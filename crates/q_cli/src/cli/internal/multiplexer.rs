@@ -103,6 +103,9 @@ pub async fn execute() -> Result<()> {
     let stdin = tokio::io::stdin();
     let mut reader = BufferedReader::new(stdin);
 
+    let tmpdir = directories::logs_dir().unwrap();
+    let mut mux_output = tokio::fs::File::create(tmpdir.join("mux-output.bin")).await.unwrap();
+
     let figterm_state = Arc::new(FigtermState::new());
 
     let (host_sender, mut host_receiver) = mpsc::unbounded_channel::<Bytes>();
@@ -148,6 +151,9 @@ pub async fn execute() -> Result<()> {
                     info!("host_receiver  recv()");
                     stdout.write_all(&encoded).await?;
                     stdout.flush().await?;
+
+                    mux_output.write_all(&encoded).await?;
+                    mux_output.flush().await?;
                 },
                 None => bail!("host recv none"),
             }
