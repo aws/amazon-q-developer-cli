@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::prelude::*;
 use bytes::Bytes;
 use eyre::{
     Context,
@@ -148,11 +149,18 @@ pub async fn execute() -> Result<()> {
             },
             encoded = host_receiver.recv() => match encoded {
                 Some(encoded) => {
+
                     info!("host_receiver  recv()");
-                    stdout.write_all(&encoded).await?;
+
+
+                    let b64 = BASE64_STANDARD.encode(encoded);
+
+                    stdout.write_all(b64.as_bytes()).await?;
+                    stdout.write_all(b"\n").await?;
                     stdout.flush().await?;
 
-                    mux_output.write_all(&encoded).await?;
+                    mux_output.write_all(b64.as_bytes()).await?;
+                    mux_output.write_all(b"\n").await?;
                     mux_output.flush().await?;
                 },
                 None => bail!("host recv none"),
