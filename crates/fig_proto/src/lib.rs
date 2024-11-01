@@ -128,7 +128,7 @@ impl FigMessage {
         let message_len: u64 = body.len().try_into()?;
         let message_len_be = message_len.to_be_bytes();
 
-        let mut inner =
+        let mut inner: BytesMut =
             BytesMut::with_capacity(b"\x1b@".len() + message_type.header().len() + message_len_be.len() + body.len());
 
         inner.extend_from_slice(b"\x1b@");
@@ -231,6 +231,8 @@ impl<T: Message> FigProtobufEncodable for T {
 
 #[cfg(test)]
 mod tests {
+    use local::EditBufferHook;
+    use remote::hostbound::Request;
     use serde_json::json;
 
     use super::*;
@@ -331,5 +333,52 @@ mod tests {
         let decoded_message: local::LocalMessage = msg.decode().unwrap();
 
         assert_eq!(message, decoded_message);
+    }
+
+    #[ignore = "ci"]
+    #[test]
+    fn abc() {
+        let a = remote::Hostbound {
+            packet: Some(remote::hostbound::Packet::Request(Request {
+                nonce: Some(0xbeef),
+                request: Some(remote::hostbound::request::Request::EditBuffer(EditBufferHook {
+                    context: Some(local::ShellContext {
+                        pid: Some(123),
+                        ttys: Some("/dev/pty123".into()),
+                        process_name: Some("/bin/bash".into()),
+                        current_working_directory: Some("/home/user".into()),
+                        session_id: None,
+                        terminal: None,
+                        hostname: None,
+                        shell_path: Some("/bin/bash".into()),
+                        wsl_distro: None,
+                        environment_variables: vec![],
+                        qterm_version: None,
+                        preexec: Some(false),
+                        osc_lock: Some(true),
+                        alias: Some("alias abc='abc d'\n".into()),
+                    }),
+                    text: "abc".repeat(10000).into(),
+                    cursor: 12,
+                    histno: 12,
+                    terminal_cursor_coordinates: None,
+                })),
+            })),
+        };
+
+        std::fs::write("hostbound.bin", a.encode_fig_protobuf().unwrap()).unwrap();
+    }
+
+    #[ignore]
+    #[test]
+    fn def() {
+        let packet_bin = include_bytes!("packet.bin");
+
+        let msg = FigMessage {
+            inner: Bytes::from_static(packet_bin),
+            message_type: FigMessageType::Protobuf,
+        };
+        let decoded_message: remote::Hostbound = msg.decode().unwrap();
+        println!("{:?}", decoded_message);
     }
 }
