@@ -39,6 +39,7 @@ use fig_proto::remote::clientbound::{
 };
 use fig_proto::remote::{
     Clientbound,
+    Hostbound,
     clientbound,
     hostbound,
 };
@@ -89,7 +90,9 @@ pub async fn execute() -> Result<()> {
 
     // Remove the socket file if it already exists
     info!("removing socket");
-    tokio::fs::remove_file(&socket_path).await.ok();
+    if let Err(err) = tokio::fs::remove_file(&socket_path).await {
+        error!(%err, "Error removing socket")
+    };
 
     // Create the socket
     info!("binding to socket");
@@ -144,6 +147,7 @@ pub async fn execute() -> Result<()> {
                 Some(encoded) => {
                     info!("host_receiver  recv()");
                     stdout.write_all(&encoded).await?;
+                    stdout.flush().await?;
                 },
                 None => bail!("host recv none"),
             }
@@ -222,7 +226,14 @@ async fn handle_client_bound_message(
                     .context("Failed to receive figterm response")?;
 
                 if let hostbound::response::Response::RunProcess(response) = response {
-                    host_sender.send(match response.encode_fig_protobuf() {
+                    let msg = Hostbound {
+                        packet: Some(hostbound::Packet::Response(hostbound::Response {
+                            nonce: Some(0xbeef),
+                            response: Some(hostbound::response::Response::RunProcess(response)),
+                        })),
+                    };
+
+                    host_sender.send(match msg.encode_fig_protobuf() {
                         Ok(encoded_message) => encoded_message,
                         Err(err) => {
                             error!(%err, "Failed to encode message");
@@ -259,7 +270,14 @@ async fn handle_client_bound_message(
                     .context("Qterm response failed to receive from sender")?;
 
                 if let hostbound::response::Response::PseudoterminalExecute(response) = response {
-                    host_sender.send(match response.encode_fig_protobuf() {
+                    let msg = Hostbound {
+                        packet: Some(hostbound::Packet::Response(hostbound::Response {
+                            nonce: Some(0xbeef),
+                            response: Some(hostbound::response::Response::PseudoterminalExecute(response)),
+                        })),
+                    };
+
+                    host_sender.send(match msg.encode_fig_protobuf() {
                         Ok(encoded_message) => encoded_message,
                         Err(err) => {
                             error!(%err, "Failed to encode message");
@@ -286,12 +304,17 @@ struct SimpleHookHandler {
 }
 
 impl SimpleHookHandler {
-    fn resererialize_send<T>(&mut self, message: &T) -> eyre::Result<()>
-    where
-        T: FigProtobufEncodable,
-    {
+    fn resererialize_send(&mut self, message: hostbound::request::Request) -> eyre::Result<()> {
         info!("sending on sender");
-        self.sender.send(match message.encode_fig_protobuf() {
+
+        let hostbound = Hostbound {
+            packet: Some(hostbound::Packet::Request(hostbound::Request {
+                nonce: Some(0xbeef),
+                request: Some(message),
+            })),
+        };
+
+        self.sender.send(match hostbound.encode_fig_protobuf() {
             Ok(encoded_message) => encoded_message,
             Err(err) => {
                 error!("Failed to encode message: {err:?}");
@@ -312,7 +335,7 @@ impl fig_remote_ipc::RemoteHookHandler for SimpleHookHandler {
         _session_id: &FigtermSessionId,
         _figterm_state: &Arc<FigtermState>,
     ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(edit_buffer_hook)?;
+        self.resererialize_send(hostbound::request::Request::EditBuffer(edit_buffer_hook.clone()))?;
         Ok(None)
     }
 
@@ -322,7 +345,7 @@ impl fig_remote_ipc::RemoteHookHandler for SimpleHookHandler {
         _session_id: &FigtermSessionId,
         _figterm_state: &Arc<FigtermState>,
     ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(prompt_hook)?;
+        self.resererialize_send(hostbound::request::Request::Prompt(prompt_hook.clone()))?;
         Ok(None)
     }
 
@@ -332,7 +355,7 @@ impl fig_remote_ipc::RemoteHookHandler for SimpleHookHandler {
         _session_id: &FigtermSessionId,
         _figterm_state: &Arc<FigtermState>,
     ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(pre_exec_hook)?;
+        self.resererialize_send(hostbound::request::Request::PreExec(pre_exec_hook.clone()))?;
         Ok(None)
     }
 
@@ -342,7 +365,7 @@ impl fig_remote_ipc::RemoteHookHandler for SimpleHookHandler {
         _session_id: &FigtermSessionId,
         _figterm_state: &Arc<FigtermState>,
     ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(post_exec_hook)?;
+        self.resererialize_send(hostbound::request::Request::PostExec(post_exec_hook.clone()))?;
         Ok(None)
     }
 
@@ -350,7 +373,7 @@ impl fig_remote_ipc::RemoteHookHandler for SimpleHookHandler {
         &mut self,
         intercepted_key: InterceptedKeyHook,
     ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(&intercepted_key)?;
+        self.resererialize_send(hostbound::request::Request::InterceptedKey(intercepted_key.clone()))?;
         Ok(None)
     }
 
@@ -369,6 +392,8 @@ impl fig_remote_ipc::RemoteHookHandler for SimpleHookHandler {
 
 #[cfg(test)]
 mod tests {
+    use fig_proto::fig::ShellContext;
+
     use super::*;
 
     #[tokio::test]
@@ -420,16 +445,30 @@ mod tests {
         let (sender, mut receiver) = mpsc::unbounded_channel();
         let mut handler = SimpleHookHandler { sender };
 
-        let message = EditBufferHook {
-            context: None,
-            text: "".into(),
-            cursor: 0,
-            histno: 0,
+        let message = hostbound::request::Request::EditBuffer(EditBufferHook {
+            context: Some(ShellContext {
+                pid: Some(123),
+                shell_path: Some("/bin/bash".into()),
+                ..Default::default()
+            }),
+            text: "abc".into(),
+            cursor: 1,
+            histno: 2,
             terminal_cursor_coordinates: None,
-        };
-        handler.resererialize_send(&message).unwrap();
+        });
+        handler.resererialize_send(message).unwrap();
 
         let received = receiver.try_recv().unwrap();
+        println!("{received:?}");
         assert!(!received.is_empty());
+
+        // let a: Hostbound = FigMessage {
+        //     inner: Bytes::from(received),
+        //     message_type: FigMessageType::Protobuf,
+        // }
+        // .decode()
+        // .unwrap();
+
+        // println!("{a:?}")
     }
 }
