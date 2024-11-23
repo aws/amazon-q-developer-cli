@@ -28,7 +28,7 @@
   "devDependencies": {
     "@vitest/coverage-v8": "^1.6.0",
     "@vitest/ui": "^1.6.0",
-    "husky": "^9.1.6",
+    "husky": "^9.1.7",
     "lint-staged": "^15.2.10",
     "micromatch": "^4.0.8",
     "prettier": "^3.3.3",
