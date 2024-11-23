@@ -12,7 +12,7 @@ publish = false
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation-sys = "0.8"
 core-foundation = "0.9"
-core-graphics = "0.23.0"
+core-graphics = "0.24.0"
 
 [package.metadata.docs.rs]
 default-target = "x86_64-apple-darwin"
