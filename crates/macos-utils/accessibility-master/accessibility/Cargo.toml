@@ -10,7 +10,7 @@ description = "Bindings for macOS Accessibility services"
 publish = false
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.25.0"
+cocoa = "0.26.0"
 core-foundation = "0.9"
 objc.workspace = true
 thiserror.workspace = true
