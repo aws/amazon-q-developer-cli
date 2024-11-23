@@ -25,7 +25,7 @@
   },
   "devDependencies": {
     "@amzn/fig-io-tsconfig": "workspace:^",
-    "@eslint/js": "^8.57.1",
+    "@eslint/js": "^9.15.0",
     "@types/eslint__js": "^8.42.3",
     "@typescript-eslint/utils": "^7.18.0",
     "eslint": "^8.57.1",
