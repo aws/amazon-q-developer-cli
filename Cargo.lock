@@ -3023,8 +3023,8 @@ dependencies = [
  "nix 0.29.0",
  "once_cell",
  "prost 0.12.6",
- "prost-build",
- "prost-reflect",
+ "prost-build 0.12.6",
+ "prost-reflect 0.13.1",
  "prost-reflect-build",
  "rmp-serde",
  "serde",
@@ -6457,6 +6457,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-build"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c1318b19085f08681016926435853bbf7858f9c082d0999b80550ff5d9abe15"
+dependencies = [
+ "bytes",
+ "heck 0.5.0",
+ "itertools 0.13.0",
+ "log",
+ "multimap",
+ "once_cell",
+ "petgraph",
+ "prettyplease",
+ "prost 0.13.3",
+ "prost-types 0.13.3",
+ "regex",
+ "syn 2.0.89",
+ "tempfile",
+]
+
+[[package]]
 name = "prost-derive"
 version = "0.12.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6491,20 +6512,32 @@ dependencies = [
  "base64 0.22.1",
  "once_cell",
  "prost 0.12.6",
- "prost-reflect-derive",
+ "prost-reflect-derive 0.13.0",
  "prost-types 0.12.6",
  "serde",
  "serde-value",
 ]
 
 [[package]]
-name = "prost-reflect-build"
-version = "0.13.0"
+name = "prost-reflect"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88efc86388935bd2a10db545e4aaefcd15b067f921c09001d952c3d50078e214"
+checksum = "4b7535b02f0e5efe3e1dbfcb428be152226ed0c66cad9541f2274c8ba8d4cd40"
 dependencies = [
- "prost-build",
- "prost-reflect",
+ "once_cell",
+ "prost 0.13.3",
+ "prost-reflect-derive 0.14.0",
+ "prost-types 0.13.3",
+]
+
+[[package]]
+name = "prost-reflect-build"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50e2537231d94dd2778920c2ada37dd9eb1ac0325bb3ee3ee651bd44c1134123"
+dependencies = [
+ "prost-build 0.13.3",
+ "prost-reflect 0.14.2",
 ]
 
 [[package]]
@@ -6512,6 +6545,17 @@ name = "prost-reflect-derive"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64c3f519df051f8a700c5aa42b53f9c42d54959506b7ed58ac7a6af7991fdc22"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.89",
+]
+
+[[package]]
+name = "prost-reflect-derive"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4fce6b22f15cc8d8d400a2b98ad29202b33bd56c7d9ddd815bc803a807ecb65"
 dependencies = [
  "proc-macro2",
  "quote",
