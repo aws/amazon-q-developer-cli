@@ -36,259 +36,11 @@ importers:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
 
-  packages/autocomplete:
-    dependencies:
-      '@amzn/fig-io-api-bindings':
-        specifier: workspace:~
-        version: link:../../packages/api-bindings
-      '@amzn/fig-io-api-bindings-wrappers':
-        specifier: workspace:^
-        version: link:../../packages/api-bindings-wrappers
-      '@amzn/fig-io-api-client':
-        specifier: workspace:^
-        version: link:../../packages/api-client
-      '@amzn/fig-io-autocomplete-parser':
-        specifier: workspace:^
-        version: link:../../packages/autocomplete-parser
-      '@amzn/fig-io-proto':
-        specifier: workspace:^
-        version: link:../../proto
-      '@amzn/fig-io-shell-parser':
-        specifier: workspace:^
-        version: link:../../packages/shell-parser
-      '@fig/autocomplete-helpers':
-        specifier: ^1.0.7
-        version: 1.0.7
-      '@fig/autocomplete-shared':
-        specifier: ^1.1.2
-        version: 1.1.2
-      '@juggle/resize-observer':
-        specifier: ^3.4.0
-        version: 3.4.0
-      '@types/js-yaml':
-        specifier: ^4.0.9
-        version: 4.0.9
-      '@vitejs/plugin-react':
-        specifier: ^4.3.3
-        version: 4.3.3(vite@5.4.10(@types/node@20.17.2)(terser@5.36.0))
-      '@withfig/autocomplete-types':
-        specifier: ^1.31.0
-        version: 1.31.0
-      deep-object-diff:
-        specifier: ^1.1.9
-        version: 1.1.9
-      exponential-backoff:
-        specifier: ^3.1.1
-        version: 3.1.1
-      js-yaml:
-        specifier: ^4.1.0
-        version: 4.1.0
-      loglevel:
-        specifier: ^1.9.2
-        version: 1.9.2
-      prop-types:
-        specifier: ^15.8.1
-        version: 15.8.1
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.1
-        version: 18.3.1(react@18.3.1)
-      react-shadow:
-        specifier: ^20.5.0
-        version: 20.5.0(prop-types@15.8.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      react-window:
-        specifier: ^1.8.10
-        version: 1.8.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      semver:
-        specifier: ^7.6.3
-        version: 7.6.3
-      tailwind-merge:
-        specifier: ^2.5.4
-        version: 2.5.4
-      use-resize-observer:
-        specifier: ^9.1.0
-        version: 9.1.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      util:
-        specifier: ^0.12.5
-        version: 0.12.5
-      vite:
-        specifier: ^5.4.10
-        version: 5.4.10(@types/node@20.17.2)(terser@5.36.0)
-      zustand:
-        specifier: ^4.5.5
-        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
-    devDependencies:
-      '@amzn/fig-io-eslint-config':
-        specifier: workspace:^
-        version: link:../../packages/eslint-config
-      '@amzn/fig-io-fuzzysort':
-        specifier: workspace:^
-        version: link:../../packages/fuzzysort
-      '@amzn/fig-io-shared':
-        specifier: workspace:^
-        version: link:../../packages/shared
-      '@amzn/fig-io-types':
-        specifier: workspace:^
-        version: link:../../packages/types
-      '@types/node':
-        specifier: ^20.17.2
-        version: 20.17.2
-      '@types/react':
-        specifier: ^18.3.12
-        version: 18.3.12
-      '@types/react-dom':
-        specifier: ^18.3.1
-        version: 18.3.1
-      '@types/react-window':
-        specifier: ^1.8.8
-        version: 1.8.8
-      '@types/semver':
-        specifier: ^7.5.8
-        version: 7.5.8
-      '@vitejs/plugin-legacy':
-        specifier: ^5.4.3
-        version: 5.4.3(terser@5.36.0)(vite@5.4.10(@types/node@20.17.2)(terser@5.36.0))
-      autoprefixer:
-        specifier: ^10.4.20
-        version: 10.4.20(postcss@8.4.47)
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      postcss:
-        specifier: ^8.4.47
-        version: 8.4.47
-      prettier:
-        specifier: ^3.3.3
-        version: 3.3.3
-      tailwindcss:
-        specifier: ^3.4.14
-        version: 3.4.14(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.6.3))
-      terser:
-        specifier: ^5.36.0
-        version: 5.36.0
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
-      vitest:
-        specifier: ^1.6.0
-        version: 1.6.0(@types/node@20.17.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
-
-  packages/dashboard:
-    dependencies:
-      '@amzn/fig-io-api-bindings':
-        specifier: workspace:^
-        version: link:../../packages/api-bindings
-      '@radix-ui/react-collapsible':
-        specifier: ^1.1.1
-        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-dropdown-menu':
-        specifier: ^2.1.2
-        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-progress':
-        specifier: ^1.1.0
-        version: 1.1.0(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-select':
-        specifier: ^2.1.2
-        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-slot':
-        specifier: ^1.1.0
-        version: 1.1.0(@types/react@18.3.12)(react@18.3.1)
-      '@radix-ui/react-switch':
-        specifier: ^1.1.1
-        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-tabs':
-        specifier: ^1.1.1
-        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      class-variance-authority:
-        specifier: ^0.7.0
-        version: 0.7.0
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
-      lucide-react:
-        specifier: ^0.379.0
-        version: 0.379.0(react@18.3.1)
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.1
-        version: 18.3.1(react@18.3.1)
-      react-markdown:
-        specifier: ^9.0.1
-        version: 9.0.1(@types/react@18.3.12)(react@18.3.1)
-      react-router:
-        specifier: ^6.27.0
-        version: 6.27.0(react@18.3.1)
-      react-router-dom:
-        specifier: ^6.27.0
-        version: 6.27.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      tailwind-merge:
-        specifier: ^2.5.4
-        version: 2.5.4
-      tailwindcss-animate:
-        specifier: ^1.0.7
-        version: 1.0.7(tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3)))
-      zod:
-        specifier: ^3.23.8
-        version: 3.23.8
-      zustand:
-        specifier: ^4.5.5
-        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
-    devDependencies:
-      '@amzn/fig-io-types':
-        specifier: workspace:^
-        version: link:../../packages/types
-      '@types/react':
-        specifier: ^18.3.12
-        version: 18.3.12
-      '@types/react-dom':
-        specifier: ^18.3.1
-        version: 18.3.1
-      '@typescript-eslint/eslint-plugin':
-        specifier: ^7.18.0
-        version: 7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint@8.57.1)(typescript@5.6.3)
-      '@typescript-eslint/parser':
-        specifier: ^7.18.0
-        version: 7.18.0(eslint@8.57.1)(typescript@5.6.3)
-      '@vitejs/plugin-react':
-        specifier: ^4.3.3
-        version: 4.3.3(vite@5.4.10(@types/node@22.8.2)(terser@5.36.0))
-      autoprefixer:
-        specifier: ^10.4.20
-        version: 10.4.20(postcss@8.4.47)
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      eslint-plugin-react-hooks:
-        specifier: ^4.6.2
-        version: 4.6.2(eslint@8.57.1)
-      eslint-plugin-react-refresh:
-        specifier: ^0.4.14
-        version: 0.4.14(eslint@8.57.1)
-      postcss:
-        specifier: ^8.4.47
-        version: 8.4.47
-      prettier:
-        specifier: ^3.3.3
-        version: 3.3.3
-      tailwindcss:
-        specifier: ^3.4.14
-        version: 3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3))
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
-      vite:
-        specifier: ^5.4.10
-        version: 5.4.10(@types/node@22.8.2)(terser@5.36.0)
-
   extensions/gnome-extension:
     dependencies:
       '@girs/gjs':
-        specifier: 4.0.0-beta.16
-        version: 4.0.0-beta.16
+        specifier: 4.0.0-beta.19
+        version: 4.0.0-beta.19
       '@girs/gnome-shell':
         specifier: ^46.0.2
         version: 46.0.2
@@ -465,6 +217,145 @@ importers:
         specifier: ^5.6.3
         version: 5.6.3
 
+  packages/autocomplete:
+    dependencies:
+      '@amzn/fig-io-api-bindings':
+        specifier: workspace:~
+        version: link:../api-bindings
+      '@amzn/fig-io-api-bindings-wrappers':
+        specifier: workspace:^
+        version: link:../api-bindings-wrappers
+      '@amzn/fig-io-api-client':
+        specifier: workspace:^
+        version: link:../api-client
+      '@amzn/fig-io-autocomplete-parser':
+        specifier: workspace:^
+        version: link:../autocomplete-parser
+      '@amzn/fig-io-proto':
+        specifier: workspace:^
+        version: link:../../proto
+      '@amzn/fig-io-shell-parser':
+        specifier: workspace:^
+        version: link:../shell-parser
+      '@fig/autocomplete-helpers':
+        specifier: ^1.0.7
+        version: 1.0.7
+      '@fig/autocomplete-shared':
+        specifier: ^1.1.2
+        version: 1.1.2
+      '@juggle/resize-observer':
+        specifier: ^3.4.0
+        version: 3.4.0
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
+      '@vitejs/plugin-react':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@5.4.10(@types/node@20.17.2)(terser@5.36.0))
+      '@withfig/autocomplete-types':
+        specifier: ^1.31.0
+        version: 1.31.0
+      deep-object-diff:
+        specifier: ^1.1.9
+        version: 1.1.9
+      exponential-backoff:
+        specifier: ^3.1.1
+        version: 3.1.1
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.1.0
+      loglevel:
+        specifier: ^1.9.2
+        version: 1.9.2
+      prop-types:
+        specifier: ^15.8.1
+        version: 15.8.1
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      react-shadow:
+        specifier: ^20.5.0
+        version: 20.5.0(prop-types@15.8.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      react-window:
+        specifier: ^1.8.10
+        version: 1.8.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      semver:
+        specifier: ^7.6.3
+        version: 7.6.3
+      tailwind-merge:
+        specifier: ^2.5.4
+        version: 2.5.4
+      use-resize-observer:
+        specifier: ^9.1.0
+        version: 9.1.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      util:
+        specifier: ^0.12.5
+        version: 0.12.5
+      vite:
+        specifier: ^5.4.10
+        version: 5.4.10(@types/node@20.17.2)(terser@5.36.0)
+      zustand:
+        specifier: ^4.5.5
+        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
+    devDependencies:
+      '@amzn/fig-io-eslint-config':
+        specifier: workspace:^
+        version: link:../eslint-config
+      '@amzn/fig-io-fuzzysort':
+        specifier: workspace:^
+        version: link:../fuzzysort
+      '@amzn/fig-io-shared':
+        specifier: workspace:^
+        version: link:../shared
+      '@amzn/fig-io-types':
+        specifier: workspace:^
+        version: link:../types
+      '@types/node':
+        specifier: ^20.17.2
+        version: 20.17.2
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.12
+      '@types/react-dom':
+        specifier: ^18.3.1
+        version: 18.3.1
+      '@types/react-window':
+        specifier: ^1.8.8
+        version: 1.8.8
+      '@types/semver':
+        specifier: ^7.5.8
+        version: 7.5.8
+      '@vitejs/plugin-legacy':
+        specifier: ^5.4.3
+        version: 5.4.3(terser@5.36.0)(vite@5.4.10(@types/node@20.17.2)(terser@5.36.0))
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.4.20(postcss@8.4.47)
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      postcss:
+        specifier: ^8.4.47
+        version: 8.4.47
+      prettier:
+        specifier: ^3.3.3
+        version: 3.3.3
+      tailwindcss:
+        specifier: ^3.4.14
+        version: 3.4.14(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.6.3))
+      terser:
+        specifier: ^5.36.0
+        version: 5.36.0
+      typescript:
+        specifier: ^5.6.3
+        version: 5.6.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.0(@types/node@20.17.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
+
   packages/autocomplete-parser:
     dependencies:
       '@amzn/fig-io-api-bindings':
@@ -525,6 +416,115 @@ importers:
       vitest:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
+
+  packages/dashboard:
+    dependencies:
+      '@amzn/fig-io-api-bindings':
+        specifier: workspace:^
+        version: link:../api-bindings
+      '@radix-ui/react-collapsible':
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-dropdown-menu':
+        specifier: ^2.1.2
+        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-progress':
+        specifier: ^1.1.0
+        version: 1.1.0(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-select':
+        specifier: ^2.1.2
+        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-slot':
+        specifier: ^1.1.0
+        version: 1.1.0(@types/react@18.3.12)(react@18.3.1)
+      '@radix-ui/react-switch':
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-tabs':
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      class-variance-authority:
+        specifier: ^0.7.0
+        version: 0.7.0
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      lucide-react:
+        specifier: ^0.379.0
+        version: 0.379.0(react@18.3.1)
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      react-markdown:
+        specifier: ^9.0.1
+        version: 9.0.1(@types/react@18.3.12)(react@18.3.1)
+      react-router:
+        specifier: ^6.27.0
+        version: 6.27.0(react@18.3.1)
+      react-router-dom:
+        specifier: ^6.27.0
+        version: 6.27.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      tailwind-merge:
+        specifier: ^2.5.4
+        version: 2.5.4
+      tailwindcss-animate:
+        specifier: ^1.0.7
+        version: 1.0.7(tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3)))
+      zod:
+        specifier: ^3.23.8
+        version: 3.23.8
+      zustand:
+        specifier: ^4.5.5
+        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
+    devDependencies:
+      '@amzn/fig-io-types':
+        specifier: workspace:^
+        version: link:../types
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.12
+      '@types/react-dom':
+        specifier: ^18.3.1
+        version: 18.3.1
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^7.18.0
+        version: 7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint@8.57.1)(typescript@5.6.3)
+      '@typescript-eslint/parser':
+        specifier: ^7.18.0
+        version: 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+      '@vitejs/plugin-react':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@5.4.10(@types/node@22.8.2)(terser@5.36.0))
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.4.20(postcss@8.4.47)
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      eslint-plugin-react-hooks:
+        specifier: ^4.6.2
+        version: 4.6.2(eslint@8.57.1)
+      eslint-plugin-react-refresh:
+        specifier: ^0.4.14
+        version: 0.4.14(eslint@8.57.1)
+      postcss:
+        specifier: ^8.4.47
+        version: 8.4.47
+      prettier:
+        specifier: ^3.3.3
+        version: 3.3.3
+      tailwindcss:
+        specifier: ^3.4.14
+        version: 3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3))
+      typescript:
+        specifier: ^5.6.3
+        version: 5.6.3
+      vite:
+        specifier: ^5.4.10
+        version: 5.4.10(@types/node@22.8.2)(terser@5.36.0)
 
   packages/eslint-config:
     devDependencies:
@@ -1629,8 +1629,8 @@ packages:
   '@girs/atk-1.0@2.53.1-4.0.0-beta.16':
     resolution: {integrity: sha512-PqF8SK3zBqxeBcXbeimoio0+dGHoRrn1r/DI/CumLJbE9vgvG8G0E/5U7Y3ELNNRurOx4KLbpb1HmLAyTP3S3w==}
 
-  '@girs/cairo-1.0@1.0.0-4.0.0-beta.16':
-    resolution: {integrity: sha512-nIrOvL73lhCHB/4n4ro7Ud4XaR0DrUg+MvCN/B42L2eCS8YIZ0MHZ+Fma0shifDQyv8uoopHfE5I7X/v7VOYFg==}
+  '@girs/cairo-1.0@1.0.0-4.0.0-beta.19':
+    resolution: {integrity: sha512-nBI5oveqH0N7czBC95ofJ4Un5KKqK6guANE6O0OxkwuF6B3YxVqdNmF8O8i2tk3GIxBzwxkC0bi0Wb6X4tLR8g==}
 
   '@girs/cally-14@14.0.0-4.0.0-beta.16':
     resolution: {integrity: sha512-QD4pH4Mj8rIhIP+LMOqGDMeiRKQ1ONY0Gn/ZUuLCGwzcH51F7ubhHYYA0tmDzBbzM1yQLWL2yhuRhT+SYa9IOw==}
@@ -1674,8 +1674,11 @@ packages:
   '@girs/gio-2.0@2.82.0-4.0.0-beta.16':
     resolution: {integrity: sha512-5JW6qgyzh3OW7dEihP+h2ZtXWw7kDXi/ra63ZscnYqUIuoebqaSB66HFzd3AMyDYYQ7j8IGZdJCog+6kKwnk8Q==}
 
-  '@girs/gjs@4.0.0-beta.16':
-    resolution: {integrity: sha512-UjWj6GXXCqJ+z8DdzQ2XYxl1IqzgcIOIs6BTcEsXQfaZx9704GNpd9PRcqOKj7hVe2VGqO5VdIbk80u9Bo+lUQ==}
+  '@girs/gio-2.0@2.82.2-4.0.0-beta.19':
+    resolution: {integrity: sha512-OM2E/mdNX3Z+X7mB8ZVFch4WbUqX1Y6hADiG9+LuGWsAOjPAVvDDUk5N4+34+BTPEfFHLGOdo8E7dI235jylCQ==}
+
+  '@girs/gjs@4.0.0-beta.19':
+    resolution: {integrity: sha512-tl+BjmMqqZH9xZcJZ2AwWI0sotGDc7qVPppAJNeFZFCgUDOFVWThZfkpZffZcQGNphn7wgU8HOvgZyrtVhrltw==}
 
   '@girs/gl-1.0@1.0.0-4.0.0-beta.16':
     resolution: {integrity: sha512-/0zdgA+ptwjhW70XnkaNPYJF5mA/H0L9x3bacA+Pj1VwuGGppHFpT/PYvqaDeOPpOMUUCgBrJXXqTt3gh6b6lQ==}
@@ -1686,8 +1689,14 @@ packages:
   '@girs/glib-2.0@2.82.0-4.0.0-beta.16':
     resolution: {integrity: sha512-YZjsythyPhClrq0uEGq8rBJ8ER0iBPf3alr1kkSOt28tDG4tn0Rv2kudHEKsFenlFjzhYVOMrJSjVvsxtcqRUQ==}
 
+  '@girs/glib-2.0@2.82.2-4.0.0-beta.19':
+    resolution: {integrity: sha512-mRUhcp7O65KQQkyrgiQpUzl1rY+TH4X+A98Kk67g3VjuA7Ei/lV4lcuZnW04HnXAGvQ3Qfkq877NmcDXRgb02g==}
+
   '@girs/gmodule-2.0@2.0.0-4.0.0-beta.16':
     resolution: {integrity: sha512-jhl7j0JOtttJnOFQ4OypPjGP5DL8AlEiSsd8YKpXI3CEC7tUFZXHq+/mymFeZ6m4GFLEdC4j0efl9roPTSEYnA==}
+
+  '@girs/gmodule-2.0@2.0.0-4.0.0-beta.19':
+    resolution: {integrity: sha512-whTYGLL63Hw1Tn9ZicpJRAMtkYiZwB3lrcln4ETFxyO1ckGTTZ5s17cWcrQjij27veVvjWcb5rmc93L5djeBpg==}
 
   '@girs/gnome-shell@46.0.2':
     resolution: {integrity: sha512-3200N6FZstRaDndKm2lDZ7ZeeutJoa+dm8pqU1J6a7PYL0H+JGZIDtarcBWCfMBnIvcFeT7y8vgdooe8X3y3KA==}
@@ -1706,6 +1715,9 @@ packages:
 
   '@girs/gobject-2.0@2.82.0-4.0.0-beta.16':
     resolution: {integrity: sha512-ziBHUMSVuoHlzhZrMvuJDSZPOR4HzRW+nk35aI3QW9TpHtIYTk6vWvY0EG0+ylzJlltT9C/kzoVvspyMulBZ5g==}
+
+  '@girs/gobject-2.0@2.82.2-4.0.0-beta.19':
+    resolution: {integrity: sha512-E1fCaIZvZ7K035Waa/vYOTqLKI47OSUX3wpMrD+DBlyfDLDCFvyXwaIrFsiKUVFJIxj1xxq7H2yCZvkYqkfklA==}
 
   '@girs/graphene-1.0@1.0.0-4.0.0-beta.16':
     resolution: {integrity: sha512-OQ1TfBQNwL19fe4PfubJwWVaQGQ5LyBf/5cQnRWYvuLGARS6lNCoLs5+/fGuukO4mxJK5/3A7sfh1DiapC2D5g==}
@@ -6966,19 +6978,19 @@ snapshots:
   '@girs/accountsservice-1.0@1.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/adw-1@1.6.0-4.0.0-beta.16':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gdk-4.0': 4.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
@@ -6991,32 +7003,32 @@ snapshots:
 
   '@girs/atk-1.0@2.52.0-4.0.0-beta.15':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.80.3-4.0.0-beta.15
       '@girs/gobject-2.0': 2.80.3-4.0.0-beta.15
 
   '@girs/atk-1.0@2.53.1-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
-  '@girs/cairo-1.0@1.0.0-4.0.0-beta.16':
+  '@girs/cairo-1.0@1.0.0-4.0.0-beta.19':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
-      '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
+      '@girs/glib-2.0': 2.82.2-4.0.0-beta.19
+      '@girs/gobject-2.0': 2.82.2-4.0.0-beta.19
 
   '@girs/cally-14@14.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/atk-1.0': 2.53.1-4.0.0-beta.16
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/clutter-14': 14.0.0-4.0.0-beta.16
       '@girs/cogl-14': 14.0.0-4.0.0-beta.16
       '@girs/coglpango-14': 14.0.0-4.0.0-beta.16
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gl-1.0': 1.0.0-4.0.0-beta.16
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
@@ -7031,12 +7043,12 @@ snapshots:
   '@girs/clutter-14@14.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/atk-1.0': 2.53.1-4.0.0-beta.16
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/cogl-14': 14.0.0-4.0.0-beta.16
       '@girs/coglpango-14': 14.0.0-4.0.0-beta.16
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gl-1.0': 1.0.0-4.0.0-beta.16
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
@@ -7050,7 +7062,7 @@ snapshots:
 
   '@girs/cogl-14@14.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gl-1.0': 1.0.0-4.0.0-beta.16
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
@@ -7060,21 +7072,21 @@ snapshots:
 
   '@girs/cogl-2.0@2.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gl-1.0': 1.0.0-4.0.0-beta.16
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/coglpango-14@14.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/cogl-14': 14.0.0-4.0.0-beta.16
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gl-1.0': 1.0.0-4.0.0-beta.16
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
       '@girs/graphene-1.0': 1.0.0-4.0.0-beta.16
       '@girs/harfbuzz-0.0': 9.0.0-4.0.0-beta.16
@@ -7085,13 +7097,13 @@ snapshots:
 
   '@girs/freetype2-2.0@2.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/gck-2@4.3.0-4.0.0-beta.16':
     dependencies:
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
@@ -7100,25 +7112,25 @@ snapshots:
     dependencies:
       '@girs/gck-2': 4.3.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/gdesktopenums-3.0@3.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/gdk-4.0@4.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
       '@girs/harfbuzz-0.0': 9.0.0-4.0.0-beta.16
       '@girs/pango-1.0': 1.54.0-4.0.0-beta.16
@@ -7127,59 +7139,77 @@ snapshots:
   '@girs/gdkpixbuf-2.0@2.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/gdm-1.0@1.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/gio-2.0@2.80.3-4.0.0-beta.15':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.80.3-4.0.0-beta.15
       '@girs/gobject-2.0': 2.80.3-4.0.0-beta.15
 
   '@girs/gio-2.0@2.82.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
-  '@girs/gjs@4.0.0-beta.16':
+  '@girs/gio-2.0@2.82.2-4.0.0-beta.19':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
-      '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
+      '@girs/glib-2.0': 2.82.2-4.0.0-beta.19
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
+      '@girs/gobject-2.0': 2.82.2-4.0.0-beta.19
+
+  '@girs/gjs@4.0.0-beta.19':
+    dependencies:
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
+      '@girs/gio-2.0': 2.82.2-4.0.0-beta.19
+      '@girs/glib-2.0': 2.82.2-4.0.0-beta.19
+      '@girs/gobject-2.0': 2.82.2-4.0.0-beta.19
 
   '@girs/gl-1.0@1.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/glib-2.0@2.80.3-4.0.0-beta.15':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gobject-2.0': 2.80.3-4.0.0-beta.15
 
   '@girs/glib-2.0@2.82.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
+
+  '@girs/glib-2.0@2.82.2-4.0.0-beta.19':
+    dependencies:
+      '@girs/gjs': 4.0.0-beta.19
+      '@girs/gobject-2.0': 2.82.2-4.0.0-beta.19
 
   '@girs/gmodule-2.0@2.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
+
+  '@girs/gmodule-2.0@2.0.0-4.0.0-beta.19':
+    dependencies:
+      '@girs/gjs': 4.0.0-beta.19
+      '@girs/glib-2.0': 2.82.2-4.0.0-beta.19
+      '@girs/gobject-2.0': 2.82.2-4.0.0-beta.19
 
   '@girs/gnome-shell@46.0.2':
     dependencies:
@@ -7192,7 +7222,7 @@ snapshots:
       '@girs/gcr-4': 4.3.0-4.0.0-beta.16
       '@girs/gdm-1.0': 1.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.80.3-4.0.0-beta.15
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.80.3-4.0.0-beta.15
       '@girs/gnomebg-4.0': 4.0.0-4.0.0-beta.16
       '@girs/gnomebluetooth-3.0': 3.0.0-4.0.0-beta.16
@@ -7210,13 +7240,13 @@ snapshots:
 
   '@girs/gnomebg-4.0@4.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gdesktopenums-3.0': 3.0.0-4.0.0-beta.16
       '@girs/gdk-4.0': 4.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gnomedesktop-4.0': 4.0.0-4.0.0-beta.16
@@ -7228,7 +7258,7 @@ snapshots:
   '@girs/gnomebluetooth-3.0@3.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
@@ -7238,37 +7268,42 @@ snapshots:
       '@girs/gdesktopenums-3.0': 3.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/gobject-2.0@2.80.3-4.0.0-beta.15':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.80.3-4.0.0-beta.15
 
   '@girs/gobject-2.0@2.82.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
+
+  '@girs/gobject-2.0@2.82.2-4.0.0-beta.19':
+    dependencies:
+      '@girs/gjs': 4.0.0-beta.19
+      '@girs/glib-2.0': 2.82.2-4.0.0-beta.19
 
   '@girs/graphene-1.0@1.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/gsk-4.0@4.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gdk-4.0': 4.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
       '@girs/graphene-1.0': 1.0.0-4.0.0-beta.16
       '@girs/harfbuzz-0.0': 9.0.0-4.0.0-beta.16
@@ -7277,12 +7312,12 @@ snapshots:
 
   '@girs/gtk-4.0@4.14.4-4.0.0-beta.14':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gdk-4.0': 4.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.80.3-4.0.0-beta.15
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.80.3-4.0.0-beta.15
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.80.3-4.0.0-beta.15
@@ -7294,14 +7329,14 @@ snapshots:
 
   '@girs/gtk-4.0@4.15.5-4.0.0-beta.16':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gdk-4.0': 4.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
       '@girs/graphene-1.0': 1.0.0-4.0.0-beta.16
       '@girs/gsk-4.0': 4.0.0-4.0.0-beta.16
@@ -7312,7 +7347,7 @@ snapshots:
   '@girs/gvc-1.0@1.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
@@ -7320,28 +7355,28 @@ snapshots:
   '@girs/harfbuzz-0.0@8.5.0-4.0.0-beta.15':
     dependencies:
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.80.3-4.0.0-beta.15
       '@girs/gobject-2.0': 2.80.3-4.0.0-beta.15
 
   '@girs/harfbuzz-0.0@9.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/meta-14@14.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/atk-1.0': 2.53.1-4.0.0-beta.16
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/clutter-14': 14.0.0-4.0.0-beta.16
       '@girs/cogl-14': 14.0.0-4.0.0-beta.16
       '@girs/coglpango-14': 14.0.0-4.0.0-beta.16
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gdesktopenums-3.0': 3.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gl-1.0': 1.0.0-4.0.0-beta.16
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
@@ -7356,7 +7391,7 @@ snapshots:
 
   '@girs/mtk-14@14.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
       '@girs/graphene-1.0': 1.0.0-4.0.0-beta.16
@@ -7364,30 +7399,30 @@ snapshots:
   '@girs/nm-1.0@1.49.4-4.0.0-beta.16':
     dependencies:
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/pango-1.0@1.54.0-4.0.0-beta.16':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
       '@girs/harfbuzz-0.0': 9.0.0-4.0.0-beta.16
 
   '@girs/pangocairo-1.0@1.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
       '@girs/harfbuzz-0.0': 9.0.0-4.0.0-beta.16
       '@girs/pango-1.0': 1.54.0-4.0.0-beta.16
@@ -7395,7 +7430,7 @@ snapshots:
   '@girs/polkit-1.0@1.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
@@ -7403,16 +7438,16 @@ snapshots:
   '@girs/polkitagent-1.0@1.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
       '@girs/polkit-1.0': 1.0.0-4.0.0-beta.16
 
   '@girs/shell-14@14.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/atk-1.0': 2.53.1-4.0.0-beta.16
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/cally-14': 14.0.0-4.0.0-beta.16
       '@girs/clutter-14': 14.0.0-4.0.0-beta.16
       '@girs/cogl-14': 14.0.0-4.0.0-beta.16
@@ -7423,7 +7458,7 @@ snapshots:
       '@girs/gdesktopenums-3.0': 3.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gl-1.0': 1.0.0-4.0.0-beta.16
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
@@ -7444,12 +7479,12 @@ snapshots:
 
   '@girs/shew-0@0.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/freetype2-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gdk-4.0': 4.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
@@ -7463,7 +7498,7 @@ snapshots:
   '@girs/st-14@14.0.0-4.0.0-beta.16':
     dependencies:
       '@girs/atk-1.0': 2.53.1-4.0.0-beta.16
-      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.16
+      '@girs/cairo-1.0': 1.0.0-4.0.0-beta.19
       '@girs/cally-14': 14.0.0-4.0.0-beta.16
       '@girs/clutter-14': 14.0.0-4.0.0-beta.16
       '@girs/cogl-14': 14.0.0-4.0.0-beta.16
@@ -7472,7 +7507,7 @@ snapshots:
       '@girs/gdesktopenums-3.0': 3.0.0-4.0.0-beta.16
       '@girs/gdkpixbuf-2.0': 2.0.0-4.0.0-beta.16
       '@girs/gio-2.0': 2.82.0-4.0.0-beta.16
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gl-1.0': 1.0.0-4.0.0-beta.16
       '@girs/glib-2.0': 2.82.0-4.0.0-beta.16
       '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.16
@@ -7489,18 +7524,18 @@ snapshots:
   '@girs/upowerglib-1.0@0.99.1-4.0.0-beta.15':
     dependencies:
       '@girs/gio-2.0': 2.80.3-4.0.0-beta.15
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/glib-2.0': 2.80.3-4.0.0-beta.15
       '@girs/gobject-2.0': 2.80.3-4.0.0-beta.15
 
   '@girs/xfixes-4.0@4.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@girs/xlib-2.0@2.0.0-4.0.0-beta.16':
     dependencies:
-      '@girs/gjs': 4.0.0-beta.16
+      '@girs/gjs': 4.0.0-beta.19
       '@girs/gobject-2.0': 2.82.0-4.0.0-beta.16
 
   '@humanfs/core@0.19.1': {}
@@ -8420,7 +8455,7 @@ snapshots:
       pathe: 1.1.2
       picocolors: 1.1.1
       sirv: 2.0.4
-      vitest: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
+      vitest: 1.6.0(@types/node@20.17.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
 
   '@vitest/utils@1.6.0':
     dependencies:
