@@ -22,7 +22,7 @@ serde.workspace = true
 serde_yaml = "0.9"
 shell-color.workspace = true
 tracing.workspace = true
-unicode-width = "0.1"
+unicode-width = "0.2"
 vte = { version = "0.13.0", default-features = false }
 
 [dev-dependencies]

@@ -86,7 +86,7 @@ dependencies = [
  "serde_yaml",
  "shell-color",
  "tracing",
- "unicode-width 0.1.14",
+ "unicode-width 0.2.0",
  "vte 0.13.0",
 ]
 
@@ -6629,7 +6629,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "unicode-width 0.1.14",
+ "unicode-width 0.2.0",
  "url",
  "uuid",
  "walkdir",
