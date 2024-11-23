@@ -36,26 +36,207 @@ importers:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
 
+  extensions/gnome-extension:
+    dependencies:
+      '@girs/gjs':
+        specifier: 4.0.0-beta.16
+        version: 4.0.0-beta.16
+      '@girs/gnome-shell':
+        specifier: ^46.0.2
+        version: 46.0.2
+    devDependencies:
+      eslint:
+        specifier: ^9.13.0
+        version: 9.13.0(jiti@1.21.6)
+      eslint-plugin-jsdoc:
+        specifier: ^50.4.3
+        version: 50.4.3(eslint@9.13.0(jiti@1.21.6))
+      typescript:
+        specifier: ^5.7.2
+        version: 5.7.2
+
+  extensions/gnome-legacy-extension:
+    devDependencies:
+      '@gi.ts/cli':
+        specifier: ^1.5.10
+        version: 1.5.10(@gi.ts/lib@1.5.13)(@types/node@22.8.2)(typescript@5.7.2)
+      '@gi.ts/lib':
+        specifier: ^1.5.13
+        version: 1.5.13
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+
+  extensions/vscode:
+    devDependencies:
+      '@types/glob':
+        specifier: ^8.1.0
+        version: 8.1.0
+      '@types/mocha':
+        specifier: ^10.0.9
+        version: 10.0.9
+      '@types/node':
+        specifier: ^20.17.2
+        version: 20.17.2
+      '@types/vscode':
+        specifier: ~1.80.0
+        version: 1.80.0
+      '@vscode/test-electron':
+        specifier: ^2.4.1
+        version: 2.4.1
+      '@vscode/vsce':
+        specifier: ^2.32.0
+        version: 2.32.0
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      glob:
+        specifier: ^10.4.5
+        version: 10.4.5
+      mocha:
+        specifier: ^10.7.3
+        version: 10.7.3
+      typescript:
+        specifier: ^5.7.2
+        version: 5.7.2
+
+  packages/api-bindings:
+    dependencies:
+      '@amzn/fig-io-proto':
+        specifier: workspace:^
+        version: link:../../proto
+    devDependencies:
+      '@amzn/fig-io-eslint-config':
+        specifier: workspace:^
+        version: link:../eslint-config
+      '@amzn/fig-io-tsconfig':
+        specifier: workspace:^
+        version: link:../tsconfig
+      '@tsconfig/recommended':
+        specifier: ^1.0.8
+        version: 1.0.8
+      '@types/node':
+        specifier: ^20.17.2
+        version: 20.17.2
+      '@typescript/analyze-trace':
+        specifier: ^0.10.1
+        version: 0.10.1
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      lint-staged:
+        specifier: ^15.2.10
+        version: 15.2.10
+      prettier:
+        specifier: ^3.3.3
+        version: 3.3.3
+      ts-morph:
+        specifier: ^22.0.0
+        version: 22.0.0
+      ts-proto:
+        specifier: ~1.176.3
+        version: 1.176.3
+      tslib:
+        specifier: ^2.8.0
+        version: 2.8.0
+      tsx:
+        specifier: ^4.19.2
+        version: 4.19.2
+      typescript:
+        specifier: ^5.7.2
+        version: 5.7.2
+
+  packages/api-bindings-wrappers:
+    dependencies:
+      '@amzn/fig-io-api-bindings':
+        specifier: workspace:~
+        version: link:../api-bindings
+      loglevel:
+        specifier: ^1.9.2
+        version: 1.9.2
+    devDependencies:
+      '@amzn/fig-io-eslint-config':
+        specifier: workspace:^
+        version: link:../eslint-config
+      '@amzn/fig-io-shared':
+        specifier: workspace:^
+        version: link:../shared
+      '@amzn/fig-io-tsconfig':
+        specifier: workspace:^
+        version: link:../tsconfig
+      '@amzn/fig-io-types':
+        specifier: workspace:^
+        version: link:../types
+      '@withfig/autocomplete-types':
+        specifier: ^1.31.0
+        version: 1.31.0
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      prettier:
+        specifier: ^3.3.3
+        version: 3.3.3
+      typescript:
+        specifier: ^5.7.2
+        version: 5.7.2
+
+  packages/api-client:
+    dependencies:
+      '@amzn/fig-io-api-bindings':
+        specifier: workspace:~
+        version: link:../api-bindings
+      '@amzn/fig-io-api-bindings-wrappers':
+        specifier: workspace:^
+        version: link:../api-bindings-wrappers
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+    devDependencies:
+      '@amzn/fig-io-eslint-config':
+        specifier: workspace:^
+        version: link:../eslint-config
+      '@amzn/fig-io-shared':
+        specifier: workspace:^
+        version: link:../shared
+      '@amzn/fig-io-tsconfig':
+        specifier: workspace:^
+        version: link:../tsconfig
+      '@amzn/fig-io-types':
+        specifier: workspace:^
+        version: link:../types
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.12
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      prettier:
+        specifier: ^3.3.3
+        version: 3.3.3
+      typescript:
+        specifier: ^5.7.2
+        version: 5.7.2
+
   packages/autocomplete:
     dependencies:
       '@amzn/fig-io-api-bindings':
         specifier: workspace:~
-        version: link:../../packages/api-bindings
+        version: link:../api-bindings
       '@amzn/fig-io-api-bindings-wrappers':
         specifier: workspace:^
-        version: link:../../packages/api-bindings-wrappers
+        version: link:../api-bindings-wrappers
       '@amzn/fig-io-api-client':
         specifier: workspace:^
-        version: link:../../packages/api-client
+        version: link:../api-client
       '@amzn/fig-io-autocomplete-parser':
         specifier: workspace:^
-        version: link:../../packages/autocomplete-parser
+        version: link:../autocomplete-parser
       '@amzn/fig-io-proto':
         specifier: workspace:^
         version: link:../../proto
       '@amzn/fig-io-shell-parser':
         specifier: workspace:^
-        version: link:../../packages/shell-parser
+        version: link:../shell-parser
       '@fig/autocomplete-helpers':
         specifier: ^1.0.7
         version: 1.0.7
@@ -122,16 +303,16 @@ importers:
     devDependencies:
       '@amzn/fig-io-eslint-config':
         specifier: workspace:^
-        version: link:../../packages/eslint-config
+        version: link:../eslint-config
       '@amzn/fig-io-fuzzysort':
         specifier: workspace:^
-        version: link:../../packages/fuzzysort
+        version: link:../fuzzysort
       '@amzn/fig-io-shared':
         specifier: workspace:^
-        version: link:../../packages/shared
+        version: link:../shared
       '@amzn/fig-io-types':
         specifier: workspace:^
-        version: link:../../packages/types
+        version: link:../types
       '@types/node':
         specifier: ^20.17.2
         version: 20.17.2
@@ -164,306 +345,16 @@ importers:
         version: 3.3.3
       tailwindcss:
         specifier: ^3.4.14
-        version: 3.4.14(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.6.3))
+        version: 3.4.14(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.7.2))
       terser:
         specifier: ^5.36.0
         version: 5.36.0
       typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
+        specifier: ^5.7.2
+        version: 5.7.2
       vitest:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@20.17.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
-
-  packages/dashboard:
-    dependencies:
-      '@amzn/fig-io-api-bindings':
-        specifier: workspace:^
-        version: link:../../packages/api-bindings
-      '@radix-ui/react-collapsible':
-        specifier: ^1.1.1
-        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-dropdown-menu':
-        specifier: ^2.1.2
-        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-progress':
-        specifier: ^1.1.0
-        version: 1.1.0(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-select':
-        specifier: ^2.1.2
-        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-slot':
-        specifier: ^1.1.0
-        version: 1.1.0(@types/react@18.3.12)(react@18.3.1)
-      '@radix-ui/react-switch':
-        specifier: ^1.1.1
-        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-tabs':
-        specifier: ^1.1.1
-        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      class-variance-authority:
-        specifier: ^0.7.0
-        version: 0.7.0
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
-      lucide-react:
-        specifier: ^0.379.0
-        version: 0.379.0(react@18.3.1)
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.1
-        version: 18.3.1(react@18.3.1)
-      react-markdown:
-        specifier: ^9.0.1
-        version: 9.0.1(@types/react@18.3.12)(react@18.3.1)
-      react-router:
-        specifier: ^6.27.0
-        version: 6.27.0(react@18.3.1)
-      react-router-dom:
-        specifier: ^6.27.0
-        version: 6.27.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      tailwind-merge:
-        specifier: ^2.5.4
-        version: 2.5.4
-      tailwindcss-animate:
-        specifier: ^1.0.7
-        version: 1.0.7(tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3)))
-      zod:
-        specifier: ^3.23.8
-        version: 3.23.8
-      zustand:
-        specifier: ^4.5.5
-        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
-    devDependencies:
-      '@amzn/fig-io-types':
-        specifier: workspace:^
-        version: link:../../packages/types
-      '@types/react':
-        specifier: ^18.3.12
-        version: 18.3.12
-      '@types/react-dom':
-        specifier: ^18.3.1
-        version: 18.3.1
-      '@typescript-eslint/eslint-plugin':
-        specifier: ^7.18.0
-        version: 7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint@8.57.1)(typescript@5.6.3)
-      '@typescript-eslint/parser':
-        specifier: ^7.18.0
-        version: 7.18.0(eslint@8.57.1)(typescript@5.6.3)
-      '@vitejs/plugin-react':
-        specifier: ^4.3.3
-        version: 4.3.3(vite@5.4.10(@types/node@22.8.2)(terser@5.36.0))
-      autoprefixer:
-        specifier: ^10.4.20
-        version: 10.4.20(postcss@8.4.47)
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      eslint-plugin-react-hooks:
-        specifier: ^4.6.2
-        version: 4.6.2(eslint@8.57.1)
-      eslint-plugin-react-refresh:
-        specifier: ^0.4.14
-        version: 0.4.14(eslint@8.57.1)
-      postcss:
-        specifier: ^8.4.47
-        version: 8.4.47
-      prettier:
-        specifier: ^3.3.3
-        version: 3.3.3
-      tailwindcss:
-        specifier: ^3.4.14
-        version: 3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3))
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
-      vite:
-        specifier: ^5.4.10
-        version: 5.4.10(@types/node@22.8.2)(terser@5.36.0)
-
-  extensions/gnome-extension:
-    dependencies:
-      '@girs/gjs':
-        specifier: 4.0.0-beta.16
-        version: 4.0.0-beta.16
-      '@girs/gnome-shell':
-        specifier: ^46.0.2
-        version: 46.0.2
-    devDependencies:
-      eslint:
-        specifier: ^9.13.0
-        version: 9.13.0(jiti@1.21.6)
-      eslint-plugin-jsdoc:
-        specifier: ^50.4.3
-        version: 50.4.3(eslint@9.13.0(jiti@1.21.6))
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
-
-  extensions/gnome-legacy-extension:
-    devDependencies:
-      '@gi.ts/cli':
-        specifier: ^1.5.10
-        version: 1.5.10(@gi.ts/lib@1.5.13)(@types/node@22.8.2)(typescript@5.6.3)
-      '@gi.ts/lib':
-        specifier: ^1.5.13
-        version: 1.5.13
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-
-  extensions/vscode:
-    devDependencies:
-      '@types/glob':
-        specifier: ^8.1.0
-        version: 8.1.0
-      '@types/mocha':
-        specifier: ^10.0.9
-        version: 10.0.9
-      '@types/node':
-        specifier: ^20.17.2
-        version: 20.17.2
-      '@types/vscode':
-        specifier: ~1.80.0
-        version: 1.80.0
-      '@vscode/test-electron':
-        specifier: ^2.4.1
-        version: 2.4.1
-      '@vscode/vsce':
-        specifier: ^2.32.0
-        version: 2.32.0
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      glob:
-        specifier: ^10.4.5
-        version: 10.4.5
-      mocha:
-        specifier: ^10.7.3
-        version: 10.7.3
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
-
-  packages/api-bindings:
-    dependencies:
-      '@amzn/fig-io-proto':
-        specifier: workspace:^
-        version: link:../../proto
-    devDependencies:
-      '@amzn/fig-io-eslint-config':
-        specifier: workspace:^
-        version: link:../eslint-config
-      '@amzn/fig-io-tsconfig':
-        specifier: workspace:^
-        version: link:../tsconfig
-      '@tsconfig/recommended':
-        specifier: ^1.0.8
-        version: 1.0.8
-      '@types/node':
-        specifier: ^20.17.2
-        version: 20.17.2
-      '@typescript/analyze-trace':
-        specifier: ^0.10.1
-        version: 0.10.1
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      lint-staged:
-        specifier: ^15.2.10
-        version: 15.2.10
-      prettier:
-        specifier: ^3.3.3
-        version: 3.3.3
-      ts-morph:
-        specifier: ^22.0.0
-        version: 22.0.0
-      ts-proto:
-        specifier: ~1.176.3
-        version: 1.176.3
-      tslib:
-        specifier: ^2.8.0
-        version: 2.8.0
-      tsx:
-        specifier: ^4.19.2
-        version: 4.19.2
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
-
-  packages/api-bindings-wrappers:
-    dependencies:
-      '@amzn/fig-io-api-bindings':
-        specifier: workspace:~
-        version: link:../api-bindings
-      loglevel:
-        specifier: ^1.9.2
-        version: 1.9.2
-    devDependencies:
-      '@amzn/fig-io-eslint-config':
-        specifier: workspace:^
-        version: link:../eslint-config
-      '@amzn/fig-io-shared':
-        specifier: workspace:^
-        version: link:../shared
-      '@amzn/fig-io-tsconfig':
-        specifier: workspace:^
-        version: link:../tsconfig
-      '@amzn/fig-io-types':
-        specifier: workspace:^
-        version: link:../types
-      '@withfig/autocomplete-types':
-        specifier: ^1.31.0
-        version: 1.31.0
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      prettier:
-        specifier: ^3.3.3
-        version: 3.3.3
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
-
-  packages/api-client:
-    dependencies:
-      '@amzn/fig-io-api-bindings':
-        specifier: workspace:~
-        version: link:../api-bindings
-      '@amzn/fig-io-api-bindings-wrappers':
-        specifier: workspace:^
-        version: link:../api-bindings-wrappers
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-    devDependencies:
-      '@amzn/fig-io-eslint-config':
-        specifier: workspace:^
-        version: link:../eslint-config
-      '@amzn/fig-io-shared':
-        specifier: workspace:^
-        version: link:../shared
-      '@amzn/fig-io-tsconfig':
-        specifier: workspace:^
-        version: link:../tsconfig
-      '@amzn/fig-io-types':
-        specifier: workspace:^
-        version: link:../types
-      '@types/react':
-        specifier: ^18.3.12
-        version: 18.3.12
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      prettier:
-        specifier: ^3.3.3
-        version: 3.3.3
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
 
   packages/autocomplete-parser:
     dependencies:
@@ -520,11 +411,120 @@ importers:
         specifier: ^8.57.1
         version: 8.57.1
       typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
+        specifier: ^5.7.2
+        version: 5.7.2
       vitest:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
+
+  packages/dashboard:
+    dependencies:
+      '@amzn/fig-io-api-bindings':
+        specifier: workspace:^
+        version: link:../api-bindings
+      '@radix-ui/react-collapsible':
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-dropdown-menu':
+        specifier: ^2.1.2
+        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-progress':
+        specifier: ^1.1.0
+        version: 1.1.0(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-select':
+        specifier: ^2.1.2
+        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-slot':
+        specifier: ^1.1.0
+        version: 1.1.0(@types/react@18.3.12)(react@18.3.1)
+      '@radix-ui/react-switch':
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-tabs':
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      class-variance-authority:
+        specifier: ^0.7.0
+        version: 0.7.0
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      lucide-react:
+        specifier: ^0.379.0
+        version: 0.379.0(react@18.3.1)
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      react-markdown:
+        specifier: ^9.0.1
+        version: 9.0.1(@types/react@18.3.12)(react@18.3.1)
+      react-router:
+        specifier: ^6.27.0
+        version: 6.27.0(react@18.3.1)
+      react-router-dom:
+        specifier: ^6.27.0
+        version: 6.27.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      tailwind-merge:
+        specifier: ^2.5.4
+        version: 2.5.4
+      tailwindcss-animate:
+        specifier: ^1.0.7
+        version: 1.0.7(tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.7.2)))
+      zod:
+        specifier: ^3.23.8
+        version: 3.23.8
+      zustand:
+        specifier: ^4.5.5
+        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
+    devDependencies:
+      '@amzn/fig-io-types':
+        specifier: workspace:^
+        version: link:../types
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.12
+      '@types/react-dom':
+        specifier: ^18.3.1
+        version: 18.3.1
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^7.18.0
+        version: 7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.7.2))(eslint@8.57.1)(typescript@5.7.2)
+      '@typescript-eslint/parser':
+        specifier: ^7.18.0
+        version: 7.18.0(eslint@8.57.1)(typescript@5.7.2)
+      '@vitejs/plugin-react':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@5.4.10(@types/node@22.8.2)(terser@5.36.0))
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.4.20(postcss@8.4.47)
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      eslint-plugin-react-hooks:
+        specifier: ^4.6.2
+        version: 4.6.2(eslint@8.57.1)
+      eslint-plugin-react-refresh:
+        specifier: ^0.4.14
+        version: 0.4.14(eslint@8.57.1)
+      postcss:
+        specifier: ^8.4.47
+        version: 8.4.47
+      prettier:
+        specifier: ^3.3.3
+        version: 3.3.3
+      tailwindcss:
+        specifier: ^3.4.14
+        version: 3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.7.2))
+      typescript:
+        specifier: ^5.7.2
+        version: 5.7.2
+      vite:
+        specifier: ^5.4.10
+        version: 5.4.10(@types/node@22.8.2)(terser@5.36.0)
 
   packages/eslint-config:
     devDependencies:
@@ -539,7 +539,7 @@ importers:
         version: 8.42.3
       '@typescript-eslint/utils':
         specifier: ^7.18.0
-        version: 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+        version: 7.18.0(eslint@8.57.1)(typescript@5.7.2)
       eslint:
         specifier: ^8.57.1
         version: 8.57.1
@@ -548,7 +548,7 @@ importers:
         version: 9.1.0(eslint@8.57.1)
       eslint-plugin-import:
         specifier: ^2.31.0
-        version: 2.31.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint@8.57.1)
+        version: 2.31.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.7.2))(eslint@8.57.1)
       eslint-plugin-jsx-a11y:
         specifier: ^6.10.2
         version: 6.10.2(eslint@8.57.1)
@@ -568,11 +568,11 @@ importers:
         specifier: ^3.3.3
         version: 3.3.3
       typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
+        specifier: ^5.7.2
+        version: 5.7.2
       typescript-eslint:
         specifier: ^7.18.0
-        version: 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+        version: 7.18.0(eslint@8.57.1)(typescript@5.7.2)
 
   packages/fuzzysort: {}
 
@@ -601,8 +601,8 @@ importers:
         specifier: ^8.57.1
         version: 8.57.1
       typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
+        specifier: ^5.7.2
+        version: 5.7.2
       vitest:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
@@ -629,8 +629,8 @@ importers:
         specifier: ^3.3.3
         version: 3.3.3
       typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
+        specifier: ^5.7.2
+        version: 5.7.2
       vitest:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
@@ -659,8 +659,8 @@ importers:
         specifier: ~1.176.3
         version: 1.176.3
       typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
+        specifier: ^5.7.2
+        version: 5.7.2
 
   tests/fig-api:
     devDependencies:
@@ -674,8 +674,8 @@ importers:
         specifier: ^20.17.2
         version: 20.17.2
       typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
+        specifier: ^5.7.2
+        version: 5.7.2
       vitest:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@20.17.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
@@ -5573,6 +5573,11 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  typescript@5.7.2:
+    resolution: {integrity: sha512-i5t66RHxDvVN40HfDd1PsEThGNnlMCMT3jMUuoh9/0TaqWevNontacunWyN02LA9/fIbEWlcHZcgTKb9QoaLfg==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   uc.micro@1.0.6:
     resolution: {integrity: sha512-8Y75pvTYkLJW2hWQHXxoqRgV7qb9B+9vFEtidML+7koHUFapnVJAZ6cKs+Qjz5Aw3aZWHMC6u0wJE3At+nSGwA==}
 
@@ -6933,14 +6938,14 @@ snapshots:
 
   '@floating-ui/utils@0.2.8': {}
 
-  '@gi.ts/cli@1.5.10(@gi.ts/lib@1.5.13)(@types/node@22.8.2)(typescript@5.6.3)':
+  '@gi.ts/cli@1.5.10(@gi.ts/lib@1.5.13)(@types/node@22.8.2)(typescript@5.7.2)':
     dependencies:
       '@gi.ts/lib': 1.5.13
       '@gi.ts/node-loader': 1.5.10
       '@gi.ts/parser': 1.5.10
       '@oclif/command': 1.8.36(@oclif/config@1.18.17)
       '@oclif/config': 1.18.17
-      '@oclif/plugin-help': 5.2.20(@types/node@22.8.2)(typescript@5.6.3)
+      '@oclif/plugin-help': 5.2.20(@types/node@22.8.2)(typescript@5.7.2)
       prettier: 2.8.8
       tslib: 1.14.1
     transitivePeerDependencies:
@@ -7613,7 +7618,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@oclif/core@2.16.0(@types/node@22.8.2)(typescript@5.6.3)':
+  '@oclif/core@2.16.0(@types/node@22.8.2)(typescript@5.7.2)':
     dependencies:
       '@types/cli-progress': 3.11.6
       ansi-escapes: 4.3.2
@@ -7638,7 +7643,7 @@ snapshots:
       strip-ansi: 6.0.1
       supports-color: 8.1.1
       supports-hyperlinks: 2.3.0
-      ts-node: 10.9.2(@types/node@22.8.2)(typescript@5.6.3)
+      ts-node: 10.9.2(@types/node@22.8.2)(typescript@5.7.2)
       tslib: 2.8.0
       widest-line: 3.1.0
       wordwrap: 1.0.0
@@ -7680,9 +7685,9 @@ snapshots:
       chalk: 4.1.2
       tslib: 2.8.0
 
-  '@oclif/plugin-help@5.2.20(@types/node@22.8.2)(typescript@5.6.3)':
+  '@oclif/plugin-help@5.2.20(@types/node@22.8.2)(typescript@5.7.2)':
     dependencies:
-      '@oclif/core': 2.16.0(@types/node@22.8.2)(typescript@5.6.3)
+      '@oclif/core': 2.16.0(@types/node@22.8.2)(typescript@5.7.2)
     transitivePeerDependencies:
       - '@swc/core'
       - '@swc/wasm'
@@ -8239,34 +8244,34 @@ snapshots:
 
   '@types/vscode@1.80.0': {}
 
-  '@typescript-eslint/eslint-plugin@7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint@8.57.1)(typescript@5.6.3)':
+  '@typescript-eslint/eslint-plugin@7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.7.2))(eslint@8.57.1)(typescript@5.7.2)':
     dependencies:
       '@eslint-community/regexpp': 4.12.1
-      '@typescript-eslint/parser': 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+      '@typescript-eslint/parser': 7.18.0(eslint@8.57.1)(typescript@5.7.2)
       '@typescript-eslint/scope-manager': 7.18.0
-      '@typescript-eslint/type-utils': 7.18.0(eslint@8.57.1)(typescript@5.6.3)
-      '@typescript-eslint/utils': 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+      '@typescript-eslint/type-utils': 7.18.0(eslint@8.57.1)(typescript@5.7.2)
+      '@typescript-eslint/utils': 7.18.0(eslint@8.57.1)(typescript@5.7.2)
       '@typescript-eslint/visitor-keys': 7.18.0
       eslint: 8.57.1
       graphemer: 1.4.0
       ignore: 5.3.2
       natural-compare: 1.4.0
-      ts-api-utils: 1.3.0(typescript@5.6.3)
+      ts-api-utils: 1.3.0(typescript@5.7.2)
     optionalDependencies:
-      typescript: 5.6.3
+      typescript: 5.7.2
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3)':
+  '@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.7.2)':
     dependencies:
       '@typescript-eslint/scope-manager': 7.18.0
       '@typescript-eslint/types': 7.18.0
-      '@typescript-eslint/typescript-estree': 7.18.0(typescript@5.6.3)
+      '@typescript-eslint/typescript-estree': 7.18.0(typescript@5.7.2)
       '@typescript-eslint/visitor-keys': 7.18.0
       debug: 4.3.7(supports-color@8.1.1)
       eslint: 8.57.1
     optionalDependencies:
-      typescript: 5.6.3
+      typescript: 5.7.2
     transitivePeerDependencies:
       - supports-color
 
@@ -8275,21 +8280,21 @@ snapshots:
       '@typescript-eslint/types': 7.18.0
       '@typescript-eslint/visitor-keys': 7.18.0
 
-  '@typescript-eslint/type-utils@7.18.0(eslint@8.57.1)(typescript@5.6.3)':
+  '@typescript-eslint/type-utils@7.18.0(eslint@8.57.1)(typescript@5.7.2)':
     dependencies:
-      '@typescript-eslint/typescript-estree': 7.18.0(typescript@5.6.3)
-      '@typescript-eslint/utils': 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+      '@typescript-eslint/typescript-estree': 7.18.0(typescript@5.7.2)
+      '@typescript-eslint/utils': 7.18.0(eslint@8.57.1)(typescript@5.7.2)
       debug: 4.3.7(supports-color@8.1.1)
       eslint: 8.57.1
-      ts-api-utils: 1.3.0(typescript@5.6.3)
+      ts-api-utils: 1.3.0(typescript@5.7.2)
     optionalDependencies:
-      typescript: 5.6.3
+      typescript: 5.7.2
     transitivePeerDependencies:
       - supports-color
 
   '@typescript-eslint/types@7.18.0': {}
 
-  '@typescript-eslint/typescript-estree@7.18.0(typescript@5.6.3)':
+  '@typescript-eslint/typescript-estree@7.18.0(typescript@5.7.2)':
     dependencies:
       '@typescript-eslint/types': 7.18.0
       '@typescript-eslint/visitor-keys': 7.18.0
@@ -8298,18 +8303,18 @@ snapshots:
       is-glob: 4.0.3
       minimatch: 9.0.5
       semver: 7.6.3
-      ts-api-utils: 1.3.0(typescript@5.6.3)
+      ts-api-utils: 1.3.0(typescript@5.7.2)
     optionalDependencies:
-      typescript: 5.6.3
+      typescript: 5.7.2
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/utils@7.18.0(eslint@8.57.1)(typescript@5.6.3)':
+  '@typescript-eslint/utils@7.18.0(eslint@8.57.1)(typescript@5.7.2)':
     dependencies:
       '@eslint-community/eslint-utils': 4.4.1(eslint@8.57.1)
       '@typescript-eslint/scope-manager': 7.18.0
       '@typescript-eslint/types': 7.18.0
-      '@typescript-eslint/typescript-estree': 7.18.0(typescript@5.6.3)
+      '@typescript-eslint/typescript-estree': 7.18.0(typescript@5.7.2)
       eslint: 8.57.1
     transitivePeerDependencies:
       - supports-color
@@ -8420,7 +8425,7 @@ snapshots:
       pathe: 1.1.2
       picocolors: 1.1.1
       sirv: 2.0.4
-      vitest: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
+      vitest: 1.6.0(@types/node@20.17.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
 
   '@vitest/utils@1.6.0':
     dependencies:
@@ -9335,17 +9340,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint-import-resolver-node@0.3.9)(eslint@8.57.1):
+  eslint-module-utils@2.12.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.7.2))(eslint-import-resolver-node@0.3.9)(eslint@8.57.1):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
-      '@typescript-eslint/parser': 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+      '@typescript-eslint/parser': 7.18.0(eslint@8.57.1)(typescript@5.7.2)
       eslint: 8.57.1
       eslint-import-resolver-node: 0.3.9
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.31.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint@8.57.1):
+  eslint-plugin-import@2.31.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.7.2))(eslint@8.57.1):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.8
@@ -9356,7 +9361,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 8.57.1
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.12.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint-import-resolver-node@0.3.9)(eslint@8.57.1)
+      eslint-module-utils: 2.12.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.7.2))(eslint-import-resolver-node@0.3.9)(eslint@8.57.1)
       hasown: 2.0.2
       is-core-module: 2.15.1
       is-glob: 4.0.3
@@ -9368,7 +9373,7 @@ snapshots:
       string.prototype.trimend: 1.0.8
       tsconfig-paths: 3.15.0
     optionalDependencies:
-      '@typescript-eslint/parser': 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+      '@typescript-eslint/parser': 7.18.0(eslint@8.57.1)(typescript@5.7.2)
     transitivePeerDependencies:
       - eslint-import-resolver-typescript
       - eslint-import-resolver-webpack
@@ -11022,21 +11027,21 @@ snapshots:
       camelcase-css: 2.0.1
       postcss: 8.4.47
 
-  postcss-load-config@4.0.2(postcss@8.4.47)(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.6.3)):
+  postcss-load-config@4.0.2(postcss@8.4.47)(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.7.2)):
     dependencies:
       lilconfig: 3.1.2
       yaml: 2.6.0
     optionalDependencies:
       postcss: 8.4.47
-      ts-node: 10.9.2(@types/node@20.17.2)(typescript@5.6.3)
+      ts-node: 10.9.2(@types/node@20.17.2)(typescript@5.7.2)
 
-  postcss-load-config@4.0.2(postcss@8.4.47)(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3)):
+  postcss-load-config@4.0.2(postcss@8.4.47)(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.7.2)):
     dependencies:
       lilconfig: 3.1.2
       yaml: 2.6.0
     optionalDependencies:
       postcss: 8.4.47
-      ts-node: 10.9.2(@types/node@22.8.2)(typescript@5.6.3)
+      ts-node: 10.9.2(@types/node@22.8.2)(typescript@5.7.2)
 
   postcss-nested@6.2.0(postcss@8.4.47):
     dependencies:
@@ -11725,11 +11730,11 @@ snapshots:
 
   tailwind-merge@2.5.4: {}
 
-  tailwindcss-animate@1.0.7(tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3))):
+  tailwindcss-animate@1.0.7(tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.7.2))):
     dependencies:
-      tailwindcss: 3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3))
+      tailwindcss: 3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.7.2))
 
-  tailwindcss@3.4.14(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.6.3)):
+  tailwindcss@3.4.14(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.7.2)):
     dependencies:
       '@alloc/quick-lru': 5.2.0
       arg: 5.0.2
@@ -11748,7 +11753,7 @@ snapshots:
       postcss: 8.4.47
       postcss-import: 15.1.0(postcss@8.4.47)
       postcss-js: 4.0.1(postcss@8.4.47)
-      postcss-load-config: 4.0.2(postcss@8.4.47)(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.6.3))
+      postcss-load-config: 4.0.2(postcss@8.4.47)(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.7.2))
       postcss-nested: 6.2.0(postcss@8.4.47)
       postcss-selector-parser: 6.1.2
       resolve: 1.22.8
@@ -11756,7 +11761,7 @@ snapshots:
     transitivePeerDependencies:
       - ts-node
 
-  tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3)):
+  tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.7.2)):
     dependencies:
       '@alloc/quick-lru': 5.2.0
       arg: 5.0.2
@@ -11775,7 +11780,7 @@ snapshots:
       postcss: 8.4.47
       postcss-import: 15.1.0(postcss@8.4.47)
       postcss-js: 4.0.1(postcss@8.4.47)
-      postcss-load-config: 4.0.2(postcss@8.4.47)(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3))
+      postcss-load-config: 4.0.2(postcss@8.4.47)(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.7.2))
       postcss-nested: 6.2.0(postcss@8.4.47)
       postcss-selector-parser: 6.1.2
       resolve: 1.22.8
@@ -11860,9 +11865,9 @@ snapshots:
 
   trough@2.2.0: {}
 
-  ts-api-utils@1.3.0(typescript@5.6.3):
+  ts-api-utils@1.3.0(typescript@5.7.2):
     dependencies:
-      typescript: 5.6.3
+      typescript: 5.7.2
 
   ts-interface-checker@0.1.13: {}
 
@@ -11871,7 +11876,7 @@ snapshots:
       '@ts-morph/common': 0.23.0
       code-block-writer: 13.0.3
 
-  ts-node@10.9.2(@types/node@20.17.2)(typescript@5.6.3):
+  ts-node@10.9.2(@types/node@20.17.2)(typescript@5.7.2):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       '@tsconfig/node10': 1.0.11
@@ -11885,12 +11890,12 @@ snapshots:
       create-require: 1.1.1
       diff: 4.0.2
       make-error: 1.3.6
-      typescript: 5.6.3
+      typescript: 5.7.2
       v8-compile-cache-lib: 3.0.1
       yn: 3.1.1
     optional: true
 
-  ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3):
+  ts-node@10.9.2(@types/node@22.8.2)(typescript@5.7.2):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       '@tsconfig/node10': 1.0.11
@@ -11904,7 +11909,7 @@ snapshots:
       create-require: 1.1.1
       diff: 4.0.2
       make-error: 1.3.6
-      typescript: 5.6.3
+      typescript: 5.7.2
       v8-compile-cache-lib: 3.0.1
       yn: 3.1.1
 
@@ -12028,20 +12033,22 @@ snapshots:
       tunnel: 0.0.6
       underscore: 1.13.7
 
-  typescript-eslint@7.18.0(eslint@8.57.1)(typescript@5.6.3):
+  typescript-eslint@7.18.0(eslint@8.57.1)(typescript@5.7.2):
     dependencies:
-      '@typescript-eslint/eslint-plugin': 7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint@8.57.1)(typescript@5.6.3)
-      '@typescript-eslint/parser': 7.18.0(eslint@8.57.1)(typescript@5.6.3)
-      '@typescript-eslint/utils': 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+      '@typescript-eslint/eslint-plugin': 7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.7.2))(eslint@8.57.1)(typescript@5.7.2)
+      '@typescript-eslint/parser': 7.18.0(eslint@8.57.1)(typescript@5.7.2)
+      '@typescript-eslint/utils': 7.18.0(eslint@8.57.1)(typescript@5.7.2)
       eslint: 8.57.1
     optionalDependencies:
-      typescript: 5.6.3
+      typescript: 5.7.2
     transitivePeerDependencies:
       - supports-color
 
   typescript@4.9.5: {}
 
   typescript@5.6.3: {}
+
+  typescript@5.7.2: {}
 
   uc.micro@1.0.6: {}
 
