@@ -44,7 +44,7 @@ url = "2.5.4"
 [target.'cfg(target_os = "macos")'.dependencies]
 fig_ipc.workspace = true
 libc.workspace = true
-security-framework = "2.8.2"
+security-framework = "3.0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus = { path = "../dbus" }
