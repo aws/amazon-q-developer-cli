@@ -5291,18 +5291,6 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.24.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa52e972a9a719cecb6864fb88568781eb706bac2cd1d4f04a648542dbf78069"
-dependencies = [
- "bitflags 1.3.2",
- "cfg-if",
- "libc",
- "memoffset 0.6.5",
-]
-
-[[package]]
-name = "nix"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f346ff70e7dbfd675fe90590b92d59ef2de15a8779ae305ebcbfd3f0caf59be4"
@@ -8622,15 +8610,15 @@ dependencies = [
 
 [[package]]
 name = "tokio-vsock"
-version = "0.4.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52a15c15b1bc91f90902347eff163b5b682643aff0c8e972912cca79bd9208dd"
+checksum = "ad311033c354453d61b537cc239d8d7cc8e3d59c9eda2e8611a8b26e71f0e945"
 dependencies = [
  "bytes",
  "futures",
  "libc",
  "tokio",
- "vsock 0.3.0",
+ "vsock",
 ]
 
 [[package]]
@@ -9123,16 +9111,6 @@ name = "vsimd"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
-
-[[package]]
-name = "vsock"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c8e1df0bf1e1b28095c24564d1b90acae64ca69b097ed73896e342fa6649c57"
-dependencies = [
- "libc",
- "nix 0.24.3",
-]
 
 [[package]]
 name = "vsock"
@@ -10129,7 +10107,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uds_windows",
- "vsock 0.5.1",
+ "vsock",
  "windows-sys 0.59.0",
  "xdg-home",
  "zbus_macros",
