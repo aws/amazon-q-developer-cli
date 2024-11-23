@@ -24,6 +24,6 @@
   "devDependencies": {
     "@amzn/fig-io-tsconfig": "workspace:^",
     "ts-proto": "~1.176.3",
-    "typescript": "^5.6.3"
+    "typescript": "^5.7.2"
   }
 }
