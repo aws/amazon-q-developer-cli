@@ -100,6 +100,7 @@ impl Integration for FileIntegration {
 
         debug!(path =? self.path, "Writing file integrations");
         file.write_all(self.contents.as_bytes()).await?;
+        file.flush().await?;
 
         Ok(())
     }
