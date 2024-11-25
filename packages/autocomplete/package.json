@@ -43,7 +43,7 @@
     "react-shadow": "^20.5.0",
     "react-window": "^1.8.10",
     "semver": "^7.6.3",
-    "tailwind-merge": "^2.5.4",
+    "tailwind-merge": "^2.5.5",
     "use-resize-observer": "^9.1.0",
     "util": "^0.12.5",
     "vite": "^5.4.10",

@@ -36,254 +36,6 @@ importers:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
 
-  packages/autocomplete:
-    dependencies:
-      '@amzn/fig-io-api-bindings':
-        specifier: workspace:~
-        version: link:../../packages/api-bindings
-      '@amzn/fig-io-api-bindings-wrappers':
-        specifier: workspace:^
-        version: link:../../packages/api-bindings-wrappers
-      '@amzn/fig-io-api-client':
-        specifier: workspace:^
-        version: link:../../packages/api-client
-      '@amzn/fig-io-autocomplete-parser':
-        specifier: workspace:^
-        version: link:../../packages/autocomplete-parser
-      '@amzn/fig-io-proto':
-        specifier: workspace:^
-        version: link:../../proto
-      '@amzn/fig-io-shell-parser':
-        specifier: workspace:^
-        version: link:../../packages/shell-parser
-      '@fig/autocomplete-helpers':
-        specifier: ^1.0.7
-        version: 1.0.7
-      '@fig/autocomplete-shared':
-        specifier: ^1.1.2
-        version: 1.1.2
-      '@juggle/resize-observer':
-        specifier: ^3.4.0
-        version: 3.4.0
-      '@types/js-yaml':
-        specifier: ^4.0.9
-        version: 4.0.9
-      '@vitejs/plugin-react':
-        specifier: ^4.3.3
-        version: 4.3.3(vite@5.4.10(@types/node@20.17.2)(terser@5.36.0))
-      '@withfig/autocomplete-types':
-        specifier: ^1.31.0
-        version: 1.31.0
-      deep-object-diff:
-        specifier: ^1.1.9
-        version: 1.1.9
-      exponential-backoff:
-        specifier: ^3.1.1
-        version: 3.1.1
-      js-yaml:
-        specifier: ^4.1.0
-        version: 4.1.0
-      loglevel:
-        specifier: ^1.9.2
-        version: 1.9.2
-      prop-types:
-        specifier: ^15.8.1
-        version: 15.8.1
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.1
-        version: 18.3.1(react@18.3.1)
-      react-shadow:
-        specifier: ^20.5.0
-        version: 20.5.0(prop-types@15.8.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      react-window:
-        specifier: ^1.8.10
-        version: 1.8.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      semver:
-        specifier: ^7.6.3
-        version: 7.6.3
-      tailwind-merge:
-        specifier: ^2.5.4
-        version: 2.5.4
-      use-resize-observer:
-        specifier: ^9.1.0
-        version: 9.1.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      util:
-        specifier: ^0.12.5
-        version: 0.12.5
-      vite:
-        specifier: ^5.4.10
-        version: 5.4.10(@types/node@20.17.2)(terser@5.36.0)
-      zustand:
-        specifier: ^4.5.5
-        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
-    devDependencies:
-      '@amzn/fig-io-eslint-config':
-        specifier: workspace:^
-        version: link:../../packages/eslint-config
-      '@amzn/fig-io-fuzzysort':
-        specifier: workspace:^
-        version: link:../../packages/fuzzysort
-      '@amzn/fig-io-shared':
-        specifier: workspace:^
-        version: link:../../packages/shared
-      '@amzn/fig-io-types':
-        specifier: workspace:^
-        version: link:../../packages/types
-      '@types/node':
-        specifier: ^20.17.2
-        version: 20.17.2
-      '@types/react':
-        specifier: ^18.3.12
-        version: 18.3.12
-      '@types/react-dom':
-        specifier: ^18.3.1
-        version: 18.3.1
-      '@types/react-window':
-        specifier: ^1.8.8
-        version: 1.8.8
-      '@types/semver':
-        specifier: ^7.5.8
-        version: 7.5.8
-      '@vitejs/plugin-legacy':
-        specifier: ^5.4.3
-        version: 5.4.3(terser@5.36.0)(vite@5.4.10(@types/node@20.17.2)(terser@5.36.0))
-      autoprefixer:
-        specifier: ^10.4.20
-        version: 10.4.20(postcss@8.4.47)
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      postcss:
-        specifier: ^8.4.47
-        version: 8.4.47
-      prettier:
-        specifier: ^3.3.3
-        version: 3.3.3
-      tailwindcss:
-        specifier: ^3.4.14
-        version: 3.4.14(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.6.3))
-      terser:
-        specifier: ^5.36.0
-        version: 5.36.0
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
-      vitest:
-        specifier: ^1.6.0
-        version: 1.6.0(@types/node@20.17.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
-
-  packages/dashboard:
-    dependencies:
-      '@amzn/fig-io-api-bindings':
-        specifier: workspace:^
-        version: link:../../packages/api-bindings
-      '@radix-ui/react-collapsible':
-        specifier: ^1.1.1
-        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-dropdown-menu':
-        specifier: ^2.1.2
-        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-progress':
-        specifier: ^1.1.0
-        version: 1.1.0(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-select':
-        specifier: ^2.1.2
-        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-slot':
-        specifier: ^1.1.0
-        version: 1.1.0(@types/react@18.3.12)(react@18.3.1)
-      '@radix-ui/react-switch':
-        specifier: ^1.1.1
-        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-tabs':
-        specifier: ^1.1.1
-        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      class-variance-authority:
-        specifier: ^0.7.0
-        version: 0.7.0
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
-      lucide-react:
-        specifier: ^0.379.0
-        version: 0.379.0(react@18.3.1)
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.1
-        version: 18.3.1(react@18.3.1)
-      react-markdown:
-        specifier: ^9.0.1
-        version: 9.0.1(@types/react@18.3.12)(react@18.3.1)
-      react-router:
-        specifier: ^6.27.0
-        version: 6.27.0(react@18.3.1)
-      react-router-dom:
-        specifier: ^6.27.0
-        version: 6.27.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      tailwind-merge:
-        specifier: ^2.5.4
-        version: 2.5.4
-      tailwindcss-animate:
-        specifier: ^1.0.7
-        version: 1.0.7(tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3)))
-      zod:
-        specifier: ^3.23.8
-        version: 3.23.8
-      zustand:
-        specifier: ^4.5.5
-        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
-    devDependencies:
-      '@amzn/fig-io-types':
-        specifier: workspace:^
-        version: link:../../packages/types
-      '@types/react':
-        specifier: ^18.3.12
-        version: 18.3.12
-      '@types/react-dom':
-        specifier: ^18.3.1
-        version: 18.3.1
-      '@typescript-eslint/eslint-plugin':
-        specifier: ^7.18.0
-        version: 7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint@8.57.1)(typescript@5.6.3)
-      '@typescript-eslint/parser':
-        specifier: ^7.18.0
-        version: 7.18.0(eslint@8.57.1)(typescript@5.6.3)
-      '@vitejs/plugin-react':
-        specifier: ^4.3.3
-        version: 4.3.3(vite@5.4.10(@types/node@22.8.2)(terser@5.36.0))
-      autoprefixer:
-        specifier: ^10.4.20
-        version: 10.4.20(postcss@8.4.47)
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      eslint-plugin-react-hooks:
-        specifier: ^4.6.2
-        version: 4.6.2(eslint@8.57.1)
-      eslint-plugin-react-refresh:
-        specifier: ^0.4.14
-        version: 0.4.14(eslint@8.57.1)
-      postcss:
-        specifier: ^8.4.47
-        version: 8.4.47
-      prettier:
-        specifier: ^3.3.3
-        version: 3.3.3
-      tailwindcss:
-        specifier: ^3.4.14
-        version: 3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3))
-      typescript:
-        specifier: ^5.6.3
-        version: 5.6.3
-      vite:
-        specifier: ^5.4.10
-        version: 5.4.10(@types/node@22.8.2)(terser@5.36.0)
-
   extensions/gnome-extension:
     dependencies:
       '@girs/gjs':
@@ -465,6 +217,145 @@ importers:
         specifier: ^5.6.3
         version: 5.6.3
 
+  packages/autocomplete:
+    dependencies:
+      '@amzn/fig-io-api-bindings':
+        specifier: workspace:~
+        version: link:../api-bindings
+      '@amzn/fig-io-api-bindings-wrappers':
+        specifier: workspace:^
+        version: link:../api-bindings-wrappers
+      '@amzn/fig-io-api-client':
+        specifier: workspace:^
+        version: link:../api-client
+      '@amzn/fig-io-autocomplete-parser':
+        specifier: workspace:^
+        version: link:../autocomplete-parser
+      '@amzn/fig-io-proto':
+        specifier: workspace:^
+        version: link:../../proto
+      '@amzn/fig-io-shell-parser':
+        specifier: workspace:^
+        version: link:../shell-parser
+      '@fig/autocomplete-helpers':
+        specifier: ^1.0.7
+        version: 1.0.7
+      '@fig/autocomplete-shared':
+        specifier: ^1.1.2
+        version: 1.1.2
+      '@juggle/resize-observer':
+        specifier: ^3.4.0
+        version: 3.4.0
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
+      '@vitejs/plugin-react':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@5.4.10(@types/node@20.17.2)(terser@5.36.0))
+      '@withfig/autocomplete-types':
+        specifier: ^1.31.0
+        version: 1.31.0
+      deep-object-diff:
+        specifier: ^1.1.9
+        version: 1.1.9
+      exponential-backoff:
+        specifier: ^3.1.1
+        version: 3.1.1
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.1.0
+      loglevel:
+        specifier: ^1.9.2
+        version: 1.9.2
+      prop-types:
+        specifier: ^15.8.1
+        version: 15.8.1
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      react-shadow:
+        specifier: ^20.5.0
+        version: 20.5.0(prop-types@15.8.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      react-window:
+        specifier: ^1.8.10
+        version: 1.8.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      semver:
+        specifier: ^7.6.3
+        version: 7.6.3
+      tailwind-merge:
+        specifier: ^2.5.5
+        version: 2.5.5
+      use-resize-observer:
+        specifier: ^9.1.0
+        version: 9.1.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      util:
+        specifier: ^0.12.5
+        version: 0.12.5
+      vite:
+        specifier: ^5.4.10
+        version: 5.4.10(@types/node@20.17.2)(terser@5.36.0)
+      zustand:
+        specifier: ^4.5.5
+        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
+    devDependencies:
+      '@amzn/fig-io-eslint-config':
+        specifier: workspace:^
+        version: link:../eslint-config
+      '@amzn/fig-io-fuzzysort':
+        specifier: workspace:^
+        version: link:../fuzzysort
+      '@amzn/fig-io-shared':
+        specifier: workspace:^
+        version: link:../shared
+      '@amzn/fig-io-types':
+        specifier: workspace:^
+        version: link:../types
+      '@types/node':
+        specifier: ^20.17.2
+        version: 20.17.2
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.12
+      '@types/react-dom':
+        specifier: ^18.3.1
+        version: 18.3.1
+      '@types/react-window':
+        specifier: ^1.8.8
+        version: 1.8.8
+      '@types/semver':
+        specifier: ^7.5.8
+        version: 7.5.8
+      '@vitejs/plugin-legacy':
+        specifier: ^5.4.3
+        version: 5.4.3(terser@5.36.0)(vite@5.4.10(@types/node@20.17.2)(terser@5.36.0))
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.4.20(postcss@8.4.47)
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      postcss:
+        specifier: ^8.4.47
+        version: 8.4.47
+      prettier:
+        specifier: ^3.3.3
+        version: 3.3.3
+      tailwindcss:
+        specifier: ^3.4.14
+        version: 3.4.14(ts-node@10.9.2(@types/node@20.17.2)(typescript@5.6.3))
+      terser:
+        specifier: ^5.36.0
+        version: 5.36.0
+      typescript:
+        specifier: ^5.6.3
+        version: 5.6.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.0(@types/node@20.17.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
+
   packages/autocomplete-parser:
     dependencies:
       '@amzn/fig-io-api-bindings':
@@ -525,6 +416,115 @@ importers:
       vitest:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
+
+  packages/dashboard:
+    dependencies:
+      '@amzn/fig-io-api-bindings':
+        specifier: workspace:^
+        version: link:../api-bindings
+      '@radix-ui/react-collapsible':
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-dropdown-menu':
+        specifier: ^2.1.2
+        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-progress':
+        specifier: ^1.1.0
+        version: 1.1.0(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-select':
+        specifier: ^2.1.2
+        version: 2.1.2(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-slot':
+        specifier: ^1.1.0
+        version: 1.1.0(@types/react@18.3.12)(react@18.3.1)
+      '@radix-ui/react-switch':
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-tabs':
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      class-variance-authority:
+        specifier: ^0.7.0
+        version: 0.7.0
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      lucide-react:
+        specifier: ^0.379.0
+        version: 0.379.0(react@18.3.1)
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      react-markdown:
+        specifier: ^9.0.1
+        version: 9.0.1(@types/react@18.3.12)(react@18.3.1)
+      react-router:
+        specifier: ^6.27.0
+        version: 6.27.0(react@18.3.1)
+      react-router-dom:
+        specifier: ^6.27.0
+        version: 6.27.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      tailwind-merge:
+        specifier: ^2.5.5
+        version: 2.5.5
+      tailwindcss-animate:
+        specifier: ^1.0.7
+        version: 1.0.7(tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3)))
+      zod:
+        specifier: ^3.23.8
+        version: 3.23.8
+      zustand:
+        specifier: ^4.5.5
+        version: 4.5.5(@types/react@18.3.12)(react@18.3.1)
+    devDependencies:
+      '@amzn/fig-io-types':
+        specifier: workspace:^
+        version: link:../types
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.12
+      '@types/react-dom':
+        specifier: ^18.3.1
+        version: 18.3.1
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^7.18.0
+        version: 7.18.0(@typescript-eslint/parser@7.18.0(eslint@8.57.1)(typescript@5.6.3))(eslint@8.57.1)(typescript@5.6.3)
+      '@typescript-eslint/parser':
+        specifier: ^7.18.0
+        version: 7.18.0(eslint@8.57.1)(typescript@5.6.3)
+      '@vitejs/plugin-react':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@5.4.10(@types/node@22.8.2)(terser@5.36.0))
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.4.20(postcss@8.4.47)
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      eslint-plugin-react-hooks:
+        specifier: ^4.6.2
+        version: 4.6.2(eslint@8.57.1)
+      eslint-plugin-react-refresh:
+        specifier: ^0.4.14
+        version: 0.4.14(eslint@8.57.1)
+      postcss:
+        specifier: ^8.4.47
+        version: 8.4.47
+      prettier:
+        specifier: ^3.3.3
+        version: 3.3.3
+      tailwindcss:
+        specifier: ^3.4.14
+        version: 3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3))
+      typescript:
+        specifier: ^5.6.3
+        version: 5.6.3
+      vite:
+        specifier: ^5.4.10
+        version: 5.4.10(@types/node@22.8.2)(terser@5.36.0)
 
   packages/eslint-config:
     devDependencies:
@@ -5336,8 +5336,8 @@ packages:
   systemjs@6.15.1:
     resolution: {integrity: sha512-Nk8c4lXvMB98MtbmjX7JwJRgJOL8fluecYCfCeYBznwmpOs8Bf15hLM6z4z71EDAhQVrQrI+wt1aLWSXZq+hXA==}
 
-  tailwind-merge@2.5.4:
-    resolution: {integrity: sha512-0q8cfZHMu9nuYP/b5Shb7Y7Sh1B7Nnl5GqNr1U+n2p6+mybvRtayrQ+0042Z5byvTA8ihjlP8Odo8/VnHbZu4Q==}
+  tailwind-merge@2.5.5:
+    resolution: {integrity: sha512-0LXunzzAZzo0tEPxV3I297ffKZPlKDrjj7NXphC8V5ak9yHC5zRmxnOe2m/Rd/7ivsOMJe3JZ2JVocoDdQTRBA==}
 
   tailwindcss-animate@1.0.7:
     resolution: {integrity: sha512-bl6mpH3T7I3UFxuvDEXLxy/VuFxBk5bbzplh7tXI68mwMokNYd1t9qPBHlnyTwfa4JGC4zP516I1hYYtQ/vspA==}
@@ -8420,7 +8420,7 @@ snapshots:
       pathe: 1.1.2
       picocolors: 1.1.1
       sirv: 2.0.4
-      vitest: 1.6.0(@types/node@22.8.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
+      vitest: 1.6.0(@types/node@20.17.2)(@vitest/ui@1.6.0)(jsdom@24.1.0)(terser@5.36.0)
 
   '@vitest/utils@1.6.0':
     dependencies:
@@ -11723,7 +11723,7 @@ snapshots:
 
   systemjs@6.15.1: {}
 
-  tailwind-merge@2.5.4: {}
+  tailwind-merge@2.5.5: {}
 
   tailwindcss-animate@1.0.7(tailwindcss@3.4.14(ts-node@10.9.2(@types/node@22.8.2)(typescript@5.6.3))):
     dependencies:
