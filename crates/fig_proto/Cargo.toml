@@ -16,7 +16,7 @@ bytes.workspace = true
 fig_util.workspace = true
 hex.workspace = true
 once_cell.workspace = true
-prost = "0.12.1"
+prost = "0.13.3"
 prost-reflect = { version = "0.13.0", features = ["serde", "derive"] }
 rmp-serde = "1.1.0"
 serde.workspace = true
