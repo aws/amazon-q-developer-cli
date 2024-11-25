@@ -10,12 +10,18 @@ updates:
     assignees:
       - "grant0417"
     open-pull-requests-limit: 100
+    commit-message:
+      prefix: ci
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "daily"
     assignees:
       - "grant0417"
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+      include: scope
     open-pull-requests-limit: 100
   - package-ecosystem: "cargo"
     directory: "/"
@@ -24,3 +30,7 @@ updates:
     assignees:
       - "grant0417"
     open-pull-requests-limit: 100
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+      include: scope
