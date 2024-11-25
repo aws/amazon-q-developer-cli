@@ -2786,7 +2786,7 @@ dependencies = [
  "macos-utils",
  "mime",
  "moka",
- "muda",
+ "muda 0.15.3",
  "nix 0.29.0",
  "notify",
  "objc",
@@ -5220,6 +5220,25 @@ dependencies = [
  "png",
  "thiserror 1.0.69",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "muda"
+version = "0.15.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdae9c00e61cc0579bcac625e8ad22104c60548a025bfc972dc83868a28e1484"
+dependencies = [
+ "crossbeam-channel",
+ "dpi",
+ "gtk",
+ "keyboard-types",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "once_cell",
+ "png",
+ "thiserror 1.0.69",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8888,7 +8907,7 @@ dependencies = [
  "crossbeam-channel",
  "dirs-next",
  "libappindicator",
- "muda",
+ "muda 0.13.5",
  "objc",
  "once_cell",
  "png",
