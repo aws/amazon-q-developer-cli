@@ -3027,7 +3027,7 @@ dependencies = [
  "nix 0.29.0",
  "once_cell",
  "prost 0.12.6",
- "prost-build",
+ "prost-build 0.13.3",
  "prost-reflect",
  "prost-reflect-build",
  "rmp-serde",
@@ -6450,6 +6450,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-build"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c1318b19085f08681016926435853bbf7858f9c082d0999b80550ff5d9abe15"
+dependencies = [
+ "bytes",
+ "heck 0.5.0",
+ "itertools 0.13.0",
+ "log",
+ "multimap",
+ "once_cell",
+ "petgraph",
+ "prettyplease",
+ "prost 0.13.3",
+ "prost-types 0.13.3",
+ "regex",
+ "syn 2.0.89",
+ "tempfile",
+]
+
+[[package]]
 name = "prost-derive"
 version = "0.12.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6496,7 +6517,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88efc86388935bd2a10db545e4aaefcd15b067f921c09001d952c3d50078e214"
 dependencies = [
- "prost-build",
+ "prost-build 0.12.6",
  "prost-reflect",
 ]
 
