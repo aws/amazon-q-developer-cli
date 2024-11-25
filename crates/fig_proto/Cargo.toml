@@ -28,5 +28,5 @@ nix.workspace = true
 
 [build-dependencies]
 prost-build = "0.12.1"
-prost-reflect-build = "0.13.0"
+prost-reflect-build = "0.14.0"
 tempfile.workspace = true
