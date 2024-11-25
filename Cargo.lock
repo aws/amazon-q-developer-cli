@@ -117,7 +117,7 @@ dependencies = [
  "aws-types",
  "bytes",
  "fastrand",
- "http 0.2.12",
+ "http 1.1.0",
  "tracing",
 ]
 
@@ -136,7 +136,7 @@ dependencies = [
  "aws-smithy-types",
  "aws-types",
  "bytes",
- "http 0.2.12",
+ "http 1.1.0",
  "tracing",
 ]
 
@@ -155,7 +155,7 @@ dependencies = [
  "aws-types",
  "bytes",
  "fastrand",
- "http 0.2.12",
+ "http 1.1.0",
  "tracing",
 ]
 
@@ -173,7 +173,7 @@ dependencies = [
  "aws-smithy-types",
  "aws-types",
  "bytes",
- "http 0.2.12",
+ "http 1.1.0",
  "tracing",
 ]
 
@@ -192,7 +192,7 @@ dependencies = [
  "aws-smithy-types",
  "aws-types",
  "bytes",
- "http 0.2.12",
+ "http 1.1.0",
  "tracing",
 ]
 
@@ -211,7 +211,7 @@ dependencies = [
  "aws-smithy-types",
  "aws-types",
  "bytes",
- "http 0.2.12",
+ "http 1.1.0",
  "tracing",
 ]
 
@@ -2738,7 +2738,7 @@ dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
- "http 0.2.12",
+ "http 1.1.0",
  "tracing",
 ]
 
