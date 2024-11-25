@@ -8,7 +8,7 @@ version = "0.1.6"
 dependencies = [
  "accessibility-sys",
  "cocoa",
- "core-foundation 0.9.4",
+ "core-foundation 0.10.0",
  "objc",
  "thiserror 2.0.3",
 ]
@@ -17,7 +17,7 @@ dependencies = [
 name = "accessibility-sys"
 version = "0.1.3"
 dependencies = [
- "core-foundation 0.9.4",
+ "core-foundation 0.10.0",
  "core-foundation-sys",
  "core-graphics",
 ]
@@ -2755,7 +2755,7 @@ dependencies = [
  "cfg-if",
  "clap",
  "cocoa",
- "core-foundation 0.9.4",
+ "core-foundation 0.10.0",
  "core-graphics",
  "dashmap",
  "dbus",
@@ -2945,7 +2945,7 @@ dependencies = [
  "async-trait",
  "cfg-if",
  "clap",
- "core-foundation 0.9.4",
+ "core-foundation 0.10.0",
  "dbus",
  "dirs",
  "dispatch",
@@ -3177,7 +3177,7 @@ dependencies = [
  "camino",
  "cfg-if",
  "clap",
- "core-foundation 0.9.4",
+ "core-foundation 0.10.0",
  "dirs",
  "fig_os_shim",
  "fig_test",
@@ -4966,7 +4966,7 @@ dependencies = [
  "appkit-nsworkspace-bindings",
  "block",
  "cocoa",
- "core-foundation 0.9.4",
+ "core-foundation 0.10.0",
  "core-graphics",
  "dashmap",
  "flume",
