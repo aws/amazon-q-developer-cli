@@ -24,7 +24,7 @@
     "@amzn/fig-io-eslint-config": "workspace:^",
     "@amzn/fig-io-tsconfig": "workspace:^",
     "@tsconfig/recommended": "^1.0.8",
-    "@types/node": "^20.17.2",
+    "@types/node": "^22.9.3",
     "@typescript/analyze-trace": "^0.10.1",
     "eslint": "^8.57.1",
     "lint-staged": "^15.2.10",
