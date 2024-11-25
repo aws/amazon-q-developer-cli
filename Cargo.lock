@@ -2922,7 +2922,7 @@ dependencies = [
  "regex",
  "reqwest",
  "ring",
- "security-framework 2.11.1",
+ "security-framework 3.0.1",
  "semver",
  "serde",
  "serde_json",
