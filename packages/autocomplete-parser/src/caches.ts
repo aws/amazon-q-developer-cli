@@ -1,5 +1,5 @@
 import { SpecMixin } from "@fig/autocomplete-shared";
-import { Subcommand } from "@amzn/fig-io-shared/internal";
+import { Subcommand } from "@aws/amazon-q-developer-cli-shared/internal";
 
 const allCaches: Array<Map<string, unknown>> = [];
 

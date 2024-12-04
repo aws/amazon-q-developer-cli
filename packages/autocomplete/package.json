@@ -21,12 +21,12 @@
     "Safari >= 11"
   ],
   "dependencies": {
-    "@amzn/fig-io-api-bindings": "workspace:~",
-    "@amzn/fig-io-api-bindings-wrappers": "workspace:^",
-    "@amzn/fig-io-api-client": "workspace:^",
-    "@amzn/fig-io-autocomplete-parser": "workspace:^",
-    "@amzn/fig-io-proto": "workspace:^",
-    "@amzn/fig-io-shell-parser": "workspace:^",
+    "@aws/amazon-q-developer-cli-api-bindings": "workspace:~",
+    "@aws/amazon-q-developer-cli-api-bindings-wrappers": "workspace:^",
+    "@aws/amazon-q-developer-cli-api-client": "workspace:^",
+    "@aws/amazon-q-developer-cli-autocomplete-parser": "workspace:^",
+    "@aws/amazon-q-developer-cli-proto": "workspace:^",
+    "@aws/amazon-q-developer-cli-shell-parser": "workspace:^",
     "@fig/autocomplete-helpers": "^1.0.7",
     "@fig/autocomplete-shared": "^1.1.2",
     "@juggle/resize-observer": "^3.4.0",
@@ -50,10 +50,10 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
-    "@amzn/fig-io-eslint-config": "workspace:^",
-    "@amzn/fig-io-fuzzysort": "workspace:^",
-    "@amzn/fig-io-shared": "workspace:^",
-    "@amzn/fig-io-types": "workspace:^",
+    "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
+    "@aws/amazon-q-developer-cli-fuzzysort": "workspace:^",
+    "@aws/amazon-q-developer-cli-shared": "workspace:^",
+    "@aws/amazon-q-developer-cli-types": "workspace:^",
     "@types/node": "^22.10.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
@@ -70,7 +70,7 @@
     "vitest": "^2.1.6"
   },
   "bundledDependencies": [
-    "@amzn/fig-io-fuzzysort",
-    "@amzn/fig-io-shared"
+    "@aws/amazon-q-developer-cli-fuzzysort",
+    "@aws/amazon-q-developer-cli-shared"
   ]
 }

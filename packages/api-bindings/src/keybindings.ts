@@ -2,7 +2,7 @@ import {
   Action,
   KeybindingPressedNotification,
   NotificationType,
-} from "@amzn/fig-io-proto/fig";
+} from "@aws/amazon-q-developer-cli-proto/fig";
 import { sendUpdateApplicationPropertiesRequest } from "./requests.js";
 import { _subscribe, NotificationResponse } from "./notifications.js";
 

@@ -4,7 +4,7 @@ import {
   ShellPromptReturnedNotification,
   TextUpdate,
   HistoryUpdatedNotification,
-} from "@amzn/fig-io-proto/fig";
+} from "@aws/amazon-q-developer-cli-proto/fig";
 import { sendInsertTextRequest } from "./requests.js";
 import { _subscribe, NotificationResponse } from "./notifications.js";
 

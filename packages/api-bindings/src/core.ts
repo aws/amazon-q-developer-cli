@@ -1,7 +1,7 @@
 import {
   ServerOriginatedMessage,
   ClientOriginatedMessage,
-} from "@amzn/fig-io-proto/fig";
+} from "@aws/amazon-q-developer-cli-proto/fig";
 
 import { b64ToBytes, bytesToBase64 } from "./utils.js";
 

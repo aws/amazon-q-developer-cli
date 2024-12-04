@@ -1,6 +1,6 @@
 import logger from "loglevel";
-import { SETTINGS, updateSettings } from "@amzn/fig-io-api-bindings-wrappers";
-import { SpecLocationSource } from "@amzn/fig-io-shared/utils";
+import { SETTINGS, updateSettings } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { SpecLocationSource } from "@aws/amazon-q-developer-cli-shared/utils";
 import {
   getSpecPath,
   loadFigSubcommand,
@@ -28,8 +28,8 @@ vi.mock("../src/loadHelpers", () => ({
   isDiffVersionedSpec: vi.fn(),
 }));
 
-vi.mock("@amzn/fig-io-api-bindings-wrappers", async () => ({
-  ...(await vi.importActual("@amzn/fig-io-api-bindings-wrappers")),
+vi.mock("@aws/amazon-q-developer-cli-api-bindings-wrappers", async () => ({
+  ...(await vi.importActual("@aws/amazon-q-developer-cli-api-bindings-wrappers")),
   executeCommand: vi.fn(),
 }));
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { shallow } from "zustand/shallow";
-import { parseArguments } from "@amzn/fig-io-autocomplete-parser";
+import { parseArguments } from "@aws/amazon-q-developer-cli-autocomplete-parser";
 import { useAutocompleteStore } from "../state";
 import { shellContextSelector } from "../state/generators";
 

@@ -3,23 +3,23 @@ import logger from "loglevel";
 import { Mutate, StateCreator, StoreApi } from "zustand";
 import { createWithEqualityFn } from "zustand/traditional";
 
-import { Suggestion } from "@amzn/fig-io-shared/internal";
+import { Suggestion } from "@aws/amazon-q-developer-cli-shared/internal";
 import {
   fieldsAreEqual,
   makeArray,
   memoizeOne,
-} from "@amzn/fig-io-shared/utils";
-import { AliasMap, getCommand } from "@amzn/fig-io-shell-parser";
+} from "@aws/amazon-q-developer-cli-shared/utils";
+import { AliasMap, getCommand } from "@aws/amazon-q-developer-cli-shell-parser";
 import {
   ArgumentParserResult,
   initialParserState,
-} from "@amzn/fig-io-autocomplete-parser";
+} from "@aws/amazon-q-developer-cli-autocomplete-parser";
 import {
   getSetting,
   SETTINGS,
   SettingsMap,
-} from "@amzn/fig-io-api-bindings-wrappers";
-import { type Types } from "@amzn/fig-io-api-bindings";
+} from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { type Types } from "@aws/amazon-q-developer-cli-api-bindings";
 import { detailedDiff } from "deep-object-diff";
 import { trackEvent } from "../telemetry.js";
 import { FigState, initialFigState } from "../fig/hooks";

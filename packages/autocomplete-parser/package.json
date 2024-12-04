@@ -1,5 +1,5 @@
 {
-  "name": "@amzn/fig-io-autocomplete-parser",
+  "name": "@aws/amazon-q-developer-cli-autocomplete-parser",
   "version": "1.0.0",
   "license": "MIT OR Apache-2.0",
   "author": "Amazon Web Services",
@@ -17,10 +17,10 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "@amzn/fig-io-eslint-config": "workspace:^",
-    "@amzn/fig-io-shared": "workspace:^",
-    "@amzn/fig-io-tsconfig": "workspace:^",
-    "@amzn/fig-io-types": "workspace:^",
+    "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
+    "@aws/amazon-q-developer-cli-shared": "workspace:^",
+    "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
+    "@aws/amazon-q-developer-cli-types": "workspace:^",
     "@types/semver": "^7.5.8",
     "@withfig/autocomplete-types": "^1.31.0",
     "eslint": "^9.16.0",
@@ -28,10 +28,10 @@
     "vitest": "^2.1.6"
   },
   "dependencies": {
-    "@amzn/fig-io-api-bindings": "workspace:~",
-    "@amzn/fig-io-api-bindings-wrappers": "workspace:^",
-    "@amzn/fig-io-api-client": "workspace:^",
-    "@amzn/fig-io-shell-parser": "workspace:^",
+    "@aws/amazon-q-developer-cli-api-bindings": "workspace:~",
+    "@aws/amazon-q-developer-cli-api-bindings-wrappers": "workspace:^",
+    "@aws/amazon-q-developer-cli-api-client": "workspace:^",
+    "@aws/amazon-q-developer-cli-shell-parser": "workspace:^",
     "@fig/autocomplete-generators": "^2.4.0",
     "@fig/autocomplete-helpers": "^1.0.7",
     "@fig/autocomplete-shared": "^1.1.2",

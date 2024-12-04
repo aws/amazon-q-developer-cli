@@ -1,5 +1,5 @@
 {
-  "name": "@amzn/fig-io-api-bindings",
+  "name": "@aws/amazon-q-developer-cli-api-bindings",
   "version": "0.30.3",
   "license": "MIT OR Apache-2.0",
   "author": "Amazon Web Services",
@@ -18,11 +18,11 @@
     "generate-requests": "tsx codegen/generate-requests.ts && prettier -w src/requests.ts"
   },
   "dependencies": {
-    "@amzn/fig-io-proto": "workspace:^"
+    "@aws/amazon-q-developer-cli-proto": "workspace:^"
   },
   "devDependencies": {
-    "@amzn/fig-io-eslint-config": "workspace:^",
-    "@amzn/fig-io-tsconfig": "workspace:^",
+    "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
+    "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
     "@tsconfig/recommended": "^1.0.8",
     "@types/node": "^22.10.1",
     "@typescript/analyze-trace": "^0.10.1",

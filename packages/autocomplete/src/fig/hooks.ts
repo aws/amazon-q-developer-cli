@@ -6,13 +6,13 @@ import {
   Settings,
   Shell,
   Types,
-} from "@amzn/fig-io-api-bindings";
-import { AliasMap } from "@amzn/fig-io-shell-parser";
+} from "@aws/amazon-q-developer-cli-api-bindings";
+import { AliasMap } from "@aws/amazon-q-developer-cli-shell-parser";
 import {
   SettingsMap,
   updateSettings,
-} from "@amzn/fig-io-api-bindings-wrappers";
-import { clearSpecIndex } from "@amzn/fig-io-autocomplete-parser";
+} from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { clearSpecIndex } from "@aws/amazon-q-developer-cli-autocomplete-parser";
 import { updateSelectSuggestionKeybindings } from "../actions";
 import { generatorCache } from "../generators/helpers";
 

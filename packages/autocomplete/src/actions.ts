@@ -1,5 +1,5 @@
-import { Fig as FigAPI } from "@amzn/fig-io-api-bindings";
-import { SettingsMap } from "@amzn/fig-io-api-bindings-wrappers";
+import { Fig as FigAPI } from "@aws/amazon-q-developer-cli-api-bindings";
+import { SettingsMap } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import * as app from "./fig.json";
 
 const SELECT_SUGGESTION_ACTION_PREFIX = "selectSuggestion";

@@ -1,11 +1,11 @@
-import fuzzysort from "@amzn/fig-io-fuzzysort";
+import fuzzysort from "@aws/amazon-q-developer-cli-fuzzysort";
 import logger from "loglevel";
-import { Suggestion } from "@amzn/fig-io-shared/internal";
+import { Suggestion } from "@aws/amazon-q-developer-cli-shared/internal";
 import {
   makeArray,
   longestCommonPrefix,
   ensureTrailingSlash,
-} from "@amzn/fig-io-shared/utils";
+} from "@aws/amazon-q-developer-cli-shared/utils";
 
 const SHORTCUT_PREFIX = "?";
 

@@ -1,4 +1,4 @@
-import { Platform } from "@amzn/fig-io-api-bindings";
+import { Platform } from "@aws/amazon-q-developer-cli-api-bindings";
 
 export type PlatformInfo = Awaited<ReturnType<typeof Platform.getPlatformInfo>>;
 

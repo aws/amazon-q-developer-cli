@@ -5,7 +5,7 @@ import {
   Auth,
   Install,
   Platform,
-} from "@amzn/fig-io-api-bindings";
+} from "@aws/amazon-q-developer-cli-api-bindings";
 import { PlatformInfo } from "@/types/preferences";
 
 type KV = Record<string, unknown>;

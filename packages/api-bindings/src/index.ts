@@ -1,4 +1,4 @@
-import * as Fig from "@amzn/fig-io-proto/fig";
+import * as Fig from "@aws/amazon-q-developer-cli-proto/fig";
 import * as WindowPosition from "./position.js";
 import * as Settings from "./settings.js";
 import * as EditBufferNotifications from "./editbuffer.js";

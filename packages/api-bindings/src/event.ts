@@ -1,4 +1,4 @@
-import { NotificationType } from "@amzn/fig-io-proto/fig";
+import { NotificationType } from "@aws/amazon-q-developer-cli-proto/fig";
 import { _subscribe, NotificationResponse } from "./notifications.js";
 
 export function subscribe<T>(

@@ -5,7 +5,7 @@ import { Terminal } from "@/components/ui/terminal";
 import settings, { intro } from "@/data/inline";
 import inlineDemo from "@assets/images/inline_demo.gif";
 import { useEffect, useState } from "react";
-import { Codewhisperer } from "@amzn/fig-io-api-bindings";
+import { Codewhisperer } from "@aws/amazon-q-developer-cli-api-bindings";
 import { useLocalStateZod } from "@/hooks/store/useState";
 import { z } from "zod";
 import {

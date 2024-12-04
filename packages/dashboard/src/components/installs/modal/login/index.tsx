@@ -1,6 +1,6 @@
 import Lockup from "@/components/svg/logo";
 import { Button } from "@/components/ui/button";
-import { Auth, Internal, Native } from "@amzn/fig-io-api-bindings";
+import { Auth, Internal, Native } from "@aws/amazon-q-developer-cli-api-bindings";
 import { useEffect, useState } from "react";
 import Tab from "./tabs";
 import { useLocalStateZodDefault } from "@/hooks/store/useState";

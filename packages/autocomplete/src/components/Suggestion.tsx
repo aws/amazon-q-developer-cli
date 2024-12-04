@@ -1,8 +1,8 @@
 import { useCallback, useMemo, CSSProperties, useRef } from "react";
 import logger from "loglevel";
-import fuzzysort from "@amzn/fig-io-fuzzysort";
-import { Suggestion as SuggestionT } from "@amzn/fig-io-shared/internal";
-import { makeArray } from "@amzn/fig-io-shared/utils";
+import fuzzysort from "@aws/amazon-q-developer-cli-fuzzysort";
+import { Suggestion as SuggestionT } from "@aws/amazon-q-developer-cli-shared/internal";
+import { makeArray } from "@aws/amazon-q-developer-cli-shared/utils";
 import { getQueryTermForSuggestion } from "../suggestions/helpers";
 import SuggestionIcon from "./SuggestionIcon";
 

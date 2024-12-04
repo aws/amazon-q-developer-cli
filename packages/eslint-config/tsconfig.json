@@ -1,5 +1,5 @@
 {
-  "extends": ["@amzn/fig-io-tsconfig/base.json"],
+  "extends": ["@aws/amazon-q-developer-cli-tsconfig/base.json"],
   "compilerOptions": {
     "outDir": "dist"
   },

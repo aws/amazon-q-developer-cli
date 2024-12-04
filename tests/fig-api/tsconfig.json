@@ -5,7 +5,7 @@
     "sourceMap": true,
     "esModuleInterop": true,
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["@amzn/fig-io-types", "node"],
+    "types": ["@aws/amazon-q-developer-cli-types", "node"],
     "outDir": "dist"
   },
   "include": ["src/**/*.ts"],

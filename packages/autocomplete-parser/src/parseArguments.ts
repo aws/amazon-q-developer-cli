@@ -1,7 +1,7 @@
 import logger from "loglevel";
 import { convertSubcommand, initializeDefault } from "@fig/autocomplete-shared";
 import { filepaths, folders } from "@fig/autocomplete-generators";
-import * as Internal from "@amzn/fig-io-shared/internal";
+import * as Internal from "@aws/amazon-q-developer-cli-shared/internal";
 import {
   firstMatchingToken,
   makeArray,
@@ -9,15 +9,15 @@ import {
   SuggestionFlag,
   SuggestionFlags,
   withTimeout,
-} from "@amzn/fig-io-shared/utils";
+} from "@aws/amazon-q-developer-cli-shared/utils";
 import {
   executeCommand,
   executeLoginShell,
   getSetting,
   isInDevMode,
   SETTINGS,
-} from "@amzn/fig-io-api-bindings-wrappers";
-import { Command, substituteAlias } from "@amzn/fig-io-shell-parser";
+} from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { Command, substituteAlias } from "@aws/amazon-q-developer-cli-shell-parser";
 import {
   getSpecPath,
   loadSubcommandCached,

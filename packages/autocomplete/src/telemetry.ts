@@ -1,4 +1,4 @@
-import { Telemetry } from "@amzn/fig-io-api-bindings";
+import { Telemetry } from "@aws/amazon-q-developer-cli-api-bindings";
 import { version } from "../package.json";
 
 export const trackEvent = (

@@ -1,5 +1,5 @@
 {
-  "name": "@amzn/fig-io-shell-parser",
+  "name": "@aws/amazon-q-developer-cli-shell-parser",
   "version": "1.0.0",
   "license": "MIT OR Apache-2.0",
   "author": "Amazon Web Services",
@@ -18,11 +18,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@amzn/fig-io-shared": "workspace:^"
+    "@aws/amazon-q-developer-cli-shared": "workspace:^"
   },
   "devDependencies": {
-    "@amzn/fig-io-eslint-config": "workspace:^",
-    "@amzn/fig-io-tsconfig": "workspace:^",
+    "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
+    "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
     "@vitest/coverage-v8": "^2.1.6",
     "eslint": "^9.16.0",
     "prettier": "^3.4.1",

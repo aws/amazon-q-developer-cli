@@ -3,7 +3,7 @@ import accessibility_fig from "@assets/images/accessibility_fig.png?url";
 import desktop_entry from "@assets/images/desktop_entry.png?url";
 import gnome_shell_extension from "@assets/images/gnome_shell_extension.png?url";
 import { DESKTOP_ENTRY_NAME, PRODUCT_NAME } from "@/lib/constants";
-import { Platform } from "@amzn/fig-io-api-bindings";
+import { Platform } from "@aws/amazon-q-developer-cli-api-bindings";
 
 const getBackupsDir = (): string => {
   const backupsDir = window?.fig?.constants?.backupsDir;

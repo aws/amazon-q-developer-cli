@@ -1,4 +1,4 @@
-import { localProtocol } from "@amzn/fig-io-shared/utils";
+import { localProtocol } from "@aws/amazon-q-developer-cli-shared/utils";
 
 const generateSpec = async (
   tokenArray: string[] | undefined,

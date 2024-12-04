@@ -1,4 +1,4 @@
-import { Result } from "@amzn/fig-io-fuzzysort";
+import { Result } from "@aws/amazon-q-developer-cli-fuzzysort";
 import logger from "loglevel";
 import {
   Option,
@@ -6,7 +6,7 @@ import {
   Arg,
   Suggestion,
   SuggestionType,
-} from "@amzn/fig-io-shared/internal";
+} from "@aws/amazon-q-developer-cli-shared/internal";
 import {
   makeArray,
   SuggestionFlags,
@@ -15,17 +15,17 @@ import {
   memoizeOne,
   localProtocol,
   fieldsAreEqual,
-} from "@amzn/fig-io-shared/utils";
+} from "@aws/amazon-q-developer-cli-shared/utils";
 import {
   countEqualOptions,
   Annotation,
   TokenType,
-} from "@amzn/fig-io-autocomplete-parser";
+} from "@aws/amazon-q-developer-cli-autocomplete-parser";
 import {
   getSetting,
   SETTINGS,
   SettingsMap,
-} from "@amzn/fig-io-api-bindings-wrappers";
+} from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import { GeneratorState } from "../generators/helpers";
 
 import {

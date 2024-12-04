@@ -1,5 +1,5 @@
 {
-  "name": "@amzn/fig-io-tsconfig",
+  "name": "@aws/amazon-q-developer-cli-tsconfig",
   "version": "0.1.0",
   "license": "MIT OR Apache-2.0",
   "author": "Amazon Web Services",

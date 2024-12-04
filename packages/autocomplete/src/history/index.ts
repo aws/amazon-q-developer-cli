@@ -9,21 +9,21 @@ import {
   getSpecPath,
   loadSubcommandCached,
   serializeSpecLocation,
-} from "@amzn/fig-io-autocomplete-parser";
+} from "@aws/amazon-q-developer-cli-autocomplete-parser";
 import {
   getAllCommandsWithAlias,
   AliasMap,
   Command,
-} from "@amzn/fig-io-shell-parser";
-import { SpecLocationSource } from "@amzn/fig-io-shared/utils";
-import { Suggestion } from "@amzn/fig-io-shared/internal";
+} from "@aws/amazon-q-developer-cli-shell-parser";
+import { SpecLocationSource } from "@aws/amazon-q-developer-cli-shared/utils";
+import { Suggestion } from "@aws/amazon-q-developer-cli-shared/internal";
 import {
   executeCommand,
   executeLoginShell,
   SETTINGS,
   getSetting,
-} from "@amzn/fig-io-api-bindings-wrappers";
-import { History } from "@amzn/fig-io-api-bindings";
+} from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { History } from "@aws/amazon-q-developer-cli-api-bindings";
 import { captureError } from "../sentry";
 import {
   AnnotatedCommand,

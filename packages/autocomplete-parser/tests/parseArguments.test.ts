@@ -5,14 +5,14 @@ import {
 } from "@fig/autocomplete-shared";
 import logger from "loglevel";
 import { folders, filepaths } from "@fig/autocomplete-generators";
-import * as Internal from "@amzn/fig-io-shared/internal";
+import * as Internal from "@aws/amazon-q-developer-cli-shared/internal";
 import {
   SuggestionFlag,
   SuggestionFlags,
   makeArray,
   SpecLocationSource,
-} from "@amzn/fig-io-shared/utils";
-import { Command, getCommand } from "@amzn/fig-io-shell-parser";
+} from "@aws/amazon-q-developer-cli-shared/utils";
+import { Command, getCommand } from "@aws/amazon-q-developer-cli-shell-parser";
 import {
   findOption,
   getCurrentArg,

@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/collapsible";
 import { useStatusCheck } from "@/hooks/store/useStatusCheck";
 import { InstallCheck } from "@/types/preferences";
-import { Install } from "@amzn/fig-io-api-bindings";
+import { Install } from "@aws/amazon-q-developer-cli-api-bindings";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 

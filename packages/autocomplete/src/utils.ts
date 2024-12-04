@@ -1,7 +1,7 @@
-import { fs } from "@amzn/fig-io-api-bindings";
+import { fs } from "@aws/amazon-q-developer-cli-api-bindings";
 // eslint-disable-next-line unicorn/prefer-node-protocol
 import util from "util";
-import { isInDevMode } from "@amzn/fig-io-api-bindings-wrappers";
+import { isInDevMode } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 
 // Logging functions
 const DEFAULT_CONSOLE = {

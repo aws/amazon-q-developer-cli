@@ -77,7 +77,7 @@ import {
   UserLogoutRequest,
   WindowFocusRequest,
   WriteFileRequest,
-} from "@amzn/fig-io-proto/fig";
+} from "@aws/amazon-q-developer-cli-proto/fig";
 import { sendMessage } from "./core.js";
 
 export async function sendPositionWindowRequest(

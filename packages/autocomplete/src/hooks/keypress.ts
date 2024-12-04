@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import logger from "loglevel";
-import { Keybindings, Shell } from "@amzn/fig-io-api-bindings";
-import { SETTINGS, getSetting } from "@amzn/fig-io-api-bindings-wrappers";
+import { Keybindings, Shell } from "@aws/amazon-q-developer-cli-api-bindings";
+import { SETTINGS, getSetting } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import { ACTIONS, AutocompleteAction } from "../actions";
 import { useAutocompleteStore } from "../state";
 import { Visibility } from "../state/types";

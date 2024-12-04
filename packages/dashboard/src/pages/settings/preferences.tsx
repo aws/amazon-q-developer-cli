@@ -2,7 +2,7 @@ import { UserPrefView } from "@/components/preference/list";
 import { Button } from "@/components/ui/button";
 import settings from "@/data/preferences";
 import { useAuth } from "@/hooks/store/useAuth";
-import { Native, User } from "@amzn/fig-io-api-bindings";
+import { Native, User } from "@aws/amazon-q-developer-cli-api-bindings";
 
 export default function Page() {
   const auth = useAuth();

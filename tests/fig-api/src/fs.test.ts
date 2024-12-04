@@ -1,4 +1,4 @@
-import { fs as figFs } from "@amzn/fig-io-api-bindings";
+import { fs as figFs } from "@aws/amazon-q-developer-cli-api-bindings";
 import nodeFs from "node:fs";
 import { tempDir } from "./util";
 import { describe, it, expect } from "vitest";

@@ -1,6 +1,6 @@
 # :warning: This repository has been transferred to the `autocomplete-engine` repo, update the package from there.
 
-## @amzn/fig-io-eslint-config
+## @aws/amazon-q-developer-cli-eslint-config
 
 This repo provides a shared eslint config for Fig repos to make
 bootstrapping Typescript repos easier.

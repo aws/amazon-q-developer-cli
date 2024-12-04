@@ -1,4 +1,4 @@
-import { State as DefaultState } from "@amzn/fig-io-api-bindings";
+import { State as DefaultState } from "@aws/amazon-q-developer-cli-api-bindings";
 
 export enum States {
   DEVELOPER_API_HOST = "developer.apiHost",

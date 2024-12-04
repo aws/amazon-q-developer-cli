@@ -20,7 +20,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
 
-    "types": ["@withfig/autocomplete-types", "@amzn/fig-io-types", "node"]
+    "types": ["@withfig/autocomplete-types", "@aws/amazon-q-developer-cli-types", "node"]
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]

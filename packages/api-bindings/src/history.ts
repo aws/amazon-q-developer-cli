@@ -1,5 +1,5 @@
 // eslint-disable-next-line camelcase
-import { HistoryQueryRequest_Param } from "@amzn/fig-io-proto/fig";
+import { HistoryQueryRequest_Param } from "@aws/amazon-q-developer-cli-proto/fig";
 import { sendHistoryQueryRequest } from "./requests.js";
 
 export type Param = string | number | Uint8Array | null;

@@ -1,15 +1,15 @@
 import logger from "loglevel";
 import { StoreApi } from "zustand";
-import { Shell } from "@amzn/fig-io-api-bindings";
+import { Shell } from "@aws/amazon-q-developer-cli-api-bindings";
 import { SpecLocationSource } from "@fig/autocomplete-shared";
-import { SpecLocation, Suggestion } from "@amzn/fig-io-shared/internal";
+import { SpecLocation, Suggestion } from "@aws/amazon-q-developer-cli-shared/internal";
 import {
   makeArray,
   longestCommonPrefix,
   ensureTrailingSlash,
-} from "@amzn/fig-io-shared/utils";
-import { getPrivateSpec } from "@amzn/fig-io-autocomplete-parser";
-import { SETTINGS } from "@amzn/fig-io-api-bindings-wrappers";
+} from "@aws/amazon-q-developer-cli-shared/utils";
+import { getPrivateSpec } from "@aws/amazon-q-developer-cli-autocomplete-parser";
+import { SETTINGS } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import { trackEvent } from "../telemetry";
 import { NamedSetState, AutocompleteState, Visibility } from "./types";
 import {

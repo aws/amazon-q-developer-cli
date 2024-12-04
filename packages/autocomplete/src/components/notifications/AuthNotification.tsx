@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import qIcon from "../../assets/icons/q.png";
-import { Auth, State } from "@amzn/fig-io-api-bindings";
+import { Auth, State } from "@aws/amazon-q-developer-cli-api-bindings";
 import { CLI_NAME, PRODUCT_NAME } from "../../consts";
 
 // 36 hours

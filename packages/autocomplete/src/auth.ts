@@ -1,4 +1,4 @@
-// import { makeAuthClient, Platform } from "@amzn/fig-io-api-client";
+// import { makeAuthClient, Platform } from "@aws/amazon-q-developer-cli-api-client";
 
 // export const authClient = makeAuthClient({
 //   os: window.fig.constants?.os as Platform,

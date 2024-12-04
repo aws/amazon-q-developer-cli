@@ -1,5 +1,5 @@
 {
-  "name": "@amzn/fig-io-proto",
+  "name": "@aws/amazon-q-developer-cli-proto",
   "version": "1.0.0",
   "license": "MIT OR Apache-2.0",
   "author": "Amazon Web Services",
@@ -21,7 +21,7 @@
     "@bufbuild/protobuf": "2.2.2"
   },
   "devDependencies": {
-    "@amzn/fig-io-tsconfig": "workspace:^",
+    "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
     "ts-proto": "~2.5.0",
     "typescript": "^5.7.2"
   }

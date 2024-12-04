@@ -1,5 +1,5 @@
-import { fread } from "@amzn/fig-io-api-bindings-wrappers";
-import { fs } from "@amzn/fig-io-api-bindings";
+import { fread } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { fs } from "@aws/amazon-q-developer-cli-api-bindings";
 import { CredentialsError } from "./errors.js";
 
 export interface AuthClient {

@@ -1,8 +1,8 @@
 import React, { ErrorInfo, lazy, Suspense, useMemo } from "react";
-import { Suggestion } from "@amzn/fig-io-shared/internal";
+import { Suggestion } from "@aws/amazon-q-developer-cli-shared/internal";
 import root from "react-shadow";
-import { SETTINGS } from "@amzn/fig-io-api-bindings-wrappers";
-import { importFromPublicCDN } from "@amzn/fig-io-autocomplete-parser";
+import { SETTINGS } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { importFromPublicCDN } from "@aws/amazon-q-developer-cli-autocomplete-parser";
 import { getMaxHeight, POPOUT_WIDTH } from "../window";
 import { useAutocompleteStore } from "../state";
 import { shellContextSelector } from "../state/generators";

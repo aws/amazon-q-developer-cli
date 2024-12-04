@@ -1,5 +1,5 @@
 {
-  "name": "@amzn/fig-io-api-client",
+  "name": "@aws/amazon-q-developer-cli-api-client",
   "version": "1.0.0",
   "license": "MIT OR Apache-2.0",
   "author": "Amazon Web Services",
@@ -16,18 +16,18 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "@amzn/fig-io-eslint-config": "workspace:^",
-    "@amzn/fig-io-shared": "workspace:^",
-    "@amzn/fig-io-tsconfig": "workspace:^",
-    "@amzn/fig-io-types": "workspace:^",
+    "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
+    "@aws/amazon-q-developer-cli-shared": "workspace:^",
+    "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
+    "@aws/amazon-q-developer-cli-types": "workspace:^",
     "@types/react": "^18.3.12",
     "eslint": "^9.16.0",
     "prettier": "^3.4.1",
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@amzn/fig-io-api-bindings": "workspace:~",
-    "@amzn/fig-io-api-bindings-wrappers": "workspace:^",
+    "@aws/amazon-q-developer-cli-api-bindings": "workspace:~",
+    "@aws/amazon-q-developer-cli-api-bindings-wrappers": "workspace:^",
     "react": "^18.3.1"
   },
   "publishConfig": {

@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Native } from "@amzn/fig-io-api-bindings";
+import { Native } from "@aws/amazon-q-developer-cli-api-bindings";
 
 export default function ExternalLink({
   href,

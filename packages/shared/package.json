@@ -1,5 +1,5 @@
 {
-  "name": "@amzn/fig-io-shared",
+  "name": "@aws/amazon-q-developer-cli-shared",
   "version": "1.0.0",
   "license": "MIT OR Apache-2.0",
   "author": "Amazon Web Services",
@@ -22,10 +22,10 @@
     "@fig/autocomplete-shared": "^1.1.2"
   },
   "devDependencies": {
-    "@amzn/fig-io-eslint-config": "workspace:^",
-    "@amzn/fig-io-fuzzysort": "workspace:^",
-    "@amzn/fig-io-tsconfig": "workspace:^",
-    "@amzn/fig-io-types": "workspace:^",
+    "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
+    "@aws/amazon-q-developer-cli-fuzzysort": "workspace:^",
+    "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
+    "@aws/amazon-q-developer-cli-types": "workspace:^",
     "@withfig/autocomplete-types": "^1.31.0",
     "eslint": "^9.16.0",
     "typescript": "^5.7.2",

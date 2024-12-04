@@ -1,5 +1,5 @@
 // @ts-check
-import react from "@amzn/fig-io-eslint-config/react";
+import react from "@aws/amazon-q-developer-cli-eslint-config/react";
 export default react({
   tsconfigPath: "./tsconfig.json",
 });

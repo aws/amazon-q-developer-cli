@@ -1,5 +1,5 @@
 import { InstallCheck } from "@/types/preferences";
-import { Fig, Internal } from "@amzn/fig-io-api-bindings";
+import { Fig, Internal } from "@aws/amazon-q-developer-cli-api-bindings";
 import { useEffect, useState } from "react";
 import { Button } from "../../ui/button";
 import Lockup from "../../svg/logo";

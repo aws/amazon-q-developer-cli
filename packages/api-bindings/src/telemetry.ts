@@ -1,4 +1,4 @@
-import { TelemetryProperty } from "@amzn/fig-io-proto/fig";
+import { TelemetryProperty } from "@aws/amazon-q-developer-cli-proto/fig";
 import {
   sendTelemetryIdentifyRequest,
   sendTelemetryPageRequest,

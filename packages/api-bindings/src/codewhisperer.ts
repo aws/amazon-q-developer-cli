@@ -1,4 +1,4 @@
-import { CodewhispererCustomization as Customization } from "@amzn/fig-io-proto/fig";
+import { CodewhispererCustomization as Customization } from "@aws/amazon-q-developer-cli-proto/fig";
 import { sendCodewhispererListCustomizationRequest } from "./requests.js";
 
 const listCustomizations = async () =>

@@ -1,6 +1,6 @@
-import { Suggestion } from "@amzn/fig-io-shared/internal";
-import { SETTINGS } from "@amzn/fig-io-api-bindings-wrappers";
-import * as settings from "@amzn/fig-io-api-bindings-wrappers";
+import { Suggestion } from "@aws/amazon-q-developer-cli-shared/internal";
+import { SETTINGS } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import * as settings from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import {
   MockInstance,
   afterAll,

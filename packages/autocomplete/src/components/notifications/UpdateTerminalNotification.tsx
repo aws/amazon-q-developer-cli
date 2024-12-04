@@ -1,4 +1,4 @@
-import { ShellContext } from "@amzn/fig-io-proto/fig_common";
+import { ShellContext } from "@aws/amazon-q-developer-cli-proto/fig_common";
 import { useAutocompleteStore } from "../../state";
 import { Notification } from "./Notification";
 

@@ -1,5 +1,5 @@
 import logger from "loglevel";
-import { fread } from "@amzn/fig-io-api-bindings-wrappers";
+import { fread } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import { SystemTheme } from "../hooks/helpers";
 import { MissingThemeError } from "./errors";
 
