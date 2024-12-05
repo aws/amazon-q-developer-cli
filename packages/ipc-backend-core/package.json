@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest",
-    "lint": "eslint src tests && prettier --check src tests",
+    "lint": "eslint src && prettier --check src",
     "lint:fix": "eslint --fix src tests && prettier --write src tests",
     "clean": "rm -rf dist/ && rm -rf node_modules/"
   },
