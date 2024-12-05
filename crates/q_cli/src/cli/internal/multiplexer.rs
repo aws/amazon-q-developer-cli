@@ -92,7 +92,7 @@ pub async fn execute() -> Result<()> {
     // Remove the socket file if it already exists
     info!("removing socket");
     if let Err(err) = tokio::fs::remove_file(&socket_path).await {
-        error!(%err, "Error removing socket")
+        error!(%err, "Error removing socket");
     };
 
     // Create the socket
