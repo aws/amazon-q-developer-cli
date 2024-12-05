@@ -1,7 +1,10 @@
 {
-  "extends": ["@amzn/fig-io-tsconfig/base.json", "@amzn/fig-io-tsconfig/dom.json"],
+  "extends": [
+    "@amzn/fig-io-tsconfig/base.json",
+    "@amzn/fig-io-tsconfig/dom.json"
+  ],
   "compilerOptions": {
-    "outDir": "dist",
+    "outDir": "dist"
   },
   "include": ["src"]
 }
