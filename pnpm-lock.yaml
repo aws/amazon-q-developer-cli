@@ -554,6 +554,53 @@ importers:
 
   packages/fuzzysort: {}
 
+  packages/ipc-backend-core:
+    dependencies:
+      '@amzn/fig-io-proto':
+        specifier: workspace:^
+        version: link:../../proto
+    devDependencies:
+      '@amzn/fig-io-eslint-config':
+        specifier: workspace:^
+        version: link:../eslint-config
+      '@amzn/fig-io-tsconfig':
+        specifier: workspace:^
+        version: link:../tsconfig
+      eslint:
+        specifier: ^9.16.0
+        version: 9.16.0(jiti@1.21.6)
+      typescript:
+        specifier: ^5.4.5
+        version: 5.7.2
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.8(@types/node@22.10.1)(@vitest/ui@2.1.8)(jsdom@24.1.0)(terser@5.37.0)
+
+  packages/ipc-backend-websocket-mux:
+    dependencies:
+      '@amzn/fig-io-ipc-backend-core':
+        specifier: workspace:^
+        version: link:../ipc-backend-core
+      '@amzn/fig-io-proto':
+        specifier: workspace:^
+        version: link:../../proto
+    devDependencies:
+      '@amzn/fig-io-eslint-config':
+        specifier: workspace:^
+        version: link:../eslint-config
+      '@amzn/fig-io-tsconfig':
+        specifier: workspace:^
+        version: link:../tsconfig
+      eslint:
+        specifier: ^9.16.0
+        version: 9.16.0(jiti@1.21.6)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.7.2
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.8(@types/node@22.10.1)(@vitest/ui@2.1.8)(jsdom@24.1.0)(terser@5.37.0)
+
   packages/shared:
     dependencies:
       '@fig/autocomplete-shared':
