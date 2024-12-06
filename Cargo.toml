@@ -111,7 +111,7 @@ serde_json = "1.0.115"
 sha2 = "0.10.6"
 strum = { version = "0.26.3", features = ["derive"] }
 sysinfo = "0.32.0"
-thiserror = "2.0.3"
+thiserror = "2.0.4"
 tempfile = "3.10.1"
 time = { version = "0.3.34", features = [
     "parsing",
