@@ -147,7 +147,7 @@ export class WebsocketMuxBackend implements IpcBackend {
     this.websocket.send(bytesToBase64(message));
   }
 
-  insertText(sessionId: string, request: InsertTextRequest): void {
+  insertText(_sessionId: string, request: InsertTextRequest): void {
     console.log("insertText");
     this.sendRequest({
       $case: "insertText",
@@ -155,7 +155,7 @@ export class WebsocketMuxBackend implements IpcBackend {
     });
   }
 
-  intercept(sessionId: string, request: InterceptRequest): void {
+  intercept(_sessionId: string, request: InterceptRequest): void {
     console.log("intercept");
     this.sendRequest({
       $case: "intercept",
@@ -164,7 +164,7 @@ export class WebsocketMuxBackend implements IpcBackend {
   }
 
   runProcess(
-    sessionId: string,
+    _sessionId: string,
     request: RunProcessRequest,
   ): RunProcessResponse {
     this.sendRequest({
