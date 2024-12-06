@@ -58,7 +58,7 @@ features = ["event-stream"]
 version = "0.60.7"
 
 [dependencies.aws-smithy-runtime]
-version = "1.7.1"
+version = "1.7.4"
 features = ["client"]
 
 [dependencies.aws-smithy-runtime-api]
