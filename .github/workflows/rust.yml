@@ -7,10 +7,12 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  AWS_REGION: us-east-1
 
 jobs:
   cargo-clippy:
@@ -66,6 +68,11 @@ jobs:
         id: toolchain
         with:
           components: llvm-tools-preview
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789100:role
+          aws-region: ${{ env.AWS_REGION }}
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - uses: actions/cache@v4
