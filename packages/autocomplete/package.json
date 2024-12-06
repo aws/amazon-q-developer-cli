@@ -46,7 +46,7 @@
     "use-resize-observer": "^9.1.0",
     "util": "^0.12.5",
     "vite": "^6.0.3",
-    "zustand": "^4.5.5"
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@amzn/fig-io-eslint-config": "workspace:^",
