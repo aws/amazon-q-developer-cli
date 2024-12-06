@@ -231,8 +231,6 @@ impl<T: Message> FigProtobufEncodable for T {
 
 #[cfg(test)]
 mod tests {
-    use local::EditBufferHook;
-    use remote::hostbound::Request;
     use serde_json::json;
 
     use super::*;
