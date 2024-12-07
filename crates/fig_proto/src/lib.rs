@@ -128,7 +128,7 @@ impl FigMessage {
         let message_len: u64 = body.len().try_into()?;
         let message_len_be = message_len.to_be_bytes();
 
-        let mut inner =
+        let mut inner: BytesMut =
             BytesMut::with_capacity(b"\x1b@".len() + message_type.header().len() + message_len_be.len() + body.len());
 
         inner.extend_from_slice(b"\x1b@");
