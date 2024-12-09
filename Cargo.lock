@@ -8308,9 +8308,9 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 
 [[package]]
 name = "tao"
-version = "0.30.8"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6682a07cf5bab0b8a2bd20d0a542917ab928b5edb75ebd4eda6b05cbaab872da"
+checksum = "cc6b53216f32e60efc27dfa111268481e4dfba53e553e4cdebcaed9db36c11bb"
 dependencies = [
  "bitflags 2.6.0",
  "cocoa",
@@ -8323,7 +8323,6 @@ dependencies = [
  "gdkwayland-sys",
  "gdkx11-sys",
  "gtk",
- "instant",
  "jni",
  "lazy_static",
  "libc",
