@@ -21,7 +21,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@bufbuild/protobuf": "2.2.2"
+    "@bufbuild/protobuf": "2.2.3"
   },
   "devDependencies": {
     "@amzn/fig-io-tsconfig": "workspace:^",
