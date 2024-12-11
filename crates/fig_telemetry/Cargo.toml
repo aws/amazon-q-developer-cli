@@ -17,7 +17,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 aws-credential-types = "1.1.6"
 aws-sdk-cognitoidentity = "1.14.0"
-aws-sdk-cognitoidentityprovider = "1.58.0"
+aws-sdk-cognitoidentityprovider = "1.59.0"
 aws-smithy-async = "1.1.7"
 aws-smithy-types = "1.1.7"
 aws-toolkit-telemetry-definitions = { path = "../aws-toolkit-telemetry-definitions" }
