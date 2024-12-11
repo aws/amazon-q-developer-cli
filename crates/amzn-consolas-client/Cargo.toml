@@ -51,7 +51,7 @@ version = "1.2.1"
 version = "0.60.11"
 
 [dependencies.aws-smithy-json]
-version = "0.60.7"
+version = "0.61.1"
 
 [dependencies.aws-smithy-runtime]
 version = "1.7.1"
