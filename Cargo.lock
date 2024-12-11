@@ -10,7 +10,7 @@ dependencies = [
  "cocoa",
  "core-foundation 0.10.0",
  "objc",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -2235,7 +2235,7 @@ dependencies = [
  "once_cell",
  "serde",
  "serde_json",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-util",
  "tracing",
@@ -2699,7 +2699,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.26.3",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "time",
  "tokio",
  "tower 0.5.1",
@@ -2737,7 +2737,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "time",
  "tokio",
  "tracing",
@@ -2878,7 +2878,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shellexpand",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -2957,7 +2957,7 @@ dependencies = [
  "strum 0.26.3",
  "tar",
  "tempfile",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "time",
  "tokio",
  "tracing",
@@ -2993,7 +2993,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tempfile",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
 ]
@@ -3010,7 +3010,7 @@ dependencies = [
  "nix 0.29.0",
  "pin-project-lite",
  "tempfile",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
  "whoami",
@@ -3025,7 +3025,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "tempfile",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -3062,7 +3062,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -3101,7 +3101,7 @@ dependencies = [
  "rustls-pemfile 2.2.0",
  "serde",
  "serde_json",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "time",
  "tokio",
  "tracing",
@@ -3124,7 +3124,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
  "url",
@@ -3159,7 +3159,7 @@ dependencies = [
  "once_cell",
  "serde",
  "serde_json",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
  "tracing-test",
@@ -3224,7 +3224,7 @@ dependencies = [
  "sha2",
  "strum 0.26.3",
  "sysinfo",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "time",
  "tokio",
  "tracing",
@@ -6766,7 +6766,7 @@ dependencies = [
  "spinners",
  "sysinfo",
  "tempfile",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "time",
  "tokio",
  "tracing",
@@ -6853,7 +6853,7 @@ dependencies = [
  "rustc-hash 2.0.0",
  "rustls 0.23.19",
  "socket2",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
 ]
@@ -6872,7 +6872,7 @@ dependencies = [
  "rustls 0.23.19",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.3",
+ "thiserror 2.0.6",
  "tinyvec",
  "tracing",
  "web-time",
@@ -8487,11 +8487,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.3"
+version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c006c85c7651b3cf2ada4584faa36773bd07bac24acfb39f3c431b36d7e667aa"
+checksum = "8fec2a1820ebd077e2b90c4df007bebf344cd394098a13c563957d0afc83ea47"
 dependencies = [
- "thiserror-impl 2.0.3",
+ "thiserror-impl 2.0.6",
 ]
 
 [[package]]
@@ -8507,9 +8507,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.3"
+version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f077553d607adc1caf65430528a576c757a71ed73944b66ebb58ef2bbd243568"
+checksum = "d65750cab40f4ff1929fb1ba509e9914eb756131cef4210da8d5d700d26f6312"
 dependencies = [
  "proc-macro2",
  "quote",
