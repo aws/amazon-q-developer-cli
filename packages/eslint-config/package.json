@@ -27,7 +27,7 @@
     "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
     "@eslint/js": "^9.16.0",
     "@types/eslint__js": "^8.42.3",
-    "@typescript-eslint/utils": "^8.17.0",
+    "@typescript-eslint/utils": "^8.18.0",
     "eslint": "^9.16.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.31.0",
