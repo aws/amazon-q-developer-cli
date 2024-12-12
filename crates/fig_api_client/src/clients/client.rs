@@ -365,4 +365,27 @@ mod tests {
             .await
             .unwrap();
     }
+
+    #[tokio::test]
+    async fn test_sigv4() {
+        let endpoint = Endpoint::load_codewhisperer();
+        let client = Client::new_consolas_client(&endpoint).await.unwrap();
+
+        tokio::try_join!(
+            client.generate_recommendations(RecommendationsInput {
+                file_context: FileContext {
+                    left_file_content: "left".into(),
+                    right_file_content: "right".into(),
+                    filename: "filename".into(),
+                    programming_language: ProgrammingLanguage {
+                        language_name: LanguageName::Rust,
+                    },
+                },
+                max_results: 0,
+                next_token: None,
+            }),
+            client.list_customizations(),
+        )
+        .unwrap();
+    }
 }
