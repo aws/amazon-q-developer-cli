@@ -27,7 +27,7 @@
     "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
     "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
     "@tsconfig/recommended": "^1.0.8",
-    "@types/node": "^22.10.1",
+    "@types/node": "^22.10.2",
     "@typescript/analyze-trace": "^0.10.1",
     "eslint": "^9.16.0",
     "lint-staged": "^15.2.10",
