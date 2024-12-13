@@ -27,7 +27,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
-    "react": "^18.3.1",
+    "react": "^19.0.0",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "react-router": "^7.0.2",
@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@aws/amazon-q-developer-cli-types": "workspace:^",
-    "@types/react": "^18.3.14",
+    "@types/react": "^19.0.1",
     "@types/react-dom": "^18.3.2",
     "@typescript-eslint/eslint-plugin": "^8.17.0",
     "@typescript-eslint/parser": "^8.17.0",
