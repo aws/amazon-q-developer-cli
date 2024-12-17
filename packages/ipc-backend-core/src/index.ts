@@ -1,18 +1,18 @@
 import type {
   InsertTextRequest,
   InterceptRequest,
-} from "@amzn/fig-io-proto/figterm";
-import type { Clientbound_RunProcessRequest as RunProcessRequest } from "@amzn/fig-io-proto/remote";
+} from "@aws/amazon-q-developer-cli-proto/figterm";
+import type { Clientbound_RunProcessRequest as RunProcessRequest } from "@aws/amazon-q-developer-cli-proto/remote";
 import type {
   RunProcessResponse,
   EditBufferChangedNotification,
-} from "@amzn/fig-io-proto/fig";
+} from "@aws/amazon-q-developer-cli-proto/fig";
 import type {
   InterceptedKeyHook,
   PostExecHook,
   PreExecHook,
   PromptHook,
-} from "@amzn/fig-io-proto/local";
+} from "@aws/amazon-q-developer-cli-proto/local";
 
 export type {
   InsertTextRequest,

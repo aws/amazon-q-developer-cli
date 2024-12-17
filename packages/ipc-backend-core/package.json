@@ -1,5 +1,5 @@
 {
-  "name": "@amzn/fig-io-ipc-backend-core",
+  "name": "@aws/amazon-q-developer-cli-ipc-backend-core",
   "version": "1.0.0",
   "description": "",
   "author": "",
@@ -19,11 +19,11 @@
     "clean": "rm -rf dist/ && rm -rf node_modules/"
   },
   "dependencies": {
-    "@amzn/fig-io-proto": "workspace:^"
+    "@aws/amazon-q-developer-cli-proto": "workspace:^"
   },
   "devDependencies": {
-    "@amzn/fig-io-eslint-config": "workspace:^",
-    "@amzn/fig-io-tsconfig": "workspace:^",
+    "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
+    "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
     "eslint": "^9.16.0",
     "typescript": "^5.4.5",
     "vitest": "^2.1.8"

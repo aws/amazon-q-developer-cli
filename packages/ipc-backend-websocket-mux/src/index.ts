@@ -9,12 +9,12 @@ import type {
   PostExecHook,
   PreExecHook,
   PromptHook,
-} from "@amzn/fig-io-ipc-backend-core";
+} from "@aws/amazon-q-developer-cli-ipc-backend-core";
 import {
   Clientbound,
   Clientbound_Request,
   Hostbound,
-} from "@amzn/fig-io-proto/remote";
+} from "@aws/amazon-q-developer-cli-proto/remote";
 
 type SubscriptionStorage<T> = ((notification: T) => void)[];
 
