@@ -105,7 +105,7 @@ reqwest = { version = "0.12.5", default-features = false, features = [
     "cookies",
 ] }
 shell-color = { path = "crates/shell-color" }
-semver = { version = "1.0.16", features = ["serde"] }
+semver = { version = "1.0.24", features = ["serde"] }
 serde = { version = "1.0.216", features = ["derive", "rc"] }
 serde_json = "1.0.115"
 sha2 = "0.10.6"
