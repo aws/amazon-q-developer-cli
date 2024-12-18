@@ -19,7 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-util = { version = "0.7.12", features = ["compat"] }
+tokio-util = { version = "0.7.13", features = ["compat"] }
 tracing.workspace = true
 zbus = { path = "../zbus" }
 
