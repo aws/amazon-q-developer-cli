@@ -12,13 +12,17 @@ workspace = true
 
 [dependencies]
 async-trait.workspace = true
+base64.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
 fig_proto.workspace = true
 fig_util.workspace = true
+flate2 = "1.0.35"
 pin-project-lite = "0.2.12"
+rand.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 whoami.workspace = true
 
@@ -28,3 +32,4 @@ nix.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 tokio.workspace = true
+uuid = { workspace = true, features = ["v4"] }

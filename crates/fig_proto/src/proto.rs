@@ -30,6 +30,11 @@ pub(crate) mod remote {
     include!(concat!(env!("OUT_DIR"), "/remote.rs"));
 }
 
+/// Mux Protocol Buffers
+pub(crate) mod mux {
+    include!(concat!(env!("OUT_DIR"), "/mux.rs"));
+}
+
 /// Stress Testing Protocol Buffers
 pub(crate) mod stress {
     include!(concat!(env!("OUT_DIR"), "/stress.rs"));

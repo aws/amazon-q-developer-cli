@@ -1,8 +1,10 @@
+use std::net::{
+    Ipv4Addr,
+    SocketAddr,
+};
 use std::sync::Arc;
 use std::time::Duration;
 
-use base64::prelude::*;
-use bytes::Bytes;
 use eyre::{
     Context,
     ContextCompat,
@@ -10,11 +12,7 @@ use eyre::{
     anyhow,
     bail,
 };
-use fig_ipc::{
-    BufferedReader,
-    RecvMessage,
-};
-use fig_proto::FigProtobufEncodable;
+use fig_ipc::Base64LineCodec;
 use fig_proto::figterm::intercept_request::{
     InterceptCommand,
     SetFigjsIntercepts,
@@ -32,17 +30,22 @@ use fig_proto::local::{
     PreExecHook,
     PromptHook,
 };
-use fig_proto::remote::clientbound::request::Request as ClientboundRequest;
-use fig_proto::remote::clientbound::response::Response as ClientboundResponse;
-use fig_proto::remote::clientbound::{
+use fig_proto::mux::{
+    self,
+    PacketOptions,
+    // Clientbound,
+    // Hostbound,
+    // Packet,
+    // clientbound,
+    // hostbound,
+    message_to_packet,
+    packet_to_message,
+};
+use fig_proto::remote;
+// use fig_proto::remote::clientbound::response::Response as ClientboundResponse;
+use fig_proto::remote::{
     PseudoterminalExecuteRequest,
     RunProcessRequest,
-};
-use fig_proto::remote::{
-    Clientbound,
-    Hostbound,
-    clientbound,
-    hostbound,
 };
 use fig_remote_ipc::figterm::{
     FigtermCommand,
@@ -54,23 +57,84 @@ use fig_util::{
     PTY_BINARY_NAME,
     directories,
 };
-use tokio::io::AsyncWriteExt;
-use tokio::net::UnixListener;
+use futures::{
+    SinkExt,
+    StreamExt,
+    TryStreamExt,
+    future,
+};
+use tokio::io::{
+    AsyncRead,
+    AsyncWrite,
+};
+use tokio::net::{
+    TcpListener,
+    TcpStream,
+    UnixListener,
+};
 use tokio::select;
 use tokio::sync::mpsc::{
     self,
     UnboundedSender,
 };
 use tokio::time::timeout;
+use tokio_util::codec::{
+    FramedRead,
+    FramedWrite,
+};
 use tracing::{
     error,
     info,
 };
 
+async fn accept_connection(tcp_stream: TcpStream) {
+    let addr = tcp_stream
+        .peer_addr()
+        .expect("connected streams should have a peer address");
+    info!("Peer address: {addr}");
+
+    let ws_stream = tokio_tungstenite::accept_async(tcp_stream)
+        .await
+        .expect("Error during the websocket handshake occurred");
+
+    info!("New WebSocket connection: {addr}");
+
+    let (write, read) = ws_stream.split();
+    // We should not forward messages other than text or binary.
+    read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
+        .forward(write)
+        .await
+        .expect("Failed to forward messages")
+}
+
+async fn handle_stdio_stream<S: AsyncWrite + AsyncRead + Unpin>(mut stream: S) {
+    let mut stdio_stream = tokio::io::join(tokio::io::stdin(), tokio::io::stdout());
+    tokio::io::copy_bidirectional(&mut stream, &mut stdio_stream)
+        .await
+        .unwrap();
+}
+
 pub async fn execute() -> Result<()> {
     // DO NOT REMOVE, this is needed such that CloudShell does not time out!
     eprintln!("Starting multiplexer, this is required for AWS CloudShell.");
     info!("starting multiplexer");
+
+    let (external_stream, internal_stream) = tokio::io::duplex(1024 * 4);
+
+    let stdio = true;
+
+    if stdio {
+        tokio::spawn(handle_stdio_stream(external_stream));
+    } else {
+        let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 8080);
+        let try_socket = TcpListener::bind(&addr).await;
+        let listener = try_socket.expect("Failed to bind");
+        info!("Listening on: {}", addr);
+
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(accept_connection(stream));
+        }
+    }
 
     // Ensure the socket path exists and has correct permissions
     let socket_path = directories::local_remote_socket_path()?;
@@ -99,17 +163,17 @@ pub async fn execute() -> Result<()> {
     info!("binding to socket");
     let listener = UnixListener::bind(&socket_path)?;
 
-    // Get a handle to stdout and stdin
-    let mut stdout = tokio::io::stdout();
-    let stdin = tokio::io::stdin();
-    let mut reader = BufferedReader::new(stdin);
+    let (read_half, write_half) = tokio::io::split(internal_stream);
+    // let mut reader = BufferedReader::new(read_half);
+    // let mut writer = BufferedReader::new(write_half);
 
-    let tmpdir = directories::logs_dir().unwrap();
-    let mut mux_output = tokio::fs::File::create(tmpdir.join("mux-output.bin")).await.unwrap();
+    let packet_codec = Base64LineCodec::<mux::Packet>::new();
+    let mut writer = FramedWrite::new(write_half, packet_codec.clone());
+    let mut reader = FramedRead::new(read_half, packet_codec);
 
     let figterm_state = Arc::new(FigtermState::new());
 
-    let (host_sender, mut host_receiver) = mpsc::unbounded_channel::<Bytes>();
+    let (host_sender, mut host_receiver) = mpsc::unbounded_channel::<mux::Hostbound>();
 
     loop {
         select! {
@@ -120,12 +184,13 @@ pub async fn execute() -> Result<()> {
                         sender: host_sender.clone(),
                     }));
                 },
-                Err(err) => error!("{PTY_BINARY_NAME} connection failed to accept: {err:?}"),
+                Err(err) => error!(?err, "{PTY_BINARY_NAME} connection failed to accept"),
             },
-            message = reader.recv_message::<Clientbound>() => match message {
-                Ok(Some(message)) => {
-                    info!("reader.recv_message::<Clientbound>()");
-                     match handle_client_bound_message(message, &figterm_state, &host_sender).await {
+            packet = reader.next() => match packet {
+                Some(Ok(packet)) => {
+                    info!("received packet");
+                    let message = packet_to_message(packet).unwrap();
+                    match handle_client_bound_message(message, &figterm_state, &host_sender).await {
                         Ok(Some(msg)) => {
                             let session = figterm_state.most_recent().context("most recent 1")?;
                             info!("sending to session {}", session.id);
@@ -135,33 +200,19 @@ pub async fn execute() -> Result<()> {
                         Err(err) => error!("error: {err:?}")
                     };
                 },
-                Ok(None) => {
+                Some(Err(err)) => {
+                    error!("Error: {err:?}");
+                },
+                None => {
                     info!("{PTY_BINARY_NAME} connection closed");
                     break;
                 },
-                Err(err) => {
-                    error!("Error: {err:?}");
-                    if !err.is_disconnect() {
-                        error!(%err, "Failed receiving remote message");
-                    }
-                    // break;
-                },
             },
             encoded = host_receiver.recv() => match encoded {
-                Some(encoded) => {
-
-                    info!("host_receiver  recv()");
-
-
-                    let b64 = BASE64_STANDARD.encode(encoded);
-
-                    stdout.write_all(b64.as_bytes()).await?;
-                    stdout.write_all(b"\n").await?;
-                    stdout.flush().await?;
-
-                    mux_output.write_all(b64.as_bytes()).await?;
-                    mux_output.write_all(b"\n").await?;
-                    mux_output.flush().await?;
+                Some(hostbound) => {
+                    info!("sending packet");
+                    let packet = message_to_packet(hostbound, &PacketOptions { gzip: false });
+                    writer.send(packet).await.unwrap();
                 },
                 None => bail!("host recv none"),
             }
@@ -172,169 +223,139 @@ pub async fn execute() -> Result<()> {
 }
 
 async fn handle_client_bound_message(
-    message: Clientbound,
+    message: mux::Clientbound,
     state: &Arc<FigtermState>,
-    host_sender: &UnboundedSender<Bytes>,
+    host_sender: &UnboundedSender<mux::Hostbound>,
 ) -> Result<Option<FigtermCommand>> {
-    let Some(packet) = message.packet else {
+    let Some(submessage) = message.submessage else {
         bail!("received malformed message");
     };
 
-    info!("packet: {:?}", packet);
+    info!("submessage: {:?}", submessage);
 
-    Ok(Some(match packet {
-        clientbound::Packet::Request(request) => match request.request.context("no request")? {
-            ClientboundRequest::Intercept(InterceptRequest {
-                intercept_command: Some(command),
-            }) => match command {
-                InterceptCommand::SetFigjsIntercepts(SetFigjsIntercepts {
-                    intercept_bound_keystrokes,
-                    intercept_global_keystrokes,
-                    actions,
-                    override_actions,
-                }) => FigtermCommand::InterceptFigJs {
-                    intercept_keystrokes: intercept_bound_keystrokes,
-                    intercept_global_keystrokes,
-                    actions,
-                    override_actions,
-                },
-                InterceptCommand::SetFigjsVisible(SetFigjsVisible { visible }) => {
-                    FigtermCommand::InterceptFigJSVisible { visible }
-                },
+    Ok(Some(match submessage {
+        mux::clientbound::Submessage::Intercept(InterceptRequest {
+            intercept_command: Some(command),
+        }) => match command {
+            InterceptCommand::SetFigjsIntercepts(SetFigjsIntercepts {
+                intercept_bound_keystrokes,
+                intercept_global_keystrokes,
+                actions,
+                override_actions,
+            }) => FigtermCommand::InterceptFigJs {
+                intercept_keystrokes: intercept_bound_keystrokes,
+                intercept_global_keystrokes,
+                actions,
+                override_actions,
             },
-            ClientboundRequest::InsertText(InsertTextRequest {
-                insertion,
-                deletion,
-                offset,
-                immediate,
-                insertion_buffer,
-                insert_during_command,
-            }) => FigtermCommand::InsertText {
-                insertion,
-                deletion: deletion.map(|d| d as i64),
-                offset,
-                immediate,
-                insertion_buffer,
-                insert_during_command,
+            InterceptCommand::SetFigjsVisible(SetFigjsVisible { visible }) => {
+                FigtermCommand::InterceptFigJSVisible { visible }
             },
-            ClientboundRequest::SetBuffer(SetBufferRequest { text, cursor_position }) => {
-                FigtermCommand::SetBuffer { text, cursor_position }
-            },
-            ClientboundRequest::RunProcess(RunProcessRequest {
-                executable,
-                arguments,
-                working_directory,
-                env,
-            }) => {
-                let session_sender = &state.most_recent().context("most recent 2")?.sender;
-                let (message, rx) = FigtermCommand::run_process(executable, arguments, working_directory, env);
-                session_sender
-                    .send(message)
-                    .context("Failed sending command to figterm")?;
-
-                let timeout_duration = Duration::from_secs(10);
-
-                let response = timeout(timeout_duration, rx)
-                    .await
-                    .context("Timed out waiting for figterm response")?
-                    .context("Failed to receive figterm response")?;
-
-                if let hostbound::response::Response::RunProcess(response) = response {
-                    let msg = Hostbound {
-                        packet: Some(hostbound::Packet::Response(hostbound::Response {
-                            nonce: Some(0xbeef),
-                            response: Some(hostbound::response::Response::RunProcess(response)),
-                        })),
-                    };
-
-                    host_sender.send(match msg.encode_fig_protobuf() {
-                        Ok(encoded_message) => encoded_message,
-                        Err(err) => {
-                            error!(%err, "Failed to encode message");
-                            return Err(err.into());
-                        },
-                    })?;
-
-                    return Ok(None);
-                } else {
-                    bail!("invalid response type");
-                }
-            },
-            ClientboundRequest::PseudoterminalExecute(PseudoterminalExecuteRequest {
-                command,
-                working_directory,
-                background_job,
-                is_pipelined,
-                env,
-            }) => {
-                let (message, rx) = FigtermCommand::pseudoterminal_execute(
-                    command,
-                    working_directory,
-                    background_job,
-                    is_pipelined,
-                    env,
-                );
-
-                let session_sender = &state.most_recent().context("most recent 3")?.sender;
-                session_sender.send(message)?;
-
-                let response = timeout(Duration::from_secs(10), rx)
-                    .await
-                    .context("Qterm response timed out after 10 sec")?
-                    .context("Qterm response failed to receive from sender")?;
-
-                if let hostbound::response::Response::PseudoterminalExecute(response) = response {
-                    let msg = Hostbound {
-                        packet: Some(hostbound::Packet::Response(hostbound::Response {
-                            nonce: Some(0xbeef),
-                            response: Some(hostbound::response::Response::PseudoterminalExecute(response)),
-                        })),
-                    };
-
-                    host_sender.send(match msg.encode_fig_protobuf() {
-                        Ok(encoded_message) => encoded_message,
-                        Err(err) => {
-                            error!(%err, "Failed to encode message");
-                            return Err(err.into());
-                        },
-                    })?;
-
-                    return Ok(None);
-                } else {
-                    bail!("invalid response type");
-                }
-            },
-            _ => bail!("INVALID REQUEST"),
         },
-        _ => {
-            error!("Invalid packet: {packet:?}");
-            return Ok(None);
+        mux::clientbound::Submessage::InsertText(InsertTextRequest {
+            insertion,
+            deletion,
+            offset,
+            immediate,
+            insertion_buffer,
+            insert_during_command,
+        }) => FigtermCommand::InsertText {
+            insertion,
+            deletion: deletion.map(|d| d as i64),
+            offset,
+            immediate,
+            insertion_buffer,
+            insert_during_command,
         },
+        mux::clientbound::Submessage::SetBuffer(SetBufferRequest { text, cursor_position }) => {
+            FigtermCommand::SetBuffer { text, cursor_position }
+        },
+        mux::clientbound::Submessage::RunProcess(RunProcessRequest {
+            executable,
+            arguments,
+            working_directory,
+            env,
+        }) => {
+            let (message, rx) = FigtermCommand::run_process(executable, arguments, working_directory, env);
+
+            let session = state.most_recent().context("most recent 3")?;
+            let sender = session.sender.clone();
+            let session_id = session.id.to_string();
+            drop(session);
+
+            sender.send(message).context("Failed sending command to figterm")?;
+
+            let timeout_duration = Duration::from_secs(10);
+
+            let response = timeout(timeout_duration, rx)
+                .await
+                .context("Timed out waiting for figterm response")?
+                .context("Failed to receive figterm response")?;
+
+            if let remote::hostbound::response::Response::RunProcess(response) = response {
+                let hostbound = mux::Hostbound {
+                    session_id,
+                    submessage: Some(mux::hostbound::Submessage::RunProcessResponse(response)),
+                };
+                host_sender.send(hostbound)?;
+                return Ok(None);
+            } else {
+                bail!("invalid response type");
+            }
+        },
+        mux::clientbound::Submessage::PseudoterminalExecute(PseudoterminalExecuteRequest {
+            command,
+            working_directory,
+            background_job,
+            is_pipelined,
+            env,
+        }) => {
+            let (message, rx) =
+                FigtermCommand::pseudoterminal_execute(command, working_directory, background_job, is_pipelined, env);
+
+            let session = state.most_recent().context("most recent 3")?;
+            let sender = session.sender.clone();
+            let session_id = session.id.to_string();
+            drop(session);
+
+            sender.send(message)?;
+
+            let response = timeout(Duration::from_secs(10), rx)
+                .await
+                .context("Qterm response timed out after 10 sec")?
+                .context("Qterm response failed to receive from sender")?;
+
+            if let remote::hostbound::response::Response::PseudoterminalExecute(response) = response {
+                let hostbound = mux::Hostbound {
+                    session_id,
+                    submessage: Some(mux::hostbound::Submessage::PseudoterminalExecuteResponse(response)),
+                };
+                host_sender.send(hostbound)?;
+                return Ok(None);
+            } else {
+                bail!("invalid response type");
+            }
+        },
+        _ => bail!("INVALID REQUEST"),
     }))
 }
 
 struct SimpleHookHandler {
-    sender: UnboundedSender<Bytes>,
+    sender: UnboundedSender<mux::Hostbound>,
 }
 
 impl SimpleHookHandler {
-    fn resererialize_send(&mut self, message: hostbound::request::Request) -> eyre::Result<()> {
+    fn resererialize_send(
+        &mut self,
+        session_id: &FigtermSessionId,
+        submessage: mux::hostbound::Submessage,
+    ) -> eyre::Result<()> {
         info!("sending on sender");
-
-        let hostbound = Hostbound {
-            packet: Some(hostbound::Packet::Request(hostbound::Request {
-                nonce: Some(0xbeef),
-                request: Some(message),
-            })),
+        let hostbound = mux::Hostbound {
+            session_id: session_id.to_string(),
+            submessage: Some(submessage),
         };
-
-        self.sender.send(match hostbound.encode_fig_protobuf() {
-            Ok(encoded_message) => encoded_message,
-            Err(err) => {
-                error!("Failed to encode message: {err:?}");
-                return Err(err.into());
-            },
-        })?;
+        self.sender.send(hostbound)?;
         Ok(())
     }
 }
@@ -346,60 +367,71 @@ impl fig_remote_ipc::RemoteHookHandler for SimpleHookHandler {
     async fn edit_buffer(
         &mut self,
         edit_buffer_hook: &EditBufferHook,
-        _session_id: &FigtermSessionId,
+        session_id: &FigtermSessionId,
         _figterm_state: &Arc<FigtermState>,
-    ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(hostbound::request::Request::EditBuffer(edit_buffer_hook.clone()))?;
+    ) -> Result<Option<remote::clientbound::response::Response>, Self::Error> {
+        self.resererialize_send(
+            session_id,
+            mux::hostbound::Submessage::EditBuffer(edit_buffer_hook.clone()),
+        )?;
         Ok(None)
     }
 
     async fn prompt(
         &mut self,
         prompt_hook: &PromptHook,
-        _session_id: &FigtermSessionId,
+        session_id: &FigtermSessionId,
         _figterm_state: &Arc<FigtermState>,
-    ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(hostbound::request::Request::Prompt(prompt_hook.clone()))?;
+    ) -> Result<Option<remote::clientbound::response::Response>, Self::Error> {
+        self.resererialize_send(session_id, mux::hostbound::Submessage::Prompt(prompt_hook.clone()))?;
         Ok(None)
     }
 
     async fn pre_exec(
         &mut self,
         pre_exec_hook: &PreExecHook,
-        _session_id: &FigtermSessionId,
+        session_id: &FigtermSessionId,
         _figterm_state: &Arc<FigtermState>,
-    ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(hostbound::request::Request::PreExec(pre_exec_hook.clone()))?;
+    ) -> Result<Option<remote::clientbound::response::Response>, Self::Error> {
+        self.resererialize_send(session_id, mux::hostbound::Submessage::PreExec(pre_exec_hook.clone()))?;
         Ok(None)
     }
 
     async fn post_exec(
         &mut self,
         post_exec_hook: &PostExecHook,
-        _session_id: &FigtermSessionId,
+        session_id: &FigtermSessionId,
         _figterm_state: &Arc<FigtermState>,
-    ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(hostbound::request::Request::PostExec(post_exec_hook.clone()))?;
+    ) -> Result<Option<remote::clientbound::response::Response>, Self::Error> {
+        self.resererialize_send(session_id, mux::hostbound::Submessage::PostExec(post_exec_hook.clone()))?;
         Ok(None)
     }
 
     async fn intercepted_key(
         &mut self,
         intercepted_key: InterceptedKeyHook,
-    ) -> Result<Option<ClientboundResponse>, Self::Error> {
-        self.resererialize_send(hostbound::request::Request::InterceptedKey(intercepted_key.clone()))?;
+        session_id: &FigtermSessionId,
+    ) -> Result<Option<remote::clientbound::response::Response>, Self::Error> {
+        self.resererialize_send(
+            session_id,
+            mux::hostbound::Submessage::InterceptedKey(intercepted_key.clone()),
+        )?;
         Ok(None)
     }
 
-    async fn account_info(&mut self) -> Result<Option<ClientboundResponse>, Self::Error> {
+    async fn account_info(&mut self) -> Result<Option<remote::clientbound::response::Response>, Self::Error> {
         Err(anyhow!("account info not implemented"))
     }
 
-    async fn start_exchange_credentials(&mut self) -> Result<Option<ClientboundResponse>, Self::Error> {
+    async fn start_exchange_credentials(
+        &mut self,
+    ) -> Result<Option<remote::clientbound::response::Response>, Self::Error> {
         Err(anyhow!("start_exchange_credentials not implemented"))
     }
 
-    async fn confirm_exchange_credentials(&mut self) -> Result<Option<ClientboundResponse>, Self::Error> {
+    async fn confirm_exchange_credentials(
+        &mut self,
+    ) -> Result<Option<remote::clientbound::response::Response>, Self::Error> {
         Err(anyhow!("confirm_exchange_credentials not implemented"))
     }
 }
@@ -413,7 +445,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_client_bound_message() {
         let messages = [
-            ClientboundRequest::Intercept(InterceptRequest {
+            mux::clientbound::Submessage::Intercept(InterceptRequest {
                 intercept_command: Some(InterceptCommand::SetFigjsIntercepts(SetFigjsIntercepts {
                     intercept_bound_keystrokes: false,
                     intercept_global_keystrokes: false,
@@ -421,10 +453,10 @@ mod tests {
                     override_actions: false,
                 })),
             }),
-            ClientboundRequest::Intercept(InterceptRequest {
+            mux::clientbound::Submessage::Intercept(InterceptRequest {
                 intercept_command: Some(InterceptCommand::SetFigjsVisible(SetFigjsVisible { visible: false })),
             }),
-            ClientboundRequest::InsertText(InsertTextRequest {
+            mux::clientbound::Submessage::InsertText(InsertTextRequest {
                 insertion: None,
                 deletion: None,
                 offset: None,
@@ -432,7 +464,7 @@ mod tests {
                 insertion_buffer: None,
                 insert_during_command: None,
             }),
-            ClientboundRequest::SetBuffer(SetBufferRequest {
+            mux::clientbound::Submessage::SetBuffer(SetBufferRequest {
                 text: "text".into(),
                 cursor_position: None,
             }),
@@ -441,11 +473,9 @@ mod tests {
         for message in messages {
             let state = Arc::new(FigtermState::new());
             let (sender, _) = mpsc::unbounded_channel();
-            let message = Clientbound {
-                packet: Some(clientbound::Packet::Request(clientbound::Request {
-                    request: Some(message),
-                    nonce: None,
-                })),
+            let message = mux::Clientbound {
+                session_id: "abcdef".into(),
+                submessage: Some(message),
             };
 
             let result = handle_client_bound_message(message, &state, &sender).await;
@@ -459,7 +489,7 @@ mod tests {
         let (sender, mut receiver) = mpsc::unbounded_channel();
         let mut handler = SimpleHookHandler { sender };
 
-        let message = hostbound::request::Request::EditBuffer(EditBufferHook {
+        let message = mux::hostbound::Submessage::EditBuffer(EditBufferHook {
             context: Some(ShellContext {
                 pid: Some(123),
                 shell_path: Some("/bin/bash".into()),
@@ -470,11 +500,12 @@ mod tests {
             histno: 2,
             terminal_cursor_coordinates: None,
         });
-        handler.resererialize_send(message).unwrap();
+        handler
+            .resererialize_send(&FigtermSessionId::new("abcdef"), message)
+            .unwrap();
 
         let received = receiver.try_recv().unwrap();
         println!("{received:?}");
-        assert!(!received.is_empty());
 
         // let a: Hostbound = FigMessage {
         //     inner: Bytes::from(received),

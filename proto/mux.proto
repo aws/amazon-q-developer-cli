@@ -1,20 +1,37 @@
 syntax = "proto3";
-package figterm;
+package mux;
 
 import "fig.proto";
 import "figterm.proto";
 import "local.proto";
+import "remote.proto";
+
+message Packet {
+  enum Compression {
+    COMPRESSION_UNKNOWN = 0;
+    COMPRESSION_NONE = 1;
+    COMPRESSION_GZIP = 2;
+  }
+
+  uint32 version = 1;
+  Compression compression = 2;
+  bytes nonce = 3;
+
+  bytes inner = 100;
+}
 
 message Hostbound {
   string session_id = 1;
 
   oneof submessage {
+    // requests
     local.EditBufferHook edit_buffer = 101;
     local.PromptHook prompt = 102;
     local.PreExecHook pre_exec = 103;
     local.PostExecHook post_exec = 108;
     local.InterceptedKeyHook intercepted_key = 104;
 
+    // responses
     fig.RunProcessResponse run_process_response = 105;
     fig.PseudoterminalExecuteResponse pseudoterminal_execute_response = 106;
   }
@@ -24,12 +41,16 @@ message Clientbound {
   string session_id = 1;
 
   oneof submessage {
+    // requests
     figterm.InterceptRequest intercept = 100;
     figterm.InsertTextRequest insert_text = 101;
     figterm.SetBufferRequest set_buffer = 102;
     figterm.DiagnosticsRequest diagnostics = 103;
     figterm.InsertOnNewCmdRequest insert_on_new_cmd = 107;
+    remote.RunProcessRequest run_process = 108;
+    remote.PseudoterminalExecuteRequest pseudoterminal_execute = 109;
 
+    // responses
     fig.ReadFileRequest read_file = 105;
   }
 }

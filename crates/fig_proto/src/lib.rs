@@ -5,11 +5,13 @@ pub mod fig_common;
 pub mod figterm;
 pub mod hooks;
 pub mod local;
+pub mod mux;
 pub(crate) mod proto;
 pub mod remote_hooks;
 pub mod util;
 use std::fmt::Debug;
 use std::mem::size_of;
+use std::num::TryFromIntError;
 
 use bytes::{
     Buf,
@@ -84,11 +86,13 @@ pub enum FigMessageComponent {
 #[derive(Debug, Error)]
 pub enum FigMessageParseError {
     #[error("incomplete message, missing {0:?}")]
-    Incomplete(FigMessageComponent),
+    Incomplete(FigMessageComponent, usize),
     #[error("invalid message header {0} (raw type {1})")]
     InvalidHeader(String, String),
     #[error("invalid message type")]
     InvalidMessageType([u8; 8]),
+    #[error("failed to convert int: {0}")]
+    TryFromInt(#[from] TryFromIntError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -113,39 +117,59 @@ pub enum FigMessageEncodeError {
     JsonEncode(#[from] serde_json::Error),
     #[error(transparent)]
     RmpEncode(#[from] rmp_serde::encode::Error),
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
 }
 
 impl FigMessage {
     pub fn json(json: impl Serialize) -> Result<Bytes, FigMessageEncodeError> {
-        FigMessage::encode(FigMessageType::Json, &serde_json::to_vec(&json)?)
+        FigMessage::encode(FigMessageType::Json, serde_json::to_vec(&json)?.into())
     }
 
     pub fn message_pack(message_pack: impl Serialize) -> Result<Bytes, FigMessageEncodeError> {
-        FigMessage::encode(FigMessageType::MessagePack, &rmp_serde::to_vec(&message_pack)?)
+        FigMessage::encode(FigMessageType::MessagePack, rmp_serde::to_vec(&message_pack)?.into())
     }
 
-    pub fn encode(message_type: FigMessageType, body: &[u8]) -> Result<Bytes, FigMessageEncodeError> {
+    pub fn encode_buf(&self, dst: &mut BytesMut) -> Result<(), FigMessageEncodeError> {
+        let body = &self.inner;
+        let message_type = self.message_type;
+
         let message_len: u64 = body.len().try_into()?;
         let message_len_be = message_len.to_be_bytes();
 
-        let mut inner: BytesMut =
-            BytesMut::with_capacity(b"\x1b@".len() + message_type.header().len() + message_len_be.len() + body.len());
+        dst.reserve(b"\x1b@".len() + message_type.header().len() + message_len_be.len() + body.len());
+        dst.extend_from_slice(b"\x1b@");
+        dst.extend_from_slice(message_type.header());
+        dst.extend_from_slice(&message_len_be);
+        dst.extend_from_slice(body);
 
-        inner.extend_from_slice(b"\x1b@");
-        inner.extend_from_slice(message_type.header());
-        inner.extend_from_slice(&message_len_be);
-        inner.extend_from_slice(body);
+        Ok(())
+    }
+
+    pub fn to_encoded(&self) -> Result<Bytes, FigMessageEncodeError> {
+        let mut inner: BytesMut = BytesMut::new();
+        self.encode_buf(&mut inner)?;
+        Ok(inner.freeze())
+    }
+
+    pub fn encode(message_type: FigMessageType, body: Bytes) -> Result<Bytes, FigMessageEncodeError> {
+        let msg = Self {
+            inner: Bytes::from(body.to_vec()),
+            message_type,
+        };
+
+        let mut inner: BytesMut = BytesMut::new();
+        msg.encode_buf(&mut inner)?;
 
         Ok(inner.freeze())
     }
 
-    pub fn to_encoded(&self) -> Result<Bytes, FigMessageEncodeError> {
-        FigMessage::encode(self.message_type, &self.inner)
-    }
-
     pub fn parse(src: &mut impl bytes::Buf) -> Result<(usize, FigMessage), FigMessageParseError> {
         if src.remaining() < 10 {
-            return Err(FigMessageParseError::Incomplete(FigMessageComponent::Header));
+            return Err(FigMessageParseError::Incomplete(
+                FigMessageComponent::Header,
+                10 - src.remaining(),
+            ));
         }
 
         let mut header = [0; 2];
@@ -169,19 +193,25 @@ impl FigMessage {
         };
 
         if src.remaining() < size_of::<u64>() {
-            return Err(FigMessageParseError::Incomplete(FigMessageComponent::BodySize));
+            return Err(FigMessageParseError::Incomplete(
+                FigMessageComponent::BodySize,
+                size_of::<u64>() - src.remaining(),
+            ));
         }
 
-        let len = src.get_u64();
+        let len: usize = src.get_u64().try_into()?;
 
-        if src.remaining() < len as usize {
-            return Err(FigMessageParseError::Incomplete(FigMessageComponent::Body));
+        if src.remaining() < len {
+            return Err(FigMessageParseError::Incomplete(
+                FigMessageComponent::Body,
+                len - src.remaining(),
+            ));
         }
 
-        let mut inner = vec![0; len as usize];
+        let mut inner = vec![0; len];
         src.copy_to_slice(&mut inner);
 
-        let message_len = 10 + size_of::<u64>() + len as usize;
+        let message_len = 10 + size_of::<u64>() + len;
 
         Ok((message_len, FigMessage {
             inner: Bytes::from(inner),
@@ -225,7 +255,7 @@ pub trait FigProtobufEncodable: Debug + Send + Sync {
 
 impl<T: Message> FigProtobufEncodable for T {
     fn encode_fig_protobuf(&self) -> Result<Bytes, FigMessageEncodeError> {
-        FigMessage::encode(FigMessageType::Protobuf, &self.encode_to_vec())
+        FigMessage::encode(FigMessageType::Protobuf, self.encode_to_vec().into())
     }
 }
 
