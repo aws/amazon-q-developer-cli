@@ -311,6 +311,7 @@ pub(super) async fn send_message(
     let conversation_state = ConversationState {
         conversation_id,
         user_input_message,
+        history: None,
     };
 
     tokio::spawn(async move {

@@ -77,6 +77,71 @@ pub struct Recommendation {
 pub struct ConversationState {
     pub conversation_id: Option<String>,
     pub user_input_message: UserInputMessage,
+    pub history: Option<Vec<ChatMessage>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ChatMessage {
+    AssistantResponseMessage(AssistantResponseMessage),
+    UserInputMessage(UserInputMessage),
+}
+
+impl TryFrom<ChatMessage> for amzn_codewhisperer_streaming_client::types::ChatMessage {
+    type Error = aws_smithy_types::error::operation::BuildError;
+
+    fn try_from(value: ChatMessage) -> Result<Self, Self::Error> {
+        Ok(match value {
+            ChatMessage::AssistantResponseMessage(message) => {
+                amzn_codewhisperer_streaming_client::types::ChatMessage::AssistantResponseMessage(message.try_into()?)
+            },
+            ChatMessage::UserInputMessage(message) => {
+                amzn_codewhisperer_streaming_client::types::ChatMessage::UserInputMessage(message.into())
+            },
+        })
+    }
+}
+
+impl TryFrom<ChatMessage> for amzn_qdeveloper_streaming_client::types::ChatMessage {
+    type Error = aws_smithy_types::error::operation::BuildError;
+
+    fn try_from(value: ChatMessage) -> Result<Self, Self::Error> {
+        Ok(match value {
+            ChatMessage::AssistantResponseMessage(message) => {
+                amzn_qdeveloper_streaming_client::types::ChatMessage::AssistantResponseMessage(message.try_into()?)
+            },
+            ChatMessage::UserInputMessage(message) => {
+                amzn_qdeveloper_streaming_client::types::ChatMessage::UserInputMessage(message.into())
+            },
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AssistantResponseMessage {
+    pub message_id: Option<String>,
+    pub content: String,
+}
+
+impl TryFrom<AssistantResponseMessage> for amzn_codewhisperer_streaming_client::types::AssistantResponseMessage {
+    type Error = aws_smithy_types::error::operation::BuildError;
+
+    fn try_from(value: AssistantResponseMessage) -> Result<Self, Self::Error> {
+        Self::builder()
+            .content(value.content)
+            .set_message_id(value.message_id)
+            .build()
+    }
+}
+
+impl TryFrom<AssistantResponseMessage> for amzn_qdeveloper_streaming_client::types::AssistantResponseMessage {
+    type Error = aws_smithy_types::error::operation::BuildError;
+
+    fn try_from(value: AssistantResponseMessage) -> Result<Self, Self::Error> {
+        Self::builder()
+            .content(value.content)
+            .set_message_id(value.message_id)
+            .build()
+    }
 }
 
 #[non_exhaustive]

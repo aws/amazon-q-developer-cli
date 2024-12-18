@@ -44,6 +44,9 @@ pub enum Error {
     #[error("{}", SdkErrorDisplay(.0))]
     QDeveloperChatResponseStream(#[from] SdkError<QDeveloperChatResponseStreamError, RawMessage>),
 
+    #[error(transparent)]
+    SmithyBuild(#[from] aws_smithy_types::error::operation::BuildError),
+
     #[error("unsupported action by consolas: {0}")]
     UnsupportedConsolas(&'static str),
 }
@@ -62,6 +65,7 @@ impl Error {
             Error::QDeveloperSendMessage(e) => e.as_service_error().map_or(false, |e| e.is_throttling_error()),
             Error::CodewhispererChatResponseStream(_)
             | Error::QDeveloperChatResponseStream(_)
+            | Error::SmithyBuild(_)
             | Error::UnsupportedConsolas(_) => false,
         }
     }
@@ -77,6 +81,7 @@ impl Error {
             Error::QDeveloperSendMessage(e) => e.as_service_error().is_some(),
             Error::CodewhispererChatResponseStream(_)
             | Error::QDeveloperChatResponseStream(_)
+            | Error::SmithyBuild(_)
             | Error::UnsupportedConsolas(_) => false,
         }
     }
@@ -135,6 +140,7 @@ mod tests {
                 QDeveloperChatResponseStreamError::unhandled("<unhandled>"),
                 raw_message(),
             )),
+            Error::SmithyBuild(aws_smithy_types::error::operation::BuildError::other("<other>")),
             Error::UnsupportedConsolas("test"),
         ]
     }

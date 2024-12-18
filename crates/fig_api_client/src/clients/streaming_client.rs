@@ -86,6 +86,7 @@ impl StreamingClient {
         let ConversationState {
             conversation_id,
             user_input_message,
+            history,
         } = conversation_state;
 
         match &self.0 {
@@ -98,7 +99,12 @@ impl StreamingClient {
                                 user_input_message.into(),
                             ),
                         )
-                        .chat_trigger_type(amzn_codewhisperer_streaming_client::types::ChatTriggerType::Manual);
+                        .chat_trigger_type(amzn_codewhisperer_streaming_client::types::ChatTriggerType::Manual)
+                        .set_history(
+                            history
+                                .map(|v| v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>())
+                                .transpose()?,
+                        );
 
                 Ok(SendMessageOutput::Codewhisperer(
                     client
@@ -114,7 +120,12 @@ impl StreamingClient {
                     .current_message(amzn_qdeveloper_streaming_client::types::ChatMessage::UserInputMessage(
                         user_input_message.into(),
                     ))
-                    .chat_trigger_type(amzn_qdeveloper_streaming_client::types::ChatTriggerType::Manual);
+                    .chat_trigger_type(amzn_qdeveloper_streaming_client::types::ChatTriggerType::Manual)
+                    .set_history(
+                        history
+                            .map(|v| v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>())
+                            .transpose()?,
+                    );
 
                 Ok(SendMessageOutput::QDeveloper(
                     client
@@ -168,7 +179,11 @@ impl RequestId for SendMessageOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::UserInputMessage;
+    use crate::model::{
+        AssistantResponseMessage,
+        ChatMessage,
+        UserInputMessage,
+    };
 
     #[tokio::test]
     async fn create_clients() {
@@ -194,6 +209,7 @@ mod tests {
                     user_input_message_context: None,
                     user_intent: None,
                 },
+                history: None,
             })
             .await
             .unwrap();
@@ -203,5 +219,37 @@ mod tests {
             output_content.push_str(&content);
         }
         assert_eq!(output_content, "Hello! How can I assist you today?");
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn assistant_response() {
+        let client = StreamingClient::new().await.unwrap();
+        let mut response = client
+            .send_message(ConversationState {
+                conversation_id: None,
+                user_input_message: UserInputMessage {
+                    content: "How about rustc?".into(),
+                    user_input_message_context: None,
+                    user_intent: None,
+                },
+                history: Some(vec![
+                    ChatMessage::UserInputMessage(UserInputMessage {
+                        content: "What language is the linux kernel written in, and who wrote it?".into(),
+                        user_input_message_context: None,
+                        user_intent: None,
+                    }),
+                    ChatMessage::AssistantResponseMessage(AssistantResponseMessage {
+                        content: "It is written in C by Linus Torvalds.".into(),
+                        message_id: None,
+                    }),
+                ]),
+            })
+            .await
+            .unwrap();
+
+        while let Some(event) = response.recv().await.unwrap() {
+            println!("{:?}", event);
+        }
     }
 }
