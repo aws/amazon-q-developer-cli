@@ -171,7 +171,6 @@ const sourceFile = project.createSourceFile(
       ` * Do not edit directly! Instead run 'npm run generate-requests' in typescript-api-bindings`,
     );
     writer.writeLine(` */`).blankLine();
-    writer.writeLine(`/* eslint-disable max-len */`).blankLine();
 
     const responses = requestsWithMatchingResponses.map((request) =>
       request.replace("Request", "Response"),
