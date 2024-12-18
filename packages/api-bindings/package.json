@@ -29,7 +29,7 @@
     "@tsconfig/recommended": "^1.0.8",
     "@types/node": "^22.10.1",
     "@typescript/analyze-trace": "^0.10.1",
-    "eslint": "^9.16.0",
+    "eslint": "^9.17.0",
     "lint-staged": "^15.2.10",
     "prettier": "^3.4.2",
     "ts-morph": "^24.0.0",
