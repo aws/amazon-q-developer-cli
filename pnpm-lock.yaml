@@ -10,7 +10,7 @@ importers:
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.8
-        version: 2.1.8(vitest@2.1.8)
+        version: 2.1.8(vitest@2.1.8(@types/node@22.10.1)(@vitest/ui@2.1.8)(jsdom@24.1.0)(terser@5.37.0))
       '@vitest/ui':
         specifier: ^2.1.8
         version: 2.1.8(vitest@2.1.8)
@@ -152,8 +152,8 @@ importers:
         specifier: ^24.0.0
         version: 24.0.0
       ts-proto:
-        specifier: ~2.5.0
-        version: 2.5.0
+        specifier: ~2.6.0
+        version: 2.6.0
       tslib:
         specifier: ^2.8.1
         version: 2.8.1
@@ -599,7 +599,7 @@ importers:
         version: link:../tsconfig
       '@vitest/coverage-v8':
         specifier: ^2.1.8
-        version: 2.1.8(vitest@2.1.8)
+        version: 2.1.8(vitest@2.1.8(@types/node@22.10.1)(@vitest/ui@2.1.8)(jsdom@24.1.0)(terser@5.37.0))
       eslint:
         specifier: ^9.16.0
         version: 9.16.0(jiti@1.21.6)
@@ -631,8 +631,8 @@ importers:
         specifier: workspace:^
         version: link:../packages/tsconfig
       ts-proto:
-        specifier: ^2.5.0
-        version: 2.5.0
+        specifier: ^2.6.0
+        version: 2.6.0
       typescript:
         specifier: ^5.7.2
         version: 5.7.2
@@ -5498,8 +5498,8 @@ packages:
   ts-proto-descriptors@2.0.0:
     resolution: {integrity: sha512-wHcTH3xIv11jxgkX5OyCSFfw27agpInAd6yh89hKG6zqIXnjW9SYqSER2CVQxdPj4czeOhGagNvZBEbJPy7qkw==}
 
-  ts-proto@2.5.0:
-    resolution: {integrity: sha512-QI+rFgj4Th3njPZ8a3HM56kH7S2ZU/ph8MeH8JC3ouhhVe5hVXEG0nAyeHXaOE+gi/8YwCGDORIyNAzdb7Pr4g==}
+  ts-proto@2.6.0:
+    resolution: {integrity: sha512-vMpXqanLw2Y0Mp3NcjV5kM7JSTiKHksJyy7/LCuZmUt7iZ3NBz6Up6b9uQn8cC1RzzMyAk+fBIT7qzoLGgl5kw==}
     hasBin: true
 
   tsconfig-paths@3.15.0:
@@ -8491,7 +8491,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@2.1.8(vitest@2.1.8)':
+  '@vitest/coverage-v8@2.1.8(vitest@2.1.8(@types/node@22.10.1)(@vitest/ui@2.1.8)(jsdom@24.1.0)(terser@5.37.0))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
@@ -11876,7 +11876,7 @@ snapshots:
     dependencies:
       '@bufbuild/protobuf': 2.2.2
 
-  ts-proto@2.5.0:
+  ts-proto@2.6.0:
     dependencies:
       '@bufbuild/protobuf': 2.2.2
       case-anything: 2.1.13
