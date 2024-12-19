@@ -13,8 +13,6 @@ import type {
   PreExecHook,
   PromptHook,
 } from "@aws/amazon-q-developer-cli-proto/local";
-import { State } from "./state.js";
-import { Settings } from "./settings.js";
 
 export type {
   InsertTextRequest,
@@ -26,14 +24,9 @@ export type {
   PostExecHook,
   PreExecHook,
   PromptHook,
-  State,
-  Settings
 };
 
 export interface IpcBackend {
-  state?: State,
-  settings?: Settings,
-
   // Request
   insertText: (sessionId: string, request: InsertTextRequest) => void;
   intercept: (sessionId: string, request: InterceptRequest) => void;
@@ -59,9 +52,3 @@ export interface IpcBackend {
     callback: (notification: InterceptedKeyHook) => void,
   ) => void;
 }
-
-interface FigtermCommands { 
-
-}
-
-interface LocalCommands { }

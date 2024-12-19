@@ -1,5 +1,5 @@
 {
-  "name": "@aws/amazon-q-developer-cli-ipc-backend-core",
+  "name": "@aws/amazon-q-developer-cli-ipc-local",
   "version": "1.0.0",
   "description": "",
   "author": "",
@@ -19,13 +19,13 @@
     "clean": "rm -rf dist/ && rm -rf node_modules/"
   },
   "dependencies": {
+    "@aws/amazon-q-developer-cli-ipc-backend-core": "workspace:^",
     "@aws/amazon-q-developer-cli-proto": "workspace:^"
   },
   "devDependencies": {
     "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
     "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
     "eslint": "^9.16.0",
-    "type-fest": "^4.30.2",
     "typescript": "^5.4.5",
     "vitest": "^2.1.8"
   }
