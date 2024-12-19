@@ -48,7 +48,7 @@
     "@aws/amazon-q-developer-cli-fuzzysort": "workspace:^",
     "@aws/amazon-q-developer-cli-shared": "workspace:^",
     "@amzn/types": "workspace:^",
-    "@types/node": "^22.10.1",
+    "@types/node": "^22.10.2",
     "@types/react": "^18.3.14",
     "@types/react-dom": "^18.3.2",
     "@types/react-window": "^1.8.8",
