@@ -293,8 +293,8 @@ export async function setTheme(
       setCSSProperties(builtInThemes[newTheme], newTheme);
       return;
     }
-    const theme: string | undefined = fig.constants?.themesFolder
-      ? await fread(`${fig.constants.themesFolder}/${newTheme}.json`)
+    const theme: string | undefined = window?.fig?.constants?.themesFolder
+      ? await fread(`${window?.fig?.constants.themesFolder}/${newTheme}.json`)
       : undefined;
 
     if (!theme) {
@@ -307,10 +307,9 @@ export async function setTheme(
 
     // All themes fallback to the dark theme if values are missing
     setCSSProperties({ ...builtInThemes.dark, ...parsedTheme }, "dark");
-  } catch (err) {
+  } catch (e) {
     logger.info(
       "There was an error parsing the theme. Using default dark theme",
-      err,
     );
     setCSSProperties(builtInThemes.dark, "dark");
   }

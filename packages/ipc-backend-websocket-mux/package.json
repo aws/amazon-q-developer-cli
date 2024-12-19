@@ -1,0 +1,32 @@
+{
+  "name": "@aws/amazon-q-developer-cli-ipc-backend-websocket-mux",
+  "version": "1.0.0",
+  "description": "",
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "lint": "eslint src && prettier --check src",
+    "lint:fix": "eslint --fix src tests && prettier --write src tests",
+    "clean": "rm -rf dist/ && rm -rf node_modules/"
+  },
+  "dependencies": {
+    "@aws/amazon-q-developer-cli-ipc-backend-core": "workspace:^",
+    "@aws/amazon-q-developer-cli-proto": "workspace:^"
+  },
+  "devDependencies": {
+    "@aws/amazon-q-developer-cli-eslint-config": "workspace:^",
+    "@aws/amazon-q-developer-cli-tsconfig": "workspace:^",
+    "eslint": "^9.16.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -86,6 +86,7 @@ impl RemoteHookHandler for RemoteHook {
     async fn intercepted_key(
         &mut self,
         _intercepted_key: InterceptedKeyHook,
+        _session_id: &FigtermSessionId,
     ) -> Result<Option<clientbound::response::Response>, Self::Error> {
         Ok(None)
     }

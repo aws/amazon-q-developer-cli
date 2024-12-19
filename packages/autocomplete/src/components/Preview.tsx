@@ -116,7 +116,7 @@ const Preview = ({ selectedItem, position }: PreviewProps) => {
   const maxHeight = getMaxHeight();
   const shellContext: Fig.ShellContext = shellContextSelector(aeState);
 
-  if (!PreviewComponent || position === DescriptionPosition.UNKNOWN) {
+  if (!PreviewComponent || position === "unknown") {
     return <></>;
   }
 

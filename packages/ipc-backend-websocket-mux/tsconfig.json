@@ -1,0 +1,10 @@
+{
+  "extends": [
+    "@aws/amazon-q-developer-cli-tsconfig/base.json",
+    "@aws/amazon-q-developer-cli-tsconfig/dom.json"
+  ],
+  "compilerOptions": {
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}

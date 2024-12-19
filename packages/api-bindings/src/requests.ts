@@ -2,6 +2,8 @@
  * Do not edit directly! Instead run 'npm run generate-requests' in typescript-api-bindings
  */
 
+/* eslint-disable max-len */
+
 import {
   AggregateSessionMetricActionRequest,
   AppendToFileRequest,
