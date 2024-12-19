@@ -50,8 +50,10 @@ impl<T: Message + Default> Decoder for Base64LineCodec<T> {
                 return Err(Error::new(std::io::ErrorKind::Other, err.to_string()));
             },
         };
-        let base64_decoded = BASE64_STANDARD.decode(line).unwrap();
-        let message = T::decode(&*base64_decoded).unwrap();
+        let base64_decoded = BASE64_STANDARD
+            .decode(line)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+        let message = T::decode(&*base64_decoded)?;
         Ok(Some(message))
     }
 }
@@ -93,8 +95,11 @@ mod tests {
 
     use super::*;
 
+    const ENV: &str = include_str!("../../test/data/env.txt");
+    const ALIAS: &str = include_str!("../../test/data/alias.txt");
+
     fn mock_message() -> Hostbound {
-        let environment_variables = include_str!("../../test/env.txt")
+        let environment_variables = ENV
             .lines()
             .filter(|line| !line.starts_with('#'))
             .map(|line| {
@@ -124,7 +129,7 @@ mod tests {
                         qterm_version: Some(env!("CARGO_PKG_VERSION").into()),
                         preexec: Some(false),
                         osc_lock: Some(false),
-                        alias: Some(include_str!("../../test/alias.txt").into()),
+                        alias: Some(ALIAS.into()),
                     }),
                 })),
             })),

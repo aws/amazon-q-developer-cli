@@ -1,13 +1,11 @@
 import { useCallback } from "react";
 import logger from "loglevel";
-import { Keybindings, Shell } from "@aws/amazon-q-developer-cli-api-bindings";
-import {
-  SETTINGS,
-  getSetting,
-} from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { Keybindings } from "@aws/amazon-q-developer-cli-api-bindings";
+import { SETTINGS, getSetting } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import { ACTIONS, AutocompleteAction } from "../actions";
 import { useAutocompleteStore } from "../state";
 import { Visibility } from "../state/types";
+import { IpcBackend } from "@aws/amazon-q-developer-cli-ipc-backend-core";
 
 export const setInterceptKeystrokes = (
   intercept: boolean,
@@ -20,6 +18,31 @@ export const setInterceptKeystrokes = (
     globalIntercept,
     currentTerminalSessionId,
   );
+
+export const setInterceptKeystrokesBackend = (
+  ipcBackend: IpcBackend,
+  interceptBoundKeystrokes: boolean,
+  interceptGlobalKeystrokes: boolean = false,
+  currentTerminalSessionId?: string,
+) =>
+  ipcBackend?.intercept(currentTerminalSessionId ?? "", {
+    interceptCommand: {
+      $case: "setFigjsIntercepts",
+      setFigjsIntercepts: {
+        // actions: ACTIONS,
+        actions: [],
+        interceptBoundKeystrokes,
+        interceptGlobalKeystrokes,
+        overrideActions: false,
+      },
+    },
+  });
+// Keybindings.setInterceptKeystrokes(
+//   ACTIONS,
+//   intercept,
+//   globalIntercept,
+//   currentTerminalSessionId,
+// );
 
 enum KeyCode {
   TAB = 48,
@@ -34,6 +57,7 @@ export const useAutocompleteKeypressCallback = (
   toggleDescriptionPopout: () => void,
   shake: () => void,
   changeSize: (direction: Direction) => void,
+  ipcBackend: IpcBackend,
 ): Parameters<typeof Keybindings.pressed>[0] => {
   const {
     suggestions,
@@ -93,7 +117,7 @@ export const useAutocompleteKeypressCallback = (
         visibleState !== Visibility.VISIBLE
       ) {
         if (suggestions.length === 1) {
-          insertTextForItem(suggestions[0]);
+          insertTextForItem(ipcBackend, suggestions[0]);
           return undefined;
         }
         setVisibleState(Visibility.VISIBLE);
@@ -110,34 +134,36 @@ export const useAutocompleteKeypressCallback = (
           navigate(1);
           break;
         case AutocompleteAction.INSERT_SELECTED:
-          insertTextForItem(selectedItem);
+          insertTextForItem(ipcBackend, selectedItem);
           break;
         case AutocompleteAction.INSERT_COMMON_PREFIX:
           try {
-            insertCommonPrefix();
-          } catch (_err) {
+            insertCommonPrefix(ipcBackend);
+          } catch (err) {
             shake();
           }
           break;
         case AutocompleteAction.INSERT_COMMON_PREFIX_OR_NAVIGATE_DOWN:
           try {
-            insertCommonPrefix();
-          } catch (_err) {
+            insertCommonPrefix(ipcBackend);
+          } catch (err) {
             navigate(1);
           }
           break;
         case AutocompleteAction.INSERT_COMMON_PREFIX_OR_INSERT_SELECTED:
           try {
-            insertCommonPrefix();
-          } catch (_err) {
-            insertTextForItem(selectedItem);
+            insertCommonPrefix(ipcBackend);
+          } catch (err) {
+            insertTextForItem(ipcBackend, selectedItem);
           }
           break;
         case AutocompleteAction.INSERT_SELECTED_AND_EXECUTE:
-          insertTextForItem(selectedItem, true);
+          insertTextForItem(ipcBackend, selectedItem, true);
           break;
         case AutocompleteAction.EXECUTE:
-          Shell.insert("\n", undefined, figState.shellContext?.sessionId);
+          ipcBackend?.insertText(figState.shellContext?.sessionId ?? "", {
+            insertion: "\n",
+          });
           break;
         case AutocompleteAction.HIDE_AUTOCOMPLETE:
           setVisibleState(Visibility.HIDDEN_UNTIL_SHOWN);
@@ -196,6 +222,7 @@ export const useAutocompleteKeypressCallback = (
       return undefined;
     },
     [
+      ipcBackend,
       navigate,
       insertCommonPrefix,
       insertTextForItem,

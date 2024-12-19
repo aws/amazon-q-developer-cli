@@ -5,6 +5,11 @@ use std::net::{
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::{
+    Bytes,
+    BytesMut,
+};
+use clap::Args;
 use eyre::{
     Context,
     ContextCompat,
@@ -33,16 +38,10 @@ use fig_proto::local::{
 use fig_proto::mux::{
     self,
     PacketOptions,
-    // Clientbound,
-    // Hostbound,
-    // Packet,
-    // clientbound,
-    // hostbound,
     message_to_packet,
     packet_to_message,
 };
 use fig_proto::remote;
-// use fig_proto::remote::clientbound::response::Response as ClientboundResponse;
 use fig_proto::remote::{
     PseudoterminalExecuteRequest,
     RunProcessRequest,
@@ -60,12 +59,12 @@ use fig_util::{
 use futures::{
     SinkExt,
     StreamExt,
-    TryStreamExt,
-    future,
 };
 use tokio::io::{
     AsyncRead,
+    AsyncReadExt,
     AsyncWrite,
+    AsyncWriteExt,
 };
 use tokio::net::{
     TcpListener,
@@ -73,21 +72,39 @@ use tokio::net::{
     UnixListener,
 };
 use tokio::select;
+use tokio::sync::broadcast;
 use tokio::sync::mpsc::{
     self,
     UnboundedSender,
 };
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::protocol::frame::Payload;
 use tokio_util::codec::{
     FramedRead,
     FramedWrite,
 };
 use tracing::{
+    debug,
     error,
     info,
+    warn,
 };
 
-async fn accept_connection(tcp_stream: TcpStream) {
+#[derive(Debug, PartialEq, Eq, Args)]
+pub struct MultiplexerArgs {
+    #[arg(long, default_value_t = false)]
+    websocket: bool,
+    #[arg(long)]
+    port: Option<u16>,
+}
+
+async fn accept_connection(
+    tcp_stream: TcpStream,
+    hostbound_tx: mpsc::Sender<Bytes>,
+    mut clientbound_rx: broadcast::Receiver<Bytes>,
+) {
     let addr = tcp_stream
         .peer_addr()
         .expect("connected streams should have a peer address");
@@ -99,12 +116,61 @@ async fn accept_connection(tcp_stream: TcpStream) {
 
     info!("New WebSocket connection: {addr}");
 
-    let (write, read) = ws_stream.split();
-    // We should not forward messages other than text or binary.
-    read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
-        .forward(write)
-        .await
-        .expect("Failed to forward messages")
+    let (mut write, mut read) = ws_stream.split();
+
+    let clientbound_join: JoinHandle<Result<(), ()>> = tokio::spawn(async move {
+        loop {
+            match clientbound_rx.recv().await {
+                Ok(bytes) => {
+                    if let Err(err) = write.send(Message::Binary(Payload::Shared(bytes))).await {
+                        error!(%err, "error sending to WebSocketStream");
+                        return Err(());
+                    }
+                },
+                Err(broadcast::error::RecvError::Lagged(lag)) => {
+                    warn!(%lag, %addr, "clientbound_rx lagged")
+                },
+                Err(broadcast::error::RecvError::Closed) => {
+                    info!("clientbound_rx closed");
+                    return Err(());
+                },
+            }
+        }
+    });
+
+    let hostbound_join: JoinHandle<Result<(), ()>> = tokio::spawn(async move {
+        loop {
+            match read.next().await {
+                Some(Ok(message)) => {
+                    let bytes = match message {
+                        Message::Binary(Payload::Owned(bytes_mut)) => Some(bytes_mut.freeze()),
+                        Message::Binary(Payload::Shared(bytes)) => Some(bytes),
+                        Message::Binary(Payload::Vec(vec)) => Some(vec.into()),
+                        Message::Text(payload) => Some(payload.as_slice().to_vec().into()),
+                        _ => continue,
+                    };
+                    if let Some(bytes) = bytes {
+                        hostbound_tx.send(bytes).await.unwrap();
+                    }
+                },
+                Some(Err(err)) => {
+                    error!(%err, "WebSocketStream error");
+                    return Err(());
+                },
+                None => {
+                    debug!("WebSocketStream ended");
+                    return Err(());
+                },
+            }
+        }
+    });
+
+    match tokio::try_join!(clientbound_join, hostbound_join) {
+        Ok(_) => {},
+        Err(err) => error!(%err, "error in websocket connection"),
+    }
+
+    info!("Websocket connection closed");
 }
 
 async fn handle_stdio_stream<S: AsyncWrite + AsyncRead + Unpin>(mut stream: S) {
@@ -114,26 +180,50 @@ async fn handle_stdio_stream<S: AsyncWrite + AsyncRead + Unpin>(mut stream: S) {
         .unwrap();
 }
 
-pub async fn execute() -> Result<()> {
+pub async fn execute(args: MultiplexerArgs) -> Result<()> {
     // DO NOT REMOVE, this is needed such that CloudShell does not time out!
-    eprintln!("Starting multiplexer, this is required for AWS CloudShell.");
     info!("starting multiplexer");
+    eprintln!("Starting multiplexer, this is required for AWS CloudShell.");
 
     let (external_stream, internal_stream) = tokio::io::duplex(1024 * 4);
 
-    let stdio = true;
+    if args.websocket {
+        let (clientbound_tx, _) = broadcast::channel::<Bytes>(10);
+        let (hostbound_tx, mut clientbound_rx) = mpsc::channel::<Bytes>(10);
+        let clientbound_tx_clone = clientbound_tx.clone();
 
-    if stdio {
-        tokio::spawn(handle_stdio_stream(external_stream));
+        let (mut external_read, mut external_write) = tokio::io::split(external_stream);
+
+        tokio::spawn(async move {
+            let mut buf = BytesMut::new();
+            while let Ok(n) = external_read.read_buf(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                let _ = clientbound_tx.send(buf.split().freeze());
+                buf.reserve(4096_usize.saturating_sub(buf.capacity()));
+            }
+        });
+
+        tokio::spawn(async move {
+            while let Some(msg) = clientbound_rx.recv().await {
+                external_write.write_all(&msg).await.unwrap();
+            }
+        });
+
+        tokio::spawn(async move {
+            let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), args.port.unwrap_or(8080));
+            let try_socket = TcpListener::bind(&addr).await;
+            let listener = try_socket.expect("Failed to bind");
+            info!("Listening on: {addr}");
+
+            while let Ok((tcp_stream, _)) = listener.accept().await {
+                let clientbound_rx = clientbound_tx_clone.subscribe();
+                tokio::spawn(accept_connection(tcp_stream, hostbound_tx.clone(), clientbound_rx));
+            }
+        });
     } else {
-        let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 8080);
-        let try_socket = TcpListener::bind(&addr).await;
-        let listener = try_socket.expect("Failed to bind");
-        info!("Listening on: {}", addr);
-
-        while let Ok((stream, _)) = listener.accept().await {
-            tokio::spawn(accept_connection(stream));
-        }
+        tokio::spawn(handle_stdio_stream(external_stream));
     }
 
     // Ensure the socket path exists and has correct permissions
@@ -164,8 +254,6 @@ pub async fn execute() -> Result<()> {
     let listener = UnixListener::bind(&socket_path)?;
 
     let (read_half, write_half) = tokio::io::split(internal_stream);
-    // let mut reader = BufferedReader::new(read_half);
-    // let mut writer = BufferedReader::new(write_half);
 
     let packet_codec = Base64LineCodec::<mux::Packet>::new();
     let mut writer = FramedWrite::new(write_half, packet_codec.clone());
@@ -197,11 +285,11 @@ pub async fn execute() -> Result<()> {
                             session.sender.send(msg)?;
                         }
                         Ok(None) => {}
-                        Err(err) => error!("error: {err:?}")
+                        Err(err) => error!(?err, "error")
                     };
                 },
                 Some(Err(err)) => {
-                    error!("Error: {err:?}");
+                    error!(?err, "Error");
                 },
                 None => {
                     info!("{PTY_BINARY_NAME} connection closed");
@@ -211,7 +299,7 @@ pub async fn execute() -> Result<()> {
             encoded = host_receiver.recv() => match encoded {
                 Some(hostbound) => {
                     info!("sending packet");
-                    let packet = message_to_packet(hostbound, &PacketOptions { gzip: false });
+                    let packet = message_to_packet(hostbound, &PacketOptions { gzip: true });
                     writer.send(packet).await.unwrap();
                 },
                 None => bail!("host recv none"),
@@ -233,24 +321,23 @@ async fn handle_client_bound_message(
 
     info!("submessage: {:?}", submessage);
 
-    Ok(Some(match submessage {
-        mux::clientbound::Submessage::Intercept(InterceptRequest {
-            intercept_command: Some(command),
-        }) => match command {
-            InterceptCommand::SetFigjsIntercepts(SetFigjsIntercepts {
+    Ok(match submessage {
+        mux::clientbound::Submessage::Intercept(InterceptRequest { intercept_command }) => match intercept_command {
+            Some(InterceptCommand::SetFigjsIntercepts(SetFigjsIntercepts {
                 intercept_bound_keystrokes,
                 intercept_global_keystrokes,
                 actions,
                 override_actions,
-            }) => FigtermCommand::InterceptFigJs {
+            })) => Some(FigtermCommand::InterceptFigJs {
                 intercept_keystrokes: intercept_bound_keystrokes,
                 intercept_global_keystrokes,
                 actions,
                 override_actions,
+            }),
+            Some(InterceptCommand::SetFigjsVisible(SetFigjsVisible { visible })) => {
+                Some(FigtermCommand::InterceptFigJSVisible { visible })
             },
-            InterceptCommand::SetFigjsVisible(SetFigjsVisible { visible }) => {
-                FigtermCommand::InterceptFigJSVisible { visible }
-            },
+            None => None,
         },
         mux::clientbound::Submessage::InsertText(InsertTextRequest {
             insertion,
@@ -259,16 +346,16 @@ async fn handle_client_bound_message(
             immediate,
             insertion_buffer,
             insert_during_command,
-        }) => FigtermCommand::InsertText {
+        }) => Some(FigtermCommand::InsertText {
             insertion,
             deletion: deletion.map(|d| d as i64),
             offset,
             immediate,
             insertion_buffer,
             insert_during_command,
-        },
+        }),
         mux::clientbound::Submessage::SetBuffer(SetBufferRequest { text, cursor_position }) => {
-            FigtermCommand::SetBuffer { text, cursor_position }
+            Some(FigtermCommand::SetBuffer { text, cursor_position })
         },
         mux::clientbound::Submessage::RunProcess(RunProcessRequest {
             executable,
@@ -298,7 +385,7 @@ async fn handle_client_bound_message(
                     submessage: Some(mux::hostbound::Submessage::RunProcessResponse(response)),
                 };
                 host_sender.send(hostbound)?;
-                return Ok(None);
+                None
             } else {
                 bail!("invalid response type");
             }
@@ -331,13 +418,15 @@ async fn handle_client_bound_message(
                     submessage: Some(mux::hostbound::Submessage::PseudoterminalExecuteResponse(response)),
                 };
                 host_sender.send(hostbound)?;
-                return Ok(None);
+                None
             } else {
                 bail!("invalid response type");
             }
         },
-        _ => bail!("INVALID REQUEST"),
-    }))
+        mux::clientbound::Submessage::Diagnostics(_)
+        | mux::clientbound::Submessage::InsertOnNewCmd(_)
+        | mux::clientbound::Submessage::ReadFile(_) => None,
+    })
 }
 
 struct SimpleHookHandler {
@@ -506,14 +595,5 @@ mod tests {
 
         let received = receiver.try_recv().unwrap();
         println!("{received:?}");
-
-        // let a: Hostbound = FigMessage {
-        //     inner: Bytes::from(received),
-        //     message_type: FigMessageType::Protobuf,
-        // }
-        // .decode()
-        // .unwrap();
-
-        // println!("{a:?}")
     }
 }

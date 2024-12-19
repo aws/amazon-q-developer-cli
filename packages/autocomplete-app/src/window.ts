@@ -1,4 +1,7 @@
-import { getSetting, SETTINGS } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import {
+  getSetting,
+  SETTINGS,
+} from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 
 // Default settings values.
 export const MAX_WIDTH = 320;

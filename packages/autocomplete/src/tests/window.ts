@@ -1,7 +1,4 @@
-import {
-  SETTINGS,
-  updateSettings,
-} from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { SETTINGS, updateSettings } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   getMaxWidth,

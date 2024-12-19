@@ -21,7 +21,6 @@ import {
 } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import { type Types } from "@aws/amazon-q-developer-cli-api-bindings";
 import { detailedDiff } from "deep-object-diff";
-import { trackEvent } from "../telemetry.js";
 import { FigState, initialFigState } from "../fig/hooks";
 import {
   AutocompleteState,
@@ -72,14 +71,14 @@ const getEnvVarsMemoized = memoizeOne(
     Object.fromEntries(
       arr
         .map((pair) => [pair.key, pair.value])
-        .filter((pair) => pair[0] && pair[1]),
+        .filter((pair) => pair[0] && pair[1])
     ),
   ([a], [b]) =>
     a.length === b.length &&
     a.every(
       (elem, index) =>
-        elem.key === b[index].key && elem.value === b[index].value,
-    ),
+        elem.key === b[index].key && elem.value === b[index].value
+    )
 );
 
 const getAliasMemoized = memoizeOne(
@@ -99,12 +98,12 @@ const getAliasMemoized = memoizeOne(
       }, {} as AliasMap);
   },
   ([aliasA, shellPathA], [aliasB, shellPathB]) =>
-    aliasA === aliasB && shellPathA === shellPathB,
+    aliasA === aliasB && shellPathA === shellPathB
 );
 
 const computeSuggestions = (
   state: AutocompleteState,
-  settings: SettingsMap,
+  settings: SettingsMap
 ) => {
   const {
     parserResult,
@@ -116,7 +115,7 @@ const computeSuggestions = (
   const historySuggestions = getFullHistorySuggestions(
     buffer,
     command,
-    processUserIsIn || "",
+    processUserIsIn || ""
   );
 
   const specSuggestions = getAllSuggestions(
@@ -125,7 +124,7 @@ const computeSuggestions = (
     parserResult.passedOptions,
     parserResult.suggestionFlags,
     state.generatorStates,
-    annotations,
+    annotations
   );
 
   let suggestions = specSuggestions;
@@ -134,12 +133,12 @@ const computeSuggestions = (
     const existingNames = new Set();
     suggestions.forEach((suggestion) => {
       makeArray(suggestion.name || []).forEach((name) =>
-        existingNames.add(name || ""),
+        existingNames.add(name || "")
       );
     });
     // Remove suggestions whose names are already in fig's suggestions
     suggestions.push(
-      ...historySuggestions.filter((x) => !existingNames.has(x.name)),
+      ...historySuggestions.filter((x) => !existingNames.has(x.name))
     );
 
     const historyPriorities: Record<string, number> = {};
@@ -156,8 +155,8 @@ const computeSuggestions = (
       priority: Math.max(
         suggestion.priority || 0,
         ...makeArray(suggestion.name).map(
-          (name) => historyPriorities[name || ""] || 0,
-        ),
+          (name) => historyPriorities[name || ""] || 0
+        )
       ),
     }));
   } else if (historyMode === "history_only") {
@@ -168,7 +167,7 @@ const computeSuggestions = (
 
   suggestions = updatePriorities(
     suggestions,
-    command?.tokens[0]?.text ?? "",
+    command?.tokens[0]?.text ?? ""
   ).sort((a, b) => (b.priority || 0) - (a.priority || 0));
 
   const filtered = filterSuggestions(
@@ -176,8 +175,8 @@ const computeSuggestions = (
     parserResult.searchTerm,
     state.fuzzySearchEnabled,
     parserResult.currentArg?.suggestCurrentToken ??
-      getSetting(SETTINGS.ALWAYS_SUGGEST_CURRENT_TOKEN, false),
-    settings,
+    getSetting(SETTINGS.ALWAYS_SUGGEST_CURRENT_TOKEN, false),
+    settings
   );
 
   // Deduplication is relatively slow, so we only do it if there aren't
@@ -195,101 +194,101 @@ const computeSuggestions = (
 
 const updateSuggestions =
   (creator: StateCreator<AutocompleteState>): StateCreator<AutocompleteState> =>
-  (set, get, api) =>
-    creator(
-      (partial, replace) => {
-        const state = get();
-        const update = typeof partial === "function" ? partial(state) : partial;
-        const updatedState = { ...state, ...update };
+    (set, get, api) =>
+      creator(
+        (partial, replace) => {
+          const state = get();
+          const update = typeof partial === "function" ? partial(state) : partial;
+          const updatedState = { ...state, ...update };
 
-        if (logger.getLevel() <= logger.levels.DEBUG) {
-          logger.debug({ diff: detailedDiff(state, updatedState) });
-        }
-
-        logger.debug({ state, updatedState });
-        logger.info({ tokens: updatedState.command?.tokens });
-
-        const suggestionsMayChange =
-          !fieldsAreEqual(updatedState, state, [
-            "command",
-            "fuzzySearchEnabled",
-            "parserResult",
-            "generatorStates",
-            "historyModeEnabled",
-          ]) ||
-          !fieldsAreEqual(updatedState.figState, state.figState, [
-            "cwd",
-            "buffer",
-          ]);
-        const wasVisible = state.visibleState === Visibility.VISIBLE;
-        const willBeVisible = updatedState.visibleState === Visibility.VISIBLE;
-
-        if (
-          updatedState.visibleState === Visibility.HIDDEN_UNTIL_KEYPRESS ||
-          (willBeVisible === wasVisible && !suggestionsMayChange)
-        ) {
-          set(updatedState, replace);
-          return;
-        }
-
-        // Recompute suggestions if we change visibility state or will be visible and
-        // suggestions might change.
-        const { settings } = state;
-        const suggestions = computeSuggestions(updatedState, settings);
-        logger.info("Recomputed suggestions", { suggestions });
-
-        if (willBeVisible && !updatedState.figState.cwd) {
-          trackEvent("autocomplete-no-context", {});
-        }
-
-        // If old state is visible, and user has changed the selected item try to
-        // keep the same item selected.
-        let selectedIndex = 0;
-        let hasChangedIndex = false;
-        const lastSelected = state.suggestions[state.selectedIndex];
-
-        if (state.hasChangedIndex && willBeVisible && lastSelected) {
-          const newIndex = suggestions.findIndex((suggestion: Suggestion) =>
-            fieldsAreEqual(suggestion, lastSelected, [
-              "name",
-              "type",
-              "insertValue",
-              "description",
-            ]),
-          );
-          if (newIndex !== -1) {
-            selectedIndex = newIndex;
-            hasChangedIndex = state.hasChangedIndex;
+          if (logger.getLevel() <= logger.levels.DEBUG) {
+            logger.debug({ diff: detailedDiff(state, updatedState) });
           }
-        }
 
-        set(
-          { ...state, ...update, suggestions, selectedIndex, hasChangedIndex },
-          replace,
-        );
-      },
-      get,
-      api,
-    );
+          logger.debug({ state, updatedState });
+          logger.info({ tokens: updatedState.command?.tokens });
+
+          const suggestionsMayChange =
+            !fieldsAreEqual(updatedState, state, [
+              "command",
+              "fuzzySearchEnabled",
+              "parserResult",
+              "generatorStates",
+              "historyModeEnabled",
+            ]) ||
+            !fieldsAreEqual(updatedState.figState, state.figState, [
+              "cwd",
+              "buffer",
+            ]);
+          const wasVisible = state.visibleState === Visibility.VISIBLE;
+          const willBeVisible = updatedState.visibleState === Visibility.VISIBLE;
+
+          if (
+            updatedState.visibleState === Visibility.HIDDEN_UNTIL_KEYPRESS ||
+            (willBeVisible === wasVisible && !suggestionsMayChange)
+          ) {
+            set(updatedState, replace === false ? false : undefined);
+            return;
+          }
+
+          // Recompute suggestions if we change visibility state or will be visible and
+          // suggestions might change.
+          const { settings } = state;
+          const suggestions = computeSuggestions(updatedState, settings);
+          logger.info("Recomputed suggestions", { suggestions });
+
+          if (willBeVisible && !updatedState.figState.cwd) {
+            /* empty */
+          }
+
+          // If old state is visible, and user has changed the selected item try to
+          // keep the same item selected.
+          let selectedIndex = 0;
+          let hasChangedIndex = false;
+          const lastSelected = state.suggestions[state.selectedIndex];
+
+          if (state.hasChangedIndex && willBeVisible && lastSelected) {
+            const newIndex = suggestions.findIndex((suggestion: Suggestion) =>
+              fieldsAreEqual(suggestion, lastSelected, [
+                "name",
+                "type",
+                "insertValue",
+                "description",
+              ])
+            );
+            if (newIndex !== -1) {
+              selectedIndex = newIndex;
+              hasChangedIndex = state.hasChangedIndex;
+            }
+          }
+
+          set(
+            { ...state, ...update, suggestions, selectedIndex, hasChangedIndex },
+            replace === false ? false : undefined
+          );
+        },
+        get,
+        api
+      );
 
 type Get<T, K, F> = K extends keyof T ? T[K] : F;
 type NamedStateCreator<T> = (
   setState: NamedSetState<T>,
   getState: Get<Mutate<StoreApi<T>, []>, "getState", never>,
-  store: Mutate<StoreApi<T>, []>,
+  store: Mutate<StoreApi<T>, []>
 ) => T;
 
 const log =
   <T>(config: NamedStateCreator<T>): StateCreator<T, [], []> =>
-  (set, get, api) => {
-    const namedSet: NamedSetState<T> = (name, partial, replace) => {
-      console.groupCollapsed(`applying update: ${name}`);
-      logger.info({ name, partial, replace });
-      set(partial, replace);
-      console.groupEnd();
+    (set, get, api) => {
+      const namedSet: NamedSetState<T> = (name, partial, replace) => {
+        console.groupCollapsed(`applying update: ${name}`);
+        logger.info({ name, partial, replace });
+        set(partial, replace === false ? false : undefined);
+        console.groupEnd();
+      };
+      return config(namedSet, get, api);
     };
-    return config(namedSet, get, api);
-  };
 
 export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
   updateSuggestions(
@@ -304,7 +303,7 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
         setParserResult: (
           parserResult: ArgumentParserResult,
           hasBackspacedToNewToken: boolean,
-          largeBufferChange: boolean,
+          largeBufferChange: boolean
         ) =>
           setNamed("setParserResult", (state) => {
             let { visibleState, generatorStates } = state;
@@ -313,7 +312,7 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
             const hasNewArg = !fieldsAreEqual(
               parserResult,
               state.parserResult,
-              ["currentArg", "completionObj"],
+              ["currentArg", "completionObj"]
             );
 
             console.log(parserResult);
@@ -338,8 +337,8 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
                 const insertionTriggeredGenerator = state.generatorStates.some(
                   (oldState, idx) =>
                     oldState.generator ===
-                      state.lastInsertedSuggestion?.generator &&
-                    generatorStates[idx] !== oldState,
+                    state.lastInsertedSuggestion?.generator &&
+                    generatorStates[idx] !== oldState
                 );
 
                 visibleState =
@@ -373,9 +372,9 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
             const isFuzzySearchEnabled = () => {
               // here we decide whether to use user's fuzzy search setting or not
               switch (
-                parserResult.currentArg
-                  ? parserResult.currentArg.filterStrategy
-                  : parserResult.completionObj.filterStrategy
+              parserResult.currentArg
+                ? parserResult.currentArg.filterStrategy
+                : parserResult.completionObj.filterStrategy
               ) {
                 case "prefix":
                   return false;
@@ -401,7 +400,7 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
           setNamed("scroll", (state) => {
             const selectedIndex = Math.max(
               Math.min(index, state.suggestions.length - 1),
-              0,
+              0
             );
             return {
               selectedIndex,
@@ -414,7 +413,7 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
           setNamed("setVisibleState", { visibleState }),
 
         setHistoryModeEnabled: (
-          historyModeEnabled: React.SetStateAction<boolean>,
+          historyModeEnabled: React.SetStateAction<boolean>
         ) =>
           setNamed("setHistoryModeEnabled", (state) => ({
             historyModeEnabled:
@@ -424,7 +423,7 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
           })),
 
         setUserFuzzySearchEnabled: (
-          userFuzzySearchEnabled: React.SetStateAction<boolean>,
+          userFuzzySearchEnabled: React.SetStateAction<boolean>
         ) =>
           setNamed("setUserFuzzySearchEnabled", (state) => ({
             userFuzzySearchEnabled:
@@ -463,14 +462,14 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
 
               if (shellContext.environmentVariables) {
                 figState.environmentVariables = getEnvVarsMemoized(
-                  shellContext.environmentVariables,
+                  shellContext.environmentVariables
                 );
               }
 
               if (shellContext.alias) {
                 figState.aliases = getAliasMemoized(
                   shellContext.alias,
-                  shellContext.shellPath,
+                  shellContext.shellPath
                 );
               }
             }
@@ -500,7 +499,7 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
               const command = getCommandMemoized(
                 bufferSliced,
                 aliases,
-                cursorLocation,
+                cursorLocation
               );
               return { figState, command };
             } catch (err) {
@@ -534,6 +533,6 @@ export const useAutocompleteStore = createWithEqualityFn<AutocompleteState>(
                 : settings,
           })),
       };
-    }),
-  ),
+    })
+  )
 );

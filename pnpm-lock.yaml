@@ -415,8 +415,8 @@ importers:
         specifier: ^9.1.0
         version: 9.1.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       zustand:
-        specifier: ^4.5.5
-        version: 4.5.5(@types/react@18.3.17)(react@18.3.1)
+        specifier: 5.0.2
+        version: 5.0.2(@types/react@18.3.17)(react@18.3.1)(use-sync-external-store@1.2.2(react@18.3.1))
     devDependencies:
       '@aws/amazon-q-developer-cli-eslint-config':
         specifier: workspace:^
@@ -820,8 +820,8 @@ importers:
         specifier: workspace:^
         version: link:../packages/tsconfig
       ts-proto:
-        specifier: ~2.5.0
-        version: 2.5.0
+        specifier: ^2.6.0
+        version: 2.6.0
       typescript:
         specifier: ^5.7.2
         version: 5.7.2
@@ -5705,6 +5705,10 @@ packages:
     resolution: {integrity: sha512-QI+rFgj4Th3njPZ8a3HM56kH7S2ZU/ph8MeH8JC3ouhhVe5hVXEG0nAyeHXaOE+gi/8YwCGDORIyNAzdb7Pr4g==}
     hasBin: true
 
+  ts-proto@2.6.0:
+    resolution: {integrity: sha512-vMpXqanLw2Y0Mp3NcjV5kM7JSTiKHksJyy7/LCuZmUt7iZ3NBz6Up6b9uQn8cC1RzzMyAk+fBIT7qzoLGgl5kw==}
+    hasBin: true
+
   tsconfig-paths@3.15.0:
     resolution: {integrity: sha512-2Ac2RgzDe/cn48GvOe3M+o82pEFewD3UPbyoUHHdKasHwJKjds4fLXWf/Ux5kATBKN20oaFGu+jbElp1pos0mg==}
 
@@ -6212,6 +6216,24 @@ packages:
       immer:
         optional: true
       react:
+        optional: true
+
+  zustand@5.0.2:
+    resolution: {integrity: sha512-8qNdnJVJlHlrKXi50LDqqUNmUbuBjoKLrYQBnoChIbVph7vni+sY+YpvdjXG9YLd/Bxr6scMcR+rm5H3aSqPaw==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      '@types/react': '>=18.0.0'
+      immer: '>=9.0.6'
+      react: '>=18.0.0'
+      use-sync-external-store: '>=1.2.0'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      immer:
+        optional: true
+      react:
+        optional: true
+      use-sync-external-store:
         optional: true
 
   zwitch@2.0.4:
@@ -12176,6 +12198,13 @@ snapshots:
       ts-poet: 6.9.0
       ts-proto-descriptors: 2.0.0
 
+  ts-proto@2.6.0:
+    dependencies:
+      '@bufbuild/protobuf': 2.2.2
+      case-anything: 2.1.13
+      ts-poet: 6.9.0
+      ts-proto-descriptors: 2.0.0
+
   tsconfig-paths@3.15.0:
     dependencies:
       '@types/json5': 0.0.29
@@ -12756,11 +12785,10 @@ snapshots:
       '@types/react': 18.3.14
       react: 18.3.1
 
-  zustand@4.5.5(@types/react@18.3.17)(react@18.3.1):
-    dependencies:
-      use-sync-external-store: 1.2.2(react@18.3.1)
+  zustand@5.0.2(@types/react@18.3.17)(react@18.3.1)(use-sync-external-store@1.2.2(react@18.3.1)):
     optionalDependencies:
       '@types/react': 18.3.17
       react: 18.3.1
+      use-sync-external-store: 1.2.2(react@18.3.1)
 
   zwitch@2.0.4: {}

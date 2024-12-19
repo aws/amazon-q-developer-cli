@@ -2,7 +2,7 @@ import type {
   InsertTextRequest,
   InterceptRequest,
 } from "@aws/amazon-q-developer-cli-proto/figterm";
-import type { Clientbound_RunProcessRequest as RunProcessRequest } from "@aws/amazon-q-developer-cli-proto/remote";
+import type { RunProcessRequest } from "@aws/amazon-q-developer-cli-proto/remote";
 import type {
   RunProcessResponse,
   EditBufferChangedNotification,

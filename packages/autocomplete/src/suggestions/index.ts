@@ -15,6 +15,7 @@ import {
   memoizeOne,
   localProtocol,
   fieldsAreEqual,
+  Func,
 } from "@aws/amazon-q-developer-cli-shared/utils";
 import {
   countEqualOptions,
@@ -84,13 +85,12 @@ const convertStringsToSuggestions = (
   }
 };
 
-export const getStaticArgSuggestions = memoizeOne(
-  (currentArg: Arg | null): Suggestion[] => {
+export const getStaticArgSuggestions: Func<[Arg | null], Suggestion[]> =
+  memoizeOne((currentArg: Arg | null): Suggestion[] => {
     if (!currentArg) return [];
     const { suggestions, isDangerous } = currentArg;
     return convertStringsToSuggestions(isDangerous, suggestions, "arg");
-  },
-);
+  });
 
 // Get all subcommand, options, and other suggestion
 export const getStaticSuggestions = memoizeOne(
@@ -310,13 +310,12 @@ const addAutoExecuteSuggestion = (
     insertValue: "\n",
     description,
   });
-  // Special case handling for when the search term points to a directory path.
   if (
     searchTerm === "." ||
     (searchTerm.endsWith("/") &&
       suggestions.find(
         (x) =>
-          // TODO: use a better way to determine if x.generators. is a folders generator
+          // TODO(fedeci): use a better way to determine if x.generators. is a folders generator
           isTemplateSuggestion(x) && x.context.templateType === "folders",
       ))
   ) {
@@ -502,11 +501,7 @@ export const filterSuggestions = (
     ...nonExactMatches.map(({ suggestion }) => suggestion),
   ];
 
-  if (
-    filteredSuggestions.length > 0 &&
-    !autoExecuteAdded &&
-    !shouldHideAutoExecute
-  ) {
+  if (filteredSuggestions.length > 0 && !autoExecuteAdded) {
     // Eventually add suggest current token suggestion
     filteredSuggestions = addAutoExecuteSuggestion(
       filteredSuggestions,

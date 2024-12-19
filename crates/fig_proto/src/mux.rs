@@ -1,5 +1,6 @@
 use std::io::Read;
 
+use flate2::Compression;
 use prost::Message;
 use rand::{
     Rng,
@@ -30,7 +31,7 @@ pub struct PacketOptions {
 }
 
 pub fn message_to_packet<M: Message>(message: M, options: &PacketOptions) -> Packet {
-    let inner = message.encode_to_vec();
+    let mut inner = message.encode_to_vec();
 
     let mut rng = rand::thread_rng();
     let nonce_length = rng.gen_range(16..=32);
@@ -38,6 +39,10 @@ pub fn message_to_packet<M: Message>(message: M, options: &PacketOptions) -> Pac
     rng.fill_bytes(&mut nonce);
 
     let compression = if options.gzip {
+        let mut gz = flate2::bufread::GzEncoder::new(&*inner, Compression::default());
+        let mut s = Vec::new();
+        gz.read_to_end(&mut s).unwrap();
+        inner = s;
         packet::Compression::Gzip.into()
     } else {
         packet::Compression::None.into()

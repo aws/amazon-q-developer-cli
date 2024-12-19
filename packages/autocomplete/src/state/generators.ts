@@ -2,10 +2,7 @@ import logger from "loglevel";
 import { StoreApi } from "zustand";
 import { sleep } from "@aws/amazon-q-developer-cli-shared/utils";
 import { ArgumentParserResult } from "@aws/amazon-q-developer-cli-autocomplete-parser";
-import {
-  SETTINGS,
-  getSetting,
-} from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
+import { SETTINGS, getSetting } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import { runPipingConsoleMethods } from "../utils";
 import { getTemplateSuggestions } from "../generators/templateSuggestionsGenerator";
 import { getScriptSuggestions } from "../generators/scriptSuggestionsGenerator";
@@ -99,7 +96,7 @@ export const createGeneratorState = (
       // the suggestion created by those two custom generators
       if (generator.filterTemplateSuggestions) {
         request = (async () => {
-          // TODO: use symbols to detect if the the generator fn is filepaths/folders
+          // TODO(fedeci): use symbols to detect if the the generator fn is filepaths/folders
           // If the first custom suggestion has template meta properties then all the custom
           // suggestions are too
           const suggestions = await request;
@@ -135,7 +132,7 @@ export const createGeneratorState = (
       } else if (trigger === undefined) {
         // If trigger is undefined we never trigger, unless debounced in
         // which case we always trigger.
-        // TODO: move debounce to generator.
+        // TODO(sean): move debounce to generator.
         shouldTrigger = Boolean(currentArg?.debounce);
       } else {
         let triggerFn: (a: string, b: string) => boolean;
@@ -170,7 +167,7 @@ export const createGeneratorState = (
           runPipingConsoleMethods(() => {
             shouldTrigger = triggerFn(searchTerm, previousSearchTerm);
           });
-        } catch (_err) {
+        } catch (err) {
           shouldTrigger = true;
         }
       }

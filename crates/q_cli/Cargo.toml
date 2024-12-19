@@ -76,6 +76,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 time.workspace = true
 tokio.workspace = true
+tokio-stream = "0.1.17"
 tokio-tungstenite = "0.25.0"
 tokio-util.workspace = true
 tracing.workspace = true
