@@ -330,6 +330,7 @@ impl fig_remote_ipc::RemoteHookHandler for RemoteHook {
     async fn intercepted_key(
         &mut self,
         InterceptedKeyHook { action, context, .. }: InterceptedKeyHook,
+        _session_id: &FigtermSessionId,
     ) -> Result<Option<clientbound::response::Response>> {
         debug!(%action, "Intercepted Key Action");
 

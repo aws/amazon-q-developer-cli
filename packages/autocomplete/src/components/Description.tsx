@@ -4,12 +4,7 @@ import { getMaxHeight, POPOUT_WIDTH } from "../window";
 import { useAutocompleteStore } from "../state";
 import { AutocompleteAction } from "../actions";
 
-// eslint-disable-next-line react-refresh/only-export-components
-export enum DescriptionPosition {
-  UNKNOWN = "unknown",
-  LEFT = "left",
-  RIGHT = "right",
-}
+export type DescriptionPosition = "unknown" | "left" | "right";
 
 type DescriptionProps = {
   currentArg: Arg | null;
@@ -110,7 +105,7 @@ const Description = ({
     <span className="text-[#8c8c8c]">No description</span>
   );
 
-  if (!hasSuggestions || position === DescriptionPosition.UNKNOWN) {
+  if (!hasSuggestions || position === "unknown") {
     const stackNameAndDescription = !hasSuggestions && name && description;
     return hasSuggestions || name ? (
       <div

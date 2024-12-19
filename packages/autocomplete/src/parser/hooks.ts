@@ -23,7 +23,7 @@ const isBufferDifferenceFromTyping = (
   if (!oldBuffer.startsWith(newBuffer) && !newBuffer.startsWith(oldBuffer)) {
     return false;
   }
-  // TODO: maybe play with this threshold? For now we will allow only a difference
+  // TODO(sean) maybe play with this threshold? For now we will allow only a difference
   // of one character to be considered typing.
   return Math.abs(oldBuffer.length - newBuffer.length) < 2;
 };

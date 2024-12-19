@@ -9,6 +9,21 @@ import "local.proto";
 // all endpoints defined in this file are available to remote servers
 // be careful and keep security in mind
 
+message RunProcessRequest {
+  string executable = 1;
+  repeated string arguments = 2;
+  optional string working_directory = 3;
+  repeated fig_common.EnvironmentVariable env = 4;
+}
+
+message PseudoterminalExecuteRequest {
+  string command = 1;
+  optional string working_directory = 2;
+  optional bool background_job = 3;
+  optional bool is_pipelined = 4;
+  repeated fig_common.EnvironmentVariable env = 5;
+}
+
 message Clientbound {
   oneof packet {
     HandshakeResponse handshake_response = 100;
@@ -41,21 +56,6 @@ message Clientbound {
       RunProcessRequest run_process = 104;
       PseudoterminalExecuteRequest pseudoterminal_execute = 106;
     }
-  }
-
-  message RunProcessRequest {
-    string executable = 1;
-    repeated string arguments = 2;
-    optional string working_directory = 3;
-    repeated fig_common.EnvironmentVariable env = 4;
-  }
-
-  message PseudoterminalExecuteRequest {
-    string command = 1;
-    optional string working_directory = 2;
-    optional bool background_job = 3;
-    optional bool is_pipelined = 4;
-    repeated fig_common.EnvironmentVariable env = 5;
   }
 
   message Response {

@@ -1,0 +1,132 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { PacketReader } from './reader.js';
+import { Packet, Packet_Compression } from '@aws/amazon-q-developer-cli-proto/mux';
+import { MockWebSocket } from './websocket.test.js';
+
+function packetBase64(inner: string): string {
+    const encoder = new TextEncoder();
+    const packet = Packet.encode({
+        version: 0,
+        compression: Packet_Compression.NONE,
+        nonce: new Uint8Array(),
+        inner: encoder.encode(inner)
+    }).finish();
+    return btoa(String.fromCharCode(...packet));
+}
+
+describe('WebSocket Stream Handler', () => {
+    let mockWs: MockWebSocket;
+
+    beforeEach(() => {
+        mockWs = new MockWebSocket('ws://test');
+    });
+
+    describe('parseBase64Line', () => {
+        it('should parse a simple base64 line with LF', async () => {
+            const stream = new PacketReader(mockWs as unknown as WebSocket);
+            const reader = stream.getReader();
+
+            mockWs.emit('message', {
+                data: `${packetBase64("hello")}\n`
+            });
+
+            const { value, done } = await reader.read();
+            expect(done).toBe(false);
+            expect(new TextDecoder().decode(value?.inner)).toBe('hello');
+        });
+
+        it('should parse a simple base64 line with CRLF', async () => {
+            const stream = new PacketReader(mockWs as unknown as WebSocket);
+            const reader = stream.getReader();
+
+            mockWs.emit('message', {
+                data: `${packetBase64("hello")}\r\n`
+            });
+
+            const { value, done } = await reader.read();
+            expect(done).toBe(false);
+            expect(new TextDecoder().decode(value?.inner)).toBe('hello');
+        });
+
+        it('should handle multiple lines in single message', async () => {
+            const stream = new PacketReader(mockWs as unknown as WebSocket);
+            const reader = stream.getReader();
+
+            mockWs.emit('message', {
+                data: `${packetBase64("hello")}\n${packetBase64("world")}\n`
+            });
+
+            const result1 = await reader.read();
+            expect(new TextDecoder().decode(result1.value?.inner)).toBe('hello');
+
+            const result2 = await reader.read();
+            expect(new TextDecoder().decode(result2.value?.inner)).toBe('world');
+        });
+
+        it('should handle split messages', async () => {
+            const stream = new PacketReader(mockWs as unknown as WebSocket);
+            const reader = stream.getReader();
+
+            const base64 = packetBase64("hello world");
+            const first = base64.slice(0, 5);
+            const second = base64.slice(5);
+
+            // Send partial message
+            mockWs.emit('message', {
+                data: first
+            });
+
+            // Complete the message
+            mockWs.emit('message', {
+                data: `${second}\n`
+            });
+
+            const { value, done } = await reader.read();
+            expect(done).toBe(false);
+            expect(new TextDecoder().decode(value?.inner)).toBe('hello world');
+        });
+
+        it('should handle WebSocket close', async () => {
+            const stream = new PacketReader(mockWs as unknown as WebSocket);
+            const reader = stream.getReader();
+
+            mockWs.emit('close', {});
+
+            const { done } = await reader.read();
+            expect(done).toBe(true);
+        });
+
+        it('should handle WebSocket errors', async () => {
+            const stream = new PacketReader(mockWs as unknown as WebSocket);
+            const reader = stream.getReader();
+
+            mockWs.emit('error', new Error('WebSocket error'));
+
+            await expect(reader.read()).rejects.toThrow('WebSocket error');
+        });
+
+        it('should reject invalid base64', async () => {
+            const stream = new PacketReader(mockWs as unknown as WebSocket);
+            const reader = stream.getReader();
+
+            mockWs.emit('message', {
+                data: 'invalid-base64\n'
+            });
+
+            await expect(reader.read()).rejects.toThrow('Invalid base64 string');
+        });
+
+        it('should handle empty lines', async () => {
+            const stream = new PacketReader(mockWs as unknown as WebSocket);
+            const reader = stream.getReader();
+
+            mockWs.emit('message', {
+                data: '\n'
+            });
+
+            const { value, done } = await reader.read();
+            expect(done).toBe(false);
+            expect(new TextDecoder().decode(value?.inner)).toBe('');
+        });
+    });
+});

@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@amzn/tsconfig": "workspace:^",
-    "ts-proto": "^2.5.0",
+    "ts-proto": "^2.6.0",
     "typescript": "^5.7.2"
   }
 }

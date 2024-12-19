@@ -15,8 +15,9 @@ import {
 import { clearSpecIndex } from "@aws/amazon-q-developer-cli-autocomplete-parser";
 import { updateSelectSuggestionKeybindings } from "../actions";
 import { generatorCache } from "../generators/helpers";
+import { IpcBackend } from "@aws/amazon-q-developer-cli-ipc-backend-core";
 
-// TODO: expose Subscription type from API binding library
+// TODO(sean) expose Subscription type from API binding library
 type Unwrap<T> = T extends Promise<infer U> ? U : T;
 type Subscription = Unwrap<
   NonNullable<ReturnType<(typeof EditBufferNotifications)["subscribe"]>>
@@ -46,7 +47,7 @@ export const initialFigState: FigState = {
 
 export const useFigSubscriptionEffect = (
   getSubscription: () => Promise<Subscription> | undefined,
-  deps?: React.DependencyList,
+  deps?: React.DependencyList
 ) => {
   useEffect(() => {
     let unsubscribe: () => void;
@@ -65,84 +66,103 @@ export const useFigSubscriptionEffect = (
 };
 
 export const useFigSettings = (
-  setSettings: React.Dispatch<React.SetStateAction<Record<string, unknown>>>,
+  _setSettings: React.Dispatch<React.SetStateAction<Record<string, unknown>>>
 ) => {
-  useEffect(() => {
-    Settings.current().then((settings) => {
-      setSettings(settings);
-      updateSettings(settings as SettingsMap);
-      updateSelectSuggestionKeybindings(settings as SettingsMap);
-    });
-  }, []);
+  // useEffect(() => {
+  //   Settings.current().then((settings) => {
+  //     setSettings(settings);
+  //     updateSettings(settings as SettingsMap);
+  //     updateSelectSuggestionKeybindings(settings as SettingsMap);
+  //   });
+  // }, []);
 
-  useFigSubscriptionEffect(
-    () =>
-      Settings.didChange.subscribe((notification) => {
-        const settings = JSON.parse(notification.jsonBlob ?? "{}");
-        setSettings(settings);
-        updateSettings(settings);
-        updateSelectSuggestionKeybindings(settings as SettingsMap);
-        return { unsubscribe: false };
-      }),
-    [],
-  );
+  // useFigSubscriptionEffect(
+  //   () =>
+  //     Settings.didChange.subscribe((notification) => {
+  //       const settings = JSON.parse(notification.jsonBlob ?? "{}");
+  //       setSettings(settings);
+  //       updateSettings(settings);
+  //       updateSelectSuggestionKeybindings(settings as SettingsMap);
+  //       return { unsubscribe: false };
+  //     }),
+  //   []
+  // );
 };
 
 export const useFigKeypress = (
   keypressCallback: Parameters<typeof Keybindings.pressed>[0],
+  ipcBackend: IpcBackend
 ) => {
-  useFigSubscriptionEffect(
-    () => Keybindings.pressed(keypressCallback),
-    [keypressCallback],
-  );
+  ipcBackend.onInterceptedKey((keyHook) => {
+    keypressCallback(keyHook)
+  })
 };
 
 export const useFigAutocomplete = (
   setFigState: React.Dispatch<React.SetStateAction<FigState>>,
+  ipcBackend?: IpcBackend
 ) => {
-  useFigSubscriptionEffect(
-    () =>
-      EditBufferNotifications.subscribe((notification) => {
-        const buffer = notification.buffer ?? "";
-        const cursorLocation = notification.cursor ?? buffer.length;
+  console.log("useFigAutocomplete");
+  // useFigSubscriptionEffect(
+  //   () =>
+  //     EditBufferNotifications.subscribe((notification) => {
+  //       const buffer = notification.buffer ?? "";
+  //       const cursorLocation = notification.cursor ?? buffer.length;
 
-        const cwd = notification.context?.currentWorkingDirectory ?? null;
-        const shellContext = notification.context;
-        setFigState((figState) => ({
-          ...figState,
-          buffer,
-          cursorLocation,
-          cwd,
-          shellContext,
-        }));
-        return { unsubscribe: false };
-      }),
-    [],
-  );
+  //       const cwd = notification.context?.currentWorkingDirectory ?? null;
+  //       const shellContext = notification.context;
+  //       setFigState((figState) => ({
+  //         ...figState,
+  //         buffer,
+  //         cursorLocation,
+  //         cwd,
+  //         shellContext,
+  //       }));
+  //       return { unsubscribe: false };
+  //     }),
+  //   [],
+  // );
 
-  useFigSubscriptionEffect(
-    () =>
-      Shell.processDidChange.subscribe((notification) => {
-        const { newProcess } = notification;
-        setFigState((figState) => ({
-          ...figState,
-          processUserIsIn: newProcess?.executable ?? null,
-          cwd: newProcess?.directory ?? null,
-        }));
-        return { unsubscribe: false };
-      }),
-    [],
-  );
+  useEffect(() => {
+    ipcBackend?.onEditBufferChange((notification) => {
+      const buffer = notification.buffer ?? "";
+      const cursorLocation = notification.cursor ?? buffer.length;
+
+      const cwd = notification.context?.currentWorkingDirectory ?? null;
+      const shellContext = notification.context;
+      setFigState((figState) => ({
+        ...figState,
+        buffer,
+        cursorLocation,
+        cwd,
+        shellContext,
+      }));
+    });
+  }, [ipcBackend]);
+
+  // useFigSubscriptionEffect(
+  //   () =>
+  //     Shell.processDidChange.subscribe((notification) => {
+  //       const { newProcess } = notification;
+  //       setFigState((figState) => ({
+  //         ...figState,
+  //         processUserIsIn: newProcess?.executable ?? null,
+  //         cwd: newProcess?.directory ?? null,
+  //       }));
+  //       return { unsubscribe: false };
+  //     }),
+  //   []
+  // );
 };
 
 export const useFigClearCache = () => {
-  useFigSubscriptionEffect(() =>
-    Event.subscribe("clear-cache", () => {
-      console.log("clearing cache");
-      window.resetCaches?.();
-      generatorCache.clear();
-      clearSpecIndex();
-      return { unsubscribe: false };
-    }),
-  );
+  // useFigSubscriptionEffect(() =>
+  //   Event.subscribe("clear-cache", () => {
+  //     console.log("clearing cache");
+  //     window.resetCaches?.();
+  //     generatorCache.clear();
+  //     clearSpecIndex();
+  //     return { unsubscribe: false };
+  //   })
+  // );
 };

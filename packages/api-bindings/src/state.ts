@@ -37,7 +37,7 @@ export async function get(key: string) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function set(key: string, value: any): Promise<void> {
+export async function set(key: string, value: unknown): Promise<void> {
   return sendUpdateLocalStateRequest({
     key,
     value: JSON.stringify(value),

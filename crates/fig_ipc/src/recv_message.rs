@@ -41,7 +41,7 @@ where
                     return Ok(Some(message.decode()?));
                 },
                 // If the message is incomplete, read more into the buffer
-                Err(fig_proto::FigMessageParseError::Incomplete(_)) => {
+                Err(fig_proto::FigMessageParseError::Incomplete(_, _)) => {
                     let bytes = self.inner.read_buf(&mut self.buffer).await?;
 
                     // If the buffer is empty, we've reached EOF

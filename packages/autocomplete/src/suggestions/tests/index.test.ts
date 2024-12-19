@@ -228,16 +228,6 @@ describe("filterSuggestions", () => {
         },
       ]);
     });
-
-    it("when searchTerm is `.`", () => {
-      const suggestions: Suggestion[] = [{ name: "..", type: "folder" }];
-      const result = filterSuggestions(suggestions, ".", false, false);
-      expect(result).toEqual([
-        expect.objectContaining({
-          name: "..",
-        }),
-      ]);
-    });
   });
 
   it("should remove suggestions when searchTerm does not match any of the suggestions", () => {

@@ -46,7 +46,6 @@ export function page(
   name: string,
   properties: Record<string, Property>,
 ) {
-  // See more: https://segment.com/docs/connections/spec/page/
   const props = properties;
   props.title = document.title;
   props.path = window.location.pathname;

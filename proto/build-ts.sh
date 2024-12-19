@@ -14,7 +14,7 @@ TS_FLAGS="--plugin=${TS_PROTO} \
             --ts_proto_opt=useExactTypes=false \
             --ts_proto_opt=globalThisPolyfill=true"
 
-API="./fig.proto ./fig_common.proto ./figterm.proto ./remote.proto ./local.proto"
+API="./fig.proto ./fig_common.proto ./figterm.proto ./remote.proto ./local.proto ./mux.proto"
 
 OUT="dist"
 
