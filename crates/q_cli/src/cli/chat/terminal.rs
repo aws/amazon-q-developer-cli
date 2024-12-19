@@ -1,35 +1,40 @@
 use std::io::{
+    self,
+    Result,
     Stderr,
     Stdout,
     Write,
 };
 
-pub enum WriteOutput {
+pub enum StdioOutput {
+    /// [Stderr] is used for interactive output
     Interactive(Stderr),
+    /// [Stdout] is used for non-interactive output
     NonInteractive(Stdout),
 }
 
-// wraps the stderr/stdout handle with a enum type.
-pub fn new(is_interactive: bool) -> WriteOutput {
-    if is_interactive {
-        WriteOutput::Interactive(std::io::stderr())
-    } else {
-        WriteOutput::NonInteractive(std::io::stdout())
+impl StdioOutput {
+    pub fn new(is_interactive: bool) -> StdioOutput {
+        if is_interactive {
+            StdioOutput::Interactive(io::stderr())
+        } else {
+            StdioOutput::NonInteractive(io::stdout())
+        }
     }
 }
 
-impl Write for WriteOutput {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+impl Write for StdioOutput {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
         match self {
-            WriteOutput::Interactive(stderr) => stderr.write(buf),
-            WriteOutput::NonInteractive(stdout) => stdout.write(buf),
+            StdioOutput::Interactive(stderr) => stderr.write(buf),
+            StdioOutput::NonInteractive(stdout) => stdout.write(buf),
         }
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> Result<()> {
         match self {
-            WriteOutput::Interactive(stderr) => stderr.flush(),
-            WriteOutput::NonInteractive(stdout) => stdout.flush(),
+            StdioOutput::Interactive(stderr) => stderr.flush(),
+            StdioOutput::NonInteractive(stdout) => stdout.flush(),
         }
     }
 }

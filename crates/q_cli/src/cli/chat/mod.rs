@@ -40,6 +40,7 @@ use spinners::{
     Spinner,
     Spinners,
 };
+use terminal::StdioOutput;
 use winnow::Partial;
 use winnow::stream::Offset;
 
@@ -74,9 +75,10 @@ pub async fn chat(mut input: String) -> Result<ExitCode> {
 
     if !is_interactive {
         // append to input string any extra info that was provided.
-        stdin.lock().read_to_string(&mut input).unwrap();
+        stdin.lock().read_to_string(&mut input)?;
     }
-    let mut output = terminal::new(is_interactive);
+
+    let mut output = StdioOutput::new(is_interactive);
     let result = try_chat(&mut output, input, is_interactive).await;
 
     if is_interactive {
@@ -129,27 +131,23 @@ async fn try_chat<W: Write>(output: &mut W, mut input: String, interactive: bool
             } else if fig_settings::settings::get_bool_or("chat.greeting.enabled", true) {
                 execute!(
                     output,
-                    style::Print(format!(
-                        "
+                    style::Print(color_print::cstr! {"
 Hi, I'm Amazon Q. I can answer questions about your shell and CLI tools!
 You can include additional context by adding the following to your prompt:
 
-{} to pass your shell history
-{} to pass information about your current git repository
-{} to pass your shell environment
-",
-                        "@history".bold(),
-                        "@git".bold(),
-                        "@env".bold()
-                    ))
+<em>@history</em> to pass your shell history
+<em>@git</em> to pass information about your current git repository
+<em>@env</em> to pass your shell environment
+
+"
+                    })
                 )?;
             }
         }
 
         // Print response as we receive it
         if let Some(rx) = &mut rx {
-            // compiler complains about unused variable for spinner (bad global state usage)
-            let mut _spinner = if interactive {
+            let mut spinner = if interactive {
                 queue!(output, cursor::Hide)?;
                 Some(Spinner::new(Spinners::Dots, "Generating your answer...".to_owned()))
             } else {
@@ -193,7 +191,7 @@ You can include additional context by adding the following to your prompt:
                         },
                         ApiResponse::Error(error) => {
                             if interactive {
-                                _spinner = None;
+                                drop(spinner.take());
                                 queue!(output, cursor::MoveToColumn(0))?;
 
                                 match error {
@@ -232,7 +230,7 @@ You can include additional context by adding the following to your prompt:
                 }
 
                 if !buf.is_empty() && interactive {
-                    _spinner = None;
+                    drop(spinner.take());
                     queue!(
                         output,
                         crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
@@ -248,7 +246,6 @@ You can include additional context by adding the following to your prompt:
                         Ok(parsed) => {
                             offset += parsed.offset_from(&input);
                             output.flush()?;
-                            // output.lock().flush()?;
                             state.newline = state.set_newline;
                             state.set_newline = false;
                         },
@@ -295,26 +292,26 @@ You can include additional context by adding the following to your prompt:
             }
         }
 
-        if !interactive {
-            break Ok(());
-        }
-        loop {
-            let readline = rl.as_mut().unwrap().readline(PROMPT);
-            match readline {
-                Ok(line) => {
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    let _ = rl.as_mut().unwrap().add_history_entry(line.as_str());
-                    input = line;
-                    break;
-                },
-                Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
-                    return Ok(());
-                },
-                Err(err) => {
-                    return Err(err.into());
-                },
+        // rl is Some if the chat is interactive
+        if let Some(rl) = rl.as_mut() {
+            loop {
+                let readline = rl.readline(PROMPT);
+                match readline {
+                    Ok(line) => {
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        let _ = rl.add_history_entry(line.as_str());
+                        input = line;
+                        break;
+                    },
+                    Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
+                        return Ok(());
+                    },
+                    Err(err) => {
+                        return Err(err.into());
+                    },
+                }
             }
         }
     }
