@@ -103,4 +103,4 @@ assert_cmd = "2.0"
 criterion = "0.5.1"
 insta.workspace = true
 paste = "1.0.11"
-predicates = "3.0"
+predicates = "3.1"
