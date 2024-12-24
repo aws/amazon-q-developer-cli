@@ -55,7 +55,7 @@ futures-util = { version = "0.3.30", default-features = false, features = [
   "std",
 ] }
 async-lock = { version = "3.3.0", optional = true }
-async-broadcast = "0.7.0"
+async-broadcast = "0.7.2"
 async-executor = { version = "1.11.0", optional = true }
 blocking = { version = "1.6.0", optional = true }
 async-task = { version = "4.7.1", optional = true }
