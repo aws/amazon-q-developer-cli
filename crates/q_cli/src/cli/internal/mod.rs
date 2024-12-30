@@ -68,6 +68,7 @@ use fig_util::{
     CLI_BINARY_NAME,
     directories,
 };
+use multiplexer::MultiplexerArgs;
 use rand::distributions::{
     Alphanumeric,
     DistString,
@@ -285,7 +286,7 @@ pub enum InternalSubcommand {
         #[arg(long, allow_hyphen_values = true)]
         suggestion: String,
     },
-    Multiplexer,
+    Multiplexer(MultiplexerArgs),
 }
 
 const BUFFER_SIZE: usize = 1024;
@@ -853,7 +854,7 @@ impl InternalSubcommand {
             InternalSubcommand::InlineShellCompletionAccept { buffer, suggestion } => {
                 Ok(inline_shell_completion_accept(buffer, suggestion).await)
             },
-            InternalSubcommand::Multiplexer => match multiplexer::execute().await {
+            InternalSubcommand::Multiplexer(args) => match multiplexer::execute(args).await {
                 Ok(_) => {
                     error!("quitting multiplexer");
                     Ok(ExitCode::SUCCESS)

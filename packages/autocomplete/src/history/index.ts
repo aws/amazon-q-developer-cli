@@ -43,7 +43,8 @@ type HistoryArgValues = {
 
 type HistoryValueIndex = Record<
   string,
-  Internal.Subcommand<HistoryArgValues, unknown, unknown>
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  Internal.Subcommand<HistoryArgValues, {}, {}>
 >;
 
 type HistorySource = {
@@ -208,7 +209,7 @@ export const loadHistorySource = async (
             true,
             historyLogger,
           );
-        } catch (_err) {
+        } catch (err) {
           // skip errors in parsing commands.
         }
       }

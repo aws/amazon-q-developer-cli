@@ -4,6 +4,7 @@ import { Command } from "@aws/amazon-q-developer-cli-shell-parser";
 import { SettingsMap } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
 import { FigState } from "../fig/hooks";
 import { GeneratorState } from "../generators/helpers";
+import { IpcBackend } from "@aws/amazon-q-developer-cli-ipc-backend-core";
 
 export enum Visibility {
   VISIBLE = "visible",
@@ -37,8 +38,12 @@ type AutocompleteActions = {
     suggestion: Suggestion,
     isFullCompletion: boolean,
   ) => void;
-  insertTextForItem: (item: Suggestion, execute?: boolean) => void;
-  insertCommonPrefix: () => void;
+  insertTextForItem: (
+    ipcBackend: IpcBackend,
+    item: Suggestion,
+    execute?: boolean,
+  ) => void;
+  insertCommonPrefix: (ipcBackend: IpcBackend) => void;
   setHistoryModeEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   setUserFuzzySearchEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   setSettings: React.Dispatch<React.SetStateAction<SettingsMap>>;

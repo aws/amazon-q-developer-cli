@@ -1,6 +1,3 @@
-// Added while thiserror + clippy are having lifetime issues
-#![expect(clippy::needless_lifetimes)]
-
 use std::io::Write;
 
 use crossterm::style::{

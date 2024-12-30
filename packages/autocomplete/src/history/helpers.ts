@@ -188,7 +188,7 @@ export const walkSubcommand = <
       (state, annotation) => {
         const { text, type } = annotation;
         const name =
-          "tokenName" in annotation ? (annotation.tokenName ?? text) : text;
+          "tokenName" in annotation ? annotation.tokenName ?? text : text;
 
         if (type === TokenType.Subcommand) {
           if (!state.subcommand.subcommands[name]) {

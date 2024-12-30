@@ -55,6 +55,7 @@ pub trait RemoteHookHandler {
     async fn intercepted_key(
         &mut self,
         intercepted_key: InterceptedKeyHook,
+        session_id: &FigtermSessionId,
     ) -> Result<Option<clientbound::response::Response>, Self::Error>;
 
     async fn account_info(&mut self) -> Result<Option<clientbound::response::Response>, Self::Error>;

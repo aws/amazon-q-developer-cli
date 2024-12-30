@@ -273,7 +273,7 @@ pub async fn handle_remote_ipc(
                                         if let Some(shell_context) = &intercepted_key.context {
                                             hook.shell_context(shell_context, session_id).await;
                                         }
-                                        hook.intercepted_key(intercepted_key).await
+                                        hook.intercepted_key(intercepted_key, session_id).await
                                     },
                                     hostbound::request::Request::AccountInfo(_) => hook.account_info().await,
                                     hostbound::request::Request::StartExchangeCredentials(_) => hook.start_exchange_credentials().await,

@@ -275,7 +275,7 @@ impl Cli {
             log_file_path: match self.subcommand {
                 Some(CliRootCommands::Chat { .. }) => Some("chat.log".to_owned()),
                 Some(CliRootCommands::Translate(..)) => Some("translate.log".to_owned()),
-                Some(CliRootCommands::Internal(InternalSubcommand::Multiplexer)) => Some("mux.log".to_owned()),
+                Some(CliRootCommands::Internal(InternalSubcommand::Multiplexer(_))) => Some("mux.log".to_owned()),
                 _ => match fig_log::get_log_level_max() >= Level::DEBUG {
                     true => Some("cli.log".to_owned()),
                     false => None,

@@ -1,6 +1,5 @@
 import logger from "loglevel";
 import { StoreApi } from "zustand";
-import { Shell } from "@aws/amazon-q-developer-cli-api-bindings";
 import { SpecLocationSource } from "@fig/autocomplete-shared";
 import {
   SpecLocation,
@@ -12,7 +11,6 @@ import {
   ensureTrailingSlash,
 } from "@aws/amazon-q-developer-cli-shared/utils";
 import { SETTINGS } from "@aws/amazon-q-developer-cli-api-bindings-wrappers";
-import { trackEvent } from "../telemetry";
 import { NamedSetState, AutocompleteState, Visibility } from "./types";
 import {
   isMatchingType,
@@ -21,6 +19,10 @@ import {
 } from "../suggestions/helpers";
 import { updateAutocompleteIndexFromUserInsert } from "../suggestions/sorting";
 import { InsertPrefixError } from "./errors";
+import { IpcBackend } from "@aws/amazon-q-developer-cli-ipc-backend-core";
+import { trackEvent } from "../telemetry";
+import { create } from "@bufbuild/protobuf";
+import { InsertTextRequestSchema } from "@aws/amazon-q-developer-cli-proto/figterm";
 
 const sendTextToTerminal = (
   state: AutocompleteState,
@@ -28,6 +30,7 @@ const sendTextToTerminal = (
   text: string,
   isFullCompletion: boolean,
   rootCommand: string,
+  ipcBackend: IpcBackend,
 ) => {
   const {
     parserResult: { searchTerm },
@@ -78,11 +81,20 @@ const sendTextToTerminal = (
 
   logger.info(`inserting: ${finalStringToInsert}`);
 
-  Shell.insert(
-    finalStringToInsert,
-    { insertionBuffer: buffer },
-    state.figState.shellContext?.sessionId,
+  // insert(
+  //   finalStringToInsert,
+  //   { insertionBuffer: buffer },
+  //   state.figState.shellContext?.sessionId,
+  // );
+
+  ipcBackend?.insertText(
+    state.figState.shellContext?.sessionId ?? "",
+    create(InsertTextRequestSchema, {
+      insertion: finalStringToInsert,
+      // insertionBuffer: buffer,
+    }),
   );
+
   return {
     insertedChars: valToInsert.length,
     insertedCharsFull: finalStringToInsert.length,
@@ -94,6 +106,7 @@ const insertString = (
   item: Suggestion,
   text: string,
   isFullCompletion: boolean,
+  ipcBackend: IpcBackend,
 ) => {
   const { command, updateVisibilityPostInsert, parserResult } = state;
   const { commandIndex, annotations } = parserResult;
@@ -105,6 +118,7 @@ const insertString = (
     text,
     isFullCompletion,
     rootCommand,
+    ipcBackend,
   );
 
   let specLocation: { location: SpecLocation; name: string } | undefined;
@@ -192,8 +206,9 @@ const getFullInsertion = (
 
 const makeInsertTextForItem =
   (get: StoreApi<AutocompleteState>["getState"]) =>
-  (item: Suggestion, execute = false) => {
+  (ipcBackend: IpcBackend, item: Suggestion, execute = false) => {
     const state = get();
+    console.log("here");
     const {
       parserResult: { searchTerm },
       fuzzySearchEnabled,
@@ -220,11 +235,12 @@ const makeInsertTextForItem =
       text += " ";
     }
 
-    return insertString(state, item, text, true);
+    return insertString(state, item, text, true, ipcBackend);
   };
 
 const makeInsertCommonPrefix =
-  (get: StoreApi<AutocompleteState>["getState"]) => () => {
+  (get: StoreApi<AutocompleteState>["getState"]) =>
+  (ipcBackend: IpcBackend) => {
     const state = get();
     const {
       suggestions,
@@ -238,7 +254,7 @@ const makeInsertCommonPrefix =
 
     const queryTerm = getQueryTermForSuggestion(selectedItem, searchTerm);
     if (suggestions.length === 1) {
-      return insertTextForItem(selectedItem);
+      return insertTextForItem(ipcBackend, selectedItem);
     }
 
     let { type: itemType } = selectedItem;
@@ -274,7 +290,7 @@ const makeInsertCommonPrefix =
       if (selectedItem.type === "auto-execute") {
         throw new InsertPrefixError(`Cannot auto-execute using common prefix`);
       }
-      return insertTextForItem(selectedItem);
+      return insertTextForItem(ipcBackend, selectedItem);
     }
 
     const uncasedSharedPrefix = longestCommonPrefix(sameTypeSuggestionNames);
@@ -298,9 +314,9 @@ const makeInsertCommonPrefix =
       if (selectedItem.type === "auto-execute") {
         throw new InsertPrefixError(`Cannot auto-execute using common prefix`);
       }
-      return insertTextForItem(selectedItem);
+      return insertTextForItem(ipcBackend, selectedItem);
     }
-    return insertString(state, selectedItem, text, false);
+    return insertString(state, selectedItem, text, false, ipcBackend);
   };
 
 export const createInsertionState = (
