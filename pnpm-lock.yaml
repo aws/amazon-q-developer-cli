@@ -10,7 +10,7 @@ importers:
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.8
-        version: 2.1.8(vitest@2.1.8)
+        version: 2.1.8(vitest@2.1.8(@types/node@22.10.1)(@vitest/ui@2.1.8)(jsdom@24.1.0)(terser@5.37.0))
       '@vitest/ui':
         specifier: ^2.1.8
         version: 2.1.8(vitest@2.1.8)
@@ -422,8 +422,8 @@ importers:
         specifier: ^9.0.1
         version: 9.0.1(@types/react@18.3.14)(react@18.3.1)
       react-router:
-        specifier: ^7.0.2
-        version: 7.0.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: ^7.1.1
+        version: 7.1.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react-router-dom:
         specifier: ^7.0.2
         version: 7.0.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -584,7 +584,7 @@ importers:
         version: link:../tsconfig
       '@vitest/coverage-v8':
         specifier: ^2.1.8
-        version: 2.1.8(vitest@2.1.8)
+        version: 2.1.8(vitest@2.1.8(@types/node@22.10.1)(@vitest/ui@2.1.8)(jsdom@24.1.0)(terser@5.37.0))
       eslint:
         specifier: ^9.16.0
         version: 9.16.0(jiti@1.21.6)
@@ -4992,6 +4992,16 @@ packages:
       react-dom:
         optional: true
 
+  react-router@7.1.1:
+    resolution: {integrity: sha512-39sXJkftkKWRZ2oJtHhCxmoCrBCULr/HAH4IT5DHlgu/Q0FCPV0S4Lx+abjDTx/74xoZzNYDYbOZWlJjruyuDQ==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+
   react-style-singleton@2.2.1:
     resolution: {integrity: sha512-ZWj0fHEMyWkHzKYUr2Bs/4zU6XLmq9HsgBURm7g5pAVfyn49DgUiNgY2d4lXRlYSiCif9YBGpQleewkcqddc7g==}
     engines: {node: '>=10'}
@@ -8568,7 +8578,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@2.1.8(vitest@2.1.8)':
+  '@vitest/coverage-v8@2.1.8(vitest@2.1.8(@types/node@22.10.1)(@vitest/ui@2.1.8)(jsdom@24.1.0)(terser@5.37.0))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
@@ -11274,6 +11284,16 @@ snapshots:
       react-router: 7.0.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
 
   react-router@7.0.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+    dependencies:
+      '@types/cookie': 0.6.0
+      cookie: 1.0.2
+      react: 18.3.1
+      set-cookie-parser: 2.7.1
+      turbo-stream: 2.4.0
+    optionalDependencies:
+      react-dom: 18.3.1(react@18.3.1)
+
+  react-router@7.1.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       '@types/cookie': 0.6.0
       cookie: 1.0.2
