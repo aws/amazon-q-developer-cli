@@ -11,25 +11,16 @@ pub enum Error {
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
 fn open_macos(url_str: impl AsRef<str>) -> Result<(), Error> {
-    use macos_utils::NSURL;
-    use objc::runtime::{
-        BOOL,
-        NO,
-        Object,
-    };
-    use objc::{
-        class,
-        msg_send,
-        sel,
-        sel_impl,
+    use objc2::ClassType;
+    use objc2_foundation::{
+        NSString,
+        NSURL,
     };
 
-    let url = NSURL::from(url_str.as_ref());
-    let res: BOOL = unsafe {
-        let shared: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
-        msg_send![shared, openURL: url]
-    };
-    if res != NO { Ok(()) } else { Err(Error::Failed) }
+    let url_nsstring = NSString::from_str(url_str.as_ref());
+    let nsurl = unsafe { NSURL::initWithString(NSURL::alloc(), &url_nsstring) }.ok_or(Error::Failed)?;
+    let res = unsafe { objc2_app_kit::NSWorkspace::sharedWorkspace().openURL(&nsurl) };
+    res.then_some(()).ok_or(Error::Failed)
 }
 
 #[cfg(target_os = "windows")]

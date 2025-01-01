@@ -1,26 +1,32 @@
-use cocoa::base::id;
-use cocoa::foundation::NSInteger;
+use objc2_foundation::{
+    NSOperatingSystemVersion,
+    NSProcessInfo,
+};
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct NSOperatingSystemVersion {
-    pub major: NSInteger,
-    pub minor: NSInteger,
-    pub patch: NSInteger,
-}
+#[derive(Clone, Copy, Debug)]
+pub struct OperatingSystemVersion(NSOperatingSystemVersion);
 
-impl NSOperatingSystemVersion {
+impl OperatingSystemVersion {
     pub fn get() -> Self {
-        unsafe {
-            let process_info: id = msg_send![class!(NSProcessInfo), processInfo];
-            msg_send![process_info, operatingSystemVersion]
-        }
+        Self(NSProcessInfo::processInfo().operatingSystemVersion())
+    }
+
+    pub fn major(&self) -> isize {
+        self.0.majorVersion
+    }
+
+    pub fn minor(&self) -> isize {
+        self.0.minorVersion
+    }
+
+    pub fn patch(&self) -> isize {
+        self.0.patchVersion
     }
 }
 
-impl std::fmt::Display for NSOperatingSystemVersion {
+impl std::fmt::Display for OperatingSystemVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+        write!(f, "{}.{}.{}", self.major(), self.minor(), self.patch())
     }
 }
 
@@ -30,10 +36,11 @@ mod tests {
 
     #[test]
     fn test_operating_system_version() {
-        let v = NSOperatingSystemVersion::get();
-        assert!(v.major >= 10);
+        let v = OperatingSystemVersion::get();
+        assert!(v.major() >= 10);
 
         let formatted = format!("{v}");
+        println!("version: {formatted}");
         assert!(formatted.contains('.'));
     }
 }

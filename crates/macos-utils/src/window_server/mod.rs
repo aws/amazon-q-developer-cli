@@ -23,25 +23,7 @@ use accessibility_sys::{
     kAXWindowResizedNotification,
     pid_t,
 };
-use appkit_nsworkspace_bindings::{
-    INSNotification,
-    INSRunningApplication,
-    INSWorkspace,
-    NSApplicationActivationPolicy_NSApplicationActivationPolicyProhibited as ActivationPolicy_Prohibited,
-    NSNotification,
-    NSRunningApplication,
-    NSWorkspace,
-    NSWorkspace_NSWorkspaceRunningApplications,
-    NSWorkspaceActiveSpaceDidChangeNotification,
-    NSWorkspaceDidActivateApplicationNotification,
-    NSWorkspaceDidLaunchApplicationNotification,
-    NSWorkspaceDidTerminateApplicationNotification,
-};
 use ax_observer::AXObserver;
-use cocoa::base::{
-    id,
-    nil,
-};
 use core_foundation::base::TCFType;
 use core_foundation::string::{
     CFString,
@@ -49,12 +31,31 @@ use core_foundation::string::{
 };
 use dashmap::DashMap;
 use flume::Sender;
-use objc::declare::ClassDecl;
-use objc::runtime::{
-    Class,
-    Object,
-    Sel,
-    objc_getClass,
+use objc2::mutability::InteriorMutable;
+use objc2::rc::{
+    Allocated,
+    Retained,
+};
+use objc2::runtime::AnyObject;
+use objc2::{
+    ClassType,
+    DeclaredClass,
+    declare_class,
+    msg_send_id,
+    sel,
+};
+use objc2_app_kit::{
+    NSApplicationActivationPolicy,
+    NSRunningApplication,
+    NSWorkspace,
+    NSWorkspaceActiveSpaceDidChangeNotification,
+    NSWorkspaceDidActivateApplicationNotification,
+    NSWorkspaceDidLaunchApplicationNotification,
+    NSWorkspaceDidTerminateApplicationNotification,
+};
+use objc2_foundation::{
+    NSNotification,
+    NSObject,
 };
 use tracing::{
     debug,
@@ -68,13 +69,8 @@ pub use ui_element::{
     UIElement,
 };
 
-use super::util::notification_center::get_app_from_notification;
-use super::util::{
-    NSArrayRef,
-    NotificationCenter,
-};
-use crate::NSStringRef;
-use crate::util::Id;
+use crate::util::NotificationCenter;
+use crate::util::notification_center::get_app_from_notification;
 
 const BLOCKED_BUNDLE_IDS: &[&str] = &[
     "com.apple.ViewBridgeAuxiliary",
@@ -133,16 +129,12 @@ pub struct AccessibilityCallbackData {
 }
 
 unsafe fn app_bundle_id(app: &NSRunningApplication) -> Option<String> {
-    if matches!(app, NSRunningApplication(nil)) {
-        return None;
-    }
-    let bundle_id = NSStringRef::new(app.bundleIdentifier().0);
-    bundle_id.as_str().map(|s| s.into())
+    app.bundleIdentifier().map(|s| s.to_string())
 }
 
 pub struct WindowServer {
     _inner: Pin<Box<WindowServerInner>>,
-    observer: Id,
+    observer: Retained<ObserverClass>,
 }
 
 // SAFETY: observer id pointer is send + sync safe
@@ -165,25 +157,25 @@ impl WindowServer {
         unsafe {
             center.subscribe_with_observer(
                 NSWorkspaceActiveSpaceDidChangeNotification,
-                **observer,
+                &observer,
                 sel!(activeSpaceChanged:),
             );
 
             center.subscribe_with_observer(
                 NSWorkspaceDidLaunchApplicationNotification,
-                **observer,
+                &observer,
                 sel!(didLaunchApplication:),
             );
 
             center.subscribe_with_observer(
                 NSWorkspaceDidTerminateApplicationNotification,
-                **observer,
+                &observer,
                 sel!(didTerminateApplication:),
             );
 
             center.subscribe_with_observer(
                 NSWorkspaceDidActivateApplicationNotification,
-                **observer,
+                &observer,
                 sel!(didActivateApplication:),
             );
         }
@@ -200,19 +192,84 @@ impl Drop for WindowServer {
     fn drop(&mut self) {
         let center = NotificationCenter::workspace_center();
         unsafe {
-            center.remove_observer(**self.observer);
+            center.remove_observer(&self.observer);
         }
     }
 }
 
 trait WindowServerHandler {
-    fn did_activate_application(&mut self, notif: NSNotification);
-    fn active_space_changed(&mut self, notif: NSNotification);
-    fn did_terminate_application(&mut self, notif: NSNotification);
-    fn did_launch_application(&mut self, notif: NSNotification);
+    fn did_activate_application(&mut self, notif: &NSNotification);
+    fn active_space_changed(&mut self, notif: &NSNotification);
+    fn did_terminate_application(&mut self, notif: &NSNotification);
+    fn did_launch_application(&mut self, notif: &NSNotification);
 }
 
 const OBSERVER_CLASS_NAME: &str = "CodeWhisperer_WindowServerObserver";
+
+pub struct Ivars {
+    handler: *mut c_void,
+}
+
+declare_class! {
+    pub struct ObserverClass;
+
+    // - The superclass NSObject does not have any subclassing requirements.
+    // - Interior mutability is a safe default.
+    // - `ObserverClass` does not implement `Drop`.
+    unsafe impl ClassType for ObserverClass {
+        type Super = NSObject;
+        type Mutability = InteriorMutable;
+        const NAME: &'static str = OBSERVER_CLASS_NAME;
+    }
+
+    impl DeclaredClass for ObserverClass {
+        type Ivars = Ivars;
+    }
+
+    unsafe impl ObserverClass {
+        #[method_id(initWithHandler:)]
+        fn init_with_handler(this: Allocated<Self>, handler: *mut c_void) -> Option<Retained<Self>> {
+            let this = this.set_ivars(Ivars {
+                handler
+            });
+            unsafe { msg_send_id![super(this), init] }
+        }
+
+        #[method(didActivateApplication:)]
+        fn did_activate_application(&self, notif: &NSNotification) {
+            let inner = self.ivars().handler as *mut WindowServerInner;
+            let inner = unsafe { &mut *inner };
+            inner.did_activate_application(notif);
+        }
+
+        #[method(activeSpaceChanged:)]
+        fn active_space_changed(&self, notif: &NSNotification) {
+            let inner = self.ivars().handler as *mut WindowServerInner;
+            let inner = unsafe { &mut *inner };
+            inner.active_space_changed(notif);
+        }
+
+        #[method(didTerminateApplication:)]
+        fn did_terminate_application(&self, notif: &NSNotification) {
+            let inner = self.ivars().handler as *mut WindowServerInner;
+            let inner = unsafe { &mut *inner };
+            inner.did_terminate_application(notif);
+        }
+
+        #[method(didLaunchApplication:)]
+        fn did_launch_application(&self, notif: &NSNotification) {
+            let inner = self.ivars().handler as *mut WindowServerInner;
+            let inner = unsafe { &mut *inner };
+            inner.did_launch_application(notif);
+        }
+    }
+}
+
+impl ObserverClass {
+    pub fn new(handler: *mut c_void) -> Retained<Self> {
+        unsafe { msg_send_id![Self::alloc(), initWithHandler:handler] }
+    }
+}
 
 impl WindowServerInner {
     pub fn new(sender: Sender<WindowServerEvent>) -> Self {
@@ -222,107 +279,24 @@ impl WindowServerInner {
         }
     }
 
-    fn register_observer_class() -> *const Class {
-        let name = std::ffi::CString::new(OBSERVER_CLASS_NAME).unwrap();
-        let existing_class = unsafe { objc_getClass(name.as_ptr()) };
-        if existing_class.is_null() {
-            // TODO: this logic/the above trait could easily be generated by a macro.
-            let mut decl = ClassDecl::new(OBSERVER_CLASS_NAME, class!(NSObject)).unwrap();
-            unsafe {
-                decl.add_ivar::<*mut c_void>("handler");
-
-                extern "C" fn did_activate_application(this: &Object, _: Sel, notif: id) {
-                    unsafe {
-                        let inner = *this.get_ivar::<*mut c_void>("handler") as *mut WindowServerInner;
-                        let inner = <*mut WindowServerInner>::as_mut(inner).unwrap();
-                        inner.did_activate_application(NSNotification(notif));
-                    }
-                }
-
-                decl.add_method(
-                    sel!(didActivateApplication:),
-                    did_activate_application as extern "C" fn(&Object, Sel, id),
-                );
-
-                extern "C" fn active_space_changed(this: &Object, _: Sel, notif: id) {
-                    unsafe {
-                        let inner = *this.get_ivar::<*mut c_void>("handler") as *mut WindowServerInner;
-                        let inner = <*mut WindowServerInner>::as_mut(inner).unwrap();
-                        inner.active_space_changed(NSNotification(notif));
-                    }
-                }
-
-                decl.add_method(
-                    sel!(activeSpaceChanged:),
-                    active_space_changed as extern "C" fn(&Object, Sel, id),
-                );
-
-                extern "C" fn did_terminate_application(this: &Object, _: Sel, notif: id) {
-                    unsafe {
-                        let inner = *this.get_ivar::<*mut c_void>("handler") as *mut WindowServerInner;
-                        let inner = <*mut WindowServerInner>::as_mut(inner).unwrap();
-                        inner.did_terminate_application(NSNotification(notif));
-                    }
-                }
-
-                decl.add_method(
-                    sel!(didTerminateApplication:),
-                    did_terminate_application as extern "C" fn(&Object, Sel, id),
-                );
-
-                extern "C" fn did_launch_application(this: &Object, _: Sel, notif: id) {
-                    unsafe {
-                        let inner = *this.get_ivar::<*mut c_void>("handler") as *mut WindowServerInner;
-                        let inner = <*mut WindowServerInner>::as_mut(inner).unwrap();
-                        inner.did_launch_application(NSNotification(notif));
-                    }
-                }
-
-                decl.add_method(
-                    sel!(didLaunchApplication:),
-                    did_launch_application as extern "C" fn(&Object, Sel, id),
-                );
-
-                extern "C" fn initialize_with_handler(this: &mut Object, _: Sel, x: *mut c_void) {
-                    unsafe {
-                        (*this).set_ivar::<*mut c_void>("handler", x);
-                    }
-                }
-
-                decl.add_method(
-                    sel!(initializeWithHandler:),
-                    initialize_with_handler as extern "C" fn(&mut Object, Sel, *mut c_void),
-                );
-            }
-            decl.register()
-        } else {
-            existing_class
-        }
-    }
-
-    pub fn new_with_observer(sender: Sender<WindowServerEvent>) -> (Pin<Box<Self>>, Id) {
-        let cls = WindowServerInner::register_observer_class();
+    pub fn new_with_observer(sender: Sender<WindowServerEvent>) -> (Pin<Box<Self>>, Retained<ObserverClass>) {
         let pin = Box::pin(Self {
             observers: Default::default(),
             sender,
         });
-
-        let observer: id = unsafe { msg_send![cls, alloc] };
-        let _: () = unsafe {
-            let handler = &*pin as *const Self as *mut c_void;
-            msg_send![observer, initializeWithHandler: handler]
-        };
-        (pin, unsafe { Id::new(observer) })
+        let handler = &*pin as *const Self as *mut c_void;
+        let r = ObserverClass::new(handler);
+        (pin, r)
     }
 
     #[allow(clippy::missing_safety_doc)]
-    unsafe fn register(&mut self, ns_app: NSRunningApplication, from_activation: bool) {
+    unsafe fn register(&mut self, ns_app: &NSRunningApplication, from_activation: bool) {
         if !AXIsProcessTrusted() {
             info!("Cannot register to observer window events without accessibility perms");
             return;
         }
 
-        let bundle_id = match app_bundle_id(&ns_app) {
+        let bundle_id = match app_bundle_id(ns_app) {
             Some(bundle_id) => bundle_id,
             None => {
                 debug!("Ignoring empty bundle id");
@@ -345,7 +319,7 @@ impl WindowServerInner {
             }
         }
 
-        if ns_app.activationPolicy() == ActivationPolicy_Prohibited {
+        if ns_app.activationPolicy() == NSApplicationActivationPolicy::Prohibited {
             debug!("Ignoring application by activation policy");
             return;
         }
@@ -409,12 +383,12 @@ impl WindowServerInner {
 
         unsafe {
             let workspace = NSWorkspace::sharedWorkspace();
-            let app = workspace.frontmostApplication();
-            self.register(app, true);
+            if let Some(app) = workspace.frontmostApplication() {
+                self.register(&app, true);
+            }
 
-            let apps: NSArrayRef<NSRunningApplication> = workspace.runningApplications().into();
-            for app in apps.iter() {
-                self.register(NSRunningApplication(*app as *mut _), false)
+            for app in workspace.runningApplications().iter() {
+                self.register(app, false)
             }
         }
 
@@ -431,20 +405,23 @@ impl WindowServerInner {
 }
 
 impl WindowServerHandler for WindowServerInner {
-    fn did_activate_application(&mut self, notif: NSNotification) {
+    fn did_activate_application(&mut self, notif: &NSNotification) {
         unsafe {
-            if let Some(app) = get_app_from_notification(&notif) {
+            if let Some(app) = get_app_from_notification(notif) {
                 let bundle_id = app_bundle_id(&app);
                 trace!("Activated application {bundle_id:?}");
-                self.register(app, true);
+                self.register(&app, true);
             }
         }
     }
 
-    fn active_space_changed(&mut self, notif: NSNotification) {
+    fn active_space_changed(&mut self, notif: &NSNotification) {
         unsafe {
-            let workspace = NSWorkspace(notif.object());
-            let app = workspace.frontmostApplication();
+            let Some(object) = notif.object() else { return };
+            let workspace: Retained<NSWorkspace> = Retained::<AnyObject>::cast(object);
+            let Some(app) = workspace.frontmostApplication() else {
+                return;
+            };
             let pid = app.processIdentifier();
             let ax_app = AXUIElementCreateApplication(pid);
             let app_elem: UIElement = ax_app.into();
@@ -462,19 +439,17 @@ impl WindowServerHandler for WindowServerInner {
         }
     }
 
-    fn did_terminate_application(&mut self, notif: NSNotification) {
+    fn did_terminate_application(&mut self, notif: &NSNotification) {
         unsafe {
-            if let Some(ns_app) = get_app_from_notification(&notif) {
+            if let Some(ns_app) = get_app_from_notification(notif) {
                 if let Some(bundle_id) = app_bundle_id(&ns_app) {
                     trace!("Terminated application - {bundle_id:?}");
 
-                    let apps: NSArrayRef<NSRunningApplication> =
-                        NSWorkspace::sharedWorkspace().runningApplications().into();
+                    let apps = NSWorkspace::sharedWorkspace().runningApplications();
 
-                    let has_running = apps.iter().any(|running| {
-                        let running = NSRunningApplication(*running as *mut _);
-                        app_bundle_id(&running).map(|id| id == bundle_id).unwrap_or(false)
-                    });
+                    let has_running = apps
+                        .iter()
+                        .any(|running| app_bundle_id(running).map(|id| id == bundle_id).unwrap_or(false));
 
                     if !has_running {
                         trace!("Deregistering app {bundle_id:?} since no other instances are running");
@@ -485,12 +460,12 @@ impl WindowServerHandler for WindowServerInner {
         }
     }
 
-    fn did_launch_application(&mut self, notif: NSNotification) {
+    fn did_launch_application(&mut self, notif: &NSNotification) {
         unsafe {
-            if let Some(app) = get_app_from_notification(&notif) {
+            if let Some(app) = get_app_from_notification(notif) {
                 let bundle_id = app_bundle_id(&app);
                 trace!("Launched application - {bundle_id:?}");
-                self.register(app, true)
+                self.register(&app, true)
             }
         }
     }

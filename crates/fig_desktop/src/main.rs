@@ -71,10 +71,6 @@ use webview::{
 // #[global_allocator]
 // static GLOBAL: Jemalloc = Jemalloc;
 
-#[cfg(target_os = "macos")]
-#[macro_use]
-extern crate objc;
-
 #[derive(Debug, Default)]
 pub struct InterceptState {
     pub intercept_bound_keystrokes: RwLock<bool>,

@@ -115,7 +115,7 @@ impl Constants {
             api_proto_url: "api://localhost".to_string(),
             midway: midway_cookie_path().map_or(false, |p| p.is_file()),
             #[cfg(target_os = "macos")]
-            macos_version: macos_utils::os::NSOperatingSystemVersion::get().to_string(),
+            macos_version: macos_utils::os::OperatingSystemVersion::get().to_string(),
             #[cfg(target_os = "linux")]
             linux: LinuxConstants {
                 display_server: get_display_server(&fig_os_shim::Context::new()).ok(),

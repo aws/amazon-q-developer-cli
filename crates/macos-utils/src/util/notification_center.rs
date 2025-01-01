@@ -1,133 +1,122 @@
-use appkit_nsworkspace_bindings::{
-    INSNotification,
-    INSNotificationCenter,
-    INSWorkspace,
-    NSNotification,
-    NSNotificationCenter,
+use std::ptr::NonNull;
+
+use objc2::rc::Retained;
+use objc2::runtime::{
+    AnyObject,
+    Sel,
+};
+use objc2_app_kit::{
     NSRunningApplication,
     NSWorkspace,
 };
-use block;
-use cocoa::base::{
-    id,
-    nil as NIL,
+use objc2_foundation::{
+    NSDictionary,
+    NSDistributedNotificationCenter,
+    NSNotification,
+    NSNotificationCenter,
+    NSNotificationName,
+    NSOperationQueue,
+    ns_string,
 };
-use cocoa::foundation::NSDictionary;
-use objc::runtime::Object;
 
-use super::NSString;
+enum Inner {
+    NotificationCenter(Retained<NSNotificationCenter>),
+    DistributedNotificationCenter(Retained<NSDistributedNotificationCenter>),
+}
 
 pub struct NotificationCenter {
-    inner: NSNotificationCenter,
+    inner: Inner,
 }
 
 impl NotificationCenter {
-    pub fn new(center: NSNotificationCenter) -> Self {
-        Self { inner: center }
+    pub fn new(center: Retained<NSNotificationCenter>) -> Self {
+        Self {
+            inner: Inner::NotificationCenter(center),
+        }
     }
 
     pub fn workspace_center() -> Self {
-        let shared = unsafe { NSWorkspace::sharedWorkspace().notificationCenter() };
-        Self::new(shared)
+        let center = unsafe { NSWorkspace::sharedWorkspace().notificationCenter() };
+        Self::new(center)
     }
 
     pub fn default_center() -> Self {
-        let default = unsafe { msg_send![class!(NSNotificationCenter), defaultCenter] };
-        Self::new(default)
+        let center = unsafe { NSNotificationCenter::defaultCenter() };
+        Self::new(center)
     }
 
     pub fn distributed_center() -> Self {
-        let distributed_default: *mut Object =
-            unsafe { msg_send![class!(NSDistributedNotificationCenter), defaultCenter] };
-        Self::new(appkit_nsworkspace_bindings::NSNotificationCenter(distributed_default))
+        let center = unsafe { NSDistributedNotificationCenter::defaultCenter() };
+        Self {
+            inner: Inner::DistributedNotificationCenter(center),
+        }
     }
 
     #[allow(clippy::missing_safety_doc)]
-    pub unsafe fn remove_observer(&self, observer: id) {
-        self.inner.removeObserver_(observer);
+    pub unsafe fn remove_observer(&self, observer: &AnyObject) {
+        match &self.inner {
+            Inner::NotificationCenter(i) => i.removeObserver(observer),
+            Inner::DistributedNotificationCenter(i) => i.removeObserver(observer),
+        }
     }
 
-    pub fn post_notification<I, K, V>(&self, notification_name: impl Into<NSString>, info: I)
-    where
-        I: IntoIterator<Item = (K, V)>,
-        K: Into<NSString>,
-        V: Into<NSString>,
-    {
-        let name: NSString = notification_name.into();
+    pub fn post_notification(&self, notification_name: &NSNotificationName, user_info: &NSDictionary) {
         unsafe {
-            let (keys, objs): (Vec<id>, Vec<id>) = info
-                .into_iter()
-                .map(|(k, v)| (k.into().into_inner().autorelease(), v.into().into_inner().autorelease()))
-                .unzip();
-
-            use cocoa::foundation as cf;
-            let keys_array = cf::NSArray::arrayWithObjects(NIL, &keys);
-            let objs_array = cf::NSArray::arrayWithObjects(NIL, &objs);
-
-            let user_info = NSDictionary::dictionaryWithObjects_forKeys_(NIL, objs_array, keys_array);
-
-            self.inner.postNotificationName_object_userInfo_(
-                name.to_appkit_nsstring(),
-                NIL,
-                appkit_nsworkspace_bindings::NSDictionary(user_info),
-            );
+            match &self.inner {
+                Inner::NotificationCenter(i) => {
+                    i.postNotificationName_object_userInfo(notification_name, None, Some(user_info))
+                },
+                Inner::DistributedNotificationCenter(i) => {
+                    i.postNotificationName_object_userInfo(notification_name, None, Some(user_info))
+                },
+            }
         }
     }
 
     #[allow(clippy::missing_safety_doc)]
     pub unsafe fn subscribe_with_observer(
         &mut self,
-        notification_name: impl Into<NSString>,
-        observer: id,
-        callback: objc::runtime::Sel,
+        notification_name: &NSNotificationName,
+        observer: &AnyObject,
+        callback: Sel,
     ) {
-        let name: NSString = notification_name.into();
-        self.inner
-            .addObserver_selector_name_object_(observer, callback, name.to_appkit_nsstring(), NIL);
+        match &self.inner {
+            Inner::NotificationCenter(i) => {
+                i.addObserver_selector_name_object(observer, callback, Some(notification_name), None);
+            },
+            Inner::DistributedNotificationCenter(i) => {
+                i.addObserver_selector_name_object(observer, callback, Some(notification_name), None);
+            },
+        }
     }
 
-    pub fn subscribe<F>(&mut self, notification_name: impl Into<NSString>, queue: Option<id>, f: F)
+    pub fn subscribe<F>(&mut self, notification_name: &NSNotificationName, queue: Option<&NSOperationQueue>, f: F)
     where
-        F: Fn(NSNotification),
+        F: Fn(NonNull<NSNotification>) + Clone + 'static,
     {
-        let mut block = block::ConcreteBlock::new(f);
+        let block = block2::StackBlock::new(f);
+        // addObserverForName copies block for us.
         unsafe {
-            let name: NSString = notification_name.into();
-            // addObserverForName copies block for us.
-            self.inner.addObserverForName_object_queue_usingBlock_(
-                name.to_appkit_nsstring(),
-                NIL,
-                appkit_nsworkspace_bindings::NSOperationQueue(queue.unwrap_or(NIL)),
-                &mut block as *mut _ as *mut std::os::raw::c_void,
-            );
+            match &self.inner {
+                Inner::NotificationCenter(i) => {
+                    i.addObserverForName_object_queue_usingBlock(Some(notification_name), None, queue, &block);
+                },
+                Inner::DistributedNotificationCenter(i) => {
+                    i.addObserverForName_object_queue_usingBlock(Some(notification_name), None, queue, &block);
+                },
+            }
         }
     }
 }
 
-pub unsafe fn get_app_from_notification(notification: &NSNotification) -> Option<NSRunningApplication> {
-    let user_info = notification.userInfo().0;
-
-    if user_info.is_null() {
-        return None;
-    }
-
-    let bundle_id_str: NSString = "NSWorkspaceApplicationKey".into();
-
-    let app = user_info.objectForKey_(***bundle_id_str);
-    if app.is_null() {
-        None
-    } else {
-        Some(NSRunningApplication(app))
-    }
+pub unsafe fn get_app_from_notification(notification: &NSNotification) -> Option<Retained<NSRunningApplication>> {
+    let user_info = notification.userInfo()?;
+    let bundle_id_str = ns_string!("NSWorkspaceApplicationKey");
+    let app = user_info.objectForKey(bundle_id_str);
+    app.map(|app| Retained::<AnyObject>::cast(app))
 }
 
 #[allow(clippy::missing_safety_doc)]
-pub unsafe fn get_user_info_from_notification(notification: &NSNotification) -> Option<id> {
-    let user_info = notification.userInfo().0;
-
-    if user_info.is_null() {
-        return None;
-    }
-
-    Some(user_info)
+pub unsafe fn get_user_info_from_notification(notification: &NSNotification) -> Option<Retained<NSDictionary>> {
+    notification.userInfo()
 }

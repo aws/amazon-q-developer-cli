@@ -59,7 +59,6 @@ globset = "0.4.10"
 indicatif = "0.17.3"
 indoc.workspace = true
 mimalloc.workspace = true
-objc.workspace = true
 once_cell.workspace = true
 owo-colors = "4.0.0"
 parking_lot = "0.12.1"
@@ -90,6 +89,9 @@ nix.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 macos-utils = { path = "../macos-utils" }
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = ["NSRunningApplication"] }
+objc2-foundation.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus = { path = "../dbus" }

@@ -24,7 +24,7 @@
     "preview:autocomplete": "pnpm -C packages/autocomplete preview",
     "preview:dashboard": "pnpm -C packages/dashboard preview",
     "clean": "turbo clean --parallel",
-    "prepare": "husky install",
+    "prepare": "husky",
     "precommit": "lint-staged --config .lintstagedrc.mjs"
   },
   "devDependencies": {

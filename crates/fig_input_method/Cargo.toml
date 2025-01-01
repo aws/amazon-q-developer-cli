@@ -24,14 +24,20 @@ toml.workspace = true
 apple-bundle = "0.1.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc.workspace = true
-cocoa.workspace = true
-libc.workspace = true
-rand.workspace = true
 fig_ipc.workspace = true
 fig_log.workspace = true
 fig_proto.workspace = true
 fig_util.workspace = true
 macos-utils = { path = "../macos-utils" }
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = [
+    "NSApplication",
+    "NSResponder",
+] }
+objc2-foundation = { workspace = true, features = ["NSThread"] }
+objc2-input-method-kit = { workspace = true, features = [
+    "IMKServer",
+    "IMKInputController",
+] }
 tokio.workspace = true
 tracing.workspace = true

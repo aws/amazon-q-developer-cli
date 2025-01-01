@@ -136,9 +136,10 @@ core-graphics.workspace = true
 libc.workspace = true
 macos-utils = { path = "../macos-utils" }
 objc.workspace = true
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = ["NSApplication"] }
+objc2-foundation.workspace = true
 system-configuration = "0.6.0"
-objc-foundation = "0.1.1"
-objc_id = "0.1.1"
 
 [build-dependencies]
 image = "0.25.1"

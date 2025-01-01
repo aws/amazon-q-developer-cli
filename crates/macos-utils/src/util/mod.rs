@@ -1,7 +1,6 @@
 pub mod notification_center;
 mod nsarray;
 mod nsstring;
-mod nsurl;
 
 use std::ops::Deref;
 
@@ -10,15 +9,8 @@ pub use notification_center::{
     NotificationCenter,
     get_user_info_from_notification,
 };
-pub use nsarray::{
-    NSArray,
-    NSArrayRef,
-};
-pub use nsstring::{
-    NSString,
-    NSStringRef,
-};
-pub use nsurl::NSURL;
+pub use nsarray::NSArrayRef;
+pub use nsstring::NSStringRef;
 use objc::rc::StrongPtr;
 use objc::runtime::Object;
 
@@ -29,10 +21,6 @@ pub struct Id(objc::rc::StrongPtr);
 impl Id {
     pub unsafe fn new(ptr: *mut Object) -> Self {
         Self(StrongPtr::new(ptr))
-    }
-
-    pub fn autorelease(self) -> *mut Object {
-        self.0.autorelease()
     }
 }
 
@@ -59,14 +47,6 @@ impl IdRef {
 
     pub fn is_nil(&self) -> bool {
         self.0 == nil
-    }
-
-    /// # Safety
-    ///
-    /// This is unsafe because the caller must ensure that the pointer has exclusive
-    /// access to the object.
-    pub unsafe fn as_mut_ptr(&self) -> *mut Object {
-        self.0 as *mut _
     }
 }
 

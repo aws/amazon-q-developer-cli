@@ -1,25 +1,15 @@
-use appkit_nsworkspace_bindings::{
-    INSRunningApplication,
-    INSURL,
-    INSWorkspace,
-    NSRunningApplication,
-    NSURL,
-    NSWorkspace,
-    NSWorkspace_NSWorkspaceRunningApplications,
-};
-
-use crate::{
-    NSArrayRef,
+use objc2_app_kit::NSWorkspace;
+use objc2_foundation::{
     NSString,
-    NSStringRef,
+    NSURL,
 };
 
 #[derive(Debug)]
 pub struct MacOSApplication {
     pub name: Option<String>,
     pub bundle_identifier: Option<String>,
-    pub process_identifier: i32,
     pub bundle_path: Option<String>,
+    pub process_identifier: libc::pid_t,
 }
 
 impl MacOSApplication {
@@ -37,21 +27,19 @@ impl MacOSApplication {
 pub fn running_applications() -> Vec<MacOSApplication> {
     unsafe {
         let workspace = NSWorkspace::sharedWorkspace();
-
-        let apps: NSArrayRef<NSRunningApplication> = workspace.runningApplications().into();
-        apps.into_iter()
+        let apps = workspace.runningApplications();
+        apps.iter()
             .map(|app| {
-                let application = NSRunningApplication(*app as *mut _);
-
-                let name = NSStringRef::new(application.localizedName().0);
-                let bundle_id = NSStringRef::new(application.bundleIdentifier().0);
-                let bundle_path = NSStringRef::new(application.bundleURL().path().0);
+                let name = app.localizedName().map(|s| s.to_string());
+                let bundle_identifier = app.bundleIdentifier().map(|s| s.to_string());
+                let bundle_path = app.bundleURL().and_then(|url| url.path()).map(|s| s.to_string());
+                let process_identifier = app.processIdentifier();
 
                 MacOSApplication {
-                    name: name.as_str().map(|s| s.to_string()),
-                    bundle_identifier: bundle_id.as_str().map(|s| s.to_string()),
-                    bundle_path: bundle_path.as_str().map(|s| s.to_string()),
-                    process_identifier: application.processIdentifier(),
+                    name,
+                    bundle_identifier,
+                    bundle_path,
+                    process_identifier,
                 }
             })
             .collect()
@@ -61,33 +49,30 @@ pub fn running_applications() -> Vec<MacOSApplication> {
 pub fn running_applications_matching(bundle_identifier: &str) -> Vec<MacOSApplication> {
     running_applications()
         .into_iter()
-        .filter_map(|app| {
-            // todo: use `and_then` for more functional approach
-            if matches!(&app.bundle_identifier, Some(bundle_id) if bundle_id.as_str() == bundle_identifier) {
-                return Some(app);
-            }
-
-            None
-        })
+        .filter(|app| matches!(&app.bundle_identifier, Some(bundle_id) if bundle_id.as_str() == bundle_identifier))
         .collect()
 }
 
 pub fn launch_application(bundle_path: &str) {
-    unsafe {
-        let workspace = NSWorkspace::sharedWorkspace();
+    let bundle_nsstring = NSString::from_str(bundle_path);
+    let bundle_nsurl = unsafe { NSURL::fileURLWithPath_isDirectory(&bundle_nsstring, true) };
 
-        let str: NSString = bundle_path.into();
-        let url = NSURL::fileURLWithPath_isDirectory_(str.to_appkit_nsstring(), objc::runtime::YES);
+    let workspace = unsafe { NSWorkspace::sharedWorkspace() };
+    unsafe { workspace.openURL(&bundle_nsurl) };
+}
 
-        workspace.openURL_(url);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_running_applications() {
+        let applications = running_applications();
+        println!("{:#?}", applications);
     }
 }
 
-// #[test]
-// fn test() {
-//     // let out = dbg!(running_applications());
-//     launch_application("/Applications/Alacritty.app")
-// }
+// launch_application("/Applications/Alacritty.app")
 
 // #[test]
 // fn test_terminate() {

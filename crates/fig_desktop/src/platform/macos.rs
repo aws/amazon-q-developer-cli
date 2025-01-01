@@ -43,7 +43,6 @@ use macos_utils::window_server::{
     UIElement,
 };
 use macos_utils::{
-    NSString,
     NotificationCenter,
     WindowServer,
     WindowServerEvent,
@@ -64,6 +63,11 @@ use objc::{
     msg_send,
     sel,
     sel_impl,
+};
+use objc2_foundation::{
+    NSDictionary,
+    NSOperationQueue,
+    ns_string,
 };
 use once_cell::sync::Lazy;
 use parking_lot::{
@@ -132,8 +136,8 @@ static UNMANAGED: Lazy<Unmanaged> = Lazy::new(|| Unmanaged {
 static ACCESSIBILITY_ENABLED: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(accessibility_is_enabled()));
 
 static MACOS_VERSION: Lazy<semver::Version> = Lazy::new(|| {
-    let version = macos_utils::os::NSOperatingSystemVersion::get();
-    semver::Version::new(version.major as u64, version.minor as u64, version.patch as u64)
+    let version = macos_utils::os::OperatingSystemVersion::get();
+    semver::Version::new(version.major() as u64, version.minor() as u64, version.patch() as u64)
 });
 
 pub static ACTIVATION_POLICY: Mutex<ActivationPolicy> = Mutex::new(ActivationPolicy::Regular);
@@ -323,12 +327,9 @@ impl PlatformStateImpl {
 
                 let accessibility_proxy = self.proxy.clone();
                 let mut distributed = NotificationCenter::distributed_center();
-                let ax_notification_name: NSString = "com.apple.accessibility.api".into();
-                let queue: id = unsafe {
-                    let queue: id = msg_send![class!(NSOperationQueue), alloc];
-                    msg_send![queue, init]
-                };
-                distributed.subscribe(ax_notification_name, Some(queue), move |_| {
+                let ax_notification_name = ns_string!("com.apple.accessibility.api");
+                let queue = unsafe { NSOperationQueue::new() };
+                distributed.subscribe(ax_notification_name, Some(&queue), move |_| {
                     accessibility_proxy
                         .clone()
                         .send_event(Event::PlatformBoundEvent(
@@ -687,8 +688,8 @@ impl PlatformStateImpl {
         if !is_xterm && supports_ime {
             tracing::debug!("Sending notif com.amazon.codewhisperer.edit_buffer_updated");
             NotificationCenter::distributed_center().post_notification(
-                "com.amazon.codewhisperer.edit_buffer_updated",
-                std::iter::empty::<(&str, &str)>(),
+                ns_string!("com.amazon.codewhisperer.edit_buffer_updated"),
+                &NSDictionary::new(),
             );
         } else {
             let caret = if is_xterm {

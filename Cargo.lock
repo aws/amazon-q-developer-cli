@@ -2814,8 +2814,9 @@ dependencies = [
  "nix 0.29.0",
  "notify",
  "objc",
- "objc-foundation",
- "objc_id",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "once_cell",
  "parking_lot",
  "paste",
@@ -2921,16 +2922,16 @@ name = "fig_input_method"
 version = "1.5.1"
 dependencies = [
  "apple-bundle",
- "cocoa",
  "fig_ipc",
  "fig_log",
  "fig_proto",
  "fig_util",
- "libc",
  "macos-utils",
- "objc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-input-method-kit",
  "plist",
- "rand 0.8.5",
  "serde",
  "tokio",
  "toml",
@@ -3224,7 +3225,9 @@ dependencies = [
  "libc",
  "macos-utils",
  "nix 0.29.0",
- "objc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "paste",
  "rand 0.8.5",
  "regex",
@@ -5001,15 +5004,19 @@ dependencies = [
  "accessibility",
  "accessibility-sys",
  "appkit-nsworkspace-bindings",
- "block",
+ "block2",
  "cocoa",
  "core-foundation 0.10.0",
  "core-graphics",
  "dashmap",
  "flume",
  "fnv",
+ "libc",
  "nix 0.29.0",
  "objc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "once_cell",
  "tokio",
  "tracing",
@@ -5722,17 +5729,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "objc-foundation"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1add1b659e36c9607c7aab864a76c7a4c2760cd0cd2e120f3fb8b952c7e22bf9"
-dependencies = [
- "block",
- "objc",
- "objc_id",
-]
-
-[[package]]
 name = "objc-sys"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5847,6 +5843,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-input-method-kit"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12e306c83555cdab87755f31b45f8d9a657081edb15fc89c74a5bb4175ebd487"
+dependencies = [
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+]
+
+[[package]]
 name = "objc2-link-presentation"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5949,15 +5956,6 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
-]
-
-[[package]]
-name = "objc_id"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c92d4ddb4bd7b50d730c215ff871754d0da6b2178849f8a2a2ab69712d0c073b"
-dependencies = [
- "objc",
 ]
 
 [[package]]
@@ -6760,7 +6758,9 @@ dependencies = [
  "macos-utils",
  "mimalloc",
  "nix 0.29.0",
- "objc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "once_cell",
  "owo-colors 4.1.0",
  "parking_lot",

@@ -35,6 +35,7 @@ appkit-nsworkspace-bindings = { path = "crates/macos-utils/appkit-nsworkspace-bi
 async-trait = "0.1.74"
 aws-types = "1.2.0"
 base64 = "0.22.1"
+block2 = "0.5.1"
 bytes = "1.5.0"
 bitflags = { version = "2.6.0", features = ["serde"] }
 bstr = "1.1.0"
@@ -86,6 +87,10 @@ nix = { version = "0.29.0", features = [
     "user",
 ] }
 objc = "0.2.7"
+objc2 = "0.5.2"
+objc2-app-kit = "0.2.2"
+objc2-foundation = "0.2.2"
+objc2-input-method-kit = "0.2.2"
 once_cell = { version = "1.18.0", features = ["parking_lot"] }
 percent-encoding = "2.2.0"
 portable-pty = "0.8.1"

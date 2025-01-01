@@ -1,22 +1,12 @@
 use std::path::PathBuf;
 
-use core_foundation::base::TCFType;
-use core_foundation::bundle::{
-    CFBundleCopyBundleURL,
-    CFBundleGetMainBundle,
-};
-use core_foundation::url::{
-    CFURL,
-    CFURLRef,
-};
+use objc2_foundation::NSBundle;
 
 pub fn get_bundle_path() -> Option<PathBuf> {
-    let url: CFURLRef = unsafe { CFBundleCopyBundleURL(CFBundleGetMainBundle()) };
-    if url.is_null() {
-        return None;
-    }
-    let url = unsafe { CFURL::wrap_under_get_rule(url) };
-    url.to_path()
+    let main = NSBundle::mainBundle();
+    let url = unsafe { main.bundleURL() };
+    let path = unsafe { url.path() }?;
+    Some(path.to_string().into())
 }
 
 pub fn get_bundle_path_for_executable(executable: &str) -> Option<PathBuf> {

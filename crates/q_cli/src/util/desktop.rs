@@ -24,81 +24,69 @@ pub struct LaunchArgs {
     pub verbose: bool,
 }
 
+#[cfg(target_os = "macos")]
 pub fn desktop_app_running() -> bool {
-    cfg_if::cfg_if! {
-        if #[cfg(target_os = "macos")] {
-            use appkit_nsworkspace_bindings::NSRunningApplication;
-            use macos_utils::{
-                NSArray,
-                NSString,
-            };
-            use objc::{
-                class,
-                msg_send,
-                sel,
-                sel_impl,
-            };
-            use sysinfo::{
-                ProcessRefreshKind,
-                RefreshKind,
-                System,
-            };
-            use std::ffi::OsString;
+    use std::ffi::OsString;
 
-            use fig_util::consts::{
-                APP_PROCESS_NAME,
-                APP_BUNDLE_ID
-            };
+    use fig_util::consts::{
+        APP_BUNDLE_ID,
+        APP_PROCESS_NAME,
+    };
+    use objc2_app_kit::NSRunningApplication;
+    use objc2_foundation::ns_string;
+    use sysinfo::{
+        ProcessRefreshKind,
+        RefreshKind,
+        System,
+    };
 
-            let bundle_id = NSString::from(APP_BUNDLE_ID);
-            #[allow(unexpected_cfgs)]
-            let running_applications: NSArray<NSRunningApplication> = unsafe {
-                msg_send![
-                    class!(NSRunningApplication),
-                    runningApplicationsWithBundleIdentifier: bundle_id
-                ]
-            };
+    let bundle_id = ns_string!(APP_BUNDLE_ID);
+    let running_applications = unsafe { NSRunningApplication::runningApplicationsWithBundleIdentifier(bundle_id) };
 
-            if !running_applications.is_empty() {
-                return true;
-            }
-
-            // Fallback to process name check
-            let app_process_name= OsString::from(APP_PROCESS_NAME);
-            let system = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
-            let mut processes = system.processes_by_exact_name(&app_process_name);
-            processes.next().is_some()
-        } else if #[cfg(target_os = "windows")] {
-            use crate::consts::APP_PROCESS_NAME;
-
-            let output = match std::process::Command::new("tasklist.exe")
-                .args(["/NH", "/FI", "IMAGENAME eq fig_desktop.exe"])
-                .output()
-            {
-                Ok(output) => output,
-                Err(_) => return false,
-            };
-
-            match std::str::from_utf8(&output.stdout) {
-                Ok(result) => result.contains(CODEWHISPERER_DESKTOP_PROCESS_NAME),
-                Err(_) => false,
-            }
-        } else {
-            use sysinfo::{
-                ProcessRefreshKind,
-                RefreshKind,
-                System,
-            };
-            use std::ffi::OsString;
-
-            use fig_util::consts::APP_PROCESS_NAME;
-
-            let s = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
-            let app_process_name = OsString::from(APP_PROCESS_NAME);
-            let mut processes = s.processes_by_exact_name(&app_process_name);
-            processes.next().is_some()
-        }
+    if !running_applications.is_empty() {
+        return true;
     }
+
+    // Fallback to process name check
+    let app_process_name = OsString::from(APP_PROCESS_NAME);
+    let system = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+    let mut processes = system.processes_by_exact_name(&app_process_name);
+    processes.next().is_some()
+}
+
+#[cfg(target_os = "windows")]
+pub fn desktop_app_running() -> bool {
+    use crate::consts::APP_PROCESS_NAME;
+
+    let output = match std::process::Command::new("tasklist.exe")
+        .args(["/NH", "/FI", "IMAGENAME eq fig_desktop.exe"])
+        .output()
+    {
+        Ok(output) => output,
+        Err(_) => return false,
+    };
+
+    match std::str::from_utf8(&output.stdout) {
+        Ok(result) => result.contains(CODEWHISPERER_DESKTOP_PROCESS_NAME),
+        Err(_) => false,
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn desktop_app_running() -> bool {
+    use std::ffi::OsString;
+
+    use fig_util::consts::APP_PROCESS_NAME;
+    use sysinfo::{
+        ProcessRefreshKind,
+        RefreshKind,
+        System,
+    };
+
+    let s = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+    let app_process_name = OsString::from(APP_PROCESS_NAME);
+    let mut processes = s.processes_by_exact_name(&app_process_name);
+    processes.next().is_some()
 }
 
 pub fn launch_fig_desktop(args: LaunchArgs) -> Result<()> {
