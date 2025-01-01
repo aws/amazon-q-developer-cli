@@ -83,7 +83,7 @@ uuid.workspace = true
 walkdir = "2.5.0"
 which.workspace = true
 whoami.workspace = true
-winnow = "0.6.2"
+winnow = "0.6.21"
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
