@@ -89,7 +89,7 @@ url = "2.5.4"
 uuid.workspace = true
 which.workspace = true
 whoami.workspace = true
-wry = { version = "0.47.2", default-features = false, features = [
+wry = { version = "0.48.0", default-features = false, features = [
     # "tao",
     "protocol",
     "devtools",
