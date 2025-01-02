@@ -21,15 +21,15 @@
     "lint:fix": "prettier --write src"
   },
   "peerDependencies": {
-    "eslint": "^9.16.0",
+    "eslint": "^9.17.0",
     "typescript": ">=4.7.4"
   },
   "devDependencies": {
     "@amzn/tsconfig": "workspace:^",
-    "@eslint/js": "^9.16.0",
+    "@eslint/js": "^9.17.0",
     "@types/eslint__js": "^8.42.3",
     "@typescript-eslint/utils": "^8.17.0",
-    "eslint": "^9.16.0",
+    "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
