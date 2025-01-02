@@ -23,7 +23,7 @@ arboard = { version = "3.1.1", default-features = false, features = [
     "wayland-data-control",
 ] }
 async-trait.workspace = true
-aws-smithy-types = "1.2.10"
+aws-smithy-types = "1.2.11"
 aws-types.workspace = true
 bitflags.workspace = true
 bstr.workspace = true
