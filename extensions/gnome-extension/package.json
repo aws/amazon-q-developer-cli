@@ -19,7 +19,7 @@
     "eslint": "9.16.0",
     "globals": "^15.13.0",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.17.0"
+    "typescript-eslint": "^8.19.0"
   },
   "dependencies": {
     "@girs/gjs": "4.0.0-beta.16",
