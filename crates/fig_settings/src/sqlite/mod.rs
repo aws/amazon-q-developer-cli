@@ -3,9 +3,9 @@ use std::path::{
     Path,
     PathBuf,
 };
+use std::sync::LazyLock;
 
 use fig_util::directories::fig_data_dir;
-use once_cell::sync::Lazy;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::types::FromSql;
@@ -27,7 +27,7 @@ use crate::error::DbOpenError;
 const STATE_TABLE_NAME: &str = "state";
 const AUTH_TABLE_NAME: &str = "auth_kv";
 
-pub static DATABASE: Lazy<Result<Db, DbOpenError>> = Lazy::new(|| {
+pub static DATABASE: LazyLock<Result<Db, DbOpenError>> = LazyLock::new(|| {
     let db = Db::new().map_err(|e| DbOpenError(e.to_string()))?;
     db.migrate().map_err(|e| DbOpenError(e.to_string()))?;
     Ok(db)

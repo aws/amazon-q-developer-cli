@@ -627,8 +627,11 @@ importers:
 
   tests/fig-api:
     devDependencies:
+      '@amzn/tsconfig':
+        specifier: workspace:^
+        version: link:../../packages/tsconfig
       '@amzn/types':
-        specifier: link:../../packages/types
+        specifier: workspace:^
         version: link:../../packages/types
       '@aws/amazon-q-developer-cli-api-bindings':
         specifier: workspace:^

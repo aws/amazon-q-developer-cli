@@ -39,14 +39,23 @@ pub async fn handle(
     window_id: WindowId,
 ) -> anyhow::Result<Response<Cow<'static, [u8]>>> {
     if request.method() != Method::POST {
-        anyhow::bail!("Unsupported method: {}", request.method());
+        let body = format!("Unsupported method: {}", request.method());
+        return Ok(Response::builder()
+            .status(StatusCode::METHOD_NOT_ALLOWED)
+            .body(Cow::Owned(body.into()))?);
     }
 
-    match request.headers().get(CONTENT_TYPE) {
-        Some(val) if val == APPLICATION_FIG_API => {},
-        Some(val) => anyhow::bail!("Unsupported content type: {val:?}"),
-        None => anyhow::bail!("Missing content type"),
+    let unsupported_media_body = match request.headers().get(CONTENT_TYPE) {
+        Some(val) if val == APPLICATION_FIG_API => None,
+        Some(val) => Some(format!("Unsupported content type: {val:?}")),
+        None => Some("Missing content type".into()),
     };
+
+    if let Some(body) = unsupported_media_body {
+        return Ok(Response::builder()
+            .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+            .body(Cow::Owned(body.into()))?);
+    }
 
     let client_message = ClientOriginatedMessage::decode(Bytes::from(request.into_body()))?;
     let server_message = fig_desktop_api::handler::api_request(
@@ -74,50 +83,40 @@ pub async fn handle(
         .body(body)?)
 }
 
-// TODO: Add back
-//
-// #[cfg(test)]
-// mod tests {
-//     use fig_desktop_api::handler::{
-//         ClientOriginatedSubMessage,
-//         ServerOriginatedSubMessage,
-//     };
-//     use fig_proto::fig::{
-//         ClientOriginatedMessage,
-//         PingRequest,
-//         PingResponse,
-//         ServerOriginatedMessage,
-//     };
-//
-//     use super::*;
-//     use crate::AUTOCOMPLETE_ID;
-//
-//     #[tokio::test]
-//     async fn test_handle() {
-//         let body = ClientOriginatedMessage {
-//             id: Some(0),
-//             submessage: Some(ClientOriginatedSubMessage::PingRequest(PingRequest {})),
-//         }
-//         .encode_to_vec();
-//
-//         let request = Request::builder()
-//             .method(Method::POST)
-//             .header(CONTENT_TYPE, APPLICATION_FIG_API.clone())
-//             .body(body)
-//             .unwrap();
-//
-//         let response = handle(request, AUTOCOMPLETE_ID).await.unwrap();
-//
-//         println!("{:?}", response);
-//
-//         assert_eq!(response.status(), StatusCode::OK);
-//         assert_eq!(response.headers().get(CONTENT_TYPE).unwrap(), APPLICATION_FIG_API);
-//
-//         let decoded_response =
-// ServerOriginatedMessage::decode(Bytes::from(response.into_body().to_vec())).unwrap();
-//         assert_eq!(
-//             decoded_response.submessage.unwrap(),
-//             ServerOriginatedSubMessage::PingResponse(PingResponse {})
-//         );
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use fig_desktop_api::handler::ClientOriginatedSubMessage;
+    use fig_proto::fig::{
+        ClientOriginatedMessage,
+        PingRequest,
+    };
+
+    use super::*;
+    use crate::AUTOCOMPLETE_ID;
+
+    // TODO: add success case, this fails currently due to the
+    // globals (FIGTERM_STATE, INTERCEPT_STATE, etc) not being set in tests
+
+    #[tokio::test]
+    async fn test_handle_errors() {
+        let ctx = OsContext::new_fake();
+        let id = AUTOCOMPLETE_ID;
+        let body = ClientOriginatedMessage {
+            id: Some(0),
+            submessage: Some(ClientOriginatedSubMessage::PingRequest(PingRequest {})),
+        }
+        .encode_to_vec();
+
+        let request = Request::builder().method(Method::GET).body(body.clone()).unwrap();
+        let response = handle(ctx.clone(), request, id.clone()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .header(CONTENT_TYPE, "text/plain")
+            .body(body)
+            .unwrap();
+        let response = handle(ctx, request, id).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+}

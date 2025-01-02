@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::process::Command;
+use std::sync::Mutex;
 
 use anyhow::Result;
 use fig_settings::settings;
-use parking_lot::Mutex;
 use tracing::{
     error,
     info,
@@ -15,7 +15,7 @@ use crate::protocol::icons::{
     process_asset,
 };
 
-static SELECTED_THEME: Mutex<Cow<'_, str>> = parking_lot::const_mutex(Cow::Borrowed("hicolor"));
+static SELECTED_THEME: Mutex<Cow<'_, str>> = Mutex::new(Cow::Borrowed("hicolor"));
 
 pub fn init() -> Result<()> {
     let mut use_local = true;
@@ -50,7 +50,7 @@ pub fn init() -> Result<()> {
 
 fn set_theme(theme: String) -> Result<()> {
     if freedesktop_icons::list_themes().contains(&theme.as_str()) || theme == "hicolor" {
-        *SELECTED_THEME.lock() = Cow::Owned(theme);
+        *SELECTED_THEME.lock().unwrap() = Cow::Owned(theme);
         Ok(())
     } else {
         warn!("invalid theme: {theme}");
@@ -59,7 +59,7 @@ fn set_theme(theme: String) -> Result<()> {
 }
 
 fn get_theme() -> String {
-    SELECTED_THEME.lock().to_string()
+    SELECTED_THEME.lock().unwrap().to_string()
 }
 
 pub(super) async fn lookup(name: &str) -> Option<ProcessedAsset> {

@@ -14,7 +14,6 @@ fig_util.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 fig_proto = { workspace = true, features = ["arbitrary"] }
-once_cell.workspace = true
 
 [[bin]]
 name = "local_ipc"

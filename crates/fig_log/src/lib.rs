@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::path::Path;
+use std::sync::Mutex;
 
 use fig_util::env_var::Q_LOG_LEVEL;
-use parking_lot::Mutex;
 use thiserror::Error;
 use tracing::info;
 use tracing::level_filters::LevelFilter;
@@ -64,7 +64,7 @@ pub struct LogGuard {
 pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, Error> {
     let filter_layer = create_filter_layer();
     let (reloadable_filter_layer, reloadable_handle) = tracing_subscriber::reload::Layer::new(filter_layer);
-    ENV_FILTER_RELOADABLE_HANDLE.lock().replace(reloadable_handle);
+    ENV_FILTER_RELOADABLE_HANDLE.lock().unwrap().replace(reloadable_handle);
 
     // First we construct the file logging layer if a file name was provided.
     let (file_layer, _file_guard) = match args.log_file_path {
@@ -145,6 +145,7 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
 pub fn get_log_level() -> String {
     Q_LOG_LEVEL_GLOBAL
         .lock()
+        .unwrap()
         .clone()
         .unwrap_or_else(|| std::env::var(Q_LOG_LEVEL).unwrap_or_else(|_| DEFAULT_FILTER.to_string()))
 }
@@ -158,13 +159,14 @@ pub fn set_log_level(level: String) -> Result<String, Error> {
     info!("Setting log level to {level:?}");
 
     let old_level = get_log_level();
-    *Q_LOG_LEVEL_GLOBAL.lock() = Some(level);
+    *Q_LOG_LEVEL_GLOBAL.lock().unwrap() = Some(level);
 
     let filter_layer = create_filter_layer();
-    *MAX_LEVEL.lock() = filter_layer.max_level_hint();
+    *MAX_LEVEL.lock().unwrap() = filter_layer.max_level_hint();
 
     ENV_FILTER_RELOADABLE_HANDLE
         .lock()
+        .unwrap()
         .as_ref()
         .expect("set_log_level must not be called before logging is initialized")
         .reload(filter_layer)?;
@@ -178,12 +180,12 @@ pub fn set_log_level(level: String) -> Result<String, Error> {
 ///
 /// The max log level which is set every time the log level is set.
 pub fn get_log_level_max() -> LevelFilter {
-    let max_level = *MAX_LEVEL.lock();
+    let max_level = *MAX_LEVEL.lock().unwrap();
     match max_level {
         Some(level) => level,
         None => {
             let filter_layer = create_filter_layer();
-            *MAX_LEVEL.lock() = filter_layer.max_level_hint();
+            *MAX_LEVEL.lock().unwrap() = filter_layer.max_level_hint();
             filter_layer.max_level_hint().unwrap_or(DEFAULT_FILTER)
         },
     }
@@ -194,6 +196,7 @@ fn create_filter_layer() -> EnvFilter {
 
     let log_level = Q_LOG_LEVEL_GLOBAL
         .lock()
+        .unwrap()
         .clone()
         .or_else(|| std::env::var(Q_LOG_LEVEL).ok());
 

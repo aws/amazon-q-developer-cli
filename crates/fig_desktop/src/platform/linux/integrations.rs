@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
 
 use anyhow::{
@@ -7,7 +8,6 @@ use anyhow::{
 };
 use fig_proto::local::FocusedWindowDataHook;
 use fig_util::Terminal;
-use once_cell::sync::Lazy;
 use tracing::debug;
 
 use super::WM_REVICED_DATA;
@@ -24,7 +24,7 @@ use crate::{
     EventLoopProxy,
 };
 
-pub static WM_CLASS_ALLOWLIST: Lazy<HashMap<&'static str, Terminal>> = Lazy::new(|| {
+pub static WM_CLASS_ALLOWLIST: LazyLock<HashMap<&'static str, Terminal>> = LazyLock::new(|| {
     let mut allowlist = HashMap::new();
     for terminal in fig_util::terminal::LINUX_TERMINALS {
         if let Some(wm_class) = terminal.wm_class() {
@@ -34,7 +34,7 @@ pub static WM_CLASS_ALLOWLIST: Lazy<HashMap<&'static str, Terminal>> = Lazy::new
     allowlist
 });
 
-pub static GSE_ALLOWLIST: Lazy<HashMap<&'static str, Terminal>> = Lazy::new(|| {
+pub static GSE_ALLOWLIST: LazyLock<HashMap<&'static str, Terminal>> = LazyLock::new(|| {
     let mut allowlist = HashMap::new();
     for terminal in fig_util::terminal::LINUX_TERMINALS {
         // Using wm_class_instance here since on Wayland, (most?) terminals set the app_id equal to

@@ -1,10 +1,12 @@
 use std::borrow::Cow;
 use std::ffi::CStr;
 use std::mem::ManuallyDrop;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    LazyLock,
+};
 
 use anyhow::anyhow;
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use tao::dpi::Position;
 use tracing::{
@@ -98,7 +100,7 @@ const VT_TRUE: VARIANT = VARIANT {
     },
 };
 
-static UNMANAGED: Lazy<Mutex<Unmanaged>> = Lazy::new(|| {
+static UNMANAGED: LazyLock<Mutex<Unmanaged>> = LazyLock::new(|| {
     Mutex::new(Unmanaged {
         event_sender: None,
         location_hook: None,

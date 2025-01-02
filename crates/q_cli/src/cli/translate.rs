@@ -4,6 +4,7 @@ use std::io::{
     stdout,
 };
 use std::process::ExitCode;
+use std::sync::LazyLock;
 use std::time::Instant;
 
 use anstream::{
@@ -33,7 +34,6 @@ use fig_ipc::{
 use fig_telemetry::SuggestionState;
 use fig_util::CLI_BINARY_NAME;
 use fig_util::env_var::QTERM_SESSION_ID;
-use once_cell::sync::Lazy;
 use regex::{
     Captures,
     Regex,
@@ -267,7 +267,7 @@ fn warning_message(content: &str) {
     }
 }
 
-static PARAM_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\$[A-Za-z][A-Za-z0-9\_\-]*)").unwrap());
+static PARAM_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\$[A-Za-z][A-Za-z0-9\_\-]*)").unwrap());
 
 fn highlighter(s: &str) -> String {
     PARAM_REGEX

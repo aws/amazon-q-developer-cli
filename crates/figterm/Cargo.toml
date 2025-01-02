@@ -46,7 +46,6 @@ indoc.workspace = true
 memmem = "0.1.1"
 mimalloc.workspace = true
 num-traits = "0.2"
-once_cell.workspace = true
 parking_lot = "0.12.1"
 pin-project = "1.0.12"
 portable-pty.workspace = true

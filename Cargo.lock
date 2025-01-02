@@ -2241,7 +2241,6 @@ dependencies = [
  "fig_os_shim",
  "fig_util",
  "futures-lite",
- "once_cell",
  "serde",
  "serde_json",
  "thiserror 2.0.3",
@@ -2703,7 +2702,6 @@ dependencies = [
  "fig_settings",
  "fig_util",
  "http 1.1.0",
- "once_cell",
  "regex",
  "serde",
  "serde_json",
@@ -2739,7 +2737,6 @@ dependencies = [
  "hyper 1.5.2",
  "hyper-util",
  "insta",
- "once_cell",
  "percent-encoding",
  "rand 0.8.5",
  "reqwest",
@@ -2816,7 +2813,6 @@ dependencies = [
  "objc",
  "objc-foundation",
  "objc_id",
- "once_cell",
  "parking_lot",
  "paste",
  "percent-encoding",
@@ -2854,7 +2850,6 @@ dependencies = [
  "fig_proto",
  "fig_util",
  "libfuzzer-sys",
- "once_cell",
  "tempfile",
  "tokio",
 ]
@@ -2882,7 +2877,6 @@ dependencies = [
  "fig_util",
  "fnv",
  "macos-utils",
- "once_cell",
  "reqwest",
  "serde",
  "serde_json",
@@ -3031,7 +3025,6 @@ version = "1.5.1"
 dependencies = [
  "console-subscriber",
  "fig_util",
- "once_cell",
  "parking_lot",
  "tempfile",
  "thiserror 2.0.3",
@@ -3062,7 +3055,6 @@ dependencies = [
  "fig_util",
  "hex",
  "nix 0.29.0",
- "once_cell",
  "prost",
  "prost-build",
  "prost-reflect",
@@ -3102,7 +3094,6 @@ dependencies = [
  "fig_settings",
  "fig_util",
  "mockito",
- "once_cell",
  "reqwest",
  "reqwest_cookie_store",
  "rustls 0.23.19",
@@ -3125,7 +3116,6 @@ dependencies = [
  "fd-lock",
  "fig_test",
  "fig_util",
- "once_cell",
  "parking_lot",
  "r2d2",
  "r2d2_sqlite",
@@ -3165,7 +3155,6 @@ dependencies = [
  "fig_telemetry_core",
  "fig_util",
  "macos-utils",
- "once_cell",
  "serde",
  "serde_json",
  "thiserror 2.0.3",
@@ -3280,7 +3269,6 @@ dependencies = [
  "mimalloc",
  "nix 0.29.0",
  "num-traits",
- "once_cell",
  "parking_lot",
  "pin-project",
  "portable-pty",
@@ -5010,7 +4998,6 @@ dependencies = [
  "fnv",
  "nix 0.29.0",
  "objc",
- "once_cell",
  "tokio",
  "tracing",
 ]
@@ -5980,9 +5967,6 @@ name = "once_cell"
 version = "1.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
-dependencies = [
- "parking_lot_core",
-]
 
 [[package]]
 name = "oorandom"
@@ -6761,7 +6745,6 @@ dependencies = [
  "mimalloc",
  "nix 0.29.0",
  "objc",
- "once_cell",
  "owo-colors 4.1.0",
  "parking_lot",
  "paste",

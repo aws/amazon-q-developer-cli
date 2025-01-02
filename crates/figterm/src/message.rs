@@ -91,7 +91,7 @@ fn working_directory(path: Option<&str>, shell_state: &ShellState) -> PathBuf {
 }
 
 fn create_command(executable: impl AsRef<Path>, working_directory: impl AsRef<Path>) -> Command {
-    let env = (*SHELL_ENVIRONMENT_VARIABLES.lock())
+    let env = (*SHELL_ENVIRONMENT_VARIABLES.lock().unwrap())
         .clone()
         .into_iter()
         .filter_map(|EnvironmentVariable { key, value }| value.map(|value| (key, value)))
@@ -180,10 +180,10 @@ pub async fn process_figterm_request(
                     // // split text by cursor
                     // let (left, right) = buffer.split_at(position);
 
-                    INSERTION_LOCKED_AT.write().replace(SystemTime::now());
+                    INSERTION_LOCKED_AT.write().unwrap().replace(SystemTime::now());
                     let expected = format!("{buffer}{text_to_insert}");
                     trace!(?expected, "lock set, expected buffer");
-                    *EXPECTED_BUFFER.lock() = expected;
+                    *EXPECTED_BUFFER.lock().unwrap() = expected;
                 }
                 if let Some(ref insertion_buffer) = request.insertion_buffer {
                     if buffer.ne(insertion_buffer) {
@@ -259,16 +259,16 @@ pub async fn process_figterm_request(
             Ok(Some(response))
         },
         FigtermRequest::InsertOnNewCmd(command) => {
-            *INSERT_ON_NEW_CMD.lock() = Some((command.text, command.bracketed, command.execute));
+            *INSERT_ON_NEW_CMD.lock().unwrap() = Some((command.text, command.bracketed, command.execute));
             Ok(None)
         },
         FigtermRequest::SetBuffer(_) => Err(anyhow::anyhow!("SetBuffer is not supported in figterm")),
         FigtermRequest::UpdateShellContext(request) => {
             if request.update_environment_variables {
-                *SHELL_ENVIRONMENT_VARIABLES.lock() = request.environment_variables;
+                *SHELL_ENVIRONMENT_VARIABLES.lock().unwrap() = request.environment_variables;
             }
             if request.update_alias {
-                *SHELL_ALIAS.lock() = request.alias;
+                *SHELL_ALIAS.lock().unwrap() = request.alias;
             }
             Ok(None)
         },

@@ -51,13 +51,16 @@ declare global {
   }
   interface Window {
     // TODO: remove this from window when refactoring
-    webkit?: { messageHandlers?: Record<string, unknown> };
     globalTerminalSessionId: string | undefined;
     globalCWD: string;
     globalSSHString: string | undefined;
     logger: unknown;
     resetCaches?: () => void;
     listCache?: () => void;
+
+    ipc?: {
+      postMessage?: (message: string) => void;
+    };
   }
 
   const __APP_VERSION__: string;

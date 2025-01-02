@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{
     Arc,
+    LazyLock,
     OnceLock,
 };
 use std::time::Duration;
@@ -28,7 +29,6 @@ use fig_util::{
 };
 use fnv::FnvBuildHasher;
 use muda::MenuEvent;
-use once_cell::sync::Lazy;
 use regex::RegexSet;
 use tao::dpi::LogicalSize;
 use tao::event::{
@@ -132,7 +132,7 @@ fn to_tao_theme(theme: WryTheme) -> Option<TaoTheme> {
     }
 }
 
-pub static THEME: Lazy<Option<WryTheme>> = Lazy::new(|| {
+pub static THEME: LazyLock<Option<WryTheme>> = LazyLock::new(|| {
     fig_settings::settings::get_string("app.theme")
         .ok()
         .flatten()
@@ -177,7 +177,7 @@ impl WebviewManager {
 
             use crate::platform::ACTIVATION_POLICY;
 
-            *ACTIVATION_POLICY.lock() = ActivationPolicy::Accessory;
+            *ACTIVATION_POLICY.lock().unwrap() = ActivationPolicy::Accessory;
             event_loop.set_activation_policy(ActivationPolicy::Accessory);
         }
 
@@ -650,7 +650,7 @@ pub fn build_dashboard(
         .with_visible(visible)
         .with_focused(visible)
         .with_always_on_top(false)
-        .with_window_icon(Some(utils::ICON.clone()))
+        .with_window_icon(Some(utils::icon()))
         .with_theme(THEME.and_then(to_tao_theme))
         .build(event_loop)?;
 
@@ -684,7 +684,7 @@ pub fn build_dashboard(
                 .send_event(Event::WindowEvent {
                     window_id: DASHBOARD_ID.clone(),
                     window_event: WindowEvent::Api {
-                        payload: payload.into_body().into(),
+                        payload: payload.into_body(),
                     },
                 })
                 .unwrap();
@@ -736,7 +736,7 @@ pub fn build_autocomplete(
         .with_decorations(false)
         .with_always_on_top(true)
         .with_focused(false)
-        .with_window_icon(Some(utils::ICON.clone()))
+        .with_window_icon(Some(utils::icon()))
         .with_inner_size(LogicalSize::new(1.0, 1.0))
         .with_theme(THEME.and_then(to_tao_theme));
 
@@ -783,7 +783,7 @@ pub fn build_autocomplete(
                 .send_event(Event::WindowEvent {
                     window_id: AUTOCOMPLETE_ID.clone(),
                     window_event: WindowEvent::Api {
-                        payload: payload.into_body().into(),
+                        payload: payload.into_body(),
                     },
                 })
                 .unwrap();

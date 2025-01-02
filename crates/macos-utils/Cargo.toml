@@ -17,7 +17,6 @@ dashmap.workspace = true
 flume = "0.11.0"
 fnv = "1.0.7"
 accessibility-sys = { path = "./accessibility-master/accessibility-sys" }
-once_cell.workspace = true
 accessibility = { path = "./accessibility-master/accessibility" }
 appkit-nsworkspace-bindings.workspace = true
 tracing.workspace = true

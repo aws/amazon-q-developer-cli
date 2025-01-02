@@ -6,6 +6,7 @@ mod install_method;
 mod util;
 
 use std::any::Any;
+use std::sync::LazyLock;
 use std::time::{
     Duration,
     SystemTime,
@@ -69,7 +70,6 @@ pub use install_method::{
     InstallMethod,
     get_install_method,
 };
-use once_cell::sync::Lazy;
 use tokio::sync::{
     Mutex,
     OnceCell,
@@ -164,7 +164,7 @@ impl TelemetryStage {
     }
 }
 
-static JOIN_SET: Lazy<Mutex<JoinSet<()>>> = Lazy::new(|| Mutex::new(JoinSet::new()));
+static JOIN_SET: LazyLock<Mutex<JoinSet<()>>> = LazyLock::new(|| Mutex::new(JoinSet::new()));
 
 /// Joins all current telemetry events
 pub async fn finish_telemetry() {

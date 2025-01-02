@@ -15,16 +15,6 @@ declare global {
       }
     | undefined;
 
-  var webkit:
-    | {
-        messageHandlers?: Record<string, unknown> & {
-          proto?: {
-            postMessage: (message: string) => void;
-          };
-        };
-      }
-    | undefined;
-
   var ipc:
     | {
         postMessage?: (message: string) => void;

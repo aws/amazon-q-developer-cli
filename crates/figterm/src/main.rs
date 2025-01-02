@@ -20,6 +20,11 @@ use std::ffi::{
     OsStr,
 };
 use std::iter::repeat;
+use std::sync::{
+    LazyLock,
+    Mutex,
+    RwLock,
+};
 use std::time::{
     Duration,
     SystemTime,
@@ -83,11 +88,6 @@ use flume::{
 };
 #[cfg(unix)]
 use nix::unistd::execvp;
-use once_cell::sync::Lazy;
-use parking_lot::{
-    Mutex,
-    RwLock,
-};
 use portable_pty::PtySize;
 use tokio::io::{
     self,
@@ -143,19 +143,19 @@ const BUFFER_SIZE: usize = 16384;
 
 static INSERT_ON_NEW_CMD: Mutex<Option<(String, bool, bool)>> = Mutex::new(None);
 static INSERTION_LOCKED_AT: RwLock<Option<SystemTime>> = RwLock::new(None);
-static EXPECTED_BUFFER: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new("".to_string()));
+static EXPECTED_BUFFER: Mutex<String> = Mutex::new(String::new());
 
-static SHELL_ENVIRONMENT_VARIABLES: Lazy<Mutex<Vec<EnvironmentVariable>>> = Lazy::new(|| Mutex::new(vec![]));
-static SHELL_ALIAS: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+static SHELL_ENVIRONMENT_VARIABLES: Mutex<Vec<EnvironmentVariable>> = Mutex::new(Vec::new());
+static SHELL_ALIAS: Mutex<Option<String>> = Mutex::new(None);
 
-static USER_ENABLED_SHELLS: Lazy<Vec<String>> = Lazy::new(|| {
+static USER_ENABLED_SHELLS: LazyLock<Vec<String>> = LazyLock::new(|| {
     fig_settings::state::get("user.enabled-shells")
         .ok()
         .flatten()
         .unwrap_or_default()
 });
 
-static HOSTNAME: Lazy<Option<String>> = Lazy::new(sysinfo::System::host_name);
+static HOSTNAME: LazyLock<Option<String>> = LazyLock::new(sysinfo::System::host_name);
 
 pub enum MainLoopEvent {
     Insert {
@@ -199,11 +199,11 @@ fn shell_state_to_context(shell_state: &ShellState) -> local::ShellContext {
             .username
             .as_deref()
             .and_then(|username| HOSTNAME.as_deref().map(|hostname| format!("{username}@{hostname}"))),
-        environment_variables: SHELL_ENVIRONMENT_VARIABLES.lock().clone(),
+        environment_variables: SHELL_ENVIRONMENT_VARIABLES.lock().unwrap().clone(),
         qterm_version: Some(env!("CARGO_PKG_VERSION").into()),
         preexec: Some(shell_state.preexec),
         osc_lock: Some(shell_state.osc_lock),
-        alias: SHELL_ALIAS.lock().clone(),
+        alias: SHELL_ALIAS.lock().unwrap().clone(),
     }
 }
 
@@ -315,14 +315,14 @@ where
         });
     let preexec = term.shell_state().preexec;
 
-    let mut handle = INSERTION_LOCKED_AT.write();
+    let mut handle = INSERTION_LOCKED_AT.write().unwrap();
     let insertion_locked = match handle.as_ref() {
         Some(at) => {
             let lock_expired = at.elapsed().unwrap_or(Duration::ZERO) > Duration::from_millis(16);
             let should_unlock = lock_expired
-                || term
-                    .get_current_buffer()
-                    .map_or(true, |buff| &buff.buffer == (&EXPECTED_BUFFER.lock() as &String));
+                || term.get_current_buffer().map_or(true, |buff| {
+                    &buff.buffer == (&EXPECTED_BUFFER.lock().unwrap() as &String)
+                });
             if should_unlock {
                 handle.take();
                 if lock_expired {
@@ -916,7 +916,7 @@ fn figterm_main(command: Option<&[String]>) -> Result<()> {
                 }
                 // Check if to send the edit buffer because of timeout
                 _ = edit_buffer_interval.tick() => {
-                    let send_eb = INSERTION_LOCKED_AT.read().is_some();
+                    let send_eb = INSERTION_LOCKED_AT.read().unwrap().is_some();
                     if send_eb && can_send_edit_buffer(&term) {
                         let cursor_coordinates = get_cursor_coordinates(&terminal);
                         if let Err(err) = send_edit_buffer(&term, &remote_sender, cursor_coordinates).await {

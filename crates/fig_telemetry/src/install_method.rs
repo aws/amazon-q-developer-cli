@@ -1,12 +1,12 @@
 use std::process::Command;
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use serde::{
     Deserialize,
     Serialize,
 };
 
-static INSTALL_METHOD: Lazy<InstallMethod> = Lazy::new(|| {
+static INSTALL_METHOD: LazyLock<InstallMethod> = LazyLock::new(|| {
     if let Ok(output) = Command::new("brew").args(["list", "amazon-q", "-1"]).output() {
         if output.status.success() {
             return InstallMethod::Brew;

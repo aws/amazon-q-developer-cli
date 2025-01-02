@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    LazyLock,
+};
 
 use fig_auth::builder_id::{
     PollCreateToken,
@@ -28,7 +31,6 @@ use fig_proto::fig::{
     AuthStatusRequest,
     AuthStatusResponse,
 };
-use once_cell::sync::Lazy;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{
     Receiver,
@@ -43,7 +45,7 @@ use tracing::{
 use super::RequestResult;
 use crate::kv::KVStore;
 
-static PKCE_REGISTRATION: Lazy<Arc<PkceState<Client>>> = Lazy::new(PkceState::new);
+static PKCE_REGISTRATION: LazyLock<Arc<PkceState<Client>>> = LazyLock::new(PkceState::new);
 
 const BUILDER_ID_DATA_KEY: &str = "builder-id-data";
 

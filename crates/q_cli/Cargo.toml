@@ -60,7 +60,6 @@ indicatif = "0.17.3"
 indoc.workspace = true
 mimalloc.workspace = true
 objc.workspace = true
-once_cell.workspace = true
 owo-colors = "4.0.0"
 parking_lot = "0.12.1"
 rand.workspace = true

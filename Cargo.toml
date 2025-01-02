@@ -86,7 +86,6 @@ nix = { version = "0.29.0", features = [
     "user",
 ] }
 objc = "0.2.7"
-once_cell = { version = "1.18.0", features = ["parking_lot"] }
 percent-encoding = "2.2.0"
 portable-pty = "0.8.1"
 rand = "0.8.5"

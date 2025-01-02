@@ -67,8 +67,6 @@ impl fig_remote_ipc::RemoteHookHandler for RemoteHook {
         hook: &EditBufferHook,
         session_id: &FigtermSessionId,
         figterm_state: &Arc<FigtermState>,
-        // notifications_state: &WebviewNotificationsState,
-        // proxy: &EventLoopProxy,
     ) -> Result<Option<clientbound::response::Response>> {
         let _old_metrics = figterm_state.with_update(session_id.clone(), |session| {
             session.edit_buffer.text.clone_from(&hook.text);
@@ -95,33 +93,6 @@ impl fig_remote_ipc::RemoteHookHandler for RemoteHook {
                 None
             }
         });
-
-        // if let Some(metrics) = old_metrics.flatten() {
-        //     if metrics.end_time > metrics.start_time {
-        //         let properties: Vec<(&str, serde_json::Value)> = vec![
-        //             ("start_time", metrics.start_time.format(&Rfc3339)?.into()),
-        //             ("end_time", metrics.end_time.format(&Rfc3339)?.into()),
-        //             (
-        //                 "duration",
-        //                 (metrics.end_time - metrics.start_time).whole_seconds().into(),
-        //             ),
-        //             ("num_insertions", metrics.num_insertions.into()),
-        //             ("num_popups", metrics.num_popups.into()),
-        //         ];
-        //         //tokio::spawn(async {
-        //             if let Err(err) = fig_telemetry::emit_track(fig_telemetry::TrackEvent::new(
-        //                 fig_telemetry::TrackEventType::TerminalSessionMetricsRecorded,
-        //                 fig_telemetry::TrackSource::Desktop,
-        //                 env!("CARGO_PKG_VERSION").into(),
-        //                 properties,
-        //             ))
-        //             .await
-        //             {
-        //                 warn!(%err, "Failed to record terminal session metrics");
-        //             }
-        //         });
-        //     }
-        // }
 
         let utf16_cursor_position = hook
             .text

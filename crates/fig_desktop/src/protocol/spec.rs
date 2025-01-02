@@ -1,5 +1,8 @@
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    LazyLock,
+};
 
 use anyhow::Result;
 use fig_auth::builder_id_token;
@@ -7,7 +10,6 @@ use fig_os_shim::Context;
 use fig_request::reqwest::Client;
 use fnv::FnvHashSet;
 use futures::prelude::*;
-use once_cell::sync::Lazy;
 use serde::{
     Deserialize,
     Serialize,
@@ -28,6 +30,8 @@ use wry::http::{
 };
 
 use crate::webview::WindowId;
+
+const APPLICATION_JAVASCRIPT: HeaderValue = HeaderValue::from_static("application/javascript");
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +55,7 @@ struct CdnSource {
     auth_type: AuthType,
 }
 
-static CDNS: Lazy<Vec<CdnSource>> = Lazy::new(|| {
+static CDNS: LazyLock<Vec<CdnSource>> = LazyLock::new(|| {
     vec![
         // Public cdn
         CdnSource {
@@ -233,7 +237,8 @@ pub async fn handle(
         let content_type = response
             .headers()
             .get(http::header::CONTENT_TYPE)
-            .map_or_else(|| "application/javascript".try_into().unwrap(), |v| v.to_owned());
+            .cloned()
+            .unwrap_or(APPLICATION_JAVASCRIPT);
 
         Ok(res_ok(
             response.bytes().await?.to_vec(),

@@ -2,9 +2,11 @@ use std::env::current_exe;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    LazyLock,
+};
 
-use once_cell::sync::Lazy;
 use reqwest::Client;
 use rustls::{
     ClientConfig,
@@ -64,8 +66,8 @@ fn client_config(native_certs: bool) -> ClientConfig {
         .with_no_client_auth()
 }
 
-static CLIENT_CONFIG_NATIVE_CERTS: Lazy<Arc<ClientConfig>> = Lazy::new(|| Arc::new(client_config(true)));
-static CLIENT_CONFIG_NO_NATIVE_CERTS: Lazy<Arc<ClientConfig>> = Lazy::new(|| Arc::new(client_config(false)));
+static CLIENT_CONFIG_NATIVE_CERTS: LazyLock<Arc<ClientConfig>> = LazyLock::new(|| Arc::new(client_config(true)));
+static CLIENT_CONFIG_NO_NATIVE_CERTS: LazyLock<Arc<ClientConfig>> = LazyLock::new(|| Arc::new(client_config(false)));
 
 pub fn client_config_cached(native_certs: bool) -> Arc<ClientConfig> {
     if native_certs {
@@ -75,7 +77,7 @@ pub fn client_config_cached(native_certs: bool) -> Arc<ClientConfig> {
     }
 }
 
-pub static USER_AGENT: Lazy<String> = Lazy::new(|| {
+static USER_AGENT: LazyLock<String> = LazyLock::new(|| {
     let name = current_exe()
         .ok()
         .and_then(|exe| exe.file_stem().and_then(|name| name.to_str().map(String::from)))
@@ -92,7 +94,7 @@ pub fn user_agent() -> &'static str {
     &USER_AGENT
 }
 
-pub static CLIENT_NATIVE_CERTS: Lazy<Option<Client>> = Lazy::new(|| {
+pub static CLIENT_NATIVE_CERTS: LazyLock<Option<Client>> = LazyLock::new(|| {
     Some(
         Client::builder()
             .use_preconfigured_tls((*client_config_cached(true)).clone())
@@ -103,7 +105,7 @@ pub static CLIENT_NATIVE_CERTS: Lazy<Option<Client>> = Lazy::new(|| {
     )
 });
 
-pub static CLIENT_NO_NATIVE_CERTS: Lazy<Option<Client>> = Lazy::new(|| {
+pub static CLIENT_NO_NATIVE_CERTS: LazyLock<Option<Client>> = LazyLock::new(|| {
     Some(
         Client::builder()
             .use_preconfigured_tls((*client_config_cached(false)).clone())
@@ -122,7 +124,7 @@ pub fn reqwest_client(native_certs: bool) -> Option<&'static reqwest::Client> {
     }
 }
 
-pub static CLIENT_NATIVE_CERT_NO_REDIRECT: Lazy<Option<Client>> = Lazy::new(|| {
+pub static CLIENT_NATIVE_CERT_NO_REDIRECT: LazyLock<Option<Client>> = LazyLock::new(|| {
     Client::builder()
         .use_preconfigured_tls((*client_config_cached(true)).clone())
         .user_agent(USER_AGENT.chars().filter(|c| c.is_ascii_graphic()).collect::<String>())

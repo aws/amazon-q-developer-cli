@@ -7,7 +7,6 @@ use std::sync::atomic::{
 };
 
 use fig_os_shim::Context;
-use once_cell::sync::Lazy;
 use serde::{
     Deserialize,
     Serialize,
@@ -117,19 +116,19 @@ where
     }
 }
 
-#[allow(clippy::needless_return)]
-pub static ICON: Lazy<Icon> = Lazy::new(|| {
-    cfg_if::cfg_if!(
-        if #[cfg(target_os = "linux")] {
-            return load_icon(
-                fig_util::search_xdg_data_dirs("icons/hicolor/512x512/apps/fig.png")
-                    .unwrap_or_else(|| "/usr/share/icons/hicolor/512x512/apps/fig.png".into()),
-            ).unwrap_or_else(load_from_memory);
-        } else {
-            return load_from_memory();
-        }
-    );
-});
+#[cfg(target_os = "linux")]
+pub fn icon() -> Icon {
+    load_icon(
+        fig_util::search_xdg_data_dirs("icons/hicolor/512x512/apps/fig.png")
+            .unwrap_or_else(|| "/usr/share/icons/hicolor/512x512/apps/fig.png".into()),
+    )
+    .unwrap_or_else(load_from_memory)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn icon() -> Icon {
+    load_from_memory()
+}
 
 #[cfg(target_os = "linux")]
 fn load_icon(path: impl AsRef<std::path::Path>) -> Option<Icon> {
@@ -150,17 +149,6 @@ fn load_from_memory() -> Icon {
         (rgba, width, height)
     };
     Icon::from_rgba(icon_rgba, icon_width, icon_height).expect("Failed to open icon")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[cfg_attr(target_os = "linux", ignore)]
-    #[test]
-    fn icon() {
-        let _icon = &*ICON;
-    }
 }
 
 /// A logical rect, where the origin point is the top left corner.
@@ -198,5 +186,16 @@ impl Rect {
         let contains_y = point.y >= rect_position.y && point.y <= rect_position.y + rect_size.height;
 
         contains_x && contains_y
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg_attr(target_os = "linux", ignore)]
+    #[test]
+    fn test_icon() {
+        icon();
     }
 }

@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use anyhow::Result;
 use dashmap::DashMap;
 use fig_proto::figterm::Action;
@@ -5,7 +7,6 @@ use fig_settings::keybindings::{
     KeyBinding,
     KeyBindings,
 };
-use once_cell::sync::Lazy;
 use tracing::trace;
 
 use crate::input::{
@@ -19,8 +20,8 @@ const GLOBAL_ACTIONS: &[&str] = &["toggleAutocomplete", "showAutocomplete"];
 
 const IGNORE_ACTION: &str = "ignore";
 
-static ONLY_SHOW_ON_TAB: Lazy<bool> =
-    Lazy::new(|| fig_settings::settings::get_bool_or("autocomplete.onlyShowOnTab", false));
+static ONLY_SHOW_ON_TAB: LazyLock<bool> =
+    LazyLock::new(|| fig_settings::settings::get_bool_or("autocomplete.onlyShowOnTab", false));
 
 pub fn key_from_text(text: impl AsRef<str>) -> Option<KeyEvent> {
     let text = text.as_ref();

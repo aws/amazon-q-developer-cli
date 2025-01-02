@@ -28,7 +28,6 @@ fig_settings.workspace = true
 fig_telemetry.workspace = true
 fig_util.workspace = true
 fnv = "1.0.7"
-once_cell.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 shellexpand = "3.0.0"

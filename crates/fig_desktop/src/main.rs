@@ -17,7 +17,10 @@ mod webview;
 
 use std::path::Path;
 use std::process::exit;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    RwLock,
+};
 
 use clap::Parser;
 use event::Event;
@@ -34,7 +37,6 @@ use fig_util::{
     URL_SCHEMA,
     directories,
 };
-use parking_lot::RwLock;
 use platform::PlatformState;
 use sysinfo::{
     ProcessRefreshKind,

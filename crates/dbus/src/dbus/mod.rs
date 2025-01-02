@@ -1,5 +1,6 @@
+use std::sync::OnceLock;
+
 use fig_os_shim::Context;
-use once_cell::sync::OnceCell;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use zbus::Connection;
@@ -26,7 +27,7 @@ pub enum CrateError {
     Fdo(#[from] zbus::fdo::Error),
 }
 
-static SESSION_BUS: OnceCell<Connection> = OnceCell::new();
+static SESSION_BUS: OnceLock<Connection> = OnceLock::new();
 static SESSION_BUS_INIT: Mutex<()> = Mutex::const_new(());
 
 async fn session_bus() -> Result<&'static Connection, CrateError> {
@@ -47,7 +48,7 @@ async fn session_bus() -> Result<&'static Connection, CrateError> {
     Ok(SESSION_BUS.get().unwrap())
 }
 
-static IBUS_BUS: OnceCell<Connection> = OnceCell::new();
+static IBUS_BUS: OnceLock<Connection> = OnceLock::new();
 static IBUS_BUS_INIT: Mutex<()> = Mutex::const_new(());
 
 pub async fn ibus_bus(ctx: &Context) -> Result<&'static Connection, CrateError> {

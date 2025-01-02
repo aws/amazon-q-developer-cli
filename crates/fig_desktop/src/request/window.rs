@@ -17,6 +17,7 @@ use super::{
 use crate::event::{
     Event,
     WindowEvent,
+    WindowGeometryResult,
 };
 use crate::webview::WindowId;
 use crate::{
@@ -80,7 +81,7 @@ pub async fn position_window(
         .unwrap();
 
     match rx.recv().await {
-        Some((is_above, is_clipped)) => RequestResult::Ok(Box::new(
+        Some(WindowGeometryResult { is_above, is_clipped }) => RequestResult::Ok(Box::new(
             ServerOriginatedSubMessage::PositionWindowResponse(PositionWindowResponse {
                 is_above: Some(is_above),
                 is_clipped: Some(is_clipped),

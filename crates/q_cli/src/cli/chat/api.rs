@@ -1,5 +1,6 @@
 use std::env;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use amzn_codewhisperer_streaming_client::operation::RequestId;
 use aws_smithy_types::error::display::DisplayErrorContext;
@@ -25,7 +26,6 @@ use fig_settings::history::{
     OrderBy,
 };
 use fig_util::Shell;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use tokio::sync::mpsc::{
     UnboundedReceiver,
@@ -52,7 +52,7 @@ const MAX_SHELL_HISTORY_COMMAND_LEN: usize = 1024;
 const MAX_SHELL_HISTORY_DIRECTORY_LEN: usize = 256;
 
 /// Regex for the context modifiers `@git`, `@env`, and `@history`
-static CONTEXT_MODIFIER_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"@(git|env|history) ?").unwrap());
+static CONTEXT_MODIFIER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"@(git|env|history) ?").unwrap());
 
 fn truncate_safe(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {

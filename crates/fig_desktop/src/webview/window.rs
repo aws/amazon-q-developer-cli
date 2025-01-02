@@ -40,10 +40,12 @@ use wry::{
 };
 
 use super::notification::WebviewNotificationsState;
+use super::to_tao_theme;
 use super::window_id::WindowId;
 use crate::event::{
     EmitEventName,
     WindowEvent,
+    WindowGeometryResult,
     WindowPosition,
 };
 use crate::platform::{
@@ -329,7 +331,7 @@ impl WindowState {
                 let (is_above, is_clipped) =
                     self.update_window_geometry(position, size, anchor, platform_state, dry_run);
                 if let Some(tx) = tx {
-                    if let Err(err) = tx.send((is_above, is_clipped)) {
+                    if let Err(err) = tx.send(WindowGeometryResult { is_above, is_clipped }) {
                         tracing::error!(%err, "failed to send window geometry update result");
                     }
                 }
@@ -362,7 +364,7 @@ impl WindowState {
                         EventLoopWindowTargetExtMacOS,
                     };
 
-                    let mut policy_lock = platform::ACTIVATION_POLICY.lock();
+                    let mut policy_lock = platform::ACTIVATION_POLICY.lock().unwrap();
                     if *policy_lock != ActivationPolicy::Accessory {
                         *policy_lock = ActivationPolicy::Accessory;
                         window_target.set_activation_policy_at_runtime(ActivationPolicy::Accessory);
@@ -398,7 +400,7 @@ impl WindowState {
                             EventLoopWindowTargetExtMacOS,
                         };
 
-                        let mut policy_lock = platform::ACTIVATION_POLICY.lock();
+                        let mut policy_lock = platform::ACTIVATION_POLICY.lock().unwrap();
                         if *policy_lock != ActivationPolicy::Regular {
                             *policy_lock = ActivationPolicy::Regular;
                             window_target.set_activation_policy_at_runtime(ActivationPolicy::Regular);
@@ -440,20 +442,6 @@ impl WindowState {
                     })),
                 });
             },
-            WindowEvent::ReloadIfNotLoaded => {
-                info!(%self.window_id, "Reloading window if not loaded");
-
-                let url = serde_json::json!(self.url.lock().clone());
-
-                self.webview
-                    .evaluate_script(&format!(
-                        "if (window.location.href === 'about:blank') {{\
-                            console.log('Reloading window to', {url});\
-                            window.location.href = {url};\
-                        }}"
-                    ))
-                    .unwrap();
-            },
             WindowEvent::Reload => {
                 info!(%self.window_id, "Reloading window");
 
@@ -475,7 +463,7 @@ impl WindowState {
                 self.emit(event_name, payload);
             },
             WindowEvent::Api { payload } => {
-                api_tx.send((self.window_id.clone(), payload.into())).unwrap();
+                api_tx.send((self.window_id.clone(), payload)).unwrap();
             },
             WindowEvent::Devtools => {
                 if self.webview.is_devtools_open() {
@@ -509,11 +497,6 @@ impl WindowState {
             },
             WindowEvent::SetEnabled(enabled) => self.set_enabled(enabled),
             WindowEvent::SetTheme(theme) => self.set_theme(theme),
-            WindowEvent::SetHtml { html } => {
-                self.webview
-                    .evaluate_script(&format!("document.documentElement.innerHTML = `{html}`;"))
-                    .unwrap();
-            },
             WindowEvent::Drag => {
                 if let Err(err) = self.window.drag_window() {
                     error!(%err, "Failed to drag window");
@@ -585,8 +568,7 @@ impl WindowState {
         self.enabled.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    #[allow(clippy::unused_self)]
-    pub fn set_theme(&self, _theme: Option<Theme>) {
-        // TODO: blocked on https://github.com/tauri-apps/tao/issues/582
+    pub fn set_theme(&self, theme: Option<Theme>) {
+        self.window.set_theme(theme.and_then(to_tao_theme));
     }
 }

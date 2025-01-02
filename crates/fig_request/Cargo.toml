@@ -20,7 +20,6 @@ cfg-if.workspace = true
 cookie = "0.18.0"
 fig_settings.workspace = true
 fig_util.workspace = true
-once_cell.workspace = true
 reqwest.workspace = true
 reqwest_cookie_store = "0.8.0"
 rustls-pemfile = "2.1.0"

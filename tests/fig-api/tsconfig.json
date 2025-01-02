@@ -1,12 +1,9 @@
 {
+  "extends": ["@amzn/tsconfig/base.json"],
   "compilerOptions": {
-    "moduleResolution": "node",
-    "strict": true,
-    "sourceMap": true,
-    "esModuleInterop": true,
+    "noEmit": true,
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["@amzn/types", "node"],
-    "outDir": "dist"
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]

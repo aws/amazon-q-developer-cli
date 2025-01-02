@@ -51,7 +51,7 @@ pub async fn handle<S: Scope>(
     let resources_path = fig_util::directories::resources_path_ctx(&ctx)?.join(S::PATH);
 
     if request.uri().host() != Some("localhost") {
-        return Ok(res_400());
+        return res_400();
     }
 
     let uri_path = Path::new(request.uri().path());
@@ -63,7 +63,7 @@ pub async fn handle<S: Scope>(
             if uri_path.extension().is_none() {
                 resources_path.join("index.html")
             } else {
-                return Ok(res_404());
+                return res_404();
             }
         },
         Err(err) => return res_500(err),
@@ -71,7 +71,7 @@ pub async fn handle<S: Scope>(
 
     // dont allow escaping the resources dir
     if !path.starts_with(&resources_path) {
-        return Ok(res_400());
+        return res_400();
     }
 
     match path.metadata() {
@@ -84,7 +84,7 @@ pub async fn handle<S: Scope>(
             if uri_path.extension().is_none() {
                 path = resources_path.join("index.html");
             } else {
-                return Ok(res_404());
+                return res_404();
             }
         },
         Err(err) => return res_500(err),
@@ -94,7 +94,7 @@ pub async fn handle<S: Scope>(
 
     let content = match std::fs::read(&path) {
         Ok(content) => content,
-        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(res_404()),
+        Err(err) if err.kind() == ErrorKind::NotFound => return res_404(),
         Err(err) => return res_500(err),
     };
 

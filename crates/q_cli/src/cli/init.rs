@@ -6,6 +6,7 @@ use std::io::{
 };
 use std::path::Path;
 use std::process::ExitCode;
+use std::sync::LazyLock;
 use std::time::SystemTime;
 
 use clap::Args;
@@ -25,7 +26,6 @@ use fig_util::{
     get_parent_process_exe,
 };
 use indoc::formatdoc;
-use once_cell::sync::Lazy;
 
 use super::internal::should_figterm_launch::should_figterm_launch_exit_status;
 use crate::util::app_path_from_bundle_id;
@@ -33,7 +33,7 @@ use crate::util::app_path_from_bundle_id;
 const INLINE_ENABLED_SETTINGS_KEY: &str = "inline.enabled";
 const SHELL_INTEGRATIONS_ENABLED_STATE_KEY: &str = "shell-integrations.enabled";
 
-static IS_SNAPSHOT_TEST: Lazy<bool> = Lazy::new(|| std::env::var_os("Q_INIT_SNAPSHOT_TEST").is_some());
+static IS_SNAPSHOT_TEST: LazyLock<bool> = LazyLock::new(|| std::env::var_os("Q_INIT_SNAPSHOT_TEST").is_some());
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct InitArgs {

@@ -7,6 +7,7 @@ use tao::dpi::{
     Size,
 };
 use tao::event_loop::ControlFlow;
+use tokio::sync::mpsc::UnboundedSender;
 use wry::Theme;
 
 use crate::platform::PlatformBoundEvent;
@@ -73,6 +74,11 @@ pub enum WindowPosition {
     },
 }
 
+pub struct WindowGeometryResult {
+    pub is_above: bool,
+    pub is_clipped: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum WindowEvent {
     /// Sets the window to be enabled or disabled
@@ -81,15 +87,13 @@ pub enum WindowEvent {
     /// [`WindowEvent::SetEnabled(true)`]
     SetEnabled(bool),
     /// Sets the theme of the window (light, dark, or system if None)
-    ///
-    /// This is currently unimplemented blocked on <https://github.com/tauri-apps/tao/issues/582>
     SetTheme(Option<Theme>),
     UpdateWindowGeometry {
         position: Option<WindowPosition>,
         size: Option<LogicalSize<f64>>,
         anchor: Option<LogicalSize<f64>>,
         dry_run: bool,
-        tx: Option<tokio::sync::mpsc::UnboundedSender<(bool, bool)>>,
+        tx: Option<UnboundedSender<WindowGeometryResult>>,
     },
     /// Hides the window
     Hide,
@@ -114,19 +118,12 @@ pub enum WindowEvent {
 
     Reload,
 
-    /// Trigger a reload if the page is not already loaded
-    ReloadIfNotLoaded,
-
     Api {
         /// A base64 encoded protobuf
-        payload: Cow<'static, str>,
+        payload: String,
     },
     Devtools,
     DebugMode(bool),
-
-    SetHtml {
-        html: Cow<'static, str>,
-    },
 
     Drag,
     Batch(Vec<WindowEvent>),

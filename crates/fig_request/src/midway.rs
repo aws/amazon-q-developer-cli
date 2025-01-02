@@ -3,11 +3,13 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    LazyLock,
+};
 
 use cookie::CookieBuilder;
 use fig_util::directories::DirectoryError;
-use once_cell::sync::Lazy;
 use reqwest::cookie::Jar;
 use reqwest::redirect::Policy;
 use reqwest::{
@@ -264,9 +266,9 @@ impl MidwayCookies {
     }
 }
 
-static JAR: Lazy<Arc<Jar>> = Lazy::new(|| Arc::new(Jar::default()));
+static JAR: LazyLock<Arc<Jar>> = LazyLock::new(|| Arc::new(Jar::default()));
 
-static CLIENT: Lazy<Client> = Lazy::new(|| {
+static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     reqwest::ClientBuilder::new()
         .redirect(Policy::custom(|attempt| {
             if attempt.url().domain() == Some("midway-auth.amazon.com")

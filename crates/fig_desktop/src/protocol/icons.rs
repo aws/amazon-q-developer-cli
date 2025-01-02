@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::collections::hash_map::RandomState;
 use std::ffi::OsStr;
 use std::hash::Hash;
 use std::io::Cursor;
@@ -8,7 +7,10 @@ use std::path::{
     Path,
     PathBuf,
 };
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    LazyLock,
+};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -21,7 +23,6 @@ use image::{
     Rgba,
 };
 use moka::future::Cache;
-use once_cell::sync::Lazy;
 use percent_encoding::percent_decode_str;
 use tracing::{
     debug,
@@ -37,6 +38,10 @@ use wry::http::{
 };
 
 use crate::platform::PlatformState;
+use crate::protocol::util::{
+    parse_hex_rgb,
+    scale_u8,
+};
 use crate::webview::WindowId;
 
 const DEFAULT_ICON: &str = "template";
@@ -47,7 +52,7 @@ pub enum AssetSpecifier<'a> {
     PathBased(Cow<'a, Path>),
 }
 
-static ASSETS: Lazy<HashMap<AssetSpecifier<'static>, Arc<Cow<'static, [u8]>>>> = Lazy::new(|| {
+static ASSETS: LazyLock<HashMap<AssetSpecifier<'static>, Arc<Cow<'static, [u8]>>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
 
     macro_rules! load_assets {
@@ -73,7 +78,7 @@ static ASSETS: Lazy<HashMap<AssetSpecifier<'static>, Arc<Cow<'static, [u8]>>>> =
 pub type ProcessedAsset = (Arc<Cow<'static, [u8]>>, AssetKind);
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-static ASSET_CACHE: Lazy<Cache<PathBuf, ProcessedAsset>> = Lazy::new(|| {
+static ASSET_CACHE: LazyLock<Cache<PathBuf, ProcessedAsset>> = LazyLock::new(|| {
     Cache::builder()
         .weigher(|k: &PathBuf, v: &(Arc<Cow<'_, [u8]>>, AssetKind)| {
             (k.as_os_str().len() + v.0.len()).try_into().unwrap_or(u32::MAX)
@@ -87,6 +92,15 @@ static ASSET_CACHE: Lazy<Cache<PathBuf, ProcessedAsset>> = Lazy::new(|| {
 pub enum AssetKind {
     Png,
     Svg,
+}
+
+impl AssetKind {
+    pub fn mime(&self) -> mime::Mime {
+        match self {
+            AssetKind::Png => mime::IMAGE_PNG,
+            AssetKind::Svg => mime::IMAGE_SVG,
+        }
+    }
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -147,10 +161,7 @@ async fn resolve_asset(asset: &AssetSpecifier<'_>, fallback: Option<&str>) -> (A
 fn build_asset_response(data: Cow<'static, [u8]>, asset_kind: AssetKind) -> Response<Cow<'static, [u8]>> {
     Response::builder()
         .status(StatusCode::OK)
-        .header(CONTENT_TYPE, match asset_kind {
-            AssetKind::Png => "image/png",
-            AssetKind::Svg => "image/svg+xml",
-        })
+        .header(CONTENT_TYPE, asset_kind.mime().essence_str())
         .body(data)
         .unwrap()
 }
@@ -165,10 +176,6 @@ async fn build_default() -> Response<Cow<'static, [u8]>> {
     cached_asset_response(&AssetSpecifier::Named(DEFAULT_ICON.into()), None).await
 }
 
-fn scale(a: u8, b: u8) -> u8 {
-    (a as f32 * (b as f32 / 256.0)) as u8
-}
-
 pub async fn handle(
     _ctx: Arc<Context>,
     request: Request<Vec<u8>>,
@@ -177,8 +184,7 @@ pub async fn handle(
     debug!(uri =% request.uri(), "Fig protocol request");
     let url = Url::parse(&request.uri().to_string())?;
     let domain = url.domain();
-    // rust really doesn't like us not specifying RandomState here
-    let pairs: HashMap<_, _, RandomState> = url.query_pairs().collect();
+    let pairs: HashMap<_, _> = url.query_pairs().collect();
 
     let res = match domain {
         Some("template") => {
@@ -188,21 +194,15 @@ pub async fn handle(
             let mut image = image::load_from_memory_with_format(asset, image::ImageFormat::Png).unwrap();
 
             if let Some(color) = query_pairs.get("color") {
-                if color.len() == 6 {
-                    if let (Ok(color_r), Ok(color_g), Ok(color_b)) = (
-                        u8::from_str_radix(&color[0..2], 16),
-                        u8::from_str_radix(&color[2..4], 16),
-                        u8::from_str_radix(&color[4..6], 16),
-                    ) {
-                        for y in 0..image.height() {
-                            for x in 0..image.width() {
-                                let Rgba([r, g, b, a]) = image.get_pixel(x, y);
-                                image.put_pixel(
-                                    x,
-                                    y,
-                                    Rgba([scale(r, color_r), scale(g, color_g), scale(b, color_b), a]),
-                                );
-                            }
+                if let Some(rgb) = parse_hex_rgb(color) {
+                    for y in 0..image.height() {
+                        for x in 0..image.width() {
+                            let Rgba([r, g, b, a]) = image.get_pixel(x, y);
+                            image.put_pixel(
+                                x,
+                                y,
+                                Rgba([scale_u8(r, rgb[0]), scale_u8(g, rgb[1]), scale_u8(b, rgb[2]), a]),
+                            );
                         }
                     }
                 }

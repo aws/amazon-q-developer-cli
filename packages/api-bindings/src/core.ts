@@ -91,23 +91,16 @@ export function sendMessage(
     return;
   }
 
-  const b64 = bytesToBase64(buffer);
-
-  if (window.ipc && window.ipc.postMessage) {
-    window.ipc.postMessage(b64);
-  } else if (window.webkit) {
-    if (!window.webkit?.messageHandlers?.proto) {
-      console.error(
-        "This version of Amazon Q does not support using protocol buffers. Please update.",
-      );
-      return;
-    }
-    window.webkit.messageHandlers.proto.postMessage(b64);
-  } else {
-    console.error(
-      "Cannot send request. Fig.js is not supported in this browser.",
-    );
+  const postMessage = window?.ipc?.postMessage;
+  if (postMessage && typeof postMessage === "function") {
+    const b64 = bytesToBase64(buffer);
+    postMessage(b64);
+    return;
   }
+
+  console.error(
+    "Cannot send request. Fig.js is not supported in this browser.",
+  );
 }
 
 const setupEventListeners = (): void => {

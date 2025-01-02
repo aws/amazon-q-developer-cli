@@ -1,5 +1,5 @@
 import childProcess from "node:child_process";
-import { tempDir } from "./util";
+import { tempDir } from "./util.js";
 
 // Set Fig JS bindings to log less
 window.fig = { constants: undefined, quiet: true };

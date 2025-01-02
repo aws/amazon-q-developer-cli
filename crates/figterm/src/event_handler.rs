@@ -60,7 +60,7 @@ impl EventListener for EventHandler {
                 let hook = new_prompt_hook(Some(context));
                 let message = hook_to_message(hook);
 
-                let insert_on_new_cmd = INSERT_ON_NEW_CMD.lock().take();
+                let insert_on_new_cmd = INSERT_ON_NEW_CMD.lock().unwrap().take();
 
                 if let Some(cwd) = &shell_state.local_context.current_working_directory {
                     if cwd.exists() {

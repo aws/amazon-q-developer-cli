@@ -5,6 +5,7 @@ extern crate libfuzzer_sys;
 
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use fig_ipc::{
     BufferedUnixStream,
@@ -13,12 +14,11 @@ use fig_ipc::{
 };
 use fig_proto::local::LocalMessage;
 use libfuzzer_sys::fuzz_target;
-use once_cell::sync::Lazy;
 use tokio::net::UnixListener;
 
-static RUNTIME: Lazy<tokio::runtime::Runtime> = Lazy::new(|| tokio::runtime::Runtime::new().unwrap());
+static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
-static DIRSOCK: Lazy<(tempfile::TempDir, PathBuf)> = Lazy::new(|| {
+static DIRSOCK: LazyLock<(tempfile::TempDir, PathBuf)> = LazyLock::new(|| {
     let temp_dir = tempfile::tempdir().unwrap();
     let socket_path = temp_dir.path().join("test.sock");
     #[cfg(unix)]
@@ -31,7 +31,7 @@ static DIRSOCK: Lazy<(tempfile::TempDir, PathBuf)> = Lazy::new(|| {
     (temp_dir, socket_path)
 });
 
-static LISTENER: Lazy<UnixListener> = Lazy::new(|| UnixListener::bind(&DIRSOCK.1).unwrap());
+static LISTENER: LazyLock<UnixListener> = LazyLock::new(|| UnixListener::bind(&DIRSOCK.1).unwrap());
 
 fuzz_target!(|input: LocalMessage| {
     RUNTIME.block_on(fuzz(input));

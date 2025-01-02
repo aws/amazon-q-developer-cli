@@ -73,6 +73,26 @@ pub fn in_special_terminal(ctx: &Context) -> Option<Terminal> {
     Terminal::from_process_info(ctx, &SPECIAL_TERMINALS.to_vec())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CustomTerminalMacos {
+    /// The macOS bundle ID
+    pub bundle_id: Option<String>,
+
+    #[serde(default)]
+    pub input_method: bool,
+    #[serde(default)]
+    pub accessibility: bool,
+    #[serde(default)]
+    pub xterm: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CustomTerminal {
+    pub id: String,
+    pub name: String,
+    pub macos: CustomTerminalMacos,
+}
+
 /// All supported terminals
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -141,6 +161,9 @@ pub enum Terminal {
     Windsurf,
     /// Ghostty
     Ghostty,
+
+    /// Custom terminal to support user/custom entries
+    Custom(CustomTerminal),
 }
 
 impl fmt::Display for Terminal {
@@ -178,6 +201,7 @@ impl fmt::Display for Terminal {
             Terminal::Windsurf => write!(f, "Windsurf"),
             Terminal::Guake => write!(f, "Guake"),
             Terminal::Ghostty => write!(f, "Ghostty"),
+            Terminal::Custom(custom_terminal) => write!(f, "{}", custom_terminal.name),
         }
     }
 }
@@ -210,6 +234,7 @@ impl Terminal {
             Some("Nova") => return Some(Terminal::Nova),
             Some("WezTerm") => return Some(Terminal::WezTerm),
             Some("guake") => return Some(Terminal::Guake),
+            Some("ghostty") => return Some(Terminal::Ghostty),
             _ => (),
         };
 
@@ -295,8 +320,10 @@ impl Terminal {
     }
 
     pub fn version() -> Option<String> {
+        static RE: OnceLock<Option<regex::Regex>> = OnceLock::new();
+        let re = RE.get_or_init(|| regex::Regex::new("[0-9\\-\\._]+").ok()).as_ref()?;
         let version = std::env::var("TERM_PROGRAM_VERSION").ok()?;
-        match regex::Regex::new("[0-9\\-\\._]+").ok()?.captures(&version).is_some() {
+        match re.captures(&version).is_some() {
             true => Some(version),
             false => None,
         }
@@ -338,6 +365,7 @@ impl Terminal {
             Terminal::Windsurf => "windsurf".into(),
             Terminal::Guake => "guake".into(),
             Terminal::Ghostty => "ghostty".into(),
+            Terminal::Custom(custom_terminal) => custom_terminal.id.clone().into(),
         }
     }
 
@@ -364,6 +392,7 @@ impl Terminal {
             Terminal::Rio => Some("com.raphaelamorim.rio".into()),
             Terminal::Windsurf => Some("com.exafunction.windsurf".into()),
             Terminal::Ghostty => Some("com.mitchellh.ghostty".into()),
+            Terminal::Custom(custom_terminal) => custom_terminal.macos.bundle_id.clone().map(Cow::Owned),
             _ => None,
         }
     }
@@ -409,7 +438,7 @@ impl Terminal {
                 | Terminal::Zed
                 | Terminal::Rio
                 | Terminal::Ghostty
-        )
+        ) || self.as_custom().map_or(false, |c| c.macos.input_method)
     }
 
     pub fn supports_macos_accessibility(&self) -> bool {
@@ -422,7 +451,7 @@ impl Terminal {
                 | Terminal::VSCodium
                 | Terminal::Hyper
                 | Terminal::Tabby
-        )
+        ) || self.as_custom().map_or(false, |c| c.macos.accessibility)
     }
 
     pub fn is_xterm(&self) -> bool {
@@ -436,7 +465,7 @@ impl Terminal {
                 | Terminal::Cursor
                 | Terminal::CursorNightly
                 | Terminal::Windsurf
-        )
+        ) || self.as_custom().map_or(false, |c| c.macos.xterm)
     }
 
     pub fn executable_names(&self) -> &'static [&'static str] {
@@ -513,7 +542,10 @@ impl Terminal {
 
     pub fn is_jetbrains_terminal() -> bool {
         // Handles all official JetBrain IDEs + Android Studio
-        matches!(std::env::var("TERMINAL_EMULATOR").ok(), Some(v) if v == "JetBrains-JediTerm")
+        match std::env::var("TERMINAL_EMULATOR") {
+            Ok(v) => v == "JetBrains-JediTerm",
+            Err(_) => false,
+        }
     }
 
     pub fn supports_fancy_boxes(&self) -> bool {
@@ -541,6 +573,13 @@ impl Terminal {
             self,
             Terminal::Ssh | Terminal::Tmux | Terminal::Vim | Terminal::Nvim | Terminal::Zellij
         )
+    }
+
+    pub fn as_custom(&self) -> Option<&CustomTerminal> {
+        match self {
+            Terminal::Custom(custom) => Some(custom),
+            _ => None,
+        }
     }
 }
 

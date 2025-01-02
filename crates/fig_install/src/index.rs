@@ -3,7 +3,7 @@ use std::hash::{
     Hash,
     Hasher,
 };
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::time::{
     SystemTime,
     UNIX_EPOCH,
@@ -43,19 +43,16 @@ const DEFAULT_RELEASE_URL: &str = "https://desktop-release.q.us-east-1.amazonaws
 /// - The env var `Q_DESKTOP_RELEASE_URL`
 /// - The setting `install.releaseUrl`
 /// - Falls back to the default or the build time env var `Q_BUILD_DESKTOP_RELEASE_URL`
-fn release_url() -> &'static Url {
-    static RELEASE_URL: OnceLock<Url> = OnceLock::new();
-    RELEASE_URL.get_or_init(|| {
-        match std::env::var("Q_DESKTOP_RELEASE_URL") {
-            Ok(s) => Url::parse(&s),
-            Err(_) => match fig_settings::settings::get_string("install.releaseUrl") {
-                Ok(Some(s)) => Url::parse(&s),
-                _ => Url::parse(option_env!("Q_BUILD_DESKTOP_RELEASE_URL").unwrap_or(DEFAULT_RELEASE_URL)),
-            },
-        }
-        .unwrap()
-    })
-}
+static RELEASE_URL: LazyLock<Url> = LazyLock::new(|| {
+    match std::env::var("Q_DESKTOP_RELEASE_URL") {
+        Ok(s) => Url::parse(&s),
+        Err(_) => match fig_settings::settings::get_string("install.releaseUrl") {
+            Ok(Some(s)) => Url::parse(&s),
+            _ => Url::parse(option_env!("Q_BUILD_DESKTOP_RELEASE_URL").unwrap_or(DEFAULT_RELEASE_URL)),
+        },
+    }
+    .unwrap()
+});
 
 fn deser_enum_other<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
@@ -287,7 +284,7 @@ pub struct Package {
 
 impl Package {
     pub(crate) fn download_url(&self) -> Url {
-        let mut url = release_url().clone();
+        let mut url = RELEASE_URL.clone();
         url.set_path(&self.download);
         url
     }
@@ -340,7 +337,7 @@ impl PackageArchitecture {
 }
 
 fn index_endpoint(_channel: &Channel) -> Url {
-    let mut url = release_url().clone();
+    let mut url = RELEASE_URL.clone();
     url.set_path("index.json");
     url
 }
@@ -447,8 +444,8 @@ mod tests {
 
     #[test]
     fn test_release_url() {
-        println!("{}", *release_url());
-        println!("{:#?}", *release_url());
+        println!("{}", *RELEASE_URL);
+        println!("{:#?}", *RELEASE_URL);
     }
 
     #[test]

@@ -2,6 +2,7 @@ mod completion_cache;
 mod validate;
 
 use std::fmt::Write;
+use std::sync::LazyLock;
 use std::time::{
     Duration,
     Instant,
@@ -34,7 +35,6 @@ use fig_util::terminal::{
     current_terminal_version,
 };
 use flume::Sender;
-use once_cell::sync::Lazy;
 use tokio::sync::Mutex;
 use tracing::{
     error,
@@ -54,8 +54,9 @@ static INLINE_ENABLED: Mutex<bool> = Mutex::const_new(true);
 
 static LAST_RECEIVED: Mutex<Option<SystemTime>> = Mutex::const_new(None);
 
-static CACHE_ENABLED: Lazy<bool> = Lazy::new(|| std::env::var_os("Q_INLINE_SHELL_COMPLETION_CACHE_DISABLE").is_none());
-static COMPLETION_CACHE: Lazy<Mutex<CompletionCache>> = Lazy::new(|| Mutex::new(CompletionCache::new()));
+static CACHE_ENABLED: LazyLock<bool> =
+    LazyLock::new(|| std::env::var_os("Q_INLINE_SHELL_COMPLETION_CACHE_DISABLE").is_none());
+static COMPLETION_CACHE: LazyLock<Mutex<CompletionCache>> = LazyLock::new(|| Mutex::new(CompletionCache::new()));
 
 static TELEMETRY_QUEUE: Mutex<TelemetryQueue> = Mutex::const_new(TelemetryQueue::new());
 

@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use fig_os_shim::{
     ContextArcProvider,
     ContextProvider,
@@ -20,7 +22,6 @@ use fig_proto::local::{
 use fig_remote_ipc::figterm::FigtermState;
 use fig_settings::StateProvider;
 use fig_settings::settings::SettingsProvider;
-use parking_lot::Mutex;
 use tao::event_loop::ControlFlow;
 use tracing::error;
 
@@ -47,16 +48,16 @@ pub async fn debug(command: DebugModeCommand, proxy: &EventLoopProxy) -> LocalRe
 
     let debug_mode = match command.set_debug_mode {
         Some(b) => {
-            *DEBUG_MODE.lock() = b;
+            *DEBUG_MODE.lock().unwrap() = b;
             b
         },
         None => match command.toggle_debug_mode {
             Some(true) => {
-                let mut locked_debug = DEBUG_MODE.lock();
+                let mut locked_debug = DEBUG_MODE.lock().unwrap();
                 *locked_debug = !*locked_debug;
                 *locked_debug
             },
-            _ => *DEBUG_MODE.lock(),
+            _ => *DEBUG_MODE.lock().unwrap(),
         },
     };
 

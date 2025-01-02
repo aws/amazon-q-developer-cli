@@ -23,11 +23,11 @@ pub fn update(
     intercept_state: &InterceptState,
 ) -> RequestResult {
     if let Some(intercept_bound_keystrokes) = request.intercept_bound_keystrokes {
-        *intercept_state.intercept_bound_keystrokes.write() = intercept_bound_keystrokes;
+        *intercept_state.intercept_bound_keystrokes.write().unwrap() = intercept_bound_keystrokes;
     }
 
     if let Some(intercept_global_keystrokes) = request.intercept_global_keystrokes {
-        *intercept_state.intercept_global_keystrokes.write() = intercept_global_keystrokes;
+        *intercept_state.intercept_global_keystrokes.write().unwrap() = intercept_global_keystrokes;
     }
 
     let key_bindings = KeyBindings::load_from_settings("autocomplete")
