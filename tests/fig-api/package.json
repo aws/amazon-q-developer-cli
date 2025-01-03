@@ -12,7 +12,7 @@
   "devDependencies": {
     "@aws/amazon-q-developer-cli-api-bindings": "workspace:^",
     "@amzn/types": "link:../../packages/types",
-    "@types/node": "^22.10.1",
+    "@types/node": "^22.10.4",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }
