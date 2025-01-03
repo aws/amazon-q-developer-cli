@@ -3696,6 +3696,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "generator"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc6bd114ceda131d3b1d665eba35788690ad37f5916457286b32ab6fd3c438dd"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "log",
+ "rustversion",
+ "windows 0.58.0",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4953,6 +4966,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
+name = "loom"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca"
+dependencies = [
+ "cfg-if",
+ "generator",
+ "scoped-tls",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "loop9"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5213,25 +5239,23 @@ dependencies = [
 
 [[package]]
 name = "moka"
-version = "0.12.8"
+version = "0.12.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32cf62eb4dd975d2dde76432fb1075c49e3ee2331cf36f1f8fd4b66550d32b6f"
+checksum = "23db87a7f248211f6a7c8644a1b750541f8a4c68ae7de0f908860e44c0c201f6"
 dependencies = [
  "async-lock",
- "async-trait",
  "crossbeam-channel",
  "crossbeam-epoch",
  "crossbeam-utils",
  "event-listener",
  "futures-util",
- "once_cell",
+ "loom",
  "parking_lot",
  "quanta",
  "rustc_version",
  "smallvec",
  "tagptr",
  "thiserror 1.0.69",
- "triomphe",
  "uuid",
 ]
 
@@ -9008,12 +9032,6 @@ dependencies = [
  "once_cell",
  "petgraph",
 ]
-
-[[package]]
-name = "triomphe"
-version = "0.1.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "859eb650cfee7434994602c3a68b25d77ad9e68c8a6cd491616ef86661382eb3"
 
 [[package]]
 name = "try-lock"
