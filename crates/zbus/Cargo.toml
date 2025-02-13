@@ -46,7 +46,7 @@ zvariant = { version = "4.2.0", default-features = false, features = [
 ] }
 zbus_names = { path = "../zbus_names", version = "3.0" }
 zbus_macros = { version = "=4.4.0" }
-enumflags2 = { version = "0.7.9", features = ["serde"] }
+enumflags2 = { version = "0.7.11", features = ["serde"] }
 async-io = { version = "2.3.2", optional = true }
 futures-core = "0.3.30"
 futures-sink = "0.3.30"
