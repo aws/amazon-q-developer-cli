@@ -7,10 +7,10 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@eslint/js": "^9.18.0",
+    "@eslint/js": "^9.20.0",
     "@gi.ts/cli": "^1.5.10",
     "@gi.ts/lib": "^1.5.13",
-    "eslint": "^9.18.0",
+    "eslint": "^9.20.1",
     "globals": "^15.14.0"
   },
   "scripts": {
