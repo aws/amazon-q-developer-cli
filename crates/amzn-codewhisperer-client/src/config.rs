@@ -349,7 +349,9 @@ impl Builder {
     ///
     /// # Examples
     /// Create a custom endpoint resolver that resolves a different endpoing per-stage, e.g. staging
-    /// vs. production. ```no_run
+    /// vs. production.
+    ///
+    /// ```no_run
     /// use amzn_codewhisperer_client::config::endpoint::{
     ///     Endpoint,
     ///     EndpointFuture,
@@ -1120,7 +1122,9 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature. ```no_run
+    /// `behavior-version-latest` cargo feature.
+    ///
+    /// ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
     ///
     /// let config = amzn_codewhisperer_client::Config::builder()
@@ -1129,8 +1133,9 @@ impl Builder {
     ///     .build();
     /// let client = amzn_codewhisperer_client::Client::from_conf(config);
     /// ```
-    /// 
+    ///
     /// Customizing behavior major version:
+    ///
     /// ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
     ///
@@ -1155,7 +1160,9 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature. ```no_run
+    /// `behavior-version-latest` cargo feature.
+    ///
+    /// ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
     ///
     /// let config = amzn_codewhisperer_client::Config::builder()
@@ -1164,8 +1171,9 @@ impl Builder {
     ///     .build();
     /// let client = amzn_codewhisperer_client::Client::from_conf(config);
     /// ```
-    /// 
+    ///
     /// Customizing behavior major version:
+    ///
     /// ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
     ///

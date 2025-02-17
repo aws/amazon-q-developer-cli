@@ -42,9 +42,9 @@ pub struct StreamingClient(inner::Inner);
 impl StreamingClient {
     pub async fn new() -> Result<Self, Error> {
         let client = if fig_util::system_info::in_cloudshell() {
-            Self::new_qdeveloper_client(&Endpoint::load_q()).await?
+            Self::new_qdeveloper_client_prod().await?
         } else {
-            Self::new_codewhisperer_client(&Endpoint::load_codewhisperer()).await
+            Self::new_codewhisperer_client_prod().await
         };
         Ok(client)
     }
@@ -68,6 +68,10 @@ impl StreamingClient {
         Self(inner::Inner::Codewhisperer(client))
     }
 
+    pub async fn new_codewhisperer_client_prod() -> Self {
+        Self::new_codewhisperer_client(&Endpoint::load_codewhisperer()).await
+    }
+
     pub async fn new_qdeveloper_client(endpoint: &Endpoint) -> Result<Self, Error> {
         let conf_builder: amzn_qdeveloper_streaming_client::config::Builder =
             (&sigv4_sdk_config(endpoint).await?).into();
@@ -80,6 +84,10 @@ impl StreamingClient {
             .build();
         let client = QDeveloperStreamingClient::from_conf(conf);
         Ok(Self(inner::Inner::QDeveloper(client)))
+    }
+
+    pub async fn new_qdeveloper_client_prod() -> Result<Self, Error> {
+        Self::new_qdeveloper_client(&Endpoint::load_q()).await
     }
 
     pub async fn send_message(&self, conversation_state: ConversationState) -> Result<SendMessageOutput, Error> {

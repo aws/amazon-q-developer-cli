@@ -354,7 +354,9 @@ impl Builder {
     ///
     /// # Examples
     /// Create a custom endpoint resolver that resolves a different endpoing per-stage, e.g. staging
-    /// vs. production. ```no_run
+    /// vs. production.
+    ///
+    ///  ```no_run
     /// use amzn_qdeveloper_client::config::endpoint::{
     ///     Endpoint,
     ///     EndpointFuture,
@@ -1135,7 +1137,9 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature. ```no_run
+    /// `behavior-version-latest` cargo feature.
+    ///
+    ///  ```no_run
     /// use amzn_qdeveloper_client::config::BehaviorVersion;
     ///
     /// let config = amzn_qdeveloper_client::Config::builder()
@@ -1170,7 +1174,9 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature. ```no_run
+    /// `behavior-version-latest` cargo feature.
+    ///
+    ///  ```no_run
     /// use amzn_qdeveloper_client::config::BehaviorVersion;
     ///
     /// let config = amzn_qdeveloper_client::Config::builder()

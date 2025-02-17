@@ -399,6 +399,35 @@ impl From<ShellState> for amzn_qdeveloper_streaming_client::types::ShellState {
 }
 
 #[derive(Debug, Clone)]
+pub struct AdditionalContext {
+    pub name: String,
+    pub description: String,
+    pub inner_content: String,
+}
+
+impl From<AdditionalContext> for amzn_codewhisperer_streaming_client::types::AdditionalContentEntry {
+    fn from(value: AdditionalContext) -> Self {
+        Self::builder()
+            .name(value.name)
+            .description(value.description)
+            .inner_context(value.inner_content)
+            .build()
+            .expect("Failed to build amzn_codewhisperer_streaming_client::types::AdditionalContentEntry")
+    }
+}
+
+impl From<AdditionalContext> for amzn_qdeveloper_streaming_client::types::AdditionalContentEntry {
+    fn from(value: AdditionalContext) -> Self {
+        Self::builder()
+            .name(value.name)
+            .description(value.description)
+            .inner_context(value.inner_content)
+            .build()
+            .expect("Failed to build amzn_qdeveloper_streaming_client::types::AdditionalContentEntry")
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct UserInputMessage {
     pub content: String,
     pub user_input_message_context: Option<UserInputMessageContext>,
@@ -432,6 +461,7 @@ pub struct UserInputMessageContext {
     pub shell_state: Option<ShellState>,
     pub env_state: Option<EnvState>,
     pub git_state: Option<GitState>,
+    pub additional_context: Option<Vec<AdditionalContext>>,
 }
 
 impl From<UserInputMessageContext> for amzn_codewhisperer_streaming_client::types::UserInputMessageContext {
@@ -440,6 +470,11 @@ impl From<UserInputMessageContext> for amzn_codewhisperer_streaming_client::type
             .set_shell_state(value.shell_state.map(Into::into))
             .set_env_state(value.env_state.map(Into::into))
             .set_git_state(value.git_state.map(Into::into))
+            .set_additional_context(
+                value
+                    .additional_context
+                    .map(|v| v.into_iter().map(Into::into).collect()),
+            )
             .build()
     }
 }
@@ -450,6 +485,11 @@ impl From<UserInputMessageContext> for amzn_qdeveloper_streaming_client::types::
             .set_shell_state(value.shell_state.map(Into::into))
             .set_env_state(value.env_state.map(Into::into))
             .set_git_state(value.git_state.map(Into::into))
+            .set_additional_context(
+                value
+                    .additional_context
+                    .map(|v| v.into_iter().map(Into::into).collect()),
+            )
             .build()
     }
 }
@@ -503,6 +543,11 @@ mod tests {
                 git_state: Some(GitState {
                     status: "test status".to_string(),
                 }),
+                additional_context: Some(vec![AdditionalContext {
+                    name: "test name".to_string(),
+                    description: "test description".to_string(),
+                    inner_content: "test inner content".to_string(),
+                }]),
             }),
             user_intent: Some(UserIntent::ApplyCommonBestPractices),
         };
