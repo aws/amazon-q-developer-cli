@@ -28,7 +28,7 @@ regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10.6"
-strum = { version = "0.26.1", features = ["derive"] }
+strum = { version = "0.27.1", features = ["derive"] }
 thiserror.workspace = true
 time.workspace = true
 tokio.workspace = true
