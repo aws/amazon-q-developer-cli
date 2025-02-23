@@ -122,7 +122,7 @@ rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
 shell-color = { path = "crates/shell-color" }
 semver = { version = "1.0.16", features = ["serde"] }
 serde = { version = "1.0.216", features = ["derive", "rc"] }
-serde_json = "1.0.115"
+serde_json = "1.0.139"
 sha2 = "0.10.6"
 strum = { version = "0.26.3", features = ["derive"] }
 sysinfo = "0.32.0"
