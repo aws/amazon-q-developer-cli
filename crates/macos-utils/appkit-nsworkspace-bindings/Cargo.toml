@@ -7,7 +7,7 @@ publish.workspace = true
 version.workspace = true
 
 [target.'cfg(target_os = "macos")'.build-dependencies]
-bindgen = "0.70.1"
+bindgen = "0.71.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc.workspace = true
