@@ -156,7 +156,7 @@ winnow = "0.6.2"
 
 # Keep these minor synced with reqwest
 # https://github.com/seanmonstar/reqwest/blob/v0.12.12/Cargo.toml
-rustls = "0.23.21"
+rustls = "0.23.23"
 rustls-native-certs = "0.8.1"
 webpki-roots = "0.26.0"
 
