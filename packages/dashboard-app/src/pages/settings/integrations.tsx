@@ -18,7 +18,7 @@ export default function Page() {
             Beta
           </span>
           <span className="leading-none">
-            Want support for JetBrains, Alacritty, and Kitty?
+            Want support for JetBrains, Alacritty, Kitty, and Ghostty?
           </span>
         </h2>
         <p>{parseBackticksToCode(setupString)}</p>
