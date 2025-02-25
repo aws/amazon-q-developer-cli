@@ -40,14 +40,14 @@
     }
   },
   "devDependencies": {
-    "@eslint/js": "^9.18.0",
+    "@eslint/js": "^9.21.0",
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.10.6",
     "@types/vscode": "~1.80.0",
     "@vscode/test-electron": "^2.4.1",
     "@vscode/vsce": "^2.32.0",
-    "eslint": "^9.18.0",
+    "eslint": "^9.21.0",
     "glob": "^11.0.1",
     "globals": "^15.14.0",
     "mocha": "^10.8.2",
