@@ -15,6 +15,6 @@
     "@aws/amazon-q-developer-cli-api-bindings": "workspace:^",
     "@types/node": "^22.10.6",
     "typescript": "^5.7.3",
-    "vitest": "^2.1.8"
+    "vitest": "^3.0.7"
   }
 }
