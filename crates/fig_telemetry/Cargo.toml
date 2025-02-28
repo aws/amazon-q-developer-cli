@@ -18,8 +18,8 @@ async-trait.workspace = true
 aws-credential-types = "1.1.6"
 aws-sdk-cognitoidentity = "1.51.0"
 aws-sdk-cognitoidentityprovider = "1.60.1"
-aws-smithy-async = "1.2.2"
-aws-smithy-types = "1.2.10"
+aws-smithy-async = "1.2.4"
+aws-smithy-types = "1.2.13"
 aws-toolkit-telemetry-definitions = { path = "../aws-toolkit-telemetry-definitions" }
 fig_auth.workspace = true
 fig_aws_common.workspace = true
