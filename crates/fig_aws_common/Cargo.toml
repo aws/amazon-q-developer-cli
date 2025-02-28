@@ -16,7 +16,7 @@ http.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-aws-smithy-runtime = { version = "1.6.1", features = ["client", "test-util"] }
+aws-smithy-runtime = { version = "1.7.8", features = ["client", "test-util"] }
 
 [lints]
 workspace = true
