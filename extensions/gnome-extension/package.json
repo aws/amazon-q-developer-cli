@@ -15,8 +15,8 @@
     "lint:fix": "eslint --fix src build-scripts && prettier --write src build-scripts types"
   },
   "devDependencies": {
-    "@eslint/js": "^9.18.0",
-    "eslint": "9.18.0",
+    "@eslint/js": "^9.21.0",
+    "eslint": "9.21.0",
     "globals": "^15.14.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
