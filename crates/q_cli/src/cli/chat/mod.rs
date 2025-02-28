@@ -185,6 +185,17 @@ struct ChatArgs<'o, W> {
     terminal_width_provider: fn() -> Option<usize>,
 }
 
+/// Enum used to denote the origin of a tool use event
+enum ToolUseStatus {
+    /// Variant denotes that the tool use event associated with chat context is a direct result of
+    /// a user request
+    Idle,
+    /// Variant denotes that the tool use event associated with the chat context is a result of a
+    /// retry for one or more previously attempted tool use. The tuple is the utterance id
+    /// associated with the original user request that necessitated the tool use
+    RetryInProgress(String),
+}
+
 /// State required for a chat session.
 struct ChatContext<'o, W> {
     /// The [Write] destination for printing conversation text.
@@ -209,6 +220,9 @@ struct ChatContext<'o, W> {
     // tool_use_telemetry_events: Vec<ToolUseEventBuilder>,
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
 
+    /// State used to keep track of tool use relation
+    tool_use_status: ToolUseStatus,
+
     /// Whether or not an unexpected end of chat stream was encountered while consuming the model
     /// response's tool use data. Pair of (tool_use_id, name) for the tool that was being received.
     encountered_tool_use_eos: Option<(String, String)>,
@@ -232,6 +246,7 @@ where
             conversation_state: ConversationState::new(args.tool_config),
             tool_use_recursions: 0,
             tool_use_telemetry_events: HashMap::new(),
+            tool_use_status: ToolUseStatus::Idle,
             encountered_tool_use_eos: None,
         }
     }
@@ -589,6 +604,13 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
                     }
                     self.conversation_state.add_tool_results(tool_results);
                     self.send_tool_use_telemetry().await;
+                    if let ToolUseStatus::Idle = self.tool_use_status {
+                        self.tool_use_status = ToolUseStatus::RetryInProgress(
+                            self.conversation_state
+                                .message_id()
+                                .map_or("No utterance id found".to_string(), |v| v.to_string()),
+                        );
+                    }
                     return Ok(Some(
                         self.client
                             .send_message(self.conversation_state.as_sendable_conversation_state())
@@ -757,6 +779,13 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
                                     ))],
                                     status: ToolResultStatus::Error,
                                 });
+                                if let ToolUseStatus::Idle = self.tool_use_status {
+                                    self.tool_use_status = ToolUseStatus::RetryInProgress(
+                                        self.conversation_state
+                                            .message_id()
+                                            .map_or("No utterance id found".to_string(), |v| v.to_string()),
+                                    );
+                                }
                             },
                         }
                     }
@@ -771,6 +800,7 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
                 },
                 // New user prompt.
                 _ => {
+                    self.tool_use_status = ToolUseStatus::Idle;
                     self.tool_use_recursions = 0;
 
                     if is_initial_input {
@@ -834,7 +864,12 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
     }
 
     async fn send_tool_use_telemetry(&mut self) {
-        for (_, event) in self.tool_use_telemetry_events.drain() {
+        for (_, mut event) in self.tool_use_telemetry_events.drain() {
+            event.user_input_id = match self.tool_use_status {
+                ToolUseStatus::Idle => self.conversation_state.message_id(),
+                ToolUseStatus::RetryInProgress(ref id) => Some(id.as_str()),
+            }
+            .map(|v| v.to_string());
             let event: fig_telemetry::EventType = event.into();
             let app_event = fig_telemetry::AppTelemetryEvent::new(event).await;
             fig_telemetry::dispatch_or_send_event(app_event).await;
