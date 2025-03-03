@@ -420,8 +420,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_format_path() {
-        tracing_subscriber::fmt::init();
-
         async fn assert_paths(cwd: &str, path: &str, expected: &str) {
             let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
             let fs = ctx.fs();
