@@ -30,6 +30,7 @@ zvariant = "zvariant"
 ser = "ser"
 sur = "sur"
 ratatui = "ratatui"
+typ = "typ"
 
 [type.rust.extend-identifiers]
 # typos really wanted to correct 2ND -> 2AND

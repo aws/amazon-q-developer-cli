@@ -19,6 +19,7 @@ phases:
       # Install cargo
       - curl --retry 5 --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
       - . "$HOME/.cargo/env"
+      - rustup toolchain install `cat rust-toolchain.toml | grep channel | cut -d '=' -f2 | tr -d ' "'`
       # Install tauri-cli, required for building and bundling the desktop app
       - cargo install --version 1.6.2 tauri-cli
       # Install cross only if the musl env var is set and not null

@@ -231,6 +231,8 @@ fn absolute_to_relative(cwd: impl AsRef<Path>, path: impl AsRef<Path>) -> Result
         if a == b {
             cwd_parts.next();
             path_parts.next();
+        } else {
+            break;
         }
     }
 
@@ -250,6 +252,14 @@ fn absolute_to_relative(cwd: impl AsRef<Path>, path: impl AsRef<Path>) -> Result
 fn format_path(cwd: impl AsRef<Path>, path: impl AsRef<Path>) -> String {
     absolute_to_relative(cwd, path.as_ref())
         .map(|p| p.to_string_lossy().to_string())
+        // If we have three consecutive ".." then it should probably just stay as an absolute path.
+        .map(|p| {
+            if p.starts_with("../../..") {
+                path.as_ref().to_string_lossy().to_string()
+            } else {
+                p
+            }
+        })
         .unwrap_or(path.as_ref().to_string_lossy().to_string())
 }
 
@@ -406,5 +416,27 @@ mod tests {
             ctx.fs().chroot_path("/~"),
             "tilde should not expand when not the first component"
         );
+    }
+
+    #[tokio::test]
+    async fn test_format_path() {
+        async fn assert_paths(cwd: &str, path: &str, expected: &str) {
+            let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+            let fs = ctx.fs();
+            let cwd = sanitize_path_tool_arg(&ctx, cwd);
+            let path = sanitize_path_tool_arg(&ctx, path);
+            fs.create_dir_all(&cwd).await.unwrap();
+            fs.create_dir_all(&path).await.unwrap();
+            // Using `contains` since the chroot test directory will prefix the formatted path with a tmpdir
+            // path.
+            assert!(format_path(cwd, path).contains(expected));
+        }
+        assert_paths("/Users/testuser/src", "/Users/testuser/Downloads", "../Downloads").await;
+        assert_paths(
+            "/Users/testuser/projects/MyProject/src",
+            "/Volumes/projects/MyProject/src",
+            "/Volumes/projects/MyProject/src",
+        )
+        .await;
     }
 }

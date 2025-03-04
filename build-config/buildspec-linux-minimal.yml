@@ -20,6 +20,7 @@ phases:
       # Install cargo
       - curl --retry 5 --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
       - . "$HOME/.cargo/env"
+      - rustup toolchain install `cat rust-toolchain.toml | grep channel | cut -d '=' -f2 | tr -d ' "'`
       # Install cross only if the musl env var is set and not null
       - if [ ! -z "${AMAZON_Q_BUILD_MUSL:+x}" ]; then cargo install cross --git https://github.com/cross-rs/cross; fi
       # Install python/node via mise (https://mise.jdx.dev/continuous-integration.html)
