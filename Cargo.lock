@@ -6864,16 +6864,6 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quick-xml"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eff6510e86862b57b210fd8cbe8ed3f0d7d600b9c2863cd4549a2e033c66e956"
-dependencies = [
- "memchr",
- "serde",
-]
-
-[[package]]
-name = "quick-xml"
 version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d3a6e5838b60e0e8fa7a43f22ade549a37d61f8bdbe636d0d7816191de969c2"
@@ -6888,6 +6878,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
 dependencies = [
  "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -10522,17 +10513,6 @@ dependencies = [
 
 [[package]]
 name = "zbus_names"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b9b1fef7d021261cc16cba64c351d291b715febe0fa10dc3a443ac5a5022e6c"
-dependencies = [
- "serde",
- "static_assertions",
- "zvariant 4.2.0",
-]
-
-[[package]]
-name = "zbus_names"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "856b7a38811f71846fd47856ceee8bccaec8399ff53fb370247e66081ace647b"
@@ -10545,15 +10525,15 @@ dependencies = [
 
 [[package]]
 name = "zbus_xml"
-version = "4.0.0"
+version = "5.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab3f374552b954f6abb4bd6ce979e6c9b38fb9d0cd7cc68a7d796e70c9f3a233"
+checksum = "589e9a02bfafb9754bb2340a9e3b38f389772684c63d9637e76b1870377bec29"
 dependencies = [
- "quick-xml 0.30.0",
+ "quick-xml 0.36.2",
  "serde",
  "static_assertions",
- "zbus_names 3.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zvariant 4.2.0",
+ "zbus_names 4.1.0",
+ "zvariant 5.1.0",
 ]
 
 [[package]]
