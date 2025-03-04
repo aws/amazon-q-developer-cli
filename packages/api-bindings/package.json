@@ -34,7 +34,7 @@
     "eslint": "^9.18.0",
     "lint-staged": "^15.3.0",
     "prettier": "^3.4.2",
-    "ts-morph": "^25.0.0",
+    "ts-morph": "^25.0.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   },
