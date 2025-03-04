@@ -194,6 +194,60 @@ impl ConversationState {
             debug!(?msg, "last message in history is from the user, dropping");
             self.history.pop_back();
         }
+
+        // If the last message from the assistant contains tool uses, we need to ensure that the
+        // next user message contains tool results.
+        match (self.history.iter().last(), &mut self.next_message) {
+            (
+                Some(ChatMessage::AssistantResponseMessage(AssistantResponseMessage {
+                    tool_uses: Some(tool_uses),
+                    ..
+                })),
+                Some(msg),
+            ) if !tool_uses.is_empty() => match msg.user_input_message_context.as_mut() {
+                Some(ctx) => {
+                    if ctx.tool_results.as_ref().is_none_or(|r| r.is_empty()) {
+                        ctx.tool_results = Some(
+                            tool_uses
+                                .iter()
+                                .map(|tool_use| ToolResult {
+                                    tool_use_id: tool_use.tool_use_id.clone(),
+                                    content: vec![ToolResultContentBlock::Text(
+                                        "Tool use was cancelled by the user".to_string(),
+                                    )],
+                                    status: fig_api_client::model::ToolResultStatus::Error,
+                                })
+                                .collect::<Vec<_>>(),
+                        );
+                    }
+                },
+                None => {
+                    let tool_results = tool_uses
+                        .iter()
+                        .map(|tool_use| ToolResult {
+                            tool_use_id: tool_use.tool_use_id.clone(),
+                            content: vec![ToolResultContentBlock::Text(
+                                "Tool use was cancelled by the user".to_string(),
+                            )],
+                            status: fig_api_client::model::ToolResultStatus::Error,
+                        })
+                        .collect::<Vec<_>>();
+                    let user_input_message_context = UserInputMessageContext {
+                        shell_state: None,
+                        env_state: Some(build_env_state()),
+                        tool_results: Some(tool_results),
+                        tools: if self.tools.is_empty() {
+                            None
+                        } else {
+                            Some(self.tools.clone())
+                        },
+                        ..Default::default()
+                    };
+                    msg.user_input_message_context = Some(user_input_message_context);
+                },
+            },
+            _ => {},
+        }
     }
 
     pub fn add_tool_results(&mut self, tool_results: Vec<ToolResult>) {
