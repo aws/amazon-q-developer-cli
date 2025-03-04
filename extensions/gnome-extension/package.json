@@ -22,7 +22,7 @@
     "typescript-eslint": "^8.20.0"
   },
   "dependencies": {
-    "@girs/gjs": "4.0.0-beta.16",
+    "@girs/gjs": "4.0.0-beta.21",
     "@girs/gnome-shell": "^46.0.2"
   },
   "sideEffects": false
