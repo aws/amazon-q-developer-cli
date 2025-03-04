@@ -309,7 +309,6 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                 <green>• 🔍 What tools do you have?\n\
                 • 🛠️ Fix the build failures in this project\n\
                 • ✅ Write unit tests and markdown docs for my application\n\
-                • 💾 Remember to talk like a pirate in our future interactions\n\
  • ☁️ List the s3 buckets I have in us-west-2</green>
 
 <em>@history</em> to pass your shell history
