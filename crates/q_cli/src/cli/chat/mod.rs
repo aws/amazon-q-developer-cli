@@ -270,11 +270,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                 • 🛠️ Fix the build failures in this project\n\
                 • ✅ Write unit tests and markdown docs for my application\n\
  • ☁️ List the s3 buckets I have in us-west-2</green>
-
-<em>@history</em> to pass your shell history
-<em>@git</em> to pass information about your current git repository
-<em>@env</em> to pass your shell environment
-\n<dim>Type <green>exit</green> to quit</dim>\n
+\n<dim>Type <green>/exit</green> to quit</dim>\n
 "
                 })
             )?;
