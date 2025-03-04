@@ -303,38 +303,6 @@ impl ConversationState {
         self.next_message = Some(msg);
     }
 
-    /// Sets the next user message with "interrupted" tool results.
-    pub fn interrupt_tool_use(&mut self, interrupted_tools: Vec<(String, super::tools::Tool)>, deny_input: String) {
-        debug_assert!(self.next_message.is_none());
-        let tool_results = interrupted_tools
-            .into_iter()
-            .map(|(tool_use_id, _)| ToolResult {
-                tool_use_id,
-                content: vec![ToolResultContentBlock::Text(
-                    "Tool use was interrupted by the user".to_string(),
-                )],
-                status: fig_api_client::model::ToolResultStatus::Error,
-            })
-            .collect::<Vec<_>>();
-        let user_input_message_context = UserInputMessageContext {
-            shell_state: None,
-            env_state: Some(build_env_state()),
-            tool_results: Some(tool_results),
-            tools: if self.tools.is_empty() {
-                None
-            } else {
-                Some(self.tools.clone())
-            },
-            ..Default::default()
-        };
-        let msg = UserInputMessage {
-            content: deny_input,
-            user_input_message_context: Some(user_input_message_context),
-            user_intent: None,
-        };
-        self.next_message = Some(msg);
-    }
-
     /// Returns a [FigConversationState] capable of being sent by
     /// [fig_api_client::StreamingClient] while preparing the current conversation state to be sent
     /// in the next message.
