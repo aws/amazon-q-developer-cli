@@ -31,7 +31,7 @@
     "@vitest/coverage-v8": "^2.1.8",
     "@vitest/ui": "^2.1.8",
     "husky": "^9.1.7",
-    "lint-staged": "^15.3.0",
+    "lint-staged": "^15.4.3",
     "micromatch": "^4.0.8",
     "prettier": "^3.4.2",
     "tsx": "^4.19.2",
