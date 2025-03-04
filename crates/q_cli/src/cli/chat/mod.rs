@@ -37,6 +37,7 @@ use eyre::{
 use fig_api_client::StreamingClient;
 use fig_api_client::clients::SendMessageOutput;
 use fig_api_client::model::{
+    AssistantResponseMessage,
     ChatResponseStream,
     ToolResult,
     ToolResultContentBlock,
@@ -379,13 +380,25 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                             cursor::MoveToColumn(0),
                         )?;
                     }
-                    let mut tool_uses = None;
-                    let mut tools_were_interrupted = false;
                     match e {
                         ChatError::Interrupted { tool_uses: inter } => {
                             execute!(self.output, style::Print("\n\n"))?;
-                            tool_uses = inter;
-                            tools_were_interrupted = true;
+                            // If there was an interrupt during tool execution, then we add fake
+                            // messages to "reset" the chat state.
+                            if let Some(ref tool_uses) = inter {
+                                self.conversation_state.abandon_tool_use(
+                                    tool_uses.clone(),
+                                    "The user interrupted the tool execution.".to_string(),
+                                );
+                                let _ = self.conversation_state.as_sendable_conversation_state();
+                                self.conversation_state
+                                    .push_assistant_message(AssistantResponseMessage {
+                                        message_id: None,
+                                        content: "Tool uses were interrupted, waiting for the next user prompt"
+                                            .to_string(),
+                                        tool_uses: None,
+                                    });
+                            }
                         },
                         ChatError::Client(err) => {
                             if let fig_api_client::Error::QuotaBreach(msg) = err {
@@ -408,8 +421,8 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                     }
                     self.conversation_state.fix_history();
                     next_state = Some(ChatState::PromptUser {
-                        tool_uses,
-                        tools_were_interrupted,
+                        tool_uses: None,
+                        tools_were_interrupted: false,
                     });
                 },
             }
