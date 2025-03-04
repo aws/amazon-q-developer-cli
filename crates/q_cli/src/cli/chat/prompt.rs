@@ -22,18 +22,17 @@ use rustyline::{
 };
 use winnow::stream::AsChar;
 
-const MODIFIERS: &[&str] = &["@history", "@git", "@env"];
-const COMMANDS: &[&str] = &["/clear"];
+const COMMANDS: &[&str] = &["/clear", "/help"];
 
-pub struct ChatCompleater {}
+pub struct ChatCompleter {}
 
-impl ChatCompleater {
+impl ChatCompleter {
     fn new() -> Self {
         Self {}
     }
 }
 
-impl Completer for ChatCompleater {
+impl Completer for ChatCompleter {
     type Candidate = String;
 
     fn complete(
@@ -45,13 +44,7 @@ impl Completer for ChatCompleater {
         let (start, word) = extract_word(line, pos, None, |c| c.is_space());
         Ok((
             start,
-            if word.starts_with('@') {
-                MODIFIERS
-                    .iter()
-                    .filter(|p| p.starts_with(word))
-                    .map(|s| (*s).to_owned())
-                    .collect()
-            } else if word.starts_with('/') {
+            if word.starts_with('/') {
                 COMMANDS
                     .iter()
                     .filter(|p| p.starts_with(word))
@@ -67,7 +60,7 @@ impl Completer for ChatCompleater {
 #[derive(Helper, Completer, Hinter, Validator)]
 pub struct ChatHelper {
     #[rustyline(Completer)]
-    completer: ChatCompleater,
+    completer: ChatCompleter,
     #[rustyline(Validator)]
     validator: (),
     #[rustyline(Hinter)]
@@ -107,7 +100,7 @@ pub fn rl() -> Result<Editor<ChatHelper, DefaultHistory>> {
         .edit_mode(edit_mode)
         .build();
     let h = ChatHelper {
-        completer: ChatCompleater::new(),
+        completer: ChatCompleter::new(),
         hinter: (),
         validator: (),
     };

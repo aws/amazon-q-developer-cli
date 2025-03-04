@@ -1,9 +1,9 @@
+mod command;
 mod conversation_state;
 mod input_source;
 mod parse;
 mod parser;
 mod prompt;
-mod stdio;
 mod tools;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -16,6 +16,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
+use command::Command;
 use conversation_state::ConversationState;
 use crossterm::style::{
     Attribute,
@@ -77,7 +78,19 @@ use crate::cli::chat::parse::{
 };
 use crate::util::region_check;
 
-pub async fn chat(initial_input: Option<String>) -> Result<ExitCode> {
+const HELP_TEXT: &str = color_print::cstr! {"
+
+<magenta,em>q</magenta,em> (Amazon Q Chat)
+
+<em>/clear</em>        <black!>Clear the conversation history</black!>
+<em>/help</em>         <black!>Show this help dialogue</black!>
+<em>/quit</em>         <black!>Quit the application</black!>
+
+<em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
+
+"};
+
+pub async fn chat(input: Option<String>) -> Result<ExitCode> {
     if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
         bail!(
             "You are not logged in, please log in with {}",
@@ -88,102 +101,32 @@ pub async fn chat(initial_input: Option<String>) -> Result<ExitCode> {
     region_check("chat")?;
 
     let ctx = Context::new();
+    let output = std::io::stderr();
+
     let stdin = std::io::stdin();
-    let is_interactive = stdin.is_terminal();
-    let initial_input = if !is_interactive {
+    let interactive = stdin.is_terminal();
+    let input = if !interactive {
         // append to input string any extra info that was provided.
-        let mut input = initial_input.unwrap_or_default();
+        let mut input = input.unwrap_or_default();
         stdin.lock().read_to_string(&mut input)?;
         Some(input)
     } else {
-        initial_input
+        input
     };
-
-    let tool_config = load_tools()?;
-    debug!(?tool_config, "Using tools");
 
     let client = match ctx.env().get("Q_MOCK_CHAT_RESPONSE") {
         Ok(json) => create_stream(serde_json::from_str(std::fs::read_to_string(json)?.as_str())?),
         _ => StreamingClient::new().await?,
     };
 
-    let mut output = stdio::StdioOutput::new(is_interactive);
-    let result = ChatContext::new(ChatArgs {
-        output: &mut output,
-        ctx,
-        initial_input,
-        input_source: InputSource::new()?,
-        is_interactive,
-        tool_config,
-        client,
-        terminal_width_provider: || terminal::window_size().map(|s| s.columns.into()).ok(),
-    })
-    .try_chat()
-    .await;
+    let mut chat = ChatContext::new(ctx, output, input, InputSource::new()?, interactive, client, || {
+        terminal::window_size().map(|s| s.columns.into()).ok()
+    })?;
 
-    if is_interactive {
-        queue!(
-            output,
-            cursor::MoveToColumn(0),
-            style::SetAttribute(Attribute::Reset),
-            style::ResetColor,
-            cursor::Show
-        )
-        .ok();
-    }
-    output.flush().ok();
+    let result = chat.try_chat().await.map(|_| ExitCode::SUCCESS);
+    drop(chat); // Explicit drop for clarity
 
-    result.map(|_| ExitCode::SUCCESS)
-}
-
-/// The tools that can be used by the model.
-#[derive(Debug, Clone)]
-pub struct ToolConfiguration {
-    tools: HashMap<String, ToolSpec>,
-}
-
-/// Returns all tools supported by Q chat.
-fn load_tools() -> Result<ToolConfiguration> {
-    let tools: Vec<ToolSpec> = serde_json::from_str(include_str!("tools/tool_index.json"))?;
-    Ok(ToolConfiguration {
-        tools: tools.into_iter().map(|spec| (spec.name.clone(), spec)).collect(),
-    })
-}
-
-fn print_error<W: Write>(
-    output: &mut W,
-    prepend_msg: &str,
-    report: Option<eyre::Report>,
-) -> Result<(), std::io::Error> {
-    queue!(
-        output,
-        style::SetAttribute(Attribute::Bold),
-        style::SetForegroundColor(Color::Red),
-    )?;
-    if let Some(report) = report {
-        queue!(output, style::Print(format!("{}: {:?}\n", prepend_msg, report)),)?;
-    } else {
-        queue!(output, style::Print(prepend_msg), style::Print("\n"))?;
-    }
-    queue!(
-        output,
-        style::SetForegroundColor(Color::Reset),
-        style::SetAttribute(Attribute::Reset),
-    )?;
-    output.flush()
-}
-
-/// Required fields for initializing a new chat session.
-struct ChatArgs<'o, W> {
-    /// The [Write] destination for printing conversation text.
-    output: &'o mut W,
-    ctx: Arc<Context>,
-    initial_input: Option<String>,
-    input_source: InputSource,
-    is_interactive: bool,
-    tool_config: ToolConfiguration,
-    client: StreamingClient,
-    terminal_width_provider: fn() -> Option<usize>,
+    result
 }
 
 /// Enum used to denote the origin of a tool use event
@@ -213,13 +156,13 @@ pub enum ChatError {
     Interrupted { tool_uses: Option<Vec<QueuedTool>> },
 }
 
-pub struct ChatContext<'o, W> {
-    /// The [Write] destination for printing conversation text.
-    output: &'o mut W,
+pub struct ChatContext<W: Write> {
     ctx: Arc<Context>,
+    /// The [Write] destination for printing conversation text.
+    output: W,
     initial_input: Option<String>,
     input_source: InputSource,
-    is_interactive: bool,
+    interactive: bool,
     /// The client to use to interact with the model.
     client: StreamingClient,
     /// Width of the terminal, required for [ParseState].
@@ -233,17 +176,50 @@ pub struct ChatContext<'o, W> {
     tool_use_status: ToolUseStatus,
 }
 
-impl<W> std::fmt::Debug for ChatContext<'_, W> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ChatContext")
-            .field("initial_input", &self.initial_input)
-            .field("input_source", &self.input_source)
-            .field("is_interactive", &self.is_interactive)
-            .field("client", &self.client)
-            .field("terminal_width_provider", &self.terminal_width_provider)
-            .field("conversation_state", &self.conversation_state)
-            .field("tool_use_telemetry_events", &self.tool_use_telemetry_events)
-            .finish()
+impl<W: Write> ChatContext<W> {
+    pub fn new(
+        ctx: Arc<Context>,
+        output: W,
+        input: Option<String>,
+        input_source: InputSource,
+        interactive: bool,
+        client: StreamingClient,
+        terminal_width_provider: fn() -> Option<usize>,
+    ) -> Result<Self> {
+        Ok(Self {
+            ctx,
+            output,
+            initial_input: input,
+            input_source,
+            interactive,
+            client,
+            terminal_width_provider,
+            spinner: None,
+            conversation_state: ConversationState::new(load_tools()?),
+            tool_use_telemetry_events: HashMap::new(),
+            tool_use_status: ToolUseStatus::Idle,
+        })
+    }
+}
+
+impl<W: Write> Drop for ChatContext<W> {
+    fn drop(&mut self) {
+        if let Some(spinner) = &mut self.spinner {
+            spinner.stop();
+        }
+
+        if self.interactive {
+            queue!(
+                self.output,
+                cursor::MoveToColumn(0),
+                style::SetAttribute(Attribute::Reset),
+                style::ResetColor,
+                cursor::Show
+            )
+            .ok();
+        }
+
+        self.output.flush().ok();
     }
 }
 
@@ -279,28 +255,12 @@ impl Default for ChatState {
     }
 }
 
-impl<'o, W> ChatContext<'o, W>
+impl<W> ChatContext<W>
 where
     W: Write,
 {
-    fn new(args: ChatArgs<'o, W>) -> Self {
-        Self {
-            output: args.output,
-            ctx: args.ctx,
-            initial_input: args.initial_input,
-            input_source: args.input_source,
-            is_interactive: args.is_interactive,
-            client: args.client,
-            terminal_width_provider: args.terminal_width_provider,
-            spinner: None,
-            conversation_state: ConversationState::new(args.tool_config),
-            tool_use_telemetry_events: HashMap::new(),
-            tool_use_status: ToolUseStatus::Idle,
-        }
-    }
-
     async fn try_chat(&mut self) -> Result<()> {
-        if self.is_interactive {
+        if self.interactive {
             execute!(
                 self.output,
                 style::Print(color_print::cstr! {"
@@ -315,7 +275,6 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
 <em>@git</em> to pass information about your current git repository
 <em>@env</em> to pass your shell environment
 \n<dim>Type <green>exit</green> to quit</dim>\n
-
 "
                 })
             )?;
@@ -371,8 +330,31 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
             match result {
                 Ok(state) => next_state = Some(state),
                 Err(e) => {
+                    fn print_error<W: Write>(
+                        output: &mut W,
+                        prepend_msg: &str,
+                        report: Option<eyre::Report>,
+                    ) -> Result<(), std::io::Error> {
+                        queue!(
+                            output,
+                            style::SetAttribute(Attribute::Bold),
+                            style::SetForegroundColor(Color::Red),
+                        )?;
+
+                        match report {
+                            Some(report) => queue!(output, style::Print(format!("{}: {:?}\n", prepend_msg, report)),)?,
+                            None => queue!(output, style::Print(prepend_msg), style::Print("\n"))?,
+                        }
+
+                        execute!(
+                            output,
+                            style::SetAttribute(Attribute::Reset),
+                            style::SetForegroundColor(Color::Reset),
+                        )
+                    }
+
                     error!(?e, "An error occurred processing the current state");
-                    if self.is_interactive && self.spinner.is_some() {
+                    if self.interactive && self.spinner.is_some() {
                         drop(self.spinner.take());
                         queue!(
                             self.output,
@@ -388,10 +370,10 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                         },
                         ChatError::Client(err) => {
                             if let fig_api_client::Error::QuotaBreach(msg) = err {
-                                print_error(self.output, msg, None)?;
+                                print_error(&mut self.output, msg, None)?;
                             } else {
                                 print_error(
-                                    self.output,
+                                    &mut self.output,
                                     "Amazon Q is having trouble responding right now",
                                     Some(err.into()),
                                 )?;
@@ -399,7 +381,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                         },
                         _ => {
                             print_error(
-                                self.output,
+                                &mut self.output,
                                 "Amazon Q is having trouble responding right now",
                                 Some(e.into()),
                             )?;
@@ -414,7 +396,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
 
     /// Read input from the user.
     async fn prompt_user(&mut self, mut tool_uses: Option<Vec<QueuedTool>>) -> Result<ChatState, ChatError> {
-        if self.is_interactive {
+        if self.interactive {
             execute!(self.output, cursor::Show)?;
         }
         let tool_uses = tool_uses.take().unwrap_or_default();
@@ -430,7 +412,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                     style::Print(format!("{}\n", "▔".repeat(terminal_width))),
                     style::SetForegroundColor(Color::Reset),
                 )?;
-                tool.queue_description(&self.ctx, self.output)
+                tool.queue_description(&self.ctx, &mut self.output)
                     .map_err(|e| ChatError::Custom(format!("failed to print tool: {}", e).into()))?;
                 queue!(self.output, style::Print("\n"))?;
             }
@@ -468,33 +450,20 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
         user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
     ) -> Result<ChatState, ChatError> {
+        let Ok(command) = Command::parse(&user_input) else {
+            return Ok(ChatState::PromptUser { tool_uses });
+        };
+
         let tool_uses = tool_uses.unwrap_or_default();
-        match user_input.as_str() {
-            "exit" | "quit" => Ok(ChatState::Exit),
-            "/clear" => {
-                self.conversation_state.clear();
-                execute!(
-                    self.output,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print("\nConversation history cleared\n\n"),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
-                Ok(ChatState::PromptUser { tool_uses: None })
-            },
-            "y" if !tool_uses.is_empty() => Ok(ChatState::ExecuteTools(tool_uses)),
-            _ => {
+        Ok(match command {
+            Command::Ask { prompt } => {
+                if ["y", "Y"].contains(&prompt.as_str()) {
+                    return Ok(ChatState::ExecuteTools(tool_uses));
+                }
+
                 self.tool_use_status = ToolUseStatus::Idle;
-                if self.is_interactive {
+                if self.interactive {
                     queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
-                    if user_input.contains("@history") {
-                        queue!(self.output, style::Print("Using shell history\n"))?;
-                    }
-                    if user_input.contains("@git") {
-                        queue!(self.output, style::Print("Using git context\n"))?;
-                    }
-                    if user_input.contains("@env") {
-                        queue!(self.output, style::Print("Using environment\n"))?;
-                    }
                     queue!(self.output, style::SetForegroundColor(Color::Reset))?;
                     queue!(self.output, cursor::Hide)?;
                     execute!(self.output, style::Print("\n"))?;
@@ -508,13 +477,37 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                 }
 
                 self.send_tool_use_telemetry().await;
-                return Ok(ChatState::HandleResponseStream(
+
+                ChatState::HandleResponseStream(
                     self.client
                         .send_message(self.conversation_state.as_sendable_conversation_state())
                         .await?,
-                ));
+                )
             },
-        }
+            Command::Execute { command } => {
+                queue!(self.output, style::Print('\n'))?;
+                std::process::Command::new("bash").args(["-c", &command]).status().ok();
+                queue!(self.output, style::Print('\n'))?;
+                ChatState::PromptUser { tool_uses: None }
+            },
+            Command::Clear => {
+                self.conversation_state.clear();
+
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("\nConversation history cleared\n\n"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+
+                ChatState::PromptUser { tool_uses: None }
+            },
+            Command::Help => {
+                execute!(self.output, style::Print(HELP_TEXT))?;
+                ChatState::PromptUser { tool_uses: None }
+            },
+            Command::Quit => ChatState::Exit,
+        })
     }
 
     async fn tool_use_execute(&mut self, tool_uses: Vec<QueuedTool>) -> Result<ChatState, ChatError> {
@@ -535,9 +528,9 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                 style::Print(format!("{}\n", "▔".repeat(terminal_width))),
                 style::SetForegroundColor(Color::Reset),
             )?;
-            let invoke_result = tool.1.invoke(&self.ctx, self.output).await;
+            let invoke_result = tool.1.invoke(&self.ctx, &mut self.output).await;
 
-            if self.is_interactive && self.spinner.is_some() {
+            if self.interactive && self.spinner.is_some() {
                 queue!(
                     self.output,
                     terminal::Clear(terminal::ClearType::CurrentLine),
@@ -635,7 +628,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                             buf.push_str(&text);
                         },
                         parser::ResponseEvent::ToolUse(tool_use) => {
-                            if self.is_interactive && self.spinner.is_some() {
+                            if self.interactive && self.spinner.is_some() {
                                 drop(self.spinner.take());
                                 queue!(
                                     self.output,
@@ -662,7 +655,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                         tool_use_id,
                         name, "The response stream ended before the entire tool use was received"
                     );
-                    if self.is_interactive {
+                    if self.interactive {
                         execute!(self.output, cursor::Hide)?;
                         self.spinner = Some(Spinner::new(
                             Spinners::Dots,
@@ -696,7 +689,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                 buf.push('\n');
             }
 
-            if tool_name_being_recvd.is_none() && !buf.is_empty() && self.is_interactive && self.spinner.is_some() {
+            if tool_name_being_recvd.is_none() && !buf.is_empty() && self.interactive && self.spinner.is_some() {
                 drop(self.spinner.take());
                 queue!(
                     self.output,
@@ -728,7 +721,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
             }
 
             // Set spinner after showing all of the assistant text content so far.
-            if let (Some(name), true) = (&tool_name_being_recvd, self.is_interactive) {
+            if let (Some(name), true) = (&tool_name_being_recvd, self.interactive) {
                 queue!(
                     self.output,
                     style::SetForegroundColor(Color::Blue),
@@ -747,7 +740,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
                     )
                     .await;
                 }
-                if self.is_interactive {
+                if self.interactive {
                     queue!(self.output, style::ResetColor, style::SetAttribute(Attribute::Reset))?;
                     execute!(self.output, style::Print("\n"))?;
 
@@ -1004,6 +997,11 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
     StreamingClient::mock(mock)
 }
 
+/// Returns all tools supported by Q chat.
+fn load_tools() -> Result<HashMap<String, ToolSpec>> {
+    Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1011,7 +1009,6 @@ mod tests {
     #[tokio::test]
     async fn test_flow() {
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
-        let mut output = std::io::stdout();
         let test_client = create_stream(serde_json::json!([
             [
                 "Sure, I'll create a file for you",
@@ -1030,22 +1027,23 @@ mod tests {
             ],
         ]));
 
-        let c = ChatArgs {
-            output: &mut output,
-            ctx: Arc::clone(&ctx),
-            initial_input: None,
-            input_source: InputSource::new_mock(vec![
+        ChatContext::new(
+            Arc::clone(&ctx),
+            std::io::stdout(),
+            None,
+            InputSource::new_mock(vec![
                 "create a new file".to_string(),
                 "y".to_string(),
                 "exit".to_string(),
             ]),
-            is_interactive: true,
-            tool_config: load_tools().unwrap(),
-            client: test_client,
-            terminal_width_provider: || Some(80),
-        };
-
-        ChatContext::new(c).try_chat().await.unwrap();
+            true,
+            test_client,
+            || Some(80),
+        )
+        .unwrap()
+        .try_chat()
+        .await
+        .unwrap();
 
         assert_eq!(ctx.fs().read_to_string("/file.txt").await.unwrap(), "Hello, world!");
     }

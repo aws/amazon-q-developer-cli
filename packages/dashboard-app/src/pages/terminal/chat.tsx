@@ -21,24 +21,6 @@ export default function Page() {
             command line. Ask Amazon Q a question, and receive an in-depth
             answer.
           </p>
-          <div className="flex flex-col">
-            <p className="font-light leading-tight">
-              To increase the fidelity of the response, you can pass context
-              about your environment with:
-            </p>
-            <ul className="flex flex-col gap-0 list-disc ml-5">
-              <li>
-                <Code>@history</Code> to pass your shell history
-              </li>
-              <li>
-                <Code>@git</Code> to pass information about your current git
-                repository
-              </li>
-              <li>
-                <Code>@env</Code> to pass your shell environment
-              </li>
-            </ul>
-          </div>
           <Terminal title="Passing Context">
             <Terminal.Tab>
               <img src={chatWithContextDemo} alt="chat with context demo" />
