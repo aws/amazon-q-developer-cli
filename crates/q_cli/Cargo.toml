@@ -67,6 +67,7 @@ rustyline = { version = "14.0.0", features = ["derive"] }
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+shlex.workspace = true
 spinners = "4.1.0"
 sysinfo.workspace = true
 tempfile.workspace = true

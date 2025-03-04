@@ -24,12 +24,34 @@ use super::{
 };
 use crate::cli::chat::truncate_safe;
 
+const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail"];
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecuteBash {
     pub command: String,
 }
 
 impl ExecuteBash {
+    pub fn requires_consent(&self) -> bool {
+        let Some(args) = shlex::split(&self.command) else {
+            return true;
+        };
+
+        const DANGEROUS_PATTERNS: &[&str] = &["|", "<(", "$(", "`", ">", "&&", "||"];
+        if args
+            .iter()
+            .any(|arg| DANGEROUS_PATTERNS.iter().any(|p| arg.contains(p)))
+        {
+            return true;
+        }
+
+        if let Some(cmd) = args.first() {
+            !READONLY_COMMANDS.contains(&cmd.as_str())
+        } else {
+            true
+        }
+    }
+
     pub async fn invoke(&self, mut updates: impl Write) -> Result<InvokeOutput> {
         // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
         let mut child = tokio::process::Command::new("bash")
@@ -171,7 +193,6 @@ mod tests {
         // Verifying stderr
         let v = serde_json::json!({
             "command": "echo Hello, world! 1>&2",
-            "interactive": false
         });
         let out = serde_json::from_value::<ExecuteBash>(v)
             .unwrap()
@@ -203,6 +224,47 @@ mod tests {
             assert_eq!(json.get("stderr").unwrap(), "");
         } else {
             panic!("Expected JSON output");
+        }
+    }
+
+    #[test]
+    fn test_requires_consent_for_readonly_commands() {
+        let cmds = &[
+            // Safe commands
+            ("ls ~", false),
+            ("ls -al ~", false),
+            ("pwd", false),
+            ("echo 'Hello, world!'", false),
+            ("which aws", false),
+            // Potentially dangerous readonly commands
+            ("echo hi > myimportantfile", true),
+            ("ls -al >myimportantfile", true),
+            ("echo hi 2> myimportantfile", true),
+            ("echo hi >> myimportantfile", true),
+            ("echo $(rm myimportantfile)", true),
+            ("echo `rm myimportantfile`", true),
+            ("echo hello && rm myimportantfile", true),
+            ("echo hello&&rm myimportantfile", true),
+            ("ls nonexistantpath || rm myimportantfile", true),
+            ("echo myimportantfile | xargs rm", true),
+            ("echo myimportantfile|args rm", true),
+            ("echo <(rm myimportantfile)", true),
+            ("cat <<< 'some string here' > myimportantfile", true),
+            ("echo '\n#!/usr/bin/env bash\necho hello\n' > myscript.sh", true),
+            ("cat <<EOF > myimportantfile\nhello world\nEOF", true),
+        ];
+        for (cmd, expected) in cmds {
+            let tool = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+                "command": cmd,
+            }))
+            .unwrap();
+            assert_eq!(
+                tool.requires_consent(),
+                *expected,
+                "expected command: `{}` to have requires_consent: `{}`",
+                cmd,
+                expected
+            );
         }
     }
 }

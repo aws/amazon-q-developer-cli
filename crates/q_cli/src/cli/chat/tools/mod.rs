@@ -85,7 +85,7 @@ impl Tool {
         match self {
             Tool::FsRead(_) => false,
             Tool::FsWrite(_) => true,
-            Tool::ExecuteBash(_) => true,
+            Tool::ExecuteBash(execute_bash) => execute_bash.requires_consent(),
             Tool::UseAws(use_aws) => use_aws.requires_consent(),
         }
     }

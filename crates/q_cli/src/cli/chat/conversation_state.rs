@@ -92,6 +92,13 @@ impl ConversationState {
             warn!(?next_message, "next_message should not exist");
         }
 
+        let input = if input.is_empty() {
+            warn!("input must not be empty when adding new messages");
+            "Empty prompt".to_string()
+        } else {
+            input
+        };
+
         let msg = UserInputMessage {
             content: input,
             user_input_message_context: Some(UserInputMessageContext {
@@ -142,6 +149,9 @@ impl ConversationState {
     ///    are dropped.
     /// 3. The last message is from the assistant. The last message is dropped if it is from the
     ///    user.
+    /// 4. If the last message is from the assistant and it contains tool uses, and a next user
+    ///    message is set without tool results, then the user message will have cancelled tool
+    ///    results.
     pub fn fix_history(&mut self) {
         // Trim the conversation history by finding the second oldest message from the user without
         // tool results - this will be the new oldest message in the history.
@@ -158,7 +168,7 @@ impl ConversationState {
                             matches!(
                                 m.user_input_message_context.as_ref(),
                                 Some(ctx) if ctx.tool_results.as_ref().is_none_or(|v| v.is_empty())
-                            )
+                            ) && !m.content.is_empty()
                         },
                         ChatMessage::AssistantResponseMessage(_) => false,
                     }
@@ -172,7 +182,6 @@ impl ConversationState {
                 None => {
                     debug!("no valid starting user message found in the history, clearing");
                     self.history.clear();
-
                     // Edge case: if the next message contains tool results, then we have to just
                     // abandon them.
                     match &mut self.next_message {
