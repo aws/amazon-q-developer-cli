@@ -1,5 +1,4 @@
 import { UserPrefView } from "@/components/preference/list";
-import { Code } from "@/components/text/code";
 import { Terminal } from "@/components/ui/terminal";
 import settings, { intro } from "@/data/chat";
 import chatWithContextDemo from "@assets/images/chat_with_context_demo.gif";
