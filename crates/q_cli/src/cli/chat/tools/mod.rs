@@ -69,6 +69,17 @@ impl Tool {
         }
     }
 
+    // TODO: Remove, just roll with it for now ya?
+    pub fn display_name_action(&self) -> String {
+        match self {
+            Tool::FsRead(_) => "Reading from filesystem",
+            Tool::FsWrite(_) => "Writing to filesystem",
+            Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
+            Tool::UseAws(_) => "Using AWS CLI",
+        }
+        .to_owned()
+    }
+
     /// Whether or not the tool should prompt the user for consent before [Self::invoke] is called.
     pub fn requires_consent(&self, _ctx: &Context) -> bool {
         match self {

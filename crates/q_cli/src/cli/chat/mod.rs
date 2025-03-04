@@ -447,19 +447,18 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
             execute!(
                 self.output,
                 style::SetForegroundColor(Color::DarkGrey),
-                style::Print("▁".repeat(terminal_width)),
-                style::ResetColor,
-                style::Print("\n\nEnter "),
+                style::Print("\nEnter "),
                 style::SetForegroundColor(Color::Green),
                 style::Print("y"),
-                style::ResetColor,
+                style::SetForegroundColor(Color::DarkGrey),
                 style::Print(format!(
-                    " to run {}, or otherwise continue your conversation.\n\n",
+                    " to run {}, otherwise continue without.\n\n",
                     match tool_uses.len() == 1 {
                         true => "this tool",
                         false => "these tools",
                     }
                 )),
+                style::SetForegroundColor(Color::Reset),
             )?;
         }
         let user_input = match self.input_source.read_line(Some("> "))? {
@@ -489,7 +488,7 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
         let tool_uses = tool_uses.unwrap_or_default();
         Ok(match command {
             Command::Ask { prompt } => {
-                if ["y", "Y"].contains(&prompt.as_str()) {
+                if ["y", "Y"].contains(&prompt.as_str()) && !tool_uses.is_empty() {
                     return Ok(ChatState::ExecuteTools(tool_uses));
                 }
 
@@ -555,16 +554,15 @@ Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
         // Execute the requested tools.
         let terminal_width = self.terminal_width();
         let mut tool_results = vec![];
-        for tool in tool_uses {
+        for (i, tool) in tool_uses.into_iter().enumerate() {
             let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.0.clone());
             tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_accepted = true);
 
             let tool_start = std::time::Instant::now();
             queue!(
                 self.output,
-                style::Print("\n\nExecuting "),
                 style::SetForegroundColor(Color::Cyan),
-                style::Print(format!("{}...\n", tool.1.display_name())),
+                style::Print(format!("\n{}. {}...\n", i + 1, tool.1.display_name_action())),
                 style::SetForegroundColor(Color::DarkGrey),
                 style::Print(format!("{}\n", "▔".repeat(terminal_width))),
                 style::SetForegroundColor(Color::Reset),

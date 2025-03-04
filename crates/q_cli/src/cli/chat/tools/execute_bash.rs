@@ -2,13 +2,10 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::process::Stdio;
 
+use crossterm::queue;
 use crossterm::style::{
     self,
     Color,
-};
-use crossterm::{
-    execute,
-    queue,
 };
 use eyre::{
     Context as EyreContext,
@@ -34,14 +31,6 @@ pub struct ExecuteBash {
 
 impl ExecuteBash {
     pub async fn invoke(&self, mut updates: impl Write) -> Result<InvokeOutput> {
-        execute!(
-            updates,
-            style::SetForegroundColor(Color::Green),
-            style::Print(format!("Executing `{}`", &self.command)),
-            style::ResetColor,
-            style::Print("\n"),
-        )?;
-
         // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
         let mut child = tokio::process::Command::new("bash")
             .arg("-c")
@@ -64,12 +53,12 @@ impl ExecuteBash {
         let mut stdout_buf = VecDeque::with_capacity(LINE_COUNT);
         let mut stderr_buf = VecDeque::with_capacity(LINE_COUNT);
 
+        let mut stdout_done = false;
+        let mut stderr_done = false;
         let exit_status = loop {
-            child.stdin.take();
-
             select! {
                 biased;
-                line = stdout.next_line() => match line {
+                line = stdout.next_line(), if !stdout_done => match line {
                     Ok(Some(line)) => {
                         writeln!(updates, "{line}")?;
                         if stdout_buf.len() >= LINE_COUNT {
@@ -77,10 +66,10 @@ impl ExecuteBash {
                         }
                         stdout_buf.push_back(line);
                     },
-                    Ok(None) => {},
+                    Ok(None) => stdout_done = true,
                     Err(err) => error!(%err, "Failed to read stdout of child process"),
                 },
-                line = stderr.next_line() => match line {
+                line = stderr.next_line(), if !stderr_done => match line {
                     Ok(Some(line)) => {
                         writeln!(updates, "{line}")?;
                         if stderr_buf.len() >= LINE_COUNT {
@@ -88,7 +77,7 @@ impl ExecuteBash {
                         }
                         stderr_buf.push_back(line);
                     },
-                    Ok(None) => {},
+                    Ok(None) => stderr_done = true,
                     Err(err) => error!(%err, "Failed to read stderr of child process"),
                 },
                 exit_status = child.wait() => {
