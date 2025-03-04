@@ -78,6 +78,22 @@ use crate::cli::chat::parse::{
 };
 use crate::util::region_check;
 
+const WELCOME_TEXT: &str = color_print::cstr! {"
+
+<em>Hi, I'm <magenta,em>Amazon Q</magenta,em>. Ask me anything.</em>
+
+<cyan!>Things to try</cyan!>
+• Fix the build failures in this project.
+• List my s3 buckets in us-west-2.
+• Write unit tests for my application.
+• Help me understand my git status
+
+<em>/help</em>         <black!>Show the help dialogue</black!>
+<em>/quit</em>         <black!>Quit the application</black!>
+
+
+"};
+
 const HELP_TEXT: &str = color_print::cstr! {"
 
 <magenta,em>q</magenta,em> (Amazon Q Chat)
@@ -271,19 +287,7 @@ where
 {
     async fn try_chat(&mut self) -> Result<()> {
         if self.interactive {
-            execute!(
-                self.output,
-                style::Print(color_print::cstr! {"
-Hi, I'm <g>Amazon Q</g>, your AI Developer Assistant.
-\n<yellow>Try asking me:</yellow>\n\n\
-                <green>• What tools do you have?\n\
-                • Fix the build failures in this project\n\
-                • Write unit tests and markdown docs for my application\n\
- • List the s3 buckets I have in us-west-2</green>
-\n<dim>Type <green>/exit</green> to quit</dim>\n
-"
-                })
-            )?;
+            execute!(self.output, style::Print(WELCOME_TEXT))?;
         }
 
         let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
