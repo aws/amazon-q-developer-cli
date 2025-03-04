@@ -233,11 +233,18 @@ type QueuedTool = (String, Tool);
 #[derive(Debug)]
 enum ChatState {
     /// Prompt the user with `tool_uses`, if available.
-    PromptUser { tool_uses: Option<Vec<QueuedTool>> },
+    PromptUser {
+        /// Tool uses to present to the user.
+        tool_uses: Option<Vec<QueuedTool>>,
+        /// Whether or not the associated tool uses were previously interrupted.
+        tools_were_interrupted: bool,
+    },
     /// Handle the user input, depending on if any tools require execution.
     HandleInput {
         input: String,
         tool_uses: Option<Vec<QueuedTool>>,
+        /// Whether or not the associated tool uses were previously interrupted.
+        tools_were_interrupted: bool,
     },
     /// Validate the list of tool uses provided by the model.
     ValidateTools(Vec<ToolUse>),
@@ -251,7 +258,10 @@ enum ChatState {
 
 impl Default for ChatState {
     fn default() -> Self {
-        Self::PromptUser { tool_uses: None }
+        Self::PromptUser {
+            tool_uses: None,
+            tools_were_interrupted: false,
+        }
     }
 }
 
@@ -273,7 +283,10 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
 
         let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
 
-        let mut next_state = Some(ChatState::PromptUser { tool_uses: None });
+        let mut next_state = Some(ChatState::PromptUser {
+            tool_uses: None,
+            tools_were_interrupted: false,
+        });
 
         if let Some(user_input) = self.initial_input.take() {
             execute!(
@@ -287,6 +300,7 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
             next_state = Some(ChatState::HandleInput {
                 input: user_input,
                 tool_uses: None,
+                tools_were_interrupted: false,
             });
         }
 
@@ -296,8 +310,15 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
             debug!(?chat_state, "changing to state");
 
             let result = match chat_state {
-                ChatState::PromptUser { tool_uses } => self.prompt_user(tool_uses).await,
-                ChatState::HandleInput { input, tool_uses } => self.handle_input(input, tool_uses).await,
+                ChatState::PromptUser {
+                    tool_uses,
+                    tools_were_interrupted,
+                } => self.prompt_user(tool_uses, tools_were_interrupted).await,
+                ChatState::HandleInput {
+                    input,
+                    tool_uses,
+                    tools_were_interrupted,
+                } => self.handle_input(input, tool_uses, tools_were_interrupted).await,
                 ChatState::ExecuteTools(tool_uses) => {
                     let tool_uses_clone = tool_uses.clone();
                     tokio::select! {
@@ -354,10 +375,12 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
                         )?;
                     }
                     let mut tool_uses = None;
+                    let mut tools_were_interrupted = false;
                     match e {
                         ChatError::Interrupted { tool_uses: inter } => {
-                            execute!(self.output, style::Print("\n"))?;
+                            execute!(self.output, style::Print("\n\n"))?;
                             tool_uses = inter;
+                            tools_were_interrupted = true;
                         },
                         ChatError::Client(err) => {
                             if let fig_api_client::Error::QuotaBreach(msg) = err {
@@ -379,19 +402,27 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
                         },
                     }
                     self.conversation_state.fix_history();
-                    next_state = Some(ChatState::PromptUser { tool_uses });
+                    next_state = Some(ChatState::PromptUser {
+                        tool_uses,
+                        tools_were_interrupted,
+                    });
                 },
             }
         }
     }
 
     /// Read input from the user.
-    async fn prompt_user(&mut self, mut tool_uses: Option<Vec<QueuedTool>>) -> Result<ChatState, ChatError> {
+    async fn prompt_user(
+        &mut self,
+        mut tool_uses: Option<Vec<QueuedTool>>,
+        tools_were_interrupted: bool,
+    ) -> Result<ChatState, ChatError> {
         if self.interactive {
             execute!(self.output, cursor::Show)?;
         }
         let tool_uses = tool_uses.take().unwrap_or_default();
-        if !tool_uses.is_empty() {
+        // Don't print the tools if they were previously interrupted.
+        if !tool_uses.is_empty() && !tools_were_interrupted {
             let terminal_width = self.terminal_width();
             for (i, (_, tool)) in tool_uses.iter().enumerate() {
                 queue!(
@@ -433,6 +464,7 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
         Ok(ChatState::HandleInput {
             input: user_input,
             tool_uses: Some(tool_uses),
+            tools_were_interrupted,
         })
     }
 
@@ -440,9 +472,13 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
         &mut self,
         user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
+        tools_were_interrupted: bool,
     ) -> Result<ChatState, ChatError> {
         let Ok(command) = Command::parse(&user_input) else {
-            return Ok(ChatState::PromptUser { tool_uses });
+            return Ok(ChatState::PromptUser {
+                tool_uses,
+                tools_were_interrupted,
+            });
         };
 
         let tool_uses = tool_uses.unwrap_or_default();
@@ -461,10 +497,10 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
                     self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
                 }
 
-                if !tool_uses.is_empty() {
-                    self.conversation_state.abandon_tool_use(tool_uses, user_input);
-                } else {
-                    self.conversation_state.append_new_user_message(user_input);
+                match (tool_uses.is_empty(), tools_were_interrupted) {
+                    (false, false) => self.conversation_state.abandon_tool_use(tool_uses, user_input),
+                    (false, true) => self.conversation_state.interrupt_tool_use(tool_uses, user_input),
+                    _ => self.conversation_state.append_new_user_message(user_input),
                 }
 
                 self.send_tool_use_telemetry().await;
@@ -479,7 +515,10 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
                 queue!(self.output, style::Print('\n'))?;
                 std::process::Command::new("bash").args(["-c", &command]).status().ok();
                 queue!(self.output, style::Print('\n'))?;
-                ChatState::PromptUser { tool_uses: None }
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    tools_were_interrupted,
+                }
             },
             Command::Clear => {
                 self.conversation_state.clear();
@@ -491,11 +530,17 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
                     style::SetForegroundColor(Color::Reset)
                 )?;
 
-                ChatState::PromptUser { tool_uses: None }
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    tools_were_interrupted,
+                }
             },
             Command::Help => {
                 execute!(self.output, style::Print(HELP_TEXT))?;
-                ChatState::PromptUser { tool_uses: None }
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    tools_were_interrupted,
+                }
             },
             Command::Quit => ChatState::Exit,
         })
@@ -755,7 +800,10 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
         if !tool_uses.is_empty() {
             Ok(ChatState::ValidateTools(tool_uses))
         } else {
-            Ok(ChatState::PromptUser { tool_uses: None })
+            Ok(ChatState::PromptUser {
+                tool_uses: None,
+                tools_were_interrupted: false,
+            })
         }
     }
 
@@ -852,6 +900,7 @@ Hi, I'm <g>Amazon Q</g>. Ask me anything.
         } else {
             Ok(ChatState::PromptUser {
                 tool_uses: Some(queued_tools),
+                tools_were_interrupted: false,
             })
         }
     }
@@ -1017,6 +1066,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow() {
+        let _ = tracing_subscriber::fmt::try_init();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let test_client = create_stream(serde_json::json!([
             [

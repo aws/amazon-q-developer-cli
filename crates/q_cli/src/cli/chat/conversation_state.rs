@@ -27,7 +27,6 @@ use tracing::{
     debug,
     error,
     info,
-    trace,
     warn,
 };
 
@@ -137,74 +136,63 @@ impl ConversationState {
     }
 
     /// Updates the history so that, when non-empty, the following invariants are in place:
-    /// 1. The history length is <= MAX_CONVERSATION_STATE_HISTORY_LEN if the next user message does
-    ///    not contain tool results. Oldest messages are dropped.
+    /// 1. The history length is `<= MAX_CONVERSATION_STATE_HISTORY_LEN`. Oldest messages are
+    ///    dropped.
     /// 2. The first message is from the user, and does not contain tool results. Oldest messages
     ///    are dropped.
     /// 3. The last message is from the assistant. The last message is dropped if it is from the
     ///    user.
     pub fn fix_history(&mut self) {
-        if self.history.is_empty() {
-            return;
+        // Trim the conversation history by finding the second oldest message from the user without
+        // tool results - this will be the new oldest message in the history.
+        if self.history.len() > MAX_CONVERSATION_STATE_HISTORY_LEN {
+            match self
+                .history
+                .iter()
+                .enumerate()
+                // Skip the first message which should be from the user.
+                .skip(1)
+                .find(|(_, m)| -> bool {
+                    match m {
+                        ChatMessage::UserInputMessage(m) => {
+                            matches!(
+                                m.user_input_message_context.as_ref(),
+                                Some(ctx) if ctx.tool_results.as_ref().is_none_or(|v| v.is_empty())
+                            )
+                        },
+                        ChatMessage::AssistantResponseMessage(_) => false,
+                    }
+                })
+                .map(|v| v.0)
+            {
+                Some(i) => {
+                    debug!("removing the first {i} elements in the history");
+                    self.history.drain(..i);
+                },
+                None => {
+                    debug!("no valid starting user message found in the history, clearing");
+                    self.history.clear();
+
+                    // Edge case: if the next message contains tool results, then we have to just
+                    // abandon them.
+                    match &mut self.next_message {
+                        Some(UserInputMessage {
+                            ref mut content,
+                            user_input_message_context: Some(ctx),
+                            ..
+                        }) if ctx.tool_results.as_ref().is_some_and(|r| !r.is_empty()) => {
+                            *content = "The conversation history has overflowed, clearing state".to_string();
+                            ctx.tool_results.take();
+                        },
+                        _ => {},
+                    }
+                },
+            }
         }
 
-        // Invariant (3).
         if let Some(ChatMessage::UserInputMessage(msg)) = self.history.iter().last() {
             debug!(?msg, "last message in history is from the user, dropping");
             self.history.pop_back();
-        }
-
-        // Check if the next message contains tool results - if it does, then return early.
-        // Required in the case that the entire history consists of tool results; every message is
-        // therefore required to avoid validation errors in the backend.
-        match self.next_message.as_ref() {
-            Some(UserInputMessage {
-                user_input_message_context: Some(ctx),
-                ..
-            }) if ctx.tool_results.as_ref().is_none_or(|r| r.is_empty()) => {
-                debug!(
-                    curr_history_len = self.history.len(),
-                    max_history_len = MAX_CONVERSATION_STATE_HISTORY_LEN,
-                    "next user message does not contain tool results, removing messages if required"
-                );
-            },
-            _ => {
-                debug!("next user message contains tool results, not modifying the history");
-                return;
-            },
-        }
-
-        // Invariant (1).
-        while self.history.len() > MAX_CONVERSATION_STATE_HISTORY_LEN {
-            self.history.pop_front();
-        }
-
-        // Invariant (2).
-        match self
-            .history
-            .iter()
-            .enumerate()
-            .find(|(_, m)| -> bool {
-                match m {
-                    ChatMessage::UserInputMessage(m) => {
-                        matches!(
-                            m.user_input_message_context.as_ref(),
-                            Some(ctx) if ctx.tool_results.as_ref().is_none_or(|v| v.is_empty())
-                        )
-                    },
-                    ChatMessage::AssistantResponseMessage(_) => false,
-                }
-            })
-            .map(|v| v.0)
-        {
-            Some(i) => {
-                trace!("removing the first {i} elements in the history");
-                self.history.drain(..i);
-            },
-            None => {
-                trace!("no valid starting user message found in the history, clearing");
-                self.history.clear();
-            },
         }
     }
 
@@ -229,6 +217,7 @@ impl ConversationState {
         self.next_message = Some(msg);
     }
 
+    /// Sets the next user message with "cancelled" tool results.
     pub fn abandon_tool_use(&mut self, tools_to_be_abandoned: Vec<(String, super::tools::Tool)>, deny_input: String) {
         debug_assert!(self.next_message.is_none());
         let tool_results = tools_to_be_abandoned
@@ -237,6 +226,38 @@ impl ConversationState {
                 tool_use_id,
                 content: vec![ToolResultContentBlock::Text(
                     "Tool use was cancelled by the user".to_string(),
+                )],
+                status: fig_api_client::model::ToolResultStatus::Error,
+            })
+            .collect::<Vec<_>>();
+        let user_input_message_context = UserInputMessageContext {
+            shell_state: None,
+            env_state: Some(build_env_state()),
+            tool_results: Some(tool_results),
+            tools: if self.tools.is_empty() {
+                None
+            } else {
+                Some(self.tools.clone())
+            },
+            ..Default::default()
+        };
+        let msg = UserInputMessage {
+            content: deny_input,
+            user_input_message_context: Some(user_input_message_context),
+            user_intent: None,
+        };
+        self.next_message = Some(msg);
+    }
+
+    /// Sets the next user message with "interrupted" tool results.
+    pub fn interrupt_tool_use(&mut self, interrupted_tools: Vec<(String, super::tools::Tool)>, deny_input: String) {
+        debug_assert!(self.next_message.is_none());
+        let tool_results = interrupted_tools
+            .into_iter()
+            .map(|(tool_use_id, _)| ToolResult {
+                tool_use_id,
+                content: vec![ToolResultContentBlock::Text(
+                    "Tool use was interrupted by the user".to_string(),
                 )],
                 status: fig_api_client::model::ToolResultStatus::Error,
             })
@@ -344,6 +365,7 @@ mod tests {
     use fig_api_client::model::{
         AssistantResponseMessage,
         ToolResultStatus,
+        ToolUse,
     };
 
     use super::*;
@@ -365,27 +387,58 @@ mod tests {
         println!("{env_state:?}");
     }
 
+    fn assert_conversation_state_invariants(state: FigConversationState, i: usize) {
+        if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
+            assert!(
+                matches!(msg, ChatMessage::UserInputMessage(_)),
+                "{i}: First message in the history must be from the user, instead found: {:?}",
+                msg
+            );
+        }
+        if let Some(Some(msg)) = state.history.as_ref().map(|h| h.last()) {
+            assert!(
+                matches!(msg, ChatMessage::AssistantResponseMessage(_)),
+                "{i}: Last message in the history must be from the assistant, instead found: {:?}",
+                msg
+            );
+            // If the last message from the assistant contains tool uses, then the next user
+            // message must contain tool results.
+            match (state.user_input_message.user_input_message_context, msg) {
+                (
+                    Some(ctx),
+                    ChatMessage::AssistantResponseMessage(AssistantResponseMessage {
+                        tool_uses: Some(tool_uses),
+                        ..
+                    }),
+                ) if !tool_uses.is_empty() => {
+                    assert!(
+                        ctx.tool_results.is_some_and(|r| !r.is_empty()),
+                        "The user input message must contain tool results when the last assistant message contains tool uses"
+                    );
+                },
+                _ => {},
+            }
+        }
+
+        let actual_history_len = state.history.unwrap_or_default().len();
+        assert!(
+            actual_history_len <= MAX_CONVERSATION_STATE_HISTORY_LEN,
+            "history should not extend past the max limit of {}, instead found length {}",
+            MAX_CONVERSATION_STATE_HISTORY_LEN,
+            actual_history_len
+        );
+    }
+
     #[tokio::test]
-    async fn test_conversation_state_history_handling() {
+    async fn test_conversation_state_history_handling_truncation() {
         let mut conversation_state = ConversationState::new(load_tools().unwrap());
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation_state.append_new_user_message("start".to_string());
-        for i in 0..=100 {
+        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state();
-            assert!(
-                s.history
-                    .as_ref()
-                    .is_none_or(|h| h.first().is_none_or(|m| matches!(m, ChatMessage::UserInputMessage(_)))),
-                "First message in the history must be from the user"
-            );
-            assert!(
-                s.history.as_ref().is_none_or(|h| h
-                    .last()
-                    .is_none_or(|m| matches!(m, ChatMessage::AssistantResponseMessage(_)))),
-                "Last message in the history must be from the assistant"
-            );
+            assert_conversation_state_invariants(s, i);
             conversation_state.push_assistant_message(AssistantResponseMessage {
                 message_id: None,
                 content: i.to_string(),
@@ -393,44 +446,24 @@ mod tests {
             });
             conversation_state.append_new_user_message(i.to_string());
         }
-
-        let s = conversation_state.as_sendable_conversation_state();
-        assert_eq!(
-            s.history.as_ref().unwrap().len(),
-            MAX_CONVERSATION_STATE_HISTORY_LEN,
-            "history should be capped at {}",
-            MAX_CONVERSATION_STATE_HISTORY_LEN
-        );
-        let first_msg = s.history.as_ref().unwrap().first().unwrap();
-        match first_msg {
-            ChatMessage::UserInputMessage(_) => {},
-            other @ ChatMessage::AssistantResponseMessage(_) => {
-                panic!("First message should be from the user, instead found {:?}", other)
-            },
-        }
-        let last_msg = s.history.as_ref().unwrap().iter().last().unwrap();
-        match last_msg {
-            ChatMessage::AssistantResponseMessage(assistant_response_message) => {
-                assert_eq!(assistant_response_message.content, "100");
-            },
-            other @ ChatMessage::UserInputMessage(_) => {
-                panic!("Last message should be from the assistant, instead found {:?}", other)
-            },
-        }
     }
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
-        let mut conversation_state = ConversationState::new(load_tools().unwrap());
-
         // Build a long conversation history of tool use results.
+        let mut conversation_state = ConversationState::new(load_tools().unwrap());
         conversation_state.append_new_user_message("start".to_string());
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let _ = conversation_state.as_sendable_conversation_state();
+            let s = conversation_state.as_sendable_conversation_state();
+            assert_conversation_state_invariants(s, i);
             conversation_state.push_assistant_message(AssistantResponseMessage {
                 message_id: None,
                 content: i.to_string(),
-                tool_uses: None,
+                tool_uses: Some(vec![ToolUse {
+                    tool_use_id: "tool_id".to_string(),
+                    name: "tool name".to_string(),
+                    input: aws_smithy_types::Document::Null,
+                }]),
             });
             conversation_state.add_tool_results(vec![ToolResult {
                 tool_use_id: "tool_id".to_string(),
@@ -439,13 +472,35 @@ mod tests {
             }]);
         }
 
-        let s = conversation_state.as_sendable_conversation_state();
-        let actual_history_len = s.history.as_ref().unwrap().len();
-        assert!(
-            actual_history_len > MAX_CONVERSATION_STATE_HISTORY_LEN,
-            "history should extend past the max limit of {}, instead found length {}",
-            MAX_CONVERSATION_STATE_HISTORY_LEN,
-            actual_history_len
-        );
+        // Build a long conversation history of user messages mixed in with tool results.
+        let mut conversation_state = ConversationState::new(load_tools().unwrap());
+        conversation_state.append_new_user_message("start".to_string());
+        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+            let s = conversation_state.as_sendable_conversation_state();
+            assert_conversation_state_invariants(s, i);
+            if i % 3 == 0 {
+                conversation_state.push_assistant_message(AssistantResponseMessage {
+                    message_id: None,
+                    content: i.to_string(),
+                    tool_uses: Some(vec![ToolUse {
+                        tool_use_id: "tool_id".to_string(),
+                        name: "tool name".to_string(),
+                        input: aws_smithy_types::Document::Null,
+                    }]),
+                });
+                conversation_state.add_tool_results(vec![ToolResult {
+                    tool_use_id: "tool_id".to_string(),
+                    content: vec![],
+                    status: ToolResultStatus::Success,
+                }]);
+            } else {
+                conversation_state.push_assistant_message(AssistantResponseMessage {
+                    message_id: None,
+                    content: i.to_string(),
+                    tool_uses: None,
+                });
+                conversation_state.append_new_user_message(i.to_string());
+            }
+        }
     }
 }

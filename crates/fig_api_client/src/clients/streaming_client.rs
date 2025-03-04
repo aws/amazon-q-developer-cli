@@ -159,7 +159,7 @@ impl StreamingClient {
                 ))
             },
             inner::Inner::Mock(events) => {
-                let mut new_events = events.lock().unwrap().next().unwrap().clone();
+                let mut new_events = events.lock().unwrap().next().unwrap_or_default().clone();
                 new_events.reverse();
                 Ok(SendMessageOutput::Mock(new_events))
             },
