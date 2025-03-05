@@ -80,13 +80,13 @@ impl Tool {
         .to_owned()
     }
 
-    /// Whether or not the tool should prompt the user for consent before [Self::invoke] is called.
-    pub fn requires_consent(&self, _ctx: &Context) -> bool {
+    /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.
+    pub fn requires_acceptance(&self, _ctx: &Context) -> bool {
         match self {
             Tool::FsRead(_) => false,
             Tool::FsWrite(_) => true,
-            Tool::ExecuteBash(execute_bash) => execute_bash.requires_consent(),
-            Tool::UseAws(use_aws) => use_aws.requires_consent(),
+            Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
+            Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
         }
     }
 

@@ -182,6 +182,10 @@ pub enum CliRootCommands {
     /// AI assistant in your terminal
     #[command(alias("q"))]
     Chat {
+        /// Enabling this flag allows the model to execute all commands without first accepting
+        /// them.
+        #[arg(short, long)]
+        accept_all: bool,
         /// The first question to ask
         input: Option<String>,
     },
@@ -328,7 +332,7 @@ impl Cli {
                 CliRootCommands::Telemetry(subcommand) => subcommand.execute().await,
                 CliRootCommands::Version => Self::print_version(),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
-                CliRootCommands::Chat { input } => chat::chat(input).await,
+                CliRootCommands::Chat { accept_all, input } => chat::chat(input, accept_all).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
@@ -447,7 +451,10 @@ mod test {
         });
 
         assert_eq!(Cli::parse_from([CLI_BINARY_NAME, "chat", "-vv"]), Cli {
-            subcommand: Some(CliRootCommands::Chat { input: None },),
+            subcommand: Some(CliRootCommands::Chat {
+                accept_all: false,
+                input: None
+            },),
             verbose: 2,
             help_all: false,
         });

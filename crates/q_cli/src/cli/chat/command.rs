@@ -5,6 +5,7 @@ pub enum Command {
     Execute { command: String },
     Clear,
     Help,
+    AcceptAll,
     Quit,
 }
 
@@ -16,6 +17,7 @@ impl Command {
             return Ok(match command.to_lowercase().as_str() {
                 "clear" => Self::Clear,
                 "help" => Self::Help,
+                "acceptall" => Self::AcceptAll,
                 "q" | "exit" | "quit" => Self::Quit,
                 _ => return Err(format!("Unknown command: {}", input)),
             });

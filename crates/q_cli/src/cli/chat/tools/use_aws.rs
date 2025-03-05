@@ -39,7 +39,7 @@ pub struct UseAws {
 }
 
 impl UseAws {
-    pub fn requires_consent(&self) -> bool {
+    pub fn requires_acceptance(&self) -> bool {
         !READONLY_OPS.iter().any(|op| self.operation_name.starts_with(op))
     }
 
@@ -52,7 +52,10 @@ impl UseAws {
         command.arg(&self.service_name).arg(&self.operation_name);
         if let Some(parameters) = self.cli_parameters() {
             for (name, val) in parameters {
-                command.arg(name).arg(val);
+                command.arg(name);
+                if !val.is_empty() {
+                    command.arg(val);
+                }
             }
         }
         let output = command
@@ -110,7 +113,14 @@ impl UseAws {
         if let Some(parameters) = &self.parameters {
             queue!(updates, style::Print("Parameters: \n".to_string()))?;
             for (name, value) in parameters {
-                queue!(updates, style::Print(format!("- {}: {}\n", name, value)))?;
+                match value {
+                    serde_json::Value::String(s) if s.is_empty() => {
+                        queue!(updates, style::Print(format!("- {}\n", name)))?;
+                    },
+                    _ => {
+                        queue!(updates, style::Print(format!("- {}: {}\n", name, value)))?;
+                    },
+                }
             }
         }
 
@@ -160,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn test_requires_consent() {
+    fn test_requires_acceptance() {
         let cmd = use_aws! {{
             "service_name": "ecs",
             "operation_name": "list-task-definitions",
@@ -168,7 +178,7 @@ mod tests {
             "profile_name": "default",
             "label": ""
         }};
-        assert!(!cmd.requires_consent());
+        assert!(!cmd.requires_acceptance());
         let cmd = use_aws! {{
             "service_name": "lambda",
             "operation_name": "list-functions",
@@ -176,7 +186,7 @@ mod tests {
             "profile_name": "default",
             "label": ""
         }};
-        assert!(!cmd.requires_consent());
+        assert!(!cmd.requires_acceptance());
         let cmd = use_aws! {{
             "service_name": "s3",
             "operation_name": "put-object",
@@ -184,7 +194,7 @@ mod tests {
             "profile_name": "default",
             "label": ""
         }};
-        assert!(cmd.requires_consent());
+        assert!(cmd.requires_acceptance());
     }
 
     #[test]

@@ -32,7 +32,7 @@ pub struct ExecuteBash {
 }
 
 impl ExecuteBash {
-    pub fn requires_consent(&self) -> bool {
+    pub fn requires_acceptance(&self) -> bool {
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
@@ -228,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    fn test_requires_consent_for_readonly_commands() {
+    fn test_requires_acceptance_for_readonly_commands() {
         let cmds = &[
             // Safe commands
             ("ls ~", false),
@@ -259,9 +259,9 @@ mod tests {
             }))
             .unwrap();
             assert_eq!(
-                tool.requires_consent(),
+                tool.requires_acceptance(),
                 *expected,
-                "expected command: `{}` to have requires_consent: `{}`",
+                "expected command: `{}` to have requires_acceptance: `{}`",
                 cmd,
                 expected
             );
