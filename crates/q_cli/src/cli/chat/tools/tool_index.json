@@ -102,39 +102,5 @@
       },
       "required": ["region", "service_name", "operation_name", "label"]
     }
-  },
-  "git": {
-    "name": "git",
-    "description": "Execute a git command with the specified parameters. All arguments must conform to standard git CLI specification.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "command": {
-          "type": "string",
-          "description": "The primary git command to execute (e.g., clone, pull, push, status)."
-        },
-        "subcommand": {
-          "type": "string",
-          "description": "Optional: The subcommand for git commands that support them (e.g., remote add, branch create)."
-        },
-        "repo": {
-          "type": "string",
-          "description": "Optional: The repository URL or name to operate on, depending on the command context."
-        },
-        "branch": {
-          "type": "string",
-          "description": "Optional: The branch name to use for operations that require a branch specification."
-        },
-        "parameters": {
-          "type": "object",
-          "description": "Optional: Additional parameters for the git command. The parameter keys must match git command-line options."
-        },
-        "label": {
-          "type": "string",
-          "description": "Human readable description of the git operation being performed."
-        }
-      },
-      "required": ["command", "label"]
-    }
   }
 }

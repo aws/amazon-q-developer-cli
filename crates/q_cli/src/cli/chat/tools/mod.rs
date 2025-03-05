@@ -1,7 +1,6 @@
 pub mod execute_bash;
 pub mod fs_read;
 pub mod fs_write;
-pub mod git;
 pub mod use_aws;
 
 use std::io::Write;
@@ -29,7 +28,6 @@ use fig_api_client::model::{
 use fig_os_shim::Context;
 use fs_read::FsRead;
 use fs_write::FsWrite;
-use git::Git;
 use serde::Deserialize;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
@@ -58,7 +56,6 @@ pub enum Tool {
     FsWrite(FsWrite),
     ExecuteBash(ExecuteBash),
     UseAws(UseAws),
-    Git(Git),
 }
 
 impl Tool {
@@ -69,7 +66,6 @@ impl Tool {
             Tool::FsWrite(_) => "Write to filesystem",
             Tool::ExecuteBash(_) => "Execute shell command",
             Tool::UseAws(_) => "Use AWS CLI",
-            Tool::Git(_) => "Git",
         }
     }
 
@@ -80,7 +76,6 @@ impl Tool {
             Tool::FsWrite(_) => "Writing to filesystem",
             Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
             Tool::UseAws(_) => "Using AWS CLI",
-            Tool::Git(_) => "Using Git CLI",
         }
         .to_owned()
     }
@@ -92,7 +87,6 @@ impl Tool {
             Tool::FsWrite(_) => true,
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_consent(),
             Tool::UseAws(use_aws) => use_aws.requires_consent(),
-            Tool::Git(git) => git.requires_consent(),
         }
     }
 
@@ -103,7 +97,6 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.invoke(context, updates).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
-            Tool::Git(git) => git.invoke(context, updates).await,
         }
     }
 
@@ -114,7 +107,6 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.queue_description(ctx, updates),
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
-            Tool::Git(git) => git.queue_description(updates),
         }
     }
 
@@ -125,7 +117,6 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.validate(ctx).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
-            Tool::Git(git) => git.validate(ctx).await,
         }
     }
 }
@@ -147,7 +138,6 @@ impl TryFrom<ToolUse> for Tool {
             "fs_write" => Self::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?),
             "execute_bash" => Self::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Self::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
-            "git" => Self::Git(serde_json::from_value::<Git>(value.args).map_err(map_err)?),
             unknown => {
                 return Err(ToolResult {
                     tool_use_id: value.id,
