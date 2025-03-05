@@ -89,9 +89,9 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 • Write unit tests for my application.
 • Help me understand my git status
 
+<em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
-<em>/acceptall</em>    <black!>Toggle tool use acceptance prompting</black!>
 
 
 "};
@@ -101,13 +101,11 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <magenta,em>q</magenta,em> (Amazon Q Chat)
 
 <em>/clear</em>        <black!>Clear the conversation history</black!>
+<em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
 <em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
-
-<black!>Use the following dangerous command at your own discretion.</black!>
-<em>/acceptall</em>    <black!>Disables acceptance prompting for the session.</black!>
 
 "};
 
@@ -530,9 +528,10 @@ where
                 execute!(
                     self.output,
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format!("\n{} acceptance prompting.\n\n", match self.accept_all {
-                        true => "Disabled",
-                        false => "Enabled",
+                    style::Print(format!("\n{}\n\n", match self.accept_all {
+                        true =>
+                            "Disabled acceptance prompting.\nAgents can sometimes do unexpected things so understand the risks.",
+                        false => "Enabled acceptance prompting. Run again to disable.",
                     })),
                     style::SetForegroundColor(Color::Reset)
                 )?;

@@ -55,6 +55,10 @@ impl FsWrite {
             FsWrite::Create { path, .. } => {
                 let file_text = self.canonical_create_command_text();
                 let path = sanitize_path_tool_arg(ctx, path);
+                if let Some(parent) = path.parent() {
+                    fs.create_dir_all(parent).await?;
+                }
+
                 let invoke_description = if fs.exists(&path) { "Replacing: " } else { "Creating: " };
                 queue!(
                     updates,
