@@ -91,6 +91,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
+<em>/acceptall</em>    <black!>Toggle tool use acceptance prompting</black!>
 
 
 "};
