@@ -46,7 +46,23 @@ pub enum RecvError {
     Client(#[from] fig_api_client::Error),
     #[error("{0}")]
     Json(#[from] serde_json::Error),
+    /// An error was encountered while waiting for the next event in the stream after a noticeably
+    /// long wait time.
+    ///
+    /// *Context*: the client can throw an error after ~100s of waiting with no response, likely due
+    /// to an exceptionally complex tool use taking too long to generate.
+    #[error("The stream ended after {}s: {source}", .duration.as_secs())]
+    StreamTimeout {
+        source: fig_api_client::Error,
+        duration: std::time::Duration,
+    },
     /// Unexpected end of stream while receiving a tool use.
+    ///
+    /// *Context*: the stream can unexpectedly end with `Ok(None)` while waiting for an
+    /// exceptionally complex tool use. This is due to some proxy server dropping idle
+    /// connections after some timeout is reached.
+    ///
+    /// TODO: should this be removed?
     #[error("Unexpected end of stream for tool: {} with id: {}", .name, .tool_use_id)]
     UnexpectedToolUseEos {
         tool_use_id: String,
@@ -154,7 +170,7 @@ impl ResponseParser {
                     };
                     return Ok(ResponseEvent::EndStream { message });
                 },
-                Err(err) => return Err(err.into()),
+                Err(err) => return Err(err),
             }
         }
     }
@@ -221,7 +237,7 @@ impl ResponseParser {
     }
 
     /// Returns the next event in the [SendMessageOutput] without consuming it.
-    async fn peek(&mut self) -> Result<Option<&ChatResponseStream>, fig_api_client::Error> {
+    async fn peek(&mut self) -> Result<Option<&ChatResponseStream>, RecvError> {
         if self.peek.is_some() {
             return Ok(self.peek.as_ref());
         }
@@ -235,14 +251,27 @@ impl ResponseParser {
     }
 
     /// Consumes the next [SendMessageOutput] event.
-    async fn next(&mut self) -> Result<Option<ChatResponseStream>, fig_api_client::Error> {
+    async fn next(&mut self) -> Result<Option<ChatResponseStream>, RecvError> {
         if let Some(ev) = self.peek.take() {
             return Ok(Some(ev));
         }
         trace!("Attempting to recv next event");
-        let r = self.response.recv().await?;
-        trace!(?r, "Received new event");
-        Ok(r)
+        let start = std::time::Instant::now();
+        let result = self.response.recv().await;
+        let duration = std::time::Instant::now().duration_since(start);
+        match result {
+            Ok(r) => {
+                trace!(?r, "Received new event");
+                Ok(r)
+            },
+            Err(err) => {
+                if duration.as_secs() >= 59 {
+                    Err(RecvError::StreamTimeout { source: err, duration })
+                } else {
+                    Err(err.into())
+                }
+            },
+        }
     }
 }
 

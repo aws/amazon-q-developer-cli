@@ -648,6 +648,34 @@ where
                         },
                     }
                 },
+                Err(RecvError::StreamTimeout { source, duration }) => {
+                    error!(
+                        ?source,
+                        "Encountered a stream timeout after waiting for {}s",
+                        duration.as_secs()
+                    );
+                    if self.interactive {
+                        execute!(self.output, cursor::Hide)?;
+                        self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
+                    }
+                    // For stream timeouts, we'll tell the model to try and split its response into
+                    // smaller chunks.
+                    self.conversation_state
+                        .push_assistant_message(AssistantResponseMessage {
+                            message_id: None,
+                            content: "Fake message - actual message took too long to generate".to_string(),
+                            tool_uses: None,
+                        });
+                    self.conversation_state.append_new_user_message(
+                        "You took too long to respond - try to split up the work into smaller steps.".to_string(),
+                    );
+                    self.send_tool_use_telemetry().await;
+                    return Ok(ChatState::HandleResponseStream(
+                        self.client
+                            .send_message(self.conversation_state.as_sendable_conversation_state())
+                            .await?,
+                    ));
+                },
                 Err(RecvError::UnexpectedToolUseEos {
                     tool_use_id,
                     name,
