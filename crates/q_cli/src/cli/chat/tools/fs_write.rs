@@ -13,6 +13,7 @@ use eyre::{
 };
 use fig_os_shim::Context;
 use serde::Deserialize;
+use tracing::warn;
 
 use super::{
     InvokeOutput,
@@ -24,8 +25,14 @@ use super::{
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "command")]
 pub enum FsWrite {
+    /// The tool spec should only require `file_text`, but the model sometimes doesn't want to
+    /// provide it. Thus, including `new_str` as a fallback check, if it's available.
     #[serde(rename = "create")]
-    Create { path: String, file_text: String },
+    Create {
+        path: String,
+        file_text: Option<String>,
+        new_str: Option<String>,
+    },
     #[serde(rename = "str_replace")]
     StrReplace {
         path: String,
@@ -45,18 +52,15 @@ impl FsWrite {
         let fs = ctx.fs();
         let cwd = ctx.env().current_dir()?;
         match self {
-            FsWrite::Create { path, file_text } => {
+            FsWrite::Create { path, .. } => {
+                let file_text = self.canonical_create_command_text();
                 let path = sanitize_path_tool_arg(ctx, path);
-                let relative_path = format_path(cwd, fs.chroot_path(&path));
-                let invoke_description = if fs.exists(&path) {
-                    "Replacing the current file contents at"
-                } else {
-                    "Creating a new file at"
-                };
+                let invoke_description = if fs.exists(&path) { "Replacing: " } else { "Creating: " };
                 queue!(
                     updates,
+                    style::Print(invoke_description),
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format!("{} {}", invoke_description, relative_path)),
+                    style::Print(format_path(cwd, &path)),
                     style::ResetColor,
                     style::Print("\n"),
                 )?;
@@ -69,8 +73,9 @@ impl FsWrite {
                 let matches = file.match_indices(old_str).collect::<Vec<_>>();
                 queue!(
                     updates,
+                    style::Print("Updating: "),
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format!("Updating {}", format_path(cwd, &path))),
+                    style::Print(format_path(cwd, &path)),
                     style::ResetColor,
                     style::Print("\n"),
                 )?;
@@ -89,19 +94,16 @@ impl FsWrite {
                 insert_line,
                 new_str,
             } => {
+                let path = sanitize_path_tool_arg(ctx, path);
+                let mut file = fs.read_to_string(&path).await?;
                 queue!(
                     updates,
+                    style::Print("Updating: "),
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format!(
-                        "Inserting at line {} in {}",
-                        insert_line,
-                        format_path(cwd, path)
-                    )),
+                    style::Print(format_path(cwd, &path)),
                     style::ResetColor,
                     style::Print("\n"),
                 )?;
-                let path = fs.chroot_path_str(path);
-                let mut file = fs.read_to_string(&path).await?;
 
                 // Get the index of the start of the line to insert at.
                 let num_lines = file.lines().enumerate().map(|(i, _)| i + 1).last().unwrap_or(1);
@@ -121,7 +123,8 @@ impl FsWrite {
     pub fn queue_description(&self, ctx: &Context, updates: &mut impl Write) -> Result<()> {
         let cwd = ctx.env().current_dir()?;
         match self {
-            FsWrite::Create { path, file_text } => {
+            FsWrite::Create { path, .. } => {
+                let file_text = self.canonical_create_command_text();
                 let relative_path = format_path(cwd, path);
                 queue!(
                     updates,
@@ -134,7 +137,7 @@ impl FsWrite {
                 if ctx.fs().exists(path) {
                     let prev = ctx.fs().read_to_string_sync(path)?;
                     let prev = stylize_output_if_able(ctx, &relative_path, prev.as_str(), None, Some("-"));
-                    let new = stylize_output_if_able(ctx, &relative_path, file_text, None, Some("+"));
+                    let new = stylize_output_if_able(ctx, &relative_path, &file_text, None, Some("+"));
                     queue!(
                         updates,
                         style::Print("Replacing:\n"),
@@ -147,7 +150,7 @@ impl FsWrite {
                         style::Print("\n\n")
                     )?;
                 } else {
-                    let file = stylize_output_if_able(ctx, &relative_path, file_text, None, None);
+                    let file = stylize_output_if_able(ctx, &relative_path, &file_text, None, None);
                     queue!(
                         updates,
                         style::Print("Contents:\n"),
@@ -222,6 +225,25 @@ impl FsWrite {
         }
 
         Ok(())
+    }
+
+    /// Returns the text to use for the [FsWrite::Create] command. This is required since we can't
+    /// rely on the model always providing `file_text`.
+    fn canonical_create_command_text(&self) -> String {
+        match self {
+            FsWrite::Create { file_text, new_str, .. } => match (file_text, new_str) {
+                (Some(file_text), _) => file_text.clone(),
+                (None, Some(new_str)) => {
+                    warn!("required field `file_text` is missing, using the provided `new_str` instead");
+                    new_str.clone()
+                },
+                _ => {
+                    warn!("no content provided for the create command");
+                    String::new()
+                },
+            },
+            _ => String::new(),
+        }
     }
 }
 
@@ -350,6 +372,20 @@ mod tests {
             "path": "/my-file",
             "command": "create",
             "file_text": file_text
+        });
+        serde_json::from_value::<FsWrite>(v)
+            .unwrap()
+            .invoke(&ctx, &mut stdout)
+            .await
+            .unwrap();
+
+        assert_eq!(ctx.fs().read_to_string("/my-file").await.unwrap(), file_text);
+
+        let file_text = "This is a new string";
+        let v = serde_json::json!({
+            "path": "/my-file",
+            "command": "create",
+            "new_str": file_text
         });
         serde_json::from_value::<FsWrite>(v)
             .unwrap()

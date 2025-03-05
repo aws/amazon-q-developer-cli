@@ -224,7 +224,9 @@ fn sanitize_path_tool_arg(ctx: &Context, path: impl AsRef<Path>) -> PathBuf {
         Some(p) => res.push(p),
         None => return res,
     }
-    res.push(path);
+    for p in path {
+        res.push(p);
+    }
     // For testing scenarios, we need to make sure paths are appropriately handled in chroot test
     // file systems since they are passed directly from the model.
     ctx.fs().chroot_path(res)

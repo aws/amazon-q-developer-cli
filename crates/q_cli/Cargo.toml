@@ -68,6 +68,7 @@ semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 shlex.workspace = true
+similar.workspace = true
 spinners = "4.1.0"
 sysinfo.workspace = true
 tempfile.workspace = true

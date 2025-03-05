@@ -26,7 +26,6 @@ use super::{
     OutputKind,
     format_path,
     sanitize_path_tool_arg,
-    stylize_output_if_able,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,6 +51,7 @@ impl FsRead {
     pub async fn invoke(&self, ctx: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(ctx, &self.path);
         let is_file = ctx.fs().symlink_metadata(&path).await?.is_file();
+        let relative_path = format_path(ctx.env().current_dir()?, &path);
         debug!(?path, is_file, "Reading");
 
         if is_file {
@@ -84,8 +84,22 @@ impl FsRead {
                     .collect::<Vec<_>>()
                     .join("\n");
 
-                let formatted = stylize_output_if_able(ctx, &path, file_contents.as_str(), Some(start + 1), None);
-                queue!(updates, style::Print(formatted), style::ResetColor, style::Print("\n"))?;
+                queue!(
+                    updates,
+                    style::Print("Reading: "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(relative_path),
+                    style::ResetColor,
+                    style::Print(", lines "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(start + 1),
+                    style::ResetColor,
+                    style::Print("-"),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(end + 1),
+                    style::ResetColor,
+                    style::Print("\n"),
+                )?;
 
                 // TODO: We copy and paste this below so the control flow needs work in this tool
                 let byte_count = file_contents.len();
@@ -108,13 +122,11 @@ impl FsRead {
                 );
             }
 
-            let file_text = stylize_output_if_able(ctx, path, file.as_str(), None, None);
             queue!(
                 updates,
+                style::Print("Reading: "),
                 style::SetForegroundColor(Color::Green),
-                style::Print("Reading:\n"),
-                style::ResetColor,
-                style::Print(file_text),
+                style::Print(relative_path),
                 style::ResetColor,
                 style::Print("\n"),
             )?;
@@ -135,8 +147,9 @@ impl FsRead {
                 let relative_path = format_path(&cwd, &path);
                 queue!(
                     updates,
+                    style::Print("Reading: "),
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format!("Reading directory {}", &relative_path)),
+                    style::Print(&relative_path),
                     style::ResetColor,
                     style::Print("\n"),
                 )?;

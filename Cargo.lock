@@ -6826,6 +6826,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shlex",
+ "similar",
  "spinners",
  "syntect",
  "sysinfo",
