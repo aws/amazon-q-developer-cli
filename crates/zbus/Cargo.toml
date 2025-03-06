@@ -65,7 +65,7 @@ rand = "0.8.5"
 sha1 = { version = "0.10.6", features = ["std"] }
 event-listener = "5.3.0"
 static_assertions = "1.1.0"
-async-trait = "0.1.80"
+async-trait = "0.1.87"
 async-fs = { version = "2.1.2", optional = true }
 # FIXME: We should only enable process feature for Mac OS. See comment on async-process below for why we can't.
 tokio = { version = "1.42.0", optional = true, features = [
