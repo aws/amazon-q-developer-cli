@@ -40,7 +40,7 @@ tokio-vsock = ["dep:tokio-vsock", "tokio"]
 
 [dependencies]
 serde = { version = "1.0.216", features = ["derive"] }
-serde_repr = "0.1.19"
+serde_repr = "0.1.20"
 zvariant = { version = "4.2.0", default-features = false, features = [
   "enumflags2",
 ] }
