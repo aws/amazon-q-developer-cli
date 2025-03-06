@@ -29,7 +29,7 @@ amzn-consolas-client = { path = "crates/amzn-consolas-client" }
 amzn-qdeveloper-client = { path = "crates/amzn-qdeveloper-client" }
 amzn-qdeveloper-streaming-client = { path = "crates/amzn-qdeveloper-streaming-client" }
 anstream = "0.6.13"
-anyhow = "1.0.75"
+anyhow = "1.0.97"
 appkit-nsworkspace-bindings = { path = "crates/macos-utils/appkit-nsworkspace-bindings" }
 async-trait = "0.1.74"
 aws-smithy-runtime-api = "1.6.1"
