@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2025-03-05",
+      "version": "1.7.0",
+      "title": "Version 1.7.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Enhanced `q chat` with agentic capabilities. See the [announcement post](https://aws.amazon.com/blogs/devops/introducing-the-enhanced-command-line-interface-in-amazon-q-developer/) for more information."
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-02-20",
       "version": "1.6.3",
       "title": "Version 1.6.3",
