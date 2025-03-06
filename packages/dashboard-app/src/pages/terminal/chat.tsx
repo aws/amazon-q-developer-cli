@@ -1,7 +1,7 @@
 import { UserPrefView } from "@/components/preference/list";
 import { Terminal } from "@/components/ui/terminal";
 import settings, { intro } from "@/data/chat";
-import chatWithContextDemo from "@assets/images/chat_with_context_demo.gif";
+import chatDemo from "@assets/images/chat_demo.gif";
 
 export default function Page() {
   return (
@@ -16,13 +16,13 @@ export default function Page() {
         </h2>
         <div className="flex flex-col gap-6 mt-4">
           <p className="font-light leading-tight">
-            Amazon Q is a generative AI-powered assistant tailored for your
-            command line. Ask Amazon Q a question, and receive an in-depth
-            answer.
+            Amazon Q is an agentic AI assistant capable of performing complex,
+            multi-step actions on your behalf. Amazon Q can write files locally,
+            query AWS resources, and execute bash commands for you.
           </p>
-          <Terminal title="Passing Context">
+          <Terminal title="Chat">
             <Terminal.Tab>
-              <img src={chatWithContextDemo} alt="chat with context demo" />
+              <img src={chatDemo} alt="chat with context demo" />
             </Terminal.Tab>
           </Terminal>
         </div>

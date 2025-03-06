@@ -44,6 +44,7 @@ use fig_api_client::model::{
     ToolResultStatus,
 };
 use fig_os_shim::Context;
+use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
 use input_source::InputSource;
 use parser::{
@@ -140,6 +141,7 @@ pub async fn chat(input: Option<String>, accept_all: bool) -> Result<ExitCode> {
 
     let mut chat = ChatContext::new(
         ctx,
+        Settings::new(),
         output,
         input,
         InputSource::new()?,
@@ -184,6 +186,7 @@ pub enum ChatError {
 
 pub struct ChatContext<W: Write> {
     ctx: Arc<Context>,
+    settings: Settings,
     /// The [Write] destination for printing conversation text.
     output: W,
     initial_input: Option<String>,
@@ -207,6 +210,7 @@ impl<W: Write> ChatContext<W> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: Arc<Context>,
+        settings: Settings,
         output: W,
         input: Option<String>,
         input_source: InputSource,
@@ -217,6 +221,7 @@ impl<W: Write> ChatContext<W> {
     ) -> Result<Self> {
         Ok(Self {
             ctx,
+            settings,
             output,
             initial_input: input,
             input_source,
@@ -293,7 +298,7 @@ where
     W: Write,
 {
     async fn try_chat(&mut self) -> Result<()> {
-        if self.interactive {
+        if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
             execute!(self.output, style::Print(WELCOME_TEXT))?;
         }
 
@@ -1123,6 +1128,7 @@ mod tests {
 
         ChatContext::new(
             Arc::clone(&ctx),
+            Settings::new_fake(),
             std::io::stdout(),
             None,
             InputSource::new_mock(vec![

@@ -18,7 +18,7 @@ const chatSettings: PrefSection[] = [
 
 export const intro: Intro = {
   title: "Chat",
-  description: `Generative AI for your command line. Just run \`${CLI_BINARY_NAME} chat\`.`,
+  description: `Agentic AI in your command line. Just run \`${CLI_BINARY_NAME} chat\`.`,
   link: CHAT_WIKI_URL,
 };
 
