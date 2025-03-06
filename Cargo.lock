@@ -2990,7 +2990,7 @@ dependencies = [
  "macos-utils",
  "nix 0.29.0",
  "objc",
- "owo-colors 4.1.0",
+ "owo-colors 4.2.0",
  "plist",
  "regex",
  "serde",
@@ -5157,7 +5157,7 @@ checksum = "317f146e2eb7021892722af37cf1b971f0a70c8406f487e24952667616192c64"
 dependencies = [
  "cfg-if",
  "miette-derive",
- "owo-colors 4.1.0",
+ "owo-colors 4.2.0",
  "supports-color",
  "supports-hyperlinks",
  "supports-unicode",
@@ -6112,9 +6112,9 @@ checksum = "c1b04fb49957986fdce4d6ee7a65027d55d4b6d2265e5848bbb507b58ccfdb6f"
 
 [[package]]
 name = "owo-colors"
-version = "4.1.0"
+version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb37767f6569cd834a413442455e0f066d0d522de8630436e2a1761d9726ba56"
+checksum = "1036865bb9422d3300cf723f657c2851d0e9ab12567854b1f4eba3d77decf564"
 
 [[package]]
 name = "pango"
@@ -6815,7 +6815,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
- "owo-colors 4.1.0",
+ "owo-colors 4.2.0",
  "parking_lot",
  "paste",
  "predicates",
