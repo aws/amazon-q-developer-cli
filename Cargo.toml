@@ -78,7 +78,7 @@ fig_util = { path = "crates/fig_util" }
 flate2 = "1.0.35"
 flume = "0.11.0"
 futures = "0.3.26"
-globset = "0.4.10"
+globset = "0.4.16"
 hex = "0.4.3"
 http = "1.2.0"
 indicatif = "0.17.3"
