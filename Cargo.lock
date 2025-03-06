@@ -10,7 +10,7 @@ dependencies = [
  "cocoa",
  "core-foundation 0.10.0",
  "objc",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -2242,7 +2242,7 @@ dependencies = [
  "futures-lite",
  "serde",
  "serde_json",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-util",
  "tracing",
@@ -2705,7 +2705,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.26.3",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tracing",
@@ -2741,7 +2741,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tracing",
@@ -2880,7 +2880,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shellexpand",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -2960,7 +2960,7 @@ dependencies = [
  "strum 0.26.3",
  "tar",
  "tempfile",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tracing",
@@ -2997,7 +2997,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tempfile",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
 ]
@@ -3017,7 +3017,7 @@ dependencies = [
  "pin-project-lite",
  "rand 0.8.5",
  "tempfile",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-util",
  "tracing",
@@ -3033,7 +3033,7 @@ dependencies = [
  "fig_util",
  "parking_lot",
  "tempfile",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -3071,7 +3071,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "uuid",
 ]
 
@@ -3110,7 +3110,7 @@ dependencies = [
  "rustls-pemfile 2.2.0",
  "serde",
  "serde_json",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tracing",
@@ -3132,7 +3132,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "url",
@@ -3166,7 +3166,7 @@ dependencies = [
  "macos-utils",
  "serde",
  "serde_json",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "tracing-test",
@@ -3251,7 +3251,7 @@ dependencies = [
  "sha2",
  "strum 0.26.3",
  "sysinfo",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tracing",
@@ -6831,7 +6831,7 @@ dependencies = [
  "syntect",
  "sysinfo",
  "tempfile",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tokio-tungstenite",
@@ -6905,7 +6905,7 @@ dependencies = [
  "rustc-hash 2.1.0",
  "rustls 0.23.21",
  "socket2",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
 ]
@@ -6924,7 +6924,7 @@ dependencies = [
  "rustls 0.23.21",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "tinyvec",
  "tracing",
  "web-time",
@@ -8536,11 +8536,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.10"
+version = "2.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3ac7f54ca534db81081ef1c1e7f6ea8a3ef428d2fc069097c079443d24124d3"
+checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
 dependencies = [
- "thiserror-impl 2.0.10",
+ "thiserror-impl 2.0.12",
 ]
 
 [[package]]
@@ -8556,9 +8556,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.10"
+version = "2.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e9465d30713b56a37ede7185763c3492a91be2f5fa68d958c44e41ab9248beb"
+checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9081,7 +9081,7 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "sha1",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "utf-8",
 ]
 
@@ -10274,7 +10274,7 @@ dependencies = [
  "sha2",
  "soup3",
  "tao-macros",
- "thiserror 2.0.10",
+ "thiserror 2.0.12",
  "url",
  "webkit2gtk",
  "webkit2gtk-sys",
