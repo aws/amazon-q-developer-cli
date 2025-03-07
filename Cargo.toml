@@ -132,7 +132,7 @@ similar = "2.6.0"
 strum = { version = "0.26.3", features = ["derive"] }
 sysinfo = "0.32.0"
 thiserror = "2.0.3"
-tempfile = "3.10.1"
+tempfile = "3.18.0"
 time = { version = "0.3.34", features = [
     "parsing",
     "formatting",
