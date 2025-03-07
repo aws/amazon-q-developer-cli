@@ -7,76 +7,35 @@ mod prompt;
 mod tools;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io::{
-    IsTerminal,
-    Read,
-    Write,
-};
+use std::io::{IsTerminal, Read, Write};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
 use command::Command;
 use conversation_state::ConversationState;
-use crossterm::style::{
-    Attribute,
-    Color,
-    Stylize,
-};
-use crossterm::{
-    cursor,
-    execute,
-    queue,
-    style,
-    terminal,
-};
-use eyre::{
-    Result,
-    bail,
-};
+use crossterm::style::{Attribute, Color, Stylize};
+use crossterm::{cursor, execute, queue, style, terminal};
+use eyre::{Result, bail};
 use fig_api_client::StreamingClient;
 use fig_api_client::clients::SendMessageOutput;
 use fig_api_client::model::{
-    AssistantResponseMessage,
-    ChatResponseStream,
-    ToolResult,
-    ToolResultContentBlock,
-    ToolResultStatus,
+    AssistantResponseMessage, ChatResponseStream, ToolResult, ToolResultContentBlock, ToolResultStatus,
 };
 use fig_os_shim::Context;
 use fig_util::CLI_BINARY_NAME;
 use input_source::InputSource;
-use parser::{
-    RecvError,
-    ResponseParser,
-    ToolUse,
-};
+use parser::{RecvError, ResponseParser, ToolUse};
 use serde_json::Map;
-use spinners::{
-    Spinner,
-    Spinners,
-};
+use spinners::{Spinner, Spinners};
 use thiserror::Error;
-use tokio::signal::unix::{
-    SignalKind,
-    signal,
-};
-use tools::{
-    Tool,
-    ToolSpec,
-};
-use tracing::{
-    debug,
-    error,
-    trace,
-};
+use tokio::signal::unix::{SignalKind, signal};
+use tools::{Tool, ToolSpec};
+use tracing::{debug, error, trace};
 use winnow::Partial;
 use winnow::stream::Offset;
 
-use crate::cli::chat::parse::{
-    ParseState,
-    interpret_markdown,
-};
+use crate::cli::chat::parse::{ParseState, interpret_markdown};
 use crate::util::region_check;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
@@ -90,6 +49,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 • Help me understand my git status
 
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
+<em>/compact</em>      <black!>Compacts conversation history with summary</black!>
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
@@ -101,6 +61,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <magenta,em>q</magenta,em> (Amazon Q Chat)
 
 <em>/clear</em>        <black!>Clear the conversation history</black!>
+<em>/compact</em>      <black!>Compacts conversation history with summary</black!>
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
@@ -538,6 +499,42 @@ where
 
                 ChatState::PromptUser { tool_uses: None }
             },
+            Command::Compact => {
+                if self.interactive {
+                    queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
+                    queue!(self.output, style::SetForegroundColor(Color::Reset))?;
+                    queue!(self.output, cursor::Hide)?;
+                    execute!(self.output, style::Print("\n"))?;
+                    self.spinner = Some(Spinner::new(Spinners::Dots, "Compacting conversation...".to_owned()));
+                }
+
+                // Addig Command to state as signal to trim message history
+                self.conversation_state.cmd = Some(Command::Compact);
+
+                // Create a prompt asking for a summary of the conversation
+                self.conversation_state.append_new_user_message(
+                    "Provide a concise summary of our conversation so far. This summary will replace the conversation history.\
+                     Use the following format for this summary:\
+                     # Original User Ask\
+                        <Add the original user ask here>\
+                     # Completed Items:\
+                        <Details about what has been completed to far. Add resources that have been modified along with important information that needs to be retained.>\
+                     # Todo Items:\
+                        <Details about any tasks that have not been completed, including required details and next steps for completing each item>".to_string()
+                );
+
+                self.send_tool_use_telemetry().await;
+
+                // Send the request to get a summary
+                let response = self
+                    .client
+                    .send_message(self.conversation_state.as_sendable_conversation_state())
+                    .await?;
+
+                // After getting the summary, we'll handle it in the response handler
+                // and then implement the logic to keep only the last 2 messages
+                ChatState::HandleResponseStream(response)
+            },
             Command::Quit => ChatState::Exit,
         })
     }
@@ -739,6 +736,22 @@ where
                     ));
                 },
                 Err(err) => return Err(err.into()),
+            }
+
+            // If this was a response to a /compact command, compact the conversation history
+            if let Some(Command::Compact) = self.conversation_state.cmd {
+                //reset the command for conversation state
+                self.conversation_state.cmd = None;
+
+                // After receiving the summary, compact the conversation history to only the last 2 messages
+                self.conversation_state.compact_conversation_history();
+
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("\n\nConversation has been compacted. Only the summary and this message remain.\n\n"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
             }
 
             // Fix for the markdown parser copied over from q chat:

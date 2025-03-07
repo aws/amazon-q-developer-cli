@@ -1,42 +1,18 @@
-use std::collections::{
-    HashMap,
-    VecDeque,
-};
+use std::collections::{HashMap, VecDeque};
 use std::env;
 
 use fig_api_client::model::{
-    AssistantResponseMessage,
-    ChatMessage,
-    ConversationState as FigConversationState,
-    EnvState,
-    ShellState,
-    Tool,
-    ToolInputSchema,
-    ToolResult,
-    ToolResultContentBlock,
-    ToolSpecification,
-    UserInputMessage,
-    UserInputMessageContext,
+    AssistantResponseMessage, ChatMessage, ConversationState as FigConversationState, EnvState, ShellState, Tool,
+    ToolInputSchema, ToolResult, ToolResultContentBlock, ToolSpecification, UserInputMessage, UserInputMessageContext,
 };
 use fig_util::Shell;
-use rand::distributions::{
-    Alphanumeric,
-    DistString,
-};
-use tracing::{
-    debug,
-    error,
-    info,
-    warn,
-};
+use rand::distributions::{Alphanumeric, DistString};
+use tracing::{debug, error, info, warn};
 
+use super::Command;
 use super::tools::ToolSpec;
 use super::truncate_safe;
-use crate::cli::chat::tools::{
-    InputSchema,
-    InvokeOutput,
-    serde_value_to_document,
-};
+use crate::cli::chat::tools::{InputSchema, InvokeOutput, serde_value_to_document};
 
 // Max constants for length of strings and lists, use these to truncate elements
 // to ensure the API request is valid
@@ -55,6 +31,8 @@ pub struct ConversationState {
     /// The next user message to be sent as part of the conversation. Required to be [Some] before
     /// calling [Self::as_sendable_conversation_state].
     pub next_message: Option<UserInputMessage>,
+    //optional Command that is changing conversation state
+    pub cmd: Option<Command>,
     history: VecDeque<ChatMessage>,
     tools: Vec<Tool>,
 }
@@ -66,6 +44,7 @@ impl ConversationState {
         Self {
             conversation_id,
             next_message: None,
+            cmd: None,
             history: VecDeque::new(),
             tools: tool_config
                 .into_values()
@@ -312,6 +291,21 @@ impl ConversationState {
         self.next_message = Some(msg);
     }
 
+    /// Compacts the conversation history by keeping only the last message from the user. The
+    /// response for the summary will be added after
+    /// This is used after receiving a summary to reduce the conversation size.
+    pub fn compact_conversation_history(&mut self) {
+        // check to see if there has been at least on turn of the conversation
+        if self.history.len() <= 2 {
+            return;
+        }
+
+        // Keep only the last message
+        let len = self.history.len();
+        let to_remove = len - 1;
+        self.history.drain(0..to_remove);
+    }
+
     /// Returns a [FigConversationState] capable of being sent by
     /// [fig_api_client::StreamingClient] while preparing the current conversation state to be sent
     /// in the next message.
@@ -393,14 +387,9 @@ fn build_shell_state() -> ShellState {
 
 #[cfg(test)]
 mod tests {
-    use fig_api_client::model::{
-        AssistantResponseMessage,
-        ToolResultStatus,
-        ToolUse,
-    };
-
     use super::*;
     use crate::cli::chat::load_tools;
+    use fig_api_client::model::{AssistantResponseMessage, ToolResultStatus, ToolUse};
 
     #[test]
     fn test_truncate_safe() {
@@ -458,6 +447,54 @@ mod tests {
             MAX_CONVERSATION_STATE_HISTORY_LEN,
             actual_history_len
         );
+    }
+
+    /// Tests that compact_conversation_history keeps only the last message in the history.
+    /// This is used after receiving a summary to compact the conversation.
+    #[test]
+    fn test_compact_conversation_history() {
+        let mut conversation_state = ConversationState::new(load_tools().unwrap());
+
+        // Add some messages to the history
+        conversation_state.append_new_user_message("message 1".to_string());
+        let _state = conversation_state.as_sendable_conversation_state();
+        conversation_state.push_assistant_message(AssistantResponseMessage {
+            message_id: None,
+            content: "response 1".to_string(),
+            tool_uses: None,
+        });
+
+        conversation_state.append_new_user_message("message 2".to_string());
+        let _state = conversation_state.as_sendable_conversation_state();
+        conversation_state.push_assistant_message(AssistantResponseMessage {
+            message_id: None,
+            content: "response 2".to_string(),
+            tool_uses: None,
+        });
+
+        conversation_state.append_new_user_message("message 3".to_string());
+        let _state = conversation_state.as_sendable_conversation_state();
+        conversation_state.push_assistant_message(AssistantResponseMessage {
+            message_id: None,
+            content: "response 3".to_string(),
+            tool_uses: None,
+        });
+
+        // Verify we have more than 2 messages
+        assert!(conversation_state.history.len() > 2);
+
+        // Call the method we're testing
+        conversation_state.compact_conversation_history();
+
+        // Verify we now have exactly 1 message (the last one)
+        assert_eq!(conversation_state.history.len(), 1);
+
+        // Verify it's the last message (from the assistant)
+        if let Some(ChatMessage::AssistantResponseMessage(msg)) = conversation_state.history.back() {
+            assert_eq!(msg.content, "response 3");
+        } else {
+            panic!("Last message should be from assistant");
+        }
     }
 
     #[tokio::test]
