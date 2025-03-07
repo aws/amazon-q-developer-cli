@@ -120,7 +120,7 @@ reqwest = { version = "0.12.12", default-features = false, features = [
     "socks",
     "cookies",
 ] }
-ring = "0.17.8"
+ring = "0.17.13"
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
 shell-color = { path = "crates/shell-color" }
 semver = { version = "1.0.16", features = ["serde"] }
