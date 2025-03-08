@@ -1140,6 +1140,6 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(ctx.fs().read_to_string("/file.txt").await.unwrap(), "Hello, world!");
+        assert_eq!(ctx.fs().read_to_string("/file.txt").await.unwrap(), "Hello, world!\n");
     }
 }
