@@ -22,7 +22,6 @@ fig_os_shim.workspace = true
 hex.workspace = true
 indoc.workspace = true
 libc.workspace = true
-paste = "1.0.11"
 rand.workspace = true
 regex.workspace = true
 serde.workspace = true

@@ -858,27 +858,25 @@ pub fn build_autocomplete(
 
 async fn init_webview_notification_listeners(proxy: EventLoopProxy) {
     #[allow(unused_macros)]
-    macro_rules! watcher {
-        ($type:ident, $name:expr, $on_update:expr) => {{
-            paste::paste! {
-                let proxy = proxy.clone();
-                tokio::spawn(async move {
-                    let mut rx = NOTIFICATION_BUS.[<subscribe_ $type>]($name.into());
-                    loop {
-                        let res = rx.recv().await;
-                        match res {
-                            Ok(val) => {
-                                #[allow(clippy::redundant_closure_call)]
-                                ($on_update)(val, &proxy);
-                            },
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("Notification bus '{}' lagged by {n} messages", $name);
-                            },
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                        }
+    macro_rules! settings_watcher {
+        ($name:expr, $on_update:expr) => {{
+            let proxy = proxy.clone();
+            tokio::spawn(async move {
+                let mut rx = NOTIFICATION_BUS.subscribe_settings($name.into());
+                loop {
+                    let res = rx.recv().await;
+                    match res {
+                        Ok(val) => {
+                            #[allow(clippy::redundant_closure_call)]
+                            ($on_update)(val, &proxy);
+                        },
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("Notification bus '{}' lagged by {n} messages", $name);
+                        },
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
-                });
-            }
+                }
+            });
         };};
     }
 
@@ -895,8 +893,7 @@ async fn init_webview_notification_listeners(proxy: EventLoopProxy) {
         };
 
         use crate::notification_bus::JsonNotification;
-        watcher!(
-            settings,
+        settings_watcher!(
             "autocomplete.disable",
             |notification: JsonNotification, proxy: &EventLoopProxy| {
                 let enabled = !notification.as_bool().unwrap_or(false);
@@ -909,8 +906,7 @@ async fn init_webview_notification_listeners(proxy: EventLoopProxy) {
                     .unwrap();
             }
         );
-        watcher!(
-            settings,
+        settings_watcher!(
             "app.launchOnStartup",
             |notification: JsonNotification, _proxy: &EventLoopProxy| {
                 let enabled = !notification.as_bool().unwrap_or(true);
@@ -947,22 +943,17 @@ async fn init_webview_notification_listeners(proxy: EventLoopProxy) {
         );
     }
 
-    watcher!(
-        settings,
-        "app.theme",
-        |notification: JsonNotification, proxy: &EventLoopProxy| {
-            let theme = notification.as_string().as_deref().and_then(map_theme);
-            debug!(?theme, "Theme changed");
-            proxy
-                .send_event(Event::WindowEventAll {
-                    window_event: WindowEvent::SetTheme(theme),
-                })
-                .unwrap();
-        }
-    );
+    settings_watcher!("app.theme", |notification: JsonNotification, proxy: &EventLoopProxy| {
+        let theme = notification.as_string().as_deref().and_then(map_theme);
+        debug!(?theme, "Theme changed");
+        proxy
+            .send_event(Event::WindowEventAll {
+                window_event: WindowEvent::SetTheme(theme),
+            })
+            .unwrap();
+    });
 
-    watcher!(
-        settings,
+    settings_watcher!(
         "app.hideMenubarIcon",
         |notification: JsonNotification, proxy: &EventLoopProxy| {
             let enabled = !notification.as_bool().unwrap_or(false);
@@ -971,8 +962,7 @@ async fn init_webview_notification_listeners(proxy: EventLoopProxy) {
         }
     );
 
-    watcher!(
-        settings,
+    settings_watcher!(
         "developer.dashboard.host",
         |_notification: JsonNotification, proxy: &EventLoopProxy| {
             let url = dashboard::url();
@@ -986,8 +976,7 @@ async fn init_webview_notification_listeners(proxy: EventLoopProxy) {
         }
     );
 
-    watcher!(
-        settings,
+    settings_watcher!(
         "developer.dashboard.build",
         |_notification: JsonNotification, proxy: &EventLoopProxy| {
             let url = dashboard::url();
@@ -1001,8 +990,7 @@ async fn init_webview_notification_listeners(proxy: EventLoopProxy) {
         }
     );
 
-    watcher!(
-        settings,
+    settings_watcher!(
         "developer.autocomplete.host",
         |_notification: JsonNotification, proxy: &EventLoopProxy| {
             let url = autocomplete::url();
@@ -1016,8 +1004,7 @@ async fn init_webview_notification_listeners(proxy: EventLoopProxy) {
         }
     );
 
-    watcher!(
-        settings,
+    settings_watcher!(
         "developer.autocomplete.build",
         |_notification: JsonNotification, proxy: &EventLoopProxy| {
             let url = autocomplete::url();
@@ -1030,27 +1017,6 @@ async fn init_webview_notification_listeners(proxy: EventLoopProxy) {
                 .unwrap();
         }
     );
-
-    // I don't think this is meant to be here anymore
-    // watcher!(settings, "app.beta", |_: JsonNotification, proxy: &EventLoopProxy| {
-    //     let proxy = proxy.clone();
-    //     tokio::spawn(fig_install::update(
-    //         Some(Box::new(move |_| {
-    //             proxy
-    //                 .send_event(Event::ShowMessageNotification {
-    //                     title: "Fig Update".into(),
-    //                     body: "Fig is updating in the background. You can continue to use Fig while
-    // it updates.".into(),                     parent: None,
-    //                 })
-    //                 .unwrap();
-    //         })),
-    //         fig_install::UpdateOptions {
-    //             ignore_rollout: true,
-    //             interactive: true,
-    //             relaunch_dashboard: true,
-    //         },
-    //     ));
-    // });
 
     // Midway watcher
     tokio::spawn(async move {

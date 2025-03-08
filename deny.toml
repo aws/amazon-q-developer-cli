@@ -28,6 +28,8 @@ ignore = [
   "RUSTSEC-2024-0420",
   # glib is required by gtk via tao, depends on upgrading those dependencies
   "RUSTSEC-2024-0429",
+  # paste is used in core deps
+  "RUSTSEC-2024-0436",
 ]
 
 [licenses]

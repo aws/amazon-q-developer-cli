@@ -29,15 +29,13 @@ use crate::{
 };
 
 macro_rules! utf8_dir {
-    ($name:ident, $($arg:ident: $type:ty),*) => {
-        paste::paste! {
-            pub fn [<$name _utf8>]($($arg: $type),*) -> Result<Utf8PathBuf> {
-                Ok($name($($arg),*)?.try_into()?)
-            }
+    ($fname:ident, $name:ident, $($arg:ident: $type:ty),*) => {
+        pub fn $fname($($arg: $type),*) -> Result<Utf8PathBuf> {
+            Ok($name($($arg),*)?.try_into()?)
         }
     };
-    ($name:ident) => {
-        utf8_dir!($name,);
+    ($fname:ident, $name:ident) => {
+        utf8_dir!($fname, $name,);
     };
 }
 
@@ -507,17 +505,17 @@ pub fn local_webview_data_dir<Ctx: FsProvider + EnvProvider + PlatformProvider>(
     Ok(local_data_dir(ctx)?.join(crate::consts::linux::DESKTOP_APP_WM_CLASS))
 }
 
-utf8_dir!(home_dir);
+utf8_dir!(home_dir_utf8, home_dir);
 #[cfg(unix)]
-utf8_dir!(home_local_bin);
-utf8_dir!(fig_data_dir);
-utf8_dir!(sockets_dir);
-utf8_dir!(remote_socket_path);
-utf8_dir!(figterm_socket_path, session_id: impl Display);
-utf8_dir!(manifest_path);
-utf8_dir!(backups_dir);
-utf8_dir!(logs_dir);
-utf8_dir!(settings_path);
+utf8_dir!(home_local_bin_utf8, home_local_bin);
+utf8_dir!(fig_data_dir_utf8, fig_data_dir);
+utf8_dir!(sockets_dir_utf8, sockets_dir);
+utf8_dir!(remote_socket_path_utf8, remote_socket_path);
+utf8_dir!(figterm_socket_path_utf8, figterm_socket_path, session_id: impl Display);
+utf8_dir!(manifest_path_utf8, manifest_path);
+utf8_dir!(backups_dir_utf8, backups_dir);
+utf8_dir!(logs_dir_utf8, logs_dir);
+utf8_dir!(settings_path_utf8, settings_path);
 
 #[cfg(test)]
 mod linux_tests {
