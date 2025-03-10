@@ -13,7 +13,7 @@ prettyplease = "0.2.15"
 quote = "1.0.33"
 serde.workspace = true
 serde_json.workspace = true
-syn = "2.0.90"
+syn = "2.0.100"
 
 [dependencies]
 amzn-toolkit-telemetry = { path = "../amzn-toolkit-telemetry" }
