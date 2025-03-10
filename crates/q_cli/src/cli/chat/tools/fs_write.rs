@@ -50,6 +50,19 @@ pub enum FsWrite {
 }
 
 impl FsWrite {
+    /// Helper function to clean file content:
+    /// 1. Ensures the file ends with a newline
+    /// 2. Removes trailing whitespace from each line
+    fn clean_file_content(content: String) -> String {
+        let mut cleaned = content
+            .lines()
+            .map(|line| line.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n");
+        cleaned.push('\n');
+        cleaned
+    }
+
     pub async fn invoke(&self, ctx: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
         let fs = ctx.fs();
         let cwd = ctx.env().current_dir()?;
@@ -70,7 +83,9 @@ impl FsWrite {
                     style::ResetColor,
                     style::Print("\n"),
                 )?;
-                fs.write(&path, file_text.as_bytes()).await?;
+
+                let cleaned_text = Self::clean_file_content(file_text);
+                fs.write(&path, cleaned_text.as_bytes()).await?;
                 Ok(Default::default())
             },
             FsWrite::StrReplace { path, old_str, new_str } => {
@@ -89,7 +104,8 @@ impl FsWrite {
                     0 => Err(eyre!("no occurrences of \"{old_str}\" were found")),
                     1 => {
                         let file = file.replacen(old_str, new_str, 1);
-                        fs.write(path, file).await?;
+                        let cleaned_file = Self::clean_file_content(file);
+                        fs.write(path, cleaned_file).await?;
                         Ok(Default::default())
                     },
                     x => Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
@@ -120,7 +136,8 @@ impl FsWrite {
                     i += line_len;
                 }
                 file.insert_str(i, new_str);
-                fs.write(&path, &file).await?;
+                let cleaned_file = Self::clean_file_content(file);
+                fs.write(&path, &cleaned_file).await?;
                 Ok(Default::default())
             },
             FsWrite::Append { path, new_str } => {
@@ -435,7 +452,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(ctx.fs().read_to_string("/my-file").await.unwrap(), file_text);
+        assert_eq!(
+            ctx.fs().read_to_string("/my-file").await.unwrap(),
+            format!("{}\n", file_text)
+        );
 
         let file_text = "Goodbye, world!\nSee you later";
         let v = serde_json::json!({
@@ -449,7 +469,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(ctx.fs().read_to_string("/my-file").await.unwrap(), file_text);
+        // File should end with a newline
+        assert_eq!(
+            ctx.fs().read_to_string("/my-file").await.unwrap(),
+            format!("{}\n", file_text)
+        );
 
         let file_text = "This is a new string";
         let v = serde_json::json!({
@@ -463,7 +487,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(ctx.fs().read_to_string("/my-file").await.unwrap(), file_text);
+        assert_eq!(
+            ctx.fs().read_to_string("/my-file").await.unwrap(),
+            format!("{}\n", file_text)
+        );
     }
 
     #[tokio::test]
@@ -613,7 +640,7 @@ mod tests {
             .await
             .unwrap();
         let actual = ctx.fs().read_to_string(test_file_path).await.unwrap();
-        assert_eq!(actual, format!("{}{}", test_file_contents, new_str),);
+        assert_eq!(actual, format!("{}{}\n", test_file_contents, new_str));
 
         // Then, test prepending
         let v = serde_json::json!({
@@ -628,7 +655,7 @@ mod tests {
             .await
             .unwrap();
         let actual = ctx.fs().read_to_string(test_file_path).await.unwrap();
-        assert_eq!(actual, format!("{}{}{}", new_str, test_file_contents, new_str),);
+        assert_eq!(actual, format!("{}{}{}\n", new_str, test_file_contents, new_str));
     }
 
     #[tokio::test]
@@ -682,5 +709,28 @@ mod tests {
         assert_eq!(truncate_str(s, 13), s);
         let s = "Hello, world!";
         assert_eq!(truncate_str(s, 0), "<...Truncated>");
+    }
+
+    #[test]
+    fn test_clean_file_content() {
+        // Test removing trailing whitespace
+        let content = "Hello world!  \nThis is a test   \nWith trailing spaces    ";
+        let expected = "Hello world!\nThis is a test\nWith trailing spaces\n";
+        assert_eq!(FsWrite::clean_file_content(content.to_string()), expected);
+
+        // Test ensuring ending newline
+        let content = "Hello world!\nNo ending newline";
+        let expected = "Hello world!\nNo ending newline\n";
+        assert_eq!(FsWrite::clean_file_content(content.to_string()), expected);
+
+        // Test with content already having ending newline
+        let content = "Hello world!\nWith ending newline\n";
+        let expected = "Hello world!\nWith ending newline\n";
+        assert_eq!(FsWrite::clean_file_content(content.to_string()), expected);
+
+        // Test with empty string
+        let content = "";
+        let expected = "\n";
+        assert_eq!(FsWrite::clean_file_content(content.to_string()), expected);
     }
 }
