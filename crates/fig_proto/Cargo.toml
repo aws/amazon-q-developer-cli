@@ -29,6 +29,6 @@ uuid.workspace = true
 nix.workspace = true
 
 [build-dependencies]
-prost-build = "0.13.3"
+prost-build = "0.13.5"
 prost-reflect-build = "0.14.0"
 tempfile.workspace = true
