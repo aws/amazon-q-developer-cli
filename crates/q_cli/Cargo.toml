@@ -21,7 +21,7 @@ anstream.workspace = true
 appkit-nsworkspace-bindings.workspace = true
 arboard = { version = "3.1.1", default-features = false }
 async-trait.workspace = true
-aws-smithy-types = "1.2.10"
+aws-smithy-types = "1.2.13"
 aws-types.workspace = true
 base64.workspace = true
 bitflags.workspace = true
