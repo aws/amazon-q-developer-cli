@@ -1,5 +1,6 @@
 use eyre::Result;
 
+#[derive(Debug, Clone)]
 pub enum Command {
     Ask { prompt: String },
     Execute { command: String },
@@ -7,6 +8,7 @@ pub enum Command {
     Help,
     AcceptAll,
     Quit,
+    Compact,
 }
 
 impl Command {
@@ -19,6 +21,7 @@ impl Command {
                 "help" => Self::Help,
                 "acceptall" => Self::AcceptAll,
                 "q" | "exit" | "quit" => Self::Quit,
+                "compact" => Self::Compact,
                 _ => return Err(format!("Unknown command: {}", input)),
             });
         }
