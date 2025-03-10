@@ -1102,7 +1102,7 @@ name = "aws-toolkit-telemetry-definitions"
 version = "0.1.0"
 dependencies = [
  "amzn-toolkit-telemetry",
- "convert_case 0.6.0",
+ "convert_case 0.8.0",
  "prettyplease",
  "quote",
  "serde",
@@ -1959,9 +1959,9 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "convert_case"
-version = "0.6.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec182b0ca2f35d8fc196cf3404988fd8b8c739a4d270ff118a398feb0cbec1ca"
+checksum = "baaaa0ecca5b51987b9423ccdc971514dd8b0bb7b4060b983d3664dad3f1f89f"
 dependencies = [
  "unicode-segmentation",
 ]
@@ -6782,7 +6782,7 @@ dependencies = [
  "clap_complete_fig",
  "color-eyre",
  "color-print",
- "convert_case 0.6.0",
+ "convert_case 0.8.0",
  "criterion",
  "crossterm",
  "ctrlc",
