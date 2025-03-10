@@ -21,6 +21,7 @@ use super::{
     sanitize_path_tool_arg,
     stylize_output_if_able,
 };
+use crate::util::stylize_diff;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "command")]
@@ -170,25 +171,26 @@ impl FsWrite {
                     style::SetForegroundColor(Color::Green),
                     style::Print(&relative_path),
                     style::ResetColor,
+                    style::Print("\n"),
+                    style::Print("Operation: "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("Write contents"),
+                    style::ResetColor,
                     style::Print("\n\n"),
                 )?;
                 if ctx.fs().exists(path) {
                     let prev = ctx.fs().read_to_string_sync(path)?;
-                    let prev = stylize_output_if_able(ctx, &relative_path, prev.as_str(), None, Some("-"));
-                    let new = stylize_output_if_able(ctx, &relative_path, &file_text, None, Some("+"));
-                    queue!(
-                        updates,
-                        style::Print("Replacing:\n"),
-                        style::Print(prev),
-                        style::ResetColor,
-                        style::Print("\n\n"),
-                        style::Print("With:\n"),
-                        style::Print(new),
-                        style::ResetColor,
-                        style::Print("\n\n")
-                    )?;
+                    // For file replacement, we're showing the entire file diff, so line numbers start at 1
+                    //                    let prev = stylize_output_if_able(ctx, &relative_path, prev.as_str(), Some(1),
+                    // Some("-"));                    let new = stylize_output_if_able(ctx,
+                    // &relative_path, &file_text, Some(1), Some("+"));
+
+                    let diff = stylize_diff(ctx, &prev, &file_text, Some(1));
+
+                    queue!(updates, style::Print(diff))?;
                 } else {
-                    let file = stylize_output_if_able(ctx, &relative_path, &file_text, None, None);
+                    // For new files, we should still show line numbers starting at 1
+                    let file = stylize_output_if_able(ctx, &relative_path, &file_text, Some(1), None);
                     queue!(
                         updates,
                         style::Print("Contents:\n"),
@@ -211,6 +213,12 @@ impl FsWrite {
                     style::SetForegroundColor(Color::Green),
                     style::Print(relative_path),
                     style::ResetColor,
+                    style::Print("\n"),
+                    style::Print("Operation: "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("Insert contents at {}", insert_line)),
+                    style::ResetColor,
+                    style::Print("\n\n"),
                     style::Print("\n\nContents:\n"),
                     style::Print(file),
                     style::ResetColor,
@@ -220,26 +228,30 @@ impl FsWrite {
             FsWrite::StrReplace { path, old_str, new_str } => {
                 let relative_path = format_path(cwd, path);
                 let file = ctx.fs().read_to_string_sync(&relative_path)?;
-                // TODO: we should pass some additional lines as context before and after the file.
+
+                // Find the line numbers in the original file for proper context
                 let (start_line, _) = match line_number_at(&file, old_str) {
-                    Some((start_line, end_line)) => (Some(start_line), Some(end_line)),
-                    _ => (None, None),
+                    Some((start_line, end_line)) => (start_line, end_line),
+                    _ => (0, 0), // Default to 0 if not found
                 };
-                let old_str = stylize_output_if_able(ctx, &relative_path, old_str, start_line, Some("-"));
-                let new_str = stylize_output_if_able(ctx, &relative_path, new_str, start_line, Some("+"));
+
+                // Generate the diff with proper line numbers
+                let diff = stylize_diff(ctx, &old_str, &new_str, Some(start_line));
+
                 queue!(
                     updates,
                     style::Print("Path: "),
                     style::SetForegroundColor(Color::Green),
                     style::Print(relative_path),
                     style::ResetColor,
-                    style::Print("\n\n"),
-                    style::Print("Replacing:\n"),
-                    style::Print(old_str),
+                    style::Print("\n"),
+                    style::Print("Operation: "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("Replace contents at line {}", start_line)),
                     style::ResetColor,
                     style::Print("\n\n"),
-                    style::Print("With:\n"),
-                    style::Print(new_str),
+                    style::Print("Diff:\n"),
+                    style::Print(diff),
                     style::ResetColor
                 )?;
                 Ok(())

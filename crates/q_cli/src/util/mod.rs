@@ -3,6 +3,7 @@ pub mod desktop;
 pub mod pid_file;
 mod region_check;
 pub mod spinner;
+pub mod stylize_diff;
 
 use std::env;
 use std::ffi::OsStr;
@@ -19,7 +20,10 @@ use std::process::{
     Command,
     ExitCode,
 };
-use std::sync::Mutex;
+use std::sync::{
+    LazyLock,
+    Mutex,
+};
 use std::time::Duration;
 
 use anstream::println;
@@ -49,9 +53,12 @@ use globset::{
 };
 use regex::Regex;
 pub use region_check::region_check;
+pub use stylize_diff::stylize_diff;
+use syntect::highlighting::ThemeSet;
 use tracing::warn;
 
 static SET_CTRLC_HANDLER: Mutex<bool> = Mutex::new(false);
+static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
 /// Glob patterns against full paths
 pub fn glob_dir(glob: &GlobSet, directory: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
