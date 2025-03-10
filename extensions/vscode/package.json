@@ -44,7 +44,7 @@
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.10.6",
-    "@types/vscode": "~1.80.0",
+    "@types/vscode": "~1.98.0",
     "@vscode/test-electron": "^2.4.1",
     "@vscode/vsce": "^2.32.0",
     "eslint": "^9.18.0",
