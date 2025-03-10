@@ -34,5 +34,5 @@ url.workspace = true
 webpki-roots.workspace = true
 
 [dev-dependencies]
-mockito = "1.4.0"
+mockito = "1.7.0"
 tokio.workspace = true
