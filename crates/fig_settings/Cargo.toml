@@ -11,7 +11,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-fd-lock = "4.0.0"
+fd-lock = "4.0.3"
 fig_util.workspace = true
 parking_lot.workspace = true
 r2d2.workspace = true
