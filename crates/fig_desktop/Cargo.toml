@@ -60,7 +60,7 @@ fnv = "1.0.7"
 futures.workspace = true
 http.workspace = true
 image = "0.25.0"
-infer = "0.16.0"
+infer = "0.19.0"
 keyboard-types = "0.7.0"
 mime = "0.3.17"
 moka = { version = "0.12.1", features = ["future"] }
