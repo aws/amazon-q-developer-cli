@@ -19,9 +19,9 @@ use fig_api_client::model::{
     UserInputMessageContext,
 };
 use fig_util::Shell;
-use rand::distributions::{
+use rand::distr::{
     Alphanumeric,
-    DistString,
+    SampleString,
 };
 use tracing::{
     debug,
@@ -61,7 +61,7 @@ pub struct ConversationState {
 
 impl ConversationState {
     pub fn new(tool_config: HashMap<String, ToolSpec>) -> Self {
-        let conversation_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 9);
+        let conversation_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
         info!(?conversation_id, "Generated new conversation id");
         Self {
             conversation_id,

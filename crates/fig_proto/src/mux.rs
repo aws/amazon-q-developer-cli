@@ -33,8 +33,8 @@ pub struct PacketOptions {
 pub fn message_to_packet<M: Message>(message: M, options: &PacketOptions) -> Result<Packet, MuxError> {
     let mut inner = message.encode_to_vec();
 
-    let mut rng = rand::thread_rng();
-    let nonce_length = rng.gen_range(16..=32);
+    let mut rng = rand::rng();
+    let nonce_length = rng.random_range(16..=32);
     let mut nonce = vec![0; nonce_length];
     rng.fill_bytes(&mut nonce);
 

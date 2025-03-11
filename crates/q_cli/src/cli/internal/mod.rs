@@ -69,9 +69,9 @@ use fig_util::{
     directories,
 };
 use multiplexer::MultiplexerArgs;
-use rand::distributions::{
+use rand::distr::{
     Alphanumeric,
-    DistString,
+    SampleString,
 };
 use sysinfo::System;
 use tokio::io::{
@@ -350,7 +350,7 @@ impl InternalSubcommand {
                         (filename, exit_code)
                     },
                     _ => {
-                        let file_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 9);
+                        let file_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
                         let tmp_filename = format!("fig-callback-{file_id}");
                         let tmp_path = PathBuf::from("/tmp").join(tmp_filename);
                         let mut tmp_file = std::fs::File::create(&tmp_path)?;

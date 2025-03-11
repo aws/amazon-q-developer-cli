@@ -7,9 +7,9 @@ use fig_api_client::model::{
     ChatResponseStream,
     ToolUse as FigToolUse,
 };
-use rand::distributions::{
+use rand::distr::{
     Alphanumeric,
-    DistString,
+    SampleString,
 };
 use thiserror::Error;
 use tracing::{
@@ -96,7 +96,7 @@ pub struct ResponseParser {
 
 impl ResponseParser {
     pub fn new(response: SendMessageOutput) -> Self {
-        let message_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 9);
+        let message_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
         info!(?message_id, "Generated new message id");
         Self {
             response,

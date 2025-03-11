@@ -24,7 +24,7 @@ const TWEET_OPTIONS: &[(&str, bool)] = &[
 ];
 
 fn tweet_url() -> Result<Url> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let (tweet, with_link) = TWEET_OPTIONS.choose(&mut rng).unwrap_or(&TWEET_OPTIONS[0]);
 
     let mut params = vec![("text", *tweet), ("related", "codewhisperer")];

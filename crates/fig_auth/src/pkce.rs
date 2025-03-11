@@ -188,8 +188,8 @@ impl PkceRegistration {
         let redirect_uri = format!("http://{}/oauth/callback", listener.local_addr()?);
         let code_verifier = generate_code_verifier();
         let code_challenge = generate_code_challenge(&code_verifier);
-        let state = rand::thread_rng()
-            .sample_iter(rand::distributions::Alphanumeric)
+        let state = rand::rng()
+            .sample_iter(rand::distr::Alphanumeric)
             .take(10)
             .collect::<Vec<_>>();
         let state = String::from_utf8(state).unwrap_or("state".to_string());

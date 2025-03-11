@@ -84,7 +84,7 @@ impl std::fmt::Display for UnknownDesktopErrContext {
 /// ```
 pub fn gen_hex_string() -> String {
     let mut buf = [0u8; 32];
-    rand::thread_rng().fill(&mut buf);
+    rand::rng().fill(&mut buf);
     hex::encode(buf)
 }
 
