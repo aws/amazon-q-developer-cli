@@ -183,7 +183,7 @@ impl Processor {
     {
         if self.state.sync_state.timeout.is_none() {
             let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, byte);
+            self.parser.advance(&mut performer, &[byte]);
         } else {
             self.advance_sync(handler, byte);
         }
@@ -198,7 +198,7 @@ impl Processor {
         for i in 0..self.state.sync_state.buffer.len() {
             let byte = self.state.sync_state.buffer[i];
             let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, byte);
+            self.parser.advance(&mut performer, &[byte]);
         }
 
         // Resetting state after processing makes sure we don't interpret buffered sync escapes.
