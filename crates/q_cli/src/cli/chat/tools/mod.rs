@@ -294,14 +294,17 @@ fn stylize_output_if_able(ctx: &Context, path: impl AsRef<Path>, file_text: &str
         }
     }
     StylizedFile {
+        truecolor: false,
         content: file_text.to_string(),
         gutter_bg: style::Color::Reset,
         line_bg: style::Color::Reset,
     }
 }
 
+/// File contents that are potentially stylized with truecolor escape codes.
 #[derive(Debug)]
 struct StylizedFile {
+    truecolor: bool,
     content: String,
     gutter_bg: style::Color,
     line_bg: style::Color,
@@ -310,6 +313,7 @@ struct StylizedFile {
 impl Default for StylizedFile {
     fn default() -> Self {
         Self {
+            truecolor: false,
             content: Default::default(),
             gutter_bg: style::Color::Reset,
             line_bg: style::Color::Reset,
@@ -335,18 +339,12 @@ fn stylized_file(path: impl AsRef<Path>, file_text: impl AsRef<str>) -> Result<S
         .wrap_err_with(|| format!("missing extension: {}", extension))?;
 
     let theme = &ts.themes["base16-ocean.dark"];
-    let mut h = HighlightLines::new(syntax, theme);
+    let mut highlighter = HighlightLines::new(syntax, theme);
     let file_text = file_text.as_ref().lines();
-    let (line_bg, gutter_bg) = match (theme.settings.background, theme.settings.gutter) {
-        (Some(line_bg), Some(gutter_bg)) => (line_bg, gutter_bg),
-        (Some(line_bg), None) => (line_bg, line_bg),
-        _ => bail!("missing theme"),
-    };
-
     let mut file = String::new();
     for line in file_text {
         let mut ranges = Vec::new();
-        ranges.append(&mut h.highlight_line(line, ps)?);
+        ranges.append(&mut highlighter.highlight_line(line, ps)?);
         let mut escaped_line = as_24_bit_terminal_escaped(&ranges[..], false);
         escaped_line.push_str(&format!(
             "{}\n",
@@ -354,7 +352,14 @@ fn stylized_file(path: impl AsRef<Path>, file_text: impl AsRef<str>) -> Result<S
         ));
         file.push_str(&escaped_line);
     }
+
+    let (line_bg, gutter_bg) = match (theme.settings.background, theme.settings.gutter) {
+        (Some(line_bg), Some(gutter_bg)) => (line_bg, gutter_bg),
+        (Some(line_bg), None) => (line_bg, line_bg),
+        _ => bail!("missing theme"),
+    };
     Ok(StylizedFile {
+        truecolor: true,
         content: file,
         gutter_bg: syntect_to_crossterm_color(gutter_bg),
         line_bg: syntect_to_crossterm_color(line_bg),

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::io::Write;
+use std::path::Path;
 
 use crossterm::queue;
 use crossterm::style::{
@@ -25,7 +26,6 @@ use super::{
     stylize_output_if_able,
     terminal_width_required_for_line_count,
 };
-use crate::cli::chat::tools::supports_truecolor;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "command")]
@@ -55,19 +55,6 @@ pub enum FsWrite {
 }
 
 impl FsWrite {
-    /// Helper function to clean file content:
-    /// 1. Ensures the file ends with a newline
-    /// 2. Removes trailing whitespace from each line
-    fn clean_file_content(content: String) -> String {
-        let mut cleaned = content
-            .lines()
-            .map(|line| line.trim_end())
-            .collect::<Vec<_>>()
-            .join("\n");
-        cleaned.push('\n');
-        cleaned
-    }
-
     pub async fn invoke(&self, ctx: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
         let fs = ctx.fs();
         let cwd = ctx.env().current_dir()?;
@@ -89,8 +76,7 @@ impl FsWrite {
                     style::Print("\n"),
                 )?;
 
-                let cleaned_text = Self::clean_file_content(file_text);
-                fs.write(&path, cleaned_text.as_bytes()).await?;
+                write_to_file(ctx, path, file_text).await?;
                 Ok(Default::default())
             },
             FsWrite::StrReplace { path, old_str, new_str } => {
@@ -109,8 +95,7 @@ impl FsWrite {
                     0 => Err(eyre!("no occurrences of \"{old_str}\" were found")),
                     1 => {
                         let file = file.replacen(old_str, new_str, 1);
-                        let cleaned_file = Self::clean_file_content(file);
-                        fs.write(path, cleaned_file).await?;
+                        fs.write(path, file).await?;
                         Ok(Default::default())
                     },
                     x => Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
@@ -141,17 +126,11 @@ impl FsWrite {
                     i += line_len;
                 }
                 file.insert_str(i, new_str);
-                let cleaned_file = Self::clean_file_content(file);
-                fs.write(&path, &cleaned_file).await?;
+                write_to_file(ctx, &path, file).await?;
                 Ok(Default::default())
             },
             FsWrite::Append { path, new_str } => {
                 let path = sanitize_path_tool_arg(ctx, path);
-
-                // Return an error if the file doesn't exist
-                if !fs.exists(&path) {
-                    bail!("The file does not exist: {}", path.display());
-                }
 
                 queue!(
                     updates,
@@ -162,15 +141,12 @@ impl FsWrite {
                     style::Print("\n"),
                 )?;
 
-                let mut file_content = fs.read_to_string(&path).await.unwrap_or_default();
-                if !file_content.ends_with_newline() {
-                    file_content.push('\n');
+                let mut file = fs.read_to_string(&path).await?;
+                if !file.ends_with_newline() {
+                    file.push('\n');
                 }
-                file_content.push_str(new_str);
-                if !file_content.ends_with_newline() {
-                    file_content.push('\n');
-                }
-                fs.write(&path, file_content).await?;
+                file.push_str(new_str);
+                write_to_file(ctx, path, file).await?;
                 Ok(Default::default())
             },
         }
@@ -190,7 +166,7 @@ impl FsWrite {
                     Default::default()
                 };
                 let new = stylize_output_if_able(ctx, &relative_path, &file_text);
-                print_diff(ctx, updates, &prev, &new, 1)?;
+                print_diff(updates, &prev, &new, 1)?;
                 Ok(())
             },
             FsWrite::Insert {
@@ -213,7 +189,7 @@ impl FsWrite {
 
                 let old = stylize_output_if_able(ctx, &relative_path, &old);
                 let new = stylize_output_if_able(ctx, &relative_path, &new);
-                print_diff(ctx, updates, &old, &new, start_line)?;
+                print_diff(updates, &old, &new, start_line)?;
                 Ok(())
             },
             FsWrite::StrReplace { path, old_str, new_str } => {
@@ -225,7 +201,7 @@ impl FsWrite {
                 };
                 let old_str = stylize_output_if_able(ctx, &relative_path, old_str);
                 let new_str = stylize_output_if_able(ctx, &relative_path, new_str);
-                print_diff(ctx, updates, &old_str, &new_str, start_line)?;
+                print_diff(updates, &old_str, &new_str, start_line)?;
 
                 Ok(())
             },
@@ -233,7 +209,7 @@ impl FsWrite {
                 let relative_path = format_path(cwd, path);
                 let start_line = ctx.fs().read_to_string_sync(&relative_path)?.lines().count() + 1;
                 let file = stylize_output_if_able(ctx, &relative_path, new_str);
-                print_diff(ctx, updates, &Default::default(), &file, start_line)?;
+                print_diff(updates, &Default::default(), &file, start_line)?;
                 Ok(())
             },
         }
@@ -305,6 +281,15 @@ impl FsWrite {
     }
 }
 
+/// Writes `content` to `path`, adding a newline if necessary.
+async fn write_to_file(ctx: &Context, path: impl AsRef<Path>, mut content: String) -> Result<()> {
+    if !content.ends_with_newline() {
+        content.push('\n');
+    }
+    ctx.fs().write(path.as_ref(), content).await?;
+    Ok(())
+}
+
 /// Returns a prefix/suffix pair before and after the content dictated by `[start_line, end_line]`
 /// within `content`. The updated start and end lines containing the original context along with
 /// the suffix and prefix are returned.
@@ -365,7 +350,6 @@ fn get_lines_with_context(
 /// Prints a git-diff style comparison between `old_str` and `new_str`.
 /// - `start_line` - 1-indexed line number that `old_str` and `new_str` start at.
 fn print_diff(
-    ctx: &Context,
     updates: &mut impl Write,
     old_str: &StylizedFile,
     new_str: &StylizedFile,
@@ -387,15 +371,15 @@ fn print_diff(
     let new_line_num_width = terminal_width_required_for_line_count(max_new_i);
 
     // Now, print
-    fn fmt_i(i: Option<usize>, start_line: usize) -> String {
+    fn fmt_index(i: Option<usize>, start_line: usize) -> String {
         match i {
             Some(i) => (i + start_line).to_string(),
             _ => " ".to_string(),
         }
     }
     for change in diff.iter_all_changes() {
-        // Colors
-        let (text_color, gutter_bg_color, line_bg_color) = match (change.tag(), supports_truecolor(ctx)) {
+        // Define the colors per line.
+        let (text_color, gutter_bg_color, line_bg_color) = match (change.tag(), new_str.truecolor) {
             (similar::ChangeTag::Equal, true) => (style::Color::Reset, new_str.gutter_bg, new_str.line_bg),
             (similar::ChangeTag::Delete, true) => (
                 style::Color::Reset,
@@ -407,19 +391,21 @@ fn print_diff(
                 style::Color::Rgb { r: 40, g: 67, b: 43 },
                 style::Color::Rgb { r: 24, g: 38, b: 30 },
             ),
-            (similar::ChangeTag::Equal, false) => (style::Color::Reset, style::Color::Reset, style::Color::Reset),
-            (similar::ChangeTag::Delete, false) => (style::Color::Red, style::Color::Reset, style::Color::Reset),
-            (similar::ChangeTag::Insert, false) => (style::Color::Green, style::Color::Reset, style::Color::Reset),
+            (similar::ChangeTag::Equal, false) => (style::Color::Reset, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Delete, false) => (style::Color::Red, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Insert, false) => (style::Color::Green, new_str.gutter_bg, new_str.line_bg),
         };
-        // Change tag character
+        // Define the change tag character to print, if any.
         let sign = match change.tag() {
             similar::ChangeTag::Equal => " ",
             similar::ChangeTag::Delete => "-",
             similar::ChangeTag::Insert => "+",
         };
 
-        let old_i_str = fmt_i(change.old_index(), start_line);
-        let new_i_str = fmt_i(change.new_index(), start_line);
+        let old_i_str = fmt_index(change.old_index(), start_line);
+        let new_i_str = fmt_index(change.new_index(), start_line);
+
+        // Print the gutter and line numbers.
         queue!(updates, style::SetBackgroundColor(gutter_bg_color))?;
         queue!(
             updates,
@@ -448,6 +434,7 @@ fn print_diff(
                 new_line_num_width = new_line_num_width
             ))
         )?;
+        // Print the line.
         queue!(
             updates,
             style::SetForegroundColor(style::Color::Reset),
@@ -501,8 +488,6 @@ fn line_number_at(file: impl AsRef<str>, needle: impl AsRef<str>) -> Option<(usi
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-
-    use similar::DiffableStr;
 
     use super::*;
 
@@ -854,29 +839,6 @@ mod tests {
         assert_eq!(truncate_str(s, 13), s);
         let s = "Hello, world!";
         assert_eq!(truncate_str(s, 0), "<...Truncated>");
-    }
-
-    #[test]
-    fn test_clean_file_content() {
-        // Test removing trailing whitespace
-        let content = "Hello world!  \nThis is a test   \nWith trailing spaces    ";
-        let expected = "Hello world!\nThis is a test\nWith trailing spaces\n";
-        assert_eq!(FsWrite::clean_file_content(content.to_string()), expected);
-
-        // Test ensuring ending newline
-        let content = "Hello world!\nNo ending newline";
-        let expected = "Hello world!\nNo ending newline\n";
-        assert_eq!(FsWrite::clean_file_content(content.to_string()), expected);
-
-        // Test with content already having ending newline
-        let content = "Hello world!\nWith ending newline\n";
-        let expected = "Hello world!\nWith ending newline\n";
-        assert_eq!(FsWrite::clean_file_content(content.to_string()), expected);
-
-        // Test with empty string
-        let content = "";
-        let expected = "\n";
-        assert_eq!(FsWrite::clean_file_content(content.to_string()), expected);
     }
 
     #[test]
