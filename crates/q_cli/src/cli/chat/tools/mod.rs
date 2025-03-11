@@ -14,6 +14,7 @@ use aws_smithy_types::{
     Document,
     Number as SmithyNumber,
 };
+use crossterm::style;
 use execute_bash::ExecuteBash;
 use eyre::{
     ContextCompat as _,
@@ -32,14 +33,8 @@ use serde::Deserialize;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
-use syntect::util::{
-    LinesWithEndings,
-    as_24_bit_terminal_escaped,
-};
-use tracing::{
-    error,
-    warn,
-};
+use syntect::util::as_24_bit_terminal_escaped;
+use tracing::error;
 use use_aws::UseAws;
 
 use super::parser::ToolUse;
@@ -276,60 +271,55 @@ fn format_path(cwd: impl AsRef<Path>, path: impl AsRef<Path>) -> String {
         .unwrap_or(path.as_ref().to_string_lossy().to_string())
 }
 
-/// Returns the number of characters required for displaying line numbers for `file_text`.
-fn terminal_width(line_count: usize) -> usize {
+fn supports_truecolor(ctx: &Context) -> bool {
+    matches!(ctx.env().get("COLORTERM"), Ok(s) if s == "truecolor")
+}
+
+/// Returns the number of terminal cells required for displaying line numbers. This is used to
+/// determine how many characters the gutter should allocate when displaying line numbers for a
+/// text file.
+///
+/// For example, `10` and `99` both take 2 cells, whereas `100` and `999` take 3.
+fn terminal_width_required_for_line_count(line_count: usize) -> usize {
     ((line_count as f32 + 0.1).log10().ceil()) as usize
 }
 
-fn stylize_output_if_able(
-    ctx: &Context,
-    path: impl AsRef<Path>,
-    file_text: &str,
-    starting_line: Option<usize>,
-    gutter_prefix: Option<&str>,
-) -> String {
-    match ctx.env().get("COLORTERM") {
-        Ok(s) if s == "truecolor" => match stylized_file(path, file_text, starting_line, gutter_prefix) {
+fn stylize_output_if_able(ctx: &Context, path: impl AsRef<Path>, file_text: &str) -> StylizedFile {
+    if supports_truecolor(ctx) {
+        match stylized_file(path, file_text) {
             Ok(s) => return s,
             Err(err) => {
                 error!(?err, "unable to syntax highlight the output");
             },
-        },
-        _ => {
-            warn!("24bit color is not supported, falling back to nonstylized syntax highlighting");
-        },
+        }
     }
-    format!("\n{}", nonstylized_file(file_text))
+    StylizedFile {
+        content: file_text.to_string(),
+        gutter_bg: style::Color::Reset,
+        line_bg: style::Color::Reset,
+    }
 }
 
-fn nonstylized_file(file_text: impl AsRef<str>) -> String {
-    let file_text = file_text.as_ref();
-    let line_count = file_text.lines().count();
-    let width = terminal_width(line_count);
-    let lines = LinesWithEndings::from(file_text);
-    let mut f = String::new();
-    for (i, line) in lines.enumerate() {
-        f.push_str(&format!(" {:>width$}: {}", i + 1, line, width = width));
+#[derive(Debug)]
+struct StylizedFile {
+    content: String,
+    gutter_bg: style::Color,
+    line_bg: style::Color,
+}
+
+impl Default for StylizedFile {
+    fn default() -> Self {
+        Self {
+            content: Default::default(),
+            gutter_bg: style::Color::Reset,
+            line_bg: style::Color::Reset,
+        }
     }
-    f
 }
 
 /// Returns a 24bit terminal escaped syntax-highlighted [String] of the file pointed to by `path`,
 /// if able.
-///
-/// Params:
-/// - `starting_line` - 1-indexed line to start the line number at.
-/// - `gutter_prefix` - character to display in the first cell of the gutter, before the file
-///   number.
-fn stylized_file(
-    path: impl AsRef<Path>,
-    file_text: impl AsRef<str>,
-    starting_line: Option<usize>,
-    gutter_prefix: Option<&str>,
-) -> Result<String> {
-    let starting_line = starting_line.unwrap_or(1);
-    let gutter_prefix = gutter_prefix.unwrap_or(" ");
-
+fn stylized_file(path: impl AsRef<Path>, file_text: impl AsRef<str>) -> Result<StylizedFile> {
     let ps = &*SYNTAX_SET;
     let ts = &*THEME_SET;
 
@@ -346,49 +336,37 @@ fn stylized_file(
 
     let theme = &ts.themes["base16-ocean.dark"];
     let mut h = HighlightLines::new(syntax, theme);
-    let gutter_width = terminal_width(file_text.as_ref().lines().count()) + terminal_width(starting_line);
-    let file_text = LinesWithEndings::from(file_text.as_ref());
-    let (gutter_fg, gutter_bg) = match (
-        theme.settings.gutter_foreground,
-        theme.settings.gutter,
-        theme.settings.foreground,
-        theme.settings.background,
-    ) {
-        (Some(gutter_fg), Some(gutter_bg), _, _) => (gutter_fg, gutter_bg),
-        (_, _, Some(fg), Some(bg)) => (fg, bg),
+    let file_text = file_text.as_ref().lines();
+    let (line_bg, gutter_bg) = match (theme.settings.background, theme.settings.gutter) {
+        (Some(line_bg), Some(gutter_bg)) => (line_bg, gutter_bg),
+        (Some(line_bg), None) => (line_bg, line_bg),
         _ => bail!("missing theme"),
-    };
-    let gutter_prefix_style = syntect::highlighting::Style {
-        foreground: gutter_fg,
-        background: gutter_bg,
-        font_style: syntect::highlighting::FontStyle::BOLD,
-    };
-    let gutter_linenum_style = syntect::highlighting::Style {
-        foreground: gutter_fg,
-        background: gutter_bg,
-        font_style: syntect::highlighting::FontStyle::default(),
     };
 
     let mut file = String::new();
-    // We need to append newlines here for some reason, otherwise the highlighting ends at the end
-    // of the content for the first line.
-    file.push_str(&as_24_bit_terminal_escaped(&[(gutter_linenum_style, "\n\n")], true));
-    for (i, line) in file_text.enumerate() {
-        let i = (i + starting_line).to_string();
-        let gutter_content = format!("{:>width$} ", i, width = gutter_width);
-        let mut ranges = vec![
-            (gutter_prefix_style, gutter_prefix),
-            (gutter_linenum_style, gutter_content.as_str()),
-        ];
+    for line in file_text {
+        let mut ranges = Vec::new();
         ranges.append(&mut h.highlight_line(line, ps)?);
-        let escaped_line = as_24_bit_terminal_escaped(&ranges[..], true);
+        let mut escaped_line = as_24_bit_terminal_escaped(&ranges[..], false);
+        escaped_line.push_str(&format!(
+            "{}\n",
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
+        ));
         file.push_str(&escaped_line);
     }
-    if !file.ends_with("\n") {
-        file.push('\n');
-    }
+    Ok(StylizedFile {
+        content: file,
+        gutter_bg: syntect_to_crossterm_color(gutter_bg),
+        line_bg: syntect_to_crossterm_color(line_bg),
+    })
+}
 
-    Ok(file)
+fn syntect_to_crossterm_color(syntect: syntect::highlighting::Color) -> style::Color {
+    style::Color::Rgb {
+        r: syntect.r,
+        g: syntect.g,
+        b: syntect.b,
+    }
 }
 
 #[cfg(test)]
@@ -399,12 +377,12 @@ mod tests {
 
     #[test]
     fn test_gutter_width() {
-        assert_eq!(terminal_width(1), 1);
-        assert_eq!(terminal_width(9), 1);
-        assert_eq!(terminal_width(10), 2);
-        assert_eq!(terminal_width(99), 2);
-        assert_eq!(terminal_width(100), 3);
-        assert_eq!(terminal_width(999), 3);
+        assert_eq!(terminal_width_required_for_line_count(1), 1);
+        assert_eq!(terminal_width_required_for_line_count(9), 1);
+        assert_eq!(terminal_width_required_for_line_count(10), 2);
+        assert_eq!(terminal_width_required_for_line_count(99), 2);
+        assert_eq!(terminal_width_required_for_line_count(100), 3);
+        assert_eq!(terminal_width_required_for_line_count(999), 3);
     }
 
     #[tokio::test]
