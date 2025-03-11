@@ -7,7 +7,10 @@ use rustyline::completion::{
     extract_word,
 };
 use rustyline::error::ReadlineError;
-use rustyline::highlight::Highlighter;
+use rustyline::highlight::{
+    CmdKind,
+    Highlighter,
+};
 use rustyline::history::DefaultHistory;
 use rustyline::{
     Completer,
@@ -84,7 +87,7 @@ impl Highlighter for ChatHelper {
         Cow::Borrowed(line)
     }
 
-    fn highlight_char(&self, _line: &str, _pos: usize, _forced: bool) -> bool {
+    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
         false
     }
 }
