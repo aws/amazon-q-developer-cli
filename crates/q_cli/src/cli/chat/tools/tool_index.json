@@ -10,28 +10,59 @@
           "description": "Bash command to execute"
         }
       },
-      "required": ["command"]
+      "required": [
+        "command"
+      ]
     }
   },
   "fs_read": {
     "name": "fs_read",
-    "description": "A tool for reading files (e.g. `cat -n`), or listing files/directories (e.g. `ls -la` or `find . -maxdepth 2). The behavior of this tool is determined by the `path` parameter pointing to a file or directory.\n* If `path` is a file, this tool returns the result of running `cat -n`, and the optional `read_range` determines what range of lines will be read from the specified file.\n* If `path` is a directory, this tool returns the listed files and directories of the specified path, as if running `ls -la`. If the `read_range` parameter is provided, the tool acts like the `find . -maxdepth <read_range>`, where `read_range` is the number of subdirectories deep to search, e.g. [2] will run `find . -maxdepth 2`.",
+    "description": "Tool for reading files (for example, `cat -n`) and directories (for example, `ls -la`). The behavior of this tool is determined by the `mode` parameter. The available modes are:\n- line: Show lines in a file, given by an optional `start_line` and optional `end_line`.\n- directory: List directory contents. Content is returned in the \"long format\" of ls (that is, `ls -la`).\n- search: Search for a pattern in a file. The pattern is a string. The matching is case insensitive.\n\nExample Usage:\n1. Read all lines from a file: command=\"line\", path=\"/path/to/file.txt\"\n2. Read the last 5 lines from a file: command=\"line\", path=\"/path/to/file.txt\", start_line=-5\n3. List the files in the home directory: command=\"line\", path=\"~\"\n4. Recursively list files in a directory to a max depth of 2: command=\"line\", path=\"/path/to/directory\", depth=2\n5. Search for all instances of \"test\" in a file: command=\"search\", path=\"/path/to/file.txt\", pattern=\"test\"\n",
     "input_schema": {
       "type": "object",
       "properties": {
         "path": {
-          "description": "Absolute path to file or directory, e.g. `/repo/file.py` or `/repo`.",
+          "description": "Path to the file or directory. The path should be absolute, or otherwise start with ~ for the user's home.",
           "type": "string"
         },
-        "read_range": {
-          "description": "Optional parameter when reading either files or directories.\n* When `path` is a file, if none is given, the full file is shown. If provided, the file will be shown in the indicated line number range, e.g. [11, 12] will show lines 11 and 12. Indexing at 1 to start. Setting `[start_line, -1]` shows all lines from `start_line` to the end of the file.\n* When `path` is a directory, if none is given, the results of `ls -l` are given. If provided, the current directory and indicated number of subdirectories will be shown, e.g. [2] will show the current directory and directories two levels deep.",
-          "items": {
-            "type": "integer"
-          },
-          "type": "array"
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Line",
+            "Directory",
+            "Search"
+          ],
+          "description": "The mode to run in: `Line`, `Directory`, `Search`. `Line` and `Search` are only for text files, and `Directory` is only for directories."
+        },
+        "start_line": {
+          "type": "integer",
+          "description": "Starting line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
+          "default": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "description": "Ending line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
+          "default": -1
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Pattern to search for (required, for Search mode). Case insensitive. The pattern matching is performed per line."
+        },
+        "context_lines": {
+          "type": "integer",
+          "description": "Number of context lines around search results (optional, for Search mode)",
+          "default": 2
+        },
+        "depth": {
+          "type": "integer",
+          "description": "Depth of a recursive directory listing (optional, for Directory mode)",
+          "default": 0
         }
       },
-      "required": ["path"]
+      "required": [
+        "path",
+        "mode"
+      ]
     }
   },
   "fs_write": {
@@ -42,7 +73,12 @@
       "properties": {
         "command": {
           "type": "string",
-          "enum": ["create", "str_replace", "insert", "append"],
+          "enum": [
+            "create",
+            "str_replace",
+            "insert",
+            "append"
+          ],
           "description": "The commands to run. Allowed options are: `create`, `str_replace`, `insert`, `append`."
         },
         "file_text": {
@@ -66,7 +102,10 @@
           "type": "string"
         }
       },
-      "required": ["command", "path"]
+      "required": [
+        "command",
+        "path"
+      ]
     }
   },
   "use_aws": {
@@ -100,7 +139,12 @@
           "description": "Human readable description of the api that is being called."
         }
       },
-      "required": ["region", "service_name", "operation_name", "label"]
+      "required": [
+        "region",
+        "service_name",
+        "operation_name",
+        "label"
+      ]
     }
   }
 }

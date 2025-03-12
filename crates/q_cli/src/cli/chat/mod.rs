@@ -437,7 +437,7 @@ where
         }
         let tool_uses = tool_uses.take().unwrap_or_default();
         if !tool_uses.is_empty() {
-            self.print_tool_descriptions(&tool_uses)?;
+            self.print_tool_descriptions(&tool_uses).await?;
 
             execute!(
                 self.output,
@@ -917,7 +917,7 @@ where
 
         match skip_acceptance {
             true => {
-                self.print_tool_descriptions(&queued_tools)?;
+                self.print_tool_descriptions(&queued_tools).await?;
                 Ok(ChatState::ExecuteTools(queued_tools))
             },
             false => Ok(ChatState::PromptUser {
@@ -926,7 +926,7 @@ where
         }
     }
 
-    fn print_tool_descriptions(&mut self, tool_uses: &[QueuedTool]) -> Result<(), ChatError> {
+    async fn print_tool_descriptions(&mut self, tool_uses: &[QueuedTool]) -> Result<(), ChatError> {
         let terminal_width = self.terminal_width();
         for (_, tool) in tool_uses.iter() {
             queue!(
@@ -939,6 +939,7 @@ where
                 style::SetForegroundColor(Color::Reset),
             )?;
             tool.queue_description(&self.ctx, &mut self.output)
+                .await
                 .map_err(|e| ChatError::Custom(format!("failed to print tool: {}", e).into()))?;
             queue!(self.output, style::Print("\n"))?;
         }

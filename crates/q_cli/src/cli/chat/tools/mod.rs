@@ -82,9 +82,9 @@ impl Tool {
     }
 
     /// Queues up a tool's intention in a human readable format
-    pub fn queue_description(&self, ctx: &Context, updates: &mut impl Write) -> Result<()> {
+    pub async fn queue_description(&self, ctx: &Context, updates: &mut impl Write) -> Result<()> {
         match self {
-            Tool::FsRead(fs_read) => fs_read.queue_description(updates),
+            Tool::FsRead(fs_read) => fs_read.queue_description(ctx, updates).await,
             Tool::FsWrite(fs_write) => fs_write.queue_description(ctx, updates),
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
