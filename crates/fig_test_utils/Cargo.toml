@@ -16,7 +16,7 @@ fig_os_shim.workspace = true
 fig_util.workspace = true
 hex.workspace = true
 http.workspace = true
-http-body-util = "0.1.1"
+http-body-util = "0.1.3"
 hyper = { version = "1.6.0", features = ["server"] }
 hyper-util = { version = "0.1.5", features = ["tokio"] }
 reqwest.workspace = true

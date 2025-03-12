@@ -24,7 +24,7 @@ fig_aws_common.workspace = true
 fig_settings.workspace = true
 fig_telemetry_core.workspace = true
 fig_util.workspace = true
-http-body-util = "0.1.1"
+http-body-util = "0.1.3"
 hyper = { version = "1.6.0", features = ["server"] }
 hyper-util = { version = "0.1.5", features = ["tokio"] }
 percent-encoding.workspace = true
