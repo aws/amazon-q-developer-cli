@@ -6557,6 +6557,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "shell-color",
  "shlex",
  "similar",
  "spinners",

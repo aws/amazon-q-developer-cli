@@ -1,6 +1,6 @@
-use std::borrow::Cow;
 use std::io::Write;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use crossterm::queue;
 use crossterm::style::{
@@ -8,6 +8,7 @@ use crossterm::style::{
     Color,
 };
 use eyre::{
+    ContextCompat as _,
     Result,
     bail,
     eyre,
@@ -15,17 +16,27 @@ use eyre::{
 use fig_os_shim::Context;
 use serde::Deserialize;
 use similar::DiffableStr;
-use syntect::util::LinesWithEndings;
-use tracing::warn;
+use syntect::easy::HighlightLines;
+use syntect::highlighting::ThemeSet;
+use syntect::parsing::SyntaxSet;
+use syntect::util::{
+    LinesWithEndings,
+    as_24_bit_terminal_escaped,
+};
+use tracing::{
+    error,
+    warn,
+};
 
 use super::{
     InvokeOutput,
-    StylizedFile,
     format_path,
     sanitize_path_tool_arg,
-    stylize_output_if_able,
-    terminal_width_required_for_line_count,
+    supports_truecolor,
 };
+
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "command")]
@@ -455,23 +466,6 @@ fn print_diff(
     Ok(())
 }
 
-/// Limits the passed str to `max_len`.
-///
-/// If the str exceeds `max_len`, then the first `max_len` characters are returned with a suffix of
-/// `"<...Truncated>`. Otherwise, the str is returned as is.
-#[allow(dead_code)]
-fn truncate_str(text: &str, max_len: usize) -> Cow<'_, str> {
-    if text.len() > max_len {
-        let mut out = String::new();
-        let t = "<...Truncated>";
-        out.push_str(&text[..max_len]);
-        out.push_str(t);
-        out.into()
-    } else {
-        text.into()
-    }
-}
-
 /// Returns a 1-indexed line number range of the start and end of `needle` inside `file`.
 fn line_number_at(file: impl AsRef<str>, needle: impl AsRef<str>) -> Option<(usize, usize)> {
     let file = file.as_ref();
@@ -482,6 +476,110 @@ fn line_number_at(file: impl AsRef<str>, needle: impl AsRef<str>) -> Option<(usi
         Some((start + 1, start + end + 1))
     } else {
         None
+    }
+}
+
+/// Returns the number of terminal cells required for displaying line numbers. This is used to
+/// determine how many characters the gutter should allocate when displaying line numbers for a
+/// text file.
+///
+/// For example, `10` and `99` both take 2 cells, whereas `100` and `999` take 3.
+fn terminal_width_required_for_line_count(line_count: usize) -> usize {
+    line_count.to_string().chars().count()
+}
+
+fn stylize_output_if_able(ctx: &Context, path: impl AsRef<Path>, file_text: &str) -> StylizedFile {
+    if supports_truecolor(ctx) {
+        match stylized_file(path, file_text) {
+            Ok(s) => return s,
+            Err(err) => {
+                error!(?err, "unable to syntax highlight the output");
+            },
+        }
+    }
+    StylizedFile {
+        truecolor: false,
+        content: file_text.to_string(),
+        gutter_bg: style::Color::Reset,
+        line_bg: style::Color::Reset,
+    }
+}
+
+/// Represents a [String] that is potentially stylized with truecolor escape codes.
+#[derive(Debug)]
+struct StylizedFile {
+    /// Whether or not the file is stylized with 24bit color.
+    truecolor: bool,
+    /// File content. If [Self::truecolor] is true, then it has escape codes for styling with 24bit
+    /// color.
+    content: String,
+    /// Background color for the gutter.
+    gutter_bg: style::Color,
+    /// Background color for the line content.
+    line_bg: style::Color,
+}
+
+impl Default for StylizedFile {
+    fn default() -> Self {
+        Self {
+            truecolor: false,
+            content: Default::default(),
+            gutter_bg: style::Color::Reset,
+            line_bg: style::Color::Reset,
+        }
+    }
+}
+
+/// Returns a 24bit terminal escaped syntax-highlighted [String] of the file pointed to by `path`,
+/// if able.
+fn stylized_file(path: impl AsRef<Path>, file_text: impl AsRef<str>) -> Result<StylizedFile> {
+    let ps = &*SYNTAX_SET;
+    let ts = &*THEME_SET;
+
+    let extension = path
+        .as_ref()
+        .extension()
+        .wrap_err("missing extension")?
+        .to_str()
+        .wrap_err("not utf8")?;
+
+    let syntax = ps
+        .find_syntax_by_extension(extension)
+        .wrap_err_with(|| format!("missing extension: {}", extension))?;
+
+    let theme = &ts.themes["base16-ocean.dark"];
+    let mut highlighter = HighlightLines::new(syntax, theme);
+    let file_text = file_text.as_ref().lines();
+    let mut file = String::new();
+    for line in file_text {
+        let mut ranges = Vec::new();
+        ranges.append(&mut highlighter.highlight_line(line, ps)?);
+        let mut escaped_line = as_24_bit_terminal_escaped(&ranges[..], false);
+        escaped_line.push_str(&format!(
+            "{}\n",
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
+        ));
+        file.push_str(&escaped_line);
+    }
+
+    let (line_bg, gutter_bg) = match (theme.settings.background, theme.settings.gutter) {
+        (Some(line_bg), Some(gutter_bg)) => (line_bg, gutter_bg),
+        (Some(line_bg), None) => (line_bg, line_bg),
+        _ => bail!("missing theme"),
+    };
+    Ok(StylizedFile {
+        truecolor: true,
+        content: file,
+        gutter_bg: syntect_to_crossterm_color(gutter_bg),
+        line_bg: syntect_to_crossterm_color(line_bg),
+    })
+}
+
+fn syntect_to_crossterm_color(syntect: syntect::highlighting::Color) -> style::Color {
+    style::Color::Rgb {
+        r: syntect.r,
+        g: syntect.g,
+        b: syntect.b,
     }
 }
 
@@ -832,16 +930,6 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_str() {
-        let s = "Hello, world!";
-        assert_eq!(truncate_str(s, 6), "Hello,<...Truncated>");
-        let s = "Hello, world!";
-        assert_eq!(truncate_str(s, 13), s);
-        let s = "Hello, world!";
-        assert_eq!(truncate_str(s, 0), "<...Truncated>");
-    }
-
-    #[test]
     fn test_lines_with_context() {
         let content = "Hello\nWorld!\nhow\nare\nyou\ntoday?";
         assert_eq!(get_lines_with_context(content, 1, 1, 1), ("", 1, "World!\n", 2));
@@ -851,5 +939,15 @@ mod tests {
             ("Hello\n", 1, "you\ntoday?", 6)
         );
         assert_eq!(get_lines_with_context(content, 4, 100, 2), ("World!\nhow\n", 2, "", 6));
+    }
+
+    #[test]
+    fn test_gutter_width() {
+        assert_eq!(terminal_width_required_for_line_count(1), 1);
+        assert_eq!(terminal_width_required_for_line_count(9), 1);
+        assert_eq!(terminal_width_required_for_line_count(10), 2);
+        assert_eq!(terminal_width_required_for_line_count(99), 2);
+        assert_eq!(terminal_width_required_for_line_count(100), 3);
+        assert_eq!(terminal_width_required_for_line_count(999), 3);
     }
 }

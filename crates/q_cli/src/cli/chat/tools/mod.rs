@@ -8,19 +8,13 @@ use std::path::{
     Path,
     PathBuf,
 };
-use std::sync::LazyLock;
 
 use aws_smithy_types::{
     Document,
     Number as SmithyNumber,
 };
-use crossterm::style;
 use execute_bash::ExecuteBash;
-use eyre::{
-    ContextCompat as _,
-    Result,
-    bail,
-};
+use eyre::Result;
 use fig_api_client::model::{
     ToolResult,
     ToolResultContentBlock,
@@ -30,19 +24,11 @@ use fig_os_shim::Context;
 use fs_read::FsRead;
 use fs_write::FsWrite;
 use serde::Deserialize;
-use syntect::easy::HighlightLines;
-use syntect::highlighting::ThemeSet;
-use syntect::parsing::SyntaxSet;
-use syntect::util::as_24_bit_terminal_escaped;
-use tracing::error;
 use use_aws::UseAws;
 
 use super::parser::ToolUse;
 
 pub const MAX_TOOL_RESPONSE_SIZE: usize = 30720;
-
-static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
-static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
 /// Represents an executable tool use.
 #[derive(Debug, Clone)]
@@ -272,106 +258,9 @@ fn format_path(cwd: impl AsRef<Path>, path: impl AsRef<Path>) -> String {
 }
 
 fn supports_truecolor(ctx: &Context) -> bool {
-    matches!(ctx.env().get("COLORTERM"), Ok(s) if s == "truecolor")
-}
-
-/// Returns the number of terminal cells required for displaying line numbers. This is used to
-/// determine how many characters the gutter should allocate when displaying line numbers for a
-/// text file.
-///
-/// For example, `10` and `99` both take 2 cells, whereas `100` and `999` take 3.
-fn terminal_width_required_for_line_count(line_count: usize) -> usize {
-    ((line_count as f32 + 0.1).log10().ceil()) as usize
-}
-
-fn stylize_output_if_able(ctx: &Context, path: impl AsRef<Path>, file_text: &str) -> StylizedFile {
-    if supports_truecolor(ctx) {
-        match stylized_file(path, file_text) {
-            Ok(s) => return s,
-            Err(err) => {
-                error!(?err, "unable to syntax highlight the output");
-            },
-        }
-    }
-    StylizedFile {
-        truecolor: false,
-        content: file_text.to_string(),
-        gutter_bg: style::Color::Reset,
-        line_bg: style::Color::Reset,
-    }
-}
-
-/// File contents that are potentially stylized with truecolor escape codes.
-#[derive(Debug)]
-struct StylizedFile {
-    truecolor: bool,
-    content: String,
-    gutter_bg: style::Color,
-    line_bg: style::Color,
-}
-
-impl Default for StylizedFile {
-    fn default() -> Self {
-        Self {
-            truecolor: false,
-            content: Default::default(),
-            gutter_bg: style::Color::Reset,
-            line_bg: style::Color::Reset,
-        }
-    }
-}
-
-/// Returns a 24bit terminal escaped syntax-highlighted [String] of the file pointed to by `path`,
-/// if able.
-fn stylized_file(path: impl AsRef<Path>, file_text: impl AsRef<str>) -> Result<StylizedFile> {
-    let ps = &*SYNTAX_SET;
-    let ts = &*THEME_SET;
-
-    let extension = path
-        .as_ref()
-        .extension()
-        .wrap_err("missing extension")?
-        .to_str()
-        .wrap_err("not utf8")?;
-
-    let syntax = ps
-        .find_syntax_by_extension(extension)
-        .wrap_err_with(|| format!("missing extension: {}", extension))?;
-
-    let theme = &ts.themes["base16-ocean.dark"];
-    let mut highlighter = HighlightLines::new(syntax, theme);
-    let file_text = file_text.as_ref().lines();
-    let mut file = String::new();
-    for line in file_text {
-        let mut ranges = Vec::new();
-        ranges.append(&mut highlighter.highlight_line(line, ps)?);
-        let mut escaped_line = as_24_bit_terminal_escaped(&ranges[..], false);
-        escaped_line.push_str(&format!(
-            "{}\n",
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine),
-        ));
-        file.push_str(&escaped_line);
-    }
-
-    let (line_bg, gutter_bg) = match (theme.settings.background, theme.settings.gutter) {
-        (Some(line_bg), Some(gutter_bg)) => (line_bg, gutter_bg),
-        (Some(line_bg), None) => (line_bg, line_bg),
-        _ => bail!("missing theme"),
-    };
-    Ok(StylizedFile {
-        truecolor: true,
-        content: file,
-        gutter_bg: syntect_to_crossterm_color(gutter_bg),
-        line_bg: syntect_to_crossterm_color(line_bg),
-    })
-}
-
-fn syntect_to_crossterm_color(syntect: syntect::highlighting::Color) -> style::Color {
-    style::Color::Rgb {
-        r: syntect.r,
-        g: syntect.g,
-        b: syntect.b,
-    }
+    // Simple override to disable truecolor since shell_color doesn't use Context.
+    !ctx.env().get("Q_DISABLE_TRUECOLOR").is_ok_and(|s| !s.is_empty())
+        && shell_color::get_color_support().contains(shell_color::ColorSupport::TERM24BIT)
 }
 
 #[cfg(test)]
@@ -379,16 +268,6 @@ mod tests {
     use fig_os_shim::EnvProvider;
 
     use super::*;
-
-    #[test]
-    fn test_gutter_width() {
-        assert_eq!(terminal_width_required_for_line_count(1), 1);
-        assert_eq!(terminal_width_required_for_line_count(9), 1);
-        assert_eq!(terminal_width_required_for_line_count(10), 2);
-        assert_eq!(terminal_width_required_for_line_count(99), 2);
-        assert_eq!(terminal_width_required_for_line_count(100), 3);
-        assert_eq!(terminal_width_required_for_line_count(999), 3);
-    }
 
     #[tokio::test]
     async fn test_tilde_path_expansion() {
