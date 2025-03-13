@@ -80,6 +80,13 @@ pub static VARIANTS: &[VSCodeVariant] = &[
         cli_executable_name: "windsurf",
     },
     VSCodeVariant {
+        bundle_identifier: "com.exafunction.windsurf-next",
+        config_folder_name: ".windsurf-next",
+        application_support_folder_name: "Windsurf Next",
+        application_name: "Windsurf Next",
+        cli_executable_name: "windsurf-next",
+    },
+    VSCodeVariant {
         bundle_identifier: "co.posit.positron",
         config_folder_name: ".positron",
         application_support_folder_name: "Positron",

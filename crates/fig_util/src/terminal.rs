@@ -24,6 +24,7 @@ pub const MACOS_TERMINALS: &[Terminal] = &[
     Terminal::CursorNightly,
     Terminal::Rio,
     Terminal::Windsurf,
+    Terminal::WindsurfNext,
     Terminal::Ghostty,
     Terminal::Positron,
     Terminal::Trae,
@@ -162,6 +163,8 @@ pub enum Terminal {
     Zellij,
     /// Windsurf
     Windsurf,
+    /// Windsurf Next
+    WindsurfNext,
     /// Ghostty
     Ghostty,
     /// Positron
@@ -206,6 +209,7 @@ impl fmt::Display for Terminal {
             Terminal::CursorNightly => write!(f, "Cursor Nightly"),
             Terminal::Rio => write!(f, "Rio"),
             Terminal::Windsurf => write!(f, "Windsurf"),
+            Terminal::WindsurfNext => write!(f, "Windsurf Next"),
             Terminal::Guake => write!(f, "Guake"),
             Terminal::Ghostty => write!(f, "Ghostty"),
             Terminal::Positron => write!(f, "Positron"),
@@ -372,6 +376,7 @@ impl Terminal {
             Terminal::CursorNightly => "cursor-nightly".into(),
             Terminal::Rio => "rio".into(),
             Terminal::Windsurf => "windsurf".into(),
+            Terminal::WindsurfNext => "windsurf-next".into(),
             Terminal::Guake => "guake".into(),
             Terminal::Ghostty => "ghostty".into(),
             Terminal::Positron => "positron".into(),
@@ -402,6 +407,7 @@ impl Terminal {
             Terminal::CursorNightly => Some("com.todesktop.23052492jqa5xjo".into()),
             Terminal::Rio => Some("com.raphaelamorim.rio".into()),
             Terminal::Windsurf => Some("com.exafunction.windsurf".into()),
+            Terminal::WindsurfNext => Some("com.exafunction.windsurf-next".into()),
             Terminal::Ghostty => Some("com.mitchellh.ghostty".into()),
             Terminal::Positron => Some("co.posit.positron".into()),
             Terminal::Trae => Some("com.trae.app".into()),
@@ -429,6 +435,7 @@ impl Terminal {
             "com.todesktop.23052492jqa5xjo" => Terminal::CursorNightly,
             "com.raphaelamorim.rio" => Terminal::Rio,
             "com.exafunction.windsurf" => Terminal::Windsurf,
+            "com.exafunction.windsurf-next" => Terminal::WindsurfNext,
             "com.mitchellh.ghostty" => Terminal::Ghostty,
             "co.posit.positron" => Terminal::Positron,
             "com.trae.app" => Terminal::Trae,
@@ -480,6 +487,7 @@ impl Terminal {
                 | Terminal::Cursor
                 | Terminal::CursorNightly
                 | Terminal::Windsurf
+                | Terminal::WindsurfNext
                 | Terminal::Trae
         ) || self.as_custom().is_some_and(|c| c.macos.xterm)
     }
@@ -505,6 +513,7 @@ impl Terminal {
             Terminal::CursorNightly => &["Cursor Nightly", "cursor-nightly"],
             Terminal::Rio => &["rio"],
             Terminal::Windsurf => &["windsurf"],
+            Terminal::WindsurfNext => &["windsurf-next"],
             Terminal::Guake => &["guake"],
             Terminal::Ghostty => &["ghostty"],
             Terminal::Positron => &["positron"],
@@ -575,6 +584,7 @@ impl Terminal {
                 | Terminal::Cursor
                 | Terminal::CursorNightly
                 | Terminal::Windsurf
+                | Terminal::WindsurfNext
                 | Terminal::Trae
         )
     }
