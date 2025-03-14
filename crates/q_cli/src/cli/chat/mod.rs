@@ -456,10 +456,26 @@ where
                 style::SetForegroundColor(Color::Reset),
             )?;
         }
-        let user_input = match self.input_source.read_line(Some("> "))? {
-            Some(line) => line,
-            None => return Ok(ChatState::Exit),
+
+        // Require two consecutive sigint's to exit.
+        let mut ctrl_c = false;
+        let user_input = loop {
+            match (self.input_source.read_line(Some("> "))?, ctrl_c) {
+                (Some(line), _) => break line,
+                (None, false) => {
+                    execute!(
+                        self.output,
+                        style::Print(format!(
+                            "\n(To exit, press Ctrl+C or Ctrl+D again or type {})\n\n",
+                            "/quit".green()
+                        ))
+                    )?;
+                    ctrl_c = true;
+                },
+                (None, true) => return Ok(ChatState::Exit),
+            }
         };
+
         Ok(ChatState::HandleInput {
             input: user_input,
             tool_uses: Some(tool_uses),
