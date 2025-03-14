@@ -46,6 +46,7 @@ impl InputSource {
                                 continue;
                             } else if l.ends_with("\\") {
                                 line.push_str(&l);
+                                line.pop();
                                 prompt = ">> ";
                                 continue;
                             } else {
