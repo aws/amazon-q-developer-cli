@@ -35,22 +35,32 @@ impl InputSource {
 
     pub fn read_line(&mut self, prompt: Option<&str>) -> Result<Option<String>, ReadlineError> {
         match &mut self.0 {
-            inner::Inner::Readline(rl) => loop {
-                let line = rl.readline(prompt.unwrap_or(""));
-                match line {
-                    Ok(line) => {
-                        if line.trim().is_empty() {
-                            continue;
-                        }
-                        let _ = rl.add_history_entry(line.as_str());
-                        return Ok(Some(line));
-                    },
-                    Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
-                        return Ok(None);
-                    },
-                    Err(err) => {
-                        return Err(err);
-                    },
+            inner::Inner::Readline(rl) => {
+                let mut prompt = prompt.unwrap_or_default();
+                let mut line = String::new();
+                loop {
+                    let curr_line = rl.readline(prompt);
+                    match curr_line {
+                        Ok(l) => {
+                            if l.trim().is_empty() {
+                                continue;
+                            } else if l.ends_with("\\") {
+                                line.push_str(&l);
+                                prompt = ">> ";
+                                continue;
+                            } else {
+                                line.push_str(&l);
+                                let _ = rl.add_history_entry(line.as_str());
+                                return Ok(Some(line));
+                            }
+                        },
+                        Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
+                            return Ok(None);
+                        },
+                        Err(err) => {
+                            return Err(err);
+                        },
+                    }
                 }
             },
             inner::Inner::Mock { index, lines } => {
