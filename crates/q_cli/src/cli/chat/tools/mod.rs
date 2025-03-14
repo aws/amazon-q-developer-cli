@@ -1,4 +1,5 @@
 pub mod execute_bash;
+pub mod fs_patch;
 pub mod fs_read;
 pub mod fs_write;
 pub mod use_aws;
@@ -21,8 +22,10 @@ use fig_api_client::model::{
     ToolResultStatus,
 };
 use fig_os_shim::Context;
+use fs_patch::FsPatch;
 use fs_read::FsRead;
 use fs_write::FsWrite;
+use nix::NixPath;
 use serde::Deserialize;
 use use_aws::UseAws;
 
@@ -37,6 +40,7 @@ pub enum Tool {
     FsWrite(FsWrite),
     ExecuteBash(ExecuteBash),
     UseAws(UseAws),
+    FsPatch(FsPatch),
 }
 
 impl Tool {
@@ -47,6 +51,7 @@ impl Tool {
             Tool::FsWrite(_) => "Write to filesystem",
             Tool::ExecuteBash(_) => "Execute shell command",
             Tool::UseAws(_) => "Use AWS CLI",
+            Tool::FsPatch(_) => "Apply patch to filesystem",
         }
     }
 
@@ -57,6 +62,7 @@ impl Tool {
             Tool::FsWrite(_) => "Writing to filesystem",
             Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
             Tool::UseAws(_) => "Using AWS CLI",
+            Tool::FsPatch(_) => "Applying patch to filesystem",
         }
         .to_owned()
     }
@@ -68,6 +74,7 @@ impl Tool {
             Tool::FsWrite(_) => true,
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
+            Tool::FsPatch(_) => true,
         }
     }
 
@@ -78,16 +85,18 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.invoke(context, updates).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
+            Tool::FsPatch(fs_patch) => fs_patch.invoke(context, updates).await,
         }
     }
 
     /// Queues up a tool's intention in a human readable format
-    pub fn queue_description(&self, ctx: &Context, updates: &mut impl Write) -> Result<()> {
+    pub async fn queue_description(&mut self, ctx: &Context, updates: &mut impl Write) -> Result<()> {
         match self {
             Tool::FsRead(fs_read) => fs_read.queue_description(updates),
             Tool::FsWrite(fs_write) => fs_write.queue_description(ctx, updates),
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
+            Tool::FsPatch(fs_patch) => fs_patch.queue_description(ctx, updates),
         }
     }
 
@@ -98,6 +107,7 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.validate(ctx).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
+            Tool::FsPatch(fs_patch) => fs_patch.validate(ctx).await,
         }
     }
 }
@@ -119,6 +129,7 @@ impl TryFrom<ToolUse> for Tool {
             "fs_write" => Self::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?),
             "execute_bash" => Self::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Self::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
+            "fs_patch" => Self::FsPatch(serde_json::from_value::<FsPatch>(value.args).map_err(map_err)?),
             unknown => {
                 return Err(ToolResult {
                     tool_use_id: value.id,
@@ -215,6 +226,9 @@ fn sanitize_path_tool_arg(ctx: &Context, path: impl AsRef<Path>) -> PathBuf {
 
 /// Converts `path` to a relative path according to the current working directory `cwd`.
 fn absolute_to_relative(cwd: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<PathBuf> {
+    if path.as_ref().is_relative() {
+        return Ok(path.as_ref().into());
+    }
     let cwd = cwd.as_ref().canonicalize()?;
     let path = path.as_ref().canonicalize()?;
     let mut cwd_parts = cwd.components().peekable();
@@ -239,7 +253,11 @@ fn absolute_to_relative(cwd: impl AsRef<Path>, path: impl AsRef<Path>) -> Result
         relative.push(part);
     }
 
-    Ok(relative)
+    if relative.is_empty() {
+        Ok(PathBuf::from("."))
+    } else {
+        Ok(relative)
+    }
 }
 
 /// Small helper for formatting the path as a relative path, if able.

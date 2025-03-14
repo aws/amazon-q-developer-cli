@@ -27,7 +27,7 @@ mod inner {
         Mutex,
     };
 
-    use tempfile::TempDir;
+    use super::FigTempDir;
 
     #[derive(Debug, Clone, Default)]
     pub(super) enum Inner {
@@ -35,7 +35,7 @@ mod inner {
         Real,
         /// Uses the real filesystem except acts as if the process has
         /// a different root directory by using [TempDir]
-        Chroot(Arc<TempDir>),
+        Chroot(Arc<FigTempDir>),
         Fake(Arc<Mutex<HashMap<PathBuf, Vec<u8>>>>),
     }
 }
@@ -51,7 +51,7 @@ impl Fs {
 
     pub fn new_chroot() -> Self {
         let tempdir = tempfile::tempdir().expect("failed creating temporary directory");
-        Self(inner::Inner::Chroot(tempdir.into()))
+        Self(inner::Inner::Chroot(Arc::new(tempdir.into())))
     }
 
     pub fn is_chroot(&self) -> bool {
@@ -435,6 +435,21 @@ fn append(a: impl AsRef<Path>, b: impl AsRef<Path>) -> PathBuf {
         b = b.strip_prefix(b"/").unwrap();
     }
     PathBuf::from(OsString::from_vec(a.to_vec())).join(PathBuf::from(OsString::from_vec(b.to_vec())))
+}
+
+#[derive(Debug)]
+struct FigTempDir(TempDir);
+
+impl FigTempDir {
+    fn path(&self) -> PathBuf {
+        self.0.path().canonicalize().unwrap_or(self.0.path().into())
+    }
+}
+
+impl From<TempDir> for FigTempDir {
+    fn from(value: TempDir) -> Self {
+        Self(value)
+    }
 }
 
 #[cfg(test)]

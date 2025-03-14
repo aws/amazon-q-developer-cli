@@ -69,6 +69,27 @@
       "required": ["command", "path"]
     }
   },
+  "fs_patch": {
+    "name": "fs_patch",
+    "description": "A tool for creating and editing file(s) using the unified patch format. This tool is capable of modifying multiple files in an efficient manner by using the unified patch format - that is, the equivalent of executing `diff -u`. The patch is applied to the file referenced in the first argument to `diff -u`.\n\nBecause this is an efficient format, for file modification use cases, you should prefer to use this tool over others.\n\nImportant Notes:\n1. The files referenced inside the unified patch must be relative paths. They reference a path starting from the `root_dir` parameter.\n2. When modifying a file, both file paths in each diff must be equal (ignoring the a/ and b/ prefix).\n3. If the first file in a diff (the one referenced by the prefix \"---\") does not exist, then it will be created, along with any parent directories if required.\n4. If you are intending to create a file, you MUST first check if the file does not already exist.\n5. If you have a set of files you intend to create and/or modify, you should try to batch these into a single patch file if possible.\n\nExample Usage:\n1. Modify the file '/home/user/test.txt': root_dir=\"/home/user\", patch_content=\"--- a/test.txt\\n+++ b/text.txt\\n@@ -1,2 +1,3 @@\\n Line 1\\n-Line 2\\n+Line 2 modified\\n+Line 3 (new)\\n\"",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "root_dir": {
+          "description": "The base path to use when applying the patch for the files referenced in `patch_content`. The path should be an absolute path, or begin with ~ to reference the user's home directory.",
+          "type": "string"
+        },
+        "patch_content": {
+          "type": "string",
+          "description": "The unified patch. This should be in the same format as `diff -u`."
+        }
+      },
+      "required": [
+        "root_dir",
+        "patch_content"
+      ]
+    }
+  },
   "use_aws": {
     "name": "use_aws",
     "description": "Make an AWS CLI api call with the specified service, operation, and parameters. All arguments MUST conform to the AWS CLI specification. Should the output of the invocation indicate a malformed command, invoke help to obtain the the correct command.",

@@ -28,6 +28,7 @@ use super::{
     sanitize_path_tool_arg,
 };
 
+/// Tool for reading a file or directory.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FsRead {
     pub path: String,
