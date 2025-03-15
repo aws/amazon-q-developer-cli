@@ -416,7 +416,7 @@ mod tests {
     use super::*;
 
     // Helper function to create a test ContextManager with temporary directories
-    fn create_test_context_manager() -> Result<(ContextManager, tempfile::TempDir)> {
+    pub fn create_test_context_manager() -> Result<(ContextManager, tempfile::TempDir)> {
         // Create a temporary directory for testing
         let temp_dir = tempdir()?;
         let config_dir = temp_dir.path().join("context");
