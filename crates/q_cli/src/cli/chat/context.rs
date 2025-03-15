@@ -16,6 +16,7 @@ use eyre::{
     Result,
     eyre,
 };
+use regex::Regex;
 use serde::{
     Deserialize,
     Serialize,
@@ -250,24 +251,157 @@ impl ContextManager {
         Ok(())
     }
 
-    /// Clear all paths from the context configuration.
+    /// List all available profiles.
+    ///
+    /// # Returns
+    /// A Result containing a vector of profile names, with "default" always first
+    pub fn list_profiles(&self) -> Result<Vec<String>> {
+        let mut profiles = Vec::new();
+
+        // Always include default profile
+        profiles.push("default".to_string());
+
+        // Read profile directory and extract profile names
+        if self.profiles_dir.exists() {
+            for entry in fs::read_dir(&self.profiles_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
+                    if let Some(filename) = path.file_stem() {
+                        let profile_name = filename.to_string_lossy().to_string();
+                        if profile_name != "default" {
+                            profiles.push(profile_name);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort non-default profiles alphabetically
+        if profiles.len() > 1 {
+            profiles[1..].sort();
+        }
+
+        Ok(profiles)
+    }
+
+    /// Create a new profile.
     ///
     /// # Arguments
-    /// * `global` - If true, clear global configuration; otherwise, clear current profile
-    ///   configuration
+    /// * `name` - Name of the profile to create
     ///
     /// # Returns
     /// A Result indicating success or an error
-    pub fn clear(&mut self, global: bool) -> Result<()> {
-        // Clear the appropriate config
-        if global {
-            self.global_config.paths.clear();
-        } else {
-            self.profile_config.paths.clear();
+    pub fn create_profile(&self, name: &str) -> Result<()> {
+        // Validate profile name
+        Self::validate_profile_name(name)?;
+
+        // Check if profile already exists
+        let profile_path = self.profiles_dir.join(format!("{}.json", name));
+        if profile_path.exists() {
+            return Err(eyre!("Profile '{}' already exists", name));
         }
 
-        // Save the updated configuration
-        self.save_config(global)?;
+        // Create empty profile configuration
+        let config = ContextConfig::default();
+        let contents = serde_json::to_string_pretty(&config)
+            .map_err(|e| eyre!("Failed to serialize profile configuration: {}", e))?;
+
+        // Create the file
+        let mut file = File::create(&profile_path)?;
+        file.write_all(contents.as_bytes())?;
+
+        Ok(())
+    }
+
+    /// Delete a profile.
+    ///
+    /// # Arguments
+    /// * `name` - Name of the profile to delete
+    ///
+    /// # Returns
+    /// A Result indicating success or an error
+    pub fn delete_profile(&self, name: &str) -> Result<()> {
+        // Cannot delete default profile
+        if name == "default" {
+            return Err(eyre!("Cannot delete the default profile"));
+        }
+
+        // Cannot delete active profile
+        if name == self.current_profile {
+            return Err(eyre!(
+                "Cannot delete the active profile. Switch to another profile first"
+            ));
+        }
+
+        // Check if profile exists
+        let profile_path = self.profiles_dir.join(format!("{}.json", name));
+        if !profile_path.exists() {
+            return Err(eyre!("Profile '{}' does not exist", name));
+        }
+
+        // Delete the profile file
+        fs::remove_file(&profile_path)?;
+
+        Ok(())
+    }
+
+    /// Switch to a different profile.
+    ///
+    /// # Arguments
+    /// * `name` - Name of the profile to switch to
+    /// * `create` - If true, create the profile if it doesn't exist
+    ///
+    /// # Returns
+    /// A Result indicating success or an error
+    pub fn switch_profile(&mut self, name: &str, create: bool) -> Result<()> {
+        // Validate profile name
+        Self::validate_profile_name(name)?;
+
+        // Check if profile exists
+        let profile_path = self.profiles_dir.join(format!("{}.json", name));
+        if !profile_path.exists() {
+            if create {
+                // Create the profile if requested
+                self.create_profile(name)?;
+            } else {
+                return Err(eyre!("Profile '{}' does not exist. Use --create to create it", name));
+            }
+        }
+
+        // Load the profile configuration
+        let profile_config = Self::load_profile_config(&self.profiles_dir, name)?;
+
+        // Update the current profile
+        self.current_profile = name.to_string();
+        self.profile_config = profile_config;
+
+        Ok(())
+    }
+
+    /// Validate a profile name.
+    ///
+    /// Profile names can only contain alphanumeric characters, hyphens, and underscores.
+    ///
+    /// # Arguments
+    /// * `name` - Name to validate
+    ///
+    /// # Returns
+    /// A Result indicating if the name is valid
+    fn validate_profile_name(name: &str) -> Result<()> {
+        // Check if name is empty
+        if name.is_empty() {
+            return Err(eyre!("Profile name cannot be empty"));
+        }
+
+        // Check if name contains only allowed characters
+        let re = Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap();
+        if !re.is_match(name) {
+            return Err(eyre!(
+                "Profile name can only contain alphanumeric characters, hyphens, and underscores"
+            ));
+        }
 
         Ok(())
     }
@@ -613,4 +747,251 @@ mod tests {
 
         Ok(())
     }
+}
+
+#[test]
+fn test_list_profiles() -> Result<()> {
+    // Create a test context manager
+    let (manager, _temp_dir) = create_test_context_manager()?;
+
+    // Create some test profiles
+    let profiles_dir = &manager.profiles_dir;
+
+    // Create profile files
+    let profile_names = ["default", "test-profile", "another-profile", "z-profile"];
+    for name in &profile_names {
+        let config = ContextConfig::default();
+        let contents = serde_json::to_string_pretty(&config)?;
+        let path = profiles_dir.join(format!("{}.json", name));
+        let mut file = File::create(&path)?;
+        file.write_all(contents.as_bytes())?;
+    }
+
+    // List profiles
+    let profiles = manager.list_profiles()?;
+
+    // Verify profiles are listed with default first and others alphabetically
+    assert_eq!(profiles.len(), 4);
+    assert_eq!(profiles[0], "default");
+    assert_eq!(profiles[1], "another-profile");
+    assert_eq!(profiles[2], "test-profile");
+    assert_eq!(profiles[3], "z-profile");
+
+    Ok(())
+}
+
+#[test]
+fn test_create_profile() -> Result<()> {
+    // Create a test context manager
+    let (manager, _temp_dir) = create_test_context_manager()?;
+
+    // Create a new profile
+    manager.create_profile("test-profile")?;
+
+    // Verify the profile file was created
+    let profile_path = manager.profiles_dir.join("test-profile.json");
+    assert!(profile_path.exists());
+
+    // Verify the profile has an empty paths list
+    let mut file = File::open(&profile_path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
+    let config: ContextConfig = serde_json::from_str(&contents)?;
+    assert_eq!(config.paths.len(), 0);
+
+    Ok(())
+}
+
+#[test]
+fn test_create_profile_already_exists() -> Result<()> {
+    // Create a test context manager
+    let (manager, _temp_dir) = create_test_context_manager()?;
+
+    // Create a profile
+    manager.create_profile("test-profile")?;
+
+    // Try to create the same profile again
+    let result = manager.create_profile("test-profile");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("already exists"));
+
+    Ok(())
+}
+
+#[test]
+fn test_create_profile_invalid_name() -> Result<()> {
+    // Create a test context manager
+    let (manager, _temp_dir) = create_test_context_manager()?;
+
+    // Try to create a profile with an invalid name
+    let result = manager.create_profile("invalid/name");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("can only contain"));
+
+    Ok(())
+}
+
+#[test]
+fn test_delete_profile() -> Result<()> {
+    // Create a test context manager
+    let (manager, _temp_dir) = create_test_context_manager()?;
+
+    // Create a profile
+    manager.create_profile("test-profile")?;
+
+    // Verify the profile file exists
+    let profile_path = manager.profiles_dir.join("test-profile.json");
+    assert!(profile_path.exists());
+
+    // Delete the profile
+    manager.delete_profile("test-profile")?;
+
+    // Verify the profile file was deleted
+    assert!(!profile_path.exists());
+
+    Ok(())
+}
+
+#[test]
+fn test_delete_profile_default() -> Result<()> {
+    // Create a test context manager
+    let (manager, _temp_dir) = create_test_context_manager()?;
+
+    // Try to delete the default profile
+    let result = manager.delete_profile("default");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("Cannot delete the default profile"));
+
+    Ok(())
+}
+
+#[test]
+fn test_delete_profile_active() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = create_test_context_manager()?;
+
+    // Create a profile
+    manager.create_profile("test-profile")?;
+
+    // Switch to the profile
+    manager.switch_profile("test-profile", false)?;
+
+    // Try to delete the active profile
+    let result = manager.delete_profile("test-profile");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("Cannot delete the active profile"));
+
+    Ok(())
+}
+
+#[test]
+fn test_delete_profile_not_exists() -> Result<()> {
+    // Create a test context manager
+    let (manager, _temp_dir) = create_test_context_manager()?;
+
+    // Try to delete a profile that doesn't exist
+    let result = manager.delete_profile("nonexistent");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("does not exist"));
+
+    Ok(())
+}
+
+#[test]
+fn test_switch_profile() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = create_test_context_manager()?;
+
+    // Create a profile
+    manager.create_profile("test-profile")?;
+
+    // Add a path to the profile
+    let profile_path = manager.profiles_dir.join("test-profile.json");
+    let test_config = ContextConfig {
+        paths: vec!["test/path.md".to_string()],
+    };
+    let contents = serde_json::to_string_pretty(&test_config)?;
+    let mut file = File::create(&profile_path)?;
+    file.write_all(contents.as_bytes())?;
+
+    // Switch to the profile
+    manager.switch_profile("test-profile", false)?;
+
+    // Verify the current profile was updated
+    assert_eq!(manager.current_profile, "test-profile");
+    assert_eq!(manager.profile_config.paths.len(), 1);
+    assert_eq!(manager.profile_config.paths[0], "test/path.md");
+
+    Ok(())
+}
+
+#[test]
+fn test_switch_profile_create() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = create_test_context_manager()?;
+
+    // Switch to a profile that doesn't exist with create flag
+    manager.switch_profile("new-profile", true)?;
+
+    // Verify the profile was created and switched to
+    assert_eq!(manager.current_profile, "new-profile");
+    assert_eq!(manager.profile_config.paths.len(), 0);
+
+    // Verify the profile file was created
+    let profile_path = manager.profiles_dir.join("new-profile.json");
+    assert!(profile_path.exists());
+
+    Ok(())
+}
+
+#[test]
+fn test_switch_profile_not_exists() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = create_test_context_manager()?;
+
+    // Try to switch to a profile that doesn't exist without create flag
+    let result = manager.switch_profile("nonexistent", false);
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("does not exist"));
+
+    Ok(())
+}
+
+#[test]
+fn test_validate_profile_name() -> Result<()> {
+    // Create a test context manager
+    let (manager, _temp_dir) = create_test_context_manager()?;
+
+    // Test valid names
+    assert!(manager.validate_profile_name("valid").is_ok());
+    assert!(manager.validate_profile_name("valid-name").is_ok());
+    assert!(manager.validate_profile_name("valid_name").is_ok());
+    assert!(manager.validate_profile_name("valid123").is_ok());
+
+    // Test invalid names
+    assert!(manager.validate_profile_name("").is_err());
+    assert!(manager.validate_profile_name("invalid/name").is_err());
+    assert!(manager.validate_profile_name("invalid.name").is_err());
+    assert!(manager.validate_profile_name("invalid name").is_err());
+
+    Ok(())
 }

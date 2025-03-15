@@ -18,13 +18,13 @@ This checklist tracks the implementation progress of the context management feat
   - [x] Add validation to prevent duplicate paths
   - [x] Write unit tests for path management functions
 
-- [ ] **Prompt 3: Implement Profile Management Functions**
-  - [ ] Implement `list_profiles` method
-  - [ ] Implement `create_profile` method
-  - [ ] Implement `delete_profile` method
-  - [ ] Implement `switch_profile` method
-  - [ ] Add validation for profile operations
-  - [ ] Write unit tests for profile management functions
+- [x] **Prompt 3: Implement Profile Management Functions**
+  - [x] Implement `list_profiles` method
+  - [x] Implement `create_profile` method
+  - [x] Implement `delete_profile` method
+  - [x] Implement `switch_profile` method
+  - [x] Add validation for profile operations
+  - [x] Write unit tests for profile management functions
 
 - [ ] **Prompt 4: Implement Context File Processing**
   - [ ] Implement `get_context_files` method
