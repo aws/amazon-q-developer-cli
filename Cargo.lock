@@ -6520,6 +6520,7 @@ dependencies = [
  "ctrlc",
  "dbus",
  "dialoguer",
+ "dirs",
  "eyre",
  "fig_api_client",
  "fig_auth",

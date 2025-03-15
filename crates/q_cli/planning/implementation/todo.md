@@ -4,12 +4,12 @@ This checklist tracks the implementation progress of the context management feat
 
 ## Implementation Tasks
 
-- [ ] **Prompt 1: Create the Core Data Structures**
-  - [ ] Create `src/cli/chat/context.rs` with `ContextConfig` and `ContextManager` structs
-  - [ ] Implement serialization/deserialization for `ContextConfig`
-  - [ ] Add methods to initialize `ContextManager` with default paths
-  - [ ] Implement methods to load and save configurations
-  - [ ] Write unit tests for core functions
+- [x] **Prompt 1: Create the Core Data Structures**
+  - [x] Create `src/cli/chat/context.rs` with `ContextConfig` and `ContextManager` structs
+  - [x] Implement serialization/deserialization for `ContextConfig`
+  - [x] Add methods to initialize `ContextManager` with default paths
+  - [x] Implement methods to load and save configurations
+  - [x] Write unit tests for core functions
 
 - [ ] **Prompt 2: Implement Path Management Functions**
   - [ ] Implement `add_paths` method
