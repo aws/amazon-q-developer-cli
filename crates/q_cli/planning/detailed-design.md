@@ -81,7 +81,12 @@ pub struct ContextManager {
 
 ```rust
 pub enum Command {
-    // Existing variants...
+    Ask { prompt: String },
+    Execute { command: String },
+    Clear,
+    Help,
+    AcceptAll,
+    Quit,
     Context { subcommand: ContextSubcommand },
 }
 
@@ -157,13 +162,20 @@ The command parsing will be implemented by extending the existing `Command::pars
 
 ```rust
 pub fn parse(input: &str) -> Result<Self, String> {
-    // Existing code...
-    
+    let input = input.trim();
+
     if let Some(command) = input.strip_prefix("/") {
         let parts: Vec<&str> = command.split_whitespace().collect();
         
+        if parts.is_empty() {
+            return Err("Empty command".to_string());
+        }
+        
         return Ok(match parts[0].to_lowercase().as_str() {
-            // Existing commands...
+            "clear" => Self::Clear,
+            "help" => Self::Help,
+            "acceptall" => Self::AcceptAll,
+            "q" | "exit" | "quit" => Self::Quit,
             "context" => {
                 if parts.len() < 2 {
                     return Err("Missing subcommand for /context".to_string());
@@ -191,12 +203,13 @@ pub fn parse(input: &str) -> Result<Self, String> {
                         Self::Context { subcommand: ContextSubcommand::Add { global, paths } }
                     },
                     // Other subcommands...
+                    _ => return Err(format!("Unknown context subcommand: {}", parts[1])),
                 }
             },
-            // Rest of the commands...
+            _ => return Err(format!("Unknown command: {}", input)),
         });
     }
-    
+
     // Rest of the parsing logic...
 }
 ```
@@ -227,7 +240,13 @@ The help text will be updated to include information about the context managemen
 
 ```rust
 const HELP_TEXT: &str = color_print::cstr! {"
-// Existing help text...
+
+<magenta,em>q</magenta,em> (Amazon Q Chat)
+
+<em>/clear</em>        <black!>Clear the conversation history</black!>
+<em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
+<em>/help</em>         <black!>Show this help dialogue</black!>
+<em>/quit</em>         <black!>Quit the application</black!>
 <em>/context</em>      <black!>Manage context files for the chat session</black!>
   <em>show</em>        <black!>Display current context configuration</black!>
   <em>add</em>         <black!>Add file(s) to context [--global]</black!>
@@ -235,6 +254,9 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>profile</em>     <black!>List, create [--create], or delete [--delete] context profiles</black!>
   <em>switch</em>      <black!>Switch to a different context profile [--create]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
+
+<em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
+
 "};
 ```
 
@@ -291,12 +313,7 @@ impl ContextManager {
             Ok(config)
         } else {
             // Default global configuration
-            Ok(ContextConfig {
-                paths: vec![
-                    "~/.aws/amazonq/rules/**/*.md".to_string(),
-                    "AmazonQ.md".to_string(),
-                ],
-            })
+            Ok(ContextConfig::default())
         }
     }
     
@@ -319,12 +336,110 @@ impl ContextManager {
 3. Update the command prompt to indicate the active profile
 4. Add unit tests for the conversation integration
 
+```rust
+// Update ConversationState struct
+#[derive(Debug, Clone)]
+pub struct ConversationState {
+    /// Randomly generated on creation.
+    conversation_id: String,
+    /// The next user message to be sent as part of the conversation. Required to be [Some] before
+    /// calling [Self::as_sendable_conversation_state].
+    pub next_message: Option<UserInputMessage>,
+    history: VecDeque<ChatMessage>,
+    tools: Vec<Tool>,
+    /// Context manager for handling sticky context files
+    pub context_manager: Option<ContextManager>,
+}
+
+impl ConversationState {
+    pub fn new(tool_config: HashMap<String, ToolSpec>, profile: Option<String>) -> Self {
+        let conversation_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
+        info!(?conversation_id, "Generated new conversation id");
+        
+        // Initialize context manager
+        let context_manager = match ContextManager::new() {
+            Ok(mut manager) => {
+                // Switch to specified profile if provided
+                if let Some(profile_name) = profile {
+                    if let Err(e) = manager.switch_profile(&profile_name, false) {
+                        warn!("Failed to switch to profile {}: {}", profile_name, e);
+                    }
+                }
+                Some(manager)
+            },
+            Err(e) => {
+                warn!("Failed to initialize context manager: {}", e);
+                None
+            },
+        };
+        
+        Self {
+            conversation_id,
+            next_message: None,
+            history: VecDeque::new(),
+            tools: tool_config
+                .into_values()
+                .map(|v| {
+                    Tool::ToolSpecification(ToolSpecification {
+                        name: v.name,
+                        description: v.description,
+                        input_schema: v.input_schema.into(),
+                    })
+                })
+                .collect(),
+            context_manager,
+        }
+    }
+    
+    // Other methods...
+}
+```
+
 ### Phase 4: CLI Flag
 
 1. Update the CLI entry point to accept the `--profile` flag
 2. Implement logic for initializing the `ContextManager` with the specified profile
 3. Add error handling for non-existent profiles
 4. Add unit tests for the CLI flag
+
+```rust
+// Update CliRootCommands enum in src/cli/mod.rs
+#[derive(Debug, PartialEq, Subcommand)]
+pub enum CliRootCommands {
+    // Existing commands...
+    
+    /// Chat with Amazon Q
+    Chat {
+        /// Toggles acceptance prompting for the session
+        #[arg(long)]
+        accept_all: bool,
+        
+        /// Input to send to Amazon Q
+        input: Option<String>,
+        
+        /// Context profile to use
+        #[arg(long)]
+        profile: Option<String>,
+    },
+    
+    // Other commands...
+}
+
+// Update chat function in src/cli/chat/mod.rs
+pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<String>) -> Result<ExitCode> {
+    // Existing code...
+    
+    let mut conversation_state = ConversationState::new(tool_config, profile);
+    
+    // Rest of the function...
+}
+
+// Update execute method in src/cli/mod.rs
+match self.subcommand {
+    // Other commands...
+    CliRootCommands::Chat { accept_all, input, profile } => chat::chat(input, accept_all, profile).await,
+    // Other commands...
+}
 
 ## Testing Strategy
 
