@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the technical implementation details for the context management feature in the Amazon Q Developer CLI. The feature allows users to maintain "sticky" context by specifying files that should always be included in the chat context, organized through aliases.
+This document outlines the technical implementation details for the context management feature in the Amazon Q Developer CLI. The feature allows users to maintain "sticky" context by specifying files that should always be included in the chat context, organized through profiles.
 
 ## Implementation Components
 
@@ -27,10 +27,10 @@ pub struct ContextConfig {
 #[derive(Debug, Clone)]
 pub struct ContextManager {
     config_dir: PathBuf,
-    aliases_dir: PathBuf,
+    profiles_dir: PathBuf,
     global_config: ContextConfig,
-    current_alias: String,
-    alias_config: ContextConfig,
+    current_profile: String,
+    profile_config: ContextConfig,
 }
 ```
 
@@ -39,7 +39,7 @@ pub struct ContextManager {
 The configurations will be stored in JSON files:
 
 - Global context: `~/.aws/amazonq/context/global.json`
-- Alias-specific context: `~/.aws/amazonq/context/aliases/[alias-name].json`
+- Profile-specific context: `~/.aws/amazonq/context/profiles/[profile-name].json`
 
 Example global.json:
 ```json
@@ -63,10 +63,10 @@ impl ContextManager {
     // Load global configuration
     pub fn load_global_config(config_dir: &Path) -> Result<ContextConfig> { /* ... */ }
     
-    // Switch to a different alias
-    pub fn switch_alias(&mut self, alias: &str, create: bool) -> Result<()> { /* ... */ }
+    // Switch to a different profile
+    pub fn switch_profile(&mut self, profile: &str, create: bool) -> Result<()> { /* ... */ }
     
-    // Get all context files (global + alias-specific)
+    // Get all context files (global + profile-specific)
     pub fn get_context_files(&self) -> Result<Vec<(String, String)>> { /* ... */ }
     
     // Process a path (handling globs and file types)
@@ -75,23 +75,23 @@ impl ContextManager {
     // Add a file to the context collection
     fn add_file_to_context(&self, path: &Path, context_files: &mut Vec<(String, String)>) -> Result<()> { /* ... */ }
     
-    // Add paths to context (global or alias)
+    // Add paths to context (global or profile)
     pub fn add_paths(&mut self, paths: Vec<String>, global: bool) -> Result<()> { /* ... */ }
     
-    // Remove paths from context (global or alias)
+    // Remove paths from context (global or profile)
     pub fn remove_paths(&mut self, paths: Vec<String>, global: bool) -> Result<()> { /* ... */ }
     
-    // Clear all paths (global or alias)
+    // Clear all paths (global or profile)
     pub fn clear(&mut self, global: bool) -> Result<()> { /* ... */ }
     
-    // List all available aliases
-    pub fn list_aliases(&self) -> Result<Vec<String>> { /* ... */ }
+    // List all available profiles
+    pub fn list_profiles(&self) -> Result<Vec<String>> { /* ... */ }
     
-    // Create a new alias
-    pub fn create_alias(&self, name: &str) -> Result<()> { /* ... */ }
+    // Create a new profile
+    pub fn create_profile(&self, name: &str) -> Result<()> { /* ... */ }
     
-    // Delete an alias
-    pub fn delete_alias(&self, name: &str) -> Result<()> { /* ... */ }
+    // Delete a profile
+    pub fn delete_profile(&self, name: &str) -> Result<()> { /* ... */ }
     
     // Save configurations to disk
     fn save_config(&self, global: bool) -> Result<()> { /* ... */ }
@@ -113,15 +113,15 @@ pub struct ConversationState {
 Update the constructor to initialize the `ContextManager`:
 
 ```rust
-pub fn new(tool_config: HashMap<String, ToolSpec>, alias: Option<String>) -> Self {
+pub fn new(tool_config: HashMap<String, ToolSpec>, profile: Option<String>) -> Self {
     // Existing code...
     
     // Initialize context manager
     let context_manager = match ContextManager::new() {
         Ok(mut manager) => {
-            if let Some(alias_name) = alias {
-                if let Err(e) = manager.switch_alias(&alias_name, false) {
-                    error!("Failed to switch to alias {}: {}", alias_name, e);
+            if let Some(profile_name) = profile {
+                if let Err(e) = manager.switch_profile(&profile_name, false) {
+                    error!("Failed to switch to profile {}: {}", profile_name, e);
                 }
             }
             Some(manager)
@@ -205,7 +205,7 @@ pub enum ContextSubcommand {
     Show,
     Add { global: bool, paths: Vec<String> },
     Remove { global: bool, paths: Vec<String> },
-    Alias { delete: Option<String>, create: Option<String> },
+    Profile { delete: Option<String>, create: Option<String> },
     Switch { name: String, create: bool },
     Clear { global: bool },
 }
@@ -237,8 +237,8 @@ pub fn parse(input: &str) -> Result<Self, String> {
                     "rm" => {
                         // Parse rm command
                     },
-                    "alias" => {
-                        // Parse alias command
+                    "profile" => {
+                        // Parse profile command
                     },
                     "switch" => {
                         // Parse switch command
@@ -275,11 +275,11 @@ match Command::parse(&input) {
             ContextSubcommand::Remove { global, paths } => {
                 // Remove paths from context
             },
-            ContextSubcommand::Alias { delete, create } => {
-                // Handle alias operations
+            ContextSubcommand::Profile { delete, create } => {
+                // Handle profile operations
             },
             ContextSubcommand::Switch { name, create } => {
-                // Switch to a different alias
+                // Switch to a different profile
             },
             ContextSubcommand::Clear { global } => {
                 // Clear context
@@ -290,9 +290,9 @@ match Command::parse(&input) {
 }
 ```
 
-### 10. CLI Flag for Alias
+### 10. CLI Flag for Profile
 
-Update the CLI entry point to accept the `--alias` flag:
+Update the CLI entry point to accept the `--profile` flag:
 
 ```rust
 #[derive(Parser, Debug)]
@@ -300,9 +300,9 @@ Update the CLI entry point to accept the `--alias` flag:
 struct Args {
     // Existing fields...
     
-    /// Specify a context alias to use for the chat session
+    /// Specify a context profile to use for the chat session
     #[arg(long)]
-    alias: Option<String>,
+    profile: Option<String>,
 }
 ```
 
@@ -317,8 +317,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>show</em>        <black!>Display current context configuration</black!>
   <em>add</em>         <black!>Add file(s) to context [--global]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
-  <em>alias</em>       <black!>List, create [--create], or delete [--delete] context aliases</black!>
-  <em>switch</em>      <black!>Switch to a different context alias [--create]</black!>
+  <em>profile</em>     <black!>List, create [--create], or delete [--delete] context profiles</black!>
+  <em>switch</em>      <black!>Switch to a different context profile [--create]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
 "};
 ```
@@ -339,12 +339,12 @@ Format context files with clear section boundaries:
 
 ### 13. Command Prompt Styling
 
-Update the prompt to indicate the current context alias:
+Update the prompt to indicate the current context profile:
 
 ```rust
 fn get_prompt(context_manager: &Option<ContextManager>) -> String {
     if let Some(manager) = context_manager {
-        format!("[context:{}] > ", manager.current_alias)
+        format!("[context:{}] > ", manager.current_profile)
     } else {
         "> ".to_string()
     }
@@ -356,10 +356,10 @@ fn get_prompt(context_manager: &Option<ContextManager>) -> String {
 Context files will be processed in the following order:
 
 1. Global context files first, in the order they appear in the configuration
-2. Alias-specific context files next, in the order they appear in the configuration
+2. Profile-specific context files next, in the order they appear in the configuration
 3. For glob patterns, files will be processed in the order they're returned by the glob expansion
 
-This ensures that alias-specific context can override or supplement global context as needed.
+This ensures that profile-specific context can override or supplement global context as needed.
 
 ## Error Handling
 
@@ -367,7 +367,7 @@ The implementation will provide clear error messages for common issues:
 
 - For invalid file paths: "File not found: [path]"
 - For permission issues: "Permission denied: [path]"
-- For non-existent aliases: "Alias not found: [alias-name]"
+- For non-existent profiles: "Profile not found: [profile-name]"
 - For duplicate paths: "Path already exists in context: [path]"
 
 ## Dependencies

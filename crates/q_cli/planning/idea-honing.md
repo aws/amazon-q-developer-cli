@@ -64,7 +64,7 @@ Read rough-idea.md. Ask me one question at a time so we can develop a thorough, 
 
 ### Q11: How should the system handle the actual integration of context files into the chat conversation? Should it be transparent to the user or should there be some indication that context files are being used?
 
-**A11:** The system should indicate the active context by modifying the prompt with a colored prefix showing the current alias. The CLI already uses the `crossterm` crate for terminal styling, so we'll use that to implement a colored prompt like `[context:alias-name] >`. This provides a clear visual indicator of which context alias is active without being intrusive to the chat experience. Alias names should only be allowed to contain alphanumeric characters, hyphens, and underscores.
+**A11:** The system should indicate the active context by modifying the prompt with a colored prefix showing the current profile. The CLI already uses the `crossterm` crate for terminal styling, so we'll use that to implement a colored prompt like `[context:profile-name] >`. This provides a clear visual indicator of which context profile is active without being intrusive to the chat experience. Profile names should only be allowed to contain alphanumeric characters, hyphens, and underscores.
 
 ### Q12: How should the context management feature handle updates to context files during an active chat session? Should changes to files be automatically reflected, or should there be a command to refresh the context?
 
@@ -108,7 +108,7 @@ This format provides clear identification of context files with their filenames 
        Show,
        Add { global: bool, paths: Vec<String> },
        Remove { global: bool, paths: Vec<String> },
-       Alias { delete: Option<String>, create: Option<String> },
+       Profile { delete: Option<String>, create: Option<String> },
        Switch { name: String, create: bool },
        Clear { global: bool },
    }
@@ -132,24 +132,24 @@ This format provides clear identification of context files with their filenames 
 7. **Integrate with Conversation State**:
    Modify the `ConversationState` class to include context files in the chat messages sent to the API.
 
-### Q15: How should the system handle the CLI flag for specifying an alias at startup? What would be the syntax and behavior of this flag?
+### Q15: How should the system handle the CLI flag for specifying an profile at startup? What would be the syntax and behavior of this flag?
 
-**A15:** The system should implement a `--alias` flag that takes the alias name as a required argument:
+**A15:** The system should implement a `--profile` flag that takes the profile name as a required argument:
 
 ```
-q chat --alias my-team-service
+q chat --profile my-team-service
 ```
 
-If the specified alias doesn't exist, the system should display an error message and exit:
+If the specified profile doesn't exist, the system should display an error message and exit:
 ```
-Error: Alias 'my-team-service' not found. Use '/context alias --create my-team-service' to create it.
+Error: Profile 'my-team-service' not found. Use '/context profile --create my-team-service' to create it.
 ```
 
-However, specifying `--alias default` should never produce an error, even though it's functionally equivalent to not using the flag at all, since "default" is the standard alias used when no alias is specified.
+However, specifying `--profile default` should never produce an error, even though it's functionally equivalent to not using the flag at all, since "default" is the standard profile used when no profile is specified.
 
-### Q16: How should the system handle the JSON schema for the configuration files? What fields should be included in the global and alias-specific configuration files?
+### Q16: How should the system handle the JSON schema for the configuration files? What fields should be included in the global and profile-specific configuration files?
 
-**A16:** The system should use a simple path list schema for both global and alias-specific configuration files:
+**A16:** The system should use a simple path list schema for both global and profile-specific configuration files:
 
 **Global configuration (global.json)**:
 ```json
@@ -161,7 +161,7 @@ However, specifying `--alias default` should never produce an error, even though
 }
 ```
 
-**Alias configuration (aliases/my-alias.json)**:
+**Profile configuration (profiles/my-profile.json)**:
 ```json
 {
   "paths": [
@@ -177,29 +177,29 @@ This simple schema focuses on the essential information (the paths to include in
 
 **A17:** Based on the examples in planning/idea.md, the `/context show` command should display:
 
-1. The current active alias name
+1. The current active profile name
 2. The global context paths (indented)
-3. The alias-specific context paths (indented)
+3. The profile-specific context paths (indented)
 
 Example output format:
 ```
-current alias: my-team-service
+current profile: my-team-service
 
 global:
     ~/.aws/amazonq/rules/**/*.md
     AmazonQ.md
     /path/to/MyTeamQLib/**/*.md
 
-alias:
+profile:
     /path/to/MyTeamServiceDocs/AmazonQ.md
     /path/to/MyTeamServiceDocs/tasks/P129406383/**/*
 ```
 
-If there are no paths in either the global or alias-specific context, it should display `<none>` under the respective section. The output should be formatted with clear section headers and indentation to make it easy to read and distinguish between global and alias-specific context paths.
+If there are no paths in either the global or profile-specific context, it should display `<none>` under the respective section. The output should be formatted with clear section headers and indentation to make it easy to read and distinguish between global and profile-specific context paths.
 
-### Q18: How should the system handle the `/context alias` command? What information should be displayed and in what format?
+### Q18: How should the system handle the `/context profile` command? What information should be displayed and in what format?
 
-**A18:** The `/context alias` command should list all available aliases (including the default alias) in a format similar to `git branch`, with the current alias highlighted or marked with an asterisk:
+**A18:** The `/context profile` command should list all available profiles (including the default profile) in a format similar to `git branch`, with the current profile highlighted or marked with an asterisk:
 
 ```
   default
@@ -209,10 +209,10 @@ If there are no paths in either the global or alias-specific context, it should 
 ```
 
 In this example:
-- Each alias is listed on a separate line
-- The current active alias (my-team-service) is marked with an asterisk and could be highlighted using the `crossterm` crate's styling capabilities
+- Each profile is listed on a separate line
+- The current active profile (my-team-service) is marked with an asterisk and could be highlighted using the `crossterm` crate's styling capabilities
 - The list is alphabetically sorted, with "default" always appearing first
-- The output is simple and clean, making it easy to scan the available aliases
+- The output is simple and clean, making it easy to scan the available profiles
 
 ### Q19: What should happen when a user tries to add a file path that already exists in the context? Should it be ignored, replaced, or should the user be notified?
 
@@ -257,53 +257,53 @@ This approach:
 3. Maintains the separation between global and alias-specific contexts
 4. Follows the pattern of other commands with the `--global` flag
 
-### Q22: How should the system handle the deletion of aliases? Should there be a specific command for this purpose?
+### Q22: How should the system handle the deletion of profiles? Should there be a specific command for this purpose?
 
-**A22:** The system should extend the `/context alias` command to include a `--delete` or `-d` flag for deleting aliases, similar to the `git branch` command:
+**A22:** The system should extend the `/context profile` command to include a `--delete` or `-d` flag for deleting profiles, similar to the `git branch` command:
 
 ```
-/context alias --delete my-team-service
+/context profile --delete my-team-service
 ```
 
 This command should:
-1. Delete the specified alias configuration file
-2. Prevent deletion of the "default" alias
-3. Prevent deletion of the currently active alias (user must switch to another alias first)
-4. Provide confirmation of the deletion with a message like: "Deleted alias 'my-team-service'"
-5. Return an error if the specified alias doesn't exist
+1. Delete the specified profile configuration file
+2. Prevent deletion of the "default" profile
+3. Prevent deletion of the currently active profile (user must switch to another profile first)
+4. Provide confirmation of the deletion with a message like: "Deleted profile 'my-team-service'"
+5. Return an error if the specified profile doesn't exist
 
 This approach:
 1. Follows the Git-style command pattern that users may already be familiar with
-2. Provides a clear and explicit way to remove aliases that are no longer needed
-3. Includes safeguards to prevent accidental deletion of important aliases
+2. Provides a clear and explicit way to remove profiles that are no longer needed
+3. Includes safeguards to prevent accidental deletion of important profiles
 4. Maintains consistency with the rest of the command structure
 
-### Q23: How should the system handle the creation of new aliases? Should it be part of the switch command or a separate operation?
+### Q23: How should the system handle the creation of new profiles? Should it be part of the switch command or a separate operation?
 
-**A23:** The system should support creating aliases in two ways:
+**A23:** The system should support creating profiles in two ways:
 
-1. Using the `/context alias` command with a `--create` or `-c` flag:
+1. Using the `/context profile` command with a `--create` or `-c` flag:
    ```
-   /context alias --create my-team-service
-   Created alias: my-team-service
+   /context profile --create my-team-service
+   Created profile: my-team-service
    ```
 
 2. Using the `/context switch` command with a `--create` or `-c` flag (for convenience):
    ```
    /context switch --create my-team-service
-   Created and switched to alias: my-team-service
+   Created and switched to profile: my-team-service
    ```
 
 This dual approach:
-1. Makes the `/context alias` command the central place for all alias management operations (listing, creating, deleting)
-2. Provides a convenient shortcut for creating and switching to an alias in one command
+1. Makes the `/context profile` command the central place for all profile management operations (listing, creating, deleting)
+2. Provides a convenient shortcut for creating and switching to a profile in one command
 3. Follows a more intuitive command structure where related operations are grouped together
 4. Provides flexibility for different user workflows
 
-If a user tries to switch to an alias that doesn't exist without using the `--create` flag, the system should return an error message:
+If a user tries to switch to a profile that doesn't exist without using the `--create` flag, the system should return an error message:
 
 ```
-Error: Alias 'my-team-service' not found. Use '/context alias --create my-team-service' to create it or '/context switch --create my-team-service' to create and switch to it.
+Error: Profile 'my-team-service' not found. Use '/context profile --create my-team-service' to create it or '/context switch --create my-team-service' to create and switch to it.
 ```
 
 ### Q24: How should the system handle the help text for the `/context` command and its subcommands? What information should be included to help users understand how to use the feature?
@@ -315,8 +315,8 @@ Error: Alias 'my-team-service' not found. Use '/context alias --create my-team-s
   <em>show</em>        <black!>Display current context configuration</black!>
   <em>add</em>         <black!>Add file(s) to context [--global]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
-  <em>alias</em>       <black!>List, create [--create], or delete [--delete] context aliases</black!>
-  <em>switch</em>      <black!>Switch to a different context alias [--create]</black!>
+  <em>profile</em>     <black!>List, create [--create], or delete [--delete] context profiles</black!>
+  <em>switch</em>      <black!>Switch to a different context profile [--create]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
 ```
 
