@@ -1,4 +1,5 @@
 mod command;
+mod context;
 mod conversation_state;
 mod input_source;
 mod parse;

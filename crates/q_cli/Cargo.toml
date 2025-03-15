@@ -38,6 +38,7 @@ convert_case.workspace = true
 crossterm = { version = "0.28.1", features = ["event-stream"] }
 ctrlc = "3.2.5"
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
+dirs-next = "2.0.0"
 eyre = "0.6.8"
 fig_api_client.workspace = true
 fig_auth.workspace = true
@@ -108,7 +109,6 @@ winapi = { version = "0.3", features = ["consoleapi"] }
 [dev-dependencies]
 assert_cmd = "2.0"
 criterion = "0.5.1"
-dirs.workspace = true
 insta.workspace = true
 paste = "1.0.11"
 predicates = "3.0"
