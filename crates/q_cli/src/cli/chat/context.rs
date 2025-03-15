@@ -286,6 +286,28 @@ impl ContextManager {
         Ok(profiles)
     }
 
+    /// Clear all paths from the context configuration.
+    ///
+    /// # Arguments
+    /// * `global` - If true, clear global configuration; otherwise, clear current profile
+    ///   configuration
+    ///
+    /// # Returns
+    /// A Result indicating success or an error
+    pub fn clear(&mut self, global: bool) -> Result<()> {
+        // Clear the appropriate config
+        if global {
+            self.global_config.paths.clear();
+        } else {
+            self.profile_config.paths.clear();
+        }
+
+        // Save the updated configuration
+        self.save_config(global)?;
+
+        Ok(())
+    }
+
     /// Create a new profile.
     ///
     /// # Arguments
@@ -719,7 +741,7 @@ mod tests {
     #[test]
     fn test_clear_global() -> Result<()> {
         // Create a test context manager
-        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
 
         // Clear global config
         manager.clear(true)?;
@@ -733,7 +755,7 @@ mod tests {
     #[test]
     fn test_clear_profile() -> Result<()> {
         // Create a test context manager
-        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
 
         // Add paths to profile config
         let paths = vec!["test/path1.md".to_string(), "test/path2.md".to_string()];
@@ -752,7 +774,7 @@ mod tests {
 #[test]
 fn test_list_profiles() -> Result<()> {
     // Create a test context manager
-    let (manager, _temp_dir) = create_test_context_manager()?;
+    let (manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Create some test profiles
     let profiles_dir = &manager.profiles_dir;
@@ -783,7 +805,7 @@ fn test_list_profiles() -> Result<()> {
 #[test]
 fn test_create_profile() -> Result<()> {
     // Create a test context manager
-    let (manager, _temp_dir) = create_test_context_manager()?;
+    let (manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Create a new profile
     manager.create_profile("test-profile")?;
@@ -806,7 +828,7 @@ fn test_create_profile() -> Result<()> {
 #[test]
 fn test_create_profile_already_exists() -> Result<()> {
     // Create a test context manager
-    let (manager, _temp_dir) = create_test_context_manager()?;
+    let (manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Create a profile
     manager.create_profile("test-profile")?;
@@ -825,7 +847,7 @@ fn test_create_profile_already_exists() -> Result<()> {
 #[test]
 fn test_create_profile_invalid_name() -> Result<()> {
     // Create a test context manager
-    let (manager, _temp_dir) = create_test_context_manager()?;
+    let (manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Try to create a profile with an invalid name
     let result = manager.create_profile("invalid/name");
@@ -841,7 +863,7 @@ fn test_create_profile_invalid_name() -> Result<()> {
 #[test]
 fn test_delete_profile() -> Result<()> {
     // Create a test context manager
-    let (manager, _temp_dir) = create_test_context_manager()?;
+    let (manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Create a profile
     manager.create_profile("test-profile")?;
@@ -862,7 +884,7 @@ fn test_delete_profile() -> Result<()> {
 #[test]
 fn test_delete_profile_default() -> Result<()> {
     // Create a test context manager
-    let (manager, _temp_dir) = create_test_context_manager()?;
+    let (manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Try to delete the default profile
     let result = manager.delete_profile("default");
@@ -878,7 +900,7 @@ fn test_delete_profile_default() -> Result<()> {
 #[test]
 fn test_delete_profile_active() -> Result<()> {
     // Create a test context manager
-    let (mut manager, _temp_dir) = create_test_context_manager()?;
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Create a profile
     manager.create_profile("test-profile")?;
@@ -900,7 +922,7 @@ fn test_delete_profile_active() -> Result<()> {
 #[test]
 fn test_delete_profile_not_exists() -> Result<()> {
     // Create a test context manager
-    let (manager, _temp_dir) = create_test_context_manager()?;
+    let (manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Try to delete a profile that doesn't exist
     let result = manager.delete_profile("nonexistent");
@@ -916,7 +938,7 @@ fn test_delete_profile_not_exists() -> Result<()> {
 #[test]
 fn test_switch_profile() -> Result<()> {
     // Create a test context manager
-    let (mut manager, _temp_dir) = create_test_context_manager()?;
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Create a profile
     manager.create_profile("test-profile")?;
@@ -944,7 +966,7 @@ fn test_switch_profile() -> Result<()> {
 #[test]
 fn test_switch_profile_create() -> Result<()> {
     // Create a test context manager
-    let (mut manager, _temp_dir) = create_test_context_manager()?;
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Switch to a profile that doesn't exist with create flag
     manager.switch_profile("new-profile", true)?;
@@ -963,7 +985,7 @@ fn test_switch_profile_create() -> Result<()> {
 #[test]
 fn test_switch_profile_not_exists() -> Result<()> {
     // Create a test context manager
-    let (mut manager, _temp_dir) = create_test_context_manager()?;
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Try to switch to a profile that doesn't exist without create flag
     let result = manager.switch_profile("nonexistent", false);
@@ -979,19 +1001,19 @@ fn test_switch_profile_not_exists() -> Result<()> {
 #[test]
 fn test_validate_profile_name() -> Result<()> {
     // Create a test context manager
-    let (manager, _temp_dir) = create_test_context_manager()?;
+    let (_manager, _temp_dir) = tests::create_test_context_manager()?;
 
     // Test valid names
-    assert!(manager.validate_profile_name("valid").is_ok());
-    assert!(manager.validate_profile_name("valid-name").is_ok());
-    assert!(manager.validate_profile_name("valid_name").is_ok());
-    assert!(manager.validate_profile_name("valid123").is_ok());
+    assert!(ContextManager::validate_profile_name("valid").is_ok());
+    assert!(ContextManager::validate_profile_name("valid-name").is_ok());
+    assert!(ContextManager::validate_profile_name("valid_name").is_ok());
+    assert!(ContextManager::validate_profile_name("valid123").is_ok());
 
     // Test invalid names
-    assert!(manager.validate_profile_name("").is_err());
-    assert!(manager.validate_profile_name("invalid/name").is_err());
-    assert!(manager.validate_profile_name("invalid.name").is_err());
-    assert!(manager.validate_profile_name("invalid name").is_err());
+    assert!(ContextManager::validate_profile_name("").is_err());
+    assert!(ContextManager::validate_profile_name("invalid/name").is_err());
+    assert!(ContextManager::validate_profile_name("invalid.name").is_err());
+    assert!(ContextManager::validate_profile_name("invalid name").is_err());
 
     Ok(())
 }
