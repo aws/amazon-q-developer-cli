@@ -33,10 +33,16 @@ const COMMANDS: &[&str] = &[
     "/context",
     "/context show",
     "/context add",
+    "/context add --global",
     "/context rm",
+    "/context rm --global",
     "/context profile",
+    "/context profile --create",
+    "/context profile --delete",
     "/context switch",
+    "/context switch --create",
     "/context clear",
+    "/context clear --global",
 ];
 
 pub struct ChatCompleter {}

@@ -43,10 +43,10 @@ This checklist tracks the implementation progress of the context management feat
   - [x] Add parameter parsing for flags
   - [x] Write unit tests for command parsing
 
-- [ ] **Prompt 6: Implement Command Completion**
-  - [ ] Update `COMMANDS` array with context commands
-  - [ ] Modify `ChatCompleter` implementation if needed
-  - [ ] Write unit tests for command completion
+- [x] **Prompt 6: Implement Command Completion**
+  - [x] Update `COMMANDS` array with context commands
+  - [x] Modify `ChatCompleter` implementation if needed
+  - [x] Write unit tests for command completion
 
 - [ ] **Prompt 7: Update the Help Text**
   - [ ] Add context commands to `HELP_TEXT` constant
