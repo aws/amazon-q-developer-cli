@@ -36,12 +36,12 @@ This checklist tracks the implementation progress of the context management feat
   - [x] Support for glob patterns
   - [x] Support for relative paths
 
-- [ ] **Prompt 5: Extend the Command Enum and Parser**
-  - [ ] Add `Context` variant to `Command` enum
-  - [ ] Create `ContextSubcommand` enum
-  - [ ] Update `Command::parse` method
-  - [ ] Add parameter parsing for flags
-  - [ ] Write unit tests for command parsing
+- [x] **Prompt 5: Extend the Command Enum and Parser**
+  - [x] Add `Context` variant to `Command` enum
+  - [x] Create `ContextSubcommand` enum
+  - [x] Update `Command::parse` method
+  - [x] Add parameter parsing for flags
+  - [x] Write unit tests for command parsing
 
 - [ ] **Prompt 6: Implement Command Completion**
   - [ ] Update `COMMANDS` array with context commands

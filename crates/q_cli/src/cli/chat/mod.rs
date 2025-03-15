@@ -593,6 +593,20 @@ where
                 }
             },
             Command::Quit => ChatState::Exit,
+            Command::Context { subcommand: _ } => {
+                // This will be implemented in a future prompt
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("\nContext management commands are not yet implemented.\n\n"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    skip_printing_tools: true,
+                }
+            },
         })
     }
 

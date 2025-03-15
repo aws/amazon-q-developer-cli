@@ -25,7 +25,19 @@ use rustyline::{
 };
 use winnow::stream::AsChar;
 
-const COMMANDS: &[&str] = &["/clear", "/help"];
+const COMMANDS: &[&str] = &[
+    "/clear",
+    "/help",
+    "/acceptall",
+    "/quit",
+    "/context",
+    "/context show",
+    "/context add",
+    "/context rm",
+    "/context profile",
+    "/context switch",
+    "/context clear",
+];
 
 pub struct ChatCompleter {}
 
