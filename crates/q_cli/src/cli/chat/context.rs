@@ -1,3 +1,4 @@
+use std::env;
 use std::fs::{
     self,
     File,
@@ -16,6 +17,7 @@ use eyre::{
     Result,
     eyre,
 };
+use glob::glob;
 use regex::Regex;
 use serde::{
     Deserialize,
@@ -398,6 +400,146 @@ impl ContextManager {
         // Update the current profile
         self.current_profile = name.to_string();
         self.profile_config = profile_config;
+
+        Ok(())
+    }
+
+    /// Get all context files (global + profile-specific).
+    ///
+    /// This method:
+    /// 1. Processes all paths in the global and profile configurations
+    /// 2. Expands glob patterns to include matching files
+    /// 3. Reads the content of each file
+    /// 4. Returns a vector of (filename, content) pairs
+    ///
+    /// # Returns
+    /// A Result containing a vector of (filename, content) pairs or an error
+    pub fn get_context_files(&self) -> Result<Vec<(String, String)>> {
+        let mut context_files = Vec::new();
+        let cwd = env::current_dir()?;
+
+        // Process global paths first
+        for path in &self.global_config.paths {
+            Self::process_path(path, &cwd, &mut context_files)?;
+        }
+
+        // Then process profile-specific paths
+        for path in &self.profile_config.paths {
+            Self::process_path(path, &cwd, &mut context_files)?;
+        }
+
+        Ok(context_files)
+    }
+
+    /// Process a path, handling glob patterns and file types.
+    ///
+    /// This method:
+    /// 1. Expands the path (handling ~ for home directory)
+    /// 2. If the path contains glob patterns, expands them
+    /// 3. For each resulting path, adds the file to the context collection
+    ///
+    /// # Arguments
+    /// * `path` - The path to process
+    /// * `cwd` - The current working directory for resolving relative paths
+    /// * `context_files` - The collection to add files to
+    ///
+    /// # Returns
+    /// A Result indicating success or an error
+    fn process_path(path: &str, cwd: &Path, context_files: &mut Vec<(String, String)>) -> Result<()> {
+        // Expand ~ to home directory
+        let expanded_path = if path.starts_with('~') {
+            if let Some(home_dir) = dirs::home_dir() {
+                home_dir.join(&path[2..]).to_string_lossy().to_string()
+            } else {
+                return Err(eyre!("Could not determine home directory"));
+            }
+        } else {
+            path.to_string()
+        };
+
+        // Handle absolute, relative paths, and glob patterns
+        let full_path = if expanded_path.starts_with('/') {
+            // Absolute path
+            expanded_path
+        } else {
+            // Relative path
+            cwd.join(&expanded_path).to_string_lossy().to_string()
+        };
+
+        // Check if the path contains glob patterns
+        if full_path.contains('*') || full_path.contains('?') || full_path.contains('[') {
+            // Expand glob pattern
+            match glob(&full_path) {
+                Ok(entries) => {
+                    let mut found_any = false;
+
+                    for entry in entries {
+                        match entry {
+                            Ok(path) => {
+                                if path.is_file() {
+                                    Self::add_file_to_context(&path, context_files)?;
+                                    found_any = true;
+                                }
+                            },
+                            Err(e) => return Err(eyre!("Glob error: {}", e)),
+                        }
+                    }
+
+                    if !found_any {
+                        // Not an error, just no matches
+                        // We could log this if we had a logger
+                    }
+                },
+                Err(e) => return Err(eyre!("Invalid glob pattern '{}': {}", full_path, e)),
+            }
+        } else {
+            // Regular path
+            let path = Path::new(&full_path);
+            if path.exists() {
+                if path.is_file() {
+                    Self::add_file_to_context(path, context_files)?;
+                } else if path.is_dir() {
+                    // For directories, add all files in the directory (non-recursive)
+                    for entry in fs::read_dir(path)? {
+                        let entry = entry?;
+                        let path = entry.path();
+                        if path.is_file() {
+                            Self::add_file_to_context(&path, context_files)?;
+                        }
+                    }
+                }
+            } else {
+                // Not an error, file just doesn't exist
+                // We could log this if we had a logger
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Add a file to the context collection.
+    ///
+    /// This method:
+    /// 1. Reads the content of the file
+    /// 2. Adds the (filename, content) pair to the context collection
+    ///
+    /// # Arguments
+    /// * `path` - The path to the file
+    /// * `context_files` - The collection to add the file to
+    ///
+    /// # Returns
+    /// A Result indicating success or an error
+    fn add_file_to_context(path: &Path, context_files: &mut Vec<(String, String)>) -> Result<()> {
+        // Get the filename as a string
+        let filename = path.to_string_lossy().to_string();
+
+        // Read the file content
+        let mut file = File::open(path)?;
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+
+        // Add to the context collection
+        context_files.push((filename, content));
 
         Ok(())
     }
@@ -1034,6 +1176,204 @@ fn test_validate_profile_name() -> Result<()> {
     assert!(ContextManager::validate_profile_name("invalid name").is_err());
     assert!(ContextManager::validate_profile_name("_invalid").is_err());
     assert!(ContextManager::validate_profile_name("-invalid").is_err());
+
+    Ok(())
+}
+
+#[test]
+fn test_get_context_files() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, temp_dir) = tests::create_test_context_manager()?;
+
+    // Create some test files
+    let test_dir = temp_dir.path().join("test_files");
+    fs::create_dir_all(&test_dir)?;
+
+    // Create file 1
+    let file1_path = test_dir.join("file1.md");
+    let mut file1 = File::create(&file1_path)?;
+    file1.write_all(b"Content of file 1")?;
+
+    // Create file 2
+    let file2_path = test_dir.join("file2.md");
+    let mut file2 = File::create(&file2_path)?;
+    file2.write_all(b"Content of file 2")?;
+
+    // Create a subdirectory with a file
+    let subdir = test_dir.join("subdir");
+    fs::create_dir_all(&subdir)?;
+    let file3_path = subdir.join("file3.md");
+    let mut file3 = File::create(&file3_path)?;
+    file3.write_all(b"Content of file 3")?;
+
+    // Add paths to global and profile configs
+    manager.global_config.paths = vec![file1_path.to_string_lossy().to_string()];
+    manager.profile_config.paths = vec![file2_path.to_string_lossy().to_string()];
+
+    // Get context files
+    let context_files = manager.get_context_files()?;
+
+    // Verify files were added
+    assert_eq!(context_files.len(), 2);
+
+    // Verify file 1 (global)
+    assert_eq!(context_files[0].0, file1_path.to_string_lossy().to_string());
+    assert_eq!(context_files[0].1, "Content of file 1");
+
+    // Verify file 2 (profile)
+    assert_eq!(context_files[1].0, file2_path.to_string_lossy().to_string());
+    assert_eq!(context_files[1].1, "Content of file 2");
+
+    Ok(())
+}
+
+#[test]
+fn test_process_path_glob() -> Result<()> {
+    // Create a test context manager
+    let (_manager, temp_dir) = tests::create_test_context_manager()?;
+
+    // Create some test files
+    let test_dir = temp_dir.path().join("test_files");
+    fs::create_dir_all(&test_dir)?;
+
+    // Create multiple markdown files
+    for i in 1..=3 {
+        let file_path = test_dir.join(format!("file{}.md", i));
+        let mut file = File::create(&file_path)?;
+        file.write_all(format!("Content of file {}", i).as_bytes())?;
+    }
+
+    // Create a text file (different extension)
+    let text_file = test_dir.join("file.txt");
+    let mut file = File::create(&text_file)?;
+    file.write_all(b"Content of text file")?;
+
+    // Process a glob pattern that matches markdown files
+    let mut context_files = Vec::new();
+    let glob_pattern = format!("{}/*.md", test_dir.to_string_lossy());
+    ContextManager::process_path(&glob_pattern, &env::current_dir()?, &mut context_files)?;
+
+    // Verify only markdown files were added
+    assert_eq!(context_files.len(), 3);
+
+    // Verify the text file was not included
+    let text_file_name = text_file.to_string_lossy().to_string();
+    assert!(!context_files.iter().any(|(name, _)| name == &text_file_name));
+
+    Ok(())
+}
+
+#[test]
+fn test_process_path_directory() -> Result<()> {
+    // Create a test context manager
+    let (_manager, temp_dir) = tests::create_test_context_manager()?;
+
+    // Create a directory with files
+    let test_dir = temp_dir.path().join("test_dir");
+    fs::create_dir_all(&test_dir)?;
+
+    // Create files in the directory
+    for i in 1..=3 {
+        let file_path = test_dir.join(format!("file{}.txt", i));
+        let mut file = File::create(&file_path)?;
+        file.write_all(format!("Content of file {}", i).as_bytes())?;
+    }
+
+    // Create a subdirectory with a file (should not be included)
+    let subdir = test_dir.join("subdir");
+    fs::create_dir_all(&subdir)?;
+    let subfile = subdir.join("subfile.txt");
+    let mut file = File::create(&subfile)?;
+    file.write_all(b"Content of subfile")?;
+
+    // Process the directory
+    let mut context_files = Vec::new();
+    ContextManager::process_path(&test_dir.to_string_lossy(), &env::current_dir()?, &mut context_files)?;
+
+    // Verify only files in the directory were added (not subdirectory files)
+    assert_eq!(context_files.len(), 3);
+
+    // Verify the subfile was not included
+    let subfile_name = subfile.to_string_lossy().to_string();
+    assert!(!context_files.iter().any(|(name, _)| name == &subfile_name));
+
+    Ok(())
+}
+
+#[test]
+fn test_add_file_to_context() -> Result<()> {
+    // Create a test context manager
+    let (_manager, temp_dir) = tests::create_test_context_manager()?;
+
+    // Create a test file
+    let file_path = temp_dir.path().join("test_file.txt");
+    let mut file = File::create(&file_path)?;
+    file.write_all(b"Test file content")?;
+
+    // Add the file to context
+    let mut context_files = Vec::new();
+    ContextManager::add_file_to_context(&file_path, &mut context_files)?;
+
+    // Verify the file was added correctly
+    assert_eq!(context_files.len(), 1);
+    assert_eq!(context_files[0].0, file_path.to_string_lossy().to_string());
+    assert_eq!(context_files[0].1, "Test file content");
+
+    Ok(())
+}
+
+#[test]
+fn test_home_directory_expansion() -> Result<()> {
+    // Create a test context manager
+    let (_manager, temp_dir) = tests::create_test_context_manager()?;
+
+    // Set the HOME environment variable to our temp directory
+    env::set_var("HOME", temp_dir.path().to_str().unwrap());
+
+    // Create a test file in the "home" directory
+    let file_path = temp_dir.path().join("home_file.txt");
+    let mut file = File::create(&file_path)?;
+    file.write_all(b"Home file content")?;
+
+    // Process a path with ~ expansion
+    let mut context_files = Vec::new();
+    ContextManager::process_path("~/home_file.txt", &env::current_dir()?, &mut context_files)?;
+
+    // Verify the file was added correctly
+    assert_eq!(context_files.len(), 1);
+    assert_eq!(context_files[0].0, file_path.to_string_lossy().to_string());
+    assert_eq!(context_files[0].1, "Home file content");
+
+    Ok(())
+}
+
+#[test]
+fn test_relative_path_resolution() -> Result<()> {
+    // Create a test context manager
+    let (_manager, temp_dir) = tests::create_test_context_manager()?;
+
+    // Create a test file
+    let file_path = temp_dir.path().join("relative_file.txt");
+    let mut file = File::create(&file_path)?;
+    file.write_all(b"Relative file content")?;
+
+    // Get the current directory
+    let current_dir = env::current_dir()?;
+
+    // Change to the temp directory
+    env::set_current_dir(temp_dir.path())?;
+
+    // Process a relative path
+    let mut context_files = Vec::new();
+    ContextManager::process_path("relative_file.txt", &temp_dir.path(), &mut context_files)?;
+
+    // Restore the current directory
+    env::set_current_dir(current_dir)?;
+
+    // Verify the file was added correctly
+    assert_eq!(context_files.len(), 1);
+    assert_eq!(context_files[0].0, file_path.to_string_lossy().to_string());
+    assert_eq!(context_files[0].1, "Relative file content");
 
     Ok(())
 }

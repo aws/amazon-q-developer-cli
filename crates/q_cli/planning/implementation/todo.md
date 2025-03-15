@@ -26,12 +26,15 @@ This checklist tracks the implementation progress of the context management feat
   - [x] Add validation for profile operations
   - [x] Write unit tests for profile management functions
 
-- [ ] **Prompt 4: Implement Context File Processing**
-  - [ ] Implement `get_context_files` method
-  - [ ] Implement `process_path` helper method
-  - [ ] Implement `add_file_to_context` helper method
-  - [ ] Add support for different path types
-  - [ ] Write unit tests for context file processing
+- [x] **Prompt 4: Implement Context File Processing**
+  - [x] Implement `get_context_files` method
+  - [x] Implement `process_path` helper method
+  - [x] Implement `add_file_to_context` helper method
+  - [x] Add support for different path types
+  - [x] Write unit tests for context file processing
+  - [x] Support for home directory expansion
+  - [x] Support for glob patterns
+  - [x] Support for relative paths
 
 - [ ] **Prompt 5: Extend the Command Enum and Parser**
   - [ ] Add `Context` variant to `Command` enum
