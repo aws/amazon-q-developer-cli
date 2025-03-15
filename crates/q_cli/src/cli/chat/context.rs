@@ -162,6 +162,96 @@ impl ContextManager {
         
         Ok(())
     }
+    
+    /// Add paths to the context configuration.
+    ///
+    /// # Arguments
+    /// * `paths` - List of paths to add
+    /// * `global` - If true, add to global configuration; otherwise, add to current profile configuration
+    ///
+    /// # Returns
+    /// A Result indicating success or an error
+    pub fn add_paths(&mut self, paths: Vec<String>, global: bool) -> Result<()> {
+        // Get reference to the appropriate config
+        let config = if global {
+            &mut self.global_config
+        } else {
+            &mut self.profile_config
+        };
+        
+        // Add each path, checking for duplicates
+        for path in paths {
+            if config.paths.contains(&path) {
+                return Err(eyre!("Path '{}' already exists in the context", path));
+            }
+            config.paths.push(path);
+        }
+        
+        // Save the updated configuration
+        self.save_config(global)?;
+        
+        Ok(())
+    }
+    
+    /// Remove paths from the context configuration.
+    ///
+    /// # Arguments
+    /// * `paths` - List of paths to remove
+    /// * `global` - If true, remove from global configuration; otherwise, remove from current profile configuration
+    ///
+    /// # Returns
+    /// A Result indicating success or an error
+    pub fn remove_paths(&mut self, paths: Vec<String>, global: bool) -> Result<()> {
+        // Get reference to the appropriate config
+        let config = if global {
+            &mut self.global_config
+        } else {
+            &mut self.profile_config
+        };
+        
+        // Track if any paths were removed
+        let mut removed_any = false;
+        
+        // Remove each path if it exists
+        for path in paths {
+            let original_len = config.paths.len();
+            config.paths.retain(|p| p != &path);
+            
+            if config.paths.len() < original_len {
+                removed_any = true;
+            }
+        }
+        
+        if !removed_any {
+            return Err(eyre!("None of the specified paths were found in the context"));
+        }
+        
+        // Save the updated configuration
+        self.save_config(global)?;
+        
+        Ok(())
+    }
+    
+    /// Clear all paths from the context configuration.
+    ///
+    /// # Arguments
+    /// * `global` - If true, clear global configuration; otherwise, clear current profile configuration
+    ///
+    /// # Returns
+    /// A Result indicating success or an error
+    pub fn clear(&mut self, global: bool) -> Result<()> {
+        // Clear the appropriate config
+        if global {
+            self.global_config.paths.clear();
+        } else {
+            self.profile_config.paths.clear();
+        }
+        
+        // Save the updated configuration
+        self.save_config(global)?;
+        
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -355,6 +445,153 @@ mod tests {
         
         assert!(config_dir.exists());
         assert!(profiles_dir.exists());
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_add_paths_global() -> Result<()> {
+        // Create a test context manager
+        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        
+        // Add paths to global config
+        let paths = vec!["test/path1.md".to_string(), "test/path2.md".to_string()];
+        manager.add_paths(paths, true)?;
+        
+        // Verify paths were added
+        assert_eq!(manager.global_config.paths.len(), 4);
+        assert_eq!(manager.global_config.paths[2], "test/path1.md");
+        assert_eq!(manager.global_config.paths[3], "test/path2.md");
+        
+        // Verify the file was created
+        let global_path = manager.config_dir.join("global.json");
+        assert!(global_path.exists());
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_add_paths_profile() -> Result<()> {
+        // Create a test context manager
+        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        
+        // Add paths to profile config
+        let paths = vec!["test/path1.md".to_string(), "test/path2.md".to_string()];
+        manager.add_paths(paths, false)?;
+        
+        // Verify paths were added
+        assert_eq!(manager.profile_config.paths.len(), 2);
+        assert_eq!(manager.profile_config.paths[0], "test/path1.md");
+        assert_eq!(manager.profile_config.paths[1], "test/path2.md");
+        
+        // Verify the file was created
+        let profile_path = manager.profiles_dir.join("default.json");
+        assert!(profile_path.exists());
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_add_paths_duplicate() -> Result<()> {
+        // Create a test context manager
+        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        
+        // Add a path to profile config
+        let paths = vec!["test/path1.md".to_string()];
+        manager.add_paths(paths.clone(), false)?;
+        
+        // Try to add the same path again
+        let result = manager.add_paths(paths, false);
+        
+        // Verify it returns an error
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("already exists"));
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_remove_paths_global() -> Result<()> {
+        // Create a test context manager
+        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        
+        // Remove a path from global config
+        let paths = vec!["AmazonQ.md".to_string()];
+        manager.remove_paths(paths, true)?;
+        
+        // Verify path was removed
+        assert_eq!(manager.global_config.paths.len(), 1);
+        assert_eq!(manager.global_config.paths[0], "~/.aws/amazonq/rules/**/*.md");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_remove_paths_profile() -> Result<()> {
+        // Create a test context manager
+        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        
+        // Add paths to profile config
+        let add_paths = vec!["test/path1.md".to_string(), "test/path2.md".to_string()];
+        manager.add_paths(add_paths, false)?;
+        
+        // Remove a path
+        let remove_paths = vec!["test/path1.md".to_string()];
+        manager.remove_paths(remove_paths, false)?;
+        
+        // Verify path was removed
+        assert_eq!(manager.profile_config.paths.len(), 1);
+        assert_eq!(manager.profile_config.paths[0], "test/path2.md");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_remove_paths_not_found() -> Result<()> {
+        // Create a test context manager
+        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        
+        // Try to remove a path that doesn't exist
+        let paths = vec!["nonexistent/path.md".to_string()];
+        let result = manager.remove_paths(paths, true);
+        
+        // Verify it returns an error
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("None of the specified paths were found"));
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_clear_global() -> Result<()> {
+        // Create a test context manager
+        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        
+        // Clear global config
+        manager.clear(true)?;
+        
+        // Verify paths were cleared
+        assert_eq!(manager.global_config.paths.len(), 0);
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_clear_profile() -> Result<()> {
+        // Create a test context manager
+        let (mut manager, _temp_dir) = create_test_context_manager()?;
+        
+        // Add paths to profile config
+        let paths = vec!["test/path1.md".to_string(), "test/path2.md".to_string()];
+        manager.add_paths(paths, false)?;
+        
+        // Clear profile config
+        manager.clear(false)?;
+        
+        // Verify paths were cleared
+        assert_eq!(manager.profile_config.paths.len(), 0);
         
         Ok(())
     }
