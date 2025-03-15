@@ -417,11 +417,11 @@ impl ContextManager {
             return Err(eyre!("Profile name cannot be empty"));
         }
 
-        // Check if name contains only allowed characters
-        let re = Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap();
+        // Check if name contains only allowed characters and starts with an alphanumeric character
+        let re = Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$").unwrap();
         if !re.is_match(name) {
             return Err(eyre!(
-                "Profile name can only contain alphanumeric characters, hyphens, and underscores"
+                "Profile name must start with an alphanumeric character and can only contain alphanumeric characters, hyphens, and underscores"
             ));
         }
 
@@ -855,7 +855,23 @@ fn test_create_profile_invalid_name() -> Result<()> {
     // Verify it returns an error
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("can only contain"));
+    assert!(err.contains("must start with an alphanumeric character"));
+
+    // Try to create a profile with a name starting with underscore
+    let result = manager.create_profile("_invalid");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("must start with an alphanumeric character"));
+
+    // Try to create a profile with a name starting with hyphen
+    let result = manager.create_profile("-invalid");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("must start with an alphanumeric character"));
 
     Ok(())
 }
@@ -1008,12 +1024,16 @@ fn test_validate_profile_name() -> Result<()> {
     assert!(ContextManager::validate_profile_name("valid-name").is_ok());
     assert!(ContextManager::validate_profile_name("valid_name").is_ok());
     assert!(ContextManager::validate_profile_name("valid123").is_ok());
+    assert!(ContextManager::validate_profile_name("1valid").is_ok());
+    assert!(ContextManager::validate_profile_name("9test").is_ok());
 
     // Test invalid names
     assert!(ContextManager::validate_profile_name("").is_err());
     assert!(ContextManager::validate_profile_name("invalid/name").is_err());
     assert!(ContextManager::validate_profile_name("invalid.name").is_err());
     assert!(ContextManager::validate_profile_name("invalid name").is_err());
+    assert!(ContextManager::validate_profile_name("_invalid").is_err());
+    assert!(ContextManager::validate_profile_name("-invalid").is_err());
 
     Ok(())
 }
