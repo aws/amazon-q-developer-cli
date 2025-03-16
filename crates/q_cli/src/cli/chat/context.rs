@@ -208,7 +208,8 @@ impl ContextManager {
             // Check each path to make sure it exists or matches at least one file
             for path in &paths {
                 // We're using a temporary context_files vector just for validation
-                match Self::process_path(path, &cwd, &mut context_files, false) {
+                // Pass is_validation=true to ensure we error if glob patterns don't match any files
+                match Self::process_path(path, &cwd, &mut context_files, false, true) {
                     Ok(_) => {}, // Path is valid
                     Err(e) => return Err(eyre!("Invalid path '{}': {}. Use --force to add anyway.", path, e)),
                 }
@@ -503,12 +504,14 @@ impl ContextManager {
 
         // Process global paths first
         for path in &self.global_config.paths {
-            Self::process_path(path, &cwd, &mut context_files, force)?;
+            // Use is_validation=false for get_context_files to handle non-matching globs gracefully
+            Self::process_path(path, &cwd, &mut context_files, force, false)?;
         }
 
         // Then process profile-specific paths
         for path in &self.profile_config.paths {
-            Self::process_path(path, &cwd, &mut context_files, force)?;
+            // Use is_validation=false for get_context_files to handle non-matching globs gracefully
+            Self::process_path(path, &cwd, &mut context_files, force, false)?;
         }
 
         Ok(context_files)
@@ -528,10 +531,17 @@ impl ContextManager {
     /// * `cwd` - The current working directory for resolving relative paths
     /// * `context_files` - The collection to add files to
     /// * `force` - If true, include paths that don't exist yet
+    /// * `is_validation` - If true, error when glob patterns don't match; if false, silently skip
     ///
     /// # Returns
     /// A Result indicating success or an error
-    fn process_path(path: &str, cwd: &Path, context_files: &mut Vec<(String, String)>, force: bool) -> Result<()> {
+    fn process_path(
+        path: &str,
+        cwd: &Path,
+        context_files: &mut Vec<(String, String)>,
+        force: bool,
+        is_validation: bool,
+    ) -> Result<()> {
         // Expand ~ to home directory
         let expanded_path = if path.starts_with('~') {
             if let Some(home_dir) = dirs::home_dir() {
@@ -571,9 +581,12 @@ impl ContextManager {
                         }
                     }
 
-                    if !found_any && !force {
+                    if !found_any && !force && is_validation {
+                        // When validating paths (e.g., for /context add), error if no files match
                         return Err(eyre!("No files found matching glob pattern '{}'", full_path));
                     }
+                    // When just showing expanded files (e.g., for /context show --expand),
+                    // silently skip non-matching patterns (don't add anything to context_files)
                 },
                 Err(e) => return Err(eyre!("Invalid glob pattern '{}': {}", full_path, e)),
             }
@@ -1447,7 +1460,7 @@ fn test_process_path_glob() -> Result<()> {
     // Process a glob pattern that matches markdown files
     let mut context_files = Vec::new();
     let glob_pattern = format!("{}/*.md", test_dir.to_string_lossy());
-    ContextManager::process_path(&glob_pattern, &env::current_dir()?, &mut context_files, false)?;
+    ContextManager::process_path(&glob_pattern, &env::current_dir()?, &mut context_files, false, false)?;
 
     // Verify only markdown files were added
     assert_eq!(context_files.len(), 3);
@@ -1488,6 +1501,7 @@ fn test_process_path_directory() -> Result<()> {
         &test_dir.to_string_lossy(),
         &env::current_dir()?,
         &mut context_files,
+        false,
         false,
     )?;
 
@@ -1538,7 +1552,13 @@ fn test_home_directory_expansion() -> Result<()> {
 
     // Process a path with ~ expansion
     let mut context_files = Vec::new();
-    ContextManager::process_path("~/home_file.txt", &env::current_dir()?, &mut context_files, false)?;
+    ContextManager::process_path(
+        "~/home_file.txt",
+        &env::current_dir()?,
+        &mut context_files,
+        false,
+        false,
+    )?;
 
     // Verify the file was added correctly
     assert_eq!(context_files.len(), 1);
@@ -1566,7 +1586,7 @@ fn test_relative_path_resolution() -> Result<()> {
 
     // Process a relative path
     let mut context_files = Vec::new();
-    ContextManager::process_path("relative_file.txt", &temp_dir.path(), &mut context_files, false)?;
+    ContextManager::process_path("relative_file.txt", &temp_dir.path(), &mut context_files, false, false)?;
 
     // Restore the current directory
     env::set_current_dir(current_dir)?;
@@ -1575,6 +1595,33 @@ fn test_relative_path_resolution() -> Result<()> {
     assert_eq!(context_files.len(), 1);
     assert_eq!(context_files[0].0, file_path.to_string_lossy().to_string());
     assert_eq!(context_files[0].1, "Relative file content");
+
+    Ok(())
+}
+#[test]
+fn test_process_path_glob_validation() -> Result<()> {
+    // Create a test context manager
+    let (_manager, temp_dir) = tests::create_test_context_manager()?;
+
+    // Create a test directory
+    let test_dir = temp_dir.path().join("test_glob_validation");
+    fs::create_dir_all(&test_dir)?;
+
+    // Create a glob pattern that doesn't match any files
+    let glob_pattern = format!("{}/*.nonexistent", test_dir.to_string_lossy());
+
+    // Test with is_validation=true (should error)
+    let mut context_files = Vec::new();
+    let result = ContextManager::process_path(&glob_pattern, &env::current_dir()?, &mut context_files, false, true);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("No files found matching glob pattern"));
+
+    // Test with is_validation=false (should silently skip)
+    let mut context_files = Vec::new();
+    let result = ContextManager::process_path(&glob_pattern, &env::current_dir()?, &mut context_files, false, false);
+    assert!(result.is_ok());
+    assert_eq!(context_files.len(), 0); // No files should be added
 
     Ok(())
 }
