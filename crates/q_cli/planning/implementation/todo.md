@@ -73,11 +73,11 @@ This checklist tracks the implementation progress of the context management feat
   - [x] Add terminal styling for profile indicator
   - [x] Write unit tests for prompt generation
 
-- [ ] **Prompt 11: Add CLI Flag for Profile**
-  - [ ] Update CLI entry point for `--profile` flag
-  - [ ] Modify `chat` function to use specified profile
-  - [ ] Add error handling for non-existent profiles
-  - [ ] Write unit tests for CLI flag handling
+- [x] **Prompt 11: Add CLI Flag for Profile**
+  - [x] Update CLI entry point for `--profile` flag
+  - [x] Modify `chat` function to use specified profile
+  - [x] Add error handling for non-existent profiles
+  - [x] Write unit tests for CLI flag handling
 
 - [ ] **Prompt 12: Integration Testing**
   - [ ] Test end-to-end flow for adding context files

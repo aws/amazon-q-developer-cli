@@ -584,4 +584,34 @@ mod test {
             })
         );
     }
+
+    #[test]
+    fn test_chat_with_profile() {
+        assert_parse!(["chat", "--profile", "my-profile"], CliRootCommands::Chat {
+            accept_all: false,
+            input: None,
+            profile: Some("my-profile".to_string()),
+        });
+    }
+
+    #[test]
+    fn test_chat_with_profile_and_input() {
+        assert_parse!(["chat", "--profile", "my-profile", "Hello"], CliRootCommands::Chat {
+            accept_all: false,
+            input: Some("Hello".to_string()),
+            profile: Some("my-profile".to_string()),
+        });
+    }
+
+    #[test]
+    fn test_chat_with_profile_and_accept_all() {
+        assert_parse!(
+            ["chat", "--profile", "my-profile", "--accept-all"],
+            CliRootCommands::Chat {
+                accept_all: true,
+                input: None,
+                profile: Some("my-profile".to_string()),
+            }
+        );
+    }
 }

@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use command::Command;
+use context::ContextManager;
 use conversation_state::ConversationState;
 use crossterm::style::{
     Attribute,
@@ -71,6 +72,7 @@ use tracing::{
     debug,
     error,
     trace,
+    warn,
 };
 use winnow::Partial;
 use winnow::stream::Offset;
@@ -147,6 +149,27 @@ pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<Strin
         Ok(json) => create_stream(serde_json::from_str(std::fs::read_to_string(json)?.as_str())?),
         _ => StreamingClient::new().await?,
     };
+
+    // If profile is specified, verify it exists before starting the chat
+    if let Some(ref profile_name) = profile {
+        // Create a temporary context manager to check if the profile exists
+        match ContextManager::new() {
+            Ok(context_manager) => {
+                let profiles = context_manager.list_profiles()?;
+                if !profiles.contains(profile_name) {
+                    bail!(
+                        "Profile '{}' does not exist. Available profiles: {}",
+                        profile_name,
+                        profiles.join(", ")
+                    );
+                }
+            },
+            Err(e) => {
+                warn!("Failed to initialize context manager to verify profile: {}", e);
+                // Continue without verification if context manager can't be initialized
+            },
+        }
+    }
 
     let mut chat = ChatContext::new(
         ctx,
