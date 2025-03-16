@@ -1,0 +1,1 @@
+This folder stores files used while developing new Q CLI features (research, design, and implementation docs).

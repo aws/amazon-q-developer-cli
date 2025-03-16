@@ -2,7 +2,7 @@
 
 I have "cheat sheets" I've created to help Q understand Amazon internals and be able to interact with different systems like internal search and internal code browser. Some cheat sheets are general (README.md and development.md) and some are very specific (golang.md). While I have some success with telling Q to read these files, I have to keep telling Q to read and re-read them periodically as they fall outside the context window. I don't have visibility into when this is going to happen so I kind of have to guess or I just sort of notice that it's happening based on Q's behavior suddenly taking a turn for the worse.
 
-Given context size is limited, I don't always need all cheat sheets for every given task. For example, I only need Q to read golang.md when working on a BrazilMakeGo package. Also, there are certain docs that I want in the context only while working on a specific task. For example, I have a convention where I'm creating a folder named after a SIM id and using it to store planning docs (research summary, implementation plan, todo.md, etc). I want these in context just while working on that specific task.
+Given context size is limited, I don't always need all cheat sheets for every given task. For example, I only need Q to read golang.md when working on a Go package. Also, there are certain docs that I want in the context only while working on a specific task. For example, I have a convention where I'm creating a folder named after a task id and using it to store planning docs (research summary, implementation plan, todo.md, etc). I want these in context just while working on that specific task.
 
 I'd like all of these docs to be in source control, but the location can vary given we work across many repos (packages) within Amazon.
 
@@ -25,7 +25,7 @@ Some concepts to understand:
 
 ### Example Walkthrough
 
-I'm an Amazon builder who's been assigned a SIM task to complete. Although my team generally uses Java, I've been asked to implement a Lambda function in Go for performance reasons. I start q chat and check my current context:
+I'm an Amazon builder who's been assigned a task to complete. Although my team generally uses Java, I've been asked to implement a Lambda function in Go for performance reasons. I start q chat and check my current context:
 
 ```
 > /context show
@@ -49,7 +49,6 @@ Added /path/to/MyTeamQRules/**/*.md to global context
 current profile: default
 
 global:
-    ~/.toolbox/tools/q/amazonstdlib/AmazonQ.md
     ~/.aws/amazonq/rules/**/*.md
     AmazonQ.md
     /path/to/MyTeamQLib/**/*.md
@@ -69,7 +68,6 @@ Added /path/to/MyTeamServiceDocs/AmazonQ.md to my-team-service context
 current profile: my-team-service
 
 global:
-    ~/.toolbox/tools/q/amazonstdlib/builder.md
     ~/.aws/amazonq/rules/**/*.md
     AmazonQ.md
     /path/to/MyTeamQLib/**/*.md
@@ -81,7 +79,7 @@ Now I start working on my task:
 
 > I have a new task: P129406383
 
-Because of all the existing context, that's all I type and Q knows to follow team conventions and create a folder called P129406383 in MyTeamServiceDocs/tasks folder, download the SIM contents, and save it to a file in that folder. I'll then add the SIM folder to my profile context:
+Because of all the existing context, that's all I type and Q knows to follow team conventions and create a folder called P129406383 in MyTeamServiceDocs/tasks folder, download the task contents, and save it to a file in that folder. I'll then add the task folder to my profile context:
 
 > /context add /path/to/MyTeamServiceDocs/tasks/P129406383/**/*
 Added /path/to/MyTeamServiceDocs/tasks/P129406383/**/* to my-team-service context
@@ -89,7 +87,6 @@ Added /path/to/MyTeamServiceDocs/tasks/P129406383/**/* to my-team-service contex
 current profile: my-team-service
 
 global:
-    ~/.toolbox/tools/q/amazonstdlib/builder.md
     ~/.aws/amazonq/rules/**/*.md
     AmazonQ.md
     /path/to/MyTeamQLib/**/*.md
@@ -104,4 +101,4 @@ Now I can start implementation planning for the task:
 
 > Create an implementation plan for this task
 
-We don't have to specify what the task is, because the SIM folder which contains the SIM details in a file is already in the context. Also, either the team Q library or (ideally) amazonstdlib describes a process for creating an implementation plan. It causes the agent to start asking questions with the goal of getting to a detailed implementation plan, prompt plan, and todo checklist for the task. The agent saves planning artifact files to the P129406383 folder so they're automatically added to the context.
+We don't have to specify what the task is, because the task folder which contains the task details in a file is already in the context. Also, either the team Q library or (ideally) a centralized library describes a process for creating an implementation plan. It causes the agent to start asking questions with the goal of getting to a detailed implementation plan, prompt plan, and todo checklist for the task. The agent saves planning artifact files to the P129406383 folder so they're automatically added to the context.
