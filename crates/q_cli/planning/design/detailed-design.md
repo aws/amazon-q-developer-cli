@@ -11,9 +11,11 @@ This document provides a comprehensive design for implementing the context manag
 3. [Data Structures](#data-structures)
 4. [File Storage](#file-storage)
 5. [Command Interface](#command-interface)
-6. [Implementation Plan](#implementation-plan)
-7. [Testing Strategy](#testing-strategy)
-8. [Future Enhancements](#future-enhancements)
+6. [Implementation Details](#implementation-details)
+7. [Context File Inclusion](#context-file-inclusion)
+8. [Error Handling](#error-handling)
+9. [Testing Strategy](#testing-strategy)
+10. [Future Enhancements](#future-enhancements)
 
 ## Feature Requirements
 
@@ -29,10 +31,12 @@ The context management feature must:
 8. Support switching between profiles
 9. Allow creating and deleting profiles
 10. Support specifying a profile at startup via CLI flag
+11. Support adding non-existent files with a force flag
+12. Support renaming profiles
 
 ## Architecture
 
-The context management feature will be implemented as a new module within the existing Amazon Q Developer CLI codebase. The main components are:
+The context management feature is implemented as a new module within the existing Amazon Q Developer CLI codebase. The main components are:
 
 1. **Context Manager**: Core component responsible for managing context files and profiles
 2. **Configuration Storage**: JSON files for storing global and profile-specific configurations
@@ -57,6 +61,8 @@ The context management feature will be implemented as a new module within the ex
 
 ### Context Configuration
 
+The `ContextConfig` struct stores a list of file paths or glob patterns:
+
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ContextConfig {
@@ -65,6 +71,8 @@ pub struct ContextConfig {
 ```
 
 ### Context Manager
+
+The `ContextManager` struct manages the context configurations:
 
 ```rust
 #[derive(Debug, Clone)]
@@ -79,22 +87,23 @@ pub struct ContextManager {
 
 ### Command Enum Extension
 
+The command system is extended with a new `Context` variant and `ContextSubcommand` enum:
+
 ```rust
 pub enum Command {
-    Ask { prompt: String },
-    Execute { command: String },
-    Clear,
-    Help,
-    AcceptAll,
-    Quit,
+    // Existing commands...
     Context { subcommand: ContextSubcommand },
 }
 
 pub enum ContextSubcommand {
-    Show,
-    Add { global: bool, paths: Vec<String> },
+    Show { expand: bool },
+    Add { global: bool, force: bool, paths: Vec<String> },
     Remove { global: bool, paths: Vec<String> },
-    Profile { delete: Option<String>, create: Option<String> },
+    Profile { 
+        delete: Option<String>, 
+        create: Option<String>,
+        rename: Option<(String, String)>, // (old_name, new_name)
+    },
     Switch { name: String, create: bool },
     Clear { global: bool },
 }
@@ -104,7 +113,7 @@ pub enum ContextSubcommand {
 
 ### Directory Structure
 
-The context management feature will use the following directory structure for storing configurations:
+The context management feature uses the following directory structure for storing configurations:
 
 ```
 ~/.aws/amazonq/context/
@@ -117,7 +126,7 @@ The context management feature will use the following directory structure for st
 
 ### File Format
 
-The configuration files will use a simple JSON format:
+The configuration files use a simple JSON format:
 
 **Global Configuration (global.json)**:
 ```json
@@ -141,309 +150,201 @@ The configuration files will use a simple JSON format:
 
 ## Command Interface
 
-The context management feature will extend the existing slash command system with a new `/context` command and several subcommands.
+The context management feature extends the existing slash command system with a new `/context` command and several subcommands.
 
 ### Command Syntax
 
 ```
-/context show                                  # Display current context configuration
-/context add [--global] <path> [<path> ...]    # Add file(s) to context
+/context show [--expand]                       # Display current context configuration
+/context add [--global] [--force] <path> [<path> ...]    # Add file(s) to context
 /context rm [--global] <path> [<path> ...]     # Remove file(s) from context
 /context profile                               # List available profiles
 /context profile --create <name>               # Create a new profile
 /context profile --delete <name>               # Delete a profile
+/context profile --rename <old_name> <new_name> # Rename a profile
 /context switch <name> [--create]              # Switch to a different profile
 /context clear [--global]                      # Clear all files from context
 ```
 
-### Command Parsing
+## Implementation Details
 
-The command parsing will be implemented by extending the existing `Command::parse` method in `src/cli/chat/command.rs`:
+### Files to Modify
 
-```rust
-pub fn parse(input: &str) -> Result<Self, String> {
-    let input = input.trim();
+1. `src/cli/chat/mod.rs`
+   - Add context management command handling
+   - Update help text
+   - Update chat initialization to support profiles
 
-    if let Some(command) = input.strip_prefix("/") {
-        let parts: Vec<&str> = command.split_whitespace().collect();
-        
-        if parts.is_empty() {
-            return Err("Empty command".to_string());
-        }
-        
-        return Ok(match parts[0].to_lowercase().as_str() {
-            "clear" => Self::Clear,
-            "help" => Self::Help,
-            "acceptall" => Self::AcceptAll,
-            "q" | "exit" | "quit" => Self::Quit,
-            "context" => {
-                if parts.len() < 2 {
-                    return Err("Missing subcommand for /context".to_string());
-                }
-                
-                match parts[1].to_lowercase().as_str() {
-                    "show" => Self::Context { subcommand: ContextSubcommand::Show },
-                    "add" => {
-                        // Parse add command with paths and --global flag
-                        let mut global = false;
-                        let mut paths = Vec::new();
-                        
-                        for part in &parts[2..] {
-                            if *part == "--global" {
-                                global = true;
-                            } else {
-                                paths.push(part.to_string());
-                            }
-                        }
-                        
-                        if paths.is_empty() {
-                            return Err("No paths specified for /context add".to_string());
-                        }
-                        
-                        Self::Context { subcommand: ContextSubcommand::Add { global, paths } }
-                    },
-                    // Other subcommands...
-                    _ => return Err(format!("Unknown context subcommand: {}", parts[1])),
-                }
-            },
-            _ => return Err(format!("Unknown command: {}", input)),
-        });
-    }
+2. `src/cli/chat/command.rs`
+   - Add `Context` variant to `Command` enum
+   - Add `ContextSubcommand` enum
+   - Update command parsing logic
 
-    // Rest of the parsing logic...
-}
+3. `src/cli/chat/conversation_state.rs`
+   - Add `context_manager` field to `ConversationState`
+   - Update message creation to include context files
+
+4. `src/cli/chat/prompt.rs`
+   - Update command completion
+   - Add profile indicator to prompt
+
+5. `src/cli/mod.rs`
+   - Add `--profile` flag to CLI options
+
+### Files to Add
+
+1. `src/cli/chat/context.rs`
+   - Implement `ContextConfig` struct
+   - Implement `ContextManager` struct
+   - Implement file and profile management functions
+
+### Key Components
+
+1. **Context Manager**
+   - Manages global and profile-specific context configurations
+   - Handles file operations and path resolution
+   - Provides profile management functions
+
+2. **Command Parser**
+   - Parses `/context` commands and their arguments
+   - Validates command syntax and parameters
+
+3. **Conversation Integration**
+   - Includes context files in chat messages using the format described in the [Context File Inclusion](#context-file-inclusion) section
+   - Prepends the formatted context to the user's message before sending to the LLM
+
+4. **Command Prompt**
+   - Displays active profile in the prompt
+   - Uses color to distinguish profile indicator
+
+5. **CLI Integration**
+   - Supports `--profile` flag for specifying profile at startup
+   - Validates profile existence before starting chat
+
+## Context File Inclusion
+
+When a user sends a message, the context management feature automatically includes the content of all configured context files at the beginning of the message. This is done in a structured format that allows the LLM to understand the context while keeping it separate from the user's actual message.
+
+### Format Structure
+
+Context files are included in the following format:
+
+```
+--- CONTEXT FILES BEGIN ---
+[/path/to/file1.md]
+Content of file1...
+
+[/path/to/file2.md]
+Content of file2...
+--- CONTEXT FILES END ---
+
+<user's actual message>
 ```
 
-### Command Completion
+This structure:
+1. Clearly marks the beginning and end of the context section
+2. Includes the full path of each file for reference
+3. Preserves the original content of each file
+4. Separates the context from the user's message with a blank line
 
-The command completion will be implemented by extending the `COMMANDS` array in `src/cli/chat/prompt.rs`:
+### Implementation
 
-```rust
-const COMMANDS: &[&str] = &[
-    "/clear", 
-    "/help", 
-    "/acceptall", 
-    "/quit",
-    "/context",
-    "/context show",
-    "/context add",
-    "/context rm",
-    "/context profile",
-    "/context switch",
-    "/context clear"
-];
-```
+The context file inclusion is implemented in the `append_new_user_message` method of the `ConversationState` struct:
 
-### Help Text
+1. When a user sends a message, the method retrieves all context files using `context_manager.get_context_files()`
+2. It formats the files with the header, file paths, content, and footer
+3. It prepends this formatted context to the user's message
+4. The combined message is then sent to the LLM
 
-The help text will be updated to include information about the context management feature:
+### Size Considerations
 
-```rust
-const HELP_TEXT: &str = color_print::cstr! {"
+Since LLMs have token limits, the context management feature needs to be mindful of the total size of included files:
 
-<magenta,em>q</magenta,em> (Amazon Q Chat)
+1. Very large files may need to be truncated
+2. Users should be warned if their context is approaching token limits
+3. Future enhancements may include more sophisticated handling of large contexts
 
-<em>/clear</em>        <black!>Clear the conversation history</black!>
-<em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
-<em>/help</em>         <black!>Show this help dialogue</black!>
-<em>/quit</em>         <black!>Quit the application</black!>
-<em>/context</em>      <black!>Manage context files for the chat session</black!>
-  <em>show</em>        <black!>Display current context configuration</black!>
-  <em>add</em>         <black!>Add file(s) to context [--global]</black!>
-  <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
-  <em>profile</em>     <black!>List, create [--create], or delete [--delete] context profiles</black!>
-  <em>switch</em>      <black!>Switch to a different context profile [--create]</black!>
-  <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
+## Error Handling
 
-<em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
+### Command Errors
 
-"};
-```
+1. **Missing Subcommand**
+   - Error: "Missing subcommand for /context. Try /help for available commands."
+   - Occurs when user types `/context` without a subcommand
 
-## Implementation Plan
+2. **Unknown Subcommand**
+   - Error: "Unknown context subcommand: {subcommand}"
+   - Occurs when user provides an invalid subcommand
 
-The implementation will be divided into several phases to ensure a structured and testable approach:
+3. **Invalid Command Options**
+   - Error: "Unknown option for /context {subcommand}: {option}"
+   - Occurs when user provides an invalid option for a subcommand
 
-### Phase 1: Core Context Manager
+### Path Management Errors
 
-1. Create a new module `src/cli/chat/context.rs` with the `ContextConfig` and `ContextManager` structs
-2. Implement basic file operations for reading and writing configuration files
-3. Implement methods for managing paths in global and profile-specific contexts
-4. Implement methods for switching between profiles
-5. Add unit tests for the core functionality
+1. **No Paths Specified**
+   - Error: "No paths specified for /context add"
+   - Occurs when user tries to add paths without specifying any
 
-```rust
-impl ContextManager {
-    // Initialize the context manager
-    pub fn new() -> Result<Self> {
-        let config_dir = dirs::home_dir()
-            .ok_or_else(|| eyre!("Could not determine home directory"))?
-            .join(".aws")
-            .join("amazonq")
-            .join("context");
-        
-        let profiles_dir = config_dir.join("profiles");
-        
-        // Create directories if they don't exist
-        fs::create_dir_all(&profiles_dir)?;
-        
-        // Load global configuration
-        let global_config = Self::load_global_config(&config_dir)?;
-        
-        // Load default profile
-        let current_profile = "default".to_string();
-        let profile_config = Self::load_profile_config(&profiles_dir, &current_profile)?;
-        
-        Ok(Self {
-            config_dir,
-            profiles_dir,
-            global_config,
-            current_profile,
-            profile_config,
-        })
-    }
-    
-    // Load global configuration
-    fn load_global_config(config_dir: &Path) -> Result<ContextConfig> {
-        let global_path = config_dir.join("global.json");
-        
-        if global_path.exists() {
-            let file = File::open(&global_path)?;
-            let config: ContextConfig = serde_json::from_reader(file)?;
-            Ok(config)
-        } else {
-            // Default global configuration
-            Ok(ContextConfig::default())
-        }
-    }
-    
-    // Additional methods...
-}
-```
+2. **Invalid Path**
+   - Error: "Invalid path '{path}': {reason}. Use --force to add anyway."
+   - Occurs when a specified path doesn't exist or is invalid
 
-### Phase 2: Command Interface
+3. **Duplicate Path**
+   - Error: "Path '{path}' already exists in the context"
+   - Occurs when trying to add a path that's already in the context
 
-1. Update the `Command` enum in `src/cli/chat/command.rs` to include the `Context` variant
-2. Implement parsing logic for the `/context` command and its subcommands
-3. Update the command completion in `src/cli/chat/prompt.rs`
-4. Update the help text in `src/cli/chat/mod.rs`
-5. Add unit tests for command parsing
+4. **Path Not Found**
+   - Error: "None of the specified paths were found in the context"
+   - Occurs when trying to remove paths that don't exist in the context
 
-### Phase 3: Conversation Integration
+5. **Glob Pattern No Matches**
+   - Error: "No files found matching glob pattern '{pattern}'"
+   - Occurs when a glob pattern doesn't match any files
 
-1. Update the `ConversationState` struct to include a `ContextManager`
-2. Modify the `append_new_user_message` method to include context files in the chat message
-3. Update the command prompt to indicate the active profile
-4. Add unit tests for the conversation integration
+### Profile Management Errors
 
-```rust
-// Update ConversationState struct
-#[derive(Debug, Clone)]
-pub struct ConversationState {
-    /// Randomly generated on creation.
-    conversation_id: String,
-    /// The next user message to be sent as part of the conversation. Required to be [Some] before
-    /// calling [Self::as_sendable_conversation_state].
-    pub next_message: Option<UserInputMessage>,
-    history: VecDeque<ChatMessage>,
-    tools: Vec<Tool>,
-    /// Context manager for handling sticky context files
-    pub context_manager: Option<ContextManager>,
-}
+1. **Profile Already Exists**
+   - Error: "Profile '{name}' already exists"
+   - Occurs when trying to create a profile that already exists
 
-impl ConversationState {
-    pub fn new(tool_config: HashMap<String, ToolSpec>, profile: Option<String>) -> Self {
-        let conversation_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
-        info!(?conversation_id, "Generated new conversation id");
-        
-        // Initialize context manager
-        let context_manager = match ContextManager::new() {
-            Ok(mut manager) => {
-                // Switch to specified profile if provided
-                if let Some(profile_name) = profile {
-                    if let Err(e) = manager.switch_profile(&profile_name, false) {
-                        warn!("Failed to switch to profile {}: {}", profile_name, e);
-                    }
-                }
-                Some(manager)
-            },
-            Err(e) => {
-                warn!("Failed to initialize context manager: {}", e);
-                None
-            },
-        };
-        
-        Self {
-            conversation_id,
-            next_message: None,
-            history: VecDeque::new(),
-            tools: tool_config
-                .into_values()
-                .map(|v| {
-                    Tool::ToolSpecification(ToolSpecification {
-                        name: v.name,
-                        description: v.description,
-                        input_schema: v.input_schema.into(),
-                    })
-                })
-                .collect(),
-            context_manager,
-        }
-    }
-    
-    // Other methods...
-}
-```
+2. **Profile Not Found**
+   - Error: "Profile '{name}' does not exist. Use --create to create it"
+   - Occurs when trying to switch to a non-existent profile
 
-### Phase 4: CLI Flag
+3. **Cannot Delete Default Profile**
+   - Error: "Cannot delete the default profile"
+   - Occurs when trying to delete the default profile
 
-1. Update the CLI entry point to accept the `--profile` flag
-2. Implement logic for initializing the `ContextManager` with the specified profile
-3. Add error handling for non-existent profiles
-4. Add unit tests for the CLI flag
+4. **Cannot Delete Active Profile**
+   - Error: "Cannot delete the active profile. Switch to another profile first"
+   - Occurs when trying to delete the currently active profile
 
-```rust
-// Update CliRootCommands enum in src/cli/mod.rs
-#[derive(Debug, PartialEq, Subcommand)]
-pub enum CliRootCommands {
-    // Existing commands...
-    
-    /// Chat with Amazon Q
-    Chat {
-        /// Toggles acceptance prompting for the session
-        #[arg(long)]
-        accept_all: bool,
-        
-        /// Input to send to Amazon Q
-        input: Option<String>,
-        
-        /// Context profile to use
-        #[arg(long)]
-        profile: Option<String>,
-    },
-    
-    // Other commands...
-}
+5. **Invalid Profile Name**
+   - Error: "Profile name must start with an alphanumeric character and can only contain alphanumeric characters, hyphens, and underscores"
+   - Occurs when creating a profile with an invalid name
 
-// Update chat function in src/cli/chat/mod.rs
-pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<String>) -> Result<ExitCode> {
-    // Existing code...
-    
-    let mut conversation_state = ConversationState::new(tool_config, profile);
-    
-    // Rest of the function...
-}
+6. **Cannot Rename Default Profile**
+   - Error: "Cannot rename the default profile"
+   - Occurs when trying to rename the default profile
 
-// Update execute method in src/cli/mod.rs
-match self.subcommand {
-    // Other commands...
-    CliRootCommands::Chat { accept_all, input, profile } => chat::chat(input, accept_all, profile).await,
-    // Other commands...
-}
+7. **Cannot Rename to Default**
+   - Error: "Cannot rename to 'default' as it's a reserved profile name"
+   - Occurs when trying to rename a profile to 'default'
+
+8. **Multiple Profile Operations**
+   - Error: "Only one of --delete, --create, or --rename can be specified"
+   - Occurs when specifying multiple profile operations in one command
+
+### CLI Flag Errors
+
+1. **Profile Does Not Exist**
+   - Error: "Profile '{name}' does not exist. Available profiles: {profiles}"
+   - Occurs when starting the CLI with a non-existent profile
 
 ## Testing Strategy
 
-The testing strategy will include:
+The testing strategy includes:
 
 1. **Unit Tests**: Test individual components in isolation
    - Test `ContextManager` methods for managing paths and profiles
@@ -454,6 +355,7 @@ The testing strategy will include:
    - Test the end-to-end flow of adding context files and seeing them included in chat messages
    - Test switching between profiles and verifying the correct context files are used
    - Test the CLI flag for specifying a profile at startup
+   - Test error handling for various edge cases
 
 3. **Manual Testing**: Verify the user experience
    - Test the command interface for usability
@@ -471,221 +373,6 @@ Several enhancements could be considered for future iterations:
 5. **Context Validation**: Validate context files before adding them to the context
 6. **Context Auto-Detection**: Automatically detect relevant context files based on the current directory
 7. **Context Visualization**: Provide a visual representation of the context hierarchy
-
-## Appendix: Context Manager API
-
-This section provides a detailed API reference for the `ContextManager` class:
-
-```rust
-impl ContextManager {
-    // Initialize the context manager
-    pub fn new() -> Result<Self>;
-    
-    // Load global configuration
-    fn load_global_config(config_dir: &Path) -> Result<ContextConfig>;
-    
-    // Load profile configuration
-    fn load_profile_config(profiles_dir: &Path, profile: &str) -> Result<ContextConfig>;
-    
-    // Switch to a different profile
-    pub fn switch_profile(&mut self, profile: &str, create: bool) -> Result<()>;
-    
-    // Get all context files (global + profile-specific)
-    pub fn get_context_files(&self) -> Result<Vec<(String, String)>>;
-    
-    // Process a path (handling globs and file types)
-    fn process_path(&self, path: &str, cwd: &Path, context_files: &mut Vec<(String, String)>) -> Result<()>;
-    
-    // Add a file to the context collection
-    fn add_file_to_context(&self, path: &Path, context_files: &mut Vec<(String, String)>) -> Result<()>;
-    
-    // Add paths to context (global or profile)
-    pub fn add_paths(&mut self, paths: Vec<String>, global: bool) -> Result<()>;
-    
-    // Remove paths from context (global or profile)
-    pub fn remove_paths(&mut self, paths: Vec<String>, global: bool) -> Result<()>;
-    
-    // Clear all paths (global or profile)
-    pub fn clear(&mut self, global: bool) -> Result<()>;
-    
-    // List all available profiles
-    pub fn list_profiles(&self) -> Result<Vec<String>>;
-    
-    // Create a new profile
-    pub fn create_profile(&self, name: &str) -> Result<()>;
-    
-    // Delete a profile
-    pub fn delete_profile(&self, name: &str) -> Result<()>;
-    
-    // Save configurations to disk
-    fn save_config(&self, global: bool) -> Result<()>;
-}
-```
-
-## Appendix: Command Execution Flow
-
-This section provides a detailed flow for executing each `/context` subcommand:
-
-### Show Command
-
-```rust
-match Command::parse(&input) {
-    Ok(Command::Context { subcommand: ContextSubcommand::Show }) => {
-        if let Some(context_manager) = &conversation_state.context_manager {
-            println!("current profile: {}", context_manager.current_profile);
-            println!();
-            
-            println!("global:");
-            if context_manager.global_config.paths.is_empty() {
-                println!("    <none>");
-            } else {
-                for path in &context_manager.global_config.paths {
-                    println!("    {}", path);
-                }
-            }
-            
-            println!();
-            println!("profile:");
-            if context_manager.profile_config.paths.is_empty() {
-                println!("    <none>");
-            } else {
-                for path in &context_manager.profile_config.paths {
-                    println!("    {}", path);
-                }
-            }
-        } else {
-            println!("Context manager not initialized");
-        }
-    },
-    // Other commands...
-}
-```
-
-### Add Command
-
-```rust
-match Command::parse(&input) {
-    Ok(Command::Context { subcommand: ContextSubcommand::Add { global, paths } }) => {
-        if let Some(context_manager) = &mut conversation_state.context_manager {
-            match context_manager.add_paths(paths, global) {
-                Ok(_) => {
-                    let target = if global { "global" } else { &context_manager.current_profile };
-                    println!("Added paths to {} context", target);
-                },
-                Err(e) => {
-                    eprintln!("Error adding paths: {}", e);
-                }
-            }
-        } else {
-            println!("Context manager not initialized");
-        }
-    },
-    // Other commands...
-}
-```
-
-### Remove Command
-
-```rust
-match Command::parse(&input) {
-    Ok(Command::Context { subcommand: ContextSubcommand::Remove { global, paths } }) => {
-        if let Some(context_manager) = &mut conversation_state.context_manager {
-            match context_manager.remove_paths(paths, global) {
-                Ok(_) => {
-                    let target = if global { "global" } else { &context_manager.current_profile };
-                    println!("Removed paths from {} context", target);
-                },
-                Err(e) => {
-                    eprintln!("Error removing paths: {}", e);
-                }
-            }
-        } else {
-            println!("Context manager not initialized");
-        }
-    },
-    // Other commands...
-}
-```
-
-### Profile Command
-
-```rust
-match Command::parse(&input) {
-    Ok(Command::Context { subcommand: ContextSubcommand::Profile { delete, create } }) => {
-        if let Some(context_manager) = &mut conversation_state.context_manager {
-            if let Some(name) = delete {
-                match context_manager.delete_profile(&name) {
-                    Ok(_) => println!("Deleted profile: {}", name),
-                    Err(e) => eprintln!("Error deleting profile: {}", e),
-                }
-            } else if let Some(name) = create {
-                match context_manager.create_profile(&name) {
-                    Ok(_) => println!("Created profile: {}", name),
-                    Err(e) => eprintln!("Error creating profile: {}", e),
-                }
-            } else {
-                match context_manager.list_profiles() {
-                    Ok(profiles) => {
-                        for profile in profiles {
-                            if profile == context_manager.current_profile {
-                                println!("* {}", profile);
-                            } else {
-                                println!("  {}", profile);
-                            }
-                        }
-                    },
-                    Err(e) => eprintln!("Error listing profiles: {}", e),
-                }
-            }
-        } else {
-            println!("Context manager not initialized");
-        }
-    },
-    // Other commands...
-}
-```
-
-### Switch Command
-
-```rust
-match Command::parse(&input) {
-    Ok(Command::Context { subcommand: ContextSubcommand::Switch { name, create } }) => {
-        if let Some(context_manager) = &mut conversation_state.context_manager {
-            match context_manager.switch_profile(&name, create) {
-                Ok(_) => {
-                    if create {
-                        println!("Created and switched to profile: {}", name);
-                    } else {
-                        println!("Switched to profile: {}", name);
-                    }
-                },
-                Err(e) => eprintln!("Error switching profile: {}", e),
-            }
-        } else {
-            println!("Context manager not initialized");
-        }
-    },
-    // Other commands...
-}
-```
-
-### Clear Command
-
-```rust
-match Command::parse(&input) {
-    Ok(Command::Context { subcommand: ContextSubcommand::Clear { global } }) => {
-        if let Some(context_manager) = &mut conversation_state.context_manager {
-            match context_manager.clear(global) {
-                Ok(_) => {
-                    let target = if global { "global" } else { &context_manager.current_profile };
-                    println!("Cleared {} context", target);
-                },
-                Err(e) => eprintln!("Error clearing context: {}", e),
-            }
-        } else {
-            println!("Context manager not initialized");
-        }
-    },
-    // Other commands...
-}
-```
+8. **Context Caching**: Cache frequently accessed files to improve performance
+9. **Context Filtering**: Filter context files based on content or metadata
+10. **Context Compression**: Compress large context files to save space
