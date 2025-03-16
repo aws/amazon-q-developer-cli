@@ -2,11 +2,9 @@
 
 Always follow these guidelines when assisting in development for the Amazon Q CLI.
 
-## Verifying Fixes
+## AmazonQ.md
 
-1. After completing a fix, verify by running build and test for the q_cli crate only. Fix any problems found.
-1. Once passing, run `cargo +nightly fmt`
-1. Commit changes to git. Fix any pre-commit hook errors.
+DO NOT create an AmazonQ.md file unless I explicitly tell you to do so.
 
 ## Git
 
@@ -55,6 +53,12 @@ queues and maintains the same functionality as the original.
 🤖 Assisted by [Amazon Q Developer](https://aws.amazon.com/q/developer)
 ```
 
-### Push/Merging Commits
+### Committing Changes
 
-It's find for you to run `git commit`, but DO NOT ever run `git push`, ever.
+Follow the git best practice of committing early and often. It's fine for you to run `git commit`, but DO NOT ever run `git push`, ever.
+
+Before committing a change, always do the following first:
+
+1. Verify via `cargo build` and `cargo test` for the q_cli crate only. Fix any problems found
+2. Run `cargo +nightly fmt` to auto-format the code
+3. Commit the changes
