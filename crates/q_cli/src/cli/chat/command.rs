@@ -242,337 +242,227 @@ impl Command {
 mod tests {
     use super::*;
 
+    /// Helper function to assert that a command parses to a Context command with the expected
+    /// subcommand
+    fn assert_context_command<F>(input: &str, assertion: F)
+    where
+        F: FnOnce(ContextSubcommand),
+    {
+        match Command::parse(input).unwrap() {
+            Command::Context { subcommand } => assertion(subcommand),
+            cmd => panic!("Expected Context command, got {:?}", cmd),
+        }
+    }
+
+    /// Helper function to assert that a command parsing results in an error
+    fn assert_parse_error(input: &str, expected_error: &str) {
+        let result = Command::parse(input);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), expected_error);
+    }
+
+    /// Helper function to assert that a command parses to a Context Add subcommand with the
+    /// expected parameters
+    fn assert_context_add_command(input: &str, expected_global: bool, expected_force: bool, expected_paths: Vec<&str>) {
+        assert_context_command(input, |subcommand| match subcommand {
+            ContextSubcommand::Add { global, force, paths } => {
+                assert_eq!(global, expected_global);
+                assert_eq!(force, expected_force);
+                assert_eq!(paths, expected_paths);
+            },
+            _ => panic!("Expected Add subcommand"),
+        });
+    }
+
+    /// Helper function to assert that a command parses to a Context Remove subcommand with the
+    /// expected parameters
+    fn assert_context_remove_command(input: &str, expected_global: bool, expected_paths: Vec<&str>) {
+        assert_context_command(input, |subcommand| match subcommand {
+            ContextSubcommand::Remove { global, paths } => {
+                assert_eq!(global, expected_global);
+                assert_eq!(paths, expected_paths);
+            },
+            _ => panic!("Expected Remove subcommand"),
+        });
+    }
+
+    /// Helper function to assert that a command parses to a Context Profile subcommand with the
+    /// expected parameters
+    fn assert_context_profile_command(
+        input: &str,
+        expected_delete: Option<&str>,
+        expected_create: Option<&str>,
+        expected_rename: Option<(&str, &str)>,
+    ) {
+        assert_context_command(input, |subcommand| match subcommand {
+            ContextSubcommand::Profile { delete, create, rename } => {
+                assert_eq!(delete, expected_delete.map(String::from));
+                assert_eq!(create, expected_create.map(String::from));
+                assert_eq!(
+                    rename,
+                    expected_rename.map(|(old, new)| (old.to_string(), new.to_string()))
+                );
+            },
+            _ => panic!("Expected Profile subcommand"),
+        });
+    }
+
+    /// Helper function to assert that a command parses to a Context Switch subcommand with the
+    /// expected parameters
+    fn assert_context_switch_command(input: &str, expected_name: &str, expected_create: bool) {
+        assert_context_command(input, |subcommand| match subcommand {
+            ContextSubcommand::Switch { name, create } => {
+                assert_eq!(name, expected_name);
+                assert_eq!(create, expected_create);
+            },
+            _ => panic!("Expected Switch subcommand"),
+        });
+    }
+
+    /// Helper function to assert that a command parses to a Context Clear subcommand with the
+    /// expected parameters
+    fn assert_context_clear_command(input: &str, expected_global: bool) {
+        assert_context_command(input, |subcommand| match subcommand {
+            ContextSubcommand::Clear { global } => {
+                assert_eq!(global, expected_global);
+            },
+            _ => panic!("Expected Clear subcommand"),
+        });
+    }
+
     #[test]
     fn test_parse_context_show() {
-        let cmd = Command::parse("/context show").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Show { expand },
-            } => {
+        assert_context_command("/context show", |subcommand| match subcommand {
+            ContextSubcommand::Show { expand } => {
                 assert!(!expand);
             },
-            _ => panic!("Expected Context Show command"),
-        }
+            _ => panic!("Expected Show subcommand"),
+        });
     }
 
     #[test]
     fn test_parse_context_show_expand() {
-        let cmd = Command::parse("/context show --expand").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Show { expand },
-            } => {
+        assert_context_command("/context show --expand", |subcommand| match subcommand {
+            ContextSubcommand::Show { expand } => {
                 assert!(expand);
             },
-            _ => panic!("Expected Context Show command with expand flag"),
-        }
+            _ => panic!("Expected Show subcommand with expand flag"),
+        });
     }
 
     #[test]
     fn test_parse_context_add() {
-        let cmd = Command::parse("/context add path1 path2").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Add { global, force, paths },
-            } => {
-                assert!(!global);
-                assert!(!force);
-                assert_eq!(paths, vec!["path1", "path2"]);
-            },
-            _ => panic!("Expected Context Add command"),
-        }
+        assert_context_add_command("/context add path1 path2", false, false, vec!["path1", "path2"]);
     }
 
     #[test]
     fn test_parse_context_add_global() {
-        let cmd = Command::parse("/context add --global path1 path2").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Add { global, force, paths },
-            } => {
-                assert!(global);
-                assert!(!force);
-                assert_eq!(paths, vec!["path1", "path2"]);
-            },
-            _ => panic!("Expected Context Add command with global flag"),
-        }
+        assert_context_add_command("/context add --global path1 path2", true, false, vec!["path1", "path2"]);
+    }
+
+    #[test]
+    fn test_parse_context_add_force() {
+        assert_context_add_command("/context add --force path1 path2", false, true, vec!["path1", "path2"]);
+    }
+
+    #[test]
+    fn test_parse_context_add_global_force() {
+        assert_context_add_command("/context add --global --force path1 path2", true, true, vec![
+            "path1", "path2",
+        ]);
+    }
+
+    #[test]
+    fn test_parse_context_add_short_force() {
+        assert_context_add_command("/context add -f path1 path2", false, true, vec!["path1", "path2"]);
     }
 
     #[test]
     fn test_parse_context_rm() {
-        let cmd = Command::parse("/context rm path1 path2").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Remove { global, paths },
-            } => {
-                assert!(!global);
-                assert_eq!(paths, vec!["path1", "path2"]);
-            },
-            _ => panic!("Expected Context Remove command"),
-        }
+        assert_context_remove_command("/context rm path1 path2", false, vec!["path1", "path2"]);
     }
 
     #[test]
     fn test_parse_context_rm_global() {
-        let cmd = Command::parse("/context rm --global path1 path2").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Remove { global, paths },
-            } => {
-                assert!(global);
-                assert_eq!(paths, vec!["path1", "path2"]);
-            },
-            _ => panic!("Expected Context Remove command with global flag"),
-        }
+        assert_context_remove_command("/context rm --global path1 path2", true, vec!["path1", "path2"]);
     }
 
     #[test]
     fn test_parse_context_profile() {
-        let cmd = Command::parse("/context profile").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Profile { delete, create, rename },
-            } => {
-                assert!(delete.is_none());
-                assert!(create.is_none());
-                assert!(rename.is_none());
-            },
-            _ => panic!("Expected Context Profile command"),
-        }
+        assert_context_profile_command("/context profile", None, None, None);
     }
 
     #[test]
     fn test_parse_context_profile_create() {
-        let cmd = Command::parse("/context profile --create my-profile").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Profile { delete, create, rename },
-            } => {
-                assert!(delete.is_none());
-                assert_eq!(create, Some("my-profile".to_string()));
-                assert!(rename.is_none());
-            },
-            _ => panic!("Expected Context Profile command with create option"),
-        }
+        assert_context_profile_command("/context profile --create my-profile", None, Some("my-profile"), None);
     }
 
     #[test]
     fn test_parse_context_profile_delete() {
-        let cmd = Command::parse("/context profile --delete my-profile").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Profile { delete, create, rename },
-            } => {
-                assert_eq!(delete, Some("my-profile".to_string()));
-                assert!(create.is_none());
-                assert!(rename.is_none());
-            },
-            _ => panic!("Expected Context Profile command with delete option"),
-        }
-    }
-
-    #[test]
-    fn test_parse_context_switch() {
-        let cmd = Command::parse("/context switch my-profile").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Switch { name, create },
-            } => {
-                assert_eq!(name, "my-profile");
-                assert!(!create);
-            },
-            _ => panic!("Expected Context Switch command"),
-        }
-    }
-
-    #[test]
-    fn test_parse_context_switch_create() {
-        let cmd = Command::parse("/context switch --create my-profile").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Switch { name, create },
-            } => {
-                assert_eq!(name, "my-profile");
-                assert!(create);
-            },
-            _ => panic!("Expected Context Switch command with create flag"),
-        }
-    }
-
-    #[test]
-    fn test_parse_context_clear() {
-        let cmd = Command::parse("/context clear").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Clear { global },
-            } => {
-                assert!(!global);
-            },
-            _ => panic!("Expected Context Clear command"),
-        }
+        assert_context_profile_command("/context profile --delete my-profile", Some("my-profile"), None, None);
     }
 
     #[test]
     fn test_parse_context_profile_rename() {
-        let cmd = Command::parse("/context profile --rename old-profile new-profile").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Profile { delete, create, rename },
-            } => {
-                assert!(delete.is_none());
-                assert!(create.is_none());
-                assert_eq!(rename, Some(("old-profile".to_string(), "new-profile".to_string())));
-            },
-            _ => panic!("Expected Context Profile command with rename option"),
-        }
+        assert_context_profile_command(
+            "/context profile --rename old-profile new-profile",
+            None,
+            None,
+            Some(("old-profile", "new-profile")),
+        );
     }
 
     #[test]
     fn test_parse_context_profile_rename_short_flag() {
-        let cmd = Command::parse("/context profile -r old-profile new-profile").unwrap();
-        match cmd {
-            Command::Context {
-                subcommand: ContextSubcommand::Profile { delete, create, rename },
-            } => {
-                assert!(delete.is_none());
-                assert!(create.is_none());
-                assert_eq!(rename, Some(("old-profile".to_string(), "new-profile".to_string())));
-            },
-            _ => panic!("Expected Context Profile command with rename option"),
-        }
+        assert_context_profile_command(
+            "/context profile -r old-profile new-profile",
+            None,
+            None,
+            Some(("old-profile", "new-profile")),
+        );
+    }
+
+    #[test]
+    fn test_parse_context_switch() {
+        assert_context_switch_command("/context switch my-profile", "my-profile", false);
+    }
+
+    #[test]
+    fn test_parse_context_switch_create() {
+        assert_context_switch_command("/context switch --create my-profile", "my-profile", true);
+    }
+
+    #[test]
+    fn test_parse_context_clear() {
+        assert_context_clear_command("/context clear", false);
+    }
+
+    #[test]
+    fn test_parse_context_clear_global() {
+        assert_context_clear_command("/context clear --global", true);
     }
 
     #[test]
     fn test_parse_context_profile_rename_error_missing_names() {
-        let result = Command::parse("/context profile --rename");
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "Missing profile names for --rename. Usage: --rename <old_name> <new_name>"
+        assert_parse_error(
+            "/context profile --rename",
+            "Missing profile names for --rename. Usage: --rename <old_name> <new_name>",
         );
     }
 
     #[test]
     fn test_parse_context_profile_rename_error_missing_new_name() {
-        let result = Command::parse("/context profile --rename old-profile");
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "Missing profile names for --rename. Usage: --rename <old_name> <new_name>"
+        assert_parse_error(
+            "/context profile --rename old-profile",
+            "Missing profile names for --rename. Usage: --rename <old_name> <new_name>",
         );
     }
 
     #[test]
     fn test_parse_context_profile_multiple_operations() {
-        let result = Command::parse("/context profile --create new-profile --rename old-profile new-profile");
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "Only one of --delete, --create, or --rename can be specified"
+        assert_parse_error(
+            "/context profile --create new-profile --rename old-profile new-profile",
+            "Only one of --delete, --create, or --rename can be specified",
         );
-    }
-}
-
-#[test]
-fn test_parse_context_profile_rename() {
-    let cmd = Command::parse("/context profile --rename old-profile new-profile").unwrap();
-    match cmd {
-        Command::Context {
-            subcommand: ContextSubcommand::Profile { delete, create, rename },
-        } => {
-            assert!(delete.is_none());
-            assert!(create.is_none());
-            assert_eq!(rename, Some(("old-profile".to_string(), "new-profile".to_string())));
-        },
-        _ => panic!("Expected Context Profile command with rename option"),
-    }
-}
-
-#[test]
-fn test_parse_context_profile_rename_short_flag() {
-    let cmd = Command::parse("/context profile -r old-profile new-profile").unwrap();
-    match cmd {
-        Command::Context {
-            subcommand: ContextSubcommand::Profile { delete, create, rename },
-        } => {
-            assert!(delete.is_none());
-            assert!(create.is_none());
-            assert_eq!(rename, Some(("old-profile".to_string(), "new-profile".to_string())));
-        },
-        _ => panic!("Expected Context Profile command with rename option"),
-    }
-}
-
-#[test]
-fn test_parse_context_profile_rename_error_missing_names() {
-    let result = Command::parse("/context profile --rename");
-    assert!(result.is_err());
-    assert_eq!(
-        result.unwrap_err(),
-        "Missing profile names for --rename. Usage: --rename <old_name> <new_name>"
-    );
-}
-
-#[test]
-fn test_parse_context_profile_rename_error_missing_new_name() {
-    let result = Command::parse("/context profile --rename old-profile");
-    assert!(result.is_err());
-    assert_eq!(
-        result.unwrap_err(),
-        "Missing profile names for --rename. Usage: --rename <old_name> <new_name>"
-    );
-}
-
-#[test]
-fn test_parse_context_profile_multiple_operations() {
-    let result = Command::parse("/context profile --create new-profile --rename old-profile new-profile");
-    assert!(result.is_err());
-    assert_eq!(
-        result.unwrap_err(),
-        "Only one of --delete, --create, or --rename can be specified"
-    );
-}
-#[test]
-fn test_parse_context_add_force() {
-    let cmd = Command::parse("/context add --force path1 path2").unwrap();
-    match cmd {
-        Command::Context {
-            subcommand: ContextSubcommand::Add { global, force, paths },
-        } => {
-            assert!(!global);
-            assert!(force);
-            assert_eq!(paths, vec!["path1", "path2"]);
-        },
-        _ => panic!("Expected Context Add command with force flag"),
-    }
-}
-
-#[test]
-fn test_parse_context_add_global_force() {
-    let cmd = Command::parse("/context add --global --force path1 path2").unwrap();
-    match cmd {
-        Command::Context {
-            subcommand: ContextSubcommand::Add { global, force, paths },
-        } => {
-            assert!(global);
-            assert!(force);
-            assert_eq!(paths, vec!["path1", "path2"]);
-        },
-        _ => panic!("Expected Context Add command with global and force flags"),
-    }
-}
-
-#[test]
-fn test_parse_context_add_short_force() {
-    let cmd = Command::parse("/context add -f path1 path2").unwrap();
-    match cmd {
-        Command::Context {
-            subcommand: ContextSubcommand::Add { global, force, paths },
-        } => {
-            assert!(!global);
-            assert!(force);
-            assert_eq!(paths, vec!["path1", "path2"]);
-        },
-        _ => panic!("Expected Context Add command with short force flag"),
     }
 }

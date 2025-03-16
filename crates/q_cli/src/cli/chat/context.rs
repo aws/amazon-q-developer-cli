@@ -520,11 +520,14 @@ impl ContextManager {
     /// 1. Expands the path (handling ~ for home directory)
     /// 2. If the path contains glob patterns, expands them
     /// 3. For each resulting path, adds the file to the context collection
+    /// 4. Handles directories by including all files in the directory (non-recursive)
+    /// 5. With force=true, includes paths that don't exist yet
     ///
     /// # Arguments
     /// * `path` - The path to process
     /// * `cwd` - The current working directory for resolving relative paths
     /// * `context_files` - The collection to add files to
+    /// * `force` - If true, include paths that don't exist yet
     ///
     /// # Returns
     /// A Result indicating success or an error
