@@ -487,7 +487,10 @@ where
         // Require two consecutive sigint's to exit.
         let mut ctrl_c = false;
         let user_input = loop {
-            match (self.input_source.read_line(Some("> "))?, ctrl_c) {
+            // Generate prompt based on active context profile
+            let prompt = prompt::generate_prompt(&self.conversation_state);
+
+            match (self.input_source.read_line(Some(&prompt))?, ctrl_c) {
                 (Some(line), _) => break line,
                 (None, false) => {
                     execute!(

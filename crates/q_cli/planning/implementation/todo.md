@@ -67,11 +67,11 @@ This checklist tracks the implementation progress of the context management feat
   - [x] Ensure proper error handling
   - [x] Write integration tests for command execution
 
-- [ ] **Prompt 10: Update the Command Prompt**
-  - [ ] Create function for generating prompt string
-  - [ ] Modify main chat loop to use this function
-  - [ ] Add terminal styling for profile indicator
-  - [ ] Write unit tests for prompt generation
+- [x] **Prompt 10: Update the Command Prompt**
+  - [x] Create function for generating prompt string
+  - [x] Modify main chat loop to use this function
+  - [x] Add terminal styling for profile indicator
+  - [x] Write unit tests for prompt generation
 
 - [ ] **Prompt 11: Add CLI Flag for Profile**
   - [ ] Update CLI entry point for `--profile` flag
