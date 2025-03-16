@@ -606,13 +606,16 @@ impl ContextManager {
                         }
                     }
                 }
-            } else if !force {
+            } else if !force && is_validation {
+                // When validating paths (e.g., for /context add), error if the path doesn't exist
                 return Err(eyre!("Path '{}' does not exist", full_path));
             } else if force {
                 // When using --force, we'll add the path even though it doesn't exist
                 // This allows users to add paths that will exist in the future
                 context_files.push((full_path.clone(), format!("(Path '{}' does not exist yet)", full_path)));
             }
+            // When just showing expanded files (e.g., for /context show --expand),
+            // silently skip non-existent paths if is_validation is false
         }
 
         Ok(())
@@ -1622,6 +1625,44 @@ fn test_process_path_glob_validation() -> Result<()> {
     let result = ContextManager::process_path(&glob_pattern, &env::current_dir()?, &mut context_files, false, false);
     assert!(result.is_ok());
     assert_eq!(context_files.len(), 0); // No files should be added
+
+    Ok(())
+}
+
+#[test]
+fn test_process_path_nonexistent_file_validation() -> Result<()> {
+    // Create a test context manager
+    let (_manager, temp_dir) = tests::create_test_context_manager()?;
+
+    // Create a path to a non-existent file
+    let nonexistent_file = temp_dir.path().join("nonexistent_file.txt");
+    let nonexistent_path = nonexistent_file.to_string_lossy().to_string();
+
+    // Test with is_validation=true (should error)
+    let mut context_files = Vec::new();
+    let result = ContextManager::process_path(&nonexistent_path, &env::current_dir()?, &mut context_files, false, true);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("Path") && err.contains("does not exist"));
+
+    // Test with is_validation=false (should silently skip)
+    let mut context_files = Vec::new();
+    let result = ContextManager::process_path(
+        &nonexistent_path,
+        &env::current_dir()?,
+        &mut context_files,
+        false,
+        false,
+    );
+    assert!(result.is_ok());
+    assert_eq!(context_files.len(), 0); // No files should be added
+
+    // Test with force=true (should add placeholder)
+    let mut context_files = Vec::new();
+    let result = ContextManager::process_path(&nonexistent_path, &env::current_dir()?, &mut context_files, true, false);
+    assert!(result.is_ok());
+    assert_eq!(context_files.len(), 1); // Should add placeholder
+    assert!(context_files[0].1.contains("does not exist yet"));
 
     Ok(())
 }
