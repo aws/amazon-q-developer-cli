@@ -114,8 +114,18 @@ pub struct ChatHelper {
 
 impl Highlighter for ChatHelper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
-        // Always color the entire prompt magenta for consistency
-        Cow::Owned(prompt.magenta().to_string())
+        // Check if the prompt contains a context profile indicator
+        if let Some(profile_end) = prompt.find("] ") {
+            // Split the prompt into context part and the rest
+            let context_part = &prompt[..=profile_end];
+            let rest = &prompt[(profile_end + 1)..];
+
+            // Color the context part cyan and the rest magenta
+            Cow::Owned(format!("{}{}", context_part.cyan(), rest.magenta()))
+        } else {
+            // Default prompt with magenta color
+            Cow::Owned(prompt.magenta().to_string())
+        }
     }
 
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
