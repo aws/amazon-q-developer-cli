@@ -1,4 +1,4 @@
-# Development Guidelines
+# Amazon Q Development Guidelines
 
 Always follow these guidelines when assisting in development for the Amazon Q CLI.
 
