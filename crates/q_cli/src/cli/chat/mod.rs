@@ -107,7 +107,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 <em>/context</em>      <black!>Manage context files for the chat session</black!>
-  <em>show</em>        <black!>Display current context configuration</black!>
+  <em>show</em>        <black!>Display current context configuration [--expand]</black!>
   <em>add</em>         <black!>Add file(s) to context [--global]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>profile</em>     <black!>List, create [--create], or delete [--delete] context profiles</black!>
@@ -517,13 +517,24 @@ where
         user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
     ) -> Result<ChatState, ChatError> {
-        let Ok(command) = Command::parse(&user_input) else {
+        let command_result = Command::parse(&user_input);
+
+        if let Err(error_message) = &command_result {
+            // Display error message for command parsing errors
+            execute!(
+                self.output,
+                style::SetForegroundColor(Color::Red),
+                style::Print(format!("\nError: {}\n\n", error_message)),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+
             return Ok(ChatState::PromptUser {
                 tool_uses,
                 skip_printing_tools: true,
             });
-        };
+        }
 
+        let command = command_result.unwrap();
         let tool_uses = tool_uses.unwrap_or_default();
         Ok(match command {
             Command::Ask { prompt } => {
@@ -608,7 +619,7 @@ where
             Command::Context { subcommand } => {
                 if let Some(context_manager) = &mut self.conversation_state.context_manager {
                     match subcommand {
-                        command::ContextSubcommand::Show => {
+                        command::ContextSubcommand::Show { expand } => {
                             execute!(
                                 self.output,
                                 style::SetForegroundColor(Color::Green),
@@ -647,6 +658,42 @@ where
                                     execute!(self.output, style::Print(format!("    {}\n", path)))?;
                                 }
                                 execute!(self.output, style::Print("\n"))?;
+                            }
+
+                            // If expand flag is set, show the expanded files
+                            if expand {
+                                match context_manager.get_context_files() {
+                                    Ok(context_files) => {
+                                        if context_files.is_empty() {
+                                            execute!(
+                                                self.output,
+                                                style::SetForegroundColor(Color::DarkGrey),
+                                                style::Print("No files matched the patterns.\n\n"),
+                                                style::SetForegroundColor(Color::Reset)
+                                            )?;
+                                        } else {
+                                            execute!(
+                                                self.output,
+                                                style::SetForegroundColor(Color::Green),
+                                                style::Print(format!("Expanded files ({}):\n", context_files.len())),
+                                                style::SetForegroundColor(Color::Reset)
+                                            )?;
+
+                                            for (filename, _) in context_files {
+                                                execute!(self.output, style::Print(format!("    {}\n", filename)))?;
+                                            }
+                                            execute!(self.output, style::Print("\n"))?;
+                                        }
+                                    },
+                                    Err(e) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Red),
+                                            style::Print(format!("Error expanding files: {}\n\n", e)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                }
                             }
                         },
                         command::ContextSubcommand::Add { global, paths } => {

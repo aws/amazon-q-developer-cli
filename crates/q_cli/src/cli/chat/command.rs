@@ -21,7 +21,9 @@ pub enum Command {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum ContextSubcommand {
-    Show,
+    Show {
+        expand: bool,
+    },
     Add {
         global: bool,
         paths: Vec<String>,
@@ -65,8 +67,21 @@ impl Command {
                     }
 
                     match parts[1].to_lowercase().as_str() {
-                        "show" => Self::Context {
-                            subcommand: ContextSubcommand::Show,
+                        "show" => {
+                            // Parse show command with optional --expand flag
+                            let mut expand = false;
+
+                            for part in &parts[2..] {
+                                if *part == "--expand" {
+                                    expand = true;
+                                } else {
+                                    return Err(format!("Unknown option for /context show: {}", part));
+                                }
+                            }
+
+                            Self::Context {
+                                subcommand: ContextSubcommand::Show { expand },
+                            }
                         },
                         "add" => {
                             // Parse add command with paths and --global flag
@@ -212,9 +227,24 @@ mod tests {
         let cmd = Command::parse("/context show").unwrap();
         match cmd {
             Command::Context {
-                subcommand: ContextSubcommand::Show,
-            } => {},
+                subcommand: ContextSubcommand::Show { expand },
+            } => {
+                assert!(!expand);
+            },
             _ => panic!("Expected Context Show command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_context_show_expand() {
+        let cmd = Command::parse("/context show --expand").unwrap();
+        match cmd {
+            Command::Context {
+                subcommand: ContextSubcommand::Show { expand },
+            } => {
+                assert!(expand);
+            },
+            _ => panic!("Expected Context Show command with expand flag"),
         }
     }
 

@@ -34,6 +34,7 @@ const COMMANDS: &[&str] = &[
     "/quit",
     "/context",
     "/context show",
+    "/context show --expand",
     "/context add",
     "/context add --global",
     "/context rm",
@@ -59,7 +60,7 @@ pub fn generate_prompt(conversation_state: &ConversationState) -> String {
         if context_manager.current_profile != "default" {
             // Format with profile name for non-default profiles
             let profile = context_manager.current_profile.clone();
-            return format!("[{}] > ", profile).cyan().to_string();
+            return format!("[{}] > ", profile);
         }
     }
 
@@ -111,12 +112,9 @@ pub struct ChatHelper {
 }
 
 impl Highlighter for ChatHelper {
-    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, default: bool) -> Cow<'b, str> {
-        if default {
-            Cow::Owned(prompt.magenta().to_string())
-        } else {
-            Cow::Borrowed(prompt)
-        }
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
+        // Always color the entire prompt magenta for consistency
+        Cow::Owned(prompt.magenta().to_string())
     }
 
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
