@@ -123,33 +123,50 @@ impl ConversationState {
 
         // Get context files if available
         let context_files = if let Some(context_manager) = &self.context_manager {
+            eprintln!("\x1b[31mDEBUG: Context manager found, getting context files\x1b[0m");
             match context_manager.get_context_files() {
                 Ok(files) => {
+                    eprintln!("\x1b[31mDEBUG: Found {} context files\x1b[0m", files.len());
                     if !files.is_empty() {
                         let mut context_content = String::new();
                         context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
-                        for (filename, content) in files {
+                        for (filename, content) in &files {
+                            eprintln!(
+                                "\x1b[31mDEBUG: Adding context file: {}, size: {} bytes\x1b[0m",
+                                filename,
+                                content.len()
+                            );
                             context_content.push_str(&format!("[{}]\n{}\n", filename, content));
                         }
                         context_content.push_str("--- CONTEXT FILES END ---\n\n");
+                        eprintln!(
+                            "\x1b[31mDEBUG: Total context content size: {} bytes\x1b[0m",
+                            context_content.len()
+                        );
                         Some(context_content)
                     } else {
+                        eprintln!("\x1b[31mDEBUG: No context files found\x1b[0m");
                         None
                     }
                 },
                 Err(e) => {
-                    warn!("Failed to get context files: {}", e);
+                    eprintln!("\x1b[31mDEBUG: Failed to get context files: {}\x1b[0m", e);
                     None
                 },
             }
         } else {
+            eprintln!("\x1b[31mDEBUG: No context manager available\x1b[0m");
             None
         };
 
         // Combine context files with user input if available
         let content = if let Some(context) = context_files {
-            format!("{}\n{}", context, input)
+            eprintln!("\x1b[31mDEBUG: Combining context files with user input\x1b[0m");
+            let combined = format!("{}\n{}", context, input);
+            eprintln!("\x1b[31mDEBUG: Combined content size: {} bytes\x1b[0m", combined.len());
+            combined
         } else {
+            eprintln!("\x1b[31mDEBUG: Using only user input (no context files)\x1b[0m");
             input
         };
 
@@ -372,6 +389,25 @@ impl ConversationState {
     pub fn as_sendable_conversation_state(&mut self) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
         self.fix_history();
+
+        // Log the content of the next message for debugging
+        if let Some(next_message) = &self.next_message {
+            eprintln!(
+                "\x1b[31mDEBUG: Sending message to Q with content length: {} bytes\x1b[0m",
+                next_message.content.len()
+            );
+
+            // Check if the content contains context files
+            if next_message.content.contains("--- CONTEXT FILES BEGIN ---") {
+                eprintln!("\x1b[31mDEBUG: Message contains context files\x1b[0m");
+
+                // Log the first few lines to verify format
+                let lines: Vec<&str> = next_message.content.lines().take(10).collect();
+                eprintln!("\x1b[31mDEBUG: First few lines of content: {:?}\x1b[0m", lines);
+            } else {
+                eprintln!("\x1b[31mDEBUG: Message does NOT contain context files\x1b[0m");
+            }
+        }
 
         // The current state we want to send
         let curr_state = self.clone();

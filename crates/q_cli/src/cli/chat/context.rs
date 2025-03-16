@@ -24,6 +24,11 @@ use serde::{
     Serialize,
 };
 
+// Debug print function with red color
+fn debug_print(message: &str) {
+    eprintln!("\x1b[31mDEBUG: {}\x1b[0m", message);
+}
+
 /// Configuration for context files, containing paths to include in the context.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ContextConfig {
@@ -418,16 +423,26 @@ impl ContextManager {
         let mut context_files = Vec::new();
         let cwd = env::current_dir()?;
 
+        debug_print(&format!("Getting context files from current directory: {:?}", cwd));
+        debug_print(&format!("Global paths: {:?}", self.global_config.paths));
+        debug_print(&format!(
+            "Profile '{}' paths: {:?}",
+            self.current_profile, self.profile_config.paths
+        ));
+
         // Process global paths first
         for path in &self.global_config.paths {
+            debug_print(&format!("Processing global path: {}", path));
             Self::process_path(path, &cwd, &mut context_files)?;
         }
 
         // Then process profile-specific paths
         for path in &self.profile_config.paths {
+            debug_print(&format!("Processing profile path: {}", path));
             Self::process_path(path, &cwd, &mut context_files)?;
         }
 
+        debug_print(&format!("Total context files found: {}", context_files.len()));
         Ok(context_files)
     }
 
@@ -449,7 +464,9 @@ impl ContextManager {
         // Expand ~ to home directory
         let expanded_path = if path.starts_with('~') {
             if let Some(home_dir) = dirs::home_dir() {
-                home_dir.join(&path[2..]).to_string_lossy().to_string()
+                let expanded = home_dir.join(&path[2..]).to_string_lossy().to_string();
+                debug_print(&format!("Expanded ~ path '{}' to '{}'", path, expanded));
+                expanded
             } else {
                 return Err(eyre!("Could not determine home directory"));
             }
@@ -460,14 +477,18 @@ impl ContextManager {
         // Handle absolute, relative paths, and glob patterns
         let full_path = if expanded_path.starts_with('/') {
             // Absolute path
+            debug_print(&format!("Using absolute path: {}", expanded_path));
             expanded_path
         } else {
             // Relative path
-            cwd.join(&expanded_path).to_string_lossy().to_string()
+            let full = cwd.join(&expanded_path).to_string_lossy().to_string();
+            debug_print(&format!("Resolved relative path '{}' to '{}'", expanded_path, full));
+            full
         };
 
         // Check if the path contains glob patterns
         if full_path.contains('*') || full_path.contains('?') || full_path.contains('[') {
+            debug_print(&format!("Processing glob pattern: {}", full_path));
             // Expand glob pattern
             match glob(&full_path) {
                 Ok(entries) => {
@@ -477,6 +498,7 @@ impl ContextManager {
                         match entry {
                             Ok(path) => {
                                 if path.is_file() {
+                                    debug_print(&format!("Glob match found: {:?}", path));
                                     Self::add_file_to_context(&path, context_files)?;
                                     found_any = true;
                                 }
@@ -486,8 +508,7 @@ impl ContextManager {
                     }
 
                     if !found_any {
-                        // Not an error, just no matches
-                        // We could log this if we had a logger
+                        debug_print(&format!("No files matched glob pattern: {}", full_path));
                     }
                 },
                 Err(e) => return Err(eyre!("Invalid glob pattern '{}': {}", full_path, e)),
@@ -497,20 +518,22 @@ impl ContextManager {
             let path = Path::new(&full_path);
             if path.exists() {
                 if path.is_file() {
+                    debug_print(&format!("Processing regular file: {:?}", path));
                     Self::add_file_to_context(path, context_files)?;
                 } else if path.is_dir() {
+                    debug_print(&format!("Processing directory: {:?}", path));
                     // For directories, add all files in the directory (non-recursive)
                     for entry in fs::read_dir(path)? {
                         let entry = entry?;
                         let path = entry.path();
                         if path.is_file() {
+                            debug_print(&format!("Found file in directory: {:?}", path));
                             Self::add_file_to_context(&path, context_files)?;
                         }
                     }
                 }
             } else {
-                // Not an error, file just doesn't exist
-                // We could log this if we had a logger
+                debug_print(&format!("Path does not exist: {}", full_path));
             }
         }
 
@@ -532,11 +555,14 @@ impl ContextManager {
     fn add_file_to_context(path: &Path, context_files: &mut Vec<(String, String)>) -> Result<()> {
         // Get the filename as a string
         let filename = path.to_string_lossy().to_string();
+        debug_print(&format!("Adding file to context: {}", filename));
 
         // Read the file content
         let mut file = File::open(path)?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
+
+        debug_print(&format!("Read {} bytes from file: {}", content.len(), filename));
 
         // Add to the context collection
         context_files.push((filename, content));
