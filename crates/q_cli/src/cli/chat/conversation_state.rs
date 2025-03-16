@@ -123,7 +123,7 @@ impl ConversationState {
 
         // Get context files if available
         let context_files = if let Some(context_manager) = &self.context_manager {
-            match context_manager.get_context_files() {
+            match context_manager.get_context_files(true) {
                 Ok(files) => {
                     if !files.is_empty() {
                         let mut context_content = String::new();
@@ -491,7 +491,7 @@ mod tests {
         // Mock the context_manager to return some context files
         if let Some(context_manager) = &mut conversation_state.context_manager {
             // We can't easily mock get_context_files, but we can verify the method exists
-            assert!(context_manager.get_context_files().is_ok());
+            assert!(context_manager.get_context_files(true).is_ok());
         }
 
         // Test that append_new_user_message works with context_manager

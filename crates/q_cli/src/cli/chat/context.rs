@@ -188,16 +188,32 @@ impl ContextManager {
     /// * `paths` - List of paths to add
     /// * `global` - If true, add to global configuration; otherwise, add to current profile
     ///   configuration
+    /// * `force` - If true, skip validation that the path exists
     ///
     /// # Returns
     /// A Result indicating success or an error
-    pub fn add_paths(&mut self, paths: Vec<String>, global: bool) -> Result<()> {
+    pub fn add_paths(&mut self, paths: Vec<String>, global: bool, force: bool) -> Result<()> {
         // Get reference to the appropriate config
         let config = if global {
             &mut self.global_config
         } else {
             &mut self.profile_config
         };
+
+        // Validate paths exist before adding them
+        if !force {
+            let cwd = env::current_dir()?;
+            let mut context_files = Vec::new();
+
+            // Check each path to make sure it exists or matches at least one file
+            for path in &paths {
+                // We're using a temporary context_files vector just for validation
+                match Self::process_path(path, &cwd, &mut context_files, false) {
+                    Ok(_) => {}, // Path is valid
+                    Err(e) => return Err(eyre!("Invalid path '{}': {}. Use --force to add anyway.", path, e)),
+                }
+            }
+        }
 
         // Add each path, checking for duplicates
         for path in paths {
@@ -476,20 +492,23 @@ impl ContextManager {
     /// 3. Reads the content of each file
     /// 4. Returns a vector of (filename, content) pairs
     ///
+    /// # Arguments
+    /// * `force` - If true, include paths that don't exist yet
+    ///
     /// # Returns
     /// A Result containing a vector of (filename, content) pairs or an error
-    pub fn get_context_files(&self) -> Result<Vec<(String, String)>> {
+    pub fn get_context_files(&self, force: bool) -> Result<Vec<(String, String)>> {
         let mut context_files = Vec::new();
         let cwd = env::current_dir()?;
 
         // Process global paths first
         for path in &self.global_config.paths {
-            Self::process_path(path, &cwd, &mut context_files)?;
+            Self::process_path(path, &cwd, &mut context_files, force)?;
         }
 
         // Then process profile-specific paths
         for path in &self.profile_config.paths {
-            Self::process_path(path, &cwd, &mut context_files)?;
+            Self::process_path(path, &cwd, &mut context_files, force)?;
         }
 
         Ok(context_files)
@@ -509,7 +528,7 @@ impl ContextManager {
     ///
     /// # Returns
     /// A Result indicating success or an error
-    fn process_path(path: &str, cwd: &Path, context_files: &mut Vec<(String, String)>) -> Result<()> {
+    fn process_path(path: &str, cwd: &Path, context_files: &mut Vec<(String, String)>, force: bool) -> Result<()> {
         // Expand ~ to home directory
         let expanded_path = if path.starts_with('~') {
             if let Some(home_dir) = dirs::home_dir() {
@@ -549,9 +568,8 @@ impl ContextManager {
                         }
                     }
 
-                    if !found_any {
-                        // Not an error, just no matches
-                        // We could log this if we had a logger
+                    if !found_any && !force {
+                        return Err(eyre!("No files found matching glob pattern '{}'", full_path));
                     }
                 },
                 Err(e) => return Err(eyre!("Invalid glob pattern '{}': {}", full_path, e)),
@@ -572,9 +590,12 @@ impl ContextManager {
                         }
                     }
                 }
-            } else {
-                // Not an error, file just doesn't exist
-                // We could log this if we had a logger
+            } else if !force {
+                return Err(eyre!("Path '{}' does not exist", full_path));
+            } else if force {
+                // When using --force, we'll add the path even though it doesn't exist
+                // This allows users to add paths that will exist in the future
+                context_files.push((full_path.clone(), format!("(Path '{}' does not exist yet)", full_path)));
             }
         }
 
@@ -836,7 +857,7 @@ mod tests {
 
         // Add paths to global config
         let paths = vec!["test/path1.md".to_string(), "test/path2.md".to_string()];
-        manager.add_paths(paths, true)?;
+        manager.add_paths(paths, true, true)?;
 
         // Verify paths were added
         assert_eq!(manager.global_config.paths.len(), 4);
@@ -857,7 +878,7 @@ mod tests {
 
         // Add paths to profile config
         let paths = vec!["test/path1.md".to_string(), "test/path2.md".to_string()];
-        manager.add_paths(paths, false)?;
+        manager.add_paths(paths, false, true)?;
 
         // Verify paths were added
         assert_eq!(manager.profile_config.paths.len(), 2);
@@ -878,10 +899,10 @@ mod tests {
 
         // Add a path to profile config
         let paths = vec!["test/path1.md".to_string()];
-        manager.add_paths(paths.clone(), false)?;
+        manager.add_paths(paths.clone(), false, true)?;
 
         // Try to add the same path again
-        let result = manager.add_paths(paths, false);
+        let result = manager.add_paths(paths, false, true);
 
         // Verify it returns an error
         assert!(result.is_err());
@@ -914,7 +935,7 @@ mod tests {
 
         // Add paths to profile config
         let add_paths = vec!["test/path1.md".to_string(), "test/path2.md".to_string()];
-        manager.add_paths(add_paths, false)?;
+        manager.add_paths(add_paths, false, true)?;
 
         // Remove a path
         let remove_paths = vec!["test/path1.md".to_string()];
@@ -965,7 +986,7 @@ mod tests {
 
         // Add paths to profile config
         let paths = vec!["test/path1.md".to_string(), "test/path2.md".to_string()];
-        manager.add_paths(paths, false)?;
+        manager.add_paths(paths, false, true)?;
 
         // Clear profile config
         manager.clear(false)?;
@@ -1113,7 +1134,7 @@ fn test_rename_profile() -> Result<()> {
 
     // Add a path to the profile
     manager.switch_profile("test-profile", false)?;
-    manager.add_paths(vec!["test/path".to_string()], false)?;
+    manager.add_paths(vec!["test/path".to_string()], false, true)?;
 
     // Test renaming the profile
     manager.rename_profile("test-profile", "new-profile")?;
@@ -1383,7 +1404,7 @@ fn test_get_context_files() -> Result<()> {
     manager.profile_config.paths = vec![file2_path.to_string_lossy().to_string()];
 
     // Get context files
-    let context_files = manager.get_context_files()?;
+    let context_files = manager.get_context_files(false)?;
 
     // Verify files were added
     assert_eq!(context_files.len(), 2);
@@ -1423,7 +1444,7 @@ fn test_process_path_glob() -> Result<()> {
     // Process a glob pattern that matches markdown files
     let mut context_files = Vec::new();
     let glob_pattern = format!("{}/*.md", test_dir.to_string_lossy());
-    ContextManager::process_path(&glob_pattern, &env::current_dir()?, &mut context_files)?;
+    ContextManager::process_path(&glob_pattern, &env::current_dir()?, &mut context_files, false)?;
 
     // Verify only markdown files were added
     assert_eq!(context_files.len(), 3);
@@ -1460,7 +1481,12 @@ fn test_process_path_directory() -> Result<()> {
 
     // Process the directory
     let mut context_files = Vec::new();
-    ContextManager::process_path(&test_dir.to_string_lossy(), &env::current_dir()?, &mut context_files)?;
+    ContextManager::process_path(
+        &test_dir.to_string_lossy(),
+        &env::current_dir()?,
+        &mut context_files,
+        false,
+    )?;
 
     // Verify only files in the directory were added (not subdirectory files)
     assert_eq!(context_files.len(), 3);
@@ -1509,7 +1535,7 @@ fn test_home_directory_expansion() -> Result<()> {
 
     // Process a path with ~ expansion
     let mut context_files = Vec::new();
-    ContextManager::process_path("~/home_file.txt", &env::current_dir()?, &mut context_files)?;
+    ContextManager::process_path("~/home_file.txt", &env::current_dir()?, &mut context_files, false)?;
 
     // Verify the file was added correctly
     assert_eq!(context_files.len(), 1);
@@ -1537,7 +1563,7 @@ fn test_relative_path_resolution() -> Result<()> {
 
     // Process a relative path
     let mut context_files = Vec::new();
-    ContextManager::process_path("relative_file.txt", &temp_dir.path(), &mut context_files)?;
+    ContextManager::process_path("relative_file.txt", &temp_dir.path(), &mut context_files, false)?;
 
     // Restore the current directory
     env::set_current_dir(current_dir)?;

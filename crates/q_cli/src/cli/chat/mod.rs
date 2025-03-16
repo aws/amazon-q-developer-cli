@@ -108,7 +108,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/quit</em>         <black!>Quit the application</black!>
 <em>/context</em>      <black!>Manage context files for the chat session</black!>
   <em>show</em>        <black!>Display current context configuration [--expand]</black!>
-  <em>add</em>         <black!>Add file(s) to context [--global]</black!>
+  <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>profile</em>     <black!>List, create [--create], delete [--delete], or rename [--rename] context profiles</black!>
   <em>switch</em>      <black!>Switch to a different context profile [--create]</black!>
@@ -662,7 +662,7 @@ where
 
                             // If expand flag is set, show the expanded files
                             if expand {
-                                match context_manager.get_context_files() {
+                                match context_manager.get_context_files(false) {
                                     Ok(context_files) => {
                                         if context_files.is_empty() {
                                             execute!(
@@ -696,8 +696,8 @@ where
                                 }
                             }
                         },
-                        command::ContextSubcommand::Add { global, paths } => {
-                            match context_manager.add_paths(paths.clone(), global) {
+                        command::ContextSubcommand::Add { global, force, paths } => {
+                            match context_manager.add_paths(paths.clone(), global, force) {
                                 Ok(_) => {
                                     let target = if global { "global" } else { "profile" };
                                     execute!(

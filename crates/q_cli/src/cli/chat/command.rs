@@ -26,6 +26,7 @@ pub enum ContextSubcommand {
     },
     Add {
         global: bool,
+        force: bool,
         paths: Vec<String>,
     },
     Remove {
@@ -85,13 +86,16 @@ impl Command {
                             }
                         },
                         "add" => {
-                            // Parse add command with paths and --global flag
+                            // Parse add command with paths and flags
                             let mut global = false;
+                            let mut force = false;
                             let mut paths = Vec::new();
 
                             for part in &parts[2..] {
                                 if *part == "--global" {
                                     global = true;
+                                } else if *part == "--force" || *part == "-f" {
+                                    force = true;
                                 } else {
                                     paths.push((*part).to_string());
                                 }
@@ -102,7 +106,7 @@ impl Command {
                             }
 
                             Self::Context {
-                                subcommand: ContextSubcommand::Add { global, paths },
+                                subcommand: ContextSubcommand::Add { global, force, paths },
                             }
                         },
                         "rm" => {
@@ -269,9 +273,10 @@ mod tests {
         let cmd = Command::parse("/context add path1 path2").unwrap();
         match cmd {
             Command::Context {
-                subcommand: ContextSubcommand::Add { global, paths },
+                subcommand: ContextSubcommand::Add { global, force, paths },
             } => {
                 assert!(!global);
+                assert!(!force);
                 assert_eq!(paths, vec!["path1", "path2"]);
             },
             _ => panic!("Expected Context Add command"),
@@ -283,9 +288,10 @@ mod tests {
         let cmd = Command::parse("/context add --global path1 path2").unwrap();
         match cmd {
             Command::Context {
-                subcommand: ContextSubcommand::Add { global, paths },
+                subcommand: ContextSubcommand::Add { global, force, paths },
             } => {
                 assert!(global);
+                assert!(!force);
                 assert_eq!(paths, vec!["path1", "path2"]);
             },
             _ => panic!("Expected Context Add command with global flag"),
@@ -525,4 +531,48 @@ fn test_parse_context_profile_multiple_operations() {
         result.unwrap_err(),
         "Only one of --delete, --create, or --rename can be specified"
     );
+}
+#[test]
+fn test_parse_context_add_force() {
+    let cmd = Command::parse("/context add --force path1 path2").unwrap();
+    match cmd {
+        Command::Context {
+            subcommand: ContextSubcommand::Add { global, force, paths },
+        } => {
+            assert!(!global);
+            assert!(force);
+            assert_eq!(paths, vec!["path1", "path2"]);
+        },
+        _ => panic!("Expected Context Add command with force flag"),
+    }
+}
+
+#[test]
+fn test_parse_context_add_global_force() {
+    let cmd = Command::parse("/context add --global --force path1 path2").unwrap();
+    match cmd {
+        Command::Context {
+            subcommand: ContextSubcommand::Add { global, force, paths },
+        } => {
+            assert!(global);
+            assert!(force);
+            assert_eq!(paths, vec!["path1", "path2"]);
+        },
+        _ => panic!("Expected Context Add command with global and force flags"),
+    }
+}
+
+#[test]
+fn test_parse_context_add_short_force() {
+    let cmd = Command::parse("/context add -f path1 path2").unwrap();
+    match cmd {
+        Command::Context {
+            subcommand: ContextSubcommand::Add { global, force, paths },
+        } => {
+            assert!(!global);
+            assert!(force);
+            assert_eq!(paths, vec!["path1", "path2"]);
+        },
+        _ => panic!("Expected Context Add command with short force flag"),
+    }
 }
