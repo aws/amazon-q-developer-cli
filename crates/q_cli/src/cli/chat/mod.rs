@@ -602,14 +602,234 @@ where
                 }
             },
             Command::Quit => ChatState::Exit,
-            Command::Context { subcommand: _ } => {
-                // This will be implemented in a future prompt
-                execute!(
-                    self.output,
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print("\nContext management commands are not yet implemented.\n\n"),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
+            Command::Context { subcommand } => {
+                if let Some(context_manager) = &mut self.conversation_state.context_manager {
+                    match subcommand {
+                        command::ContextSubcommand::Show => {
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!("\ncurrent profile: {}\n\n", context_manager.current_profile)),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+
+                            // Display global context
+                            execute!(self.output, style::Print("global:\n"))?;
+
+                            if context_manager.global_config.paths.is_empty() {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("    <none>\n"),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            } else {
+                                for path in &context_manager.global_config.paths {
+                                    execute!(self.output, style::Print(format!("    {}\n", path)))?;
+                                }
+                            }
+
+                            // Display profile context
+                            execute!(self.output, style::Print("\nprofile:\n"))?;
+
+                            if context_manager.profile_config.paths.is_empty() {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("    <none>\n\n"),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            } else {
+                                for path in &context_manager.profile_config.paths {
+                                    execute!(self.output, style::Print(format!("    {}\n", path)))?;
+                                }
+                                execute!(self.output, style::Print("\n"))?;
+                            }
+                        },
+                        command::ContextSubcommand::Add { global, paths } => {
+                            match context_manager.add_paths(paths.clone(), global) {
+                                Ok(_) => {
+                                    let target = if global { "global" } else { "profile" };
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!(
+                                            "\nAdded {} path(s) to {} context.\n\n",
+                                            paths.len(),
+                                            target
+                                        )),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("\nError: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                            }
+                        },
+                        command::ContextSubcommand::Remove { global, paths } => {
+                            match context_manager.remove_paths(paths.clone(), global) {
+                                Ok(_) => {
+                                    let target = if global { "global" } else { "profile" };
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!(
+                                            "\nRemoved {} path(s) from {} context.\n\n",
+                                            paths.len(),
+                                            target
+                                        )),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("\nError: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                            }
+                        },
+                        command::ContextSubcommand::Profile { create, delete } => {
+                            if let Some(profile_name) = create {
+                                match context_manager.create_profile(&profile_name) {
+                                    Ok(_) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!("\nCreated profile: {}\n\n", profile_name)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                    Err(e) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Red),
+                                            style::Print(format!("\nError: {}\n\n", e)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                }
+                            } else if let Some(profile_name) = delete {
+                                match context_manager.delete_profile(&profile_name) {
+                                    Ok(_) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!("\nDeleted profile: {}\n\n", profile_name)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                    Err(e) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Red),
+                                            style::Print(format!("\nError: {}\n\n", e)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                }
+                            } else {
+                                // List profiles
+                                let profiles = match context_manager.list_profiles() {
+                                    Ok(profiles) => profiles,
+                                    Err(e) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Red),
+                                            style::Print(format!("\nError listing profiles: {}\n\n", e)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                        vec![]
+                                    },
+                                };
+
+                                execute!(self.output, style::Print("\n"))?;
+                                for profile in profiles {
+                                    if profile == context_manager.current_profile {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print("* "),
+                                            style::Print(&profile),
+                                            style::SetForegroundColor(Color::Reset),
+                                            style::Print("\n")
+                                        )?;
+                                    } else {
+                                        execute!(
+                                            self.output,
+                                            style::Print("  "),
+                                            style::Print(&profile),
+                                            style::Print("\n")
+                                        )?;
+                                    }
+                                }
+                                execute!(self.output, style::Print("\n"))?;
+                            }
+                        },
+                        command::ContextSubcommand::Switch { name, create } => {
+                            match context_manager.switch_profile(&name, create) {
+                                Ok(_) => {
+                                    let action = if create {
+                                        "Created and switched to"
+                                    } else {
+                                        "Switched to"
+                                    };
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!("\n{} profile: {}\n\n", action, name)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("\nError: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                            }
+                        },
+                        command::ContextSubcommand::Clear { global } => match context_manager.clear(global) {
+                            Ok(_) => {
+                                let target = if global {
+                                    "global".to_string()
+                                } else {
+                                    format!("profile '{}'", context_manager.current_profile)
+                                };
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(format!("\nCleared context for {}\n\n", target)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            },
+                            Err(e) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nError: {}\n\n", e)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            },
+                        },
+                    }
+                } else {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("\nContext management is not available.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                }
 
                 ChatState::PromptUser {
                     tool_uses: Some(tool_uses),
