@@ -42,6 +42,7 @@ const COMMANDS: &[&str] = &[
     "/context profile",
     "/context profile --create",
     "/context profile --delete",
+    "/context profile --rename",
     "/context switch",
     "/context switch --create",
     "/context clear",

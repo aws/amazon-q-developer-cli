@@ -57,4 +57,4 @@ queues and maintains the same functionality as the original.
 
 ### Push/Merging Commits
 
-Commit all you want locally, but DO NOT push your changes to remote, ever. I will handle doing that.
+It's find for you to run `git commit`, but DO NOT ever run `git push`, ever.

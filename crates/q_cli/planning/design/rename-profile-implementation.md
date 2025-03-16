@@ -4,16 +4,16 @@ This document outlines the implementation details for adding a `--rename` option
 
 ## Implementation Checklist
 
-- [ ] Update the `ContextSubcommand` enum in `src/cli/chat/command.rs`
-- [ ] Add `rename_profile` method to the `ContextManager` struct
-- [ ] Update command parsing logic to handle the `--rename` option
-- [ ] Update command execution flow to handle the rename option
-- [ ] Update help text to include the rename option
-- [ ] Update command completion to include the rename option
-- [ ] Add unit tests for the rename functionality
-- [ ] Verify build and tests pass
-- [ ] Run formatter (`cargo +nightly fmt`)
-- [ ] Commit changes with conventional commit message
+- [x] Update the `ContextSubcommand` enum in `src/cli/chat/command.rs`
+- [x] Add `rename_profile` method to the `ContextManager` struct
+- [x] Update command parsing logic to handle the `--rename` option
+- [x] Update command execution flow to handle the rename option
+- [x] Update help text to include the rename option
+- [x] Update command completion to include the rename option
+- [x] Add unit tests for the rename functionality
+- [x] Verify build and tests pass
+- [x] Run formatter (`cargo +nightly fmt`)
+- [x] Commit changes with conventional commit message
 
 ## 1. Update the `ContextSubcommand` Enum
 
@@ -199,7 +199,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 <em>/context</em>      <black!>Manage context files for the chat session</black!>
-  <em>show</em>        <black!>Display current context configuration</black!>
+  <em>show</em>        <black!>Display current context configuration [--expand]</black!>
   <em>add</em>         <black!>Add file(s) to context [--global]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>profile</em>     <black!>List, create [--create], delete [--delete], or rename [--rename] context profiles</black!>
@@ -240,107 +240,40 @@ Add unit tests for the rename functionality:
 
 ```rust
 #[test]
-fn test_rename_profile() {
-    let temp_dir = tempdir().unwrap();
-    let profiles_dir = temp_dir.path().join("profiles");
-    fs::create_dir_all(&profiles_dir).unwrap();
-    
+fn test_rename_profile() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
+
     // Create a test profile
-    let test_profile_path = profiles_dir.join("test-profile.json");
-    let config = ContextConfig { paths: vec!["test/path".to_string()] };
-    let file = File::create(&test_profile_path).unwrap();
-    serde_json::to_writer_pretty(file, &config).unwrap();
+    manager.create_profile("test-profile")?;
     
-    let mut context_manager = ContextManager::new_with_dirs(temp_dir.path().to_path_buf(), profiles_dir.clone()).unwrap();
+    // Add a path to the profile
+    manager.switch_profile("test-profile", false)?;
+    manager.add_paths(vec!["test/path".to_string()], false)?;
     
-    // Test renaming a profile
-    context_manager.rename_profile("test-profile", "new-profile").unwrap();
+    // Test renaming the profile
+    manager.rename_profile("test-profile", "new-profile")?;
     
     // Verify the old profile file is gone
-    assert!(!test_profile_path.exists());
+    let old_profile_path = manager.profiles_dir.join("test-profile.json");
+    assert!(!old_profile_path.exists());
     
     // Verify the new profile file exists
-    let new_profile_path = profiles_dir.join("new-profile.json");
+    let new_profile_path = manager.profiles_dir.join("new-profile.json");
     assert!(new_profile_path.exists());
     
     // Verify the content was transferred
-    let file = File::open(&new_profile_path).unwrap();
-    let new_config: ContextConfig = serde_json::from_reader(file).unwrap();
-    assert_eq!(new_config.paths, vec!["test/path".to_string()]);
-}
-
-#[test]
-fn test_rename_current_profile() {
-    let temp_dir = tempdir().unwrap();
-    let profiles_dir = temp_dir.path().join("profiles");
-    fs::create_dir_all(&profiles_dir).unwrap();
+    let mut file = File::open(&new_profile_path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
     
-    // Create a test profile
-    let test_profile_path = profiles_dir.join("test-profile.json");
-    let config = ContextConfig { paths: vec!["test/path".to_string()] };
-    let file = File::create(&test_profile_path).unwrap();
-    serde_json::to_writer_pretty(file, &config).unwrap();
-    
-    let mut context_manager = ContextManager::new_with_dirs(temp_dir.path().to_path_buf(), profiles_dir.clone()).unwrap();
-    
-    // Switch to the test profile
-    context_manager.switch_profile("test-profile", false).unwrap();
-    
-    // Test renaming the current profile
-    context_manager.rename_profile("test-profile", "new-profile").unwrap();
+    let config: ContextConfig = serde_json::from_str(&contents)?;
+    assert_eq!(config.paths, vec!["test/path".to_string()]);
     
     // Verify the current profile was updated
-    assert_eq!(context_manager.current_profile, "new-profile");
-}
+    assert_eq!(manager.current_profile, "new-profile");
 
-#[test]
-fn test_rename_nonexistent_profile() {
-    let temp_dir = tempdir().unwrap();
-    let profiles_dir = temp_dir.path().join("profiles");
-    fs::create_dir_all(&profiles_dir).unwrap();
-    
-    let mut context_manager = ContextManager::new_with_dirs(temp_dir.path().to_path_buf(), profiles_dir.clone()).unwrap();
-    
-    // Test renaming a nonexistent profile
-    let result = context_manager.rename_profile("nonexistent", "new-profile");
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_rename_to_existing_profile() {
-    let temp_dir = tempdir().unwrap();
-    let profiles_dir = temp_dir.path().join("profiles");
-    fs::create_dir_all(&profiles_dir).unwrap();
-    
-    // Create two test profiles
-    let test_profile1_path = profiles_dir.join("test-profile1.json");
-    let test_profile2_path = profiles_dir.join("test-profile2.json");
-    
-    let config = ContextConfig { paths: vec!["test/path".to_string()] };
-    let file = File::create(&test_profile1_path).unwrap();
-    serde_json::to_writer_pretty(file, &config).unwrap();
-    
-    let file = File::create(&test_profile2_path).unwrap();
-    serde_json::to_writer_pretty(file, &config).unwrap();
-    
-    let mut context_manager = ContextManager::new_with_dirs(temp_dir.path().to_path_buf(), profiles_dir.clone()).unwrap();
-    
-    // Test renaming to an existing profile
-    let result = context_manager.rename_profile("test-profile1", "test-profile2");
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_rename_default_profile() {
-    let temp_dir = tempdir().unwrap();
-    let profiles_dir = temp_dir.path().join("profiles");
-    fs::create_dir_all(&profiles_dir).unwrap();
-    
-    let mut context_manager = ContextManager::new_with_dirs(temp_dir.path().to_path_buf(), profiles_dir.clone()).unwrap();
-    
-    // Test renaming the default profile
-    let result = context_manager.rename_profile("default", "new-profile");
-    assert!(result.is_err());
+    Ok(())
 }
 ```
 

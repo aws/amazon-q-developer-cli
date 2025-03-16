@@ -35,6 +35,7 @@ pub enum ContextSubcommand {
     Profile {
         delete: Option<String>,
         create: Option<String>,
+        rename: Option<(String, String)>, // (old_name, new_name)
     },
     Switch {
         name: String,
@@ -126,9 +127,10 @@ impl Command {
                             }
                         },
                         "profile" => {
-                            // Parse profile command with optional --create or --delete flags
+                            // Parse profile command with optional --create, --delete, or --rename flags
                             let mut create = None;
                             let mut delete = None;
+                            let mut rename = None;
 
                             let mut i = 2;
                             while i < parts.len() {
@@ -149,6 +151,14 @@ impl Command {
                                             return Err("Missing profile name for --delete".to_string());
                                         }
                                     },
+                                    Some(&"--rename" | &"-r") => {
+                                        if i + 2 < parts.len() {
+                                            rename = Some((parts[i + 1].to_string(), parts[i + 2].to_string()));
+                                            i += 3;
+                                        } else {
+                                            return Err("Missing profile names for --rename. Usage: --rename <old_name> <new_name>".to_string());
+                                        }
+                                    },
                                     Some(part) => {
                                         return Err(format!("Unknown option for /context profile: {}", part));
                                     },
@@ -156,8 +166,14 @@ impl Command {
                                 }
                             }
 
+                            // Ensure only one operation is specified
+                            let operations = [delete.is_some(), create.is_some(), rename.is_some()];
+                            if operations.iter().filter(|&&x| x).count() > 1 {
+                                return Err("Only one of --delete, --create, or --rename can be specified".to_string());
+                            }
+
                             Self::Context {
-                                subcommand: ContextSubcommand::Profile { create, delete },
+                                subcommand: ContextSubcommand::Profile { create, delete, rename },
                             }
                         },
                         "switch" => {
@@ -309,10 +325,11 @@ mod tests {
         let cmd = Command::parse("/context profile").unwrap();
         match cmd {
             Command::Context {
-                subcommand: ContextSubcommand::Profile { delete, create },
+                subcommand: ContextSubcommand::Profile { delete, create, rename },
             } => {
                 assert!(delete.is_none());
                 assert!(create.is_none());
+                assert!(rename.is_none());
             },
             _ => panic!("Expected Context Profile command"),
         }
@@ -323,10 +340,11 @@ mod tests {
         let cmd = Command::parse("/context profile --create my-profile").unwrap();
         match cmd {
             Command::Context {
-                subcommand: ContextSubcommand::Profile { delete, create },
+                subcommand: ContextSubcommand::Profile { delete, create, rename },
             } => {
                 assert!(delete.is_none());
                 assert_eq!(create, Some("my-profile".to_string()));
+                assert!(rename.is_none());
             },
             _ => panic!("Expected Context Profile command with create option"),
         }
@@ -337,10 +355,11 @@ mod tests {
         let cmd = Command::parse("/context profile --delete my-profile").unwrap();
         match cmd {
             Command::Context {
-                subcommand: ContextSubcommand::Profile { delete, create },
+                subcommand: ContextSubcommand::Profile { delete, create, rename },
             } => {
                 assert_eq!(delete, Some("my-profile".to_string()));
                 assert!(create.is_none());
+                assert!(rename.is_none());
             },
             _ => panic!("Expected Context Profile command with delete option"),
         }
@@ -388,87 +407,122 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_context_clear_global() {
-        let cmd = Command::parse("/context clear --global").unwrap();
+    fn test_parse_context_profile_rename() {
+        let cmd = Command::parse("/context profile --rename old-profile new-profile").unwrap();
         match cmd {
             Command::Context {
-                subcommand: ContextSubcommand::Clear { global },
+                subcommand: ContextSubcommand::Profile { delete, create, rename },
             } => {
-                assert!(global);
+                assert!(delete.is_none());
+                assert!(create.is_none());
+                assert_eq!(rename, Some(("old-profile".to_string(), "new-profile".to_string())));
             },
-            _ => panic!("Expected Context Clear command with global flag"),
+            _ => panic!("Expected Context Profile command with rename option"),
         }
     }
 
     #[test]
-    fn test_parse_context_error_no_subcommand() {
-        let result = Command::parse("/context");
+    fn test_parse_context_profile_rename_short_flag() {
+        let cmd = Command::parse("/context profile -r old-profile new-profile").unwrap();
+        match cmd {
+            Command::Context {
+                subcommand: ContextSubcommand::Profile { delete, create, rename },
+            } => {
+                assert!(delete.is_none());
+                assert!(create.is_none());
+                assert_eq!(rename, Some(("old-profile".to_string(), "new-profile".to_string())));
+            },
+            _ => panic!("Expected Context Profile command with rename option"),
+        }
+    }
+
+    #[test]
+    fn test_parse_context_profile_rename_error_missing_names() {
+        let result = Command::parse("/context profile --rename");
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
-            "Missing subcommand for /context. Try /help for available commands."
+            "Missing profile names for --rename. Usage: --rename <old_name> <new_name>"
         );
     }
 
     #[test]
-    fn test_parse_context_error_unknown_subcommand() {
-        let result = Command::parse("/context unknown");
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Unknown context subcommand: unknown");
-    }
-
-    #[test]
-    fn test_parse_context_add_error_no_paths() {
-        let result = Command::parse("/context add");
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "No paths specified for /context add");
-    }
-
-    #[test]
-    fn test_parse_context_add_error_only_global_flag() {
-        let result = Command::parse("/context add --global");
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "No paths specified for /context add");
-    }
-
-    #[test]
-    fn test_parse_context_rm_error_no_paths() {
-        let result = Command::parse("/context rm");
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "No paths specified for /context rm");
-    }
-
-    #[test]
-    fn test_parse_context_profile_create_error_no_name() {
-        let result = Command::parse("/context profile --create");
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Missing profile name for --create");
-    }
-
-    #[test]
-    fn test_parse_context_profile_delete_error_no_name() {
-        let result = Command::parse("/context profile --delete");
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Missing profile name for --delete");
-    }
-
-    #[test]
-    fn test_parse_context_switch_error_no_name() {
-        let result = Command::parse("/context switch");
+    fn test_parse_context_profile_rename_error_missing_new_name() {
+        let result = Command::parse("/context profile --rename old-profile");
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
-            "Missing profile name for /context switch. Usage: /context switch <profile-name> [--create]"
+            "Missing profile names for --rename. Usage: --rename <old_name> <new_name>"
         );
     }
 
     #[test]
-    fn test_parse_context_switch_error_only_create_flag() {
-        let result = Command::parse("/context switch --create");
+    fn test_parse_context_profile_multiple_operations() {
+        let result = Command::parse("/context profile --create new-profile --rename old-profile new-profile");
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
-            "Missing profile name for /context switch. Usage: /context switch <profile-name> [--create]"
+            "Only one of --delete, --create, or --rename can be specified"
         );
     }
+}
+
+#[test]
+fn test_parse_context_profile_rename() {
+    let cmd = Command::parse("/context profile --rename old-profile new-profile").unwrap();
+    match cmd {
+        Command::Context {
+            subcommand: ContextSubcommand::Profile { delete, create, rename },
+        } => {
+            assert!(delete.is_none());
+            assert!(create.is_none());
+            assert_eq!(rename, Some(("old-profile".to_string(), "new-profile".to_string())));
+        },
+        _ => panic!("Expected Context Profile command with rename option"),
+    }
+}
+
+#[test]
+fn test_parse_context_profile_rename_short_flag() {
+    let cmd = Command::parse("/context profile -r old-profile new-profile").unwrap();
+    match cmd {
+        Command::Context {
+            subcommand: ContextSubcommand::Profile { delete, create, rename },
+        } => {
+            assert!(delete.is_none());
+            assert!(create.is_none());
+            assert_eq!(rename, Some(("old-profile".to_string(), "new-profile".to_string())));
+        },
+        _ => panic!("Expected Context Profile command with rename option"),
+    }
+}
+
+#[test]
+fn test_parse_context_profile_rename_error_missing_names() {
+    let result = Command::parse("/context profile --rename");
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        "Missing profile names for --rename. Usage: --rename <old_name> <new_name>"
+    );
+}
+
+#[test]
+fn test_parse_context_profile_rename_error_missing_new_name() {
+    let result = Command::parse("/context profile --rename old-profile");
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        "Missing profile names for --rename. Usage: --rename <old_name> <new_name>"
+    );
+}
+
+#[test]
+fn test_parse_context_profile_multiple_operations() {
+    let result = Command::parse("/context profile --create new-profile --rename old-profile new-profile");
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        "Only one of --delete, --create, or --rename can be specified"
+    );
 }

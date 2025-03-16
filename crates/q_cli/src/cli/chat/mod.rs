@@ -110,7 +110,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>show</em>        <black!>Display current context configuration [--expand]</black!>
   <em>add</em>         <black!>Add file(s) to context [--global]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
-  <em>profile</em>     <black!>List, create [--create], or delete [--delete] context profiles</black!>
+  <em>profile</em>     <black!>List, create [--create], delete [--delete], or rename [--rename] context profiles</black!>
   <em>switch</em>      <black!>Switch to a different context profile [--create]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
 
@@ -746,7 +746,7 @@ where
                                 },
                             }
                         },
-                        command::ContextSubcommand::Profile { create, delete } => {
+                        command::ContextSubcommand::Profile { create, delete, rename } => {
                             if let Some(profile_name) = create {
                                 match context_manager.create_profile(&profile_name) {
                                     Ok(_) => {
@@ -773,6 +773,28 @@ where
                                             self.output,
                                             style::SetForegroundColor(Color::Green),
                                             style::Print(format!("\nDeleted profile: {}\n\n", profile_name)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                    Err(e) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Red),
+                                            style::Print(format!("\nError: {}\n\n", e)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                }
+                            } else if let Some((old_name, new_name)) = rename {
+                                match context_manager.rename_profile(&old_name, &new_name) {
+                                    Ok(_) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!(
+                                                "\nRenamed profile: {} -> {}\n\n",
+                                                old_name, new_name
+                                            )),
                                             style::SetForegroundColor(Color::Reset)
                                         )?;
                                     },

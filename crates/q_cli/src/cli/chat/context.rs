@@ -371,6 +371,58 @@ impl ContextManager {
         Ok(())
     }
 
+    /// Rename a profile.
+    ///
+    /// # Arguments
+    /// * `old_name` - Current name of the profile
+    /// * `new_name` - New name for the profile
+    ///
+    /// # Returns
+    /// A Result indicating success or an error
+    pub fn rename_profile(&mut self, old_name: &str, new_name: &str) -> Result<()> {
+        // Validate profile names
+        if old_name == "default" {
+            return Err(eyre!("Cannot rename the default profile"));
+        }
+
+        if new_name == "default" {
+            return Err(eyre!("Cannot rename to 'default' as it's a reserved profile name"));
+        }
+
+        // Validate new profile name
+        Self::validate_profile_name(new_name)?;
+
+        // Check if old profile exists
+        let old_profile_path = self.profiles_dir.join(format!("{}.json", old_name));
+        if !old_profile_path.exists() {
+            return Err(eyre!("Profile '{}' not found", old_name));
+        }
+
+        // Check if new profile name already exists
+        let new_profile_path = self.profiles_dir.join(format!("{}.json", new_name));
+        if new_profile_path.exists() {
+            return Err(eyre!("Profile '{}' already exists", new_name));
+        }
+
+        // Read the old profile configuration
+        let profile_config = Self::load_profile_config(&self.profiles_dir, old_name)?;
+
+        // Write the configuration to the new profile file
+        let file = File::create(&new_profile_path)?;
+        serde_json::to_writer_pretty(file, &profile_config)?;
+
+        // Delete the old profile file
+        fs::remove_file(&old_profile_path)?;
+
+        // If the current profile is being renamed, update the current_profile field
+        if self.current_profile == old_name {
+            self.current_profile = new_name.to_string();
+            self.profile_config = profile_config;
+        }
+
+        Ok(())
+    }
+
     /// Switch to a different profile.
     ///
     /// # Arguments
@@ -1047,6 +1099,114 @@ fn test_delete_profile() -> Result<()> {
 
     // Verify the profile file was deleted
     assert!(!profile_path.exists());
+
+    Ok(())
+}
+
+#[test]
+fn test_rename_profile() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
+
+    // Create a test profile
+    manager.create_profile("test-profile")?;
+
+    // Add a path to the profile
+    manager.switch_profile("test-profile", false)?;
+    manager.add_paths(vec!["test/path".to_string()], false)?;
+
+    // Test renaming the profile
+    manager.rename_profile("test-profile", "new-profile")?;
+
+    // Verify the old profile file is gone
+    let old_profile_path = manager.profiles_dir.join("test-profile.json");
+    assert!(!old_profile_path.exists());
+
+    // Verify the new profile file exists
+    let new_profile_path = manager.profiles_dir.join("new-profile.json");
+    assert!(new_profile_path.exists());
+
+    // Verify the content was transferred
+    let mut file = File::open(&new_profile_path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
+    let config: ContextConfig = serde_json::from_str(&contents)?;
+    assert_eq!(config.paths, vec!["test/path".to_string()]);
+
+    // Verify the current profile was updated
+    assert_eq!(manager.current_profile, "new-profile");
+
+    Ok(())
+}
+
+#[test]
+fn test_rename_nonexistent_profile() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
+
+    // Test renaming a nonexistent profile
+    let result = manager.rename_profile("nonexistent", "new-profile");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("not found"));
+
+    Ok(())
+}
+
+#[test]
+fn test_rename_to_existing_profile() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
+
+    // Create two test profiles
+    manager.create_profile("test-profile1")?;
+    manager.create_profile("test-profile2")?;
+
+    // Test renaming to an existing profile
+    let result = manager.rename_profile("test-profile1", "test-profile2");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("already exists"));
+
+    Ok(())
+}
+
+#[test]
+fn test_rename_default_profile() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
+
+    // Test renaming the default profile
+    let result = manager.rename_profile("default", "new-profile");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("Cannot rename the default profile"));
+
+    Ok(())
+}
+
+#[test]
+fn test_rename_to_default_profile() -> Result<()> {
+    // Create a test context manager
+    let (mut manager, _temp_dir) = tests::create_test_context_manager()?;
+
+    // Create a test profile
+    manager.create_profile("test-profile")?;
+
+    // Test renaming to "default"
+    let result = manager.rename_profile("test-profile", "default");
+
+    // Verify it returns an error
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("reserved profile name"));
 
     Ok(())
 }
