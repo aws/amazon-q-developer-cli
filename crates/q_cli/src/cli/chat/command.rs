@@ -61,7 +61,7 @@ impl Command {
                 "q" | "exit" | "quit" => Self::Quit,
                 "context" => {
                     if parts.len() < 2 {
-                        return Err("Missing subcommand for /context".to_string());
+                        return Err("Missing subcommand for /context. Try /help for available commands.".to_string());
                     }
 
                     match parts[1].to_lowercase().as_str() {
@@ -165,7 +165,7 @@ impl Command {
                                     subcommand: ContextSubcommand::Switch { name, create },
                                 }
                             } else {
-                                return Err("Missing profile name for /context switch".to_string());
+                                return Err("Missing profile name for /context switch. Usage: /context switch <profile-name> [--create]".to_string());
                             }
                         },
                         "clear" => {
@@ -374,7 +374,10 @@ mod tests {
     fn test_parse_context_error_no_subcommand() {
         let result = Command::parse("/context");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Missing subcommand for /context");
+        assert_eq!(
+            result.unwrap_err(),
+            "Missing subcommand for /context. Try /help for available commands."
+        );
     }
 
     #[test]
@@ -423,13 +426,19 @@ mod tests {
     fn test_parse_context_switch_error_no_name() {
         let result = Command::parse("/context switch");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Missing profile name for /context switch");
+        assert_eq!(
+            result.unwrap_err(),
+            "Missing profile name for /context switch. Usage: /context switch <profile-name> [--create]"
+        );
     }
 
     #[test]
     fn test_parse_context_switch_error_only_create_flag() {
         let result = Command::parse("/context switch --create");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Missing profile name for /context switch");
+        assert_eq!(
+            result.unwrap_err(),
+            "Missing profile name for /context switch. Usage: /context switch <profile-name> [--create]"
+        );
     }
 }

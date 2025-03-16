@@ -388,6 +388,18 @@ impl ContextManager {
         // Validate profile name
         Self::validate_profile_name(name)?;
 
+        // Special handling for default profile - it always exists
+        if name == "default" {
+            // Load the default profile configuration
+            let profile_config = Self::load_profile_config(&self.profiles_dir, name)?;
+
+            // Update the current profile
+            self.current_profile = name.to_string();
+            self.profile_config = profile_config;
+
+            return Ok(());
+        }
+
         // Check if profile exists
         let profile_path = self.profiles_dir.join(format!("{}.json", name));
         if !profile_path.exists() {

@@ -58,7 +58,8 @@ pub fn generate_prompt(conversation_state: &ConversationState) -> String {
     if let Some(context_manager) = &conversation_state.context_manager {
         if context_manager.current_profile != "default" {
             // Format with profile name for non-default profiles
-            return format!("[{}] > ", context_manager.current_profile.clone().cyan());
+            let profile = context_manager.current_profile.clone();
+            return format!("[{}] > ", profile).cyan().to_string();
         }
     }
 
