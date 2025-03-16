@@ -106,6 +106,13 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
+<em>/context</em>      <black!>Manage context files for the chat session</black!>
+  <em>show</em>        <black!>Display current context configuration</black!>
+  <em>add</em>         <black!>Add file(s) to context [--global]</black!>
+  <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
+  <em>profile</em>     <black!>List, create [--create], or delete [--delete] context profiles</black!>
+  <em>switch</em>      <black!>Switch to a different context profile [--create]</black!>
+  <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
 
 <em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
 

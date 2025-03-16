@@ -48,10 +48,10 @@ This checklist tracks the implementation progress of the context management feat
   - [x] Modify `ChatCompleter` implementation if needed
   - [x] Write unit tests for command completion
 
-- [ ] **Prompt 7: Update the Help Text**
-  - [ ] Add context commands to `HELP_TEXT` constant
-  - [ ] Format help text consistently
-  - [ ] Include clear descriptions of each subcommand
+- [x] **Prompt 7: Update the Help Text**
+  - [x] Add context commands to `HELP_TEXT` constant
+  - [x] Format help text consistently
+  - [x] Include clear descriptions of each subcommand
 
 - [ ] **Prompt 8: Integrate with ConversationState**
   - [ ] Add `context_manager` field to `ConversationState`
