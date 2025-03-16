@@ -79,11 +79,11 @@ This checklist tracks the implementation progress of the context management feat
   - [x] Add error handling for non-existent profiles
   - [x] Write unit tests for CLI flag handling
 
-- [ ] **Prompt 12: Integration Testing**
-  - [ ] Test end-to-end flow for adding context files
-  - [ ] Test profile switching
-  - [ ] Test CLI flag for profile specification
-  - [ ] Test error handling for edge cases
+- [x] **Prompt 12: Integration Testing**
+  - [x] Test end-to-end flow for adding context files
+  - [x] Test profile switching
+  - [x] Test CLI flag for profile specification
+  - [x] Test error handling for edge cases
 
 - [ ] **Prompt 13: Documentation and Final Touches**
   - [ ] Add documentation comments to public API
