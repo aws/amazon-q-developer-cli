@@ -10,9 +10,7 @@ use std::{
 
 use tempfile::TempDir;
 
-// This test file focuses on CLI-specific integration tests
-// Note: These tests are marked as ignored by default since they require the CLI binary
-// Run with: cargo test --test context_management_cli_test -- --ignored
+// This test file focuses on CLI-specific integration tests for the context management feature
 
 // Helper function to create a temporary directory with test files
 fn setup_test_environment() -> (TempDir, PathBuf) {
@@ -35,61 +33,73 @@ fn setup_test_environment() -> (TempDir, PathBuf) {
     (temp_dir, test_files_dir)
 }
 
+// Helper function to run a CLI command and return the output
+fn run_cli_command(args: Vec<&str>) -> std::process::Output {
+    let mut command = Command::new("cargo");
+    command.arg("run").arg("--bin").arg("q_cli");
+
+    for arg in args {
+        command.arg(arg);
+    }
+
+    command.output().expect("Failed to execute command")
+}
+
+// These tests are marked as ignored because they require the CLI binary to be built
+// and they interact with the file system in ways that might not be suitable for automated testing
+// Run with: cargo test --test context_management_cli_test -- --ignored
+
 #[test]
 #[ignore]
 fn test_cli_profile_flag() {
     let (temp_dir, test_files_dir) = setup_test_environment();
 
     // Set the HOME environment variable to our temp directory
-    // This ensures the CLI will use our test directory for configuration
     env::set_var("HOME", temp_dir.path().to_str().unwrap());
 
-    // Create a profile using the CLI
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--accept-all")
-        .arg("/context profile --create test-profile")
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
+    // Create a profile
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context profile --create test-profile"]);
+    assert!(
+        output.status.success(),
+        "Failed to create profile: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Add a file to the test profile
     let file_path = test_files_dir.join("file1.md").to_string_lossy().to_string();
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--profile")
-        .arg("test-profile")
-        .arg("--accept-all")
-        .arg(format!("/context add --force {}", file_path))
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
+    let output = run_cli_command(vec![
+        "chat",
+        "--profile",
+        "test-profile",
+        "--accept-all",
+        &format!("/context add --force {}", file_path),
+    ]);
+    assert!(
+        output.status.success(),
+        "Failed to add file to profile: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Verify the file was added by running the show command
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--profile")
-        .arg("test-profile")
-        .arg("--accept-all")
-        .arg("/context show")
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
+    let output = run_cli_command(vec![
+        "chat",
+        "--profile",
+        "test-profile",
+        "--accept-all",
+        "/context show",
+    ]);
+    assert!(
+        output.status.success(),
+        "Failed to show context: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    assert!(output_str.contains(&file_path));
+    assert!(
+        output_str.contains(&file_path),
+        "Output does not contain file path: {}",
+        output_str
+    );
 
     // Verify the profile file was created
     let profile_path = temp_dir
@@ -100,11 +110,19 @@ fn test_cli_profile_flag() {
         .join("profiles")
         .join("test-profile.json");
 
-    assert!(profile_path.exists());
+    assert!(profile_path.exists(), "Profile file does not exist");
 
     // Read the profile file and verify it contains the file path
-    let profile_content = fs::read_to_string(profile_path).expect("Failed to read profile file");
-    assert!(profile_content.contains(&file_path.replace('\\', "\\\\")));
+    let profile_content = fs::read_to_string(&profile_path).expect("Failed to read profile file");
+
+    // Handle path separators for different platforms
+    let normalized_path = file_path.replace('\\', "\\\\");
+    assert!(
+        profile_content.contains(&normalized_path),
+        "Profile content does not contain file path.\nProfile content: {}\nExpected path: {}",
+        profile_content,
+        normalized_path
+    );
 }
 
 #[test]
@@ -116,39 +134,29 @@ fn test_cli_error_handling() {
     env::set_var("HOME", temp_dir.path().to_str().unwrap());
 
     // Try to switch to a non-existent profile
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--profile")
-        .arg("non-existent-profile")
-        .arg("--accept-all")
-        .arg("exit")
-        .output()
-        .expect("Failed to execute command");
+    let output = run_cli_command(vec!["chat", "--profile", "non-existent-profile", "--accept-all"]);
 
     // The command should still succeed, but there should be an error message
-    assert!(output.status.success());
+    assert!(output.status.success(), "Command failed unexpectedly");
 
     let error_str = String::from_utf8_lossy(&output.stderr);
-    assert!(error_str.contains("profile") && error_str.contains("does not exist"));
+    assert!(
+        error_str.contains("profile") && error_str.contains("does not exist"),
+        "Error message does not indicate profile not found: {}",
+        error_str
+    );
 
     // Try to add a non-existent file without --force
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--accept-all")
-        .arg("/context add non-existent-file.md")
-        .output()
-        .expect("Failed to execute command");
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context add non-existent-file.md"]);
 
-    assert!(output.status.success());
+    assert!(output.status.success(), "Command failed unexpectedly");
 
     let error_str = String::from_utf8_lossy(&output.stderr);
-    assert!(error_str.contains("Invalid path") || error_str.contains("does not exist"));
+    assert!(
+        error_str.contains("Invalid path") || error_str.contains("does not exist"),
+        "Error message does not indicate invalid path: {}",
+        error_str
+    );
 }
 
 #[test]
@@ -161,33 +169,31 @@ fn test_cli_context_persistence() {
 
     // Add a file to the global context
     let file_path = test_files_dir.join("file1.md").to_string_lossy().to_string();
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--accept-all")
-        .arg(format!("/context add --global --force {}", file_path))
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
+    let output = run_cli_command(vec![
+        "chat",
+        "--accept-all",
+        &format!("/context add --global --force {}", file_path),
+    ]);
+    assert!(
+        output.status.success(),
+        "Failed to add file to global context: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Start a new session and verify the file is still in the context
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--accept-all")
-        .arg("/context show")
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context show"]);
+    assert!(
+        output.status.success(),
+        "Failed to show context: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    assert!(output_str.contains(&file_path));
+    assert!(
+        output_str.contains(&file_path),
+        "Output does not contain file path: {}",
+        output_str
+    );
 
     // Verify the global config file was created
     let global_path = temp_dir
@@ -197,11 +203,19 @@ fn test_cli_context_persistence() {
         .join("context")
         .join("global.json");
 
-    assert!(global_path.exists());
+    assert!(global_path.exists(), "Global config file does not exist");
 
     // Read the global config file and verify it contains the file path
-    let global_content = fs::read_to_string(global_path).expect("Failed to read global config file");
-    assert!(global_content.contains(&file_path.replace('\\', "\\\\")));
+    let global_content = fs::read_to_string(&global_path).expect("Failed to read global config file");
+
+    // Handle path separators for different platforms
+    let normalized_path = file_path.replace('\\', "\\\\");
+    assert!(
+        global_content.contains(&normalized_path),
+        "Global config content does not contain file path.\nGlobal content: {}\nExpected path: {}",
+        global_content,
+        normalized_path
+    );
 }
 
 #[test]
@@ -213,76 +227,66 @@ fn test_cli_profile_commands() {
     env::set_var("HOME", temp_dir.path().to_str().unwrap());
 
     // Create a profile
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--accept-all")
-        .arg("/context profile --create test-profile")
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context profile --create test-profile"]);
+    assert!(
+        output.status.success(),
+        "Failed to create profile: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // List profiles and verify the new profile is there
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--accept-all")
-        .arg("/context profile")
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context profile"]);
+    assert!(
+        output.status.success(),
+        "Failed to list profiles: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    assert!(output_str.contains("test-profile"));
+    assert!(
+        output_str.contains("test-profile"),
+        "Output does not contain profile name: {}",
+        output_str
+    );
 
     // Switch to the new profile
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--accept-all")
-        .arg("/context switch test-profile")
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context switch test-profile"]);
+    assert!(
+        output.status.success(),
+        "Failed to switch profile: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Verify the profile was switched
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--accept-all")
-        .arg("/context show")
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context show"]);
+    assert!(
+        output.status.success(),
+        "Failed to show context: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    assert!(output_str.contains("current profile: test-profile"));
+    assert!(
+        output_str.contains("current profile: test-profile"),
+        "Output does not indicate correct profile: {}",
+        output_str
+    );
 
-    // Delete the profile
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--bin")
-        .arg("q")
-        .arg("chat")
-        .arg("--accept-all")
-        .arg("/context switch default")
-        .arg("/context profile --delete test-profile")
-        .output()
-        .expect("Failed to execute command");
+    // Switch back to default profile
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context switch default"]);
+    assert!(
+        output.status.success(),
+        "Failed to switch to default profile: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
-    assert!(output.status.success());
+    // Delete the test profile
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context profile --delete test-profile"]);
+    assert!(
+        output.status.success(),
+        "Failed to delete profile: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Verify the profile was deleted
     let profile_path = temp_dir
@@ -293,5 +297,56 @@ fn test_cli_profile_commands() {
         .join("profiles")
         .join("test-profile.json");
 
-    assert!(!profile_path.exists());
+    assert!(!profile_path.exists(), "Profile file still exists after deletion");
+
+    // Verify the profile is no longer listed
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context profile"]);
+    assert!(
+        output.status.success(),
+        "Failed to list profiles: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !output_str.contains("test-profile"),
+        "Output still contains deleted profile: {}",
+        output_str
+    );
+}
+
+#[test]
+#[ignore]
+fn test_cli_force_flag() {
+    let (temp_dir, _) = setup_test_environment();
+
+    // Set the HOME environment variable to our temp directory
+    env::set_var("HOME", temp_dir.path().to_str().unwrap());
+
+    // Try to add a non-existent file with --force flag
+    let output = run_cli_command(vec![
+        "chat",
+        "--accept-all",
+        "/context add --force non-existent-file.md",
+    ]);
+    assert!(
+        output.status.success(),
+        "Failed to add non-existent file with force flag: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify the file was added to the configuration
+    let output = run_cli_command(vec!["chat", "--accept-all", "/context show"]);
+    assert!(
+        output.status.success(),
+        "Failed to show context: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output_str.contains("non-existent-file.md"),
+        "Output does not contain non-existent file: {}",
+        output_str
+    );
 }
