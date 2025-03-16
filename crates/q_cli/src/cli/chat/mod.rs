@@ -118,7 +118,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 "};
 
-pub async fn chat(input: Option<String>, accept_all: bool) -> Result<ExitCode> {
+pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<String>) -> Result<ExitCode> {
     if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
         bail!(
             "You are not logged in, please log in with {}",
@@ -157,6 +157,7 @@ pub async fn chat(input: Option<String>, accept_all: bool) -> Result<ExitCode> {
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
         accept_all,
+        profile,
     )?;
 
     let result = chat.try_chat().await.map(|_| ExitCode::SUCCESS);
@@ -226,6 +227,7 @@ impl<W: Write> ChatContext<W> {
         client: StreamingClient,
         terminal_width_provider: fn() -> Option<usize>,
         accept_all: bool,
+        profile: Option<String>,
     ) -> Result<Self> {
         Ok(Self {
             ctx,
@@ -237,7 +239,7 @@ impl<W: Write> ChatContext<W> {
             client,
             terminal_width_provider,
             spinner: None,
-            conversation_state: ConversationState::new(load_tools()?),
+            conversation_state: ConversationState::new(load_tools()?, profile),
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
             accept_all,
@@ -1214,6 +1216,7 @@ mod tests {
             test_client,
             || Some(80),
             false,
+            None,
         )
         .unwrap()
         .try_chat()

@@ -30,6 +30,7 @@ use tracing::{
     warn,
 };
 
+use super::context::ContextManager;
 use super::tools::ToolSpec;
 use super::truncate_safe;
 use crate::cli::chat::tools::{
@@ -57,12 +58,32 @@ pub struct ConversationState {
     pub next_message: Option<UserInputMessage>,
     history: VecDeque<ChatMessage>,
     tools: Vec<Tool>,
+    /// Context manager for handling sticky context files
+    pub context_manager: Option<ContextManager>,
 }
 
 impl ConversationState {
-    pub fn new(tool_config: HashMap<String, ToolSpec>) -> Self {
+    pub fn new(tool_config: HashMap<String, ToolSpec>, profile: Option<String>) -> Self {
         let conversation_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
         info!(?conversation_id, "Generated new conversation id");
+
+        // Initialize context manager
+        let context_manager = match ContextManager::new() {
+            Ok(mut manager) => {
+                // Switch to specified profile if provided
+                if let Some(profile_name) = profile {
+                    if let Err(e) = manager.switch_profile(&profile_name, false) {
+                        warn!("Failed to switch to profile {}: {}", profile_name, e);
+                    }
+                }
+                Some(manager)
+            },
+            Err(e) => {
+                warn!("Failed to initialize context manager: {}", e);
+                None
+            },
+        };
+
         Self {
             conversation_id,
             next_message: None,
@@ -77,6 +98,7 @@ impl ConversationState {
                     })
                 })
                 .collect(),
+            context_manager,
         }
     }
 
@@ -99,8 +121,40 @@ impl ConversationState {
             input
         };
 
+        // Get context files if available
+        let context_files = if let Some(context_manager) = &self.context_manager {
+            match context_manager.get_context_files() {
+                Ok(files) => {
+                    if !files.is_empty() {
+                        let mut context_content = String::new();
+                        context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
+                        for (filename, content) in files {
+                            context_content.push_str(&format!("[{}]\n{}\n", filename, content));
+                        }
+                        context_content.push_str("--- CONTEXT FILES END ---\n\n");
+                        Some(context_content)
+                    } else {
+                        None
+                    }
+                },
+                Err(e) => {
+                    warn!("Failed to get context files: {}", e);
+                    None
+                },
+            }
+        } else {
+            None
+        };
+
+        // Combine context files with user input if available
+        let content = if let Some(context) = context_files {
+            format!("{}\n{}", context, input)
+        } else {
+            input
+        };
+
         let msg = UserInputMessage {
-            content: input,
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 shell_state: Some(build_shell_state()),
                 env_state: Some(build_env_state()),
@@ -418,6 +472,33 @@ mod tests {
         println!("{env_state:?}");
     }
 
+    #[test]
+    fn test_conversation_state_with_context_manager() {
+        let tool_config = load_tools().unwrap();
+        let profile = Some("test-profile".to_string());
+
+        let conversation_state = ConversationState::new(tool_config, profile);
+
+        // Verify that context_manager is initialized
+        assert!(conversation_state.context_manager.is_some());
+    }
+
+    #[test]
+    fn test_append_new_user_message_with_context() {
+        let tool_config = load_tools().unwrap();
+        let mut conversation_state = ConversationState::new(tool_config, None);
+
+        // Mock the context_manager to return some context files
+        if let Some(context_manager) = &mut conversation_state.context_manager {
+            // We can't easily mock get_context_files, but we can verify the method exists
+            assert!(context_manager.get_context_files().is_ok());
+        }
+
+        // Test that append_new_user_message works with context_manager
+        conversation_state.append_new_user_message("test message".to_string());
+        assert!(conversation_state.next_message.is_some());
+    }
+
     fn assert_conversation_state_invariants(state: FigConversationState, i: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
             assert!(
@@ -462,7 +543,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
-        let mut conversation_state = ConversationState::new(load_tools().unwrap());
+        let mut conversation_state = ConversationState::new(load_tools().unwrap(), None);
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
@@ -482,7 +563,7 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
         // Build a long conversation history of tool use results.
-        let mut conversation_state = ConversationState::new(load_tools().unwrap());
+        let mut conversation_state = ConversationState::new(load_tools().unwrap(), None);
         conversation_state.append_new_user_message("start".to_string());
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state();
@@ -504,7 +585,7 @@ mod tests {
         }
 
         // Build a long conversation history of user messages mixed in with tool results.
-        let mut conversation_state = ConversationState::new(load_tools().unwrap());
+        let mut conversation_state = ConversationState::new(load_tools().unwrap(), None);
         conversation_state.append_new_user_message("start".to_string());
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state();

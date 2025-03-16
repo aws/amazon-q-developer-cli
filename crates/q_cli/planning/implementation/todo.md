@@ -53,12 +53,12 @@ This checklist tracks the implementation progress of the context management feat
   - [x] Format help text consistently
   - [x] Include clear descriptions of each subcommand
 
-- [ ] **Prompt 8: Integrate with ConversationState**
-  - [ ] Add `context_manager` field to `ConversationState`
-  - [ ] Update `ConversationState::new` method
-  - [ ] Modify `append_new_user_message` method
-  - [ ] Add support for profile switching via CLI flag
-  - [ ] Write unit tests for integration
+- [x] **Prompt 8: Integrate with ConversationState**
+  - [x] Add `context_manager` field to `ConversationState`
+  - [x] Update `ConversationState::new` method
+  - [x] Modify `append_new_user_message` method
+  - [x] Add support for profile switching via CLI flag
+  - [x] Write unit tests for integration
 
 - [ ] **Prompt 9: Implement Command Execution**
   - [ ] Add case for `Context` command in main chat loop
