@@ -41,7 +41,26 @@ impl From<ToolUse> for FigToolUse {
 }
 
 #[derive(Debug, Error)]
-pub enum RecvError {
+pub struct RecvError {
+    /// The request id associated with the [SendMessageOutput] stream.
+    pub request_id: Option<String>,
+    #[source]
+    pub source: RecvErrorKind,
+}
+
+impl std::fmt::Display for RecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Failed to receive the next message: ")?;
+        if let Some(request_id) = self.request_id.as_ref() {
+            write!(f, "request_id: {}, error: ", request_id)?;
+        }
+        write!(f, "{}", self.source)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum RecvErrorKind {
     #[error("{0}")]
     Client(#[from] fig_api_client::Error),
     #[error("{0}")]
@@ -223,13 +242,13 @@ impl ResponseParser {
                         content: std::mem::take(&mut self.assistant_text),
                         tool_uses: Some(self.tool_uses.clone().into_iter().map(Into::into).collect()),
                     });
-                    return Err(RecvError::UnexpectedToolUseEos {
+                    return Err(self.error(RecvErrorKind::UnexpectedToolUseEos {
                         tool_use_id: id,
                         name,
                         message,
-                    });
+                    }));
                 } else {
-                    return Err(err.into());
+                    return Err(self.error(err));
                 }
             },
         };
@@ -266,11 +285,23 @@ impl ResponseParser {
             },
             Err(err) => {
                 if duration.as_secs() >= 59 {
-                    Err(RecvError::StreamTimeout { source: err, duration })
+                    Err(self.error(RecvErrorKind::StreamTimeout { source: err, duration }))
                 } else {
-                    Err(err.into())
+                    Err(self.error(err))
                 }
             },
+        }
+    }
+
+    fn request_id(&self) -> Option<&str> {
+        self.response.request_id()
+    }
+
+    /// Helper to create a new [RecvError] populated with the associated request id for the stream.
+    fn error(&self, source: impl Into<RecvErrorKind>) -> RecvError {
+        RecvError {
+            request_id: self.request_id().map(str::to_string),
+            source: source.into(),
         }
     }
 }

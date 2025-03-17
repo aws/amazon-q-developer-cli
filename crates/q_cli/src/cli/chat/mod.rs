@@ -49,6 +49,7 @@ use fig_util::CLI_BINARY_NAME;
 use input_source::InputSource;
 use parser::{
     RecvError,
+    RecvErrorKind,
     ResponseParser,
     ToolUse,
 };
@@ -730,8 +731,12 @@ where
                         },
                     }
                 },
-                Err(RecvError::StreamTimeout { source, duration }) => {
+                Err(RecvError {
+                    request_id,
+                    source: RecvErrorKind::StreamTimeout { source, duration },
+                }) => {
                     error!(
+                        request_id,
                         ?source,
                         "Encountered a stream timeout after waiting for {}s",
                         duration.as_secs()
@@ -758,14 +763,18 @@ where
                             .await?,
                     ));
                 },
-                Err(RecvError::UnexpectedToolUseEos {
-                    tool_use_id,
-                    name,
-                    message,
+                Err(RecvError {
+                    request_id,
+                    source:
+                        RecvErrorKind::UnexpectedToolUseEos {
+                            tool_use_id,
+                            name,
+                            message,
+                        },
                 }) => {
                     error!(
-                        tool_use_id,
-                        name, "The response stream ended before the entire tool use was received"
+                        request_id,
+                        tool_use_id, name, "The response stream ended before the entire tool use was received"
                     );
                     if self.interactive {
                         execute!(self.output, cursor::Hide)?;

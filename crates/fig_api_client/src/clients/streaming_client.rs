@@ -176,6 +176,14 @@ pub enum SendMessageOutput {
 }
 
 impl SendMessageOutput {
+    pub fn request_id(&self) -> Option<&str> {
+        match self {
+            SendMessageOutput::Codewhisperer(output) => output.request_id(),
+            SendMessageOutput::QDeveloper(output) => output.request_id(),
+            SendMessageOutput::Mock(_) => None,
+        }
+    }
+
     pub async fn recv(&mut self) -> Result<Option<ChatResponseStream>, Error> {
         match self {
             SendMessageOutput::Codewhisperer(output) => Ok(output
