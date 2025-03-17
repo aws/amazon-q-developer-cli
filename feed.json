@@ -12,6 +12,30 @@
     },
     {
       "type": "release",
+      "date": "2025-03-14",
+      "version": "1.7.1",
+      "title": "Version 1.7.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "`q chat` improvements: better file diff [#799](https://github.com/aws/amazon-q-developer-cli/pull/799), append functionality with fs_write [#764](https://github.com/aws/amazon-q-developer-cli/pull/764), multi-line input support [#831](https://github.com/aws/amazon-q-developer-cli/pull/831)"
+        },
+        {
+          "type": "added",
+          "description": "Support for WindSurf Next [#814](https://github.com/aws/amazon-q-developer-cli/pull/814)"
+        },
+        {
+          "type": "changed",
+          "description": "Ctrl+C no longer exits `q chat` on first attempt [#830](https://github.com/aws/amazon-q-developer-cli/pull/830)"
+        },
+        {
+          "type": "fixed",
+          "description": "Minor issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-03-05",
       "version": "1.7.0",
       "title": "Version 1.7.0",

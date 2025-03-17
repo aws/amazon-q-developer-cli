@@ -271,6 +271,7 @@ enum ChatState {
     PromptUser {
         /// Tool uses to present to the user.
         tool_uses: Option<Vec<QueuedTool>>,
+        skip_printing_tools: bool,
     },
     /// Handle the user input, depending on if any tools require execution.
     HandleInput {
@@ -289,7 +290,10 @@ enum ChatState {
 
 impl Default for ChatState {
     fn default() -> Self {
-        Self::PromptUser { tool_uses: None }
+        Self::PromptUser {
+            tool_uses: None,
+            skip_printing_tools: false,
+        }
     }
 }
 
@@ -304,7 +308,10 @@ where
 
         let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
 
-        let mut next_state = Some(ChatState::PromptUser { tool_uses: None });
+        let mut next_state = Some(ChatState::PromptUser {
+            tool_uses: None,
+            skip_printing_tools: true,
+        });
 
         if let Some(user_input) = self.initial_input.take() {
             execute!(
@@ -327,7 +334,10 @@ where
             debug!(?chat_state, "changing to state");
 
             let result = match chat_state {
-                ChatState::PromptUser { tool_uses } => self.prompt_user(tool_uses).await,
+                ChatState::PromptUser {
+                    tool_uses,
+                    skip_printing_tools,
+                } => self.prompt_user(tool_uses, skip_printing_tools).await,
                 ChatState::HandleInput { input, tool_uses } => self.handle_input(input, tool_uses).await,
                 ChatState::ExecuteTools(tool_uses) => {
                     let tool_uses_clone = tool_uses.clone();
@@ -424,19 +434,26 @@ where
                         },
                     }
                     self.conversation_state.fix_history();
-                    next_state = Some(ChatState::PromptUser { tool_uses: None });
+                    next_state = Some(ChatState::PromptUser {
+                        tool_uses: None,
+                        skip_printing_tools: false,
+                    });
                 },
             }
         }
     }
 
     /// Read input from the user.
-    async fn prompt_user(&mut self, mut tool_uses: Option<Vec<QueuedTool>>) -> Result<ChatState, ChatError> {
+    async fn prompt_user(
+        &mut self,
+        mut tool_uses: Option<Vec<QueuedTool>>,
+        skip_printing_tools: bool,
+    ) -> Result<ChatState, ChatError> {
         if self.interactive {
             execute!(self.output, cursor::Show)?;
         }
         let tool_uses = tool_uses.take().unwrap_or_default();
-        if !tool_uses.is_empty() {
+        if !tool_uses.is_empty() && !skip_printing_tools {
             self.print_tool_descriptions(&tool_uses).await?;
 
             execute!(
@@ -456,10 +473,26 @@ where
                 style::SetForegroundColor(Color::Reset),
             )?;
         }
-        let user_input = match self.input_source.read_line(Some("> "))? {
-            Some(line) => line,
-            None => return Ok(ChatState::Exit),
+
+        // Require two consecutive sigint's to exit.
+        let mut ctrl_c = false;
+        let user_input = loop {
+            match (self.input_source.read_line(Some("> "))?, ctrl_c) {
+                (Some(line), _) => break line,
+                (None, false) => {
+                    execute!(
+                        self.output,
+                        style::Print(format!(
+                            "\n(To exit, press Ctrl+C or Ctrl+D again or type {})\n\n",
+                            "/quit".green()
+                        ))
+                    )?;
+                    ctrl_c = true;
+                },
+                (None, true) => return Ok(ChatState::Exit),
+            }
         };
+
         Ok(ChatState::HandleInput {
             input: user_input,
             tool_uses: Some(tool_uses),
@@ -472,7 +505,10 @@ where
         tool_uses: Option<Vec<QueuedTool>>,
     ) -> Result<ChatState, ChatError> {
         let Ok(command) = Command::parse(&user_input) else {
-            return Ok(ChatState::PromptUser { tool_uses });
+            return Ok(ChatState::PromptUser {
+                tool_uses,
+                skip_printing_tools: true,
+            });
         };
 
         let tool_uses = tool_uses.unwrap_or_default();
@@ -509,7 +545,10 @@ where
                 queue!(self.output, style::Print('\n'))?;
                 std::process::Command::new("bash").args(["-c", &command]).status().ok();
                 queue!(self.output, style::Print('\n'))?;
-                ChatState::PromptUser { tool_uses: None }
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    skip_printing_tools: false,
+                }
             },
             Command::Clear => {
                 self.conversation_state.clear();
@@ -521,11 +560,17 @@ where
                     style::SetForegroundColor(Color::Reset)
                 )?;
 
-                ChatState::PromptUser { tool_uses: None }
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    skip_printing_tools: true,
+                }
             },
             Command::Help => {
                 execute!(self.output, style::Print(HELP_TEXT))?;
-                ChatState::PromptUser { tool_uses: None }
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    skip_printing_tools: true,
+                }
             },
             Command::AcceptAll => {
                 self.accept_all = !self.accept_all;
@@ -541,7 +586,10 @@ where
                     style::SetForegroundColor(Color::Reset)
                 )?;
 
-                ChatState::PromptUser { tool_uses: None }
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    skip_printing_tools: true,
+                }
             },
             Command::Quit => ChatState::Exit,
         })
@@ -828,7 +876,10 @@ where
         if !tool_uses.is_empty() {
             Ok(ChatState::ValidateTools(tool_uses))
         } else {
-            Ok(ChatState::PromptUser { tool_uses: None })
+            Ok(ChatState::PromptUser {
+                tool_uses: None,
+                skip_printing_tools: false,
+            })
         }
     }
 
@@ -922,6 +973,7 @@ where
             },
             false => Ok(ChatState::PromptUser {
                 tool_uses: Some(queued_tools),
+                skip_printing_tools: false,
             }),
         }
     }
