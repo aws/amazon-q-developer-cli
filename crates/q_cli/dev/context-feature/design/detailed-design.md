@@ -189,7 +189,7 @@ The context management feature extends the existing slash command system with a 
    - Add profile indicator to prompt
 
 5. `src/cli/mod.rs`
-   - Add `--profile` flag to CLI options
+   - Add `--context-profile` flag to CLI options
 
 ### Files to Add
 
@@ -218,7 +218,7 @@ The context management feature extends the existing slash command system with a 
    - Uses color to distinguish profile indicator
 
 5. **CLI Integration**
-   - Supports `--profile` flag for specifying profile at startup
+   - Supports `--context-profile` flag for specifying profile at startup
    - Validates profile existence before starting chat
 
 ## Context File Inclusion
@@ -340,7 +340,7 @@ Since LLMs have token limits, the context management feature needs to be mindful
 
 1. **Profile Does Not Exist**
    - Error: "Profile '{name}' does not exist. Available profiles: {profiles}"
-   - Occurs when starting the CLI with a non-existent profile
+   - Occurs when starting the CLI with a non-existent context profile
 
 ## Testing Strategy
 

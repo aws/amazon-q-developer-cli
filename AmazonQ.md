@@ -59,6 +59,7 @@ Follow the git best practice of committing early and often. Run `git commit` oft
 
 Before committing a change, always do the following steps:
 
-1. Verify via `cargo build` and `cargo test`. Fix any problems found. Prefer running these commands against just the crate you're modifying for shorter runtimes
+1. Run `cargo build`
+2. Run `cargo test` and fix any problems. Prefer running these commands against just the crate you're modifying for shorter runtimes
 2. Run `cargo +nightly fmt` to auto-format the code
 3. Commit the changes

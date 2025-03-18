@@ -189,8 +189,8 @@ pub enum CliRootCommands {
         /// The first question to ask
         input: Option<String>,
         /// Context profile to use
-        #[arg(long)]
-        profile: Option<String>,
+        #[arg(long = "context-profile")]
+        context_profile: Option<String>,
     },
     /// Inline shell completions
     #[command(subcommand)]
@@ -338,8 +338,8 @@ impl Cli {
                 CliRootCommands::Chat {
                     accept_all,
                     input,
-                    profile,
-                } => chat::chat(input, accept_all, profile).await,
+                    context_profile,
+                } => chat::chat(input, accept_all, context_profile).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
@@ -461,7 +461,7 @@ mod test {
             subcommand: Some(CliRootCommands::Chat {
                 accept_all: false,
                 input: None,
-                profile: None,
+                context_profile: None,
             },),
             verbose: 2,
             help_all: false,
@@ -586,31 +586,34 @@ mod test {
     }
 
     #[test]
-    fn test_chat_with_profile() {
-        assert_parse!(["chat", "--profile", "my-profile"], CliRootCommands::Chat {
+    fn test_chat_with_context_profile() {
+        assert_parse!(["chat", "--context-profile", "my-profile"], CliRootCommands::Chat {
             accept_all: false,
             input: None,
-            profile: Some("my-profile".to_string()),
+            context_profile: Some("my-profile".to_string()),
         });
     }
 
     #[test]
-    fn test_chat_with_profile_and_input() {
-        assert_parse!(["chat", "--profile", "my-profile", "Hello"], CliRootCommands::Chat {
-            accept_all: false,
-            input: Some("Hello".to_string()),
-            profile: Some("my-profile".to_string()),
-        });
-    }
-
-    #[test]
-    fn test_chat_with_profile_and_accept_all() {
+    fn test_chat_with_context_profile_and_input() {
         assert_parse!(
-            ["chat", "--profile", "my-profile", "--accept-all"],
+            ["chat", "--context-profile", "my-profile", "Hello"],
+            CliRootCommands::Chat {
+                accept_all: false,
+                input: Some("Hello".to_string()),
+                context_profile: Some("my-profile".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_chat_with_context_profile_and_accept_all() {
+        assert_parse!(
+            ["chat", "--context-profile", "my-profile", "--accept-all"],
             CliRootCommands::Chat {
                 accept_all: true,
                 input: None,
-                profile: Some("my-profile".to_string()),
+                context_profile: Some("my-profile".to_string()),
             }
         );
     }
