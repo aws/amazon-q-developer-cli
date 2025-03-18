@@ -1,15 +1,10 @@
-use std::env;
-use std::fs::{
-    self,
-    File,
-};
-use std::io::{
-    Read,
-    Write,
-};
 use std::path::{
     Path,
     PathBuf,
+};
+use std::{
+    env,
+    fs,
 };
 
 use dirs_next as dirs;
@@ -104,11 +99,8 @@ impl ContextManager {
         let global_path = config_dir.join("global.json");
 
         if global_path.exists() {
-            #[allow(clippy::verbose_file_reads)]
             // Read and parse the existing configuration file
-            let mut file = File::open(&global_path)?;
-            let mut contents = String::new();
-            file.read_to_string(&mut contents)?;
+            let contents = fs::read_to_string(&global_path)?;
 
             let config: ContextConfig =
                 serde_json::from_str(&contents).map_err(|e| eyre!("Failed to parse global configuration: {}", e))?;
@@ -136,11 +128,8 @@ impl ContextManager {
         let profile_path = profiles_dir.join(format!("{}.json", profile));
 
         if profile_path.exists() {
-            #[allow(clippy::verbose_file_reads)]
             // Read and parse the existing configuration file
-            let mut file = File::open(&profile_path)?;
-            let mut contents = String::new();
-            file.read_to_string(&mut contents)?;
+            let contents = fs::read_to_string(&profile_path)?;
 
             let config: ContextConfig =
                 serde_json::from_str(&contents).map_err(|e| eyre!("Failed to parse profile configuration: {}", e))?;
@@ -167,16 +156,14 @@ impl ContextManager {
             let contents = serde_json::to_string_pretty(&self.global_config)
                 .map_err(|e| eyre!("Failed to serialize global configuration: {}", e))?;
 
-            let mut file = File::create(&global_path)?;
-            file.write_all(contents.as_bytes())?;
+            fs::write(&global_path, contents)?;
         } else {
             // Save profile configuration
             let profile_path = self.profiles_dir.join(format!("{}.json", self.current_profile));
             let contents = serde_json::to_string_pretty(&self.profile_config)
                 .map_err(|e| eyre!("Failed to serialize profile configuration: {}", e))?;
 
-            let mut file = File::create(&profile_path)?;
-            file.write_all(contents.as_bytes())?;
+            fs::write(&profile_path, contents)?;
         }
 
         Ok(())
@@ -350,8 +337,7 @@ impl ContextManager {
             .map_err(|e| eyre!("Failed to serialize profile configuration: {}", e))?;
 
         // Create the file
-        let mut file = File::create(&profile_path)?;
-        file.write_all(contents.as_bytes())?;
+        fs::write(&profile_path, contents)?;
 
         Ok(())
     }
@@ -425,8 +411,8 @@ impl ContextManager {
         let profile_config = Self::load_profile_config(&self.profiles_dir, old_name)?;
 
         // Write the configuration to the new profile file
-        let file = File::create(&new_profile_path)?;
-        serde_json::to_writer_pretty(file, &profile_config)?;
+        let contents = serde_json::to_string_pretty(&profile_config)?;
+        fs::write(&new_profile_path, contents)?;
 
         // Delete the old profile file
         fs::remove_file(&old_profile_path)?;
@@ -638,9 +624,7 @@ impl ContextManager {
         let filename = path.to_string_lossy().to_string();
 
         // Read the file content
-        let mut file = File::open(path)?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
+        let content = fs::read_to_string(path)?;
 
         // Add to the context collection
         context_files.push((filename, content));

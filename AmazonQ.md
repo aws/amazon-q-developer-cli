@@ -6,6 +6,17 @@ Always follow these guidelines when assisting in development for the Amazon Q CL
 
 DO NOT create or modify an AmazonQ.md file unless I explicitly tell you to do so.
 
+## Rust Best Practices
+
+### File Operations
+
+When working with file operations in Rust:
+
+1. Prefer using the simpler `fs::read_to_string()` and `fs::write()` functions over verbose `File::open()` + `read_to_string()` or `File::create()` + `write_all()` combinations
+2. Avoid the `#[allow(clippy::verbose_file_reads)]` annotation by using the recommended methods
+3. Use `serde_json::to_string_pretty()` + `fs::write()` instead of creating a file and then writing to it with `serde_json::to_writer_pretty()`
+4. Keep imports organized by functionality (e.g., group path-related imports together)
+
 ## Git
 
 ### Committing Changes
@@ -16,8 +27,8 @@ BEFORE committing a change, ALWAYS do the following steps:
 
 1. Run `cargo build` and fix any problems. Prefer running it against just the crate you're modifying for shorter runtimes
 2. Run `cargo test` and fix any problems. Prefer running it against just the crate you're modifying for shorter runtimes
-2. Run `cargo +nightly fmt` to auto-format the code
-3. Commit the changes
+3. Run `cargo +nightly fmt` to auto-format the code
+4. Commit the changes
 
 ### Commit Messages
 
