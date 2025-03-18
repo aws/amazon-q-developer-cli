@@ -4,9 +4,20 @@ Always follow these guidelines when assisting in development for the Amazon Q CL
 
 ## AmazonQ.md
 
-DO NOT create an AmazonQ.md file unless I explicitly tell you to do so.
+DO NOT create or modify an AmazonQ.md file unless I explicitly tell you to do so.
 
 ## Git
+
+### Committing Changes
+
+Follow the git best practice of committing early and often. Run `git commit` often, but DO NOT ever run `git push`
+
+BEFORE committing a change, ALWAYS do the following steps:
+
+1. Run `cargo build` and fix any problems. Prefer running it against just the crate you're modifying for shorter runtimes
+2. Run `cargo test` and fix any problems. Prefer running it against just the crate you're modifying for shorter runtimes
+2. Run `cargo +nightly fmt` to auto-format the code
+3. Commit the changes
 
 ### Commit Messages
 
@@ -52,14 +63,3 @@ queues and maintains the same functionality as the original.
 
 🤖 Assisted by [Amazon Q Developer](https://aws.amazon.com/q/developer)
 ```
-
-### Committing Changes
-
-Follow the git best practice of committing early and often. Run `git commit` often, but DO NOT ever run `git push`
-
-Before committing a change, always do the following steps:
-
-1. Run `cargo build`
-2. Run `cargo test` and fix any problems. Prefer running these commands against just the crate you're modifying for shorter runtimes
-2. Run `cargo +nightly fmt` to auto-format the code
-3. Commit the changes
