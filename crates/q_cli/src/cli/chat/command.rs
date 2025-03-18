@@ -36,7 +36,8 @@ pub enum ContextSubcommand {
     Profile {
         delete: Option<String>,
         create: Option<String>,
-        rename: Option<(String, String)>, // (old_name, new_name)
+        /// Tuple containing the old profile name and new profile name
+        rename: Option<(String, String)>,
     },
     Switch {
         name: String,
