@@ -1628,7 +1628,11 @@ fn load_global_config(config_dir: &Path) -> Result<ContextConfig> {
     } else {
         // Return default global configuration with predefined paths
         Ok(ContextConfig {
-            paths: vec!["~/.aws/amazonq/rules/**/*.md".to_string(), "AmazonQ.md".to_string()],
+            paths: vec![
+                ".amazonq/rules/**/*.md".to_string(),
+                "README.md".to_string(),
+                "AmazonQ.md".to_string(),
+            ],
         })
     }
 }
