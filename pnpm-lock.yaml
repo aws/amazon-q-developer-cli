@@ -124,8 +124,8 @@ importers:
         specifier: workspace:^
         version: link:../../proto
       '@bufbuild/protobuf':
-        specifier: 2.2.3
-        version: 2.2.3
+        specifier: 2.2.4
+        version: 2.2.4
     devDependencies:
       '@amzn/eslint-config':
         specifier: workspace:^
@@ -213,8 +213,8 @@ importers:
         specifier: workspace:^
         version: link:../shell-parser
       '@bufbuild/protobuf':
-        specifier: 2.2.3
-        version: 2.2.3
+        specifier: 2.2.4
+        version: 2.2.4
       '@fig/autocomplete-helpers':
         specifier: ^2.0.0
         version: 2.0.0
@@ -337,8 +337,8 @@ importers:
         specifier: workspace:^
         version: link:../shell-parser
       '@bufbuild/protobuf':
-        specifier: 2.2.3
-        version: 2.2.3
+        specifier: 2.2.4
+        version: 2.2.4
       '@fig/autocomplete-helpers':
         specifier: ^2.0.0
         version: 2.0.0
@@ -739,8 +739,8 @@ importers:
   proto:
     dependencies:
       '@bufbuild/protobuf':
-        specifier: 2.2.3
-        version: 2.2.3
+        specifier: 2.2.4
+        version: 2.2.4
     devDependencies:
       '@amzn/tsconfig':
         specifier: workspace:^
@@ -750,7 +750,7 @@ importers:
         version: 1.50.1
       '@bufbuild/protoc-gen-es':
         specifier: ^2.2.3
-        version: 2.2.3(@bufbuild/protobuf@2.2.3)
+        version: 2.2.3(@bufbuild/protobuf@2.2.4)
       typescript:
         specifier: ^5.8.2
         version: 5.8.2
@@ -1416,6 +1416,9 @@ packages:
 
   '@bufbuild/protobuf@2.2.3':
     resolution: {integrity: sha512-tFQoXHJdkEOSwj5tRIZSPNUuXK3RaR7T1nUrPgbYX1pUbvqqaaZAsfo+NXBPsz5rZMSKVFrgK1WL8Q/MSLvprg==}
+
+  '@bufbuild/protobuf@2.2.4':
+    resolution: {integrity: sha512-P9xQgtMh71TA7tHTnbDe68zcI+TPnkyyfBIhGaUr4iUEIXN7yI01DyjmmdEwXTk5OlISBJYkoxCVj2dwmHqIkA==}
 
   '@bufbuild/protoc-gen-es@2.2.3':
     resolution: {integrity: sha512-hdhIV9NmwXXy24DcbnArauv6L5Dv2PjkO9gz2DUhiZ9HPRpP+rmpT8zo5LohjJiuA7YIQGGKKWSKpRg+xcdLSQ==}
@@ -5450,8 +5453,8 @@ packages:
     resolution: {integrity: sha512-Loo5UUvLD9ScZ6jh8beX1T6sO1w2/MpCRpEP7V280GKMVUQ0Jzar2U3UJPsrdbziLEMMhu3Ujnq//rhiFuIeag==}
     engines: {node: '>=6'}
 
-  tr46@5.0.0:
-    resolution: {integrity: sha512-tk2G5R2KRwBd+ZN0zaEXpmzdKyOYksXwywulIX95MBODjSzMIuQnQ3m8JxgbhnL1LeVo7lqQKsYa1O3Htl7K5g==}
+  tr46@5.1.0:
+    resolution: {integrity: sha512-IUWnUK7ADYR5Sl1fZlO1INDUhVhatWl7BtJWsIhwJ0UAK7ilzzIa8uIqOO/aYVWHZPJkKbEL+362wrzoeRF7bw==}
     engines: {node: '>=18'}
 
   treeify@1.1.0:
@@ -5821,8 +5824,8 @@ packages:
     resolution: {integrity: sha512-QaKxh0eNIi2mE9p2vEdzfagOKHCcj1pJ56EEHGQOVxp8r9/iszLUUV7v89x9O1p/T+NlTM5W7jW6+cz4Fq1YVg==}
     engines: {node: '>=18'}
 
-  whatwg-url@14.1.1:
-    resolution: {integrity: sha512-mDGf9diDad/giZ/Sm9Xi2YcyzaFpbdLpJPr+E9fSkyQ7KpQD4SdFcugkRQYzhmfI4KeV4Qpnn2sKPdo+kmsgRQ==}
+  whatwg-url@14.2.0:
+    resolution: {integrity: sha512-De72GdQZzNTUBBChsXueQUnPKDkg/5A5zp7pFDuQAj5UFoENpiACU0wlCvzpAGnTkj++ihpKwKyYewn/XNUbKw==}
     engines: {node: '>=18'}
 
   which-boxed-primitive@1.1.1:
@@ -6827,11 +6830,13 @@ snapshots:
 
   '@bufbuild/protobuf@2.2.3': {}
 
-  '@bufbuild/protoc-gen-es@2.2.3(@bufbuild/protobuf@2.2.3)':
+  '@bufbuild/protobuf@2.2.4': {}
+
+  '@bufbuild/protoc-gen-es@2.2.3(@bufbuild/protobuf@2.2.4)':
     dependencies:
       '@bufbuild/protoplugin': 2.2.3
     optionalDependencies:
-      '@bufbuild/protobuf': 2.2.3
+      '@bufbuild/protobuf': 2.2.4
     transitivePeerDependencies:
       - supports-color
 
@@ -9099,7 +9104,7 @@ snapshots:
   data-urls@5.0.0:
     dependencies:
       whatwg-mimetype: 4.0.0
-      whatwg-url: 14.1.1
+      whatwg-url: 14.2.0
     optional: true
 
   data-view-buffer@1.0.2:
@@ -10218,7 +10223,7 @@ snapshots:
       webidl-conversions: 7.0.0
       whatwg-encoding: 3.1.1
       whatwg-mimetype: 4.0.0
-      whatwg-url: 14.1.1
+      whatwg-url: 14.2.0
       ws: 8.18.1
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
@@ -11843,7 +11848,7 @@ snapshots:
       url-parse: 1.5.10
     optional: true
 
-  tr46@5.0.0:
+  tr46@5.1.0:
     dependencies:
       punycode: 2.3.1
     optional: true
@@ -12227,9 +12232,9 @@ snapshots:
 
   whatwg-mimetype@4.0.0: {}
 
-  whatwg-url@14.1.1:
+  whatwg-url@14.2.0:
     dependencies:
-      tr46: 5.0.0
+      tr46: 5.1.0
       webidl-conversions: 7.0.0
     optional: true
 
