@@ -86,59 +86,14 @@ impl ContextManager {
         })
     }
 
-    /// Load the global context configuration.
-    ///
-    /// If the global configuration file doesn't exist, returns a default configuration.
-    ///
-    /// # Arguments
-    /// * `config_dir` - The directory where the global configuration is stored
-    ///
-    /// # Returns
-    /// A Result containing the global ContextConfig or an error
+    /// Get global configuration by calling the standalone function
     fn load_global_config(config_dir: &Path) -> Result<ContextConfig> {
-        let global_path = config_dir.join("global.json");
-
-        if global_path.exists() {
-            // Read and parse the existing configuration file
-            let contents = fs::read_to_string(&global_path)?;
-
-            let config: ContextConfig =
-                serde_json::from_str(&contents).map_err(|e| eyre!("Failed to parse global configuration: {}", e))?;
-
-            Ok(config)
-        } else {
-            // Return default global configuration with predefined paths
-            Ok(ContextConfig {
-                paths: vec!["~/.aws/amazonq/rules/**/*.md".to_string(), "AmazonQ.md".to_string()],
-            })
-        }
+        load_global_config(config_dir)
     }
 
-    /// Load a profile's context configuration.
-    ///
-    /// If the profile configuration file doesn't exist, creates a default configuration.
-    ///
-    /// # Arguments
-    /// * `profiles_dir` - The directory where profile configurations are stored
-    /// * `profile` - The name of the profile to load
-    ///
-    /// # Returns
-    /// A Result containing the profile's ContextConfig or an error
+    /// Get profile configuration by calling the standalone function
     fn load_profile_config(profiles_dir: &Path, profile: &str) -> Result<ContextConfig> {
-        let profile_path = profiles_dir.join(format!("{}.json", profile));
-
-        if profile_path.exists() {
-            // Read and parse the existing configuration file
-            let contents = fs::read_to_string(&profile_path)?;
-
-            let config: ContextConfig =
-                serde_json::from_str(&contents).map_err(|e| eyre!("Failed to parse profile configuration: {}", e))?;
-
-            Ok(config)
-        } else {
-            // Return empty configuration for new profiles
-            Ok(ContextConfig::default())
-        }
+        load_profile_config(profiles_dir, profile)
     }
 
     /// Save the current configuration to disk.
@@ -1649,4 +1604,58 @@ fn test_process_path_nonexistent_file_validation() -> Result<()> {
     assert!(context_files[0].1.contains("does not exist yet"));
 
     Ok(())
+}
+/// Load the global context configuration.
+///
+/// If the global configuration file doesn't exist, returns a default configuration.
+///
+/// # Arguments
+/// * `config_dir` - The directory where the global configuration is stored
+///
+/// # Returns
+/// A Result containing the global ContextConfig or an error
+fn load_global_config(config_dir: &Path) -> Result<ContextConfig> {
+    let global_path = config_dir.join("global.json");
+
+    if global_path.exists() {
+        // Read and parse the existing configuration file
+        let contents = fs::read_to_string(&global_path)?;
+
+        let config: ContextConfig =
+            serde_json::from_str(&contents).map_err(|e| eyre!("Failed to parse global configuration: {}", e))?;
+
+        Ok(config)
+    } else {
+        // Return default global configuration with predefined paths
+        Ok(ContextConfig {
+            paths: vec!["~/.aws/amazonq/rules/**/*.md".to_string(), "AmazonQ.md".to_string()],
+        })
+    }
+}
+
+/// Load a profile's context configuration.
+///
+/// If the profile configuration file doesn't exist, creates a default configuration.
+///
+/// # Arguments
+/// * `profiles_dir` - The directory where profile configurations are stored
+/// * `profile` - The name of the profile to load
+///
+/// # Returns
+/// A Result containing the profile's ContextConfig or an error
+fn load_profile_config(profiles_dir: &Path, profile: &str) -> Result<ContextConfig> {
+    let profile_path = profiles_dir.join(format!("{}.json", profile));
+
+    if profile_path.exists() {
+        // Read and parse the existing configuration file
+        let contents = fs::read_to_string(&profile_path)?;
+
+        let config: ContextConfig =
+            serde_json::from_str(&contents).map_err(|e| eyre!("Failed to parse profile configuration: {}", e))?;
+
+        Ok(config)
+    } else {
+        // Return empty configuration for new profiles
+        Ok(ContextConfig::default())
+    }
 }
