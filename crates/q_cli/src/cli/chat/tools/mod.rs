@@ -28,7 +28,7 @@ use use_aws::UseAws;
 
 use super::parser::ToolUse;
 
-pub const MAX_TOOL_RESPONSE_SIZE: usize = 30720;
+pub const MAX_TOOL_RESPONSE_SIZE: usize = 800000;
 
 /// Represents an executable tool use.
 #[derive(Debug, Clone)]
