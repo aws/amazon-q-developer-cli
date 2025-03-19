@@ -4,6 +4,7 @@ mod input_source;
 mod parse;
 mod parser;
 mod prompt;
+mod tool_manager;
 mod tools;
 use std::borrow::Cow;
 use std::collections::HashMap;
