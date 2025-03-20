@@ -19,22 +19,42 @@ pub enum ProfileSubcommand {
     Delete { name: String },
     Set { name: String },
     Rename { old_name: String, new_name: String },
+    Help,
 }
 
 impl ProfileSubcommand {
-    const CREATE_USAGE: &str = "/profile create profile_name";
-    const DELETE_USAGE: &str = "/profile delete profile_name";
-    const RENAME_USAGE: &str = "/profile rename old_profile_name new_profile_name";
-    const SET_USAGE: &str = "/profile set profile_name";
+    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available commands</cyan!>
+  <em>help</em>                <black!>Show an explanation for the profile command</black!>
+  <em>list</em>                <black!>List all available profiles</black!>
+  <em>create <<name>></em>       <black!>Create a new profile with the specified name</black!>
+  <em>delete <<name>></em>       <black!>Delete the specified profile</black!>
+  <em>set <<name>></em>          <black!>Switch to the specified profile</black!>
+  <em>rename <<old>> <<new>></em>  <black!>Rename a profile</black!>"};
+    const CREATE_USAGE: &str = "/profile create <profile_name>";
+    const DELETE_USAGE: &str = "/profile delete <profile_name>";
+    const RENAME_USAGE: &str = "/profile rename <old_profile_name> <new_profile_name>";
+    const SET_USAGE: &str = "/profile set <profile_name>";
 
     fn usage_msg(header: impl AsRef<str>) -> String {
-        format!(
-            "{}\n\nUsage:\n    {}\n    {}\n    {}\n    {}",
-            header.as_ref(),
-            ProfileSubcommand::CREATE_USAGE,
-            ProfileSubcommand::DELETE_USAGE,
-            ProfileSubcommand::RENAME_USAGE,
-            ProfileSubcommand::SET_USAGE
+        format!("{}\n\n{}", header.as_ref(), Self::AVAILABLE_COMMANDS)
+    }
+
+    pub fn help_text() -> String {
+        color_print::cformat!(
+            r#"
+<magenta,em>Profile Management</magenta,em>
+
+Profiles allow you to organize and manage different sets of context files for different projects or tasks.
+
+{}
+
+<cyan!>Notes</cyan!>
+• The "global" profile contains context files that are available in all profiles
+• The "default" profile is used when no profile is specified
+• You can switch between profiles to work on different projects
+• Each profile maintains its own set of context files
+"#,
+            Self::AVAILABLE_COMMANDS
         )
     }
 }
@@ -56,22 +76,51 @@ pub enum ContextSubcommand {
     Clear {
         global: bool,
     },
+    Help,
 }
 
 impl ContextSubcommand {
-    const ADD_USAGE: &str = "/context add [--global] [--force] path1 [path2...]";
+    const ADD_USAGE: &str = "/context add [--global] [--force] <path1> [path2...]";
+    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available commands</cyan!>
+  <em>help</em>                           <black!>Show an explanation for the context command</black!>
+  <em>show [--expand]</em>                <black!>Display current context configuration</black!>
+                                 <black!>Use --expand to list all matched files</black!>
+
+  <em>add [--global] [--force] <<paths...>></em>
+                                 <black!>Add file(s) to context</black!>
+                                 <black!>--global: Add to global context (available in all profiles)</black!>
+                                 <black!>--force: Add files even if they exceed size limits</black!>
+
+  <em>rm [--global] <<paths...>></em>       <black!>Remove file(s) from context</black!>
+                                 <black!>--global: Remove from global context</black!>
+
+  <em>clear [--global]</em>               <black!>Clear all files from current context</black!>
+                                 <black!>--global: Clear global context</black!>"};
     const CLEAR_USAGE: &str = "/context clear [--global]";
-    const REMOVE_USAGE: &str = "/context rm [--global] path1 [path2...]";
+    const REMOVE_USAGE: &str = "/context rm [--global] <path1> [path2...]";
     const SHOW_USAGE: &str = "/context show [--expand]";
 
     fn usage_msg(header: impl AsRef<str>) -> String {
-        format!(
-            "{}\n\nUsage:\n    {}\n    {}\n    {}\n    {}",
-            header.as_ref(),
-            ContextSubcommand::SHOW_USAGE,
-            ContextSubcommand::ADD_USAGE,
-            ContextSubcommand::REMOVE_USAGE,
-            ContextSubcommand::CLEAR_USAGE
+        format!("{}\n\n{}", header.as_ref(), Self::AVAILABLE_COMMANDS)
+    }
+
+    pub fn help_text() -> String {
+        color_print::cformat!(
+            r#"
+<magenta,em>Context Management</magenta,em>
+
+Context files provide Amazon Q with additional information about your project or environment.
+Adding relevant files to your context helps Amazon Q provide more accurate and helpful responses.
+
+{}
+
+<cyan!>Notes</cyan!>
+• You can add specific files or use glob patterns (e.g., "*.py", "src/**/*.js")
+• Context files are associated with the current profile
+• Global context files are available across all profiles
+• Context is preserved between chat sessions
+"#,
+            Self::AVAILABLE_COMMANDS
         )
     }
 }
@@ -100,7 +149,7 @@ impl Command {
                     macro_rules! usage_err {
                         ($usage_str:expr) => {
                             return Err(format!(
-                                "Invalid /profile arguments.\n\nUsage:\n    {}",
+                                "Invalid /profile arguments.\n\nUsage:\n  {}",
                                 $usage_str
                             ))
                         };
@@ -156,6 +205,9 @@ impl Command {
                                 None => usage_err!(ProfileSubcommand::SET_USAGE),
                             }
                         },
+                        "help" => Self::Profile {
+                            subcommand: ProfileSubcommand::Help,
+                        },
                         other => {
                             return Err(ProfileSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
                         },
@@ -169,7 +221,7 @@ impl Command {
                     macro_rules! usage_err {
                         ($usage_str:expr) => {
                             return Err(format!(
-                                "Invalid /context arguments.\n\nUsage:\n    {}",
+                                "Invalid /context arguments.\n\nUsage:\n  {}",
                                 $usage_str
                             ))
                         };
@@ -252,6 +304,9 @@ impl Command {
                             Self::Context {
                                 subcommand: ContextSubcommand::Clear { global },
                             }
+                        },
+                        "help" => Self::Context {
+                            subcommand: ContextSubcommand::Help,
                         },
                         other => {
                             return Err(ContextSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));

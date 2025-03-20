@@ -94,7 +94,8 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 • Help me understand my git status
 
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
-<em>/context</em>      <black!>Manage context files for the chat session</black!>
+<em>/profile</em>      <black!>Manage profiles for the chat session</black!>
+<em>/context</em>      <black!>Manage context files for a profile</black!>
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
@@ -109,13 +110,15 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
-<em>/profile</em>      <black!>Manage context profiles</black!>
-  <em>list</em>        <black!>List context profiles</black!>
-  <em>create</em>      <black!>Create a new context profile</black!>
-  <em>delete</em>      <black!>Delete a context profile</black!>
-  <em>rename</em>      <black!>Rename a context profile</black!>
-  <em>set</em>         <black!>Set the current context profile</black!>
+<em>/profile</em>      <black!>Manage profiles</black!>
+  <em>help</em>        <black!>Show profile help</black!>
+  <em>list</em>        <black!>List profiles</black!>
+  <em>set</em>         <black!>Set the current profile</black!>
+  <em>create</em>      <black!>Create a new profile</black!>
+  <em>delete</em>      <black!>Delete a profile</black!>
+  <em>rename</em>      <black!>Rename a profile</black!>
 <em>/context</em>      <black!>Manage context files for the chat session</black!>
+  <em>help</em>        <black!>Show context help</black!>
   <em>show</em>        <black!>Display current context configuration [--expand]</black!>
   <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
@@ -751,6 +754,16 @@ where
                                 Err(e) => print_err!(e),
                             }
                         },
+                        command::ProfileSubcommand::Help => {
+                            execute!(
+                                self.output,
+                                style::Print("\n"),
+                                // style::SetForegroundColor(Color::Cyan),
+                                style::Print(command::ProfileSubcommand::help_text()),
+                                // style::SetForegroundColor(Color::Reset),
+                                style::Print("\n")
+                            )?;
+                        },
                     }
                 }
                 ChatState::PromptUser {
@@ -910,6 +923,16 @@ where
                                     style::SetForegroundColor(Color::Reset)
                                 )?;
                             },
+                        },
+                        command::ContextSubcommand::Help => {
+                            execute!(
+                                self.output,
+                                style::Print("\n"),
+                                // style::SetForegroundColor(Color::Cyan),
+                                style::Print(command::ContextSubcommand::help_text()),
+                                // style::SetForegroundColor(Color::Reset),
+                                style::Print("\n")
+                            )?;
                         },
                     }
                     // fig_telemetry::send_context_command_executed
