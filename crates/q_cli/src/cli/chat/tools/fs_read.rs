@@ -140,6 +140,17 @@ impl FsLine {
 
         // safety check to ensure end is always greater than start
         let end = end.max(start);
+
+
+        if start >= line_count || start < 0 {
+            bail!(
+                "starting index: {} is outside of the allowed range: ({}, {})",
+                self.start_line(),
+                -(line_count as i64),
+                line_count
+            );
+        }
+
         // The range should be inclusive on both ends.
         let file_contents = file
             .lines()
@@ -394,7 +405,7 @@ impl FsDirectory {
 /// Converts negative 1-based indices to positive 0-based indices.
 fn convert_negative_index(line_count: usize, i: i32) -> usize {
     if i <= 0 {
-        (line_count as i32 + i) as usize
+        (line_count as i32 + i).max(0) as usize
     } else {
         i as usize - 1
     }
@@ -476,6 +487,11 @@ mod tests {
         fs.create_dir_all("/aaaa2").await.unwrap();
         fs.write(TEST_HIDDEN_FILE_PATH, "this is a hidden file").await.unwrap();
         ctx
+    }
+
+    #[test]
+    fn test_negative_index_conversion() {
+        assert_eq!(convert_negative_index(5, -100), 0);
     }
 
     #[test]
