@@ -38,7 +38,6 @@ convert_case.workspace = true
 crossterm = { version = "0.28.1", features = ["event-stream"] }
 ctrlc = "3.2.5"
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
-dirs-next = "2.0.0"
 eyre = "0.6.8"
 fig_api_client.workspace = true
 fig_auth.workspace = true
@@ -56,6 +55,7 @@ fig_telemetry.workspace = true
 fig_util.workspace = true
 flume.workspace = true
 futures.workspace = true
+glob.workspace = true
 globset.workspace = true
 indicatif.workspace = true
 indoc.workspace = true
@@ -89,7 +89,6 @@ whoami.workspace = true
 winnow.workspace = true
 shell-color.workspace = true
 syntect = { version = "5.2.0", features = [ "default-syntaxes", "default-themes" ]}
-glob = "0.3.2"
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
@@ -113,4 +112,3 @@ criterion = "0.5.1"
 insta.workspace = true
 paste = "1.0.11"
 predicates = "3.0"
-tempfile.workspace = true

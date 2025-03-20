@@ -178,6 +178,7 @@ pub(crate) mod tests {
         AppTelemetryEvent::new(EventType::ChatAddedMessage {
             conversation_id: "XXX".into(),
             message_id: "YYY".into(),
+            context_file_length: Some(5),
         })
         .await
     }

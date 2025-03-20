@@ -323,6 +323,19 @@ pub fn utc_backup_dir() -> Result<PathBuf> {
     Ok(backups_dir()?.join(now))
 }
 
+/// The directory to the directory containing config for the `/context` feature in `q chat`.
+pub fn chat_global_context_path<Ctx: FsProvider + EnvProvider>(ctx: &Ctx) -> Result<PathBuf> {
+    Ok(home_dir_ctx(ctx)?
+        .join(".aws")
+        .join("amazonq")
+        .join("global_context.json"))
+}
+
+/// The directory to the directory containing config for the `/context` feature in `q chat`.
+pub fn chat_profiles_dir<Ctx: FsProvider + EnvProvider>(ctx: &Ctx) -> Result<PathBuf> {
+    Ok(home_dir_ctx(ctx)?.join(".aws").join("amazonq").join("profiles"))
+}
+
 /// The desktop app socket path
 ///
 /// - MacOS: `$TMPDIR/cwrun/desktop.sock`

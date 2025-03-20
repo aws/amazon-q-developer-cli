@@ -284,13 +284,18 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
-            EventType::ChatAddedMessage { conversation_id, .. } => Some(
+            EventType::ChatAddedMessage {
+                conversation_id,
+                context_file_length,
+                ..
+            } => Some(
                 CodewhispererterminalAddChatMessage {
                     create_time: self.created_time,
                     value: None,
                     amazonq_conversation_id: Some(conversation_id.into()),
                     credential_start_url: self.credential_start_url.map(Into::into),
                     codewhispererterminal_in_cloudshell: in_cloudshell(),
+                    codewhispererterminal_context_file_length: context_file_length.map(|l| l as i64).map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -399,6 +404,7 @@ pub enum EventType {
     ChatAddedMessage {
         conversation_id: String,
         message_id: String,
+        context_file_length: Option<usize>,
     },
     MigrateClientId {
         old_client_id: String,

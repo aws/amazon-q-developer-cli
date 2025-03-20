@@ -109,12 +109,16 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
+<em>/profile</em>      <black!>Manage context profiles</black!>
+  <em>list</em>        <black!>List context profiles</black!>
+  <em>create</em>      <black!>Create a new context profile</black!>
+  <em>delete</em>      <black!>Delete a context profile</black!>
+  <em>rename</em>      <black!>Rename a context profile</black!>
+  <em>set</em>         <black!>Set the current context profile</black!>
 <em>/context</em>      <black!>Manage context files for the chat session</black!>
   <em>show</em>        <black!>Display current context configuration [--expand]</black!>
   <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
-  <em>profile</em>     <black!>List, create [--create], delete [--delete], or rename [--rename] context profiles</black!>
-  <em>switch</em>      <black!>Switch to a different context profile [--create]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
 
 <em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
@@ -153,9 +157,9 @@ pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<Strin
     // If profile is specified, verify it exists before starting the chat
     if let Some(ref profile_name) = profile {
         // Create a temporary context manager to check if the profile exists
-        match ContextManager::new() {
+        match ContextManager::new(Arc::clone(&ctx)).await {
             Ok(context_manager) => {
-                let profiles = context_manager.list_profiles()?;
+                let profiles = context_manager.list_profiles().await?;
                 if !profiles.contains(profile_name) {
                     bail!(
                         "Profile '{}' does not exist. Available profiles: {}",
@@ -182,7 +186,8 @@ pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<Strin
         || terminal::window_size().map(|s| s.columns.into()).ok(),
         accept_all,
         profile,
-    )?;
+    )
+    .await?;
 
     let result = chat.try_chat().await.map(|_| ExitCode::SUCCESS);
     drop(chat); // Explicit drop for clarity
@@ -241,7 +246,7 @@ pub struct ChatContext<W: Write> {
 
 impl<W: Write> ChatContext<W> {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         ctx: Arc<Context>,
         settings: Settings,
         output: W,
@@ -253,6 +258,7 @@ impl<W: Write> ChatContext<W> {
         accept_all: bool,
         profile: Option<String>,
     ) -> Result<Self> {
+        let ctx_clone = Arc::clone(&ctx);
         Ok(Self {
             ctx,
             settings,
@@ -263,7 +269,7 @@ impl<W: Write> ChatContext<W> {
             client,
             terminal_width_provider,
             spinner: None,
-            conversation_state: ConversationState::new(load_tools()?, profile),
+            conversation_state: ConversationState::new(ctx_clone, load_tools()?, profile).await,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
             accept_all,
@@ -438,7 +444,7 @@ where
                                     tool_uses.clone(),
                                     "The user interrupted the tool execution.".to_string(),
                                 );
-                                let _ = self.conversation_state.as_sendable_conversation_state();
+                                let _ = self.conversation_state.as_sendable_conversation_state().await;
                                 self.conversation_state
                                     .push_assistant_message(AssistantResponseMessage {
                                         message_id: None,
@@ -512,7 +518,7 @@ where
         let mut ctrl_c = false;
         let user_input = loop {
             // Generate prompt based on active context profile
-            let prompt = prompt::generate_prompt(&self.conversation_state);
+            let prompt = prompt::generate_prompt(self.conversation_state.current_profile());
 
             match (self.input_source.read_line(Some(&prompt))?, ctrl_c) {
                 (Some(line), _) => break line,
@@ -576,7 +582,7 @@ where
                 }
 
                 if tool_uses.is_empty() {
-                    self.conversation_state.append_new_user_message(user_input);
+                    self.conversation_state.append_new_user_message(user_input).await;
                 } else {
                     self.conversation_state.abandon_tool_use(tool_uses, user_input);
                 }
@@ -585,7 +591,7 @@ where
 
                 ChatState::HandleResponseStream(
                     self.client
-                        .send_message(self.conversation_state.as_sendable_conversation_state())
+                        .send_message(self.conversation_state.as_sendable_conversation_state().await)
                         .await?,
                 )
             },
@@ -640,6 +646,118 @@ where
                 }
             },
             Command::Quit => ChatState::Exit,
+            Command::Profile { subcommand } => {
+                if let Some(context_manager) = &mut self.conversation_state.context_manager {
+                    macro_rules! print_err {
+                        ($err:expr) => {
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!("\nError: {}\n\n", $err)),
+                                style::SetForegroundColor(Color::Reset)
+                            )?
+                        };
+                    }
+
+                    match subcommand {
+                        command::ProfileSubcommand::List => {
+                            let profiles = match context_manager.list_profiles().await {
+                                Ok(profiles) => profiles,
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("\nError listing profiles: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                    vec![]
+                                },
+                            };
+
+                            execute!(self.output, style::Print("\n"))?;
+                            for profile in profiles {
+                                if profile == context_manager.current_profile {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print("* "),
+                                        style::Print(&profile),
+                                        style::SetForegroundColor(Color::Reset),
+                                        style::Print("\n")
+                                    )?;
+                                } else {
+                                    execute!(
+                                        self.output,
+                                        style::Print("  "),
+                                        style::Print(&profile),
+                                        style::Print("\n")
+                                    )?;
+                                }
+                            }
+                            execute!(self.output, style::Print("\n"))?;
+                        },
+                        command::ProfileSubcommand::Create { name } => {
+                            match context_manager.create_profile(&name).await {
+                                Ok(_) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!("\nCreated profile: {}\n\n", name)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                    context_manager
+                                        .switch_profile(&name)
+                                        .await
+                                        .map_err(|e| warn!(?e, "failed to switch to newly created profile"))
+                                        .ok();
+                                },
+                                Err(e) => print_err!(e),
+                            }
+                        },
+                        command::ProfileSubcommand::Delete { name } => {
+                            match context_manager.delete_profile(&name).await {
+                                Ok(_) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!("\nDeleted profile: {}\n\n", name)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => print_err!(e),
+                            }
+                        },
+                        command::ProfileSubcommand::Set { name } => match context_manager.switch_profile(&name).await {
+                            Ok(_) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(format!("\nSwitched to profile: {}\n\n", name)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            },
+                            Err(e) => print_err!(e),
+                        },
+                        command::ProfileSubcommand::Rename { old_name, new_name } => {
+                            match context_manager.rename_profile(&old_name, &new_name).await {
+                                Ok(_) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!("\nRenamed profile: {} -> {}\n\n", old_name, new_name)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => print_err!(e),
+                            }
+                        },
+                    }
+                }
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    skip_printing_tools: true,
+                }
+            },
             Command::Context { subcommand } => {
                 if let Some(context_manager) = &mut self.conversation_state.context_manager {
                     match subcommand {
@@ -686,7 +804,7 @@ where
 
                             // If expand flag is set, show the expanded files
                             if expand {
-                                match context_manager.get_context_files(false) {
+                                match context_manager.get_context_files(false).await {
                                     Ok(context_files) => {
                                         if context_files.is_empty() {
                                             execute!(
@@ -721,7 +839,7 @@ where
                             }
                         },
                         command::ContextSubcommand::Add { global, force, paths } => {
-                            match context_manager.add_paths(paths.clone(), global, force) {
+                            match context_manager.add_paths(paths.clone(), global, force).await {
                                 Ok(_) => {
                                     let target = if global { "global" } else { "profile" };
                                     execute!(
@@ -746,7 +864,7 @@ where
                             }
                         },
                         command::ContextSubcommand::Remove { global, paths } => {
-                            match context_manager.remove_paths(paths.clone(), global) {
+                            match context_manager.remove_paths(paths.clone(), global).await {
                                 Ok(_) => {
                                     let target = if global { "global" } else { "profile" };
                                     execute!(
@@ -770,131 +888,7 @@ where
                                 },
                             }
                         },
-                        command::ContextSubcommand::Profile { create, delete, rename } => {
-                            if let Some(profile_name) = create {
-                                match context_manager.create_profile(&profile_name) {
-                                    Ok(_) => {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("\nCreated profile: {}\n\n", profile_name)),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    },
-                                    Err(e) => {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Red),
-                                            style::Print(format!("\nError: {}\n\n", e)),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    },
-                                }
-                            } else if let Some(profile_name) = delete {
-                                match context_manager.delete_profile(&profile_name) {
-                                    Ok(_) => {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("\nDeleted profile: {}\n\n", profile_name)),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    },
-                                    Err(e) => {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Red),
-                                            style::Print(format!("\nError: {}\n\n", e)),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    },
-                                }
-                            } else if let Some((old_name, new_name)) = rename {
-                                match context_manager.rename_profile(&old_name, &new_name) {
-                                    Ok(_) => {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!(
-                                                "\nRenamed profile: {} -> {}\n\n",
-                                                old_name, new_name
-                                            )),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    },
-                                    Err(e) => {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Red),
-                                            style::Print(format!("\nError: {}\n\n", e)),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    },
-                                }
-                            } else {
-                                // List profiles
-                                let profiles = match context_manager.list_profiles() {
-                                    Ok(profiles) => profiles,
-                                    Err(e) => {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Red),
-                                            style::Print(format!("\nError listing profiles: {}\n\n", e)),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                        vec![]
-                                    },
-                                };
-
-                                execute!(self.output, style::Print("\n"))?;
-                                for profile in profiles {
-                                    if profile == context_manager.current_profile {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print("* "),
-                                            style::Print(&profile),
-                                            style::SetForegroundColor(Color::Reset),
-                                            style::Print("\n")
-                                        )?;
-                                    } else {
-                                        execute!(
-                                            self.output,
-                                            style::Print("  "),
-                                            style::Print(&profile),
-                                            style::Print("\n")
-                                        )?;
-                                    }
-                                }
-                                execute!(self.output, style::Print("\n"))?;
-                            }
-                        },
-                        command::ContextSubcommand::Switch { name, create } => {
-                            match context_manager.switch_profile(&name, create) {
-                                Ok(_) => {
-                                    let action = if create {
-                                        "Created and switched to"
-                                    } else {
-                                        "Switched to"
-                                    };
-                                    execute!(
-                                        self.output,
-                                        style::SetForegroundColor(Color::Green),
-                                        style::Print(format!("\n{} profile: {}\n\n", action, name)),
-                                        style::SetForegroundColor(Color::Reset)
-                                    )?;
-                                },
-                                Err(e) => {
-                                    execute!(
-                                        self.output,
-                                        style::SetForegroundColor(Color::Red),
-                                        style::Print(format!("\nError: {}\n\n", e)),
-                                        style::SetForegroundColor(Color::Reset)
-                                    )?;
-                                },
-                            }
-                        },
-                        command::ContextSubcommand::Clear { global } => match context_manager.clear(global) {
+                        command::ContextSubcommand::Clear { global } => match context_manager.clear(global).await {
                             Ok(_) => {
                                 let target = if global {
                                     "global".to_string()
@@ -918,6 +912,7 @@ where
                             },
                         },
                     }
+                    // fig_telemetry::send_context_command_executed
                 } else {
                     execute!(
                         self.output,
@@ -1023,7 +1018,7 @@ where
         self.send_tool_use_telemetry().await;
         return Ok(ChatState::HandleResponseStream(
             self.client
-                .send_message(self.conversation_state.as_sendable_conversation_state())
+                .send_message(self.conversation_state.as_sendable_conversation_state().await)
                 .await?,
         ));
     }
@@ -1088,13 +1083,15 @@ where
                             content: "Fake message - actual message took too long to generate".to_string(),
                             tool_uses: None,
                         });
-                    self.conversation_state.append_new_user_message(
-                        "You took too long to respond - try to split up the work into smaller steps.".to_string(),
-                    );
+                    self.conversation_state
+                        .append_new_user_message(
+                            "You took too long to respond - try to split up the work into smaller steps.".to_string(),
+                        )
+                        .await;
                     self.send_tool_use_telemetry().await;
                     return Ok(ChatState::HandleResponseStream(
                         self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state())
+                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
                             .await?,
                     ));
                 },
@@ -1127,7 +1124,7 @@ where
                     self.send_tool_use_telemetry().await;
                     return Ok(ChatState::HandleResponseStream(
                         self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state())
+                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
                             .await?,
                     ));
                 },
@@ -1189,6 +1186,7 @@ where
                     fig_telemetry::send_chat_added_message(
                         self.conversation_state.conversation_id().to_owned(),
                         message_id.to_owned(),
+                        self.conversation_state.context_message_length(),
                     )
                     .await;
                 }
@@ -1299,7 +1297,7 @@ where
 
             let response = self
                 .client
-                .send_message(self.conversation_state.as_sendable_conversation_state())
+                .send_message(self.conversation_state.as_sendable_conversation_state().await)
                 .await?;
             return Ok(ChatState::HandleResponseStream(response));
         }
@@ -1534,6 +1532,7 @@ mod tests {
             false,
             None,
         )
+        .await
         .unwrap()
         .try_chat()
         .await

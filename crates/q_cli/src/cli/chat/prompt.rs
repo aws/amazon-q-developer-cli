@@ -25,13 +25,12 @@ use rustyline::{
 };
 use winnow::stream::AsChar;
 
-use super::conversation_state::ConversationState;
-
 const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
     "/acceptall",
     "/quit",
+    "/profile",
     "/context",
     "/context show",
     "/context show --expand",
@@ -49,19 +48,11 @@ const COMMANDS: &[&str] = &[
     "/context clear --global",
 ];
 
-/// Generate a prompt string based on the active context profile
-///
-/// # Arguments
-/// * `conversation_state` - The current conversation state containing the context manager
-///
-/// # Returns
-/// A string to use as the prompt, with the profile indicator if a context profile is active
-pub fn generate_prompt(conversation_state: &ConversationState) -> String {
-    if let Some(context_manager) = &conversation_state.context_manager {
-        if context_manager.current_profile != "default" {
+pub fn generate_prompt(current_profile: Option<&str>) -> String {
+    if let Some(profile_name) = &current_profile {
+        if *profile_name != "default" {
             // Format with profile name for non-default profiles
-            let profile = context_manager.current_profile.clone();
-            return format!("[{}] > ", profile);
+            return format!("[{}] > ", profile_name);
         }
     }
 
@@ -164,38 +155,11 @@ pub fn rl() -> Result<Editor<ChatHelper, DefaultHistory>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::chat::context::ContextManager;
 
     #[test]
-    fn test_generate_prompt_default_profile() {
-        let conversation_state = ConversationState::new(Default::default(), None);
-        assert_eq!(generate_prompt(&conversation_state), "> ");
-    }
-
-    #[test]
-    fn test_generate_prompt_custom_profile() {
-        let mut conversation_state = ConversationState::new(Default::default(), None);
-
-        // Create a context manager with a custom profile
-        if let Ok(mut context_manager) = ContextManager::new() {
-            if let Ok(_) = context_manager.create_profile("test-profile") {
-                if let Ok(_) = context_manager.switch_profile("test-profile", false) {
-                    conversation_state.context_manager = Some(context_manager);
-
-                    // The prompt should include the profile name
-                    let prompt = generate_prompt(&conversation_state);
-                    assert!(prompt.contains("test-profile"));
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_generate_prompt_no_context_manager() {
-        let mut conversation_state = ConversationState::new(Default::default(), None);
-        conversation_state.context_manager = None;
-
-        // Should fall back to default prompt
-        assert_eq!(generate_prompt(&conversation_state), "> ");
+    fn test_generate_prompt() {
+        assert_eq!(generate_prompt(None), "> ");
+        assert_eq!(generate_prompt(Some("default")), "> ");
+        assert!(generate_prompt(Some("test-profile")).contains("test-profile"));
     }
 }
