@@ -141,8 +141,7 @@ impl FsLine {
         // safety check to ensure end is always greater than start
         let end = end.max(start);
 
-
-        if start >= line_count || start < 0 {
+        if start >= line_count {
             bail!(
                 "starting index: {} is outside of the allowed range: ({}, {})",
                 self.start_line(),
@@ -492,6 +491,7 @@ mod tests {
     #[test]
     fn test_negative_index_conversion() {
         assert_eq!(convert_negative_index(5, -100), 0);
+        assert_eq!(convert_negative_index(5, -1), 4);
     }
 
     #[test]
@@ -555,6 +555,25 @@ mod tests {
         assert_lines!(-2, -1, lines[2..]);
         assert_lines!(-2, None::<i32>, lines[2..]);
         assert_lines!(2, None::<i32>, lines[1..]);
+    }
+
+    #[tokio::test]
+    async fn test_fs_read_line_past_eof() {
+        let ctx = setup_test_directory().await;
+        let mut stdout = std::io::stdout();
+        let v = serde_json::json!({
+            "path": TEST_FILE_PATH,
+            "mode": "Line",
+            "start_line": 100,
+            "end_line": None::<i32>,
+        });
+        assert!(
+            serde_json::from_value::<FsRead>(v)
+                .unwrap()
+                .invoke(&ctx, &mut stdout)
+                .await
+                .is_err()
+        );
     }
 
     #[test]
