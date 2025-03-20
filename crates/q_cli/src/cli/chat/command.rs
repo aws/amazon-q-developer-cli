@@ -26,6 +26,17 @@ impl ProfileSubcommand {
     const DELETE_USAGE: &str = "/profile delete profile_name";
     const RENAME_USAGE: &str = "/profile rename old_profile_name new_profile_name";
     const SET_USAGE: &str = "/profile set profile_name";
+
+    fn usage_msg(header: impl AsRef<str>) -> String {
+        format!(
+            "{}\n\nUsage:\n    {}\n    {}\n    {}\n    {}",
+            header.as_ref(),
+            ProfileSubcommand::CREATE_USAGE,
+            ProfileSubcommand::DELETE_USAGE,
+            ProfileSubcommand::RENAME_USAGE,
+            ProfileSubcommand::SET_USAGE
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +58,24 @@ pub enum ContextSubcommand {
     },
 }
 
+impl ContextSubcommand {
+    const ADD_USAGE: &str = "/context add [--global] [--force] path1 [path2...]";
+    const CLEAR_USAGE: &str = "/context clear [--global]";
+    const REMOVE_USAGE: &str = "/context rm [--global] path1 [path2...]";
+    const SHOW_USAGE: &str = "/context show [--expand]";
+
+    fn usage_msg(header: impl AsRef<str>) -> String {
+        format!(
+            "{}\n\nUsage:\n    {}\n    {}\n    {}\n    {}",
+            header.as_ref(),
+            ContextSubcommand::SHOW_USAGE,
+            ContextSubcommand::ADD_USAGE,
+            ContextSubcommand::REMOVE_USAGE,
+            ContextSubcommand::CLEAR_USAGE
+        )
+    }
+}
+
 impl Command {
     pub fn parse(input: &str) -> Result<Self, String> {
         let input = input.trim();
@@ -65,19 +94,13 @@ impl Command {
                 "q" | "exit" | "quit" => Self::Quit,
                 "profile" => {
                     if parts.len() < 2 {
-                        return Err(format!(
-                            "Missing subcommand for /profile.\n\nUsage:\n    {}\n    {}\n    {}\n    {}",
-                            ProfileSubcommand::CREATE_USAGE,
-                            ProfileSubcommand::DELETE_USAGE,
-                            ProfileSubcommand::RENAME_USAGE,
-                            ProfileSubcommand::SET_USAGE
-                        ));
+                        return Err(ProfileSubcommand::usage_msg("Missing subcommand for /profile."));
                     }
 
                     macro_rules! usage_err {
                         ($usage_str:expr) => {
                             return Err(format!(
-                                "Invalid /profile arguments.\n\nUsage:\n  {}",
+                                "Invalid /profile arguments.\n\nUsage:\n    {}",
                                 $usage_str
                             ))
                         };
@@ -134,16 +157,22 @@ impl Command {
                             }
                         },
                         other => {
-                            return Err(format!(
-                                "Unknown subcommand '{}'. Try /help for available commands.",
-                                other
-                            ));
+                            return Err(ProfileSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
                         },
                     }
                 },
                 "context" => {
                     if parts.len() < 2 {
-                        return Err("Missing subcommand for /context. Try /help for available commands.".to_string());
+                        return Err(ContextSubcommand::usage_msg("Missing subcommand for /context."));
+                    }
+
+                    macro_rules! usage_err {
+                        ($usage_str:expr) => {
+                            return Err(format!(
+                                "Invalid /context arguments.\n\nUsage:\n    {}",
+                                $usage_str
+                            ))
+                        };
                     }
 
                     match parts[1].to_lowercase().as_str() {
@@ -155,7 +184,7 @@ impl Command {
                                 if *part == "--expand" {
                                     expand = true;
                                 } else {
-                                    return Err(format!("Unknown option for /context show: {}", part));
+                                    usage_err!(ContextSubcommand::SHOW_USAGE);
                                 }
                             }
 
@@ -180,7 +209,7 @@ impl Command {
                             }
 
                             if paths.is_empty() {
-                                return Err("No paths specified for /context add".to_string());
+                                usage_err!(ContextSubcommand::ADD_USAGE);
                             }
 
                             Self::Context {
@@ -201,7 +230,7 @@ impl Command {
                             }
 
                             if paths.is_empty() {
-                                return Err("No paths specified for /context rm".to_string());
+                                usage_err!(ContextSubcommand::REMOVE_USAGE);
                             }
 
                             Self::Context {
@@ -216,7 +245,7 @@ impl Command {
                                 if *part == "--global" {
                                     global = true;
                                 } else {
-                                    return Err(format!("Unknown option for /context clear: {}", part));
+                                    usage_err!(ContextSubcommand::CLEAR_USAGE);
                                 }
                             }
 
@@ -224,7 +253,9 @@ impl Command {
                                 subcommand: ContextSubcommand::Clear { global },
                             }
                         },
-                        _ => return Err(format!("Unknown context subcommand: {}", parts[1])),
+                        other => {
+                            return Err(ContextSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
+                        },
                     }
                 },
                 _ => return Err(format!("Unknown command: {}", input)),
