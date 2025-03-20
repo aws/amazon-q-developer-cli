@@ -758,9 +758,7 @@ where
                             execute!(
                                 self.output,
                                 style::Print("\n"),
-                                // style::SetForegroundColor(Color::Cyan),
                                 style::Print(command::ProfileSubcommand::help_text()),
-                                // style::SetForegroundColor(Color::Reset),
                                 style::Print("\n")
                             )?;
                         },
@@ -928,9 +926,7 @@ where
                             execute!(
                                 self.output,
                                 style::Print("\n"),
-                                // style::SetForegroundColor(Color::Cyan),
                                 style::Print(command::ContextSubcommand::help_text()),
-                                // style::SetForegroundColor(Color::Reset),
                                 style::Print("\n")
                             )?;
                         },
