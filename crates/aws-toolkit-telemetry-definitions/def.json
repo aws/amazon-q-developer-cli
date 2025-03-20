@@ -149,6 +149,11 @@
       "name": "codewhispererterminal_isToolValid",
       "type": "boolean",
       "description": "If the use of tool as instructed by the model is valid"
+    },
+    {
+      "name": "codewhispererterminal_contextFileLength",
+      "type": "int",
+      "description": "The length of the files included as part of context management"
     }
   ],
   "metrics": [
@@ -167,7 +172,8 @@
       "metadata": [
         { "type": "amazonqConversationId" },
         { "type": "credentialStartUrl", "required": false },
-        { "type": "codewhispererterminal_inCloudshell" }
+        { "type": "codewhispererterminal_inCloudshell" },
+        { "type": "codewhispererterminal_contextFileLength", "required": false }
       ]
     },
     {

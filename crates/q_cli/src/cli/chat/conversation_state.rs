@@ -3,6 +3,7 @@ use std::collections::{
     VecDeque,
 };
 use std::env;
+use std::sync::Arc;
 
 use fig_api_client::model::{
     AssistantResponseMessage,
@@ -18,6 +19,7 @@ use fig_api_client::model::{
     UserInputMessage,
     UserInputMessageContext,
 };
+use fig_os_shim::Context;
 use fig_util::Shell;
 use rand::distr::{
     Alphanumeric,
@@ -30,6 +32,7 @@ use tracing::{
     warn,
 };
 
+use super::context::ContextManager;
 use super::tools::ToolSpec;
 use super::truncate_safe;
 use crate::cli::chat::tools::{
@@ -57,12 +60,34 @@ pub struct ConversationState {
     pub next_message: Option<UserInputMessage>,
     history: VecDeque<ChatMessage>,
     tools: Vec<Tool>,
+    /// Context manager for handling sticky context files
+    pub context_manager: Option<ContextManager>,
+    /// Cached value representing the length of the user context message.
+    context_message_length: Option<usize>,
 }
 
 impl ConversationState {
-    pub fn new(tool_config: HashMap<String, ToolSpec>) -> Self {
+    pub async fn new(ctx: Arc<Context>, tool_config: HashMap<String, ToolSpec>, profile: Option<String>) -> Self {
         let conversation_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
         info!(?conversation_id, "Generated new conversation id");
+
+        // Initialize context manager
+        let context_manager = match ContextManager::new(ctx).await {
+            Ok(mut manager) => {
+                // Switch to specified profile if provided
+                if let Some(profile_name) = profile {
+                    if let Err(e) = manager.switch_profile(&profile_name).await {
+                        warn!("Failed to switch to profile {}: {}", profile_name, e);
+                    }
+                }
+                Some(manager)
+            },
+            Err(e) => {
+                warn!("Failed to initialize context manager: {}", e);
+                None
+            },
+        };
+
         Self {
             conversation_id,
             next_message: None,
@@ -77,6 +102,8 @@ impl ConversationState {
                     })
                 })
                 .collect(),
+            context_manager,
+            context_message_length: None,
         }
     }
 
@@ -86,7 +113,7 @@ impl ConversationState {
         self.history.clear();
     }
 
-    pub fn append_new_user_message(&mut self, input: String) {
+    pub async fn append_new_user_message(&mut self, input: String) {
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
         if let Some(next_message) = self.next_message.as_ref() {
             warn!(?next_message, "next_message should not exist");
@@ -99,8 +126,40 @@ impl ConversationState {
             input
         };
 
+        // Get context files if available
+        let context_files = if let Some(context_manager) = &self.context_manager {
+            match context_manager.get_context_files(true).await {
+                Ok(files) => {
+                    if !files.is_empty() {
+                        let mut context_content = String::new();
+                        context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
+                        for (filename, content) in files {
+                            context_content.push_str(&format!("[{}]\n{}\n", filename, content));
+                        }
+                        context_content.push_str("--- CONTEXT FILES END ---\n\n");
+                        Some(context_content)
+                    } else {
+                        None
+                    }
+                },
+                Err(e) => {
+                    warn!("Failed to get context files: {}", e);
+                    None
+                },
+            }
+        } else {
+            None
+        };
+
+        // Combine context files with user input if available
+        let content = if let Some(context) = context_files {
+            format!("{}\n{}", context, input)
+        } else {
+            input
+        };
+
         let msg = UserInputMessage {
-            content: input,
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 shell_state: Some(build_shell_state()),
                 env_state: Some(build_env_state()),
@@ -155,7 +214,9 @@ impl ConversationState {
     pub fn fix_history(&mut self) {
         // Trim the conversation history by finding the second oldest message from the user without
         // tool results - this will be the new oldest message in the history.
-        if self.history.len() > MAX_CONVERSATION_STATE_HISTORY_LEN {
+        //
+        // Note that we reserve 2 slots for [ConversationState::context_messages].
+        if self.history.len() > MAX_CONVERSATION_STATE_HISTORY_LEN - 2 {
             match self
                 .history
                 .iter()
@@ -315,12 +376,20 @@ impl ConversationState {
     /// Returns a [FigConversationState] capable of being sent by
     /// [fig_api_client::StreamingClient] while preparing the current conversation state to be sent
     /// in the next message.
-    pub fn as_sendable_conversation_state(&mut self) -> FigConversationState {
+    pub async fn as_sendable_conversation_state(&mut self) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
         self.fix_history();
 
         // The current state we want to send
-        let curr_state = self.clone();
+        let mut curr_state = self.clone();
+
+        if let Some((user, assistant)) = self.context_messages().await {
+            self.context_message_length = Some(user.content.len());
+            curr_state
+                .history
+                .push_front(ChatMessage::AssistantResponseMessage(assistant));
+            curr_state.history.push_front(ChatMessage::UserInputMessage(user));
+        }
 
         // Updating `self` so that the current next_message is moved to history.
         let mut last_message = self.next_message.take().unwrap();
@@ -335,6 +404,61 @@ impl ConversationState {
             user_input_message: curr_state.next_message.expect("no user input message available"),
             history: Some(curr_state.history.into()),
         }
+    }
+
+    pub fn current_profile(&self) -> Option<&str> {
+        if let Some(cm) = self.context_manager.as_ref() {
+            Some(cm.current_profile.as_str())
+        } else {
+            None
+        }
+    }
+
+    /// Returns a pair of user and assistant messages to include as context in the message history
+    /// depending on [Self::context_manager].
+    pub async fn context_messages(&self) -> Option<(UserInputMessage, AssistantResponseMessage)> {
+        let Some(context_manager) = &self.context_manager else {
+            return None;
+        };
+
+        match context_manager.get_context_files(true).await {
+            Ok(files) => {
+                if !files.is_empty() {
+                    let mut context_content = String::new();
+                    context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
+                    for (filename, content) in files {
+                        context_content.push_str(&format!("[{}]\n{}\n", filename, content));
+                    }
+                    context_content.push_str("--- CONTEXT FILES END ---\n\n");
+
+                    let user_msg = UserInputMessage {
+                        content: format!(
+                            "Here is some information from my local q rules files, use these when answering questions:\n\n{}",
+                            context_content
+                        ),
+                        user_input_message_context: None,
+                        user_intent: None,
+                    };
+                    let assistant_msg = AssistantResponseMessage {
+                        message_id: None,
+                        content: "I will use this when generating my response.".into(),
+                        tool_uses: None,
+                    };
+                    Some((user_msg, assistant_msg))
+                } else {
+                    None
+                }
+            },
+            Err(e) => {
+                warn!("Failed to get context files: {}", e);
+                None
+            },
+        }
+    }
+
+    /// The length of the user message used as context, if any.
+    pub fn context_message_length(&self) -> Option<usize> {
+        self.context_message_length
     }
 }
 
@@ -400,6 +524,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::cli::chat::context::AMAZONQ_FILENAME;
     use crate::cli::chat::load_tools;
 
     #[test]
@@ -462,30 +587,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
-        let mut conversation_state = ConversationState::new(load_tools().unwrap());
+        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
-        conversation_state.append_new_user_message("start".to_string());
+        conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state();
+            let s = conversation_state.as_sendable_conversation_state().await;
             assert_conversation_state_invariants(s, i);
             conversation_state.push_assistant_message(AssistantResponseMessage {
                 message_id: None,
                 content: i.to_string(),
                 tool_uses: None,
             });
-            conversation_state.append_new_user_message(i.to_string());
+            conversation_state.append_new_user_message(i.to_string()).await;
         }
     }
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
         // Build a long conversation history of tool use results.
-        let mut conversation_state = ConversationState::new(load_tools().unwrap());
-        conversation_state.append_new_user_message("start".to_string());
+        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
+        conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state();
+            let s = conversation_state.as_sendable_conversation_state().await;
             assert_conversation_state_invariants(s, i);
             conversation_state.push_assistant_message(AssistantResponseMessage {
                 message_id: None,
@@ -504,10 +629,10 @@ mod tests {
         }
 
         // Build a long conversation history of user messages mixed in with tool results.
-        let mut conversation_state = ConversationState::new(load_tools().unwrap());
-        conversation_state.append_new_user_message("start".to_string());
+        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
+        conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state();
+            let s = conversation_state.as_sendable_conversation_state().await;
             assert_conversation_state_invariants(s, i);
             if i % 3 == 0 {
                 conversation_state.push_assistant_message(AssistantResponseMessage {
@@ -530,8 +655,47 @@ mod tests {
                     content: i.to_string(),
                     tool_uses: None,
                 });
-                conversation_state.append_new_user_message(i.to_string());
+                conversation_state.append_new_user_message(i.to_string()).await;
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_conversation_state_with_context_files() {
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        ctx.fs().write(AMAZONQ_FILENAME, "test context").await.unwrap();
+
+        let mut conversation_state = ConversationState::new(ctx, load_tools().unwrap(), None).await;
+
+        // First, build a large conversation history. We need to ensure that the order is always
+        // User -> Assistant -> User -> Assistant ...and so on.
+        conversation_state.append_new_user_message("start".to_string()).await;
+        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+            let s = conversation_state.as_sendable_conversation_state().await;
+
+            // Ensure that the first two messages are the fake context messages.
+            let hist = s.history.as_ref().unwrap();
+            let user = &hist[0];
+            let assistant = &hist[1];
+            match (user, assistant) {
+                (ChatMessage::UserInputMessage(user), ChatMessage::AssistantResponseMessage(_)) => {
+                    assert!(
+                        user.content.contains("test context"),
+                        "expected context message to contain context file, instead found: {}",
+                        user.content
+                    );
+                },
+                _ => panic!("Expected the first two messages to be from the user and the assistant"),
+            }
+
+            assert_conversation_state_invariants(s, i);
+
+            conversation_state.push_assistant_message(AssistantResponseMessage {
+                message_id: None,
+                content: i.to_string(),
+                tool_uses: None,
+            });
+            conversation_state.append_new_user_message(i.to_string()).await;
         }
     }
 }

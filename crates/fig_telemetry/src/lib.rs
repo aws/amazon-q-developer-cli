@@ -336,6 +336,7 @@ impl Client {
             EventType::ChatAddedMessage {
                 conversation_id,
                 message_id,
+                ..
             } => {
                 self.send_cw_telemetry_chat_add_message_event(conversation_id.clone(), message_id.clone())
                     .await;
@@ -685,10 +686,11 @@ pub async fn send_end_chat(conversation_id: String) {
     dispatch_or_send_event(event).await;
 }
 
-pub async fn send_chat_added_message(conversation_id: String, message_id: String) {
+pub async fn send_chat_added_message(conversation_id: String, message_id: String, context_file_length: Option<usize>) {
     let event = AppTelemetryEvent::new(EventType::ChatAddedMessage {
         conversation_id,
         message_id,
+        context_file_length,
     })
     .await;
     dispatch_or_send_event(event).await;
@@ -784,7 +786,7 @@ mod test {
         send_doctor_check_failed("").await;
         send_dashboard_page_viewed("/").await;
         send_menu_bar_actioned(Some("Settings")).await;
-        send_chat_added_message("debug".to_owned(), "debug".to_owned()).await;
+        send_chat_added_message("debug".to_owned(), "debug".to_owned(), Some(123)).await;
 
         finish_telemetry_unwrap().await;
 

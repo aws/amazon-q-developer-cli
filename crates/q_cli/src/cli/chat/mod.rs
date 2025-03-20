@@ -1,4 +1,5 @@
 mod command;
+mod context;
 mod conversation_state;
 mod input_source;
 mod parse;
@@ -17,6 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use command::Command;
+use context::ContextManager;
 use conversation_state::ConversationState;
 use crossterm::style::{
     Attribute,
@@ -70,6 +72,7 @@ use tracing::{
     debug,
     error,
     trace,
+    warn,
 };
 use winnow::Partial;
 use winnow::stream::Offset;
@@ -91,6 +94,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 • Help me understand my git status
 
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
+<em>/context</em>      <black!>Manage context files for the chat session</black!>
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
@@ -105,12 +109,23 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
+<em>/profile</em>      <black!>Manage context profiles</black!>
+  <em>list</em>        <black!>List context profiles</black!>
+  <em>create</em>      <black!>Create a new context profile</black!>
+  <em>delete</em>      <black!>Delete a context profile</black!>
+  <em>rename</em>      <black!>Rename a context profile</black!>
+  <em>set</em>         <black!>Set the current context profile</black!>
+<em>/context</em>      <black!>Manage context files for the chat session</black!>
+  <em>show</em>        <black!>Display current context configuration [--expand]</black!>
+  <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
+  <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
+  <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
 
 <em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
 
 "};
 
-pub async fn chat(input: Option<String>, accept_all: bool) -> Result<ExitCode> {
+pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<String>) -> Result<ExitCode> {
     if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
         bail!(
             "You are not logged in, please log in with {}",
@@ -139,6 +154,27 @@ pub async fn chat(input: Option<String>, accept_all: bool) -> Result<ExitCode> {
         _ => StreamingClient::new().await?,
     };
 
+    // If profile is specified, verify it exists before starting the chat
+    if let Some(ref profile_name) = profile {
+        // Create a temporary context manager to check if the profile exists
+        match ContextManager::new(Arc::clone(&ctx)).await {
+            Ok(context_manager) => {
+                let profiles = context_manager.list_profiles().await?;
+                if !profiles.contains(profile_name) {
+                    bail!(
+                        "Profile '{}' does not exist. Available profiles: {}",
+                        profile_name,
+                        profiles.join(", ")
+                    );
+                }
+            },
+            Err(e) => {
+                warn!("Failed to initialize context manager to verify profile: {}", e);
+                // Continue without verification if context manager can't be initialized
+            },
+        }
+    }
+
     let mut chat = ChatContext::new(
         ctx,
         Settings::new(),
@@ -149,7 +185,9 @@ pub async fn chat(input: Option<String>, accept_all: bool) -> Result<ExitCode> {
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
         accept_all,
-    )?;
+        profile,
+    )
+    .await?;
 
     let result = chat.try_chat().await.map(|_| ExitCode::SUCCESS);
     drop(chat); // Explicit drop for clarity
@@ -208,7 +246,7 @@ pub struct ChatContext<W: Write> {
 
 impl<W: Write> ChatContext<W> {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         ctx: Arc<Context>,
         settings: Settings,
         output: W,
@@ -218,7 +256,9 @@ impl<W: Write> ChatContext<W> {
         client: StreamingClient,
         terminal_width_provider: fn() -> Option<usize>,
         accept_all: bool,
+        profile: Option<String>,
     ) -> Result<Self> {
+        let ctx_clone = Arc::clone(&ctx);
         Ok(Self {
             ctx,
             settings,
@@ -229,7 +269,7 @@ impl<W: Write> ChatContext<W> {
             client,
             terminal_width_provider,
             spinner: None,
-            conversation_state: ConversationState::new(load_tools()?),
+            conversation_state: ConversationState::new(ctx_clone, load_tools()?, profile).await,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
             accept_all,
@@ -404,7 +444,7 @@ where
                                     tool_uses.clone(),
                                     "The user interrupted the tool execution.".to_string(),
                                 );
-                                let _ = self.conversation_state.as_sendable_conversation_state();
+                                let _ = self.conversation_state.as_sendable_conversation_state().await;
                                 self.conversation_state
                                     .push_assistant_message(AssistantResponseMessage {
                                         message_id: None,
@@ -477,7 +517,10 @@ where
         // Require two consecutive sigint's to exit.
         let mut ctrl_c = false;
         let user_input = loop {
-            match (self.input_source.read_line(Some("> "))?, ctrl_c) {
+            // Generate prompt based on active context profile
+            let prompt = prompt::generate_prompt(self.conversation_state.current_profile());
+
+            match (self.input_source.read_line(Some(&prompt))?, ctrl_c) {
                 (Some(line), _) => break line,
                 (None, false) => {
                     execute!(
@@ -504,13 +547,24 @@ where
         user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
     ) -> Result<ChatState, ChatError> {
-        let Ok(command) = Command::parse(&user_input) else {
+        let command_result = Command::parse(&user_input);
+
+        if let Err(error_message) = &command_result {
+            // Display error message for command parsing errors
+            execute!(
+                self.output,
+                style::SetForegroundColor(Color::Red),
+                style::Print(format!("\nError: {}\n\n", error_message)),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+
             return Ok(ChatState::PromptUser {
                 tool_uses,
                 skip_printing_tools: true,
             });
-        };
+        }
 
+        let command = command_result.unwrap();
         let tool_uses = tool_uses.unwrap_or_default();
         Ok(match command {
             Command::Ask { prompt } => {
@@ -528,7 +582,7 @@ where
                 }
 
                 if tool_uses.is_empty() {
-                    self.conversation_state.append_new_user_message(user_input);
+                    self.conversation_state.append_new_user_message(user_input).await;
                 } else {
                     self.conversation_state.abandon_tool_use(tool_uses, user_input);
                 }
@@ -537,7 +591,7 @@ where
 
                 ChatState::HandleResponseStream(
                     self.client
-                        .send_message(self.conversation_state.as_sendable_conversation_state())
+                        .send_message(self.conversation_state.as_sendable_conversation_state().await)
                         .await?,
                 )
             },
@@ -592,6 +646,287 @@ where
                 }
             },
             Command::Quit => ChatState::Exit,
+            Command::Profile { subcommand } => {
+                if let Some(context_manager) = &mut self.conversation_state.context_manager {
+                    macro_rules! print_err {
+                        ($err:expr) => {
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!("\nError: {}\n\n", $err)),
+                                style::SetForegroundColor(Color::Reset)
+                            )?
+                        };
+                    }
+
+                    match subcommand {
+                        command::ProfileSubcommand::List => {
+                            let profiles = match context_manager.list_profiles().await {
+                                Ok(profiles) => profiles,
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("\nError listing profiles: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                    vec![]
+                                },
+                            };
+
+                            execute!(self.output, style::Print("\n"))?;
+                            for profile in profiles {
+                                if profile == context_manager.current_profile {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print("* "),
+                                        style::Print(&profile),
+                                        style::SetForegroundColor(Color::Reset),
+                                        style::Print("\n")
+                                    )?;
+                                } else {
+                                    execute!(
+                                        self.output,
+                                        style::Print("  "),
+                                        style::Print(&profile),
+                                        style::Print("\n")
+                                    )?;
+                                }
+                            }
+                            execute!(self.output, style::Print("\n"))?;
+                        },
+                        command::ProfileSubcommand::Create { name } => {
+                            match context_manager.create_profile(&name).await {
+                                Ok(_) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!("\nCreated profile: {}\n\n", name)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                    context_manager
+                                        .switch_profile(&name)
+                                        .await
+                                        .map_err(|e| warn!(?e, "failed to switch to newly created profile"))
+                                        .ok();
+                                },
+                                Err(e) => print_err!(e),
+                            }
+                        },
+                        command::ProfileSubcommand::Delete { name } => {
+                            match context_manager.delete_profile(&name).await {
+                                Ok(_) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!("\nDeleted profile: {}\n\n", name)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => print_err!(e),
+                            }
+                        },
+                        command::ProfileSubcommand::Set { name } => match context_manager.switch_profile(&name).await {
+                            Ok(_) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(format!("\nSwitched to profile: {}\n\n", name)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            },
+                            Err(e) => print_err!(e),
+                        },
+                        command::ProfileSubcommand::Rename { old_name, new_name } => {
+                            match context_manager.rename_profile(&old_name, &new_name).await {
+                                Ok(_) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!("\nRenamed profile: {} -> {}\n\n", old_name, new_name)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => print_err!(e),
+                            }
+                        },
+                    }
+                }
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    skip_printing_tools: true,
+                }
+            },
+            Command::Context { subcommand } => {
+                if let Some(context_manager) = &mut self.conversation_state.context_manager {
+                    match subcommand {
+                        command::ContextSubcommand::Show { expand } => {
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!("\ncurrent profile: {}\n\n", context_manager.current_profile)),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+
+                            // Display global context
+                            execute!(self.output, style::Print("global:\n"))?;
+
+                            if context_manager.global_config.paths.is_empty() {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("    <none>\n"),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            } else {
+                                for path in &context_manager.global_config.paths {
+                                    execute!(self.output, style::Print(format!("    {}\n", path)))?;
+                                }
+                            }
+
+                            // Display profile context
+                            execute!(self.output, style::Print("\nprofile:\n"))?;
+
+                            if context_manager.profile_config.paths.is_empty() {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("    <none>\n\n"),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            } else {
+                                for path in &context_manager.profile_config.paths {
+                                    execute!(self.output, style::Print(format!("    {}\n", path)))?;
+                                }
+                                execute!(self.output, style::Print("\n"))?;
+                            }
+
+                            // If expand flag is set, show the expanded files
+                            if expand {
+                                match context_manager.get_context_files(false).await {
+                                    Ok(context_files) => {
+                                        if context_files.is_empty() {
+                                            execute!(
+                                                self.output,
+                                                style::SetForegroundColor(Color::DarkGrey),
+                                                style::Print("No files matched the patterns.\n\n"),
+                                                style::SetForegroundColor(Color::Reset)
+                                            )?;
+                                        } else {
+                                            execute!(
+                                                self.output,
+                                                style::SetForegroundColor(Color::Green),
+                                                style::Print(format!("Expanded files ({}):\n", context_files.len())),
+                                                style::SetForegroundColor(Color::Reset)
+                                            )?;
+
+                                            for (filename, _) in context_files {
+                                                execute!(self.output, style::Print(format!("    {}\n", filename)))?;
+                                            }
+                                            execute!(self.output, style::Print("\n"))?;
+                                        }
+                                    },
+                                    Err(e) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Red),
+                                            style::Print(format!("Error expanding files: {}\n\n", e)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                }
+                            }
+                        },
+                        command::ContextSubcommand::Add { global, force, paths } => {
+                            match context_manager.add_paths(paths.clone(), global, force).await {
+                                Ok(_) => {
+                                    let target = if global { "global" } else { "profile" };
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!(
+                                            "\nAdded {} path(s) to {} context.\n\n",
+                                            paths.len(),
+                                            target
+                                        )),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("\nError: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                            }
+                        },
+                        command::ContextSubcommand::Remove { global, paths } => {
+                            match context_manager.remove_paths(paths.clone(), global).await {
+                                Ok(_) => {
+                                    let target = if global { "global" } else { "profile" };
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!(
+                                            "\nRemoved {} path(s) from {} context.\n\n",
+                                            paths.len(),
+                                            target
+                                        )),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("\nError: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                            }
+                        },
+                        command::ContextSubcommand::Clear { global } => match context_manager.clear(global).await {
+                            Ok(_) => {
+                                let target = if global {
+                                    "global".to_string()
+                                } else {
+                                    format!("profile '{}'", context_manager.current_profile)
+                                };
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(format!("\nCleared context for {}\n\n", target)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            },
+                            Err(e) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nError: {}\n\n", e)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            },
+                        },
+                    }
+                    // fig_telemetry::send_context_command_executed
+                } else {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("\nContext management is not available.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                }
+
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    skip_printing_tools: true,
+                }
+            },
         })
     }
 
@@ -683,7 +1018,7 @@ where
         self.send_tool_use_telemetry().await;
         return Ok(ChatState::HandleResponseStream(
             self.client
-                .send_message(self.conversation_state.as_sendable_conversation_state())
+                .send_message(self.conversation_state.as_sendable_conversation_state().await)
                 .await?,
         ));
     }
@@ -748,13 +1083,15 @@ where
                             content: "Fake message - actual message took too long to generate".to_string(),
                             tool_uses: None,
                         });
-                    self.conversation_state.append_new_user_message(
-                        "You took too long to respond - try to split up the work into smaller steps.".to_string(),
-                    );
+                    self.conversation_state
+                        .append_new_user_message(
+                            "You took too long to respond - try to split up the work into smaller steps.".to_string(),
+                        )
+                        .await;
                     self.send_tool_use_telemetry().await;
                     return Ok(ChatState::HandleResponseStream(
                         self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state())
+                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
                             .await?,
                     ));
                 },
@@ -787,7 +1124,7 @@ where
                     self.send_tool_use_telemetry().await;
                     return Ok(ChatState::HandleResponseStream(
                         self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state())
+                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
                             .await?,
                     ));
                 },
@@ -849,6 +1186,7 @@ where
                     fig_telemetry::send_chat_added_message(
                         self.conversation_state.conversation_id().to_owned(),
                         message_id.to_owned(),
+                        self.conversation_state.context_message_length(),
                     )
                     .await;
                 }
@@ -959,7 +1297,7 @@ where
 
             let response = self
                 .client
-                .send_message(self.conversation_state.as_sendable_conversation_state())
+                .send_message(self.conversation_state.as_sendable_conversation_state().await)
                 .await?;
             return Ok(ChatState::HandleResponseStream(response));
         }
@@ -1193,7 +1531,9 @@ mod tests {
             test_client,
             || Some(80),
             false,
+            None,
         )
+        .await
         .unwrap()
         .try_chat()
         .await

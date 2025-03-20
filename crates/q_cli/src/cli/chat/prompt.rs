@@ -25,7 +25,40 @@ use rustyline::{
 };
 use winnow::stream::AsChar;
 
-const COMMANDS: &[&str] = &["/clear", "/help"];
+const COMMANDS: &[&str] = &[
+    "/clear",
+    "/help",
+    "/acceptall",
+    "/quit",
+    "/profile",
+    "/context",
+    "/context show",
+    "/context show --expand",
+    "/context add",
+    "/context add --global",
+    "/context rm",
+    "/context rm --global",
+    "/context profile",
+    "/context profile --create",
+    "/context profile --delete",
+    "/context profile --rename",
+    "/context switch",
+    "/context switch --create",
+    "/context clear",
+    "/context clear --global",
+];
+
+pub fn generate_prompt(current_profile: Option<&str>) -> String {
+    if let Some(profile_name) = &current_profile {
+        if *profile_name != "default" {
+            // Format with profile name for non-default profiles
+            return format!("[{}] > ", profile_name);
+        }
+    }
+
+    // Default prompt
+    "> ".to_string()
+}
 
 pub struct ChatCompleter {}
 
@@ -71,11 +104,18 @@ pub struct ChatHelper {
 }
 
 impl Highlighter for ChatHelper {
-    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, default: bool) -> Cow<'b, str> {
-        if default {
-            Cow::Owned(prompt.magenta().to_string())
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
+        // Check if the prompt contains a context profile indicator
+        if let Some(profile_end) = prompt.find("] ") {
+            // Split the prompt into context part and the rest
+            let context_part = &prompt[..=profile_end];
+            let rest = &prompt[(profile_end + 1)..];
+
+            // Color the context part cyan and the rest magenta
+            Cow::Owned(format!("{}{}", context_part.cyan(), rest.magenta()))
         } else {
-            Cow::Borrowed(prompt)
+            // Default prompt with magenta color
+            Cow::Owned(prompt.magenta().to_string())
         }
     }
 
@@ -110,4 +150,16 @@ pub fn rl() -> Result<Editor<ChatHelper, DefaultHistory>> {
     let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(h));
     Ok(rl)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_prompt() {
+        assert_eq!(generate_prompt(None), "> ");
+        assert_eq!(generate_prompt(Some("default")), "> ");
+        assert!(generate_prompt(Some("test-profile")).contains("test-profile"));
+    }
 }

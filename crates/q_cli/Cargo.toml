@@ -55,6 +55,7 @@ fig_telemetry.workspace = true
 fig_util.workspace = true
 flume.workspace = true
 futures.workspace = true
+glob.workspace = true
 globset.workspace = true
 indicatif.workspace = true
 indoc.workspace = true
