@@ -627,7 +627,7 @@ mod test {
     #[test]
     fn test_chat_with_no_interactive() {
         assert_parse!(
-            ["chat", "--no_interactive"],
+            ["chat", "--no-interactive"],
             CliRootCommands::Chat {
                 accept_all: false,
                 no_interactive: true,
