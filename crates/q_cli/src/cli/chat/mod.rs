@@ -129,7 +129,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 "};
 
-pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<String>) -> Result<ExitCode> {
+pub async fn chat(input: Option<String>, no_interactive: bool, accept_all: bool, profile: Option<String>) -> Result<ExitCode> {
     if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
         bail!(
             "You are not logged in, please log in with {}",
@@ -140,17 +140,22 @@ pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<Strin
     region_check("chat")?;
 
     let ctx = Context::new();
-    let output = std::io::stderr();
 
     let stdin = std::io::stdin();
-    let interactive = stdin.is_terminal();
-    let input = if !interactive {
-        // append to input string any extra info that was provided.
+    // no_interactive flag or part of a pipe
+    let interactive = !no_interactive && stdin.is_terminal();
+    let input = if !interactive && !stdin.is_terminal() {
+        // append to input string any extra info that was provided, e.g. via pipe
         let mut input = input.unwrap_or_default();
         stdin.lock().read_to_string(&mut input)?;
         Some(input)
     } else {
         input
+    };
+
+    let output: Box<dyn Write> = match interactive {
+        true => Box::new(std::io::stderr()),
+        false => Box::new(std::io::stdout()),
     };
 
     let client = match ctx.env().get("Q_MOCK_CHAT_RESPONSE") {
@@ -224,6 +229,8 @@ pub enum ChatError {
     Custom(Cow<'static, str>),
     #[error("interrupted")]
     Interrupted { tool_uses: Option<Vec<QueuedTool>> },
+    #[error("Tool approval required but --no-interactive was specified. Use --accept-all to automatically approve tools.")]
+    NonInteractiveToolApproval,
 }
 
 pub struct ChatContext<W: Write> {
@@ -358,14 +365,16 @@ where
         });
 
         if let Some(user_input) = self.initial_input.take() {
-            execute!(
-                self.output,
-                style::SetForegroundColor(Color::Magenta),
-                style::Print("> "),
-                style::SetAttribute(Attribute::Reset),
-                style::Print(&user_input),
-                style::Print("\n")
-            )?;
+            if self.interactive {
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Magenta),
+                    style::Print("> "),
+                    style::SetAttribute(Attribute::Reset),
+                    style::Print(&user_input),
+                    style::Print("\n")
+                )?;
+            }
             next_state = Some(ChatState::HandleInput {
                 input: user_input,
                 tool_uses: None,
@@ -381,7 +390,13 @@ where
                 ChatState::PromptUser {
                     tool_uses,
                     skip_printing_tools,
-                } => self.prompt_user(tool_uses, skip_printing_tools).await,
+                } => {
+                    // Cannot prompt in non-interactive mode no matter what.
+                    if !self.interactive {
+                        return Ok(())
+                    }
+                    self.prompt_user(tool_uses, skip_printing_tools).await
+                },
                 ChatState::HandleInput { input, tool_uses } => self.handle_input(input, tool_uses).await,
                 ChatState::ExecuteTools(tool_uses) => {
                     let tool_uses_clone = tool_uses.clone();
@@ -493,9 +508,7 @@ where
         mut tool_uses: Option<Vec<QueuedTool>>,
         skip_printing_tools: bool,
     ) -> Result<ChatState, ChatError> {
-        if self.interactive {
-            execute!(self.output, cursor::Show)?;
-        }
+        execute!(self.output, cursor::Show)?;
         let tool_uses = tool_uses.take().unwrap_or_default();
         if !tool_uses.is_empty() && !skip_printing_tools {
             self.print_tool_descriptions(&tool_uses).await?;
@@ -1332,15 +1345,16 @@ where
 
         let skip_acceptance = self.accept_all || queued_tools.iter().all(|tool| !tool.1.requires_acceptance(&self.ctx));
 
-        match skip_acceptance {
-            true => {
+        match (skip_acceptance, self.interactive) {
+            (true, _) => {
                 self.print_tool_descriptions(&queued_tools).await?;
                 Ok(ChatState::ExecuteTools(queued_tools))
             },
-            false => Ok(ChatState::PromptUser {
+            (false, true) => Ok(ChatState::PromptUser {
                 tool_uses: Some(queued_tools),
                 skip_printing_tools: false,
             }),
+            (false, false) => Err(ChatError::NonInteractiveToolApproval)
         }
     }
 
