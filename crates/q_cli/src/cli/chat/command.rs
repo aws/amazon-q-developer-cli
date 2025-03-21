@@ -42,7 +42,7 @@ impl ProfileSubcommand {
     pub fn help_text() -> String {
         color_print::cformat!(
             r#"
-<magenta,em>Profile Management</magenta,em>
+<magenta,em>(Beta) Profile Management</magenta,em>
 
 Profiles allow you to organize and manage different sets of context files for different projects or tasks.
 
@@ -107,7 +107,7 @@ impl ContextSubcommand {
     pub fn help_text() -> String {
         color_print::cformat!(
             r#"
-<magenta,em>Context Management</magenta,em>
+<magenta,em>(Beta) Context Management</magenta,em>
 
 Context files provide Amazon Q with additional information about your project or environment.
 Adding relevant files to your context helps Amazon Q provide more accurate and helpful responses.
