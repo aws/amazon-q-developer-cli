@@ -12,21 +12,53 @@
     },
     {
       "type": "release",
+      "date": "2025-03-20",
+      "version": "1.7.2",
+      "title": "Version 1.7.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for automatically adding files as context in `q chat` - [#834](https://github.com/aws/amazon-q-developer-cli/pull/834)"
+        },
+        {
+          "type": "added",
+          "description": "A search ability when reading the filesystem in `q chat` - [#811](https://github.com/aws/amazon-q-developer-cli/pull/811)"
+        },
+        {
+          "type": "added",
+          "description": "A larger maximum tool response size in `q chat` - [#850](https://github.com/aws/amazon-q-developer-cli/pull/850)"
+        },
+        {
+          "type": "fixed",
+          "description": "Detecting libc on certain Linux distributions during install - [#851](https://github.com/aws/amazon-q-developer-cli/pull/851)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-03-14",
       "version": "1.7.1",
       "title": "Version 1.7.1",
       "changes": [
         {
           "type": "added",
-          "description": "`q chat` improvements: better file diff [#799](https://github.com/aws/amazon-q-developer-cli/pull/799), append functionality with fs_write [#764](https://github.com/aws/amazon-q-developer-cli/pull/764), multi-line input support [#831](https://github.com/aws/amazon-q-developer-cli/pull/831)"
+          "description": "An improved file diff in `q chat` - [#799](https://github.com/aws/amazon-q-developer-cli/pull/799)"
         },
         {
           "type": "added",
-          "description": "Support for WindSurf Next [#814](https://github.com/aws/amazon-q-developer-cli/pull/814)"
+          "description": "Multi-line input support in `q chat` - [#831](https://github.com/aws/amazon-q-developer-cli/pull/831)"
+        },
+        {
+          "type": "added",
+          "description": "An append functionality with fs_write in `q chat` - [#764](https://github.com/aws/amazon-q-developer-cli/pull/764)"
+        },
+        {
+          "type": "added",
+          "description": "Support for WindSurf Next - [#814](https://github.com/aws/amazon-q-developer-cli/pull/814)"
         },
         {
           "type": "changed",
-          "description": "Ctrl+C no longer exits `q chat` on first attempt [#830](https://github.com/aws/amazon-q-developer-cli/pull/830)"
+          "description": "Ctrl+C so that it exits `q chat` on first attempt - [#830](https://github.com/aws/amazon-q-developer-cli/pull/830)"
         },
         {
           "type": "fixed",
@@ -42,7 +74,7 @@
       "changes": [
         {
           "type": "added",
-          "description": "Enhanced `q chat` with agentic capabilities. See the [announcement post](https://aws.amazon.com/blogs/devops/introducing-the-enhanced-command-line-interface-in-amazon-q-developer/) for more information."
+          "description": "An enhanced `q chat` with agentic capabilities. See the [announcement post](https://aws.amazon.com/blogs/devops/introducing-the-enhanced-command-line-interface-in-amazon-q-developer/) for more information."
         }
       ]
     },
