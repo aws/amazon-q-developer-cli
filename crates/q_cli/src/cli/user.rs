@@ -1,6 +1,9 @@
 use std::fmt;
 use std::fmt::Display;
-use std::process::ExitCode;
+use std::process::{
+    ExitCode,
+    exit,
+};
 use std::time::Duration;
 
 use anstream::println;
@@ -144,6 +147,8 @@ pub enum UserSubcommand {
 
 impl UserSubcommand {
     pub async fn execute(self) -> Result<ExitCode> {
+        ctrlc::set_handler(|| exit(1))?;
+
         match self {
             Self::Root(cmd) => cmd.execute().await,
         }
