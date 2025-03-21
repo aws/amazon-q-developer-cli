@@ -129,7 +129,12 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 "};
 
-pub async fn chat(input: Option<String>, no_interactive: bool, accept_all: bool, profile: Option<String>) -> Result<ExitCode> {
+pub async fn chat(
+    input: Option<String>,
+    no_interactive: bool,
+    accept_all: bool,
+    profile: Option<String>,
+) -> Result<ExitCode> {
     if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
         bail!(
             "You are not logged in, please log in with {}",
@@ -229,7 +234,9 @@ pub enum ChatError {
     Custom(Cow<'static, str>),
     #[error("interrupted")]
     Interrupted { tool_uses: Option<Vec<QueuedTool>> },
-    #[error("Tool approval required but --no-interactive was specified. Use --accept-all to automatically approve tools.")]
+    #[error(
+        "Tool approval required but --no-interactive was specified. Use --accept-all to automatically approve tools."
+    )]
     NonInteractiveToolApproval,
 }
 
@@ -393,7 +400,7 @@ where
                 } => {
                     // Cannot prompt in non-interactive mode no matter what.
                     if !self.interactive {
-                        return Ok(())
+                        return Ok(());
                     }
                     self.prompt_user(tool_uses, skip_printing_tools).await
                 },
@@ -1354,7 +1361,7 @@ where
                 tool_uses: Some(queued_tools),
                 skip_printing_tools: false,
             }),
-            (false, false) => Err(ChatError::NonInteractiveToolApproval)
+            (false, false) => Err(ChatError::NonInteractiveToolApproval),
         }
     }
 

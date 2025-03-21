@@ -626,14 +626,11 @@ mod test {
 
     #[test]
     fn test_chat_with_no_interactive() {
-        assert_parse!(
-            ["chat", "--no-interactive"],
-            CliRootCommands::Chat {
-                accept_all: false,
-                no_interactive: true,
-                input: None,
-                profile: None,
-            }
-        );
+        assert_parse!(["chat", "--no-interactive"], CliRootCommands::Chat {
+            accept_all: false,
+            no_interactive: true,
+            input: None,
+            profile: None,
+        });
     }
 }
