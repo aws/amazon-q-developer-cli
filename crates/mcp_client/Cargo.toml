@@ -28,3 +28,6 @@ tracing.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 nix.workspace = true
+reqwest.workspace = true
+reqwest-eventsource.workspace = true
+futures-util.workspace = true

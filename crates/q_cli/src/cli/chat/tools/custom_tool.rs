@@ -8,18 +8,11 @@ use crossterm::{
 };
 use eyre::Result;
 use fig_os_shim::Context;
-use mcp_client::{
-    Client as McpClient,
-    ClientConfig as McpClientConfig,
-    JsonRpcStdioTransport,
-    ServerCapabilities,
-    StdioTransport,
-};
+use mcp_client::{Client as McpClient, ClientConfig as McpClientConfig, JsonRpcStdioTransport, JsonRpcSseTransport, ServerCapabilities, StdioTransport, SseTransport};
 use serde::{
     Deserialize,
     Serialize,
 };
-
 use super::{
     InvokeOutput,
     ToolSpec,
@@ -28,12 +21,17 @@ use super::{
 // TODO: support http transport type
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CustomToolConfig {
-    pub command: String,
-    pub args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
+// todo: maybe don't need enum, just an MCP with generic Transport
 #[derive(Debug)]
 pub enum CustomToolClient {
     Stdio {
@@ -42,17 +40,23 @@ pub enum CustomToolClient {
         #[allow(dead_code)]
         server_capabilities: Option<ServerCapabilities>,
     },
+    Sse {
+        server_name: String,
+        client: McpClient<SseTransport>,
+        #[allow(dead_code)]
+        server_capabilities: Option<ServerCapabilities>,
+    }
 }
 
 impl CustomToolClient {
-    // TODO: add support for http transport
     pub async fn from_config(server_name: String, config: CustomToolConfig) -> Result<Self> {
         // TODO: accommodate for envs specified
-        let CustomToolConfig { command, args, env: _ } = config;
+        let CustomToolConfig { command, args, env: _, url } = config;
         let mcp_client_config = McpClientConfig {
             server_name: server_name.clone(),
             bin_path: command.clone(),
             args,
+            url: url.clone(),
             timeout: 120,
             init_params: serde_json::json!({
                  "protocolVersion": "2024-11-05",
@@ -63,13 +67,28 @@ impl CustomToolClient {
                  }
             }),
         };
-        let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
-        let server_capabilities = Some(client.init().await?);
-        Ok(CustomToolClient::Stdio {
-            server_name,
-            client,
-            server_capabilities,
-        })
+
+        if mcp_client_config.bin_path.is_some() {
+            let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
+            let server_capabilities = Some(client.init().await?);
+            Ok(CustomToolClient::Stdio {
+                server_name,
+                client,
+                server_capabilities,
+            })
+        }
+        else if mcp_client_config.url.is_some() {
+            let client = McpClient::<JsonRpcSseTransport>::from_config(mcp_client_config).await?;
+            let server_capabilities = Some(client.init().await?);
+            Ok(CustomToolClient::Sse {
+                server_name,
+                client,
+                server_capabilities,
+            })
+        }
+        else {
+            return Err(eyre::eyre!("MCP Definition Invalid because neither command or url specified"));
+        }
     }
 
     pub async fn get_tool_spec(&self) -> Result<(String, Vec<ToolSpec>)> {
@@ -89,12 +108,28 @@ impl CustomToolClient {
                 let tools = serde_json::from_value::<Vec<ToolSpec>>(tools.clone())?;
                 Ok((server_name.clone(), tools))
             },
+            CustomToolClient::Sse {
+                client, server_name, ..
+            } => {
+                let resp = client.request("tools/list", None).await?;
+                // Assuming a shape of return as per https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#listing-tools
+                let result = resp
+                    .get("result")
+                    .ok_or(eyre::eyre!("Failed to retrieve result for custom tool {}", server_name))?;
+                let tools = result.get("tools").ok_or(eyre::eyre!(
+                    "Failed to retrieve tools from result for custom tool {}",
+                    server_name
+                ))?;
+                let tools = serde_json::from_value::<Vec<ToolSpec>>(tools.clone())?;
+                Ok((server_name.clone(), tools))
+            }
         }
     }
 
     pub async fn request(&self, method: &str, params: Option<serde_json::Value>) -> Result<serde_json::Value> {
         match self {
             CustomToolClient::Stdio { client, .. } => Ok(client.request(method, params).await?),
+            CustomToolClient::Sse { client, .. } => Ok(client.request(method, params).await?),
         }
     }
 
@@ -102,6 +137,7 @@ impl CustomToolClient {
     pub async fn notify(&self, method: &str, params: Option<serde_json::Value>) -> Result<()> {
         match self {
             CustomToolClient::Stdio { client, .. } => Ok(client.notify(method, params).await?),
+            CustomToolClient::Sse { client, .. } => Ok(client.notify(method, params).await?),
         }
     }
 }

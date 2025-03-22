@@ -11,7 +11,6 @@ use nix::unistd::Pid;
 use serde::Deserialize;
 use thiserror::Error;
 use tokio::time;
-
 use crate::transport::base_protocol::{
     JsonRpcMessage,
     JsonRpcNotification,
@@ -19,27 +18,24 @@ use crate::transport::base_protocol::{
     JsonRpcVersion,
 };
 use crate::transport::stdio::JsonRpcStdioTransport;
+use crate::transport::sse::JsonRpcSseTransport;
 use crate::transport::{
     self,
     Transport,
     TransportError,
 };
-use crate::{
-    PaginationSupportedOps,
-    PromptsListResult,
-    ResourceTemplatesListResult,
-    ResourcesListResult,
-    ToolsListResult,
-};
+use crate::{PaginationSupportedOps, PromptsListResult, ResourceTemplatesListResult, ResourcesListResult, ToolsListResult};
 
 pub type ServerCapabilities = serde_json::Value;
 pub type StdioTransport = JsonRpcStdioTransport;
+pub type SseTransport = JsonRpcSseTransport;
 
 #[derive(Debug, Deserialize)]
 pub struct ClientConfig {
     pub server_name: String,
-    pub bin_path: String,
-    pub args: Vec<String>,
+    pub bin_path: Option<String>,
+    pub args: Option<Vec<String>>,
+    pub url: Option<String>,
     pub timeout: u64,
     pub init_params: serde_json::Value,
 }
@@ -71,7 +67,7 @@ pub struct Client<T: Transport> {
     server_name: String,
     transport: Arc<T>,
     timeout: u64,
-    server_process_id: Pid,
+    server_process_id: Option<Pid>,
     init_params: serde_json::Value,
     current_id: AtomicU64,
 }
@@ -82,9 +78,15 @@ impl Client<StdioTransport> {
             server_name,
             bin_path,
             args,
+            url: _,
             timeout,
             init_params,
         } = config;
+
+        // Validate required parameters for StdioTransport
+        let bin_path = bin_path.ok_or_else(|| ClientError::NegotiationError("bin_path is required for StdioTransport".to_owned()))?;
+        let args = args.unwrap_or_default();
+
         let child = tokio::process::Command::new(bin_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -93,11 +95,11 @@ impl Client<StdioTransport> {
             .spawn()?;
         let server_process_id = child.id().ok_or(ClientError::MissingProcessId)?;
         #[allow(clippy::map_err_ignore)]
-        let server_process_id = Pid::from_raw(
+        let server_process_id = Some(Pid::from_raw(
             server_process_id
                 .try_into()
                 .map_err(|_| ClientError::MissingProcessId)?,
-        );
+        ));
         let transport = Arc::new(transport::stdio::JsonRpcStdioTransport::client(child)?);
         Ok(Self {
             server_name,
@@ -110,12 +112,42 @@ impl Client<StdioTransport> {
     }
 }
 
+impl Client<SseTransport> {
+    pub async fn from_config(config: ClientConfig) -> Result<Self, ClientError> {
+        let ClientConfig {
+            server_name,
+            bin_path: _,
+            args: _,
+            url,
+            timeout,
+            init_params,
+        } = config;
+
+        // Validate required parameters for SseTransport
+        let url = url.ok_or_else(|| ClientError::NegotiationError("url is required for SseTransport".to_owned()))?;
+
+        // Create the SSE transport
+        let transport = Arc::new(JsonRpcSseTransport::client(url)?);
+
+        Ok(Self {
+            server_name,
+            transport,
+            timeout,
+            server_process_id: None,
+            init_params,
+            current_id: AtomicU64::new(0),
+        })
+    }
+}
+
 impl<T> Drop for Client<T>
 where
     T: Transport,
 {
     fn drop(&mut self) {
-        let _ = nix::sys::signal::kill(self.server_process_id, Signal::SIGTERM);
+        if let Some(pid) = self.server_process_id {
+            let _ = nix::sys::signal::kill(pid, Signal::SIGTERM);
+        }
     }
 }
 
@@ -151,12 +183,13 @@ where
 
         let server_capabilities = self.request("initialize", Some(self.init_params.clone())).await?;
         if let Err(e) = examine_server_capabilities(&server_capabilities) {
-            let _ = nix::sys::signal::kill(self.server_process_id, Signal::SIGTERM);
+            let _ = self.server_process_id.map(|pid| nix::sys::signal::kill(pid, Signal::SIGTERM));
             return Err(ClientError::NegotiationError(format!(
                 "Client {} has failed to negotiate server capabilities with server: {:?}",
                 self.server_name, e
             )));
         }
+
         self.notify("initialized", None).await?;
 
         Ok(server_capabilities)
@@ -348,8 +381,9 @@ mod tests {
         });
         let client_config_one = ClientConfig {
             server_name: "test_tool".to_owned(),
-            bin_path: bin_path.to_str().unwrap().to_string(),
-            args: ["1".to_owned()].to_vec(),
+            bin_path: Some(bin_path.to_str().unwrap().to_string()),
+            args: Some(["1".to_owned()].to_vec()),
+            url: None,
             timeout: 60,
             init_params: init_params_one.clone(),
         };
@@ -368,8 +402,9 @@ mod tests {
         });
         let client_config_two = ClientConfig {
             server_name: "test_tool".to_owned(),
-            bin_path: bin_path.to_str().unwrap().to_string(),
-            args: ["2".to_owned()].to_vec(),
+            bin_path: Some(bin_path.to_str().unwrap().to_string()),
+            args: Some(["2".to_owned()].to_vec()),
+            url: None,
             timeout: 60,
             init_params: init_params_two.clone(),
         };
