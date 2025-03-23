@@ -61,6 +61,7 @@ indicatif.workspace = true
 indoc.workspace = true
 mcp_client.workspace = true
 mimalloc.workspace = true
+open = "3.0"
 owo-colors = "4.2.0"
 parking_lot.workspace = true
 rand.workspace = true

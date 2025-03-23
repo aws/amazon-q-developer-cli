@@ -453,6 +453,12 @@ impl TrajectoryRecorder {
         if let Some(repo) = &self.repository {
             let output_path = visualizer::generate_visualization(repo, &self.config.output_dir)?;
             info!("Generated visualization at: {:?}", output_path);
+
+            // Open the visualization in the default browser
+            if let Err(e) = open::that(&output_path) {
+                warn!("Failed to open visualization in browser: {}", e);
+            }
+
             Ok(output_path)
         } else {
             Err("Repository not initialized".to_string())
