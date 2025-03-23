@@ -43,6 +43,8 @@ pub struct TrajectoryRecorder {
     current_instruction: Option<String>,
     /// Whether the recorder is enabled
     enabled: bool,
+    /// Whether the browser has been opened for visualization
+    browser_opened: bool,
 }
 
 impl TrajectoryRecorder {
@@ -66,6 +68,7 @@ impl TrajectoryRecorder {
             repository,
             last_step_id: None,
             current_instruction: None,
+            browser_opened: false,
         }
     }
 
@@ -445,7 +448,7 @@ impl TrajectoryRecorder {
     }
 
     /// Generates a visualization of the agent trajectory
-    pub fn generate_visualization(&self) -> Result<PathBuf, String> {
+    pub fn generate_visualization(&mut self) -> Result<PathBuf, String> {
         if !self.enabled {
             return Err("Trajectory recording is not enabled".to_string());
         }
@@ -454,10 +457,18 @@ impl TrajectoryRecorder {
             let output_path = visualizer::generate_visualization(repo, &self.config.output_dir)?;
             info!("Generated visualization at: {:?}", output_path);
 
-            // Open the visualization in the default browser
-            if let Err(e) = open::that(&output_path) {
-                warn!("Failed to open visualization in browser: {}", e);
-                // Return success even if browser opening fails, since the file was generated
+            // Only open the browser if it hasn't been opened before
+            if !self.browser_opened {
+                if let Err(e) = open::that(&output_path) {
+                    warn!("Failed to open visualization in browser: {}", e);
+                    // Return success even if browser opening fails, since the file was generated
+                } else {
+                    // Mark browser as opened
+                    self.browser_opened = true;
+                    info!("Opened visualization in browser");
+                }
+            } else {
+                debug!("Browser already opened, skipping automatic opening");
             }
 
             Ok(output_path)

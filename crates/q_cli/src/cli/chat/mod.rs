@@ -1388,7 +1388,7 @@ where
 
                 // Check if auto-visualize is enabled and generate visualization
                 if let Some(recorder) = &self.trajectory_recorder {
-                    let recorder_lock = recorder.lock().unwrap();
+                    let mut recorder_lock = recorder.lock().unwrap();
                     if recorder_lock.is_enabled()
                         && recorder_lock.get_config().get("auto_visualize") == Some(&"true".to_string())
                     {
