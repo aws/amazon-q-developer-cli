@@ -77,13 +77,21 @@ impl Tool {
                         params.insert("path".to_string(), serde_json::Value::String(line.path.clone()));
                         params.insert("mode".to_string(), serde_json::Value::String("Line".to_string()));
                         if let Some(start_line) = line.start_line {
-                            if start_line != 1 { // Default is 1
-                                params.insert("start_line".to_string(), serde_json::Value::Number(serde_json::Number::from(start_line)));
+                            if start_line != 1 {
+                                // Default is 1
+                                params.insert(
+                                    "start_line".to_string(),
+                                    serde_json::Value::Number(serde_json::Number::from(start_line)),
+                                );
                             }
                         }
                         if let Some(end_line) = line.end_line {
-                            if end_line != -1 { // Default is -1
-                                params.insert("end_line".to_string(), serde_json::Value::Number(serde_json::Number::from(end_line)));
+                            if end_line != -1 {
+                                // Default is -1
+                                params.insert(
+                                    "end_line".to_string(),
+                                    serde_json::Value::Number(serde_json::Number::from(end_line)),
+                                );
                             }
                         }
                     },
@@ -91,7 +99,10 @@ impl Tool {
                         params.insert("path".to_string(), serde_json::Value::String(dir.path.clone()));
                         params.insert("mode".to_string(), serde_json::Value::String("Directory".to_string()));
                         if let Some(depth) = dir.depth {
-                            params.insert("depth".to_string(), serde_json::Value::Number(serde_json::Number::from(depth)));
+                            params.insert(
+                                "depth".to_string(),
+                                serde_json::Value::Number(serde_json::Number::from(depth)),
+                            );
                         }
                     },
                     FsRead::Search(search) => {
@@ -99,8 +110,12 @@ impl Tool {
                         params.insert("mode".to_string(), serde_json::Value::String("Search".to_string()));
                         params.insert("pattern".to_string(), serde_json::Value::String(search.pattern.clone()));
                         if let Some(context_lines) = search.context_lines {
-                            if context_lines != 2 { // Default is 2
-                                params.insert("context_lines".to_string(), serde_json::Value::Number(serde_json::Number::from(context_lines)));
+                            if context_lines != 2 {
+                                // Default is 2
+                                params.insert(
+                                    "context_lines".to_string(),
+                                    serde_json::Value::Number(serde_json::Number::from(context_lines)),
+                                );
                             }
                         }
                     },
@@ -116,12 +131,18 @@ impl Tool {
                     },
                     FsWrite::StrReplace { path, .. } => {
                         params.insert("path".to_string(), serde_json::Value::String(path.clone()));
-                        params.insert("command".to_string(), serde_json::Value::String("str_replace".to_string()));
+                        params.insert(
+                            "command".to_string(),
+                            serde_json::Value::String("str_replace".to_string()),
+                        );
                     },
                     FsWrite::Insert { path, insert_line, .. } => {
                         params.insert("path".to_string(), serde_json::Value::String(path.clone()));
                         params.insert("command".to_string(), serde_json::Value::String("insert".to_string()));
-                        params.insert("insert_line".to_string(), serde_json::Value::Number(serde_json::Number::from(*insert_line)));
+                        params.insert(
+                            "insert_line".to_string(),
+                            serde_json::Value::Number(serde_json::Number::from(*insert_line)),
+                        );
                     },
                     FsWrite::Append { path, .. } => {
                         params.insert("path".to_string(), serde_json::Value::String(path.clone()));
@@ -137,22 +158,31 @@ impl Tool {
             },
             Tool::UseAws(aws) => {
                 let mut params = HashMap::new();
-                params.insert("service_name".to_string(), serde_json::Value::String(aws.service_name.clone()));
-                params.insert("operation_name".to_string(), serde_json::Value::String(aws.operation_name.clone()));
+                params.insert(
+                    "service_name".to_string(),
+                    serde_json::Value::String(aws.service_name.clone()),
+                );
+                params.insert(
+                    "operation_name".to_string(),
+                    serde_json::Value::String(aws.operation_name.clone()),
+                );
                 params.insert("region".to_string(), serde_json::Value::String(aws.region.clone()));
-                
+
                 if let Some(profile) = &aws.profile_name {
                     params.insert("profile_name".to_string(), serde_json::Value::String(profile.clone()));
                 }
-                
+
                 if let Some(label) = &aws.label {
                     params.insert("label".to_string(), serde_json::Value::String(label.clone()));
                 }
-                
+
                 if let Some(aws_params) = &aws.parameters {
-                    params.insert("parameters".to_string(), serde_json::to_value(aws_params).unwrap_or(serde_json::Value::Object(serde_json::Map::new())));
+                    params.insert(
+                        "parameters".to_string(),
+                        serde_json::to_value(aws_params).unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+                    );
                 }
-                
+
                 params
             },
             Tool::Custom(c) => {
