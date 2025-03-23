@@ -25,14 +25,14 @@ fn format_timestamp(timestamp: &str) -> String {
 /// Generates an HTML visualization of the agent trajectory
 pub fn generate_visualization(repo: &Repository, output_dir: &Path) -> Result<PathBuf, String> {
     debug!("Generating visualization in directory: {:?}", output_dir);
-    
+
     // Create output directory if it doesn't exist
     if !output_dir.exists() {
         if let Err(e) = fs::create_dir_all(output_dir) {
             return Err(format!("Failed to create output directory: {}", e));
         }
     }
-    
+
     let output_path = output_dir.join("trajectory.html");
     debug!("Visualization will be saved to: {:?}", output_path);
 
@@ -43,7 +43,7 @@ pub fn generate_visualization(repo: &Repository, output_dir: &Path) -> Result<Pa
     if let Err(e) = fs::write(&output_path, html_content) {
         return Err(format!("Failed to write visualization file: {}", e));
     }
-    
+
     debug!("Visualization successfully generated");
     Ok(output_path)
 }
@@ -172,12 +172,19 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
         .tag.reasoning { background-color: #9b59b6; }
         .tag.response { background-color: #e74c3c; }
         .tag.user-input { background-color: #f39c12; }
+        .tag.user-command { background-color: #3498db; }
         .tag.checkpoint { background-color: #f1c40f; }
         
         .user-node .graph-node {
             background-color: #2980b9;
             width: 16px;
             height: 16px;
+        }
+        .command-node .graph-node {
+            background-color: #3498db;
+            width: 16px;
+            height: 16px;
+            border: 2px solid white;
         }
         .tool-node .graph-node {
             background-color: #2ecc71;
@@ -268,7 +275,11 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
 
         // Determine node type for styling
         let node_class = if is_user_step {
-            "user-node"
+            if tags.iter().any(|t| t == "user-command") {
+                "command-node"
+            } else {
+                "user-node"
+            }
         } else if tags.iter().any(|t| t.contains("checkpoint")) {
             "checkpoint-node"
         } else if action.is_some() {

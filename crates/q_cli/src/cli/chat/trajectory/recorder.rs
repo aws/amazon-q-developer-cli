@@ -86,13 +86,24 @@ impl TrajectoryRecorder {
 
         // Create a step for the user instruction
         if let Some(repo) = &mut self.repository {
-            let step = repo
+            // Check if this is a command (starts with /)
+            let is_command = instruction.trim().starts_with('/');
+
+            // Create a step builder with appropriate tags
+            let mut step_builder = repo
                 .step_builder()
                 .parent_id(self.last_step_id.clone())
                 .user_instruction(instruction)
-                .category("user_instruction")
-                .tag("user-input")
-                .build();
+                .category("user_instruction");
+
+            // Add appropriate tag based on whether this is a command
+            if is_command {
+                step_builder = step_builder.tag("user-command");
+            } else {
+                step_builder = step_builder.tag("user-input");
+            }
+
+            let step = step_builder.build();
 
             let step_id = repo.record_step(step)?;
             self.last_step_id = Some(step_id.clone());
