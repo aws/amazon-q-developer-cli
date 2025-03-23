@@ -1,6 +1,7 @@
 mod command;
 mod context;
 mod conversation_state;
+mod history_overflow_handler;
 mod input_source;
 mod parse;
 mod parser;
@@ -20,7 +21,7 @@ use std::time::Duration;
 
 use command::Command;
 use context::ContextManager;
-use conversation_state::ConversationState;
+use conversation_state::{ConversationState, HistoryOverflowError};
 use crossterm::style::{
     Attribute,
     Color,
@@ -49,6 +50,7 @@ use fig_api_client::model::{
 use fig_os_shim::Context;
 use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
+use history_overflow_handler::HistoryOverflowHandler;
 use input_source::InputSource;
 use parser::{
     RecvError,
@@ -492,7 +494,9 @@ where
                             )?;
                         },
                     }
-                    self.conversation_state.fix_history();
+                    // Don't call fix_history directly as it might trigger overflow handling
+                    // Instead, force the history to be valid without clearing
+                    self.conversation_state.force_valid_history();
                     next_state = Some(ChatState::PromptUser {
                         tool_uses: None,
                         skip_printing_tools: false,
@@ -608,11 +612,28 @@ where
 
                 self.send_tool_use_telemetry().await;
 
-                ChatState::HandleResponseStream(
-                    self.client
-                        .send_message(self.conversation_state.as_sendable_conversation_state().await)
-                        .await?,
-                )
+                match self.conversation_state.as_sendable_conversation_state().await {
+                    Ok(state) => {
+                        ChatState::HandleResponseStream(
+                            self.client
+                                .send_message(state)
+                                .await?,
+                        )
+                    },
+                    Err(HistoryOverflowError) => {
+                        // Handle history overflow
+                        let mut handler = HistoryOverflowHandler::new(
+                            &self.ctx,
+                            &mut self.output,
+                            &mut self.input_source,
+                            self.interactive,
+                            &mut self.spinner,
+                            &self.client
+                        );
+                        
+                        handler.handle_history_overflow(&mut self.conversation_state).await?
+                    }
+                }
             },
             Command::Execute { command } => {
                 queue!(self.output, style::Print('\n'))?;
