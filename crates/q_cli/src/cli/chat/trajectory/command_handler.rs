@@ -1,16 +1,13 @@
 use std::sync::{Arc, Mutex};
 use std::io::Write;
 use crossterm::{
-    cursor,
     execute,
-    queue,
     style,
-    terminal,
 };
-use crossterm::style::{Color, Stylize};
+use crossterm::style::Color;
 use eyre::Result;
 
-use crate::cli::chat::command::{TrajectorySubcommand, CheckpointSubcommand};
+use crate::cli::chat::command::TrajectorySubcommand;
 use crate::cli::chat::trajectory::TrajectoryRecorder;
 use crate::cli::chat::conversation_state::ConversationState;
 use crate::cli::chat::ChatError;

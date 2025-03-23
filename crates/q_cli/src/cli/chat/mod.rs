@@ -108,6 +108,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
 <em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
 <em>/context</em>      <black!>(Beta) Manage context files for a profile</black!>
+<em>/trajectory</em>   <black!>(Beta) Manage trajectory recording and visualization</black!>
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
@@ -135,6 +136,13 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
+<em>/trajectory</em>   <black!>Manage trajectory recording and visualization</black!>
+  <em>help</em>        <black!>Show trajectory help</black!>
+  <em>checkpoint</em>  <black!>Manage conversation checkpoints</black!>
+  <em>visualize</em>   <black!>Generate visualization of the current trajectory</black!>
+  <em>enable</em>      <black!>Enable trajectory recording</black!>
+  <em>disable</em>     <black!>Disable trajectory recording</black!>
+  <em>status</em>      <black!>Show current trajectory recording status</black!>
 
 <em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
 
