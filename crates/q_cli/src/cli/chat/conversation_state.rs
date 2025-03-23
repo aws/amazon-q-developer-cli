@@ -190,6 +190,21 @@ impl ConversationState {
     pub fn conversation_id(&self) -> &str {
         self.conversation_id.as_ref()
     }
+    
+    /// Returns the message history.
+    pub fn history(&self) -> &VecDeque<ChatMessage> {
+        &self.history
+    }
+    
+    /// Returns the next message to be sent.
+    pub fn next_message(&self) -> Option<&UserInputMessage> {
+        self.next_message.as_ref()
+    }
+    
+    /// Returns the available tools.
+    pub fn tools(&self) -> &[Tool] {
+        &self.tools
+    }
 
     /// Returns the message id associated with the last assistant message, if present.
     ///

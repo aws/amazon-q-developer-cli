@@ -10,6 +10,7 @@ pub enum Command {
     Quit,
     Profile { subcommand: ProfileSubcommand },
     Context { subcommand: ContextSubcommand },
+    Trajectory { subcommand: TrajectorySubcommand },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +78,92 @@ pub enum ContextSubcommand {
         global: bool,
     },
     Help,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrajectorySubcommand {
+    Checkpoint { subcommand: CheckpointSubcommand },
+    Visualize,
+    Enable,
+    Disable,
+    Status,
+    Help,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckpointSubcommand {
+    Create { label: String },
+    List,
+    Restore { id: String },
+    Help,
+}
+
+impl CheckpointSubcommand {
+    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available commands</cyan!>
+  <em>help</em>                <black!>Show an explanation for checkpoint commands</black!>
+  <em>create <<label>></em>    <black!>Create a new checkpoint with the specified label</black!>
+  <em>list</em>                <black!>List all available checkpoints</black!>
+  <em>restore <<id>></em>      <black!>Restore conversation from a checkpoint</black!>"};
+    const CREATE_USAGE: &str = "/trajectory checkpoint create <label>";
+    const RESTORE_USAGE: &str = "/trajectory checkpoint restore <id>";
+
+    fn usage_msg(header: impl AsRef<str>) -> String {
+        format!("{}\n\n{}", header.as_ref(), Self::AVAILABLE_COMMANDS)
+    }
+
+    pub fn help_text() -> String {
+        color_print::cformat!(
+            r#"
+<magenta,em>Checkpoint Management</magenta,em>
+
+Checkpoints allow you to save the state of a conversation and restore it later.
+
+{}
+
+<cyan!>Notes</cyan!>
+• Checkpoints are stored in the trajectory directory
+• Each checkpoint has a unique ID and an optional label
+• You can list all checkpoints to see their IDs and labels
+• Restoring a checkpoint will reset the conversation to that point
+"#,
+            Self::AVAILABLE_COMMANDS
+        )
+    }
+}
+
+impl TrajectorySubcommand {
+    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available commands</cyan!>
+  <em>help</em>                <black!>Show an explanation for trajectory commands</black!>
+  <em>checkpoint</em>          <black!>Manage conversation checkpoints</black!>
+  <em>visualize</em>           <black!>Generate a visualization of the current trajectory</black!>
+  <em>enable</em>              <black!>Enable trajectory recording</black!>
+  <em>disable</em>             <black!>Disable trajectory recording</black!>
+  <em>status</em>              <black!>Show current trajectory recording status</black!>"};
+
+    fn usage_msg(header: impl AsRef<str>) -> String {
+        format!("{}\n\n{}", header.as_ref(), Self::AVAILABLE_COMMANDS)
+    }
+
+    pub fn help_text() -> String {
+        color_print::cformat!(
+            r#"
+<magenta,em>Trajectory Recording</magenta,em>
+
+Trajectory recording captures the steps of a conversation, allowing you to:
+• Create checkpoints to save conversation state
+• Restore from checkpoints to continue from a previous point
+• Visualize the conversation flow
+
+{}
+
+<cyan!>Notes</cyan!>
+• Trajectory recording must be enabled with the --trajectory flag when starting the chat
+• You can specify a custom directory with --trajectory-dir
+• Visualizations are generated as HTML files
+"#,
+            Self::AVAILABLE_COMMANDS
+        )
+    }
 }
 
 impl ContextSubcommand {
@@ -313,7 +400,95 @@ impl Command {
                         },
                     }
                 },
-                _ => return Err(format!("Unknown command: {}", input)),
+                "trajectory" => {
+                    if parts.len() < 2 {
+                        return Err(TrajectorySubcommand::usage_msg("Missing subcommand for /trajectory."));
+                    }
+
+                    println!("Parsing trajectory command: {}", command);
+                    
+                    macro_rules! usage_err {
+                        ($usage_str:expr) => {
+                            return Err(format!(
+                                "Invalid /trajectory arguments.\n\nUsage:\n  {}",
+                                $usage_str
+                            ))
+                        };
+                    }
+
+                    match parts[1].to_lowercase().as_str() {
+                        "checkpoint" => {
+                            if parts.len() < 3 {
+                                return Err(CheckpointSubcommand::usage_msg("Missing subcommand for /trajectory checkpoint."));
+                            }
+
+                            match parts[2].to_lowercase().as_str() {
+                                "create" => {
+                                    if parts.len() < 4 {
+                                        usage_err!(CheckpointSubcommand::CREATE_USAGE);
+                                    }
+                                    
+                                    Self::Trajectory {
+                                        subcommand: TrajectorySubcommand::Checkpoint {
+                                            subcommand: CheckpointSubcommand::Create {
+                                                label: parts[3].to_string(),
+                                            },
+                                        },
+                                    }
+                                },
+                                "list" => Self::Trajectory {
+                                    subcommand: TrajectorySubcommand::Checkpoint {
+                                        subcommand: CheckpointSubcommand::List,
+                                    },
+                                },
+                                "restore" => {
+                                    if parts.len() < 4 {
+                                        usage_err!(CheckpointSubcommand::RESTORE_USAGE);
+                                    }
+                                    
+                                    Self::Trajectory {
+                                        subcommand: TrajectorySubcommand::Checkpoint {
+                                            subcommand: CheckpointSubcommand::Restore {
+                                                id: parts[3].to_string(),
+                                            },
+                                        },
+                                    }
+                                },
+                                "help" => Self::Trajectory {
+                                    subcommand: TrajectorySubcommand::Checkpoint {
+                                        subcommand: CheckpointSubcommand::Help,
+                                    },
+                                },
+                                other => {
+                                    return Err(CheckpointSubcommand::usage_msg(format!("Unknown checkpoint subcommand '{}'.", other)));
+                                },
+                            }
+                        },
+                        "visualize" => Self::Trajectory {
+                            subcommand: TrajectorySubcommand::Visualize,
+                        },
+                        "enable" => Self::Trajectory {
+                            subcommand: TrajectorySubcommand::Enable,
+                        },
+                        "disable" => Self::Trajectory {
+                            subcommand: TrajectorySubcommand::Disable,
+                        },
+                        "status" => Self::Trajectory {
+                            subcommand: TrajectorySubcommand::Status,
+                        },
+                        "help" => Self::Trajectory {
+                            subcommand: TrajectorySubcommand::Help,
+                        },
+                        other => {
+                            println!("Unknown trajectory subcommand: {}", other);
+                            return Err(TrajectorySubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
+                        },
+                    }
+                },
+                _ => {
+                    println!("Unknown command: {}", input);
+                    return Err(format!("Unknown command: {}", input))
+                },
             });
         }
 

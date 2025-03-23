@@ -7,6 +7,7 @@ mod parser;
 mod prompt;
 mod tool_manager;
 mod tools;
+mod trajectory;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{
@@ -14,8 +15,12 @@ use std::io::{
     Read,
     Write,
 };
+use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    Mutex,
+};
 use std::time::Duration;
 
 use command::Command;
@@ -84,6 +89,10 @@ use crate::cli::chat::parse::{
     ParseState,
     interpret_markdown,
 };
+use crate::cli::chat::trajectory::{
+    TrajectoryConfig,
+    TrajectoryRecorder,
+};
 use crate::util::region_check;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
@@ -131,7 +140,14 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 "};
 
-pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<String>) -> Result<ExitCode> {
+pub async fn chat(
+    input: Option<String>,
+    accept_all: bool,
+    profile: Option<String>,
+    trajectory: bool,
+    trajectory_dir: Option<String>,
+    auto_visualize: bool,
+) -> Result<ExitCode> {
     if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
         bail!(
             "You are not logged in, please log in with {}",
@@ -186,6 +202,22 @@ pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<Strin
         }
     }
 
+    let trajectory_config = TrajectoryConfig {
+        enabled: trajectory,
+        output_dir: trajectory_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("q-agent-trajectory")),
+        auto_visualize,
+        preserve_full_context: false,
+        full_context_strategy: trajectory::FullContextStrategy::default(),
+    };
+    let trajectory_recorder = if trajectory {
+        println!("Setting up trajectory recorder with enabled=true");
+        Some(trajectory::create_recorder(trajectory_config))
+    } else {
+        None
+    };
+
     let mut chat = ChatContext::new(
         ctx,
         Settings::new(),
@@ -198,6 +230,7 @@ pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<Strin
         Some(mcp_server_configs),
         accept_all,
         profile,
+        trajectory_recorder,
     )
     .await?;
 
@@ -256,6 +289,8 @@ pub struct ChatContext<W: Write> {
     /// Abstraction that consolidates custom tools with native ones
     tool_manager: ToolManager,
     accept_all: bool,
+    /// Trajectory recorder for tracking agent actions
+    trajectory_recorder: Option<Arc<Mutex<TrajectoryRecorder>>>,
 }
 
 impl<W: Write> ChatContext<W> {
@@ -272,6 +307,7 @@ impl<W: Write> ChatContext<W> {
         mcp_server_config: Option<McpServerConfig>,
         accept_all: bool,
         profile: Option<String>,
+        trajectory_recorder: Option<Arc<Mutex<TrajectoryRecorder>>>,
     ) -> Result<Self> {
         let mcp_server_config = mcp_server_config.unwrap_or_default();
         let tool_manager = ToolManager::from_configs(mcp_server_config).await;
@@ -292,6 +328,7 @@ impl<W: Write> ChatContext<W> {
             tool_use_status: ToolUseStatus::Idle,
             tool_manager,
             accept_all,
+            trajectory_recorder,
         })
     }
 }
@@ -566,6 +603,13 @@ where
         user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
     ) -> Result<ChatState, ChatError> {
+        // Record user instruction in trajectory
+        if let Some(recorder) = &self.trajectory_recorder {
+            if let Err(e) = recorder.lock().unwrap().record_user_instruction(&user_input) {
+                warn!("Failed to record user instruction: {}", e);
+            }
+        }
+
         let command_result = Command::parse(&user_input);
 
         if let Err(error_message) = &command_result {
@@ -962,8 +1006,53 @@ where
                     skip_printing_tools: true,
                 }
             },
+            Command::Trajectory { subcommand } => {
+                self.handle_trajectory_command(subcommand).await?;
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    skip_printing_tools: true,
+                }
+            },
         })
     }
+
+    async fn handle_trajectory_command(&mut self, subcommand: command::TrajectorySubcommand) -> Result<(), ChatError> {
+        // Use the TrajectoryCommandHandler to handle the command
+        if let Some(recorder) = &self.trajectory_recorder {
+            println!("Handling trajectory command: {:?}", subcommand);
+            
+            // Check if the recorder is enabled before creating the handler
+            {
+                let is_enabled = recorder.lock().unwrap().is_enabled();
+                println!("Trajectory recorder enabled status: {}", is_enabled);
+                
+                if !is_enabled {
+                    println!("Trajectory recorder is not enabled, but --trajectory flag was provided. This is unexpected.");
+                    // Force enable the recorder if we got here with the flag
+                    recorder.lock().unwrap().set_enabled(true);
+                    println!("Forcibly enabled trajectory recorder");
+                }
+            }
+            
+            let mut handler = trajectory::TrajectoryCommandHandler::new(
+                recorder,
+                &mut self.output,
+                &mut self.conversation_state,
+                Arc::clone(&self.ctx),
+            );
+    
+            handler.handle_command(subcommand).await
+        } else {
+            execute!(
+                self.output,
+                style::SetForegroundColor(Color::Red),
+                style::Print("Trajectory recording is not enabled. Start the chat with --trajectory flag.\n"),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+            Ok(())
+        }
+    }
+
 
     async fn tool_use_execute(&mut self, tool_uses: Vec<QueuedTool>) -> Result<ChatState, ChatError> {
         // Execute the requested tools.
@@ -972,6 +1061,27 @@ where
         for tool in tool_uses {
             let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.0.clone());
             tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_accepted = true);
+
+            // Record tool use in trajectory
+            let step_id = if let Some(recorder) = &self.trajectory_recorder {
+                let tool_name = tool.1.name();
+                let tool_params = tool.1.parameters();
+                let description = tool.1.display_name_action();
+
+                match recorder
+                    .lock()
+                    .unwrap()
+                    .record_tool_use(&tool_name, tool_params, Some(&description))
+                {
+                    Ok(id) => Some(id),
+                    Err(e) => {
+                        warn!("Failed to record tool use: {}", e);
+                        None
+                    },
+                }
+            } else {
+                None
+            };
 
             let tool_start = std::time::Instant::now();
             queue!(
@@ -1008,6 +1118,40 @@ where
                         style::Print("\n"),
                     )?;
 
+                    // Record successful tool result in trajectory
+                    if let Some(recorder) = &self.trajectory_recorder {
+                        if let Some(id) = &step_id {
+                            // Create a simple JSON representation of the result
+                            let result_json = match &result {
+                                tools::InvokeOutput {
+                                    output: tools::OutputKind::Text(text),
+                                } => {
+                                    serde_json::json!({
+                                        "type": "text",
+                                        "content": text
+                                    })
+                                },
+                                tools::InvokeOutput {
+                                    output: tools::OutputKind::Json(json),
+                                } => {
+                                    serde_json::json!({
+                                        "type": "json",
+                                        "content": json
+                                    })
+                                },
+                            };
+
+                            if let Err(e) =
+                                recorder
+                                    .lock()
+                                    .unwrap()
+                                    .record_tool_result(id, true, Some(result_json), None)
+                            {
+                                warn!("Failed to record tool result: {}", e);
+                            }
+                        }
+                    }
+
                     tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
                     tool_results.push(ToolResult {
                         tool_use_id: tool.0,
@@ -1017,6 +1161,21 @@ where
                 },
                 Err(err) => {
                     error!(?err, "An error occurred processing the tool");
+
+                    // Record failed tool result in trajectory
+                    if let Some(recorder) = &self.trajectory_recorder {
+                        if let Some(id) = &step_id {
+                            if let Err(e) =
+                                recorder
+                                    .lock()
+                                    .unwrap()
+                                    .record_tool_result(id, false, None, Some(&err.to_string()))
+                            {
+                                warn!("Failed to record tool error: {}", e);
+                            }
+                        }
+                    }
+
                     execute!(
                         self.output,
                         style::SetAttribute(Attribute::Bold),
@@ -1571,6 +1730,7 @@ mod tests {
             None,
             false,
             None,
+            None,
         )
         .await
         .unwrap()
@@ -1581,3 +1741,4 @@ mod tests {
         assert_eq!(ctx.fs().read_to_string("/file.txt").await.unwrap(), "Hello, world!\n");
     }
 }
+    

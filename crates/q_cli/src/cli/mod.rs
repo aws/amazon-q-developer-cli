@@ -191,6 +191,15 @@ pub enum CliRootCommands {
         /// Context profile to use
         #[arg(long = "profile")]
         profile: Option<String>,
+        /// Enable trajectory recording
+        #[arg(long = "trajectory")]
+        trajectory: bool,
+        /// Directory to store trajectory data
+        #[arg(long = "trajectory-dir")]
+        trajectory_dir: Option<String>,
+        /// Automatically visualize trajectory after each response
+        #[arg(long = "auto-visualize")]
+        auto_visualize: bool,
     },
     /// Inline shell completions
     #[command(subcommand)]
@@ -339,7 +348,10 @@ impl Cli {
                     accept_all,
                     input,
                     profile,
-                } => chat::chat(input, accept_all, profile).await,
+                    trajectory,
+                    trajectory_dir,
+                    auto_visualize,
+                } => chat::chat(input, accept_all, profile, trajectory, trajectory_dir, auto_visualize).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
@@ -462,6 +474,9 @@ mod test {
                 accept_all: false,
                 input: None,
                 profile: None,
+                trajectory: false,
+                trajectory_dir: None,
+                auto_visualize: false,
             },),
             verbose: 2,
             help_all: false,
@@ -591,6 +606,9 @@ mod test {
             accept_all: false,
             input: None,
             profile: Some("my-profile".to_string()),
+            trajectory: false,
+            trajectory_dir: None,
+            auto_visualize: false,
         });
     }
 
@@ -600,6 +618,9 @@ mod test {
             accept_all: false,
             input: Some("Hello".to_string()),
             profile: Some("my-profile".to_string()),
+            trajectory: false,
+            trajectory_dir: None,
+            auto_visualize: false,
         });
     }
 
@@ -611,6 +632,9 @@ mod test {
                 accept_all: true,
                 input: None,
                 profile: Some("my-profile".to_string()),
+                trajectory: false,
+                trajectory_dir: None,
+                auto_visualize: false,
             }
         );
     }
