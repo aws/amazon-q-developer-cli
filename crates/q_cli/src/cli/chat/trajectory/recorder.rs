@@ -48,18 +48,11 @@ pub struct TrajectoryRecorder {
 impl TrajectoryRecorder {
     /// Creates a new trajectory recorder
     pub fn new(config: TrajectoryConfig) -> Self {
-        // Add debug print to verify configuration
-        println!("Initializing TrajectoryRecorder with enabled={}", config.enabled);
-        
         let repository = if config.enabled {
             match Repository::load(&config.output_dir) {
-                Ok(repo) => {
-                    println!("Successfully loaded repository from {}", config.output_dir.display());
-                    Some(repo)
-                },
+                Ok(repo) => Some(repo),
                 Err(e) => {
                     error!("Failed to load repository: {}", e);
-                    println!("Failed to load repository from {}: {}", config.output_dir.display(), e);
                     None
                 },
             }
@@ -468,24 +461,26 @@ impl TrajectoryRecorder {
 
     /// Enables or disables the recorder
     pub fn set_enabled(&mut self, enabled: bool) {
-        self.enabled = enabled;
+        // Only update if the value is changing
+        if self.enabled != enabled {
+            self.enabled = enabled;
 
-        // Initialize repository if enabling and not already initialized
-        if enabled && self.repository.is_none() {
-            match Repository::load(&self.config.output_dir) {
-                Ok(repo) => {
-                    self.repository = Some(repo);
-                },
-                Err(e) => {
-                    error!("Failed to load repository: {}", e);
-                },
+            // Initialize repository if enabling and not already initialized
+            if enabled && self.repository.is_none() {
+                match Repository::load(&self.config.output_dir) {
+                    Ok(repo) => {
+                        self.repository = Some(repo);
+                    },
+                    Err(e) => {
+                        error!("Failed to load repository: {}", e);
+                    },
+                }
             }
         }
     }
 
     /// Returns whether the recorder is enabled
     pub fn is_enabled(&self) -> bool {
-        println!("Checking if trajectory recorder is enabled: {}", self.enabled);
         self.enabled
     }
 

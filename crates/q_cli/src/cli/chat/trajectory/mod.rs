@@ -72,8 +72,6 @@ impl Default for TrajectoryConfig {
 
 /// Creates a new trajectory recorder with the given configuration
 pub fn create_recorder(config: TrajectoryConfig) -> Arc<Mutex<TrajectoryRecorder>> {
-    // Add debug print to verify configuration
-    println!("Creating trajectory recorder with enabled={}", config.enabled);
     Arc::new(Mutex::new(TrajectoryRecorder::new(config)))
 }
 
@@ -82,16 +80,14 @@ pub async fn convert_to_conversation_state(
     serializable: &SerializableConversationState,
     context: Arc<fig_os_shim::Context>,
 ) -> Result<crate::cli::chat::conversation_state::ConversationState, String> {
-    use crate::cli::chat::conversation_state;
     use std::collections::HashMap;
+
     use tracing::warn;
 
+    use crate::cli::chat::conversation_state;
+
     // Create a new conversation state with empty tool config and default profile
-    let mut conversation_state = conversation_state::ConversationState::new(
-        context,
-        HashMap::new(),
-        None,
-    ).await;
+    let mut conversation_state = conversation_state::ConversationState::new(context, HashMap::new(), None).await;
 
     // We can't directly set the conversation ID as it's private
     // Instead, we'll use the conversation ID when adding messages
@@ -101,7 +97,9 @@ pub async fn convert_to_conversation_state(
         match message.role.as_str() {
             "user" => {
                 // Use append_new_user_message instead of add_user_input
-                conversation_state.append_new_user_message(message.content.clone()).await;
+                conversation_state
+                    .append_new_user_message(message.content.clone())
+                    .await;
             },
             "assistant" => {
                 conversation_state.push_assistant_message(fig_api_client::model::AssistantResponseMessage {
@@ -112,7 +110,7 @@ pub async fn convert_to_conversation_state(
             },
             _ => {
                 // Skip system messages or other types
-            }
+            },
         }
     }
 
