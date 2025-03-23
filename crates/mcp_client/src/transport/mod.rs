@@ -1,9 +1,11 @@
 pub mod base_protocol;
+pub mod sse;
 pub mod stdio;
 
 use std::fmt::Debug;
 
 pub use base_protocol::*;
+pub use sse::*;
 pub use stdio::*;
 use thiserror::Error;
 

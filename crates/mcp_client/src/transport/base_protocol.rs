@@ -104,4 +104,5 @@ pub enum TransportType {
     #[default]
     Stdio,
     Websocket,
+    SSE,
 }
