@@ -11,3 +11,6 @@ mod visualizer_tests;
 
 #[cfg(test)]
 mod command_handler_tests;
+
+#[cfg(test)]
+mod checkpoint_tests;

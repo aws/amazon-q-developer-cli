@@ -86,6 +86,57 @@ The visualization includes interactive elements:
 - Color-coded tags for different step types
 - Expandable sections for tool parameters and results
 
+## Checkpoint System
+
+The checkpoint system allows you to save and restore conversation states:
+
+### Creating Checkpoints
+
+Create a checkpoint at any point in your conversation:
+
+```
+/trajectory checkpoint create my_checkpoint_name
+```
+
+This saves the current conversation state, including:
+- Message history
+- Context files
+- Profile information
+
+### Listing Checkpoints
+
+View all available checkpoints:
+
+```
+/trajectory checkpoint list
+```
+
+This shows:
+- Checkpoint IDs
+- Labels
+- Creation timestamps
+
+### Restoring Checkpoints
+
+Restore a previous conversation state:
+
+```
+/trajectory checkpoint restore <id_or_label>
+```
+
+You can restore using either:
+- The checkpoint ID
+- The checkpoint label
+
+### Checkpoint Strategies
+
+The system supports different strategies for preserving context:
+
+- **Never**: Minimal checkpoint size, stores only basic conversation structure
+- **Always**: Preserves full context for all checkpoints
+- **UserInputOnly**: Preserves full context only after user inputs
+- **ExplicitCheckpointsOnly**: Preserves full context only for explicit checkpoint commands
+
 ## Example Workflow
 
 1. Start Amazon Q with trajectory recording enabled:
@@ -105,17 +156,27 @@ The visualization includes interactive elements:
    - Record tool results
    - Provide a response
 
-4. A visualization will automatically open in your browser showing the complete trajectory
-
-5. Create a checkpoint to save the current state:
+4. Create a checkpoint to save the current state:
    ```
    > /trajectory checkpoint create file-listing
    ```
 
-6. Continue the conversation or restore from the checkpoint later:
+5. Continue the conversation with more complex questions:
+   ```
+   > Analyze the code in main.rs and suggest improvements
+   ```
+
+6. Create another checkpoint:
+   ```
+   > /trajectory checkpoint create code-analysis
+   ```
+
+7. If you want to go back to the previous state:
    ```
    > /trajectory checkpoint restore file-listing
    ```
+
+8. The conversation will be restored to the state after the file listing but before the code analysis.
 
 ## Troubleshooting
 
@@ -129,6 +190,15 @@ If the visualization doesn't open automatically:
    open ~/q-agent-trajectory/trajectory.html
    ```
 3. Ensure you have the necessary permissions to write to the trajectory directory
+
+### Checkpoint Restoration Issues
+
+If checkpoint restoration isn't working:
+
+1. Verify the checkpoint exists with `/trajectory checkpoint list`
+2. Try using the checkpoint ID instead of the label
+3. Check for error messages during restoration
+4. Ensure trajectory recording is enabled
 
 ### Recording Not Working
 
@@ -163,3 +233,5 @@ Planned enhancements for the trajectory visualization feature:
 3. Export options for sharing trajectories
 4. Integration with other debugging tools
 5. Performance optimizations for large trajectories
+6. Checkpoint comparison and diff views
+7. Checkpoint branching and merging capabilities

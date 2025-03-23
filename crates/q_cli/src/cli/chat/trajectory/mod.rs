@@ -82,10 +82,12 @@ pub async fn convert_to_conversation_state(
 ) -> Result<crate::cli::chat::conversation_state::ConversationState, String> {
     use std::collections::HashMap;
 
-    use tracing::warn;
+    use tracing::{debug, warn};
 
     use crate::cli::chat::conversation_state;
 
+    debug!("Converting serializable conversation state to ConversationState");
+    
     // Create a new conversation state with empty tool config and default profile
     let mut conversation_state = conversation_state::ConversationState::new(context, HashMap::new(), None).await;
 
@@ -96,12 +98,14 @@ pub async fn convert_to_conversation_state(
     for message in &serializable.history {
         match message.role.as_str() {
             "user" => {
+                debug!("Adding user message: {}", message.content);
                 // Use append_new_user_message instead of add_user_input
                 conversation_state
                     .append_new_user_message(message.content.clone())
                     .await;
             },
             "assistant" => {
+                debug!("Adding assistant message: {}", message.content);
                 conversation_state.push_assistant_message(fig_api_client::model::AssistantResponseMessage {
                     message_id: None,
                     content: message.content.clone(),
@@ -110,12 +114,14 @@ pub async fn convert_to_conversation_state(
             },
             _ => {
                 // Skip system messages or other types
+                debug!("Skipping message with role: {}", message.role);
             },
         }
     }
 
     // Restore context manager if available
     if let Some(profile) = serializable.metadata.get("profile") {
+        debug!("Restoring profile: {}", profile);
         if let Some(context_manager) = &mut conversation_state.context_manager {
             if let Err(e) = context_manager.switch_profile(profile).await {
                 warn!("Failed to switch to profile {}: {}", profile, e);
@@ -123,5 +129,6 @@ pub async fn convert_to_conversation_state(
         }
     }
 
+    debug!("Conversion completed successfully");
     Ok(conversation_state)
 }
