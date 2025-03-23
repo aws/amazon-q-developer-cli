@@ -43,71 +43,75 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
             line-height: 1.6;
         }
         .container {
-            max-width: 1000px;
+            max-width: 1200px;
             margin: 0 auto;
         }
         h1, h2, h3 { 
             color: #2c3e50; 
             margin-top: 20px;
         }
-        .timeline-container { 
+        .history-container { 
             margin-bottom: 40px;
             background-color: white;
             border-radius: 8px;
             padding: 20px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.05);
         }
-        .timeline { 
-            position: relative; 
-            margin-left: 30px;
-            padding-left: 20px;
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
         }
-        .timeline::before { 
-            content: ''; 
-            position: absolute; 
-            left: 0; 
-            top: 0; 
-            bottom: 0; 
-            width: 2px; 
-            background-color: #ddd; 
-        }
-        .step { 
-            position: relative;
-            margin: 20px 0;
-            padding: 15px;
-            border-radius: 8px;
-            background-color: #f5f5f5;
-            transition: all 0.3s ease;
-        }
-        .step:hover {
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            transform: translateY(-2px);
-        }
-        .step::before { 
-            content: ''; 
-            position: absolute; 
-            left: -29px; 
-            top: 15px;
-            width: 16px; 
-            height: 16px; 
-            border-radius: 50%; 
-            background-color: #3498db; 
-            border: 2px solid white;
-        }
-        .user-step {
-            background-color: #e8f4fc;
-            border-left: 4px solid #3498db;
-        }
-        .user-step::before {
-            background-color: #2980b9;
-            width: 20px;
-            height: 20px;
-            left: -31px;
-        }
-        .step-summary {
-            font-weight: bold;
+        .history-table th {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 2px solid #eee;
             color: #2c3e50;
-            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .history-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            vertical-align: middle;
+        }
+        .history-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        .graph-column {
+            width: 50px;
+            position: relative;
+        }
+        .graph-node {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #3498db;
+            display: inline-block;
+            margin-right: 10px;
+            border: 2px solid white;
+            box-shadow: 0 0 0 1px #3498db;
+        }
+        .message-column {
+            width: 70%;
+        }
+        .timestamp-column {
+            width: 15%;
+            color: #7f8c8d;
+            font-size: 0.9em;
+            text-align: right;
+        }
+        .step-line {
+            display: flex;
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 10px;
+        }
+        .step-message {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 500px;
         }
         .step-details {
             display: none;
@@ -125,7 +129,7 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
             cursor: pointer;
             font-size: 12px;
             color: #555;
-            margin-top: 10px;
+            white-space: nowrap;
         }
         .step-toggle:hover {
             background-color: #e0e0e0;
@@ -138,21 +142,42 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
             border-radius: 12px;
             font-size: 0.8em;
             margin-right: 5px;
-            margin-top: 5px;
+            white-space: nowrap;
         }
         .tag.tool-use { background-color: #2ecc71; }
         .tag.reasoning { background-color: #9b59b6; }
         .tag.response { background-color: #e74c3c; }
         .tag.user-input { background-color: #f39c12; }
+        .tag.checkpoint { background-color: #f1c40f; }
         
-        .timestamp {
-            font-size: 0.8em;
-            color: #7f8c8d;
-            margin-top: 5px;
+        .user-node .graph-node {
+            background-color: #2980b9;
+            width: 16px;
+            height: 16px;
         }
-        .action-summary {
-            font-weight: normal;
-            color: #555;
+        .tool-node .graph-node {
+            background-color: #2ecc71;
+        }
+        .reasoning-node .graph-node {
+            background-color: #9b59b6;
+        }
+        .response-node .graph-node {
+            background-color: #e74c3c;
+        }
+        .checkpoint-node .graph-node {
+            background-color: #f1c40f;
+            border-radius: 0;
+            transform: rotate(45deg);
+        }
+        
+        .graph-line {
+            position: absolute;
+            width: 2px;
+            background-color: #ddd;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            z-index: 0;
         }
     </style>
     <script>
@@ -183,15 +208,23 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
     // Track the last user instruction to avoid repetition
     let mut last_user_instruction = None;
 
-    // Add timeline container
+    // Add history container and table
     html.push_str(
         r#"
-        <div class="timeline-container">
-            <div class="timeline">
+        <div class="history-container">
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th class="graph-column"></th>
+                        <th class="message-column">Message</th>
+                        <th class="timestamp-column">Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
 "#,
     );
 
-    // Add steps for each step
+    // Add rows for each step
     for step in all_steps {
         // Extract step information
         let instruction = step.user_instruction.as_deref();
@@ -209,83 +242,115 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
             last_user_instruction = instruction;
         }
 
-        // Create step class
-        let step_class = if is_user_step { "user-step" } else { "step" };
+        // Determine node type for styling
+        let node_class = if is_user_step {
+            "user-node"
+        } else if tags.iter().any(|t| t.contains("checkpoint")) {
+            "checkpoint-node"
+        } else if action.is_some() {
+            "tool-node"
+        } else if reasoning.is_some() {
+            "reasoning-node"
+        } else if response.is_some() {
+            "response-node"
+        } else {
+            ""
+        };
 
-        // Create step HTML
+        // Create row HTML
         html.push_str(&format!(
             r#"
-            <div class="{}" id="step-{}">
+            <tr class="{}" id="step-{}">
+                <td class="graph-column">
+                    <div class="graph-line"></div>
+                    <div class="graph-node"></div>
+                </td>
+                <td class="message-column">
         "#,
-            step_class, step.id
+            node_class, step.id
         ));
 
-        // Add step content
+        // Start of single line content
+        html.push_str(r#"<div class="step-line">"#);
+
+        // Add tags first
+        if !tags.is_empty() {
+            for tag in tags {
+                let tag_class = match tag.to_lowercase().as_str() {
+                    "tool-use" => "tool-use",
+                    "reasoning" => "reasoning",
+                    "response" => "response",
+                    "user-input" => "user-input",
+                    "checkpoint" => "checkpoint",
+                    _ => "",
+                };
+                html.push_str(&format!(r#"<span class="tag {}">{}</span>"#, tag_class, tag));
+            }
+        }
+
+        // Add step content/message
         if is_user_step {
             html.push_str(&format!(
-                r#"
-                <div class="step-summary">User Instruction</div>
-                <div>{}</div>
-            "#,
+                r#"<span class="step-message">User: {}</span>"#,
                 instruction.unwrap_or("")
             ));
         } else if let Some(action) = action {
             let action_name = action.name.as_deref().unwrap_or("");
             let action_type = &action.action_type;
 
-            html.push_str(&format!(
-                r#"
-                <div class="step-summary">{} {}</div>
-            "#,
-                action_type, action_name
-            ));
+            // Create a more informative message for tool use steps
+            let message = if action_type == "tool_use" {
+                // Extract the tool name and create a more descriptive message
+                let tool_name = action_name.split_whitespace().next().unwrap_or(action_name);
+
+                // Try to extract a more meaningful description from parameters
+                let description = if let Some(path) = action.parameters.get("path").and_then(|v| v.as_str()) {
+                    let path_short = Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or(path);
+
+                    if tool_name == "fs_write" || tool_name == "fs_read" {
+                        format!(
+                            "{}: {} {}",
+                            tool_name,
+                            path_short,
+                            action.parameters.get("command").and_then(|v| v.as_str()).unwrap_or("")
+                        )
+                    } else {
+                        format!("{}: {}", tool_name, path_short)
+                    }
+                } else if let Some(command) = action.parameters.get("command").and_then(|v| v.as_str()) {
+                    let cmd_preview = command.split_whitespace().take(3).collect::<Vec<_>>().join(" ");
+                    if cmd_preview.len() < command.len() {
+                        format!("{}: {}...", tool_name, cmd_preview)
+                    } else {
+                        format!("{}: {}", tool_name, cmd_preview)
+                    }
+                } else {
+                    format!("{}", tool_name)
+                };
+
+                description
+            } else {
+                format!("{} {}", action_type, action_name)
+            };
+
+            html.push_str(&format!(r#"<span class="step-message">{}</span>"#, message));
         } else if reasoning.is_some() {
-            html.push_str(
-                r#"
-                <div class="step-summary">Reasoning</div>
-            "#,
-            );
+            html.push_str(r#"<span class="step-message">Reasoning</span>"#);
         } else if response.is_some() {
-            html.push_str(
-                r#"
-                <div class="step-summary">Response</div>
-            "#,
-            );
+            html.push_str(r#"<span class="step-message">Response</span>"#);
         } else {
-            html.push_str(&format!(
-                r#"
-                <div class="step-summary">{}</div>
-            "#,
-                category
-            ));
-        }
-
-        // Add timestamp
-        html.push_str(&format!(
-            r#"
-            <div class="timestamp">{}</div>
-        "#,
-            timestamp
-        ));
-
-        // Add tags
-        if !tags.is_empty() {
-            html.push_str(r#"<div class="tags-container">"#);
-            for tag in tags {
-                let tag_class = tag.to_lowercase().replace(' ', "-");
-                html.push_str(&format!(r#"<span class="tag {}">{}</span>"#, tag_class, tag));
-            }
-            html.push_str("</div>");
+            html.push_str(&format!(r#"<span class="step-message">{}</span>"#, category));
         }
 
         // Add toggle button for details
         let detail_id = format!("details-{}", step.id);
         html.push_str(&format!(
-            r#"
-            <button class="step-toggle" onclick="toggleDetails('{}')">Show Details</button>
-        "#,
+            r#"<button class="step-toggle" onclick="toggleDetails('{}')">Show Details</button>"#,
             detail_id
         ));
+
+        // End of single line content
+        html.push_str("</div>");
 
         // Add hidden details section
         html.push_str(&format!(
@@ -341,14 +406,25 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
         }
 
         html.push_str("</div>"); // Close details div
-        html.push_str("</div>"); // Close step div
+        html.push_str("</td>"); // Close message column
+
+        // Add timestamp column
+        html.push_str(&format!(
+            r#"
+            <td class="timestamp-column">{}</td>
+        "#,
+            timestamp
+        ));
+
+        html.push_str("</tr>"); // Close row
     }
 
-    // Close timeline and container
+    // Close table and container
     html.push_str(
         r#"
-            </div>  <!-- Close timeline -->
-        </div>  <!-- Close timeline-container -->
+                </tbody>
+            </table>
+        </div>  <!-- Close history-container -->
     </div>  <!-- Close container -->
 </body>
 </html>
