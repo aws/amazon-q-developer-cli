@@ -16,13 +16,7 @@ use std::sync::{
 
 pub use command_handler::TrajectoryCommandHandler;
 pub use recorder::TrajectoryRecorder;
-pub use repository::{
-    Repository,
-    SerializableConversationState,
-    Step,
-    Trajectory,
-};
-pub use visualizer::generate_visualization;
+pub use repository::SerializableConversationState;
 
 /// Configuration for the trajectory recorder
 #[derive(Debug, Clone)]
@@ -44,10 +38,13 @@ pub struct TrajectoryConfig {
 pub enum FullContextStrategy {
     /// Never preserve full context
     Never,
+    #[allow(dead_code)]
     /// Always preserve full context
     Always,
+    #[allow(dead_code)]
     /// Only preserve full context for user input steps
     UserInputOnly,
+    #[allow(dead_code)]
     /// Only preserve full context for explicit checkpoints
     ExplicitCheckpointsOnly,
 }
@@ -82,12 +79,15 @@ pub async fn convert_to_conversation_state(
 ) -> Result<crate::cli::chat::conversation_state::ConversationState, String> {
     use std::collections::HashMap;
 
-    use tracing::{debug, warn};
+    use tracing::{
+        debug,
+        warn,
+    };
 
     use crate::cli::chat::conversation_state;
 
     debug!("Converting serializable conversation state to ConversationState");
-    
+
     // Create a new conversation state with empty tool config and default profile
     let mut conversation_state = conversation_state::ConversationState::new(context, HashMap::new(), None).await;
 

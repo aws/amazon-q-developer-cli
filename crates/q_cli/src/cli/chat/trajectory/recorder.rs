@@ -1,10 +1,5 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{
-    Arc,
-    Mutex,
-};
-use std::time::SystemTime;
 
 use tracing::{
     debug,
@@ -114,6 +109,7 @@ impl TrajectoryRecorder {
     }
 
     /// Records agent reasoning
+    #[allow(dead_code)]
     pub fn record_reasoning(&mut self, reasoning: &str) -> Result<(), String> {
         if !self.enabled {
             return Ok(());
@@ -211,6 +207,7 @@ impl TrajectoryRecorder {
     }
 
     /// Records the agent's response to the user
+    #[allow(dead_code)]
     pub fn record_response(&mut self, response: &str) -> Result<(), String> {
         if !self.enabled {
             return Ok(());
@@ -407,7 +404,7 @@ impl TrajectoryRecorder {
 
             // Collect context file contents
             let mut context_files_content = HashMap::new();
-            if let Some(context_manager) = &conversation_state.context_manager {
+            if let Some(_context_manager) = &conversation_state.context_manager {
                 for (path, _) in &context_files {
                     if let Ok(content) = std::fs::read_to_string(path) {
                         context_files_content.insert(path.clone(), content);
@@ -514,6 +511,7 @@ impl TrajectoryRecorder {
     }
 
     /// Creates a new trajectory in the repository
+    #[allow(dead_code)]
     pub fn create_trajectory(&mut self, name: &str) -> Result<(), String> {
         if !self.enabled {
             return Ok(());
@@ -528,6 +526,7 @@ impl TrajectoryRecorder {
     }
 
     /// Switches to an existing trajectory
+    #[allow(dead_code)]
     pub fn switch_trajectory(&mut self, name: &str) -> Result<(), String> {
         if !self.enabled {
             return Ok(());
@@ -552,6 +551,7 @@ impl TrajectoryRecorder {
     }
 
     /// Sets configuration options for the recorder
+    #[allow(dead_code)]
     pub fn set_config_option(&mut self, option: &str, value: &str) -> Result<(), String> {
         match option {
             "preserve_full_context" => match value.to_lowercase().as_str() {

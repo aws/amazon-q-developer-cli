@@ -10,7 +10,6 @@ use std::time::{
 };
 
 // Import only what we need
-use fig_api_client::model::Tool;
 use serde::{
     Deserialize,
     Serialize,
@@ -71,7 +70,7 @@ pub struct CompleteMessage {
 
 // Convert from the original types to our serializable versions
 impl From<&fig_api_client::model::ChatMessage> for SerializableChatMessage {
-    fn from(msg: &fig_api_client::model::ChatMessage) -> Self {
+    fn from(_msg: &fig_api_client::model::ChatMessage) -> Self {
         SerializableChatMessage {
             role: "user".to_string(),               // Simplified
             content: "message content".to_string(), // Simplified
@@ -285,6 +284,7 @@ impl Repository {
     }
 
     /// Creates a new trajectory from the current trajectory
+    #[allow(dead_code)]
     pub fn create_trajectory(&mut self, name: &str) -> Result<(), String> {
         if self.trajectories.contains_key(name) {
             return Err(format!("Trajectory {} already exists", name));
@@ -313,6 +313,7 @@ impl Repository {
     }
 
     /// Switches to an existing trajectory
+    #[allow(dead_code)]
     pub fn switch_trajectory(&mut self, name: &str) -> Result<(), String> {
         if !self.trajectories.contains_key(name) {
             return Err(format!("Trajectory {} does not exist", name));
@@ -323,6 +324,7 @@ impl Repository {
     }
 
     /// Gets the current trajectory
+    #[allow(dead_code)]
     pub fn current_trajectory(&self) -> Result<&Trajectory, String> {
         match self.trajectories.get(&self.current_trajectory) {
             Some(trajectory) => Ok(trajectory),
@@ -331,6 +333,7 @@ impl Repository {
     }
 
     /// Gets a step by ID
+    #[allow(dead_code)]
     pub fn get_step(&self, id: &str) -> Option<&Step> {
         self.steps.get(id)
     }
@@ -373,7 +376,7 @@ pub struct StepBuilder {
 impl StepBuilder {
     /// Creates a new step builder
     pub fn new(trajectory_name: String) -> Self {
-        let now = SystemTime::now()
+        let _now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs_f64();
@@ -411,6 +414,7 @@ impl StepBuilder {
     }
 
     /// Sets the agent reasoning
+    #[allow(dead_code)]
     pub fn agent_reasoning(mut self, reasoning: impl Into<String>) -> Self {
         self.step.agent_reasoning = Some(reasoning.into());
         self
@@ -423,12 +427,14 @@ impl StepBuilder {
     }
 
     /// Sets the action result
+    #[allow(dead_code)]
     pub fn action_result(mut self, result: ActionResult) -> Self {
         self.step.action_result = Some(result);
         self
     }
 
     /// Sets the agent response
+    #[allow(dead_code)]
     pub fn agent_response(mut self, response: impl Into<String>) -> Self {
         self.step.agent_response = Some(response.into());
         self
@@ -447,6 +453,7 @@ impl StepBuilder {
     }
 
     /// Adds multiple tags
+    #[allow(dead_code)]
     pub fn tags(mut self, tags: Vec<String>) -> Self {
         self.step.tags.extend(tags);
         self
