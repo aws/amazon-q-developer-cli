@@ -1513,9 +1513,11 @@ checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "pure-rust-locales",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -4976,7 +4978,7 @@ dependencies = [
 
 [[package]]
 name = "mcp_client"
-version = "1.7.1"
+version = "1.7.2"
 dependencies = [
  "async-trait",
  "nix 0.29.0",
@@ -6704,6 +6706,7 @@ dependencies = [
  "bytes",
  "camino",
  "cfg-if",
+ "chrono",
  "clap",
  "clap_complete",
  "clap_complete_fig",
