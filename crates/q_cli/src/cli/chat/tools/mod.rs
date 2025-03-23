@@ -4,6 +4,7 @@ pub mod fs_read;
 pub mod fs_write;
 pub mod use_aws;
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{
     Path,
@@ -26,6 +27,7 @@ use fig_os_shim::Context;
 use fs_read::FsRead;
 use fs_write::FsWrite;
 use serde::Deserialize;
+use serde_json;
 use use_aws::UseAws;
 
 use super::parser::ToolUse;
@@ -46,13 +48,119 @@ impl Tool {
     /// The display name of a tool
     pub fn display_name(&self) -> String {
         match self {
-            Tool::FsRead(_) => "Read from filesystem",
-            Tool::FsWrite(_) => "Write to filesystem",
-            Tool::ExecuteBash(_) => "Execute shell command",
-            Tool::UseAws(_) => "Use AWS CLI",
-            Tool::Custom(custom_tool) => &custom_tool.name,
+            Tool::FsRead(_) => "Read from filesystem".to_string(),
+            Tool::FsWrite(_) => "Write to filesystem".to_string(),
+            Tool::ExecuteBash(_) => "Execute bash command".to_string(),
+            Tool::UseAws(_) => "Use AWS CLI".to_string(),
+            Tool::Custom(c) => c.name.clone(),
         }
-        .to_owned()
+    }
+
+    /// The name of the tool for trajectory recording
+    pub fn name(&self) -> String {
+        match self {
+            Tool::FsRead(_) => "fs_read".to_string(),
+            Tool::FsWrite(_) => "fs_write".to_string(),
+            Tool::ExecuteBash(_) => "execute_bash".to_string(),
+            Tool::UseAws(_) => "use_aws".to_string(),
+            Tool::Custom(c) => c.name.clone(),
+        }
+    }
+
+    /// Get parameters for trajectory recording
+    pub fn parameters(&self) -> HashMap<String, serde_json::Value> {
+        match self {
+            Tool::FsRead(fs_read) => {
+                let mut params = HashMap::new();
+                match fs_read {
+                    FsRead::Line(line) => {
+                        params.insert("path".to_string(), serde_json::Value::String(line.path.clone()));
+                        params.insert("mode".to_string(), serde_json::Value::String("Line".to_string()));
+                        if let Some(start_line) = line.start_line {
+                            if start_line != 1 { // Default is 1
+                                params.insert("start_line".to_string(), serde_json::Value::Number(serde_json::Number::from(start_line)));
+                            }
+                        }
+                        if let Some(end_line) = line.end_line {
+                            if end_line != -1 { // Default is -1
+                                params.insert("end_line".to_string(), serde_json::Value::Number(serde_json::Number::from(end_line)));
+                            }
+                        }
+                    },
+                    FsRead::Directory(dir) => {
+                        params.insert("path".to_string(), serde_json::Value::String(dir.path.clone()));
+                        params.insert("mode".to_string(), serde_json::Value::String("Directory".to_string()));
+                        if let Some(depth) = dir.depth {
+                            params.insert("depth".to_string(), serde_json::Value::Number(serde_json::Number::from(depth)));
+                        }
+                    },
+                    FsRead::Search(search) => {
+                        params.insert("path".to_string(), serde_json::Value::String(search.path.clone()));
+                        params.insert("mode".to_string(), serde_json::Value::String("Search".to_string()));
+                        params.insert("pattern".to_string(), serde_json::Value::String(search.pattern.clone()));
+                        if let Some(context_lines) = search.context_lines {
+                            if context_lines != 2 { // Default is 2
+                                params.insert("context_lines".to_string(), serde_json::Value::Number(serde_json::Number::from(context_lines)));
+                            }
+                        }
+                    },
+                }
+                params
+            },
+            Tool::FsWrite(fs_write) => {
+                let mut params = HashMap::new();
+                match fs_write {
+                    FsWrite::Create { path, .. } => {
+                        params.insert("path".to_string(), serde_json::Value::String(path.clone()));
+                        params.insert("command".to_string(), serde_json::Value::String("create".to_string()));
+                    },
+                    FsWrite::StrReplace { path, .. } => {
+                        params.insert("path".to_string(), serde_json::Value::String(path.clone()));
+                        params.insert("command".to_string(), serde_json::Value::String("str_replace".to_string()));
+                    },
+                    FsWrite::Insert { path, insert_line, .. } => {
+                        params.insert("path".to_string(), serde_json::Value::String(path.clone()));
+                        params.insert("command".to_string(), serde_json::Value::String("insert".to_string()));
+                        params.insert("insert_line".to_string(), serde_json::Value::Number(serde_json::Number::from(*insert_line)));
+                    },
+                    FsWrite::Append { path, .. } => {
+                        params.insert("path".to_string(), serde_json::Value::String(path.clone()));
+                        params.insert("command".to_string(), serde_json::Value::String("append".to_string()));
+                    },
+                }
+                params
+            },
+            Tool::ExecuteBash(bash) => {
+                let mut params = HashMap::new();
+                params.insert("command".to_string(), serde_json::Value::String(bash.command.clone()));
+                params
+            },
+            Tool::UseAws(aws) => {
+                let mut params = HashMap::new();
+                params.insert("service_name".to_string(), serde_json::Value::String(aws.service_name.clone()));
+                params.insert("operation_name".to_string(), serde_json::Value::String(aws.operation_name.clone()));
+                params.insert("region".to_string(), serde_json::Value::String(aws.region.clone()));
+                
+                if let Some(profile) = &aws.profile_name {
+                    params.insert("profile_name".to_string(), serde_json::Value::String(profile.clone()));
+                }
+                
+                if let Some(label) = &aws.label {
+                    params.insert("label".to_string(), serde_json::Value::String(label.clone()));
+                }
+                
+                if let Some(aws_params) = &aws.parameters {
+                    params.insert("parameters".to_string(), serde_json::to_value(aws_params).unwrap_or(serde_json::Value::Object(serde_json::Map::new())));
+                }
+                
+                params
+            },
+            Tool::Custom(c) => {
+                let mut params = HashMap::new();
+                params.insert("name".to_string(), serde_json::Value::String(c.name.clone()));
+                params
+            },
+        }
     }
 
     // TODO: Remove, just roll with it for now ya?
