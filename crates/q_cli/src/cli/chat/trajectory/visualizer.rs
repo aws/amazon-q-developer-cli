@@ -4,13 +4,22 @@ use std::path::{
     PathBuf,
 };
 
-use tracing::{
-    debug,
-    error,
-    info,
-};
+use chrono::DateTime;
 
 use super::repository::Repository;
+
+/// Formats a timestamp string to a more user-friendly format
+///
+/// Converts from RFC3339 format to a simpler "YYYY-MM-DD HH:MM:SS" format
+fn format_timestamp(timestamp: &str) -> String {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
+        // Format as YYYY-MM-DD HH:MM:SS
+        dt.format("%Y-%m-%d %H:%M:%S").to_string()
+    } else {
+        // Return the original timestamp if parsing fails
+        timestamp.to_string()
+    }
+}
 
 /// Generates an HTML visualization of the agent trajectory
 pub fn generate_visualization(repo: &Repository, output_dir: &Path) -> Result<PathBuf, String> {
@@ -99,6 +108,9 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
             color: #7f8c8d;
             font-size: 0.9em;
             text-align: right;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .step-line {
             display: flex;
@@ -413,7 +425,7 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
             r#"
             <td class="timestamp-column">{}</td>
         "#,
-            timestamp
+            format_timestamp(timestamp)
         ));
 
         html.push_str("</tr>"); // Close row
