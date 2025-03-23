@@ -1396,12 +1396,14 @@ where
                         match recorder_lock.generate_visualization() {
                             Ok(path) => {
                                 debug!("Auto-visualization generated at: {:?}", path);
-                                // No need to print to output as the visualization will open automatically
+                                // No need to print to output as the visualization will open
+                                // automatically
                             },
                             Err(e) => {
                                 warn!("Failed to auto-generate visualization: {}", e);
-                                // Only show error in debug logs, not to the user to avoid interrupting the chat flow
-                            }
+                                // Only show error in debug logs, not to the user to avoid
+                                // interrupting the chat flow
+                            },
                         }
                     }
                 }
