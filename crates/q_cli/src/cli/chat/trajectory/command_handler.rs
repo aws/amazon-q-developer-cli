@@ -228,6 +228,7 @@ impl<'a, W: Write> TrajectoryCommandHandler<'a, W> {
                     self.output,
                     style::SetForegroundColor(Color::Green),
                     style::Print(format!("Visualization generated at: {}\n", path.display())),
+                    style::Print("Opening in your default browser...\n"),
                     style::SetForegroundColor(Color::Reset),
                 )?;
             },

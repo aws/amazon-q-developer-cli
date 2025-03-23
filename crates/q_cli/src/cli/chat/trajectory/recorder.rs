@@ -457,6 +457,7 @@ impl TrajectoryRecorder {
             // Open the visualization in the default browser
             if let Err(e) = open::that(&output_path) {
                 warn!("Failed to open visualization in browser: {}", e);
+                // Return success even if browser opening fails, since the file was generated
             }
 
             Ok(output_path)

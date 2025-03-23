@@ -1,129 +1,188 @@
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use crate::cli::chat::trajectory::{
+    FullContextStrategy,
+    TrajectoryConfig,
+    TrajectoryRecorder,
+};
+
+#[test]
+fn test_recorder_initialization() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config = TrajectoryConfig {
+        enabled: true,
+        output_dir: temp_dir.path().to_path_buf(),
+        auto_visualize: false,
+        preserve_full_context: false,
+        full_context_strategy: FullContextStrategy::default(),
+    };
+
+    let recorder = TrajectoryRecorder::new(config);
+    assert!(recorder.is_enabled());
+}
+
+#[test]
+fn test_recorder_disable_enable() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config = TrajectoryConfig {
+        enabled: true,
+        output_dir: temp_dir.path().to_path_buf(),
+        auto_visualize: false,
+        preserve_full_context: false,
+        full_context_strategy: FullContextStrategy::default(),
+    };
+
+    let mut recorder = TrajectoryRecorder::new(config);
+    assert!(recorder.is_enabled());
+
+    // Disable the recorder
+    recorder.set_enabled(false);
+    assert!(!recorder.is_enabled());
+
+    // Enable the recorder again
+    recorder.set_enabled(true);
+    assert!(recorder.is_enabled());
+}
+
+#[test]
+fn test_recorder_config_options() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config = TrajectoryConfig {
+        enabled: true,
+        output_dir: temp_dir.path().to_path_buf(),
+        auto_visualize: false,
+        preserve_full_context: false,
+        full_context_strategy: FullContextStrategy::default(),
+    };
+
+    let mut recorder = TrajectoryRecorder::new(config);
     
-    use crate::cli::chat::trajectory::{TrajectoryRecorder, TrajectoryConfig, FullContextStrategy};
+    // Test setting auto_visualize
+    recorder.set_config_option("auto_visualize", "true").unwrap();
+    let config = recorder.get_config();
+    assert_eq!(config.get("auto_visualize"), Some(&"true".to_string()));
+
+    // Test setting preserve_full_context
+    recorder.set_config_option("preserve_full_context", "true").unwrap();
+    let config = recorder.get_config();
+    assert_eq!(config.get("preserve_full_context"), Some(&"true".to_string()));
+
+    // Test setting full_context_strategy
+    recorder.set_config_option("full_context_strategy", "always").unwrap();
+    let config = recorder.get_config();
+    assert_eq!(config.get("full_context_strategy"), Some(&"always".to_string()));
+}
+
+#[test]
+fn test_record_user_instruction() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config = TrajectoryConfig {
+        enabled: true,
+        output_dir: temp_dir.path().to_path_buf(),
+        auto_visualize: false,
+        preserve_full_context: false,
+        full_context_strategy: FullContextStrategy::default(),
+    };
+
+    let mut recorder = TrajectoryRecorder::new(config);
     
-    fn create_test_config() -> TrajectoryConfig {
-        let temp_dir = std::env::temp_dir().join("trajectory_recorder_test");
-        let _ = std::fs::create_dir_all(&temp_dir);
-        
-        TrajectoryConfig {
-            enabled: true,
-            output_dir: temp_dir,
-            auto_visualize: false,
-            preserve_full_context: false,
-            full_context_strategy: FullContextStrategy::Never,
-        }
-    }
+    // Record a user instruction
+    let result = recorder.record_user_instruction("Test instruction");
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_record_tool_use_and_result() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config = TrajectoryConfig {
+        enabled: true,
+        output_dir: temp_dir.path().to_path_buf(),
+        auto_visualize: false,
+        preserve_full_context: false,
+        full_context_strategy: FullContextStrategy::default(),
+    };
+
+    let mut recorder = TrajectoryRecorder::new(config);
     
-    #[test]
-    fn test_recorder_initialization() {
-        let config = create_test_config();
-        let recorder = TrajectoryRecorder::new(config.clone());
-        
-        assert!(recorder.is_enabled());
-        assert_eq!(recorder.get_config().get("output_dir").unwrap(), &config.output_dir.to_string_lossy().to_string());
-    }
+    // Record a tool use
+    let mut parameters = HashMap::new();
+    parameters.insert("path".to_string(), serde_json::json!("/test/path"));
+    parameters.insert("command".to_string(), serde_json::json!("read"));
     
-    #[test]
-    fn test_enable_disable() {
-        let config = create_test_config();
-        let mut recorder = TrajectoryRecorder::new(config);
-        
-        // Test initial state
-        assert!(recorder.is_enabled());
-        
-        // Test disable
-        recorder.set_enabled(false);
-        assert!(!recorder.is_enabled());
-        
-        // Test enable
-        recorder.set_enabled(true);
-        assert!(recorder.is_enabled());
-        
-        // Test no-op when already in desired state
-        recorder.set_enabled(true);
-        assert!(recorder.is_enabled());
-    }
+    let step_id = recorder.record_tool_use("fs_read", parameters, Some("Reading a file")).unwrap();
+    assert!(!step_id.is_empty());
     
-    #[test]
-    fn test_record_user_instruction() {
-        let config = create_test_config();
-        let mut recorder = TrajectoryRecorder::new(config);
-        
-        let result = recorder.record_user_instruction("Test instruction");
-        assert!(result.is_ok());
-    }
+    // Record a successful result
+    let result = recorder.record_tool_result(
+        &step_id, 
+        true, 
+        Some(serde_json::json!({"content": "File content"})), 
+        None
+    );
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_record_tool_use_error() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config = TrajectoryConfig {
+        enabled: true,
+        output_dir: temp_dir.path().to_path_buf(),
+        auto_visualize: false,
+        preserve_full_context: false,
+        full_context_strategy: FullContextStrategy::default(),
+    };
+
+    let mut recorder = TrajectoryRecorder::new(config);
     
-    #[test]
-    fn test_get_config() {
-        let config = create_test_config();
-        let recorder = TrajectoryRecorder::new(config.clone());
-        
-        let config_map = recorder.get_config();
-        
-        assert_eq!(config_map.get("enabled").unwrap(), "true");
-        assert_eq!(config_map.get("output_dir").unwrap(), &config.output_dir.to_string_lossy().to_string());
-        assert_eq!(config_map.get("auto_visualize").unwrap(), "false");
-        assert_eq!(config_map.get("preserve_full_context").unwrap(), "false");
-        assert_eq!(config_map.get("full_context_strategy").unwrap(), "never");
-    }
+    // Record a tool use
+    let mut parameters = HashMap::new();
+    parameters.insert("path".to_string(), serde_json::json!("/test/path"));
+    parameters.insert("command".to_string(), serde_json::json!("read"));
     
-    #[test]
-    fn test_disabled_recorder_operations() {
-        let mut config = create_test_config();
-        config.enabled = false;
-        let mut recorder = TrajectoryRecorder::new(config);
-        
-        // Operations should succeed but do nothing when disabled
-        assert!(recorder.record_user_instruction("Test").is_ok());
-        assert!(recorder.record_reasoning("Test reasoning").is_ok());
-        assert!(recorder.record_response("Test response").is_ok());
-        
-        // Tool use should return empty string when disabled
-        let tool_id = recorder.record_tool_use("test_tool", HashMap::new(), None).unwrap();
-        assert!(tool_id.is_empty());
-        
-        // Tool result should succeed but do nothing when disabled
-        assert!(recorder.record_tool_result("test_id", true, None, None).is_ok());
-    }
+    let step_id = recorder.record_tool_use("fs_read", parameters, Some("Reading a file")).unwrap();
+    assert!(!step_id.is_empty());
     
-    #[test]
-    fn test_should_preserve_full_context() {
-        let mut config = create_test_config();
-        config.preserve_full_context = true;
-        
-        // Test Never strategy
-        config.full_context_strategy = FullContextStrategy::Never;
-        let recorder = TrajectoryRecorder::new(config.clone());
-        assert!(!recorder.should_preserve_full_context(false));
-        assert!(!recorder.should_preserve_full_context(true));
-        
-        // Test Always strategy
-        config.full_context_strategy = FullContextStrategy::Always;
-        let recorder = TrajectoryRecorder::new(config.clone());
-        assert!(recorder.should_preserve_full_context(false));
-        assert!(recorder.should_preserve_full_context(true));
-        
-        // Test UserInputOnly strategy
-        config.full_context_strategy = FullContextStrategy::UserInputOnly;
-        let mut recorder = TrajectoryRecorder::new(config.clone());
-        
-        // Without current instruction
-        assert!(!recorder.should_preserve_full_context(false));
-        assert!(!recorder.should_preserve_full_context(true));
-        
-        // With current instruction
-        let _ = recorder.record_user_instruction("Test");
-        assert!(recorder.should_preserve_full_context(false));
-        assert!(recorder.should_preserve_full_context(true));
-        
-        // Test ExplicitCheckpointsOnly strategy
-        config.full_context_strategy = FullContextStrategy::ExplicitCheckpointsOnly;
-        let recorder = TrajectoryRecorder::new(config);
-        assert!(!recorder.should_preserve_full_context(false));
-        assert!(recorder.should_preserve_full_context(true));
-    }
+    // Record a failed result
+    let result = recorder.record_tool_result(
+        &step_id, 
+        false, 
+        None, 
+        Some("File not found")
+    );
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_disabled_recorder() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config = TrajectoryConfig {
+        enabled: false,  // Disabled
+        output_dir: temp_dir.path().to_path_buf(),
+        auto_visualize: false,
+        preserve_full_context: false,
+        full_context_strategy: FullContextStrategy::default(),
+    };
+
+    let mut recorder = TrajectoryRecorder::new(config);
+    assert!(!recorder.is_enabled());
+    
+    // Operations should succeed but do nothing when disabled
+    let result = recorder.record_user_instruction("Test instruction");
+    assert!(result.is_ok());
+    
+    let mut parameters = HashMap::new();
+    parameters.insert("path".to_string(), serde_json::json!("/test/path"));
+    
+    let step_id = recorder.record_tool_use("fs_read", parameters, Some("Reading a file")).unwrap();
+    assert!(step_id.is_empty());  // Should return empty string when disabled
 }

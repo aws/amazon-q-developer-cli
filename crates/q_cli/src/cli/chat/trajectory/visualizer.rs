@@ -5,6 +5,7 @@ use std::path::{
 };
 
 use chrono::DateTime;
+use tracing::debug;
 
 use super::repository::Repository;
 
@@ -23,7 +24,17 @@ fn format_timestamp(timestamp: &str) -> String {
 
 /// Generates an HTML visualization of the agent trajectory
 pub fn generate_visualization(repo: &Repository, output_dir: &Path) -> Result<PathBuf, String> {
+    debug!("Generating visualization in directory: {:?}", output_dir);
+    
+    // Create output directory if it doesn't exist
+    if !output_dir.exists() {
+        if let Err(e) = fs::create_dir_all(output_dir) {
+            return Err(format!("Failed to create output directory: {}", e));
+        }
+    }
+    
     let output_path = output_dir.join("trajectory.html");
+    debug!("Visualization will be saved to: {:?}", output_path);
 
     // Create HTML content
     let html_content = generate_html_visualization(repo)?;
@@ -32,7 +43,8 @@ pub fn generate_visualization(repo: &Repository, output_dir: &Path) -> Result<Pa
     if let Err(e) = fs::write(&output_path, html_content) {
         return Err(format!("Failed to write visualization file: {}", e));
     }
-
+    
+    debug!("Visualization successfully generated");
     Ok(output_path)
 }
 

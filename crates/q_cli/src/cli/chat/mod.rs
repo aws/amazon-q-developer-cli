@@ -1385,6 +1385,27 @@ where
                     )
                     .await;
                 }
+
+                // Check if auto-visualize is enabled and generate visualization
+                if let Some(recorder) = &self.trajectory_recorder {
+                    let recorder_lock = recorder.lock().unwrap();
+                    if recorder_lock.is_enabled()
+                        && recorder_lock.get_config().get("auto_visualize") == Some(&"true".to_string())
+                    {
+                        // Generate visualization after response is complete
+                        match recorder_lock.generate_visualization() {
+                            Ok(path) => {
+                                debug!("Auto-visualization generated at: {:?}", path);
+                                // No need to print to output as the visualization will open automatically
+                            },
+                            Err(e) => {
+                                warn!("Failed to auto-generate visualization: {}", e);
+                                // Only show error in debug logs, not to the user to avoid interrupting the chat flow
+                            }
+                        }
+                    }
+                }
+
                 if self.interactive {
                     queue!(self.output, style::ResetColor, style::SetAttribute(Attribute::Reset))?;
                     execute!(self.output, style::Print("\n"))?;

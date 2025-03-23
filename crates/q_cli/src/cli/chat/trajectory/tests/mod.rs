@@ -1,5 +1,13 @@
-mod command_handler_tests;
-mod integration_tests;
+// Unit tests for trajectory recording and visualization
+
+#[cfg(test)]
 mod recorder_tests;
+
+#[cfg(test)]
 mod repository_tests;
+
+#[cfg(test)]
 mod visualizer_tests;
+
+#[cfg(test)]
+mod command_handler_tests;

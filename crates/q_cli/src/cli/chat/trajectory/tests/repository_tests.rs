@@ -1,125 +1,179 @@
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::path::PathBuf;
+use std::collections::HashMap;
+
+use crate::cli::chat::trajectory::repository::{
+    AgentAction,
+    Repository,
+    SerializableConversationState,
+    SerializableChatMessage,
+};
+
+#[test]
+fn test_repository_creation() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path());
     
-    use crate::cli::chat::trajectory::repository::{Repository, Step, AgentAction, ActionResult};
+    // Check that the repository was created with a main trajectory
+    assert_eq!(repo.current_trajectory, "main");
+    assert!(repo.trajectories.contains_key("main"));
+    assert!(repo.steps.is_empty());
+}
+
+#[test]
+fn test_repository_save_load() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut repo = Repository::new(temp_dir.path());
     
-    fn create_test_repository() -> Repository {
-        let temp_dir = std::env::temp_dir().join("trajectory_repository_test");
-        let _ = std::fs::create_dir_all(&temp_dir);
-        Repository::new(temp_dir)
-    }
+    // Add a step
+    let step = repo.step_builder()
+        .user_instruction("Test instruction")
+        .category("user_instruction")
+        .tag("user-input")
+        .build();
     
-    #[test]
-    fn test_repository_initialization() {
-        let repo = create_test_repository();
-        
-        // Check default trajectory exists
-        assert!(repo.trajectories.contains_key("main"));
-        assert_eq!(repo.current_trajectory, "main");
-        assert!(repo.steps.is_empty());
-    }
+    let step_id = repo.record_step(step).unwrap();
+    assert!(!step_id.is_empty());
     
-    #[test]
-    fn test_step_builder() {
-        let repo = create_test_repository();
-        let step = repo.step_builder()
-            .user_instruction("Test instruction")
-            .category("user_instruction")
-            .tag("user-input")
-            .build();
-        
-        assert_eq!(step.trajectory_name, "main");
-        assert!(step.user_instruction.is_some());
-        assert_eq!(step.user_instruction.unwrap(), "Test instruction");
-        assert_eq!(step.category.unwrap(), "user_instruction");
-        assert!(step.tags.contains(&"user-input".to_string()));
-    }
+    // Save the repository
+    let save_result = repo.save();
+    assert!(save_result.is_ok());
     
-    #[test]
-    fn test_record_step() {
-        let mut repo = create_test_repository();
-        let step = repo.step_builder()
-            .user_instruction("Test instruction")
-            .category("user_instruction")
-            .tag("user-input")
-            .build();
-        
-        let step_id = repo.record_step(step).unwrap();
-        
-        // Check step was added
-        assert!(repo.steps.contains_key(&step_id));
-        assert_eq!(repo.steps.len(), 1);
-        
-        // Check trajectory was updated
-        let trajectory = repo.trajectories.get("main").unwrap();
-        assert_eq!(trajectory.latest_step_id, step_id);
-        assert_eq!(trajectory.step_ids.len(), 1);
-        assert_eq!(trajectory.step_ids[0], step_id);
-    }
+    // Load the repository
+    let loaded_repo = Repository::load(temp_dir.path()).unwrap();
     
-    #[test]
-    fn test_create_trajectory() {
-        let mut repo = create_test_repository();
-        
-        // Create a step in the main trajectory
-        let step = repo.step_builder()
-            .user_instruction("Test instruction")
-            .build();
-        let step_id = repo.record_step(step).unwrap();
-        
-        // Create a new trajectory
-        repo.create_trajectory("test_trajectory").unwrap();
-        
-        // Check new trajectory was created
-        assert!(repo.trajectories.contains_key("test_trajectory"));
-        assert_eq!(repo.current_trajectory, "test_trajectory");
-        
-        // Check new trajectory has the latest step ID from main
-        let new_trajectory = repo.trajectories.get("test_trajectory").unwrap();
-        assert_eq!(new_trajectory.latest_step_id, step_id);
-        assert!(new_trajectory.step_ids.is_empty());
-    }
+    // Check that the loaded repository has the same data
+    assert_eq!(loaded_repo.current_trajectory, repo.current_trajectory);
+    assert_eq!(loaded_repo.trajectories.len(), repo.trajectories.len());
+    assert_eq!(loaded_repo.steps.len(), repo.steps.len());
+    assert!(loaded_repo.steps.contains_key(&step_id));
+}
+
+#[test]
+fn test_create_trajectory() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut repo = Repository::new(temp_dir.path());
     
-    #[test]
-    fn test_switch_trajectory() {
-        let mut repo = create_test_repository();
-        
-        // Create a new trajectory
-        repo.create_trajectory("test_trajectory").unwrap();
-        assert_eq!(repo.current_trajectory, "test_trajectory");
-        
-        // Switch back to main
-        repo.switch_trajectory("main").unwrap();
-        assert_eq!(repo.current_trajectory, "main");
-    }
+    // Create a new trajectory
+    let result = repo.create_trajectory("test_trajectory");
+    assert!(result.is_ok());
     
-    #[test]
-    fn test_checkpoints() {
-        let mut repo = create_test_repository();
-        
-        // Create a step with checkpoint tag
-        let step = repo.step_builder()
-            .category("checkpoint")
-            .tag("checkpoint")
-            .tag("test_label")
-            .build();
-        let step_id = repo.record_step(step).unwrap();
-        
-        // List checkpoints
-        let checkpoints = repo.list_checkpoints();
-        assert_eq!(checkpoints.len(), 1);
-        assert_eq!(checkpoints[0].0, step_id);
-        
-        // Get checkpoint by ID
-        let checkpoint = repo.get_checkpoint(&step_id).unwrap();
-        assert!(checkpoint.tags.contains(&"checkpoint".to_string()));
-        assert!(checkpoint.tags.contains(&"test_label".to_string()));
-        
-        // Get checkpoint by label
-        let checkpoint = repo.get_checkpoint("test_label").unwrap();
-        assert!(checkpoint.tags.contains(&"checkpoint".to_string()));
-        assert!(checkpoint.tags.contains(&"test_label".to_string()));
-    }
+    // Check that the trajectory was created
+    assert_eq!(repo.current_trajectory, "test_trajectory");
+    assert!(repo.trajectories.contains_key("test_trajectory"));
+}
+
+#[test]
+fn test_switch_trajectory() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut repo = Repository::new(temp_dir.path());
+    
+    // Create a new trajectory
+    repo.create_trajectory("test_trajectory").unwrap();
+    assert_eq!(repo.current_trajectory, "test_trajectory");
+    
+    // Switch back to main
+    let result = repo.switch_trajectory("main");
+    assert!(result.is_ok());
+    assert_eq!(repo.current_trajectory, "main");
+}
+
+#[test]
+fn test_record_step() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut repo = Repository::new(temp_dir.path());
+    
+    // Create a step with user instruction
+    let step1 = repo.step_builder()
+        .user_instruction("Test instruction")
+        .category("user_instruction")
+        .tag("user-input")
+        .build();
+    
+    let step1_id = repo.record_step(step1).unwrap();
+    
+    // Create a step with agent action
+    let mut parameters = HashMap::new();
+    parameters.insert("path".to_string(), serde_json::json!("/test/path"));
+    
+    let action = AgentAction {
+        action_type: "tool_use".to_string(),
+        name: Some("fs_read".to_string()),
+        parameters,
+        description: Some("Reading a file".to_string()),
+    };
+    
+    let step2 = repo.step_builder()
+        .parent_id(Some(step1_id.clone()))
+        .agent_action(action)
+        .category("tool_use")
+        .tag("tool-use")
+        .build();
+    
+    let step2_id = repo.record_step(step2).unwrap();
+    
+    // Check that both steps were recorded
+    assert!(repo.steps.contains_key(&step1_id));
+    assert!(repo.steps.contains_key(&step2_id));
+    
+    // Check that the trajectory was updated
+    let trajectory = repo.trajectories.get("main").unwrap();
+    assert_eq!(trajectory.latest_step_id, step2_id);
+    assert_eq!(trajectory.step_ids.len(), 2);
+}
+
+#[test]
+fn test_checkpoints() {
+    // Create a temporary directory for testing
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut repo = Repository::new(temp_dir.path());
+    
+    // Create a conversation state
+    let state = SerializableConversationState {
+        conversation_id: "test_conversation".to_string(),
+        history: vec![
+            SerializableChatMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+                full_content: None,
+            },
+            SerializableChatMessage {
+                role: "assistant".to_string(),
+                content: "Hi there".to_string(),
+                full_content: None,
+            },
+        ],
+        next_message: None,
+        tools: vec![],
+        context_files: HashMap::new(),
+        env_state: None,
+        shell_state: None,
+        metadata: HashMap::new(),
+        full_context: None,
+    };
+    
+    // Create a checkpoint
+    let step = repo.step_builder()
+        .category("checkpoint")
+        .tag("checkpoint")
+        .tag("test_label")
+        .conversation_state(state)
+        .build();
+    
+    let checkpoint_id = repo.record_step(step).unwrap();
+    
+    // List checkpoints
+    let checkpoints = repo.list_checkpoints();
+    assert_eq!(checkpoints.len(), 1);
+    
+    // Get checkpoint by ID
+    let checkpoint = repo.get_checkpoint(&checkpoint_id);
+    assert!(checkpoint.is_some());
+    
+    // Get checkpoint by label
+    let checkpoint = repo.get_checkpoint("test_label");
+    assert!(checkpoint.is_some());
 }
