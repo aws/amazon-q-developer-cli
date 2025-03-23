@@ -96,7 +96,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 • Write unit tests for my application.
 • Help me understand my git status
 
-<em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
+<em>/acceptall</em>    <black!>Toggles acceptance prompting for the session. (CAUTION)</black!>
 <em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
 <em>/context</em>      <black!>(Beta) Manage context files for a profile</black!>
 <em>/help</em>         <black!>Show the help dialogue</black!>
@@ -110,7 +110,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <magenta,em>q</magenta,em> (Amazon Q Chat)
 
 <em>/clear</em>        <black!>Clear the conversation history</black!>
-<em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
+<em>/acceptall</em>    <black!>Toggles acceptance prompting for the session. (CAUTION)</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 <em>/profile</em>      <black!>Manage profiles</black!>
@@ -653,8 +653,8 @@ where
                     style::SetForegroundColor(Color::Green),
                     style::Print(format!("\n{}\n\n", match self.accept_all {
                         true =>
-                            "Disabled acceptance prompting.\nAgents can sometimes do unexpected things so understand the risks.",
-                        false => "Enabled acceptance prompting. Run again to disable.",
+                            "⚠️ CAUTION: Disabled acceptance prompting.\nAmazon Q will now execute commands and modify files without asking for confirmation.\nBe aware that this may lead to unexpected system changes if you're not carefully reviewing responses.",
+                        false => "Enabled acceptance prompting. You'll be asked to confirm before tools are executed.",
                     })),
                     style::SetForegroundColor(Color::Reset)
                 )?;
