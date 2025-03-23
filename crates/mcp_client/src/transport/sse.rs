@@ -24,7 +24,7 @@ pub struct JsonRpcSseTransport {
 }
 
 impl JsonRpcSseTransport {
-    pub fn client(sse_url: String) -> Result<Self, TransportError> {
+    pub async fn client(sse_url: String) -> Result<Self, TransportError> {
         let (tx, receiver) = broadcast::channel::<Result<JsonRpcMessage, TransportError>>(100);
         let exclusive_receiver = Arc::new(tokio::sync::Mutex::new(receiver));
         let shared_receiver = Arc::new(tokio::sync::Mutex::new(tx.subscribe()));
@@ -35,58 +35,50 @@ impl JsonRpcSseTransport {
 
         tracing::debug!("Connecting to: {}", sse_url);
 
-        tokio::spawn(async move {
-            match Self::connect_sse(&sse_url_clone).await {
-                Ok(mut event_source) => {
-                    tracing::debug!("Connected to SSE endpoint: {}", sse_url_clone);
+        return Self::connect_sse(&sse_url_clone).await.map(|mut event_source| {
+            tokio::spawn(async move {
+                tracing::debug!("Connected to SSE endpoint: {}", sse_url_clone);
 
-                    // todo: correct protocol error handling
-                    while let Some(event) = event_source.next().await {
-                        match event {
-                            Ok(Event::Open) => tracing::debug!("Connection opened to: {}", sse_url_clone),
-                            Ok(Event::Message(message)) if message.event == "endpoint" => {
-                                let base_url = Url::parse(&sse_url_clone).expect("SSE URL is invalid");
-                                let maybe_post_url = base_url.join(&message.data).map(|url| url.to_string());
-                                tracing::debug!("POST URL: {} ", maybe_post_url.clone().expect("Invalid POST URL"));
-                                *post_url_clone.write().await = maybe_post_url.ok();
-                            }
-                            Ok(Event::Message(message)) if message.event == "message" => {
-                                tracing::debug!("message {} {} {}", message.id, message.event, message.data);
-                                match serde_json::from_str::<JsonRpcMessage>(&message.data) {
-                                    Ok(msg) => {
-                                        let _ = tx.send(Ok(msg));
-                                    },
-                                    Err(e) => {
-                                        let _ = tx.send(Err(e.into()));
-                                    }
+                // todo: correct protocol error handling
+                while let Some(event) = event_source.next().await {
+                    match event {
+                        Ok(Event::Open) => tracing::debug!("Connection opened to: {}", sse_url_clone),
+                        Ok(Event::Message(message)) if message.event == "endpoint" => {
+                            let base_url = Url::parse(&sse_url_clone).expect("SSE URL is invalid");
+                            let maybe_post_url = base_url.join(&message.data).map(|url| url.to_string());
+                            tracing::debug!("POST URL: {} ", maybe_post_url.clone().expect("Invalid POST URL"));
+                            *post_url_clone.write().await = maybe_post_url.ok();
+                        }
+                        Ok(Event::Message(message)) if message.event == "message" => {
+                            tracing::debug!("message {} {} {}", message.id, message.event, message.data);
+                            match serde_json::from_str::<JsonRpcMessage>(&message.data) {
+                                Ok(msg) => {
+                                    let _ = tx.send(Ok(msg));
+                                },
+                                Err(e) => {
+                                    let _ = tx.send(Err(TransportError::Custom(e.to_string())));
                                 }
                             }
-                            Ok(Event::Message(message)) => {
-                                // todo: error handling
-                                tracing::error!("Unexpected message: {} {}", message.event, message.data);
-                            }
-                            Err(err) => {
-                                // todo: error handling
-                                tracing::error!("SSE event error: {}", err);
-                                event_source.close();
-                                break;
-                            }
+                        }
+                        Ok(Event::Message(message)) => {
+                            tracing::error!("Unexpected message: {} {}", message.event, message.data);
+                            let _ = tx.send(Err(TransportError::Custom(message.data)));
+                        }
+                        Err(err) => {
+                            tracing::error!("SSE event error: {}", err);
+                            let _ = tx.send(Err(TransportError::Custom(err.to_string())));
                         }
                     }
                 }
-                Err(err) => {
-                    // todo: error handling?
-                    tracing::error!("Failed to connect to SSE endpoint: {}", err);
-                }
+            });
+
+            JsonRpcSseTransport{
+                exclusive_receiver,
+                shared_receiver,
+                client: reqwest::Client::new(),
+                post_url,
             }
         });
-
-        Ok(JsonRpcSseTransport{
-            exclusive_receiver,
-            shared_receiver,
-            client: reqwest::Client::new(),
-            post_url,
-        })
     }
 
     async fn connect_sse(url: &str) -> Result<EventSource, TransportError> {

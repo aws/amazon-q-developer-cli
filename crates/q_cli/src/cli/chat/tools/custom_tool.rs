@@ -91,6 +91,7 @@ impl CustomToolClient {
         }
     }
 
+    // todo: reduce duplication
     pub async fn get_tool_spec(&self) -> Result<(String, Vec<ToolSpec>)> {
         match self {
             CustomToolClient::Stdio {

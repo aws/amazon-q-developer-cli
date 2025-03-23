@@ -14,8 +14,14 @@ workspace = true
 default = []
 
 [[bin]]
-name = "test_mcp_server"
-path = "test_mcp_server/test_server.rs"
+name = "test_mcp_server_stdio"
+path = "test_mcp_server/test_server_stdio.rs"
+test = true
+doc = false
+
+[[example]]
+name = "test_mcp_server_sse"
+path = "test_mcp_server/test_server_sse.rs"
 test = true
 doc = false
 
@@ -31,3 +37,10 @@ nix.workspace = true
 reqwest.workspace = true
 reqwest-eventsource.workspace = true
 futures-util.workspace = true
+
+[dev-dependencies]
+mcp-ectors.workspace = true
+actix.workspace = true
+actix-rt.workspace = true
+actix-web.workspace = true
+tokio.workspace = true

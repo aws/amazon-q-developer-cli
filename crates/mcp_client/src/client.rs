@@ -127,7 +127,7 @@ impl Client<SseTransport> {
         let url = url.ok_or_else(|| ClientError::NegotiationError("url is required for SseTransport".to_owned()))?;
 
         // Create the SSE transport
-        let transport = Arc::new(JsonRpcSseTransport::client(url)?);
+        let transport = Arc::new(JsonRpcSseTransport::client(url).await?);
 
         Ok(Self {
             server_name,
@@ -208,12 +208,30 @@ where
             method: method.to_owned(),
             params,
         };
+        let req_id = request.clone().id;
         let msg = JsonRpcMessage::Request(request);
         time::timeout(Duration::from_secs(self.timeout), self.transport.send(&msg)).await??;
-        let resp = time::timeout(Duration::from_secs(self.timeout), self.transport.listen()).await??;
+
+        // Keep listening until we get matching response ID or timeout
+        let resp = time::timeout(Duration::from_secs(self.timeout), async {
+            loop {
+                let response = self.transport.listen().await?;
+                if let JsonRpcMessage::Response(resp) = &response {
+                    if resp.id == req_id {
+                        return Ok(response);
+                    }
+                    // Continue listening if IDs don't match
+                    continue;
+                }
+                // Handle unexpected message type
+                return Err(ClientError::UnexpectedMsgType);
+            }
+        }).await??;
+
         let JsonRpcMessage::Response(mut resp) = resp else {
             return Err(ClientError::UnexpectedMsgType);
         };
+
         // Pagination support: https://spec.modelcontextprotocol.io/specification/2024-11-05/server/utilities/pagination/#pagination-model
         let mut next_cursor = resp.result.as_ref().and_then(|v| v.get("nextCursor"));
         if next_cursor.is_some() {
@@ -332,12 +350,17 @@ fn examine_server_capabilities(ser_cap: &serde_json::Value) -> Result<(), Client
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::process::Child;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use serde_json::Value;
 
     use super::*;
     const TEST_BIN_OUT_DIR: &str = "target/debug";
-    const TEST_SERVER_NAME: &str = "test_mcp_server";
+    const TEST_SERVER_STDIO_NAME: &str = "test_mcp_server_stdio";
+    const TEST_SERVER_SSE_NAME: &str = "test_mcp_server_sse";
+    const TEST_SSE_PORT: u16 = 8080;
 
     fn get_workspace_root() -> PathBuf {
         let output = std::process::Command::new("cargo")
@@ -358,11 +381,11 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_client_stdio() {
         std::process::Command::new("cargo")
-            .args(["build", "--bin", TEST_SERVER_NAME])
+            .args(["build", "--bin", TEST_SERVER_STDIO_NAME])
             .status()
             .expect("Failed to build binary");
         let workspace_root = get_workspace_root();
-        let bin_path = workspace_root.join(TEST_BIN_OUT_DIR).join(TEST_SERVER_NAME);
+        let bin_path = workspace_root.join(TEST_BIN_OUT_DIR).join(TEST_SERVER_STDIO_NAME);
         println!("bin path: {}", bin_path.to_str().unwrap_or("no path found"));
 
         // Testing 2 concurrent sessions to make sure transport layer does not overlap.
@@ -425,6 +448,87 @@ mod tests {
         let res_two = res_two.expect("Client two timed out");
         assert!(res_one.is_ok());
         assert!(res_two.is_ok());
+    }
+
+    /// starts an MCP SSE Server and tries to use it
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_client_sse() {
+        // Build the SSE server example
+        std::process::Command::new("cargo")
+            .args(["build", "--example", TEST_SERVER_SSE_NAME])
+            .status()
+            .expect("Failed to build SSE server example");
+
+        let workspace_root = get_workspace_root();
+        let bin_path = workspace_root.join(TEST_BIN_OUT_DIR).join("examples").join(TEST_SERVER_SSE_NAME);
+        println!("SSE server path: {}", bin_path.to_str().unwrap_or("no path found"));
+
+        // Start the SSE server
+        let server_running = Arc::new(AtomicBool::new(true));
+        let server_running_clone = server_running.clone();
+
+        let child = std::process::Command::new(bin_path)
+            .spawn()
+            .expect("Failed to start SSE server");
+
+        // Make sure to kill the server when we're done
+        let _guard = ServerGuard { child, running: server_running };
+
+        // Wait for server to start
+        tokio::time::sleep(time::Duration::from_secs(3)).await;
+
+        let init_params_one = serde_json::json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {
+              "roots": {
+                "listChanged": true
+              },
+              "sampling": {}
+            },
+            "clientInfo": {
+              "name": "TestClientOne",
+              "version": "1.0.0"
+            }
+        });
+
+        let client_config_one = ClientConfig {
+            server_name: "test_sse_tool_one".to_owned(),
+            bin_path: None,
+            args: None,
+            url: Some(format!("http://localhost:{}/sse", TEST_SSE_PORT)),
+            timeout: 60,
+            init_params: init_params_one.clone(),
+        };
+
+        let client = Client::<SseTransport>::from_config(client_config_one).await.expect("Failed to create SSE client one");
+
+        let server_capabilities = client.init().await.expect("Could not get Server Capabilities");
+
+        assert_eq!(server_capabilities["result"]["serverInfo"]["name"].as_str(), Some("Multi MCP Router Server"));
+
+        let tool_spec_recvd = client.request("tools/list", None).await.expect("Tools list error");
+
+        let tools = tool_spec_recvd["result"]["tools"].as_array().expect("Didn't get tools result");
+
+        let first_tool_name = tools.first().expect("A tool was not specified").get("name").expect("name exists on tool").as_str();
+        assert_eq!(first_tool_name, Some("helloworld_greet"));
+
+        // Set running to false to signal the guard to kill the server
+        server_running_clone.store(false, Ordering::SeqCst);
+    }
+
+    // Helper struct to ensure the server is killed when the test completes
+    struct ServerGuard {
+        child: Child,
+        running: Arc<AtomicBool>,
+    }
+
+    impl Drop for ServerGuard {
+        fn drop(&mut self) {
+            if self.running.load(Ordering::SeqCst) {
+                let _ = self.child.kill();
+            }
+        }
     }
 
     async fn test_client_routine<T: Transport>(
