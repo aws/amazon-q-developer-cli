@@ -401,6 +401,16 @@ impl ContextManager {
 
         Ok(context_files)
     }
+
+    /// Synchronous version of get_context_files for use in trajectory recorder
+    pub fn get_context_files_sync(&self, _force: bool) -> Result<std::collections::HashMap<String, Vec<String>>> {
+        // Simplified implementation that just returns empty maps
+        // This is a workaround for the async issue in the trajectory recorder
+        let mut result = std::collections::HashMap::new();
+        result.insert("global".to_string(), Vec::new());
+        result.insert(self.current_profile.clone(), Vec::new());
+        Ok(result)
+    }
 }
 
 fn profile_dir_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {

@@ -406,7 +406,7 @@ impl Command {
                     }
 
                     println!("Parsing trajectory command: {}", command);
-                    
+
                     macro_rules! usage_err {
                         ($usage_str:expr) => {
                             return Err(format!(
@@ -419,7 +419,9 @@ impl Command {
                     match parts[1].to_lowercase().as_str() {
                         "checkpoint" => {
                             if parts.len() < 3 {
-                                return Err(CheckpointSubcommand::usage_msg("Missing subcommand for /trajectory checkpoint."));
+                                return Err(CheckpointSubcommand::usage_msg(
+                                    "Missing subcommand for /trajectory checkpoint.",
+                                ));
                             }
 
                             match parts[2].to_lowercase().as_str() {
@@ -427,7 +429,7 @@ impl Command {
                                     if parts.len() < 4 {
                                         usage_err!(CheckpointSubcommand::CREATE_USAGE);
                                     }
-                                    
+
                                     Self::Trajectory {
                                         subcommand: TrajectorySubcommand::Checkpoint {
                                             subcommand: CheckpointSubcommand::Create {
@@ -445,7 +447,7 @@ impl Command {
                                     if parts.len() < 4 {
                                         usage_err!(CheckpointSubcommand::RESTORE_USAGE);
                                     }
-                                    
+
                                     Self::Trajectory {
                                         subcommand: TrajectorySubcommand::Checkpoint {
                                             subcommand: CheckpointSubcommand::Restore {
@@ -460,7 +462,10 @@ impl Command {
                                     },
                                 },
                                 other => {
-                                    return Err(CheckpointSubcommand::usage_msg(format!("Unknown checkpoint subcommand '{}'.", other)));
+                                    return Err(CheckpointSubcommand::usage_msg(format!(
+                                        "Unknown checkpoint subcommand '{}'.",
+                                        other
+                                    )));
                                 },
                             }
                         },
@@ -481,13 +486,16 @@ impl Command {
                         },
                         other => {
                             println!("Unknown trajectory subcommand: {}", other);
-                            return Err(TrajectorySubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
+                            return Err(TrajectorySubcommand::usage_msg(format!(
+                                "Unknown subcommand '{}'.",
+                                other
+                            )));
                         },
                     }
                 },
                 _ => {
                     println!("Unknown command: {}", input);
-                    return Err(format!("Unknown command: {}", input))
+                    return Err(format!("Unknown command: {}", input));
                 },
             });
         }

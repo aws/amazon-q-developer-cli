@@ -1027,28 +1027,14 @@ where
     async fn handle_trajectory_command(&mut self, subcommand: command::TrajectorySubcommand) -> Result<(), ChatError> {
         // Use the TrajectoryCommandHandler to handle the command
         if let Some(recorder) = &self.trajectory_recorder {
-            println!("Handling trajectory command: {:?}", subcommand);
-            
-            // Check if the recorder is enabled before creating the handler
-            {
-                let is_enabled = recorder.lock().unwrap().is_enabled();
-                println!("Trajectory recorder enabled status: {}", is_enabled);
-                
-                if !is_enabled {
-                    println!("Trajectory recorder is not enabled, but --trajectory flag was provided. This is unexpected.");
-                    // Force enable the recorder if we got here with the flag
-                    recorder.lock().unwrap().set_enabled(true);
-                    println!("Forcibly enabled trajectory recorder");
-                }
-            }
-            
+            // Create the handler and delegate command handling
             let mut handler = trajectory::TrajectoryCommandHandler::new(
                 recorder,
                 &mut self.output,
                 &mut self.conversation_state,
                 Arc::clone(&self.ctx),
             );
-    
+
             handler.handle_command(subcommand).await
         } else {
             execute!(
@@ -1060,7 +1046,6 @@ where
             Ok(())
         }
     }
-
 
     async fn tool_use_execute(&mut self, tool_uses: Vec<QueuedTool>) -> Result<ChatState, ChatError> {
         // Execute the requested tools.
@@ -1749,4 +1734,3 @@ mod tests {
         assert_eq!(ctx.fs().read_to_string("/file.txt").await.unwrap(), "Hello, world!\n");
     }
 }
-    
