@@ -1,20 +1,45 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{
+    HashMap,
+    VecDeque,
+};
 use std::env;
 use std::sync::Arc;
 
 use fig_api_client::model::{
-    AssistantResponseMessage, ChatMessage, ConversationState as FigConversationState, EnvState, ShellState, Tool,
-    ToolInputSchema, ToolResult, ToolResultContentBlock, ToolSpecification, UserInputMessage, UserInputMessageContext,
+    AssistantResponseMessage,
+    ChatMessage,
+    ConversationState as FigConversationState,
+    EnvState,
+    ShellState,
+    Tool,
+    ToolInputSchema,
+    ToolResult,
+    ToolResultContentBlock,
+    ToolSpecification,
+    UserInputMessage,
+    UserInputMessageContext,
 };
 use fig_os_shim::Context;
 use fig_util::Shell;
-use rand::distr::{Alphanumeric, SampleString};
-use tracing::{debug, error, info, warn};
+use rand::distr::{
+    Alphanumeric,
+    SampleString,
+};
+use tracing::{
+    debug,
+    error,
+    info,
+    warn,
+};
 
 use super::context::ContextManager;
 use super::tools::ToolSpec;
 use super::truncate_safe;
-use crate::cli::chat::tools::{InputSchema, InvokeOutput, serde_value_to_document};
+use crate::cli::chat::tools::{
+    InputSchema,
+    InvokeOutput,
+    serde_value_to_document,
+};
 
 // Max constants for length of strings and lists, use these to truncate elements
 // to ensure the API request is valid
@@ -40,10 +65,6 @@ pub struct ConversationState {
     /// Cached value representing the length of the user context message.
     context_message_length: Option<usize>,
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("History overflow error")]
-pub struct HistoryOverflowError;
 
 impl ConversationState {
     pub async fn new(ctx: Arc<Context>, tool_config: HashMap<String, ToolSpec>, profile: Option<String>) -> Self {
@@ -90,70 +111,6 @@ impl ConversationState {
     pub fn clear(&mut self) {
         self.next_message = None;
         self.history.clear();
-    }
-
-    /// Forces the history to be valid without clearing it
-    /// This is used when the user chooses to continue with a large history
-    pub fn force_valid_history(&mut self) {
-        // Find the first valid user message to keep
-        if let Some(i) = self
-            .history
-            .iter()
-            .enumerate()
-            .find(|(_, m)| -> bool {
-                match m {
-                    ChatMessage::UserInputMessage(m) => {
-                        matches!(
-                            m.user_input_message_context.as_ref(),
-                            Some(ctx) if ctx.tool_results.as_ref().is_none_or(|v| v.is_empty())
-                        ) && !m.content.is_empty()
-                    },
-                    ChatMessage::AssistantResponseMessage(_) => false,
-                }
-            })
-            .map(|v| v.0)
-        {
-            // If we found a valid message, make sure it's at the start
-            if i > 0 {
-                debug!("removing the first {i} elements in the history to ensure valid start");
-                self.history.drain(..i);
-            }
-        }
-
-        // If the history is too long, we need to make it valid without clearing
-        if self.history.len() > MAX_CONVERSATION_STATE_HISTORY_LEN - 2 {
-            // Find the oldest message that we can keep
-            if let Some(i) = self
-                .history
-                .iter()
-                .enumerate()
-                .skip(1) // Skip the first message which should be from the user
-                .find(|(_, m)| -> bool {
-                    match m {
-                        ChatMessage::UserInputMessage(m) => {
-                            matches!(
-                                m.user_input_message_context.as_ref(),
-                                Some(ctx) if ctx.tool_results.as_ref().is_none_or(|v| v.is_empty())
-                            ) && !m.content.is_empty()
-                        },
-                        ChatMessage::AssistantResponseMessage(_) => false,
-                    }
-                })
-                .map(|v| v.0)
-            {
-                // Remove the first i elements in the history
-                debug!("removing the first {i} elements in the history");
-                self.history.drain(..i);
-            } else {
-                // If we can't find a valid starting message, just keep the most recent messages
-                debug!("no valid starting user message found, keeping most recent messages");
-                let to_keep = MAX_CONVERSATION_STATE_HISTORY_LEN - 2;
-                if self.history.len() > to_keep {
-                    let to_remove = self.history.len() - to_keep;
-                    self.history.drain(..to_remove);
-                }
-            }
-        }
     }
 
     pub async fn append_new_user_message(&mut self, input: String) {
@@ -254,9 +211,7 @@ impl ConversationState {
     /// 4. If the last message is from the assistant and it contains tool uses, and a next user
     ///    message is set without tool results, then the user message will have cancelled tool
     ///    results.
-    ///
-    /// Returns true if the history needs overflow handling.
-    pub fn fix_history(&mut self) -> bool {
+    pub fn fix_history(&mut self) {
         // Trim the conversation history by finding the second oldest message from the user without
         // tool results - this will be the new oldest message in the history.
         //
@@ -286,9 +241,21 @@ impl ConversationState {
                     self.history.drain(..i);
                 },
                 None => {
-                    debug!("no valid starting user message found in the history, needs handling");
-                    // Instead of automatically clearing, return true to indicate handling is needed
-                    return true;
+                    debug!("no valid starting user message found in the history, clearing");
+                    self.history.clear();
+                    // Edge case: if the next message contains tool results, then we have to just
+                    // abandon them.
+                    match &mut self.next_message {
+                        Some(UserInputMessage {
+                            ref mut content,
+                            user_input_message_context: Some(ctx),
+                            ..
+                        }) if ctx.tool_results.as_ref().is_some_and(|r| !r.is_empty()) => {
+                            *content = "The conversation history has overflowed, clearing state".to_string();
+                            ctx.tool_results.take();
+                        },
+                        _ => {},
+                    }
                 },
             }
         }
@@ -351,8 +318,6 @@ impl ConversationState {
             },
             _ => {},
         }
-
-        false
     }
 
     pub fn add_tool_results(&mut self, tool_results: Vec<ToolResult>) {
@@ -411,13 +376,9 @@ impl ConversationState {
     /// Returns a [FigConversationState] capable of being sent by
     /// [fig_api_client::StreamingClient] while preparing the current conversation state to be sent
     /// in the next message.
-    pub async fn as_sendable_conversation_state(&mut self) -> Result<FigConversationState, HistoryOverflowError> {
+    pub async fn as_sendable_conversation_state(&mut self) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
-
-        // Check if history overflow handling is needed
-        if self.fix_history() {
-            return Err(HistoryOverflowError);
-        }
+        self.fix_history();
 
         // The current state we want to send
         let mut curr_state = self.clone();
@@ -438,11 +399,11 @@ impl ConversationState {
         }
         self.history.push_back(ChatMessage::UserInputMessage(last_message));
 
-        Ok(FigConversationState {
+        FigConversationState {
             conversation_id: Some(curr_state.conversation_id),
             user_input_message: curr_state.next_message.expect("no user input message available"),
             history: Some(curr_state.history.into()),
-        })
+        }
     }
 
     pub fn current_profile(&self) -> Option<&str> {
@@ -556,7 +517,11 @@ fn build_shell_state() -> ShellState {
 
 #[cfg(test)]
 mod tests {
-    use fig_api_client::model::{AssistantResponseMessage, ToolResultStatus, ToolUse};
+    use fig_api_client::model::{
+        AssistantResponseMessage,
+        ToolResultStatus,
+        ToolUse,
+    };
 
     use super::*;
     use crate::cli::chat::context::AMAZONQ_FILENAME;
@@ -578,8 +543,7 @@ mod tests {
         println!("{env_state:?}");
     }
 
-    fn assert_conversation_state_invariants(state: Result<FigConversationState, HistoryOverflowError>, i: usize) {
-        let state = state.expect("Should be able to get conversation state");
+    fn assert_conversation_state_invariants(state: FigConversationState, i: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
             assert!(
                 matches!(msg, ChatMessage::UserInputMessage(_)),
@@ -649,9 +613,7 @@ mod tests {
         let mut conversation_state =
             ConversationState::new(Context::new_fake(), tool_manager.load_tools().await.unwrap(), None).await;
         conversation_state.append_new_user_message("start".to_string()).await;
-
-        // Limit the number of iterations to avoid overflow errors in tests
-        for i in 0..10 {
+        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
             assert_conversation_state_invariants(s, i);
             conversation_state.push_assistant_message(AssistantResponseMessage {
@@ -674,9 +636,7 @@ mod tests {
         let mut conversation_state =
             ConversationState::new(Context::new_fake(), tool_manager.load_tools().await.unwrap(), None).await;
         conversation_state.append_new_user_message("start".to_string()).await;
-
-        // Limit the number of iterations to avoid overflow errors in tests
-        for i in 0..10 {
+        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
             assert_conversation_state_invariants(s, i);
             if i % 3 == 0 {
@@ -720,7 +680,7 @@ mod tests {
             let s = conversation_state.as_sendable_conversation_state().await;
 
             // Ensure that the first two messages are the fake context messages.
-            let hist = s.as_ref().ok().unwrap().history.as_ref().unwrap();
+            let hist = s.history.as_ref().unwrap();
             let user = &hist[0];
             let assistant = &hist[1];
             match (user, assistant) {
