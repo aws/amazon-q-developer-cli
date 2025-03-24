@@ -61,6 +61,7 @@ indicatif.workspace = true
 indoc.workspace = true
 mcp_client.workspace = true
 mimalloc.workspace = true
+open = "3.0"
 owo-colors = "4.2.0"
 parking_lot.workspace = true
 rand.workspace = true
@@ -85,6 +86,7 @@ tracing.workspace = true
 unicode-width.workspace = true
 url.workspace = true
 uuid.workspace = true
+chrono = { version = "0.4", features = ["serde"] }
 walkdir.workspace = true
 which.workspace = true
 whoami.workspace = true
