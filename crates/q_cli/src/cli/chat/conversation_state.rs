@@ -1,20 +1,45 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{
+    HashMap,
+    VecDeque,
+};
 use std::env;
 use std::sync::Arc;
 
 use fig_api_client::model::{
-    AssistantResponseMessage, ChatMessage, ConversationState as FigConversationState, EnvState, ShellState, Tool,
-    ToolInputSchema, ToolResult, ToolResultContentBlock, ToolSpecification, UserInputMessage, UserInputMessageContext,
+    AssistantResponseMessage,
+    ChatMessage,
+    ConversationState as FigConversationState,
+    EnvState,
+    ShellState,
+    Tool,
+    ToolInputSchema,
+    ToolResult,
+    ToolResultContentBlock,
+    ToolSpecification,
+    UserInputMessage,
+    UserInputMessageContext,
 };
 use fig_os_shim::Context;
 use fig_util::Shell;
-use rand::distr::{Alphanumeric, SampleString};
-use tracing::{debug, error, info, warn};
+use rand::distr::{
+    Alphanumeric,
+    SampleString,
+};
+use tracing::{
+    debug,
+    error,
+    info,
+    warn,
+};
 
 use super::context::ContextManager;
 use super::tools::ToolSpec;
 use super::truncate_safe;
-use crate::cli::chat::tools::{InputSchema, InvokeOutput, serde_value_to_document};
+use crate::cli::chat::tools::{
+    InputSchema,
+    InvokeOutput,
+    serde_value_to_document,
+};
 
 // Max constants for length of strings and lists, use these to truncate elements
 // to ensure the API request is valid

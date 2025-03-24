@@ -9,7 +9,11 @@ mod tool_manager;
 mod tools;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io::{IsTerminal, Read, Write};
+use std::io::{
+    IsTerminal,
+    Read,
+    Write,
+};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,26 +21,62 @@ use std::time::Duration;
 use command::Command;
 use context::ContextManager;
 use conversation_state::{ConversationState, HistoryOverflowError};
-use crossterm::style::{Attribute, Color, Stylize};
-use crossterm::{cursor, execute, queue, style, terminal};
-use eyre::{Result, bail};
+use crossterm::style::{
+    Attribute,
+    Color,
+    Stylize,
+};
+use crossterm::{
+    cursor,
+    execute,
+    queue,
+    style,
+    terminal,
+};
+use eyre::{
+    Result,
+    bail,
+};
 use fig_api_client::StreamingClient;
 use fig_api_client::clients::SendMessageOutput;
 use fig_api_client::model::{
-    AssistantResponseMessage, ChatResponseStream, ToolResult, ToolResultContentBlock, ToolResultStatus,
+    AssistantResponseMessage,
+    ChatResponseStream,
+    ToolResult,
+    ToolResultContentBlock,
+    ToolResultStatus,
 };
 use fig_os_shim::Context;
 use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
 use input_source::InputSource;
-use parser::{RecvError, RecvErrorKind, ResponseParser, ToolUse};
+use parser::{
+    RecvError,
+    RecvErrorKind,
+    ResponseParser,
+    ToolUse,
+};
 use serde_json::Map;
-use spinners::{Spinner, Spinners};
+use spinners::{
+    Spinner,
+    Spinners,
+};
 use thiserror::Error;
-use tokio::signal::unix::{SignalKind, signal};
-use tool_manager::{McpServerConfig, ToolManager};
+use tokio::signal::unix::{
+    SignalKind,
+    signal,
+};
+use tool_manager::{
+    McpServerConfig,
+    ToolManager,
+};
 use tools::Tool;
-use tracing::{debug, error, trace, warn};
+use tracing::{
+    debug,
+    error,
+    trace,
+    warn,
+};
 use winnow::Partial;
 use winnow::stream::Offset;
 
