@@ -28,7 +28,6 @@ use fig_api_client::model::{
 use fig_os_shim::Context;
 use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
-// use history_overflow_handler::HistoryOverflowHandler;
 use input_source::InputSource;
 use parser::{RecvError, RecvErrorKind, ResponseParser, ToolUse};
 use serde_json::Map;
