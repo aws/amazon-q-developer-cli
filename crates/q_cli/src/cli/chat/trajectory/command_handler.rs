@@ -47,13 +47,13 @@ impl<'a, W: Write> TrajectoryCommandHandler<'a, W> {
 
         // Only force enable for commands that require it to be enabled
         // Don't force enable for status, help, enable, or disable commands
-        let requires_enabled = match &subcommand {
+        let requires_enabled = !matches!(
+            &subcommand,
             TrajectorySubcommand::Status
-            | TrajectorySubcommand::Help
-            | TrajectorySubcommand::Enable
-            | TrajectorySubcommand::Disable => false,
-            _ => true,
-        };
+                | TrajectorySubcommand::Help
+                | TrajectorySubcommand::Enable
+                | TrajectorySubcommand::Disable
+        );
 
         if !is_enabled && requires_enabled {
             // Force enable the recorder if we got here
@@ -173,36 +173,41 @@ impl<'a, W: Write> TrajectoryCommandHandler<'a, W> {
                     style::SetForegroundColor(Color::Reset),
                 )?;
 
-                match self.recorder.lock().unwrap().restore_from_checkpoint(&id) {
-                    Ok(state) => {
-                        // Convert the serializable state back to a conversation state
-                        match crate::cli::chat::trajectory::convert_to_conversation_state(&state, Arc::clone(&self.ctx))
-                            .await
-                        {
-                            Ok(conversation_state) => {
-                                *self.conversation_state = conversation_state;
-                                execute!(
-                                    self.output,
-                                    style::SetForegroundColor(Color::Green),
-                                    style::Print("Checkpoint restored successfully.\n"),
-                                    style::SetForegroundColor(Color::Reset),
-                                )?;
-                            },
-                            Err(e) => {
-                                execute!(
-                                    self.output,
-                                    style::SetForegroundColor(Color::Red),
-                                    style::Print(format!("Failed to convert checkpoint state: {}\n", e)),
-                                    style::SetForegroundColor(Color::Reset),
-                                )?;
-                            },
-                        }
-                    },
+                // Get the checkpoint state before the await point
+                let checkpoint_state = match self.recorder.lock().unwrap().restore_from_checkpoint(&id) {
+                    Ok(state) => state,
                     Err(e) => {
                         execute!(
                             self.output,
                             style::SetForegroundColor(Color::Red),
                             style::Print(format!("Failed to restore checkpoint: {}\n", e)),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                        return Ok(());
+                    },
+                };
+
+                // Convert the serializable state back to a conversation state
+                match crate::cli::chat::trajectory::convert_to_conversation_state(
+                    &checkpoint_state,
+                    Arc::clone(&self.ctx),
+                )
+                .await
+                {
+                    Ok(conversation_state) => {
+                        *self.conversation_state = conversation_state;
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("Checkpoint restored successfully.\n"),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                    },
+                    Err(e) => {
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!("Failed to convert checkpoint state: {}\n", e)),
                             style::SetForegroundColor(Color::Reset),
                         )?;
                     },

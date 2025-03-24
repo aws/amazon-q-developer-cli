@@ -360,7 +360,7 @@ fn generate_html_visualization(repo: &Repository) -> Result<String, String> {
                         format!("{}: {}", tool_name, cmd_preview)
                     }
                 } else {
-                    format!("{}", tool_name)
+                    tool_name.to_string()
                 };
 
                 description

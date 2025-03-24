@@ -249,7 +249,8 @@ impl TrajectoryRecorder {
         let preserve_full_context = self.should_preserve_full_context(true);
 
         // Create serializable conversation state
-        let serializable_state = self.serialize_conversation_state(conversation_state, preserve_full_context)?;
+        let serializable_state =
+            TrajectoryRecorder::serialize_conversation_state(conversation_state, preserve_full_context)?;
 
         if let Some(repo) = &mut self.repository {
             let step = repo
@@ -328,7 +329,6 @@ impl TrajectoryRecorder {
 
     /// Serializes a conversation state to a serializable format
     fn serialize_conversation_state(
-        &self,
         conversation_state: &ConversationState,
         preserve_full_context: bool,
     ) -> Result<SerializableConversationState, String> {
@@ -405,7 +405,7 @@ impl TrajectoryRecorder {
             // Collect context file contents
             let mut context_files_content = HashMap::new();
             if let Some(_context_manager) = &conversation_state.context_manager {
-                for (path, _) in &context_files {
+                for path in context_files.keys() {
                     if let Ok(content) = std::fs::read_to_string(path) {
                         context_files_content.insert(path.clone(), content);
                     }
@@ -429,7 +429,7 @@ impl TrajectoryRecorder {
             history,
             next_message: conversation_state
                 .next_message()
-                .map(|msg| SerializableUserInputMessage::from(msg)),
+                .map(SerializableUserInputMessage::from),
             tools,
             context_files,
             env_state: Some(HashMap::new()),   // Simplified

@@ -212,9 +212,7 @@ pub async fn chat(
 
     let trajectory_config = TrajectoryConfig {
         enabled: trajectory,
-        output_dir: trajectory_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("q-agent-trajectory")),
+        output_dir: trajectory_dir.map_or_else(|| PathBuf::from("q-agent-trajectory"), PathBuf::from),
         auto_visualize,
         preserve_full_context: false,
         full_context_strategy: trajectory::FullContextStrategy::default(),
