@@ -341,7 +341,10 @@ fn login_prompt_code(shell: Shell) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::process::{Command, Stdio};
+    use std::process::{
+        Command,
+        Stdio,
+    };
     use super::*;
 
     fn run_shell_stdout(shell: &Shell, text: &str) -> String {
