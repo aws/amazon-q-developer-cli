@@ -50,7 +50,7 @@ use fig_api_client::model::{
 use fig_os_shim::Context;
 use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
-use history_overflow_handler::HistoryOverflowHandler;
+// use history_overflow_handler::HistoryOverflowHandler;
 use input_source::InputSource;
 use parser::{
     RecvError,
@@ -234,6 +234,8 @@ pub enum ChatError {
     Custom(Cow<'static, str>),
     #[error("interrupted")]
     Interrupted { tool_uses: Option<Vec<QueuedTool>> },
+    #[error("history overflow")]
+    HistoryOverflow(#[from] HistoryOverflowError),
 }
 
 pub struct ChatContext<W: Write> {
@@ -612,28 +614,11 @@ where
 
                 self.send_tool_use_telemetry().await;
 
-                match self.conversation_state.as_sendable_conversation_state().await {
-                    Ok(state) => {
-                        ChatState::HandleResponseStream(
-                            self.client
-                                .send_message(state)
-                                .await?,
-                        )
-                    },
-                    Err(HistoryOverflowError) => {
-                        // Handle history overflow
-                        let mut handler = HistoryOverflowHandler::new(
-                            &self.ctx,
-                            &mut self.output,
-                            &mut self.input_source,
-                            self.interactive,
-                            &mut self.spinner,
-                            &self.client
-                        );
-                        
-                        handler.handle_history_overflow(&mut self.conversation_state).await?
-                    }
-                }
+                ChatState::HandleResponseStream(
+                    self.client
+                        .send_message(self.conversation_state.as_sendable_conversation_state().await?)
+                        .await?,
+                )
             },
             Command::Execute { command } => {
                 queue!(self.output, style::Print('\n'))?;
@@ -1074,7 +1059,7 @@ where
         self.send_tool_use_telemetry().await;
         return Ok(ChatState::HandleResponseStream(
             self.client
-                .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                .send_message(self.conversation_state.as_sendable_conversation_state().await?)
                 .await?,
         ));
     }
@@ -1151,7 +1136,7 @@ where
                     self.send_tool_use_telemetry().await;
                     return Ok(ChatState::HandleResponseStream(
                         self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                            .send_message(self.conversation_state.as_sendable_conversation_state().await?)
                             .await?,
                     ));
                 },
@@ -1188,7 +1173,7 @@ where
                     self.send_tool_use_telemetry().await;
                     return Ok(ChatState::HandleResponseStream(
                         self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                            .send_message(self.conversation_state.as_sendable_conversation_state().await?)
                             .await?,
                     ));
                 },
@@ -1361,7 +1346,7 @@ where
 
             let response = self
                 .client
-                .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                .send_message(self.conversation_state.as_sendable_conversation_state().await?)
                 .await?;
             return Ok(ChatState::HandleResponseStream(response));
         }
