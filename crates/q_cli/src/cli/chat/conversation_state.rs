@@ -92,11 +92,6 @@ impl ConversationState {
         self.history.clear();
     }
 
-    /// Returns a copy of the current conversation history
-    pub fn extract_history(&self) -> Vec<ChatMessage> {
-        self.history.clone().into()
-    }
-
     /// Forces the history to be valid without clearing it
     /// This is used when the user chooses to continue with a large history
     pub fn force_valid_history(&mut self) {
@@ -654,7 +649,7 @@ mod tests {
         let mut conversation_state =
             ConversationState::new(Context::new_fake(), tool_manager.load_tools().await.unwrap(), None).await;
         conversation_state.append_new_user_message("start".to_string()).await;
-        
+
         // Limit the number of iterations to avoid overflow errors in tests
         for i in 0..10 {
             let s = conversation_state.as_sendable_conversation_state().await;
@@ -679,7 +674,7 @@ mod tests {
         let mut conversation_state =
             ConversationState::new(Context::new_fake(), tool_manager.load_tools().await.unwrap(), None).await;
         conversation_state.append_new_user_message("start".to_string()).await;
-        
+
         // Limit the number of iterations to avoid overflow errors in tests
         for i in 0..10 {
             let s = conversation_state.as_sendable_conversation_state().await;
