@@ -1,14 +1,20 @@
 #[cfg(not(windows))]
 use std::io::Write;
 #[cfg(not(windows))]
-use std::process::{Command, Stdio};
+use std::process::{
+    Command,
+    Stdio,
+};
 
 use anstream::println;
 #[cfg(not(windows))]
 use assert_cmd::prelude::*;
 use eyre::Context;
 use fig_util::consts::CLI_CRATE_NAME;
-use fig_util::consts::build::{SKIP_FISH_TESTS, SKIP_SHELLCHECK_TESTS};
+use fig_util::consts::build::{
+    SKIP_FISH_TESTS,
+    SKIP_SHELLCHECK_TESTS,
+};
 use paste::paste;
 
 macro_rules! init_test {

@@ -1,6 +1,9 @@
 use std::borrow::Cow;
 use std::fmt::Display;
-use std::io::{Write, stdout};
+use std::io::{
+    Write,
+    stdout,
+};
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::LazyLock;
@@ -9,10 +12,19 @@ use std::time::SystemTime;
 use clap::Args;
 use crossterm::style::Stylize;
 use eyre::Result;
-use fig_integrations::shell::{ShellExt, When};
+use fig_integrations::shell::{
+    ShellExt,
+    When,
+};
 use fig_os_shim::Context;
 use fig_util::env_var::Q_SHELL;
-use fig_util::{CLI_BINARY_NAME, PRODUCT_NAME, Shell, Terminal, get_parent_process_exe};
+use fig_util::{
+    CLI_BINARY_NAME,
+    PRODUCT_NAME,
+    Shell,
+    Terminal,
+    get_parent_process_exe,
+};
 use indoc::formatdoc;
 
 use super::internal::should_figterm_launch::should_figterm_launch_exit_status;
@@ -345,6 +357,7 @@ mod tests {
         Command,
         Stdio,
     };
+
     use super::*;
 
     fn run_shell_stdout(shell: &Shell, text: &str) -> String {
