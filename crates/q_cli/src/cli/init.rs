@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::io::{Write, stdout};
 use std::path::Path;
-use std::process::{Command, Stdio, ExitCode};
+use std::process::ExitCode;
 use std::sync::LazyLock;
 use std::time::SystemTime;
 
@@ -341,6 +341,7 @@ fn login_prompt_code(shell: Shell) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::process::{Command, Stdio};
     use super::*;
 
     fn run_shell_stdout(shell: &Shell, text: &str) -> String {
