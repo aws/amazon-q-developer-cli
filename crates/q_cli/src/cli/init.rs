@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::io::{Write, stdout};
 use std::path::Path;
-use std::process::ExitCode;
+use std::process::{Command, Stdio, ExitCode};
 use std::sync::LazyLock;
 use std::time::SystemTime;
 
@@ -341,14 +341,23 @@ fn login_prompt_code(shell: Shell) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-
     use super::*;
 
     fn run_shell_stdout(shell: &Shell, text: &str) -> String {
-        // Skip actual execution in tests to avoid dependency on shell binaries
-        // This is a simplified version that just returns the text for testing
-        format!("Mock output for {}: {}", shell.as_str(), text)
+        let mut child = Command::new(shell.as_str())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let stdin = child.stdin.as_mut().unwrap();
+        // Since these are all guarded we run the code twice to double check
+        stdin.write_all(text.as_bytes()).unwrap();
+        stdin.write_all(text.as_bytes()).unwrap();
+        stdin.flush().unwrap();
+
+        let output = child.wait_with_output().unwrap();
+        String::from_utf8(output.stdout).unwrap()
     }
 
     #[test]
