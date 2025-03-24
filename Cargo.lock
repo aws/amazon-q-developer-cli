@@ -2849,7 +2849,7 @@ dependencies = [
  "clap",
  "core-foundation 0.10.0",
  "dbus",
- "dirs 5.0.1",
+ "dirs 6.0.0",
  "dispatch",
  "fig_os_shim",
  "fig_settings",
@@ -2913,7 +2913,7 @@ name = "fig_os_shim"
 version = "1.7.2"
 dependencies = [
  "cfg-if",
- "dirs 5.0.1",
+ "dirs 6.0.0",
  "nix 0.29.0",
  "serde",
  "sysinfo 0.32.1",
@@ -3100,7 +3100,7 @@ dependencies = [
  "cfg-if",
  "clap",
  "core-foundation 0.10.0",
- "dirs 5.0.1",
+ "dirs 6.0.0",
  "fig_os_shim",
  "fig_test",
  "hex",
@@ -4976,7 +4976,7 @@ dependencies = [
 
 [[package]]
 name = "mcp_client"
-version = "1.7.1"
+version = "1.7.2"
 dependencies = [
  "async-trait",
  "nix 0.29.0",
