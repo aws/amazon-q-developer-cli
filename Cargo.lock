@@ -2681,7 +2681,7 @@ dependencies = [
  "objc",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
- "objc2-foundation 0.2.2",
+ "objc2-foundation 0.3.0",
  "parking_lot",
  "paste",
  "percent-encoding",
@@ -2791,7 +2791,7 @@ dependencies = [
  "macos-utils",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
- "objc2-foundation 0.2.2",
+ "objc2-foundation 0.3.0",
  "objc2-input-method-kit",
  "plist",
  "serde",
@@ -3111,7 +3111,7 @@ dependencies = [
  "nix 0.29.0",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
- "objc2-foundation 0.2.2",
+ "objc2-foundation 0.3.0",
  "paste",
  "rand 0.9.0",
  "regex",
@@ -4915,7 +4915,7 @@ dependencies = [
  "objc",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
- "objc2-foundation 0.2.2",
+ "objc2-foundation 0.3.0",
  "tokio",
  "tracing",
 ]
@@ -4976,7 +4976,7 @@ dependencies = [
 
 [[package]]
 name = "mcp_client"
-version = "1.7.1"
+version = "1.7.2"
 dependencies = [
  "async-trait",
  "nix 0.29.0",
@@ -5791,6 +5791,7 @@ checksum = "3a21c6c9014b82c39515db5b396f91645182611c97d24637cf56ac01e5f8d998"
 dependencies = [
  "bitflags 2.9.0",
  "block2 0.6.0",
+ "libc",
  "objc2 0.6.0",
  "objc2-core-foundation",
 ]
@@ -6743,7 +6744,7 @@ dependencies = [
  "nix 0.29.0",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
- "objc2-foundation 0.2.2",
+ "objc2-foundation 0.3.0",
  "owo-colors 4.2.0",
  "parking_lot",
  "paste",
