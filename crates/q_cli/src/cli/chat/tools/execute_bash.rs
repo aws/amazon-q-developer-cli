@@ -24,7 +24,7 @@ use super::{
 };
 use crate::cli::chat::truncate_safe;
 
-const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail"];
+const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecuteBash {
