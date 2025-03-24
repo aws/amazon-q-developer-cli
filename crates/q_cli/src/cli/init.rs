@@ -352,7 +352,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires shell binaries to be available"]
     fn test_prompts() {
         for shell in Shell::all_test() {
             let shell_integrations_disabled_output = run_shell_stdout(&shell, &shell_integrations_disabled_code(shell));
