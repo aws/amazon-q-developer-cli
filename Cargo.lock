@@ -2679,7 +2679,7 @@ dependencies = [
  "nix 0.29.0",
  "notify",
  "objc",
- "objc2 0.5.2",
+ "objc2 0.6.0",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
  "parking_lot",
@@ -2789,7 +2789,7 @@ dependencies = [
  "fig_proto",
  "fig_util",
  "macos-utils",
- "objc2 0.5.2",
+ "objc2 0.6.0",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
  "objc2-input-method-kit",
@@ -3109,7 +3109,7 @@ dependencies = [
  "libc",
  "macos-utils",
  "nix 0.29.0",
- "objc2 0.5.2",
+ "objc2 0.6.0",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
  "paste",
@@ -4913,7 +4913,7 @@ dependencies = [
  "libc",
  "nix 0.29.0",
  "objc",
- "objc2 0.5.2",
+ "objc2 0.6.0",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
  "tokio",
@@ -4976,7 +4976,7 @@ dependencies = [
 
 [[package]]
 name = "mcp_client"
-version = "1.7.1"
+version = "1.7.2"
 dependencies = [
  "async-trait",
  "nix 0.29.0",
@@ -6741,7 +6741,7 @@ dependencies = [
  "mcp_client",
  "mimalloc",
  "nix 0.29.0",
- "objc2 0.5.2",
+ "objc2 0.6.0",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
  "owo-colors 4.2.0",
