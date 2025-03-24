@@ -53,7 +53,7 @@ their IPC:
 
 ### 1. Clone repo
 
-```bash
+```shell
 git clone https://github.com/aws/amazon-q-for-command-line.git
 ```
 
@@ -63,21 +63,21 @@ This is all the dep
 
 For Debian/Ubuntu:
 
-```bash
+```shell
 sudo apt update
 sudo apt install build-essential pkg-config jq dpkg curl wget cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler
 ```
 
 For Arch:
 
-```bash
+```shell
 sudo pacman -Syu
 sudo pacman -S --needed webkit2gtk base-devel curl wget openssl appmenu-gtk-module gtk3 libappindicator-gtk3 librsvg libvips cmake jq pkgconf
 ```
 
 For Fedora:
 
-```bash
+```shell
 sudo dnf check-update
 sudo dnf install webkit2gtk3-devel.x86_64 openssl-devel curl wget libappindicator-gtk3 librsvg2-devel jq
 sudo dnf group install "C Development Tools and Libraries"
@@ -95,30 +95,38 @@ brew install mise pnpm protobuf zsh bash fish shellcheck jq
 ```shell
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup default stable
-# for pre-commit hooks the two following commands are required
+```
+
+For pre-commit hooks, the following commands are required:
+
+```shell
 rustup toolchain install nightly
 cargo install typos-cli
 ```
 
 For MacOS development make sure the right targets are installed:
 
-```bash
+```shell
 rustup target add x86_64-apple-darwin
 rustup target add aarch64-apple-darwin
 ```
 
 ### 3. Setup Python and Node using [`mise`](https://mise.jdx.dev)
 
-Add mise integrations to your shell shell
+Add mise integrations to your shell:
 
+For zsh:
 ```shell
-# zsh
 echo 'eval "$(mise activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
+```
 
-# bash
+For bash:
+```shell
 echo 'eval "$(mise activate bash)"' >> ~/.bashrc
+```
 
-# fish
+For fish:
+```shell
 echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
@@ -131,9 +139,10 @@ mise install
 
 ### 4. Setup precommit hooks
 
+Run `pnpm` in root directory to add pre-commit hooks:
+
 ```shell
-# Run `pnpm` in root directory to add pre-commit hooks
-pnpm install --ignore-scripts && pnpm husky install
+pnpm install --ignore-scripts
 ```
 
 ## Security
