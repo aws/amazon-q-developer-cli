@@ -9,81 +9,38 @@ mod tool_manager;
 mod tools;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io::{
-    IsTerminal,
-    Read,
-    Write,
-};
+use std::io::{IsTerminal, Read, Write};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
 use command::Command;
 use context::ContextManager;
-use conversation_state::ConversationState;
-use crossterm::style::{
-    Attribute,
-    Color,
-    Stylize,
-};
-use crossterm::{
-    cursor,
-    execute,
-    queue,
-    style,
-    terminal,
-};
-use eyre::{
-    Result,
-    bail,
-};
+use conversation_state::{ConversationState, HistoryOverflowError};
+use crossterm::style::{Attribute, Color, Stylize};
+use crossterm::{cursor, execute, queue, style, terminal};
+use eyre::{Result, bail};
 use fig_api_client::StreamingClient;
 use fig_api_client::clients::SendMessageOutput;
 use fig_api_client::model::{
-    AssistantResponseMessage,
-    ChatResponseStream,
-    ToolResult,
-    ToolResultContentBlock,
-    ToolResultStatus,
+    AssistantResponseMessage, ChatResponseStream, ToolResult, ToolResultContentBlock, ToolResultStatus,
 };
 use fig_os_shim::Context;
 use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
 use input_source::InputSource;
-use parser::{
-    RecvError,
-    RecvErrorKind,
-    ResponseParser,
-    ToolUse,
-};
+use parser::{RecvError, RecvErrorKind, ResponseParser, ToolUse};
 use serde_json::Map;
-use spinners::{
-    Spinner,
-    Spinners,
-};
+use spinners::{Spinner, Spinners};
 use thiserror::Error;
-use tokio::signal::unix::{
-    SignalKind,
-    signal,
-};
-use tool_manager::{
-    McpServerConfig,
-    ToolManager,
-};
+use tokio::signal::unix::{SignalKind, signal};
+use tool_manager::{McpServerConfig, ToolManager};
 use tools::Tool;
-use tracing::{
-    debug,
-    error,
-    trace,
-    warn,
-};
+use tracing::{debug, error, trace, warn};
 use winnow::Partial;
 use winnow::stream::Offset;
 
-use crate::cli::chat::parse::{
-    ParseState,
-    interpret_markdown,
-};
+use crate::cli::chat::parse::{ParseState, interpret_markdown};
 use crate::util::region_check;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
@@ -232,6 +189,8 @@ pub enum ChatError {
     Custom(Cow<'static, str>),
     #[error("interrupted")]
     Interrupted { tool_uses: Option<Vec<QueuedTool>> },
+    #[error("history overflow")]
+    HistoryOverflow(#[from] HistoryOverflowError),
 }
 
 pub struct ChatContext<W: Write> {
@@ -492,7 +451,9 @@ where
                             )?;
                         },
                     }
-                    self.conversation_state.fix_history();
+                    // Don't call fix_history directly as it might trigger overflow handling
+                    // Instead, force the history to be valid without clearing
+                    self.conversation_state.force_valid_history();
                     next_state = Some(ChatState::PromptUser {
                         tool_uses: None,
                         skip_printing_tools: false,
@@ -610,7 +571,7 @@ where
 
                 ChatState::HandleResponseStream(
                     self.client
-                        .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                        .send_message(self.conversation_state.as_sendable_conversation_state().await?)
                         .await?,
                 )
             },
@@ -651,11 +612,14 @@ where
                 execute!(
                     self.output,
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format!("\n{}\n\n", match self.accept_all {
-                        true =>
-                            "Disabled acceptance prompting.\nAgents can sometimes do unexpected things so understand the risks.",
-                        false => "Enabled acceptance prompting. Run again to disable.",
-                    })),
+                    style::Print(format!(
+                        "\n{}\n\n",
+                        match self.accept_all {
+                            true =>
+                                "Disabled acceptance prompting.\nAgents can sometimes do unexpected things so understand the risks.",
+                            false => "Enabled acceptance prompting. Run again to disable.",
+                        }
+                    )),
                     style::SetForegroundColor(Color::Reset)
                 )?;
 
@@ -1053,7 +1017,7 @@ where
         self.send_tool_use_telemetry().await;
         return Ok(ChatState::HandleResponseStream(
             self.client
-                .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                .send_message(self.conversation_state.as_sendable_conversation_state().await?)
                 .await?,
         ));
     }
@@ -1130,7 +1094,7 @@ where
                     self.send_tool_use_telemetry().await;
                     return Ok(ChatState::HandleResponseStream(
                         self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                            .send_message(self.conversation_state.as_sendable_conversation_state().await?)
                             .await?,
                     ));
                 },
@@ -1167,7 +1131,7 @@ where
                     self.send_tool_use_telemetry().await;
                     return Ok(ChatState::HandleResponseStream(
                         self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                            .send_message(self.conversation_state.as_sendable_conversation_state().await?)
                             .await?,
                     ));
                 },
@@ -1340,7 +1304,7 @@ where
 
             let response = self
                 .client
-                .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                .send_message(self.conversation_state.as_sendable_conversation_state().await?)
                 .await?;
             return Ok(ChatState::HandleResponseStream(response));
         }
