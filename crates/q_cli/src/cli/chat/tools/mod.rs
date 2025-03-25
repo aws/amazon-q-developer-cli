@@ -1,4 +1,3 @@
-pub mod custom_tool;
 pub mod execute_bash;
 pub mod fs_read;
 pub mod fs_write;
@@ -14,7 +13,6 @@ use aws_smithy_types::{
     Document,
     Number as SmithyNumber,
 };
-use custom_tool::CustomTool;
 use execute_bash::ExecuteBash;
 use eyre::Result;
 use fig_api_client::model::{
@@ -39,20 +37,17 @@ pub enum Tool {
     FsWrite(FsWrite),
     ExecuteBash(ExecuteBash),
     UseAws(UseAws),
-    Custom(CustomTool),
 }
 
 impl Tool {
     /// The display name of a tool
-    pub fn display_name(&self) -> String {
+    pub fn display_name(&self) -> &'static str {
         match self {
             Tool::FsRead(_) => "Read from filesystem",
             Tool::FsWrite(_) => "Write to filesystem",
             Tool::ExecuteBash(_) => "Execute shell command",
             Tool::UseAws(_) => "Use AWS CLI",
-            Tool::Custom(custom_tool) => &custom_tool.name,
         }
-        .to_owned()
     }
 
     // TODO: Remove, just roll with it for now ya?
@@ -62,7 +57,6 @@ impl Tool {
             Tool::FsWrite(_) => "Writing to filesystem",
             Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
             Tool::UseAws(_) => "Using AWS CLI",
-            Tool::Custom(custom_tool) => &custom_tool.name,
         }
         .to_owned()
     }
@@ -74,7 +68,6 @@ impl Tool {
             Tool::FsWrite(_) => true,
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
-            Tool::Custom(_) => false,
         }
     }
 
@@ -85,7 +78,6 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.invoke(context, updates).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
-            Tool::Custom(custom_tool) => custom_tool.invoke(context, updates).await,
         }
     }
 
@@ -96,7 +88,6 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.queue_description(ctx, updates),
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
-            Tool::Custom(custom_tool) => custom_tool.queue_description(updates),
         }
     }
 
@@ -107,7 +98,6 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.validate(ctx).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
-            Tool::Custom(custom_tool) => custom_tool.validate(ctx).await,
         }
     }
 }
@@ -148,7 +138,6 @@ impl TryFrom<ToolUse> for Tool {
 pub struct ToolSpec {
     pub name: String,
     pub description: String,
-    #[serde(alias = "inputSchema")]
     pub input_schema: InputSchema,
 }
 
