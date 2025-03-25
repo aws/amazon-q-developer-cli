@@ -41,8 +41,6 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: cargo-clippy-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
-      - name: Force regenerate lockfile
-        run: rm -f Cargo.lock && cargo generate-lockfile
       - run: cargo clippy --locked --workspace --color always -- -D warnings
 
   cargo-test:
@@ -78,8 +76,6 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: cargo-test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
-      - name: Force regenerate lockfile
-        run: rm -f Cargo.lock && cargo generate-lockfile
       - name: Generate code coverage
         run: cargo +nightly llvm-cov --locked --workspace --codecov --output-path lcov.info
       - name: Upload coverage to Codecov
