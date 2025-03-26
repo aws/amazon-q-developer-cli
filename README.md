@@ -145,6 +145,33 @@ Run `pnpm` in root directory to add pre-commit hooks:
 pnpm install --ignore-scripts
 ```
 
+## 💡 Quick Tip for Onboarding
+
+Use Q CLI to help you onboard Q CLI! 
+
+Start a `q chat` session:
+
+```shell
+q chat
+```
+
+Once inside `q chat`, you can supply project context by adding the [`codebase-summary.md`](codebase-summary.md) file:
+
+```shell
+/context add codebase-summary.md
+```
+
+This enables Q to answer onboarding questions like:
+
+- “What does this crate do?”
+
+- “Where is X implemented?”
+
+- “How do these components interact?”
+
+Great for speeding up your ramp-up and navigating the repo more effectively.
+
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
