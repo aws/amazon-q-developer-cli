@@ -718,7 +718,11 @@ def build_linux_full(
     )
 
     info("Copying AppImage to build directory")
-    bundle_name = f"{tauri_product_name()}_{version()}_amd64"
+    # Determine architecture suffix based on the target triple
+    arch_suffix = "aarch64" if "aarch64" in target else "amd64"
+    info(f"Using architecture suffix: {arch_suffix} for target: {target}")
+    
+    bundle_name = f"{tauri_product_name()}_{version()}_{arch_suffix}"
     target_subdir = "release" if release else "debug"
     bundle_grandparent_path = f"target/{target}/{target_subdir}/bundle"
     appimage_path = BUILD_DIR / f"{LINUX_PACKAGE_NAME}.appimage"
