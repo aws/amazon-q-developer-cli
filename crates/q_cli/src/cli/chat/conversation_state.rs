@@ -31,7 +31,6 @@ use tracing::{
     info,
     warn,
 };
-use regex::Regex;
 
 use super::context::ContextManager;
 use super::tools::ToolSpec;
@@ -60,6 +59,10 @@ pub struct ConversationState {
     /// calling [Self::as_sendable_conversation_state].
     pub next_message: Option<UserInputMessage>,
     history: VecDeque<ChatMessage>,
+    /// Similar to history in that stores user and assistant responses, except that it is not used in message requests. 
+    /// Instead, the responses are expected to be in human-readable format, e.g user messages prefixed with '> '.
+    /// Should also be used to store errors posted in the chat.
+    pub transcript: Vec<String>,
     tools: Vec<Tool>,
     /// Context manager for handling sticky context files
     pub context_manager: Option<ContextManager>,
@@ -93,6 +96,7 @@ impl ConversationState {
             conversation_id,
             next_message: None,
             history: VecDeque::new(),
+            transcript: Vec::new(),
             tools: tool_config
                 .into_values()
                 .map(|v| {
@@ -152,6 +156,9 @@ impl ConversationState {
             None
         };
 
+        // Record message before adding context.
+        self.transcript.push(format!("> {}", input.replace("\n", "> \n")));
+        
         // Combine context files with user input if available
         let content = if let Some(context) = context_files {
             format!("{}\n{}", context, input)
@@ -174,6 +181,7 @@ impl ConversationState {
             }),
             user_intent: None,
         };
+
         self.next_message = Some(msg);
     }
 
@@ -184,6 +192,16 @@ impl ConversationState {
         if let Some(next_message) = self.next_message.as_ref() {
             warn!(?next_message, "next_message should not exist");
         }
+
+        let tool_uses = message.tool_uses.as_deref()
+            .map_or("none".to_string(), |tools| {
+                tools.iter()
+                    .map(|tool| tool.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            });
+
+        self.transcript.push(format!("{}\n[Tool uses: {tool_uses}]", message.content.clone()));
         self.history.push_back(ChatMessage::AssistantResponseMessage(message));
     }
 
@@ -319,65 +337,6 @@ impl ConversationState {
             },
             _ => {},
         }
-    }
-
-    // Human readable chat history. Returns the last n user responses, with all assistant messages in between.
-    // User response lines are prefixed with '>'
-    pub fn transcript(&self, limit: usize) -> Vec<String> {
-        // Context files are stored in the history so we have to remove it.
-        // Since this is a simple and uncommon operation, we will clean it instead
-        // of storing it permanently without the context files.
-        // TODO: If this marker changes then we will print these files for each user message.
-        let clean = |text: &str| -> String {
-            let context_re = Regex::new(r"--- CONTEXT FILES BEGIN ---[\s\S]*?--- CONTEXT FILES END ---\s*").unwrap();
-            context_re.replace_all(text, "").into_owned()
-        };
-
-        self.history
-            .iter()
-            .rev()
-            .scan(0, |user_count, message| {
-                let result = match message {
-                    ChatMessage::AssistantResponseMessage(msg) => {
-                        if *user_count >= limit {
-                            return None;
-                        }
-
-                        let tool_uses = msg.tool_uses.as_deref()
-                            .map_or("none".to_string(), |tools| {
-                                tools.iter()
-                                    .map(|tool| tool.name.clone())
-                                    .collect::<Vec<_>>()
-                                    .join(",")
-                            });
-                        
-                        if msg.content.chars().all(char::is_whitespace) {
-                            String::new()
-                        } else {
-                            format!("{}\n[Tool uses: {}]", msg.content, tool_uses)
-                        }
-                    }
-                    ChatMessage::UserInputMessage(msg) => {
-                        if *user_count >= limit {
-                            return None;
-                        }
-
-                        let cleaned = clean(&msg.content);
-                        if cleaned.chars().all(char::is_whitespace) {
-                            String::new()
-                        } else {
-                            *user_count += 1;
-                            format!("> {}", cleaned.replace('\n', "\n> "))
-                        }
-                    }
-                };
-                Some(result)
-            })
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect()
     }
 
     pub fn add_tool_results(&mut self, tool_results: Vec<ToolResult>) {

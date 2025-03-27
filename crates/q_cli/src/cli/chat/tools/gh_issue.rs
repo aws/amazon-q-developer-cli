@@ -64,7 +64,26 @@ impl GhIssue {
 
     fn get_transcript(context: &GhIssueContext<'_>) -> String {
         let mut transcript_str = String::from("```\n[chat-transcript]\n");
-        let transcript = context.conversation_state.transcript(MAX_TRANSCRIPT_LEN);
+        let transcript: Vec<String> = context.conversation_state.transcript
+            .iter()
+            .rev() // To take last N items
+            .scan(0, |user_msg_count, line| {
+                if *user_msg_count >= MAX_TRANSCRIPT_LEN {
+                    return None;
+                }
+                if line.starts_with('>') {
+                    *user_msg_count += 1;
+                }
+
+                // backticks will mess up the markdown
+                let text = line.replace("```", r"\```");
+                Some(text)
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev() // Now return items to the proper order
+            .collect();
+
         if !transcript.is_empty() {
             transcript_str.push_str(&transcript.join("\n\n"));
         } else {

@@ -431,11 +431,8 @@ where
             match result {
                 Ok(state) => next_state = Some(state),
                 Err(e) => {
-                    fn print_error<W: Write>(
-                        output: &mut W,
-                        prepend_msg: &str,
-                        report: Option<eyre::Report>,
-                    ) -> Result<(), std::io::Error> {
+                    let mut print_error = |output: &mut W, prepend_msg: &str,report: Option<eyre::Report>,| -> Result<(), std::io::Error> {
+                        let transcript = &mut self.conversation_state.transcript;
                         queue!(
                             output,
                             style::SetAttribute(Attribute::Bold),
@@ -443,8 +440,15 @@ where
                         )?;
 
                         match report {
-                            Some(report) => queue!(output, style::Print(format!("{}: {:?}\n", prepend_msg, report)),)?,
-                            None => queue!(output, style::Print(prepend_msg), style::Print("\n"))?,
+                            Some(report) => {
+                                let text = format!("{}: {:?}\n", prepend_msg, report);
+                                transcript.push(text.clone());
+                                queue!(output, style::Print(text),)?
+                            },
+                            None => {
+                                transcript.push(prepend_msg.to_string());
+                                queue!(output, style::Print(prepend_msg), style::Print("\n"))?
+                            },
                         }
 
                         execute!(
@@ -452,7 +456,7 @@ where
                             style::SetAttribute(Attribute::Reset),
                             style::SetForegroundColor(Color::Reset),
                         )
-                    }
+                    };
 
                     error!(?e, "An error occurred processing the current state");
                     if self.interactive && self.spinner.is_some() {
