@@ -31,6 +31,7 @@ use tracing::{
     info,
     warn,
 };
+use regex::Regex;
 
 use super::context::ContextManager;
 use super::tools::ToolSpec;
@@ -318,6 +319,65 @@ impl ConversationState {
             },
             _ => {},
         }
+    }
+
+    // Human readable chat history. Returns the last n user responses, with all assistant messages in between.
+    // User response lines are prefixed with '>'
+    pub fn transcript(&self, limit: usize) -> Vec<String> {
+        // Context files are stored in the history so we have to remove it.
+        // Since this is a simple and uncommon operation, we will clean it instead
+        // of storing it permanently without the context files.
+        // TODO: If this marker changes then we will print these files for each user message.
+        let clean = |text: &str| -> String {
+            let context_re = Regex::new(r"--- CONTEXT FILES BEGIN ---[\s\S]*?--- CONTEXT FILES END ---\s*").unwrap();
+            context_re.replace_all(text, "").into_owned()
+        };
+
+        self.history
+            .iter()
+            .rev()
+            .scan(0, |user_count, message| {
+                let result = match message {
+                    ChatMessage::AssistantResponseMessage(msg) => {
+                        if *user_count >= limit {
+                            return None;
+                        }
+
+                        let tool_uses = msg.tool_uses.as_deref()
+                            .map_or("none".to_string(), |tools| {
+                                tools.iter()
+                                    .map(|tool| tool.name.clone())
+                                    .collect::<Vec<_>>()
+                                    .join(",")
+                            });
+                        
+                        if msg.content.chars().all(char::is_whitespace) {
+                            String::new()
+                        } else {
+                            format!("{}\n[Tool uses: {}]", msg.content, tool_uses)
+                        }
+                    }
+                    ChatMessage::UserInputMessage(msg) => {
+                        if *user_count >= limit {
+                            return None;
+                        }
+
+                        let cleaned = clean(&msg.content);
+                        if cleaned.chars().all(char::is_whitespace) {
+                            String::new()
+                        } else {
+                            *user_count += 1;
+                            format!("> {}", cleaned.replace('\n', "\n> "))
+                        }
+                    }
+                };
+                Some(result)
+            })
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
     }
 
     pub fn add_tool_results(&mut self, tool_results: Vec<ToolResult>) {

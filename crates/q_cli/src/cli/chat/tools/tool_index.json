@@ -146,5 +146,31 @@
         "label"
       ]
     }
+  },
+  "gh_issue": {
+    "name": "gh_issue",
+    "description": "Opens the browser to a pre-filled GitHub issue template to report chat issues, bugs, or feature requests. Pre-filled information includes the conversation transcript, chat context, and chat request IDs from the service.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the GitHub issue."
+        },
+        "expected_behavior": {
+          "type": "string",
+          "description": "Optional: The expected chat behavior or action that did not happen."
+        },
+        "actual_behavior": {
+          "type": "string",
+          "description": "Optional: The actual chat behavior that happpened and demonstrates the issue or lack of a feature."
+        },
+        "steps_to_reproduce": {
+          "type": "string",
+          "description": "Optional: Previous user chat requests or steps that were taken that may have resulted in the issue or error response."
+        }
+      },
+      "required": ["title"]
+    }
   }
 }

@@ -15,6 +15,64 @@ use fig_util::{
     PRODUCT_NAME,
 };
 
+const TEMPLATE_NAME: &str = "1_bug_report_template.yml";
+
+pub struct IssueCreator {
+    /// Issue title
+    pub title: Option<String>,
+    /// Issue description
+    pub expected_behavior: Option<String>,
+    /// Issue description
+    pub actual_behavior: Option<String>,
+    /// Issue description
+    pub steps_to_reproduce: Option<String>,
+    /// Issue description
+    pub additional_environment: Option<String>,
+}
+
+impl IssueCreator {
+    pub async fn create_url(&self) -> Result<url::Url> {
+        let diagnostics = Diagnostics::new().await;
+
+        let os = match &diagnostics.system_info.os {
+            Some(os) => os.to_string(),
+            None => "None".to_owned(),
+        };
+
+        let diagnostic_info = match diagnostics.user_readable() {
+            Ok(diagnostics) => diagnostics,
+            Err(err) => {
+                eprintln!("Error getting diagnostics: {err}");
+                "Error occurred while generating diagnostics".to_owned()
+            },
+        };
+
+        let environment =  match &self.additional_environment {
+            Some(ctx) => format!("{diagnostic_info}\n{ctx}"),
+            None => diagnostic_info
+        };
+
+        let mut params = Vec::new();
+        params.push(("template", TEMPLATE_NAME));
+        params.push(("os", &os));
+        params.push(("environment", &environment));
+
+        self.title.as_deref().map(|t| params.push(("title", t)));
+        self.expected_behavior.as_deref().map(|e| params.push(("expected", e)));
+        self.actual_behavior.as_deref().map(|a| params.push(("actual", a)));
+        self.steps_to_reproduce.as_deref().map(|s| params.push(("reproduce", s)));
+
+        let url = url::Url::parse_with_params(&format!("https://github.com/{GITHUB_REPO_NAME}/issues/new"), params.iter())?;
+
+        println!("Heading over to GitHub...");
+        if is_remote() || fig_util::open_url_async(url.as_str()).await.is_err() {
+            println!("Issue Url: {}", url.as_str().underlined());
+        }
+
+        Ok(url)
+    }
+}
+
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct IssueArgs {
     /// Force issue creation
@@ -46,32 +104,15 @@ impl IssueArgs {
             _ => joined_description,
         };
 
-        let diagnostics = Diagnostics::new().await;
-
-        let os = match &diagnostics.system_info.os {
-            Some(os) => os.to_string(),
-            None => "None".to_owned(),
-        };
-
-        let environment = match diagnostics.user_readable() {
-            Ok(diagnostics) => diagnostics,
-            Err(err) => {
-                eprintln!("Error getting diagnostics: {err}");
-                "Error occurred while generating diagnostics".to_owned()
-            },
-        };
-
-        let url = url::Url::parse_with_params(&format!("https://github.com/{GITHUB_REPO_NAME}/issues/new"), &[
-            ("template", "1_bug_report_template.yml"),
-            ("title", &issue_title),
-            ("os", &os),
-            ("environment", &environment),
-        ])?;
-
-        println!("Heading over to GitHub...");
-        if is_remote() || fig_util::open_url_async(url.as_str()).await.is_err() {
-            println!("Issue Url: {}", url.as_str().underlined());
+        let _ = IssueCreator {
+            title: Some(issue_title),
+            expected_behavior: None,
+            actual_behavior: None,
+            steps_to_reproduce: None,
+            additional_environment: None,
         }
+        .create_url()
+        .await;
 
         Ok(ExitCode::SUCCESS)
     }

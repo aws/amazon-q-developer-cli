@@ -2,6 +2,7 @@ pub mod execute_bash;
 pub mod fs_read;
 pub mod fs_write;
 pub mod use_aws;
+pub mod gh_issue;
 
 use std::io::Write;
 use std::path::{
@@ -25,6 +26,7 @@ use fs_read::FsRead;
 use fs_write::FsWrite;
 use serde::Deserialize;
 use use_aws::UseAws;
+use gh_issue::{GhIssue, GhIssueContext};
 
 use super::parser::ToolUse;
 
@@ -37,6 +39,7 @@ pub enum Tool {
     FsWrite(FsWrite),
     ExecuteBash(ExecuteBash),
     UseAws(UseAws),
+    GhIssue(GhIssue),
 }
 
 impl Tool {
@@ -47,6 +50,7 @@ impl Tool {
             Tool::FsWrite(_) => "Write to filesystem",
             Tool::ExecuteBash(_) => "Execute shell command",
             Tool::UseAws(_) => "Use AWS CLI",
+            Tool::GhIssue(_) => "Prepare GitHub issue",
         }
     }
 
@@ -57,6 +61,7 @@ impl Tool {
             Tool::FsWrite(_) => "Writing to filesystem",
             Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
             Tool::UseAws(_) => "Using AWS CLI",
+            Tool::GhIssue(_) => "Preparing GitHub issue",
         }
         .to_owned()
     }
@@ -68,16 +73,19 @@ impl Tool {
             Tool::FsWrite(_) => true,
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
+            Tool::GhIssue(_) => false,
         }
     }
 
     /// Invokes the tool asynchronously
-    pub async fn invoke(&self, context: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
+    // TODO: Need to rework this to avoid passing in args meant for a single tool.
+    pub async fn invoke(&self, context: &Context, updates: &mut impl Write, gh_issue_context: GhIssueContext<'_>) -> Result<InvokeOutput> {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(context, updates).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(context, updates).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
+            Tool::GhIssue(gh_issue) => gh_issue.invoke(updates, gh_issue_context).await,
         }
     }
 
@@ -88,6 +96,7 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.queue_description(ctx, updates),
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
+            Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
         }
     }
 
@@ -98,6 +107,7 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.validate(ctx).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
+            Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
         }
     }
 }
@@ -119,6 +129,7 @@ impl TryFrom<ToolUse> for Tool {
             "fs_write" => Self::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?),
             "execute_bash" => Self::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Self::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
+            "gh_issue" => Self::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
             unknown => {
                 return Err(ToolResult {
                     tool_use_id: value.id,

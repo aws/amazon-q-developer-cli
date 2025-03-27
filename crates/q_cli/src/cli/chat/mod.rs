@@ -50,7 +50,6 @@ use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
 use input_source::InputSource;
 use parser::{
-    RecvError,
     RecvErrorKind,
     ResponseParser,
     ToolUse,
@@ -65,6 +64,7 @@ use tokio::signal::unix::{
     SignalKind,
     signal,
 };
+use tools::gh_issue::GhIssueContext;
 use tools::{
     Tool,
     ToolSpec,
@@ -260,6 +260,8 @@ pub struct ChatContext<W: Write> {
     /// State used to keep track of tool use relation
     tool_use_status: ToolUseStatus,
     accept_all: bool,
+    /// Any failed requests that could be useful for error report/debugging
+    failed_request_ids: Vec<String>,
 }
 
 impl<W: Write> ChatContext<W> {
@@ -291,6 +293,7 @@ impl<W: Write> ChatContext<W> {
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
             accept_all,
+            failed_request_ids: Vec::new(),
         })
     }
 }
@@ -987,7 +990,14 @@ where
                 style::Print(format!("{}\n", "▔".repeat(terminal_width))),
                 style::SetForegroundColor(Color::Reset),
             )?;
-            let invoke_result = tool.1.invoke(&self.ctx, &mut self.output).await;
+            let invoke_result = tool.1.invoke(
+                &self.ctx, 
+                &mut self.output,
+                GhIssueContext {
+                    conversation_state: &self.conversation_state,
+                    failed_request_ids: &self.failed_request_ids,
+                },
+            ).await;
 
             if self.interactive && self.spinner.is_some() {
                 queue!(
@@ -1105,78 +1115,79 @@ where
                         },
                     }
                 },
-                Err(RecvError {
-                    request_id,
-                    source: RecvErrorKind::StreamTimeout { source, duration },
-                }) => {
-                    error!(
-                        request_id,
-                        ?source,
-                        "Encountered a stream timeout after waiting for {}s",
-                        duration.as_secs()
-                    );
-                    if self.interactive {
-                        execute!(self.output, cursor::Hide)?;
-                        self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
-                    }
-                    // For stream timeouts, we'll tell the model to try and split its response into
-                    // smaller chunks.
-                    self.conversation_state
-                        .push_assistant_message(AssistantResponseMessage {
-                            message_id: None,
-                            content: "Response timed out - message took too long to generate".to_string(),
-                            tool_uses: None,
-                        });
-                    self.conversation_state
-                        .append_new_user_message(
-                            "You took too long to respond - try to split up the work into smaller steps.".to_string(),
-                        )
-                        .await;
-                    self.send_tool_use_telemetry().await;
-                    return Ok(ChatState::HandleResponseStream(
-                        self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
-                            .await?,
-                    ));
-                },
-                Err(RecvError {
-                    request_id,
-                    source:
+                Err(recv_error) => {
+                    if let Some(request_id) = &recv_error.request_id {
+                        self.failed_request_ids.push(request_id.clone());
+                    };
+
+                    match recv_error.source {
+                        RecvErrorKind::StreamTimeout { source, duration } => {
+                            error!(
+                                recv_error.request_id,
+                                ?source,
+                                "Encountered a stream timeout after waiting for {}s",
+                                duration.as_secs()
+                            );
+                            if self.interactive {
+                                execute!(self.output, cursor::Hide)?;
+                                self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
+                            }
+                            // For stream timeouts, we'll tell the model to try and split its response into
+                            // smaller chunks.
+                            self.conversation_state
+                                .push_assistant_message(AssistantResponseMessage {
+                                    message_id: None,
+                                    content: "Response timed out - message took too long to generate".to_string(),
+                                    tool_uses: None,
+                                });
+                            self.conversation_state
+                                .append_new_user_message(
+                                    "You took too long to respond - try to split up the work into smaller steps.".to_string(),
+                                )
+                                .await;
+                            self.send_tool_use_telemetry().await;
+                            return Ok(ChatState::HandleResponseStream(
+                                self.client
+                                    .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                                    .await?,
+                            ));
+                        },
                         RecvErrorKind::UnexpectedToolUseEos {
                             tool_use_id,
                             name,
                             message,
+                        } => {
+                            error!(
+                                recv_error.request_id,
+                                tool_use_id, name, "The response stream ended before the entire tool use was received"
+                            );
+                            if self.interactive {
+                                execute!(self.output, cursor::Hide)?;
+                                self.spinner = Some(Spinner::new(
+                                    Spinners::Dots,
+                                    "The generated tool use was too large, trying to divide up the work...".to_string(),
+                                ));
+                            }
+        
+                            self.conversation_state.push_assistant_message(*message);
+                            let tool_results = vec![ToolResult {
+                                    tool_use_id,
+                                    content: vec![ToolResultContentBlock::Text(
+                                        "The generated tool was too large, try again but this time split up the work between multiple tool uses".to_string(),
+                                    )],
+                                    status: ToolResultStatus::Error,
+                                }];
+                            self.conversation_state.add_tool_results(tool_results);
+                            self.send_tool_use_telemetry().await;
+                            return Ok(ChatState::HandleResponseStream(
+                                self.client
+                                    .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                                    .await?,
+                            ));
                         },
-                }) => {
-                    error!(
-                        request_id,
-                        tool_use_id, name, "The response stream ended before the entire tool use was received"
-                    );
-                    if self.interactive {
-                        execute!(self.output, cursor::Hide)?;
-                        self.spinner = Some(Spinner::new(
-                            Spinners::Dots,
-                            "The generated tool use was too large, trying to divide up the work...".to_string(),
-                        ));
+                        _ => return Err(recv_error.into()),
                     }
-
-                    self.conversation_state.push_assistant_message(*message);
-                    let tool_results = vec![ToolResult {
-                            tool_use_id,
-                            content: vec![ToolResultContentBlock::Text(
-                                "The generated tool was too large, try again but this time split up the work between multiple tool uses".to_string(),
-                            )],
-                            status: ToolResultStatus::Error,
-                        }];
-                    self.conversation_state.add_tool_results(tool_results);
-                    self.send_tool_use_telemetry().await;
-                    return Ok(ChatState::HandleResponseStream(
-                        self.client
-                            .send_message(self.conversation_state.as_sendable_conversation_state().await)
-                            .await?,
-                    ));
-                },
-                Err(err) => return Err(err.into()),
+                }
             }
 
             // Fix for the markdown parser copied over from q chat:
