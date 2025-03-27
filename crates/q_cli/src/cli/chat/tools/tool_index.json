@@ -163,7 +163,7 @@
         },
         "actual_behavior": {
           "type": "string",
-          "description": "Optional: The actual chat behavior that happpened and demonstrates the issue or lack of a feature."
+          "description": "Optional: The actual chat behavior that happened and demonstrates the issue or lack of a feature."
         },
         "steps_to_reproduce": {
           "type": "string",

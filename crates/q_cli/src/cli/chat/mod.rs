@@ -431,7 +431,10 @@ where
             match result {
                 Ok(state) => next_state = Some(state),
                 Err(e) => {
-                    let mut print_error = |output: &mut W, prepend_msg: &str,report: Option<eyre::Report>,| -> Result<(), std::io::Error> {
+                    let mut print_error = |output: &mut W,
+                                           prepend_msg: &str,
+                                           report: Option<eyre::Report>|
+                     -> Result<(), std::io::Error> {
                         queue!(
                             output,
                             style::SetAttribute(Attribute::Bold),
@@ -993,14 +996,13 @@ where
                 style::Print(format!("{}\n", "▔".repeat(terminal_width))),
                 style::SetForegroundColor(Color::Reset),
             )?;
-            let invoke_result = tool.1.invoke(
-                &self.ctx, 
-                &mut self.output,
-                GhIssueContext {
+            let invoke_result = tool
+                .1
+                .invoke(&self.ctx, &mut self.output, GhIssueContext {
                     conversation_state: &self.conversation_state,
                     failed_request_ids: &self.failed_request_ids,
-                },
-            ).await;
+                })
+                .await;
 
             if self.interactive && self.spinner.is_some() {
                 queue!(
@@ -1133,7 +1135,8 @@ where
                             );
                             if self.interactive {
                                 execute!(self.output, cursor::Hide)?;
-                                self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
+                                self.spinner =
+                                    Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
                             }
                             // For stream timeouts, we'll tell the model to try and split its response into
                             // smaller chunks.
@@ -1145,7 +1148,8 @@ where
                                 });
                             self.conversation_state
                                 .append_new_user_message(
-                                    "You took too long to respond - try to split up the work into smaller steps.".to_string(),
+                                    "You took too long to respond - try to split up the work into smaller steps."
+                                        .to_string(),
                                 )
                                 .await;
                             self.send_tool_use_telemetry().await;
@@ -1171,7 +1175,7 @@ where
                                     "The generated tool use was too large, trying to divide up the work...".to_string(),
                                 ));
                             }
-        
+
                             self.conversation_state.push_assistant_message(*message);
                             let tool_results = vec![ToolResult {
                                     tool_use_id,
@@ -1190,7 +1194,7 @@ where
                         },
                         _ => return Err(recv_error.into()),
                     }
-                }
+                },
             }
 
             // Fix for the markdown parser copied over from q chat:

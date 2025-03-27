@@ -47,9 +47,9 @@ impl IssueCreator {
             },
         };
 
-        let environment =  match &self.additional_environment {
+        let environment = match &self.additional_environment {
             Some(ctx) => format!("{diagnostic_info}\n{ctx}"),
-            None => diagnostic_info
+            None => diagnostic_info,
         };
 
         let mut params = Vec::new();
@@ -57,12 +57,23 @@ impl IssueCreator {
         params.push(("os", &os));
         params.push(("environment", &environment));
 
-        self.title.as_deref().map(|t| params.push(("title", t)));
-        self.expected_behavior.as_deref().map(|e| params.push(("expected", e)));
-        self.actual_behavior.as_deref().map(|a| params.push(("actual", a)));
-        self.steps_to_reproduce.as_deref().map(|s| params.push(("reproduce", s)));
+        if let Some(t) = self.title.as_deref() {
+            params.push(("title", t));
+        }
+        if let Some(t) = self.expected_behavior.as_deref() {
+            params.push(("expected", t));
+        }
+        if let Some(t) = self.actual_behavior.as_deref() {
+            params.push(("actual", t));
+        }
+        if let Some(t) = self.steps_to_reproduce.as_deref() {
+            params.push(("reproduce", t));
+        }
 
-        let url = url::Url::parse_with_params(&format!("https://github.com/{GITHUB_REPO_NAME}/issues/new"), params.iter())?;
+        let url = url::Url::parse_with_params(
+            &format!("https://github.com/{GITHUB_REPO_NAME}/issues/new"),
+            params.iter(),
+        )?;
 
         println!("Heading over to GitHub...");
         if is_remote() || fig_util::open_url_async(url.as_str()).await.is_err() {

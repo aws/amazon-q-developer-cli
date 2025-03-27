@@ -59,9 +59,10 @@ pub struct ConversationState {
     /// calling [Self::as_sendable_conversation_state].
     pub next_message: Option<UserInputMessage>,
     history: VecDeque<ChatMessage>,
-    /// Similar to history in that stores user and assistant responses, except that it is not used in message requests. 
-    /// Instead, the responses are expected to be in human-readable format, e.g user messages prefixed with '> '.
-    /// Should also be used to store errors posted in the chat.
+    /// Similar to history in that stores user and assistant responses, except that it is not used
+    /// in message requests. Instead, the responses are expected to be in human-readable format,
+    /// e.g user messages prefixed with '> '. Should also be used to store errors posted in the
+    /// chat.
     pub transcript: VecDeque<String>,
     tools: Vec<Tool>,
     /// Context manager for handling sticky context files
@@ -158,7 +159,7 @@ impl ConversationState {
 
         // Record message before adding context.
         self.append_user_transcript(&input);
-        
+
         // Combine context files with user input if available
         let content = if let Some(context) = context_files {
             format!("{}\n{}", context, input)
@@ -472,18 +473,14 @@ impl ConversationState {
         self.context_message_length
     }
 
-    pub fn append_user_transcript(&mut self, message: &String) {
+    pub fn append_user_transcript(&mut self, message: &str) {
         self.append_transcript(format!("> {}", message.replace("\n", "> \n")));
     }
 
     pub fn append_assistant_transcript(&mut self, message: &AssistantResponseMessage) {
-        let tool_uses = message.tool_uses.as_deref()
-            .map_or("none".to_string(), |tools| {
-                tools.iter()
-                    .map(|tool| tool.name.clone())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            });
+        let tool_uses = message.tool_uses.as_deref().map_or("none".to_string(), |tools| {
+            tools.iter().map(|tool| tool.name.clone()).collect::<Vec<_>>().join(",")
+        });
         self.append_transcript(format!("{}\n[Tool uses: {tool_uses}]", message.content.clone()));
     }
 

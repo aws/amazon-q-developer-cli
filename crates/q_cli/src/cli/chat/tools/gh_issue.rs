@@ -1,10 +1,10 @@
 use std::io::Write;
 
+use crossterm::style::Color;
 use crossterm::{
     queue,
     style,
 };
-use crossterm::style::Color;
 use eyre::{
     Result,
     WrapErr,
@@ -12,10 +12,9 @@ use eyre::{
 use fig_os_shim::Context;
 use serde::Deserialize;
 
+use super::InvokeOutput;
 use crate::cli::chat::conversation_state::ConversationState;
 use crate::cli::issue::IssueCreator;
-
-use super::InvokeOutput;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhIssue {
@@ -36,17 +35,13 @@ const MAX_TRANSCRIPT_LEN: usize = 5;
 impl GhIssue {
     pub async fn invoke(&self, _updates: impl Write, context: GhIssueContext<'_>) -> Result<InvokeOutput> {
         // Prepare additional details from the chat session
-        let additional_environment = [
-            Self::get_request_ids(&context),
-            Self::get_context(&context).await,
-        ]
-        .join("\n\n");
+        let additional_environment = [Self::get_request_ids(&context), Self::get_context(&context).await].join("\n\n");
 
         // Add chat history to the actual behavior text.
-        let actual_behavior = self.actual_behavior
-            .as_ref()
-            .map(|behavior| format!("{behavior}\n{}\n\n", Self::get_transcript(&context)))
-            .unwrap_or_else(|| Self::get_transcript(&context));
+        let actual_behavior = self.actual_behavior.as_ref().map_or_else(
+            || Self::get_transcript(&context),
+            |behavior| format!("{behavior}\n{}\n\n", Self::get_transcript(&context)),
+        );
 
         let _ = IssueCreator {
             title: Some(self.title.clone()),
@@ -87,7 +82,7 @@ impl GhIssue {
         if !transcript.is_empty() {
             transcript_str.push_str(&transcript.join("\n\n"));
         } else {
-            transcript_str.push_str("No chat history found.")
+            transcript_str.push_str("No chat history found.");
         }
 
         transcript_str.push_str("\n```");
@@ -95,11 +90,12 @@ impl GhIssue {
     }
 
     fn get_request_ids(context: &GhIssueContext<'_>) -> String {
-        format!("[chat-failed_request_ids]\n{}", 
-            if context.failed_request_ids.is_empty() { 
-                "none".to_string() 
-            } else { 
-                context.failed_request_ids.join("\n") 
+        format!(
+            "[chat-failed_request_ids]\n{}",
+            if context.failed_request_ids.is_empty() {
+                "none".to_string()
+            } else {
+                context.failed_request_ids.join("\n")
             }
         )
     }
@@ -110,9 +106,9 @@ impl GhIssue {
             ctx_str.push_str("No context available.");
             return ctx_str;
         };
-    
+
         ctx_str.push_str(&format!("current_profile={}\n\n", ctx_manager.current_profile));
-        
+
         // Context file categories
         if ctx_manager.global_config.paths.is_empty() {
             ctx_str.push_str("global=none\n\n");
@@ -123,7 +119,10 @@ impl GhIssue {
         if ctx_manager.profile_config.paths.is_empty() {
             ctx_str.push_str("profile=none\n\n");
         } else {
-            ctx_str.push_str(&format!("profile=\n{}\n\n", &ctx_manager.profile_config.paths.join("\n")));
+            ctx_str.push_str(&format!(
+                "profile=\n{}\n\n",
+                &ctx_manager.profile_config.paths.join("\n")
+            ));
         }
 
         // Handle context files
@@ -133,13 +132,13 @@ impl GhIssue {
                 let total_size: usize = context_files
                     .iter()
                     .map(|(file, content)| {
-                        let size = content.as_bytes().len();
+                        let size = content.len();
                         ctx_str.push_str(&format!("{}, {} B\n", file, size));
                         size
                     })
                     .sum();
                 ctx_str.push_str(&format!("total context size={total_size} B"));
-            }
+            },
             _ => ctx_str.push_str("files=none"),
         }
 
@@ -148,10 +147,10 @@ impl GhIssue {
 
     pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
         Ok(queue!(
-            updates, 
+            updates,
             style::Print("I will prepare a github issue with our conversation history.\n"),
             style::SetForegroundColor(Color::Green),
-            style::Print(format!("Title: {}\n", &self.title)), 
+            style::Print(format!("Title: {}\n", &self.title)),
             style::ResetColor
         )?)
     }
