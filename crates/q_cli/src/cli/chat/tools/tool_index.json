@@ -148,8 +148,8 @@
     }
   },
   "gh_issue": {
-    "name": "gh_issue",
-    "description": "Opens the browser to a pre-filled GitHub issue template to report chat issues, bugs, or feature requests. Pre-filled information includes the conversation transcript, chat context, and chat request IDs from the service.",
+    "name": "report_issue",
+    "description": "Opens the browser to a pre-filled gh (GitHub) issue template to report chat issues, bugs, or feature requests. Pre-filled information includes the conversation transcript, chat context, and chat request IDs from the service.",
     "input_schema": {
       "type": "object",
       "properties": {

@@ -54,6 +54,7 @@ use parser::{
     ResponseParser,
     ToolUse,
 };
+use regex::Regex;
 use serde_json::Map;
 use spinners::{
     Spinner,
@@ -391,6 +392,9 @@ where
             });
         }
 
+        // Remove non-ASCII and ANSI characters.
+        let re = Regex::new(r"((\x9B|\x1B\[)[0-?]*[ -\/]*[@-~])|([^\x00-\x7F]+)").unwrap();
+
         loop {
             debug_assert!(next_state.is_some());
             let chat_state = next_state.take().unwrap_or_default();
@@ -443,7 +447,10 @@ where
 
                         match report {
                             Some(report) => {
-                                let text = format!("{}: {:?}\n", prepend_msg, report);
+                                let text = re
+                                    .replace_all(&format!("{}: {:?}\n", prepend_msg, report), "")
+                                    .into_owned();
+
                                 queue!(output, style::Print(&text),)?;
                                 self.conversation_state.append_transcript(text);
                             },

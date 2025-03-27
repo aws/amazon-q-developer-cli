@@ -182,7 +182,6 @@ impl ConversationState {
             }),
             user_intent: None,
         };
-
         self.next_message = Some(msg);
     }
 

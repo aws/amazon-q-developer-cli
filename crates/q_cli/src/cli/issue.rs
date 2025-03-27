@@ -32,6 +32,9 @@ pub struct IssueCreator {
 
 impl IssueCreator {
     pub async fn create_url(&self) -> Result<url::Url> {
+        let warning = |text: &String| {
+            format!("<This will be visible to anyone. Do not include personal or sensitive information>\n\n{text}")
+        };
         let diagnostics = Diagnostics::new().await;
 
         let os = match &diagnostics.system_info.os {
@@ -53,21 +56,21 @@ impl IssueCreator {
         };
 
         let mut params = Vec::new();
-        params.push(("template", TEMPLATE_NAME));
-        params.push(("os", &os));
-        params.push(("environment", &environment));
+        params.push(("template", TEMPLATE_NAME.to_string()));
+        params.push(("os", os));
+        params.push(("environment", warning(&environment)));
 
-        if let Some(t) = self.title.as_deref() {
+        if let Some(t) = self.title.clone() {
             params.push(("title", t));
         }
-        if let Some(t) = self.expected_behavior.as_deref() {
-            params.push(("expected", t));
+        if let Some(t) = self.expected_behavior.as_ref() {
+            params.push(("expected", warning(t)));
         }
-        if let Some(t) = self.actual_behavior.as_deref() {
-            params.push(("actual", t));
+        if let Some(t) = self.actual_behavior.as_ref() {
+            params.push(("actual", warning(t)));
         }
-        if let Some(t) = self.steps_to_reproduce.as_deref() {
-            params.push(("reproduce", t));
+        if let Some(t) = self.steps_to_reproduce.as_ref() {
+            params.push(("reproduce", warning(t)));
         }
 
         let url = url::Url::parse_with_params(

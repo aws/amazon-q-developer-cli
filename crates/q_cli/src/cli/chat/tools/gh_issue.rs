@@ -40,7 +40,7 @@ impl GhIssue {
         // Add chat history to the actual behavior text.
         let actual_behavior = self.actual_behavior.as_ref().map_or_else(
             || Self::get_transcript(&context),
-            |behavior| format!("{behavior}\n{}\n\n", Self::get_transcript(&context)),
+            |behavior| format!("{behavior}\n\n{}\n", Self::get_transcript(&context)),
         );
 
         let _ = IssueCreator {
