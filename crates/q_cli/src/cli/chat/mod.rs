@@ -5,7 +5,6 @@ mod input_source;
 mod parse;
 mod parser;
 mod prompt;
-mod tool_manager;
 mod tools;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -66,11 +65,10 @@ use tokio::signal::unix::{
     SignalKind,
     signal,
 };
-use tool_manager::{
-    McpServerConfig,
-    ToolManager,
+use tools::{
+    Tool,
+    ToolSpec,
 };
-use tools::Tool;
 use tracing::{
     debug,
     error,
@@ -131,7 +129,12 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 "};
 
-pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<String>) -> Result<ExitCode> {
+pub async fn chat(
+    input: Option<String>,
+    no_interactive: bool,
+    accept_all: bool,
+    profile: Option<String>,
+) -> Result<ExitCode> {
     if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
         bail!(
             "You are not logged in, please log in with {}",
@@ -142,12 +145,12 @@ pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<Strin
     region_check("chat")?;
 
     let ctx = Context::new();
-    let output = std::io::stderr();
 
     let stdin = std::io::stdin();
-    let interactive = stdin.is_terminal();
-    let input = if !interactive {
-        // append to input string any extra info that was provided.
+    // no_interactive flag or part of a pipe
+    let interactive = !no_interactive && stdin.is_terminal();
+    let input = if !interactive && !stdin.is_terminal() {
+        // append to input string any extra info that was provided, e.g. via pipe
         let mut input = input.unwrap_or_default();
         stdin.lock().read_to_string(&mut input)?;
         Some(input)
@@ -155,15 +158,15 @@ pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<Strin
         input
     };
 
+    let output: Box<dyn Write> = match interactive {
+        true => Box::new(std::io::stderr()),
+        false => Box::new(std::io::stdout()),
+    };
+
     let client = match ctx.env().get("Q_MOCK_CHAT_RESPONSE") {
         Ok(json) => create_stream(serde_json::from_str(std::fs::read_to_string(json)?.as_str())?),
         _ => StreamingClient::new().await?,
     };
-
-    let mcp_server_configs = McpServerConfig::load_config().await.unwrap_or_else(|e| {
-        tracing::warn!("No mcp server config loaded: {}", e);
-        McpServerConfig::default()
-    });
 
     // If profile is specified, verify it exists before starting the chat
     if let Some(ref profile_name) = profile {
@@ -195,7 +198,6 @@ pub async fn chat(input: Option<String>, accept_all: bool, profile: Option<Strin
         interactive,
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
-        Some(mcp_server_configs),
         accept_all,
         profile,
     )
@@ -232,6 +234,10 @@ pub enum ChatError {
     Custom(Cow<'static, str>),
     #[error("interrupted")]
     Interrupted { tool_uses: Option<Vec<QueuedTool>> },
+    #[error(
+        "Tool approval required but --no-interactive was specified. Use --accept-all to automatically approve tools."
+    )]
+    NonInteractiveToolApproval,
 }
 
 pub struct ChatContext<W: Write> {
@@ -253,8 +259,6 @@ pub struct ChatContext<W: Write> {
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
     /// State used to keep track of tool use relation
     tool_use_status: ToolUseStatus,
-    /// Abstraction that consolidates custom tools with native ones
-    tool_manager: ToolManager,
     accept_all: bool,
 }
 
@@ -269,14 +273,10 @@ impl<W: Write> ChatContext<W> {
         interactive: bool,
         client: StreamingClient,
         terminal_width_provider: fn() -> Option<usize>,
-        mcp_server_config: Option<McpServerConfig>,
         accept_all: bool,
         profile: Option<String>,
     ) -> Result<Self> {
-        let mcp_server_config = mcp_server_config.unwrap_or_default();
-        let tool_manager = ToolManager::from_configs(mcp_server_config).await;
         let ctx_clone = Arc::clone(&ctx);
-        let conversation_state = ConversationState::new(ctx_clone, tool_manager.load_tools().await?, profile).await;
         Ok(Self {
             ctx,
             settings,
@@ -287,10 +287,9 @@ impl<W: Write> ChatContext<W> {
             client,
             terminal_width_provider,
             spinner: None,
-            conversation_state,
+            conversation_state: ConversationState::new(ctx_clone, load_tools()?, profile).await,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
-            tool_manager,
             accept_all,
         })
     }
@@ -373,14 +372,16 @@ where
         });
 
         if let Some(user_input) = self.initial_input.take() {
-            execute!(
-                self.output,
-                style::SetForegroundColor(Color::Magenta),
-                style::Print("> "),
-                style::SetAttribute(Attribute::Reset),
-                style::Print(&user_input),
-                style::Print("\n")
-            )?;
+            if self.interactive {
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Magenta),
+                    style::Print("> "),
+                    style::SetAttribute(Attribute::Reset),
+                    style::Print(&user_input),
+                    style::Print("\n")
+                )?;
+            }
             next_state = Some(ChatState::HandleInput {
                 input: user_input,
                 tool_uses: None,
@@ -396,7 +397,13 @@ where
                 ChatState::PromptUser {
                     tool_uses,
                     skip_printing_tools,
-                } => self.prompt_user(tool_uses, skip_printing_tools).await,
+                } => {
+                    // Cannot prompt in non-interactive mode no matter what.
+                    if !self.interactive {
+                        return Ok(());
+                    }
+                    self.prompt_user(tool_uses, skip_printing_tools).await
+                },
                 ChatState::HandleInput { input, tool_uses } => self.handle_input(input, tool_uses).await,
                 ChatState::ExecuteTools(tool_uses) => {
                     let tool_uses_clone = tool_uses.clone();
@@ -508,9 +515,7 @@ where
         mut tool_uses: Option<Vec<QueuedTool>>,
         skip_printing_tools: bool,
     ) -> Result<ChatState, ChatError> {
-        if self.interactive {
-            execute!(self.output, cursor::Show)?;
-        }
+        execute!(self.output, cursor::Show)?;
         let tool_uses = tool_uses.take().unwrap_or_default();
         if !tool_uses.is_empty() && !skip_printing_tools {
             self.print_tool_descriptions(&tool_uses).await?;
@@ -1275,7 +1280,7 @@ where
                 .set_tool_use_id(tool_use_id.clone())
                 .set_tool_name(tool_use.name.clone())
                 .utterance_id(self.conversation_state.message_id().map(|s| s.to_string()));
-            match self.tool_manager.get_tool_from_tool_use(tool_use) {
+            match Tool::try_from(tool_use) {
                 Ok(mut tool) => {
                     match tool.validate(&self.ctx).await {
                         Ok(()) => {
@@ -1347,15 +1352,16 @@ where
 
         let skip_acceptance = self.accept_all || queued_tools.iter().all(|tool| !tool.1.requires_acceptance(&self.ctx));
 
-        match skip_acceptance {
-            true => {
+        match (skip_acceptance, self.interactive) {
+            (true, _) => {
                 self.print_tool_descriptions(&queued_tools).await?;
                 Ok(ChatState::ExecuteTools(queued_tools))
             },
-            false => Ok(ChatState::PromptUser {
+            (false, true) => Ok(ChatState::PromptUser {
                 tool_uses: Some(queued_tools),
                 skip_printing_tools: false,
             }),
+            (false, false) => Err(ChatError::NonInteractiveToolApproval),
         }
     }
 
@@ -1529,6 +1535,11 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
     StreamingClient::mock(mock)
 }
 
+/// Returns all tools supported by Q chat.
+fn load_tools() -> Result<HashMap<String, ToolSpec>> {
+    Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1568,7 +1579,6 @@ mod tests {
             true,
             test_client,
             || Some(80),
-            None,
             false,
             None,
         )

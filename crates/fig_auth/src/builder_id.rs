@@ -95,7 +95,7 @@ pub(crate) fn oidc_url(region: &Region) -> String {
 pub(crate) fn client(region: Region) -> Client {
     let retry_config = RetryConfig::standard().with_max_attempts(3);
     let sdk_config = aws_types::SdkConfig::builder()
-        .behavior_version(BehaviorVersion::v2025_01_17())
+        .behavior_version(BehaviorVersion::v2024_03_28())
         .endpoint_url(oidc_url(&region))
         .region(region)
         .retry_config(retry_config)

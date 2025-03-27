@@ -24,7 +24,7 @@ use super::{
 };
 use crate::cli::chat::truncate_safe;
 
-const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail"];
+const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecuteBash {
@@ -37,7 +37,7 @@ impl ExecuteBash {
             return true;
         };
 
-        const DANGEROUS_PATTERNS: &[&str] = &["|", "<(", "$(", "`", ">", "&&", "||"];
+        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||"];
         if args
             .iter()
             .any(|arg| DANGEROUS_PATTERNS.iter().any(|p| arg.contains(p)))
@@ -45,11 +45,40 @@ impl ExecuteBash {
             return true;
         }
 
-        if let Some(cmd) = args.first() {
-            !READONLY_COMMANDS.contains(&cmd.as_str())
-        } else {
-            true
+        // Split commands by pipe and check each one
+        let mut current_cmd = Vec::new();
+        let mut all_commands = Vec::new();
+
+        for arg in args {
+            if arg == "|" {
+                if !current_cmd.is_empty() {
+                    all_commands.push(current_cmd);
+                }
+                current_cmd = Vec::new();
+            } else if arg.contains("|") {
+                // if pipe appears without spacing e.g. `echo myimportantfile|args rm` it won't get
+                // parsed out, in this case - we want to verify before running
+                return true;
+            } else {
+                current_cmd.push(arg);
+            }
         }
+        if !current_cmd.is_empty() {
+            all_commands.push(current_cmd);
+        }
+
+        // Check if each command in the pipe chain starts with a safe command
+        for cmd_args in all_commands {
+            if let Some(cmd) = cmd_args.first() {
+                if !READONLY_COMMANDS.contains(&cmd.as_str()) {
+                    return true;
+                }
+            } else {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub async fn invoke(&self, mut updates: impl Write) -> Result<InvokeOutput> {
@@ -252,6 +281,14 @@ mod tests {
             ("cat <<< 'some string here' > myimportantfile", true),
             ("echo '\n#!/usr/bin/env bash\necho hello\n' > myscript.sh", true),
             ("cat <<EOF > myimportantfile\nhello world\nEOF", true),
+            // Safe piped commands
+            ("find . -name '*.rs' | grep main", false),
+            ("ls -la | grep .git", false),
+            ("cat file.txt | grep pattern | head -n 5", false),
+            // Unsafe piped commands
+            ("find . -name '*.rs' | rm", true),
+            ("ls -la | grep .git | rm -rf", true),
+            ("echo hello | sudo rm -rf /", true),
         ];
         for (cmd, expected) in cmds {
             let tool = serde_json::from_value::<ExecuteBash>(serde_json::json!({

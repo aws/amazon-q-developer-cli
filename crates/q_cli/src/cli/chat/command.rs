@@ -126,8 +126,31 @@ Adding relevant files to your context helps Amazon Q provide more accurate and h
 }
 
 impl Command {
+    // Check if input is a common single-word command that should use slash prefix
+    fn check_common_command(input: &str) -> Option<String> {
+        let input_lower = input.trim().to_lowercase();
+        match input_lower.as_str() {
+            "exit" | "quit" | "q" | "exit()" => {
+                Some("Did you mean to use the command '/quit' to exit? Type '/quit' to exit.".to_string())
+            },
+            "clear" | "cls" => Some(
+                "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear."
+                    .to_string(),
+            ),
+            "help" | "?" => Some(
+                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.".to_string(),
+            ),
+            _ => None,
+        }
+    }
+
     pub fn parse(input: &str) -> Result<Self, String> {
         let input = input.trim();
+
+        // Check for common single-word commands without slash prefix
+        if let Some(suggestion) = Self::check_common_command(input) {
+            return Err(suggestion);
+        }
 
         if let Some(command) = input.strip_prefix("/") {
             let parts: Vec<&str> = command.split_whitespace().collect();
@@ -313,7 +336,11 @@ impl Command {
                         },
                     }
                 },
-                _ => return Err(format!("Unknown command: {}", input)),
+                _ => {
+                    return Ok(Self::Ask {
+                        prompt: input.to_string(),
+                    });
+                },
             });
         }
 
@@ -420,6 +447,46 @@ mod tests {
 
         for (input, parsed) in tests {
             assert_eq!(&Command::parse(input).unwrap(), parsed, "{}", input);
+        }
+    }
+
+    #[test]
+    fn test_common_command_suggestions() {
+        let test_cases = vec![
+            (
+                "exit",
+                "Did you mean to use the command '/quit' to exit? Type '/quit' to exit.",
+            ),
+            (
+                "quit",
+                "Did you mean to use the command '/quit' to exit? Type '/quit' to exit.",
+            ),
+            (
+                "q",
+                "Did you mean to use the command '/quit' to exit? Type '/quit' to exit.",
+            ),
+            (
+                "clear",
+                "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear.",
+            ),
+            (
+                "cls",
+                "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear.",
+            ),
+            (
+                "help",
+                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.",
+            ),
+            (
+                "?",
+                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.",
+            ),
+        ];
+
+        for (input, expected_message) in test_cases {
+            let result = Command::parse(input);
+            assert!(result.is_err(), "Expected error for input: {}", input);
+            assert_eq!(result.unwrap_err(), expected_message);
         }
     }
 }

@@ -1,4 +1,3 @@
-#![allow(deprecated)]
 use std::io::Write;
 
 use crossterm::style::{

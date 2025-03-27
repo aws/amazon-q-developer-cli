@@ -4,6 +4,7 @@ use crossterm::style::Stylize;
 use eyre::Result;
 use rustyline::completion::{
     Completer,
+    FilenameCompleter,
     extract_word,
 };
 use rustyline::error::ReadlineError;
@@ -61,11 +62,63 @@ pub fn generate_prompt(current_profile: Option<&str>) -> String {
     "> ".to_string()
 }
 
-pub struct ChatCompleter {}
+/// Complete commands that start with a slash
+fn complete_command(word: &str, start: usize) -> (usize, Vec<String>) {
+    (
+        start,
+        COMMANDS
+            .iter()
+            .filter(|p| p.starts_with(word))
+            .map(|s| (*s).to_owned())
+            .collect(),
+    )
+}
+
+/// A wrapper around FilenameCompleter that provides enhanced path detection
+/// and completion capabilities for the chat interface.
+pub struct PathCompleter {
+    /// The underlying filename completer from rustyline
+    filename_completer: FilenameCompleter,
+}
+
+impl PathCompleter {
+    /// Creates a new PathCompleter instance
+    pub fn new() -> Self {
+        Self {
+            filename_completer: FilenameCompleter::new(),
+        }
+    }
+
+    /// Attempts to complete a file path at the given position in the line
+    pub fn complete_path(
+        &self,
+        line: &str,
+        pos: usize,
+        ctx: &Context<'_>,
+    ) -> Result<(usize, Vec<String>), ReadlineError> {
+        // Use the filename completer to get path completions
+        match self.filename_completer.complete(line, pos, ctx) {
+            Ok((pos, completions)) => {
+                // Convert the filename completer's pairs to strings
+                let file_completions: Vec<String> = completions.iter().map(|pair| pair.replacement.clone()).collect();
+
+                // Return the completions if we have any
+                Ok((pos, file_completions))
+            },
+            Err(err) => Err(err),
+        }
+    }
+}
+
+pub struct ChatCompleter {
+    path_completer: PathCompleter,
+}
 
 impl ChatCompleter {
     fn new() -> Self {
-        Self {}
+        Self {
+            path_completer: PathCompleter::new(),
+        }
     }
 }
 
@@ -79,18 +132,21 @@ impl Completer for ChatCompleter {
         _ctx: &Context<'_>,
     ) -> Result<(usize, Vec<Self::Candidate>), ReadlineError> {
         let (start, word) = extract_word(line, pos, None, |c| c.is_space());
-        Ok((
-            start,
-            if word.starts_with('/') {
-                COMMANDS
-                    .iter()
-                    .filter(|p| p.starts_with(word))
-                    .map(|s| (*s).to_owned())
-                    .collect()
-            } else {
-                Vec::new()
-            },
-        ))
+
+        // Handle command completion
+        if word.starts_with('/') {
+            return Ok(complete_command(word, start));
+        }
+
+        // Handle file path completion as fallback
+        if let Ok((pos, completions)) = self.path_completer.complete_path(line, pos, _ctx) {
+            if !completions.is_empty() {
+                return Ok((pos, completions));
+            }
+        }
+
+        // Default: no completions
+        Ok((start, Vec::new()))
     }
 }
 
@@ -159,8 +215,50 @@ mod tests {
 
     #[test]
     fn test_generate_prompt() {
+        // Test default prompt (no profile)
         assert_eq!(generate_prompt(None), "> ");
+        // Test default profile (should be same as no profile)
         assert_eq!(generate_prompt(Some("default")), "> ");
-        assert!(generate_prompt(Some("test-profile")).contains("test-profile"));
+        // Test custom profile
+        assert_eq!(generate_prompt(Some("test-profile")), "[test-profile] > ");
+        // Test another custom profile
+        assert_eq!(generate_prompt(Some("dev")), "[dev] > ");
+    }
+
+    #[test]
+    fn test_chat_completer_command_completion() {
+        let completer = ChatCompleter::new();
+        let line = "/h";
+        let pos = 2; // Position at the end of "/h"
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Get completions
+        let (start, completions) = completer.complete(line, pos, &ctx).unwrap();
+
+        // Verify start position
+        assert_eq!(start, 0);
+
+        // Verify completions contain expected commands
+        assert!(completions.contains(&"/help".to_string()));
+    }
+
+    #[test]
+    fn test_chat_completer_no_completion() {
+        let completer = ChatCompleter::new();
+        let line = "Hello, how are you?";
+        let pos = line.len();
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Get completions
+        let (_, completions) = completer.complete(line, pos, &ctx).unwrap();
+
+        // Verify no completions are returned for regular text
+        assert!(completions.is_empty());
     }
 }

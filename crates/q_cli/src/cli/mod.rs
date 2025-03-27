@@ -186,6 +186,10 @@ pub enum CliRootCommands {
         /// them.
         #[arg(short, long)]
         accept_all: bool,
+        /// Print the first response to STDOUT without interactive mode. This will fail if the
+        /// prompt requests permissions to use a tool, unless --accept-all is also used.
+        #[arg(long)]
+        no_interactive: bool,
         /// The first question to ask
         input: Option<String>,
         /// Context profile to use
@@ -337,9 +341,10 @@ impl Cli {
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
                 CliRootCommands::Chat {
                     accept_all,
+                    no_interactive,
                     input,
                     profile,
-                } => chat::chat(input, accept_all, profile).await,
+                } => chat::chat(input, no_interactive, accept_all, profile).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
@@ -460,6 +465,7 @@ mod test {
         assert_eq!(Cli::parse_from([CLI_BINARY_NAME, "chat", "-vv"]), Cli {
             subcommand: Some(CliRootCommands::Chat {
                 accept_all: false,
+                no_interactive: false,
                 input: None,
                 profile: None,
             },),
@@ -589,6 +595,7 @@ mod test {
     fn test_chat_with_context_profile() {
         assert_parse!(["chat", "--profile", "my-profile"], CliRootCommands::Chat {
             accept_all: false,
+            no_interactive: false,
             input: None,
             profile: Some("my-profile".to_string()),
         });
@@ -598,6 +605,7 @@ mod test {
     fn test_chat_with_context_profile_and_input() {
         assert_parse!(["chat", "--profile", "my-profile", "Hello"], CliRootCommands::Chat {
             accept_all: false,
+            no_interactive: false,
             input: Some("Hello".to_string()),
             profile: Some("my-profile".to_string()),
         });
@@ -609,9 +617,20 @@ mod test {
             ["chat", "--profile", "my-profile", "--accept-all"],
             CliRootCommands::Chat {
                 accept_all: true,
+                no_interactive: false,
                 input: None,
                 profile: Some("my-profile".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn test_chat_with_no_interactive() {
+        assert_parse!(["chat", "--no-interactive"], CliRootCommands::Chat {
+            accept_all: false,
+            no_interactive: true,
+            input: None,
+            profile: None,
+        });
     }
 }
