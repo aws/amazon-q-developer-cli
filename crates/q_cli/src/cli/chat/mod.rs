@@ -432,7 +432,6 @@ where
                 Ok(state) => next_state = Some(state),
                 Err(e) => {
                     let mut print_error = |output: &mut W, prepend_msg: &str,report: Option<eyre::Report>,| -> Result<(), std::io::Error> {
-                        let transcript = &mut self.conversation_state.transcript;
                         queue!(
                             output,
                             style::SetAttribute(Attribute::Bold),
@@ -442,12 +441,12 @@ where
                         match report {
                             Some(report) => {
                                 let text = format!("{}: {:?}\n", prepend_msg, report);
-                                transcript.push(text.clone());
-                                queue!(output, style::Print(text),)?
+                                queue!(output, style::Print(&text),)?;
+                                self.conversation_state.append_transcript(text);
                             },
                             None => {
-                                transcript.push(prepend_msg.to_string());
-                                queue!(output, style::Print(prepend_msg), style::Print("\n"))?
+                                queue!(output, style::Print(prepend_msg), style::Print("\n"))?;
+                                self.conversation_state.append_transcript(prepend_msg.to_string());
                             },
                         }
 

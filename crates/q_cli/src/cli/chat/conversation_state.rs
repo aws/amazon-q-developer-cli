@@ -62,7 +62,7 @@ pub struct ConversationState {
     /// Similar to history in that stores user and assistant responses, except that it is not used in message requests. 
     /// Instead, the responses are expected to be in human-readable format, e.g user messages prefixed with '> '.
     /// Should also be used to store errors posted in the chat.
-    pub transcript: Vec<String>,
+    pub transcript: VecDeque<String>,
     tools: Vec<Tool>,
     /// Context manager for handling sticky context files
     pub context_manager: Option<ContextManager>,
@@ -96,7 +96,7 @@ impl ConversationState {
             conversation_id,
             next_message: None,
             history: VecDeque::new(),
-            transcript: Vec::new(),
+            transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
             tools: tool_config
                 .into_values()
                 .map(|v| {
@@ -157,7 +157,7 @@ impl ConversationState {
         };
 
         // Record message before adding context.
-        self.transcript.push(format!("> {}", input.replace("\n", "> \n")));
+        self.append_user_transcript(&input);
         
         // Combine context files with user input if available
         let content = if let Some(context) = context_files {
@@ -193,15 +193,7 @@ impl ConversationState {
             warn!(?next_message, "next_message should not exist");
         }
 
-        let tool_uses = message.tool_uses.as_deref()
-            .map_or("none".to_string(), |tools| {
-                tools.iter()
-                    .map(|tool| tool.name.clone())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            });
-
-        self.transcript.push(format!("{}\n[Tool uses: {tool_uses}]", message.content.clone()));
+        self.append_assistant_transcript(&message);
         self.history.push_back(ChatMessage::AssistantResponseMessage(message));
     }
 
@@ -478,6 +470,28 @@ impl ConversationState {
     /// The length of the user message used as context, if any.
     pub fn context_message_length(&self) -> Option<usize> {
         self.context_message_length
+    }
+
+    pub fn append_user_transcript(&mut self, message: &String) {
+        self.append_transcript(format!("> {}", message.replace("\n", "> \n")));
+    }
+
+    pub fn append_assistant_transcript(&mut self, message: &AssistantResponseMessage) {
+        let tool_uses = message.tool_uses.as_deref()
+            .map_or("none".to_string(), |tools| {
+                tools.iter()
+                    .map(|tool| tool.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            });
+        self.append_transcript(format!("{}\n[Tool uses: {tool_uses}]", message.content.clone()));
+    }
+
+    pub fn append_transcript(&mut self, message: String) {
+        if self.transcript.len() >= MAX_CONVERSATION_STATE_HISTORY_LEN {
+            self.transcript.pop_front();
+        }
+        self.transcript.push_back(message);
     }
 }
 
