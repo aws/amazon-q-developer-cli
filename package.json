@@ -25,7 +25,8 @@
     "preview:dashboard": "pnpm -C packages/dashboard preview",
     "clean": "turbo clean --parallel",
     "prepare": "husky",
-    "precommit": "lint-staged --config .lintstagedrc.mjs"
+    "precommit": "lint-staged --config .lintstagedrc.mjs",
+    "setup": "bash scripts/setup.sh"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.0.8",

@@ -60,7 +60,7 @@
   - [Autocomplete in SSH](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-autocomplete-ssh.html)
 
 
-## 🚀 Development Setup
+## 🚀 Start Contributing
 
 ### Prerequisites
 
@@ -74,9 +74,19 @@
 git clone https://github.com/aws/amazon-q-for-command-line.git
 ```
 
-### 2. Install platform dependencies
+### 2. Setup
+Hassle-free setup:
+```shell
+npm run setup
+```
 
-This is all the dep
+Or if you'd like to DIY:
+
+<details>
+<summary>Manual Setup</summary>
+<div>
+
+### 1. Install platform dependencies
 
 For Debian/Ubuntu:
 
@@ -84,29 +94,6 @@ For Debian/Ubuntu:
 sudo apt update
 sudo apt install build-essential pkg-config jq dpkg curl wget cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler
 ```
-
-For Arch:
-
-```shell
-sudo pacman -Syu
-sudo pacman -S --needed webkit2gtk base-devel curl wget openssl appmenu-gtk-module gtk3 libappindicator-gtk3 librsvg libvips cmake jq pkgconf
-```
-
-For Fedora:
-
-```shell
-sudo dnf check-update
-sudo dnf install webkit2gtk3-devel.x86_64 openssl-devel curl wget libappindicator-gtk3 librsvg2-devel jq
-sudo dnf group install "C Development Tools and Libraries"
-```
-
-For MacOS:
-
-```shell
-xcode-select --install
-brew install mise pnpm protobuf zsh bash fish shellcheck jq
-```
-
 ### 2. Install Rust toolchain using [Rustup](https://rustup.rs):
 
 ```shell
@@ -161,6 +148,12 @@ Run `pnpm` in root directory to add pre-commit hooks:
 ```shell
 pnpm install --ignore-scripts
 ```
+
+</div>
+</details>
+
+
+
 
 ### 💡 Quick Tip for Onboarding
 
