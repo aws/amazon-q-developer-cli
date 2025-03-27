@@ -1124,7 +1124,7 @@ where
                     self.conversation_state
                         .push_assistant_message(AssistantResponseMessage {
                             message_id: None,
-                            content: "Fake message - actual message took too long to generate".to_string(),
+                            content: "Response timed out - message took too long to generate".to_string(),
                             tool_uses: None,
                         });
                     self.conversation_state
