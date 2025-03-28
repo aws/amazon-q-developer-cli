@@ -30,7 +30,7 @@ pub struct GhIssueContext<'a> {
 }
 
 /// Max amount of user chat + assistant recent chat messages to include in the issue.
-const MAX_TRANSCRIPT_LEN: usize = 5;
+const MAX_TRANSCRIPT_LEN: usize = 10;
 
 impl GhIssue {
     pub async fn invoke(&self, _updates: impl Write, context: GhIssueContext<'_>) -> Result<InvokeOutput> {

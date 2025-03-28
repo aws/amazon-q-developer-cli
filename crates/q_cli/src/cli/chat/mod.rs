@@ -576,6 +576,7 @@ where
             }
         };
 
+        self.conversation_state.append_user_transcript(&user_input);
         Ok(ChatState::HandleInput {
             input: user_input,
             tool_uses: Some(tool_uses),

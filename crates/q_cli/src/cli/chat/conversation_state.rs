@@ -157,9 +157,6 @@ impl ConversationState {
             None
         };
 
-        // Record message before adding context.
-        self.append_user_transcript(&input);
-
         // Combine context files with user input if available
         let content = if let Some(context) = context_files {
             format!("{}\n{}", context, input)
