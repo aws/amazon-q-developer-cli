@@ -69,7 +69,7 @@ The chat implementation includes a robust tool system that allows Amazon Q to in
 
 3. **Security Considerations**:
    - Tools that modify the system (like `fs_write` and `execute_bash`) require user confirmation
-   - The `/acceptall` command can toggle automatic acceptance for the session
+   - The `/acceptall` command can toggle automatic acceptance for the session, which allows Amazon Q to execute commands and modify files without asking for confirmation
    - Tool responses are limited to prevent excessive output (30KB limit)
 
 ### Technical Implementation
