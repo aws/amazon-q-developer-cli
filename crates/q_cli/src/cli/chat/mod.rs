@@ -1003,13 +1003,7 @@ where
                 style::Print(format!("{}\n", "▔".repeat(terminal_width))),
                 style::SetForegroundColor(Color::Reset),
             )?;
-            let invoke_result = tool
-                .1
-                .invoke(&self.ctx, &mut self.output, GhIssueContext {
-                    conversation_state: &self.conversation_state,
-                    failed_request_ids: &self.failed_request_ids,
-                })
-                .await;
+            let invoke_result = tool.1.invoke(&self.ctx, &mut self.output).await;
 
             if self.interactive && self.spinner.is_some() {
                 queue!(
@@ -1307,6 +1301,9 @@ where
                 .utterance_id(self.conversation_state.message_id().map(|s| s.to_string()));
             match Tool::try_from(tool_use) {
                 Ok(mut tool) => {
+                    // Apply non-Q-generated context to tools
+                    self.contextualize_tool(&mut tool);
+
                     match tool.validate(&self.ctx).await {
                         Ok(()) => {
                             tool_telemetry.is_valid = Some(true);
@@ -1388,6 +1385,27 @@ where
             }),
             (false, false) => Err(ChatError::NonInteractiveToolApproval),
         }
+    }
+
+    /// Apply program context to tools that Q may not have.
+    // We cannot attach this any other way because Tools are constructed by deserializing
+    // output from Amazon Q.
+    // TODO: Is there a better way?
+    fn contextualize_tool(&self, tool: &mut Tool) {
+        #[allow(clippy::single_match)]
+        match tool {
+            Tool::GhIssue(gh_issue) => {
+                gh_issue.set_context(GhIssueContext {
+                    // Ideally we avoid cloning, but this function is not called very often.
+                    // Using references with lifetimes requires a large refactor, and Arc<Mutex<T>>
+                    // seems like overkill and may incur some performance cost anyway.
+                    context_manager: self.conversation_state.context_manager.clone(),
+                    transcript: self.conversation_state.transcript.clone(),
+                    failed_request_ids: self.failed_request_ids.clone(),
+                });
+            },
+            _ => (),
+        };
     }
 
     async fn print_tool_descriptions(&mut self, tool_uses: &[QueuedTool]) -> Result<(), ChatError> {

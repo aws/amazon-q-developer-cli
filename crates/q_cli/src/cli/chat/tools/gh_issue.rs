@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::Write;
 
 use crossterm::style::Color;
@@ -8,12 +9,13 @@ use crossterm::{
 use eyre::{
     Result,
     WrapErr,
+    eyre,
 };
 use fig_os_shim::Context;
 use serde::Deserialize;
 
 use super::InvokeOutput;
-use crate::cli::chat::conversation_state::ConversationState;
+use crate::cli::chat::context::ContextManager;
 use crate::cli::issue::IssueCreator;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -22,25 +24,36 @@ pub struct GhIssue {
     pub expected_behavior: Option<String>,
     pub actual_behavior: Option<String>,
     pub steps_to_reproduce: Option<String>,
+
+    #[serde(skip_deserializing)]
+    pub context: Option<GhIssueContext>,
 }
 
-pub struct GhIssueContext<'a> {
-    pub conversation_state: &'a ConversationState,
-    pub failed_request_ids: &'a Vec<String>,
+#[derive(Debug, Clone)]
+pub struct GhIssueContext {
+    pub context_manager: Option<ContextManager>,
+    pub transcript: VecDeque<String>,
+    pub failed_request_ids: Vec<String>,
 }
 
 /// Max amount of user chat + assistant recent chat messages to include in the issue.
 const MAX_TRANSCRIPT_LEN: usize = 5;
 
 impl GhIssue {
-    pub async fn invoke(&self, _updates: impl Write, context: GhIssueContext<'_>) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, _updates: impl Write) -> Result<InvokeOutput> {
+        let Some(context) = self.context.as_ref() else {
+            return Err(eyre!(
+                "report_issue: Required tool context (GhIssueContext) not set by the program."
+            ));
+        };
+
         // Prepare additional details from the chat session
-        let additional_environment = [Self::get_request_ids(&context), Self::get_context(&context).await].join("\n\n");
+        let additional_environment = [Self::get_request_ids(context), Self::get_context(context).await].join("\n\n");
 
         // Add chat history to the actual behavior text.
         let actual_behavior = self.actual_behavior.as_ref().map_or_else(
-            || Self::get_transcript(&context),
-            |behavior| format!("{behavior}\n\n{}\n", Self::get_transcript(&context)),
+            || Self::get_transcript(context),
+            |behavior| format!("{behavior}\n\n{}\n", Self::get_transcript(context)),
         );
 
         let _ = IssueCreator {
@@ -57,9 +70,13 @@ impl GhIssue {
         Ok(Default::default())
     }
 
-    fn get_transcript(context: &GhIssueContext<'_>) -> String {
+    pub fn set_context(&mut self, context: GhIssueContext) {
+        self.context = Some(context);
+    }
+
+    fn get_transcript(context: &GhIssueContext) -> String {
         let mut transcript_str = String::from("```\n[chat-transcript]\n");
-        let transcript: Vec<String> = context.conversation_state.transcript
+        let transcript: Vec<String> = context.transcript
             .iter()
             .rev() // To take last N items
             .scan(0, |user_msg_count, line| {
@@ -89,7 +106,7 @@ impl GhIssue {
         transcript_str
     }
 
-    fn get_request_ids(context: &GhIssueContext<'_>) -> String {
+    fn get_request_ids(context: &GhIssueContext) -> String {
         format!(
             "[chat-failed_request_ids]\n{}",
             if context.failed_request_ids.is_empty() {
@@ -100,9 +117,9 @@ impl GhIssue {
         )
     }
 
-    async fn get_context(context: &GhIssueContext<'_>) -> String {
+    async fn get_context(context: &GhIssueContext) -> String {
         let mut ctx_str = "[chat-context]\n".to_string();
-        let Some(ctx_manager) = &context.conversation_state.context_manager else {
+        let Some(ctx_manager) = &context.context_manager else {
             ctx_str.push_str("No context available.");
             return ctx_str;
         };

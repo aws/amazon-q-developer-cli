@@ -24,10 +24,7 @@ use fig_api_client::model::{
 use fig_os_shim::Context;
 use fs_read::FsRead;
 use fs_write::FsWrite;
-use gh_issue::{
-    GhIssue,
-    GhIssueContext,
-};
+use gh_issue::GhIssue;
 use serde::Deserialize;
 use use_aws::UseAws;
 
@@ -81,19 +78,13 @@ impl Tool {
     }
 
     /// Invokes the tool asynchronously
-    // TODO: Need to rework this to avoid passing in args meant for a single tool.
-    pub async fn invoke(
-        &self,
-        context: &Context,
-        updates: &mut impl Write,
-        gh_issue_context: GhIssueContext<'_>,
-    ) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, context: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(context, updates).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(context, updates).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
-            Tool::GhIssue(gh_issue) => gh_issue.invoke(updates, gh_issue_context).await,
+            Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
         }
     }
 
