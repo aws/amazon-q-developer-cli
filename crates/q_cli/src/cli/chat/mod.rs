@@ -834,40 +834,49 @@ where
                                 execute!(self.output, style::Print("\n"))?;
                             }
 
-                            // If expand flag is set, show the expanded files
-                            if expand {
-                                match context_manager.get_context_files(false).await {
-                                    Ok(context_files) => {
-                                        if context_files.is_empty() {
-                                            execute!(
-                                                self.output,
-                                                style::SetForegroundColor(Color::DarkGrey),
-                                                style::Print("No files matched the patterns.\n\n"),
-                                                style::SetForegroundColor(Color::Reset)
-                                            )?;
-                                        } else {
-                                            execute!(
-                                                self.output,
-                                                style::SetForegroundColor(Color::Green),
-                                                style::Print(format!("Expanded files ({}):\n", context_files.len())),
-                                                style::SetForegroundColor(Color::Reset)
-                                            )?;
-
-                                            for (filename, _) in context_files {
-                                                execute!(self.output, style::Print(format!("    {}\n", filename)))?;
-                                            }
-                                            execute!(self.output, style::Print("\n"))?;
-                                        }
-                                    },
-                                    Err(e) => {
+                            match context_manager.get_context_files(false).await {
+                                Ok(context_files) => {
+                                    if context_files.is_empty() {
                                         execute!(
                                             self.output,
-                                            style::SetForegroundColor(Color::Red),
-                                            style::Print(format!("Error expanding files: {}\n\n", e)),
+                                            style::SetForegroundColor(Color::DarkGrey),
+                                            style::Print("No files matched the configured context paths.\n\n"),
                                             style::SetForegroundColor(Color::Reset)
                                         )?;
-                                    },
-                                }
+                                    } else if expand {
+                                        // Show expanded file list when expand flag is set
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!("Expanded files ({}):\n", context_files.len())),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+
+                                        for (filename, _) in context_files {
+                                            execute!(self.output, style::Print(format!("    {}\n", filename)))?;
+                                        }
+                                        execute!(self.output, style::Print("\n"))?;
+                                    } else {
+                                        // Just show the count when expand flag is not set
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!(
+                                                "Number of context files in use: {}\n",
+                                                context_files.len()
+                                            )),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    }
+                                },
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("Error retrieving context files: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
                             }
                         },
                         command::ContextSubcommand::Add { global, force, paths } => {
