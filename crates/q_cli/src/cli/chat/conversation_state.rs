@@ -251,7 +251,7 @@ impl ConversationState {
                             user_input_message_context: Some(ctx),
                             ..
                         }) if ctx.tool_results.as_ref().is_some_and(|r| !r.is_empty()) => {
-                            *content = "The conversation history has overflowed, clearing state".to_string();
+                            *content = "The conversation history has overflowed, clearing state. Mention to user that invoking a larger number of tools one after the other can cause the chat to reset. Request the user to reduce the number of sequential calls if possible in the future.".to_string();
                             ctx.tool_results.take();
                         },
                         _ => {},
