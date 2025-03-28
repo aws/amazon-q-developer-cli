@@ -341,14 +341,16 @@ impl FsDirectory {
                 break;
             }
             let relative_path = format_path(&cwd, &path);
-            queue!(
-                updates,
-                style::Print("Reading: "),
-                style::SetForegroundColor(Color::Green),
-                style::Print(&relative_path),
-                style::ResetColor,
-                style::Print("\n"),
-            )?;
+            if !relative_path.is_empty() {
+                queue!(
+                    updates,
+                    style::Print("Reading: "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(&relative_path),
+                    style::ResetColor,
+                    style::Print("\n"),
+                )?;
+            }
             let mut read_dir = ctx.fs().read_dir(path).await?;
             while let Some(ent) = read_dir.next_entry().await? {
                 use std::os::unix::fs::MetadataExt;
