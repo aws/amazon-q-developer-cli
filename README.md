@@ -153,6 +153,15 @@ pnpm install --ignore-scripts
 </details>
 
 
+### 3. Start Local Development
+To compile and view changes made to `q chat`:
+```shell
+alias run_q_chat='cargo run --bin q_cli -- chat'
+run_q_chat
+```
+
+> If you are working on other q commands, just replace `chat` with the command name 
+
 
 
 ### 💡 Quick Tip for Onboarding
