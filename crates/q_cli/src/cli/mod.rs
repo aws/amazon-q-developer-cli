@@ -348,7 +348,7 @@ impl Cli {
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
-            None => launch_dashboard(true).await,
+            None => chat::chat(None, false, false, None).await,
         }
     }
 
