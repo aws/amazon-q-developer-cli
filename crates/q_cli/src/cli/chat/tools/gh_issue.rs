@@ -34,6 +34,8 @@ pub struct GhIssueContext {
     pub context_manager: Option<ContextManager>,
     pub transcript: VecDeque<String>,
     pub failed_request_ids: Vec<String>,
+    pub accept_all: bool,
+    pub interactive: bool,
 }
 
 /// Max amount of user chat + assistant recent chat messages to include in the issue.
@@ -48,7 +50,12 @@ impl GhIssue {
         };
 
         // Prepare additional details from the chat session
-        let additional_environment = [Self::get_request_ids(context), Self::get_context(context).await].join("\n\n");
+        let additional_environment = [
+            Self::get_chat_settings(context),
+            Self::get_request_ids(context),
+            Self::get_context(context).await,
+        ]
+        .join("\n\n");
 
         // Add chat history to the actual behavior text.
         let actual_behavior = self.actual_behavior.as_ref().map_or_else(
@@ -124,20 +131,29 @@ impl GhIssue {
             return ctx_str;
         };
 
-        ctx_str.push_str(&format!("current_profile={}\n\n", ctx_manager.current_profile));
+        ctx_str.push_str(&format!("current_profile={}\n", ctx_manager.current_profile));
+        match ctx_manager.list_profiles().await {
+            Ok(profiles) if !profiles.is_empty() => {
+                ctx_str.push_str(&format!("profiles=\n{}\n\n", profiles.join("\n")));
+            },
+            _ => ctx_str.push_str("profiles=none\n\n"),
+        }
 
         // Context file categories
         if ctx_manager.global_config.paths.is_empty() {
-            ctx_str.push_str("global=none\n\n");
+            ctx_str.push_str("global_context=none\n\n");
         } else {
-            ctx_str.push_str(&format!("global=\n{}\n\n", &ctx_manager.global_config.paths.join("\n")));
+            ctx_str.push_str(&format!(
+                "global_context=\n{}\n\n",
+                &ctx_manager.global_config.paths.join("\n")
+            ));
         }
 
         if ctx_manager.profile_config.paths.is_empty() {
-            ctx_str.push_str("profile=none\n\n");
+            ctx_str.push_str("profile_context=none\n\n");
         } else {
             ctx_str.push_str(&format!(
-                "profile=\n{}\n\n",
+                "profile_context=\n{}\n\n",
                 &ctx_manager.profile_config.paths.join("\n")
             ));
         }
@@ -160,6 +176,14 @@ impl GhIssue {
         }
 
         ctx_str
+    }
+
+    fn get_chat_settings(context: &GhIssueContext) -> String {
+        let mut result_str = "[chat-settings]\n".to_string();
+        result_str.push_str(&format!("accept_all={}\n", context.accept_all));
+        result_str.push_str(&format!("interactive={}", context.interactive));
+
+        result_str
     }
 
     pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
