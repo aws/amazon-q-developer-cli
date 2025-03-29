@@ -1,0 +1,90 @@
+- Feature Name: persistent_conversations_q_cli
+- Start Date: 2024-03-27
+
+# Summary
+
+Enhance Amazon Q CLI Chat with persistent conversation management capabilities, enabling users to save, load, and manage conversations across sessions. This feature will initially support local storage with automatic conversation continuation based on the working directory, with future extensibility for cloud storage options.
+
+# Motivation
+
+The current ephemeral nature of Amazon Q CLI conversations presents several challenges. When a terminal closes, all conversation history is lost, forcing users to start from scratch. This lack of continuity is particularly problematic for people intermittently working on projects, where the context from previous hours or days is crucial. Moreover, it hampers the sharing of complex troubleshooting or design sessions with colleagues, especially across different time zones. The current setup also limits the potential for automation through scripting and impedes efficient knowledge transfer among team members. By introducing conversation persistence, we can address these issues, providing continuity, enabling collaboration, and supporting automation scenarios.
+
+
+The addition of conversation persistence will address these issues by providing continuity, enabling collaboration, and supporting automation scenarios.
+
+# Guide-level explanation
+
+The persistent conversations feature introduces several new capabilities to Amazon Q CLI:
+
+1. Automatic Continuation:
+```bash
+$ q
+Welcome to Amazon Q CLI!
+
+Would like to continue your previous conversation? (y/n)
+```
+    
+
+    
+2. Named Conversations:
+    
+```
+# Create/load a named conversation
+$ q --conversation my_project
+
+# List available conversations
+$ q --list-conversations
+Available conversations:
+1. my_project (Last modified: 2024-12-15 14:30)
+2. debug_lambda (Last modified: 2024-12-14 09:45)
+
+# Delete a conversation
+$ q --delete-conversation debug_lambda
+
+```
+
+    
+3. In-Chat Commands:
+* /conversation <name>: Create or load a conversation
+* /list-conversations: Show available conversations
+* /delete-conversation <name>: Remove a saved conversation
+
+# Reference-level explanation
+
+## Storage Implementation:
+
+We will use SQLite for conversation storage, located in the ~/.aws/amazonq/conversations/ directory. Each conversation will be stored in a file named using the SHA-1 hash of the working directory for automatic continuation. The schema will include the conversation history (with line limits), profile reference, context reference, and metadata such as timestamps.
+
+## Conversation Management:
+
+For directory-based automatic continuation, we'll create a auto-generated conversation ID for the working directory. When starting Q in the same directory, it will ask whether to load the previous conversation, or to start a fresh session. If the user had multiple conversations in the same directory, then we will provide an option to select from the last 3, sorted based on the last modified timestamp. Named conversations will be managed explicitly through CLI arguments, persisting across directory changes and supporting multiple concurrent conversations.
+
+## Telemetry:
+
+We will track the usage of new CLI arguments, monitor the number of total and simultaneous conversations, and track conversation file sizes to help us understand user behavior and optimize the feature.
+
+# Drawbacks
+
+Implementing persistent conversations introduces increased complexity in conversation management. It will require additional storage on the user's system and may have a slight performance impact due to persistent storage operations. We'll also need to consider security measures for stored conversation data.
+
+# Rationale and alternatives
+
+We've proposed to use SQLite for robust storage with good performance. The directory-based automatic continuation offers an intuitive user experience, and starting with local storage reduces complexity for the initial implementation.
+
+We considered alternatives such as a cloud-first storage approach, which was rejected due to increased complexity, and plain text storage, which was deemed inadequate for performance and maintainability reasons. 
+
+# Unresolved questions
+
+Several questions remain to be resolved during the implementation phase. We need to determine maximum conversation history limits and whether compression is required for storage optimization. Cleanup policies for old conversations and security measures for sensitive content need to be established. Additionally, we need to develop a migration strategy for future cloud storage support.
+
+# Future possibilities
+
+Looking ahead, we see several exciting possibilities for expanding this feature. We could integrate cloud storage options, including S3 and HTTPS-based storage, enabling cross-device synchronization. Enhanced collaboration features like conversation sharing, team workspace support, and access control mechanisms could be implemented.
+
+We also envision advanced management capabilities such as conversation tagging, powerful search functionality, and export/import features. For automation, we could develop an API for programmatic conversation management, integrate with CI/CD pipelines, and support batch processing capabilities.
+
+These future enhancements would further improve the utility and flexibility of persistent conversations in Amazon Q CLI, making it an even more powerful tool for developers and teams.
+
+
+
+
