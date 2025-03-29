@@ -11,7 +11,7 @@ extend-exclude = [
   "crates/zbus",
   "crates/zbus_names",
   "packages/fuzzysort",
-  "packages/dashboard/public/license/NOTICE.txt",
+  "packages/dashboard-app/public/license/NOTICE.txt",
   "pnpm-lock.yaml"
 ]
 
