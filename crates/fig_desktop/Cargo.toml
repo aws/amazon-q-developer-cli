@@ -121,7 +121,7 @@ nix.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus = { path = "../dbus" }
-freedesktop-icons = "0.2.2"
+freedesktop-icons = "0.3.1"
 gtk = "0.18"
 x11rb = "0.13.0"
 zbus = { path = "../zbus" }
