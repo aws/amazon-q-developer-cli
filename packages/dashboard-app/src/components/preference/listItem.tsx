@@ -122,7 +122,7 @@ export function Setting({
                 <SelectTrigger className="w-60">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-64 overflow-auto">
                   <SelectGroup>
                     {data.options?.map((o, i) => {
                       // console.log({ pref: data.id, localValue, inputValue: o, equal: localValue === o })
