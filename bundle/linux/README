@@ -1,9 +1,29 @@
-To install the Amazon Q CLI run the install.sh script
+# 🚀 Amazon Q CLI Installation on Linux
 
+## 1. Installation
+
+To install the Amazon Q CLI, run the following command:
+
+```bash
 ./install.sh
+```
 
-To enable support for SSH if this is being installed on a remote machine,
-run the following lines then restart sshd and reconnect to the machine.
+If you only want to install the `q` CLI without `qterm` or modifying dotfiles, use the following command:
 
+```bash
+./install.sh --q-cli
+```
+
+## 2. SSH Configuration
+If you are installing the Amazon Q CLI on a remote machine and want to enable SSH support, add the following lines to your SSH configuration (`/etc/ssh/sshd_config`):
+
+```bash
 AcceptEnv Q_SET_PARENT
 AllowStreamLocalForwarding yes
+```
+
+After making these changes, restart the SSH service:
+
+```bash
+sudo systemctl restart sshd
+```
