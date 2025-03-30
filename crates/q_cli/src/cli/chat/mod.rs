@@ -5,7 +5,6 @@ mod input_source;
 mod parse;
 mod parser;
 mod prompt;
-mod tool_manager;
 mod tools;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -66,12 +65,11 @@ use tokio::signal::unix::{
     SignalKind,
     signal,
 };
-use tool_manager::{
-    McpServerConfig,
-    ToolManager,
-};
-use tools::Tool;
 use tools::gh_issue::GhIssueContext;
+use tools::{
+    Tool,
+    ToolSpec,
+};
 use tracing::{
     debug,
     error,
@@ -163,7 +161,7 @@ pub async fn chat(
         input
     };
 
-    let mut output: Box<dyn Write> = match interactive {
+    let output: Box<dyn Write> = match interactive {
         true => Box::new(std::io::stderr()),
         false => Box::new(std::io::stdout()),
     };
@@ -172,11 +170,6 @@ pub async fn chat(
         Ok(json) => create_stream(serde_json::from_str(std::fs::read_to_string(json)?.as_str())?),
         _ => StreamingClient::new().await?,
     };
-
-    let mcp_server_configs = McpServerConfig::load_config(&mut output).await.unwrap_or_else(|e| {
-        warn!("No mcp server config loaded: {}", e);
-        McpServerConfig::default()
-    });
 
     // If profile is specified, verify it exists before starting the chat
     if let Some(ref profile_name) = profile {
@@ -208,7 +201,6 @@ pub async fn chat(
         interactive,
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
-        Some(mcp_server_configs),
         accept_all,
         profile,
     )
@@ -270,8 +262,6 @@ pub struct ChatContext<W: Write> {
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
     /// State used to keep track of tool use relation
     tool_use_status: ToolUseStatus,
-    /// Abstraction that consolidates custom tools with native ones
-    tool_manager: ToolManager,
     accept_all: bool,
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
@@ -288,14 +278,10 @@ impl<W: Write> ChatContext<W> {
         interactive: bool,
         client: StreamingClient,
         terminal_width_provider: fn() -> Option<usize>,
-        mcp_server_config: Option<McpServerConfig>,
         accept_all: bool,
         profile: Option<String>,
     ) -> Result<Self> {
-        let mcp_server_config = mcp_server_config.unwrap_or_default();
-        let tool_manager = ToolManager::from_configs(mcp_server_config).await?;
         let ctx_clone = Arc::clone(&ctx);
-        let conversation_state = ConversationState::new(ctx_clone, tool_manager.load_tools().await?, profile).await;
         Ok(Self {
             ctx,
             settings,
@@ -306,10 +292,9 @@ impl<W: Write> ChatContext<W> {
             client,
             terminal_width_provider,
             spinner: None,
-            conversation_state,
+            conversation_state: ConversationState::new(ctx_clone, load_tools()?, profile).await,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
-            tool_manager,
             accept_all,
             failed_request_ids: Vec::new(),
         })
@@ -1337,7 +1322,7 @@ where
                 .set_tool_use_id(tool_use_id.clone())
                 .set_tool_name(tool_use.name.clone())
                 .utterance_id(self.conversation_state.message_id().map(|s| s.to_string()));
-            match self.tool_manager.get_tool_from_tool_use(tool_use) {
+            match Tool::try_from(tool_use) {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);
@@ -1616,6 +1601,11 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
     StreamingClient::mock(mock)
 }
 
+/// Returns all tools supported by Q chat.
+fn load_tools() -> Result<HashMap<String, ToolSpec>> {
+    Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1655,7 +1645,6 @@ mod tests {
             true,
             test_client,
             || Some(80),
-            None,
             false,
             None,
         )
