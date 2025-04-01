@@ -11,6 +11,7 @@ pub enum Command {
     Quit,
     Profile { subcommand: ProfileSubcommand },
     Context { subcommand: ContextSubcommand },
+    Ed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +165,7 @@ impl Command {
                 "clear" => Self::Clear,
                 "help" => Self::Help,
                 "acceptall" => Self::AcceptAll,
+                "ed" => Self::Ed,
                 "issue" => {
                     if parts.len() > 1 {
                         Self::Issue {

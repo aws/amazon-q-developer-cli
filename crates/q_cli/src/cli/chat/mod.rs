@@ -13,9 +13,16 @@ use std::io::{
     Read,
     Write,
 };
-use std::process::ExitCode;
+use std::process::{
+    Command as ProcessCommand,
+    ExitCode,
+};
 use std::sync::Arc;
 use std::time::Duration;
+use std::{
+    env,
+    fs,
+};
 
 use command::Command;
 use context::ContextManager;
@@ -76,6 +83,7 @@ use tracing::{
     trace,
     warn,
 };
+use uuid::Uuid;
 use winnow::Partial;
 use winnow::stream::Offset;
 
@@ -96,6 +104,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 • Help me understand my git status
 
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
+<em>/ed</em>           <black!>Open your $EDITOR to compose a prompt</black!>
 <em>/issue</em>        <black!>Report an issue or make a feature request.</black!>
 <em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
 <em>/context</em>      <black!>(Beta) Manage context files for a profile</black!>
@@ -111,6 +120,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 <em>/clear</em>        <black!>Clear the conversation history</black!>
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
+<em>/ed</em>           <black!>Open your $EDITOR to compose a prompt</black!>
 <em>/issue</em>        <black!>Report an issue or make a feature request.</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
@@ -365,6 +375,43 @@ impl<W> ChatContext<W>
 where
     W: Write,
 {
+    /// Opens the user's preferred editor to compose a prompt
+    fn open_editor(&self) -> Result<String, ChatError> {
+        // Create a temporary file with a unique name
+        let temp_dir = std::env::temp_dir();
+        let file_name = format!("q_prompt_{}.md", Uuid::new_v4());
+        let temp_file_path = temp_dir.join(file_name);
+
+        // Get the editor from environment variable or use a default
+        let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+
+        // Write initial content to the file (optional)
+        fs::write(&temp_file_path, "# Enter your prompt here\n")
+            .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {}", e).into()))?;
+
+        // Open the editor
+        let status = ProcessCommand::new(editor)
+            .arg(&temp_file_path)
+            .status()
+            .map_err(|e| ChatError::Custom(format!("Failed to open editor: {}", e).into()))?;
+
+        if !status.success() {
+            return Err(ChatError::Custom("Editor exited with non-zero status".into()));
+        }
+
+        // Read the content back
+        let content = fs::read_to_string(&temp_file_path)
+            .map_err(|e| ChatError::Custom(format!("Failed to read temporary file: {}", e).into()))?;
+
+        // Clean up the temporary file
+        let _ = fs::remove_file(&temp_file_path);
+
+        // Remove the initial comment if it's still there
+        let content = content.replace("# Enter your prompt here\n", "");
+
+        Ok(content.trim().to_string())
+    }
+
     async fn try_chat(&mut self) -> Result<()> {
         if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
             execute!(self.output, style::Print(WELCOME_TEXT))?;
@@ -697,6 +744,61 @@ where
                 ChatState::PromptUser {
                     tool_uses: Some(tool_uses),
                     skip_printing_tools: true,
+                }
+            },
+            Command::Ed => {
+                match self.open_editor() {
+                    Ok(content) => {
+                        if content.trim().is_empty() {
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print("\nEmpty content from editor, not submitting.\n\n"),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+
+                            ChatState::PromptUser {
+                                tool_uses: Some(tool_uses),
+                                skip_printing_tools: true,
+                            }
+                        } else {
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print("\nContent loaded from editor. Submitting prompt...\n\n"),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+
+                            // Display the content as if the user typed it
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Magenta),
+                                style::Print("> "),
+                                style::SetAttribute(Attribute::Reset),
+                                style::Print(&content),
+                                style::Print("\n")
+                            )?;
+
+                            // Process the content as user input
+                            ChatState::HandleInput {
+                                input: content,
+                                tool_uses: Some(tool_uses),
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!("\nError opening editor: {}\n\n", e)),
+                            style::SetForegroundColor(Color::Reset)
+                        )?;
+
+                        ChatState::PromptUser {
+                            tool_uses: Some(tool_uses),
+                            skip_printing_tools: true,
+                        }
+                    },
                 }
             },
             Command::Quit => ChatState::Exit,
@@ -1657,5 +1759,31 @@ mod tests {
         .unwrap();
 
         assert_eq!(ctx.fs().read_to_string("/file.txt").await.unwrap(), "Hello, world!\n");
+    }
+
+    #[test]
+    fn test_editor_content_processing() {
+        // Test various template scenarios
+        let cases = vec![
+            ("# Enter your prompt here\nMy content", "My content"),
+            (
+                "# Enter your prompt here\n\nMultiple lines\nof content",
+                "\nMultiple lines\nof content",
+            ),
+            ("My content without template", "My content without template"),
+        ];
+
+        for (input, expected) in cases {
+            let processed = input.replace("# Enter your prompt here\n", "").trim().to_string();
+            assert_eq!(processed, expected.trim().to_string(), "Failed for input: {}", input);
+        }
+
+        // Special case for just the template
+        let template_only = "# Enter your prompt here\n";
+        let processed = template_only
+            .replace("# Enter your prompt here\n", "")
+            .trim()
+            .to_string();
+        assert_eq!(processed, "", "Failed for template-only input");
     }
 }
