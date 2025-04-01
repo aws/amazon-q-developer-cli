@@ -104,7 +104,6 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 • Help me understand my git status
 
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
-<em>/ed</em>           <black!>Open your $EDITOR to compose a prompt</black!>
 <em>/issue</em>        <black!>Report an issue or make a feature request.</black!>
 <em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
 <em>/context</em>      <black!>(Beta) Manage context files for a profile</black!>
