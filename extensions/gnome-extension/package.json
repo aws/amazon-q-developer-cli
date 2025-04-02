@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@girs/gjs": "4.0.0-beta.21",
-    "@girs/gnome-shell": "^46.0.2"
+    "@girs/gnome-shell": "^48.0.2"
   },
   "sideEffects": false
 }
