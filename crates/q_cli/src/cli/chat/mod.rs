@@ -102,6 +102,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
+<cyan!>Use Alt+Enter to provide multi-line prompts.</cyan!>
 
 "};
 
@@ -109,6 +110,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 <magenta,em>q</magenta,em> (Amazon Q Chat)
 
+<cyan,em>Commands:</cyan,em>
 <em>/clear</em>        <black!>Clear the conversation history</black!>
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
 <em>/issue</em>        <black!>Report an issue or make a feature request.</black!>
@@ -128,7 +130,9 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
 
+<cyan,em>Tips:</cyan,em>
 <em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
+<em>Alt+Enter</em>     <black!>Insert new-line to provide multi-line prompt. Alternatively, [Ctrl+j]</black!>
 
 "};
 

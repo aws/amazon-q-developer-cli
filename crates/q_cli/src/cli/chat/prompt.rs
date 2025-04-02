@@ -13,16 +13,25 @@ use rustyline::highlight::{
     Highlighter,
 };
 use rustyline::history::DefaultHistory;
+use rustyline::validate::{
+    ValidationContext,
+    ValidationResult,
+    Validator,
+};
 use rustyline::{
+    Cmd,
     Completer,
     CompletionType,
     Config,
     Context,
     EditMode,
     Editor,
+    EventHandler,
     Helper,
     Hinter,
-    Validator,
+    KeyCode,
+    KeyEvent,
+    Modifiers,
 };
 use winnow::stream::AsChar;
 
@@ -151,14 +160,44 @@ impl Completer for ChatCompleter {
     }
 }
 
-#[derive(Helper, Completer, Hinter, Validator)]
+/// Custom validator for multi-line input
+pub struct MultiLineValidator;
+
+impl Validator for MultiLineValidator {
+    fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
+        let input = ctx.input();
+
+        if input.trim().is_empty() {
+            return Ok(ValidationResult::Incomplete);
+        }
+
+        // Check for explicit multi-line markers
+        if input.starts_with("```") && !input.ends_with("```") {
+            return Ok(ValidationResult::Incomplete);
+        }
+
+        // Check for backslash continuation
+        if input.ends_with('\\') {
+            return Ok(ValidationResult::Incomplete);
+        }
+
+        Ok(ValidationResult::Valid(None))
+    }
+}
+
+#[derive(Helper, Completer, Hinter)]
 pub struct ChatHelper {
     #[rustyline(Completer)]
     completer: ChatCompleter,
-    #[rustyline(Validator)]
-    validator: (),
     #[rustyline(Hinter)]
     hinter: (),
+    validator: MultiLineValidator,
+}
+
+impl Validator for ChatHelper {
+    fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
+        self.validator.validate(ctx)
+    }
 }
 
 impl Highlighter for ChatHelper {
@@ -203,10 +242,23 @@ pub fn rl() -> Result<Editor<ChatHelper, DefaultHistory>> {
     let h = ChatHelper {
         completer: ChatCompleter::new(),
         hinter: (),
-        validator: (),
+        validator: MultiLineValidator,
     };
     let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(h));
+
+    // Add custom keybinding for Alt+Enter to insert a newline
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Enter, Modifiers::ALT),
+        EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
+    );
+
+    // Add custom keybinding for Ctrl+J to insert a newline
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char('j'), Modifiers::CTRL),
+        EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
+    );
+
     Ok(rl)
 }
 
