@@ -5,7 +5,7 @@
 
 ## Summary
 
-This RFC proposes adding MCP server management commands to the Amazon Q Developer CLI. The proposal includes commands for adding, removing, listing, and updating MCP servers, with appropriate scoping and security considerations.
+This RFC proposes adding MCP server management commands to the Amazon Q Developer CLI. The proposal includes commands for adding, removing, listing, and checking status of MCP servers, with appropriate scoping and security considerations.
 
 ## Motivation
 
@@ -18,7 +18,7 @@ This enhancement will improve the overal configuration for the Q CLI but providi
 - **MCP Server** is an external service that provides additional capabilities to Amazon Q. A preview support for MCP servers is offered in v1.7.2 of Amazon Q CLI.
 
 - **Scope**: Determines where MCP server configurations are stored:
-  - `local`: Available only in the current project
+  - `workspace`: Available only in the current project
   - `global`: Available to the current user across all projects
 
 ### Command Structure
@@ -33,7 +33,7 @@ q mcp [subcommand] [options]
 
 1. **add**: Add a new MCP server
    ```
-   q mcp add [--name NAME] [--url URL] [--scope SCOPE] [--env KEY=VALUE...]
+   q mcp add [--name NAME] [--scope SCOPE] [--env KEY=VALUE...] [--command COMMAND] [--args "ARG1 ARG2..."]
    ```
 
 2. **remove**: Remove an MCP server
@@ -46,17 +46,12 @@ q mcp [subcommand] [options]
    q mcp list [--scope SCOPE]
    ```
 
-4. **update**: Update an existing MCP server
-   ```
-   q mcp update [--name NAME] [--url URL] [--scope SCOPE] [--env KEY=VALUE...]
-   ```
-
-5. **import**: Import MCP servers from JSON configuration
+4. **import**: Import MCP servers from JSON configuration
    ```
    q mcp import [--file FILE] [--scope SCOPE]
    ```
 
-6. **status**: Check status of MCP servers
+5. **status**: Check status of MCP servers
    ```
    q mcp status [--name NAME]
    ```
@@ -65,24 +60,25 @@ q mcp [subcommand] [options]
 
 MCP server configurations will be stored in:
 
-- `local` scope: `.amazonq/mcp.json` in the current directory
+- `workspace` scope: `.amazonq/mcp.json` in the current project directory
 - `global` scope: `~/.aws/amazonq/mcp.json` in the user's home directory
 
 The configuration file format will be JSON:
 
 ```json
 {
-  "servers": [
-    {
-      "name": "aws-cli",
-      "url": "http://localhost:8080",
+  "mcpServers": {
+    "aws-mcp": {
+      "type": "stdio",
+      "command": "aws-mcp-server",
+      "args": ["--request-timeout", "10"],
       "env": {
         "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE_DUMMY_KEY_ID",
         "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY_DUMMY_SECRET",
         "AWS_REGION": "us-west-2"
       }
     }
-  ]
+  }
 }
 ```
 
@@ -90,7 +86,7 @@ The configuration file format will be JSON:
 
 1. **Environment Variables**: Sensitive information like API keys can be provided as environment variables
 2. **Timeout Configuration**: Users can configure MCP server startup timeout using the `Q_MCP_TIMEOUT` environment variable
-3. **Scope Precedence**: Local-scoped servers take precedence over global-scoped servers with the same name
+3. **Scope Precedence**: Workspace-scoped servers take precedence over global-scoped servers with the same name
 
 ### Integration with Chat
 
@@ -98,9 +94,9 @@ MCP servers will be automatically available in chat sessions:
 
 ```
 $ q chat
-> Use the aws-cli server to list my S3 buckets
+> Use the aws-mcp server to list my S3 buckets
 
-Using aws-cli MCP server...
+Using aws-mcp MCP server...
 Executing AWS CLI command: aws s3 ls
 2023-01-15 14:32:12 example-bucket-1
 2023-02-20 09:15:45 example-bucket-2
@@ -115,15 +111,14 @@ Users can check MCP server status during a chat session using the `/mcp` command
 ### Adding an AWS CLI MCP Server
 
 ```bash
-$ q mcp add --name aws-cli --url http://localhost:8080 --env AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE_DUMMY_KEY_ID --env AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY_DUMMY_SECRET --env AWS_REGION=us-west-2
-✓ Added MCP server 'aws-cli' to local scope
+$ q mcp add --name aws-mcp --command "aws-mcp-server --request-timeout 10" --env AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE_DUMMY_KEY_ID --env AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY_DUMMY_SECRET --env AWS_REGION=us-west-2
+✓ Added MCP server 'aws-mcp' to workspace scope
 ```
-
 ### Listing Available MCP Servers
 
 ```bash
 $ q mcp list
-  aws-cli (http://localhost:8080)
+  aws-mcp (aws-mcp-server)
 ```
 
 ### Using MCP in Chat
@@ -132,7 +127,7 @@ $ q mcp list
 $ q chat
 > Can you show me the objects in my S3 bucket example-bucket-1?
 
-I'll use the aws-cli MCP server to get that information for you.
+I'll use the aws-mcp MCP server to get that information for you.
 
 Contents of S3 bucket 'example-bucket-1':
 
@@ -157,9 +152,9 @@ $ q mcp import --file mcp-servers.json --scope global
 
 ```bash
 $ q chat
-> /mcp aws-cli
+> /mcp aws-mcp
 
-MCP Server: aws-cli (http://localhost:8080)
+MCP Server: aws-mcp (aws-mcp-server)
 Status: Connected
 Uptime: 1h 23m
 Available Tools: 12
