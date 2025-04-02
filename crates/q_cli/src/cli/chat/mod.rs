@@ -119,7 +119,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 <em>/clear</em>        <black!>Clear the conversation history</black!>
 <em>/acceptall</em>    <black!>Toggles acceptance prompting for the session.</black!>
-<em>/ed</em>           <black!>Open your $EDITOR to compose a prompt</black!>
+<em>/editor</em>       <black!>Open $EDITOR (defaults to vi) to compose a prompt</black!>
 <em>/issue</em>        <black!>Report an issue or make a feature request.</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
@@ -745,7 +745,7 @@ where
                     skip_printing_tools: true,
                 }
             },
-            Command::Ed => {
+            Command::PromptEditor => {
                 match self.open_editor() {
                     Ok(content) => {
                         if content.trim().is_empty() {

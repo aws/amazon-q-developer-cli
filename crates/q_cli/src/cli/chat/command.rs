@@ -11,7 +11,7 @@ pub enum Command {
     Quit,
     Profile { subcommand: ProfileSubcommand },
     Context { subcommand: ContextSubcommand },
-    Ed,
+    PromptEditor,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,7 +165,7 @@ impl Command {
                 "clear" => Self::Clear,
                 "help" => Self::Help,
                 "acceptall" => Self::AcceptAll,
-                "ed" => Self::Ed,
+                "editor" => Self::PromptEditor,
                 "issue" => {
                     if parts.len() > 1 {
                         Self::Issue {
