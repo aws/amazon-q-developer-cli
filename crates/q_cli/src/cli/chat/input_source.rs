@@ -39,7 +39,10 @@ impl InputSource {
                 let prompt = prompt.unwrap_or_default();
                 let curr_line = rl.readline(prompt);
                 match curr_line {
-                    Ok(line) => Ok(Some(line)),
+                    Ok(line) => {
+                        let _ = rl.add_history_entry(line.as_str());
+                        Ok(Some(line))
+                    },
                     Err(ReadlineError::Interrupted | ReadlineError::Eof) => Ok(None),
                     Err(err) => Err(err),
                 }
