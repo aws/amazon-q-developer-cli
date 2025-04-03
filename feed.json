@@ -12,6 +12,66 @@
     },
     {
       "type": "release",
+      "date": "2025-04-10",
+      "version": "1.7.3",
+      "title": "Version 1.7.3",
+      "changes": [
+        {
+          "type": "added",
+          "description": "A new command `/tools` in `q chat` for granular tool permissioning - [#1054](https://github.com/aws/amazon-q-developer-cli/pull/1054)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/compact` in `q chat` for summarizing the conversation history - [#1128](https://github.com/aws/amazon-q-developer-cli/pull/1128)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/editor` in `q chat` for composing prompts using the configured editor - [#1035](https://github.com/aws/amazon-q-developer-cli/pull/1035)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/issue` in `q chat` for creating new GitHub issues - [#990](https://github.com/aws/amazon-q-developer-cli/pull/990)"
+        },
+        {
+          "type": "added",
+          "description": "A new tool `report_issue` in `q chat` for creating new GitHub issues - [#974](https://github.com/aws/amazon-q-developer-cli/pull/974)"
+        },
+        {
+          "type": "added",
+          "description": "An improved context file display in `q chat` - [#983](https://github.com/aws/amazon-q-developer-cli/pull/983)"
+        },
+        {
+          "type": "added",
+          "description": "Optional terminal notifications on completed responses - [#1135](https://github.com/aws/amazon-q-developer-cli/pull/1135)"
+        },
+        {
+          "type": "added",
+          "description": "An option `--no-interactive` to invoke `q chat` in a non-interactive mode - [#878](https://github.com/aws/amazon-q-developer-cli/pull/878)"
+        },
+        {
+          "type": "added",
+          "description": "File name autocompletion in `q chat` - [#930](https://github.com/aws/amazon-q-developer-cli/pull/930)"
+        },
+        {
+          "type": "added",
+          "description": "Improved `execute_bash` pipe safety checking in `q chat` - [#927](https://github.com/aws/amazon-q-developer-cli/pull/927)"
+        },
+        {
+          "type": "changed",
+          "description": "Executing `q` now enters `q chat` instead of opening the dashboard - [#987](https://github.com/aws/amazon-q-developer-cli/pull/987)"
+        },
+        {
+          "type": "fixed",
+          "description": "A missing Match criteria error in the ssh integration - [#1134](https://github.com/aws/amazon-q-developer-cli/pull/1134)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-03-20",
       "version": "1.7.2",
       "title": "Version 1.7.2",

@@ -13,6 +13,8 @@ use crate::cli::doctor::{
     DoctorError,
 };
 
+const FISH_VERSION_REQUEST: &str = ">=3.3.0";
+
 pub struct FishVersionCheck;
 
 #[async_trait]
@@ -41,13 +43,15 @@ impl DoctorCheck for FishVersionCheck {
         )
         .context("failed parsing fish version")?;
 
-        if !VersionReq::parse(">=3.3.0").unwrap().matches(&version) {
-            return Err(DoctorError::error(format!(
-                "your fish version is outdated (need at least 3.3.0, found {version})"
-            )));
+        let version_req = VersionReq::parse(FISH_VERSION_REQUEST).context("failed to parse version requirement")?;
+        if version_req.matches(&version) {
+            Ok(())
+        } else {
+            Err(DoctorError::warning(format!(
+                "Your fish version is outdated (need {}, found {})",
+                FISH_VERSION_REQUEST, version
+            )))
         }
-
-        Ok(())
     }
 }
 

@@ -3,6 +3,7 @@ pub mod desktop;
 pub mod pid_file;
 mod region_check;
 pub mod spinner;
+pub mod token_counter;
 
 use std::env;
 use std::ffi::OsStr;

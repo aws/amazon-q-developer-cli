@@ -16,6 +16,8 @@ use crate::cli::doctor::{
     Platform,
 };
 
+const BASH_VERSION_REQUEST: &str = ">=5.0.0";
+
 pub struct BashVersionCheck;
 
 #[async_trait]
@@ -39,14 +41,16 @@ impl DoctorCheck for BashVersionCheck {
 
         let version = Version::parse(&version).context("Failed to parse bash version")?;
 
-        let version_req = VersionReq::parse(">=5.0.0").unwrap();
+        let version_req = VersionReq::parse(BASH_VERSION_REQUEST).context("failed to parse version requirement")?;
         if version_req.matches(&version) {
             Ok(())
         } else {
             Err(DoctorError::warning(format!(
-                "Using Bash {version} may cause issues, it is recommended to either update to bash >=5 or switch to zsh.
-  - Install Bash 5 with Brew: {}
+                "Using Bash {} may cause issues, it is recommended to either update to bash {} or switch to zsh.
+  - Install Bash with Brew: {}
   - Change shell default to ZSH: {}",
+                version,
+                BASH_VERSION_REQUEST,
                 "brew install bash && bash".bright_magenta(),
                 "chsh -s /bin/zsh && zsh".bright_magenta()
             )))

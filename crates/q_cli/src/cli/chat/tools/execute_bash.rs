@@ -69,12 +69,20 @@ impl ExecuteBash {
 
         // Check if each command in the pipe chain starts with a safe command
         for cmd_args in all_commands {
-            if let Some(cmd) = cmd_args.first() {
-                if !READONLY_COMMANDS.contains(&cmd.as_str()) {
+            match cmd_args.first() {
+                // Special casing for `find` so that we support most cases while safeguarding
+                // against unwanted mutations
+                Some(cmd)
+                    if cmd == "find"
+                        && cmd_args
+                            .iter()
+                            .any(|arg| arg.contains("-exec") || arg.contains("-delete")) =>
+                {
                     return true;
-                }
-            } else {
-                return true;
+                },
+                Some(cmd) if !READONLY_COMMANDS.contains(&cmd.as_str()) => return true,
+                None => return true,
+                _ => (),
             }
         }
 
@@ -289,6 +297,11 @@ mod tests {
             ("find . -name '*.rs' | rm", true),
             ("ls -la | grep .git | rm -rf", true),
             ("echo hello | sudo rm -rf /", true),
+            // `find` command arguments
+            ("find important-dir/ -exec rm {} \\;", true),
+            ("find . -name '*.c' -execdir gcc -o '{}.out' '{}' \\;", true),
+            ("find important-dir/ -delete", true),
+            ("find important-dir/ -name '*.txt'", false),
         ];
         for (cmd, expected) in cmds {
             let tool = serde_json::from_value::<ExecuteBash>(serde_json::json!({
