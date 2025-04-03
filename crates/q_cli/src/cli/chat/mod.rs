@@ -320,7 +320,7 @@ impl<W: Write> Drop for ChatContext<W> {
                 cursor::MoveToColumn(0),
                 style::SetAttribute(Attribute::Reset),
                 style::ResetColor,
-                cursor::Show // Ensure cursor is visible
+                cursor::Show
             )
             .ok();
         }
@@ -405,7 +405,6 @@ where
         let re = Regex::new(r"((\x9B|\x1B\[)[0-?]*[ -\/]*[@-~])|([^\x00-\x7F]+)").unwrap();
 
         loop {
-            // Ensure cursor is visible at the start of each loop iteration
             if self.interactive {
                 execute!(self.output, cursor::Show)?;
             }
@@ -446,7 +445,6 @@ where
                 ChatState::Exit => return Ok(()),
             };
 
-            // Ensure cursor is visible after processing each state
             if self.interactive {
                 execute!(self.output, cursor::Show)?;
             }
@@ -483,7 +481,7 @@ where
                             output,
                             style::SetAttribute(Attribute::Reset),
                             style::SetForegroundColor(Color::Reset),
-                            cursor::Show // Ensure cursor is visible
+                            cursor::Show
                         )
                     };
 
@@ -494,7 +492,7 @@ where
                             self.output,
                             terminal::Clear(terminal::ClearType::CurrentLine),
                             cursor::MoveToColumn(0),
-                            cursor::Show // Ensure cursor is visible
+                            cursor::Show
                         )?;
                     }
                     match e {
@@ -552,7 +550,7 @@ where
         mut tool_uses: Option<Vec<QueuedTool>>,
         skip_printing_tools: bool,
     ) -> Result<ChatState, ChatError> {
-        execute!(self.output, cursor::Show)?; // Ensure cursor is visible
+        execute!(self.output, cursor::Show)?;
         let tool_uses = tool_uses.take().unwrap_or_default();
         if !tool_uses.is_empty() && !skip_printing_tools {
             self.print_tool_descriptions(&tool_uses).await?;
@@ -572,7 +570,7 @@ where
                     }
                 )),
                 style::SetForegroundColor(Color::Reset),
-                cursor::Show // Ensure cursor is visible
+                cursor::Show
             )?;
         }
 
@@ -720,14 +718,12 @@ where
                 }
             },
             Command::Prompt { filename } => {
-                // Ensure the name has .md extension
                 let filename_with_ext = if filename.ends_with(".md") {
                     filename
                 } else {
                     format!("{}.md", filename)
                 };
 
-                // Get the prompt file path
                 let prompt_path = std::env::var("HOME")
                     .map(PathBuf::from)
                     .unwrap_or_default()
@@ -736,14 +732,13 @@ where
                     .join("prompts")
                     .join(&filename_with_ext);
 
-                // Check if file exists
                 if !prompt_path.exists() {
                     execute!(
                         self.output,
                         style::SetForegroundColor(Color::Red),
                         style::Print(format!("\nPrompt file not found: {}\n\n", prompt_path.display())),
                         style::SetForegroundColor(Color::Reset),
-                        cursor::Show // Ensure cursor is visible
+                        cursor::Show
                     )?;
                     return Ok(ChatState::PromptUser {
                         tool_uses: Some(tool_uses),
@@ -751,7 +746,6 @@ where
                     });
                 }
 
-                // Read the prompt file
                 match std::fs::read_to_string(&prompt_path) {
                     Ok(content) => {
                         execute!(
@@ -759,10 +753,9 @@ where
                             style::SetForegroundColor(Color::Green),
                             style::Print(format!("\nLoaded prompt: {}\n\n", filename_with_ext)),
                             style::SetForegroundColor(Color::Reset),
-                            cursor::Show // Ensure cursor is visible
+                            cursor::Show
                         )?;
 
-                        // Use the prompt content as user input
                         return Ok(ChatState::HandleInput {
                             input: content,
                             tool_uses: Some(tool_uses),
@@ -774,7 +767,7 @@ where
                             style::SetForegroundColor(Color::Red),
                             style::Print(format!("\nError reading prompt file: {}\n\n", e)),
                             style::SetForegroundColor(Color::Reset),
-                            cursor::Show // Ensure cursor is visible
+                            cursor::Show
                         )?;
                         return Ok(ChatState::PromptUser {
                             tool_uses: Some(tool_uses),
