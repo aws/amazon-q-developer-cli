@@ -375,7 +375,7 @@ where
     W: Write,
 {
     /// Opens the user's preferred editor to compose a prompt
-    fn open_editor(&self) -> Result<String, ChatError> {
+    fn open_editor() -> Result<String, ChatError> {
         // Create a temporary file with a unique name
         let temp_dir = std::env::temp_dir();
         let file_name = format!("q_prompt_{}.md", Uuid::new_v4());
@@ -746,7 +746,7 @@ where
                 }
             },
             Command::PromptEditor => {
-                match self.open_editor() {
+                match Self::open_editor() {
                     Ok(content) => {
                         if content.trim().is_empty() {
                             execute!(
