@@ -417,7 +417,13 @@ where
                     }
                     self.prompt_user(tool_uses, skip_printing_tools).await
                 },
-                ChatState::HandleInput { input, tool_uses } => self.handle_input(input, tool_uses).await,
+                ChatState::HandleInput { input, tool_uses } => {
+                    let tool_uses_clone = tool_uses.clone().unwrap();
+                    tokio::select! {
+                        res = self.handle_input(input, tool_uses) => res,
+                        Some(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: Some(tool_uses_clone) })
+                    }
+                },
                 ChatState::ExecuteTools(tool_uses) => {
                     let tool_uses_clone = tool_uses.clone();
                     tokio::select! {
