@@ -11,6 +11,7 @@ pub enum Command {
     Quit,
     Profile { subcommand: ProfileSubcommand },
     Context { subcommand: ContextSubcommand },
+    Prompt { filename: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -346,6 +347,16 @@ impl Command {
                         },
                     }
                 },
+                "prompt" => {
+                    if parts.len() < 2 {
+                        return Err("Missing filename for /prompt. Usage: /prompt <filename>".to_string());
+                    }
+
+                    // Join all remaining parts as the filename (to support filenames with spaces)
+                    let filename = parts[1..].join(" ");
+
+                    Self::Prompt { filename }
+                },
                 _ => {
                     return Ok(Self::Ask {
                         prompt: input.to_string(),
@@ -387,6 +398,12 @@ mod tests {
             };
         }
         let tests = &[
+            ("/prompt my-prompt", Command::Prompt {
+                filename: "my-prompt".to_string(),
+            }),
+            ("/prompt my prompt with spaces", Command::Prompt {
+                filename: "my prompt with spaces".to_string(),
+            }),
             ("/profile list", profile!(ProfileSubcommand::List)),
             (
                 "/profile create new_profile",
