@@ -35,6 +35,7 @@ clap_complete_fig = "4.4.0"
 color-eyre = "0.6.2"
 color-print = "0.3.5"
 convert_case.workspace = true
+console = "0.15.11"
 crossterm = { version = "0.28.1", features = ["event-stream"] }
 ctrlc = "3.2.5"
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
@@ -62,6 +63,8 @@ indoc.workspace = true
 mimalloc.workspace = true
 owo-colors = "4.2.0"
 parking_lot.workspace = true
+portable-pty = "0.9.0"
+filedescriptor = "0.8.3"
 rand.workspace = true
 regex.workspace = true
 rustyline = { version = "15.0.0", features = ["derive"] }
