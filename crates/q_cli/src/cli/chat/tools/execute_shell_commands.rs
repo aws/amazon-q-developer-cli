@@ -84,7 +84,7 @@ impl ExecuteShellCommands {
 
     pub async fn invoke(&self, mut updates: impl Write) -> Result<InvokeOutput> {
         // Detect the user's default shell
-        let shell = std::env::var("$0").unwrap_or_else(|_| "bash".to_string());
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
 
         let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
         let shell_init_file = match shell.as_str() {
