@@ -57,7 +57,7 @@ The chat implementation includes a robust tool system that allows Amazon Q to in
 1. **Available Tools**:
    - `fs_read`: Reads files or lists directories (similar to `cat` or `ls`)
    - `fs_write`: Creates or modifies files with various operations (create, append, replace)
-   - `execute_bash`: Executes shell commands in the user's environment
+   - `execute_shell_commands`: Executes shell commands in the user's environment
    - `use_aws`: Makes AWS CLI API calls with specified services and operations
 
 2. **Tool Execution Flow**:
@@ -68,7 +68,7 @@ The chat implementation includes a robust tool system that allows Amazon Q to in
    - The conversation continues with the tool results incorporated
 
 3. **Security Considerations**:
-   - Tools that modify the system (like `fs_write` and `execute_bash`) require user confirmation
+   - Tools that modify the system (like `fs_write` and `execute_shell_commands`) require user confirmation
    - The `/acceptall` command can toggle automatic acceptance for the session
    - Tool responses are limited to prevent excessive output (30KB limit)
 

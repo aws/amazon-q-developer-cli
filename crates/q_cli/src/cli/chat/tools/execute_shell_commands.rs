@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fs;
 use std::io::Write;
 use std::process::Stdio;
 
@@ -27,11 +28,11 @@ use crate::cli::chat::truncate_safe;
 const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ExecuteBash {
+pub struct ExecuteShellCommands {
     pub command: String,
 }
 
-impl ExecuteBash {
+impl ExecuteShellCommands {
     pub fn requires_acceptance(&self) -> bool {
         let Some(args) = shlex::split(&self.command) else {
             return true;
@@ -82,15 +83,63 @@ impl ExecuteBash {
     }
 
     pub async fn invoke(&self, mut updates: impl Write) -> Result<InvokeOutput> {
+        // Detect the user's default shell
+        let shell = std::env::var("$0").unwrap_or_else(|_| "bash".to_string());
+
+        let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
+        let shell_init_file = match shell.as_str() {
+            s if s.contains("zsh") => Some(format!("{}/{}", home, ".zshrc")),
+            s if s.contains("bash") => Some(format!("{}/{}", home, ".bashrc")),
+            _ => None,
+        };
+
+        // // Extract aliases from the shell config file
+        let aliases = if let Some(config_path) = &shell_init_file {
+            match fs::read_to_string(config_path) {
+                Ok(content) => {
+                    // Extract aliases based on shell type
+                    let pattern = match shell.as_str() {
+                        s if s.contains("zsh") | s.contains("bash") => r#"^\s*alias\s+([^=]+)=['"]?([^'"]+)['"]?$"#,
+                        // TODO: support Fish and other shells
+                        _ => r"^\s*alias\s+.+$", // fallback, won't convert to function
+                    };
+
+                    let re = regex::Regex::new(pattern).unwrap_or_else(|_| regex::Regex::new(r"").unwrap());
+                    let mut alias_commands = String::new();
+
+                    for line in content.lines() {
+                        if let Some(caps) = re.captures(line) {
+                            if caps.len() >= 3 {
+                                let name = caps[1].trim();
+                                let raw_cmd = caps[2].trim();
+                                alias_commands.push_str(&format!(
+                                    "{name}() {{ {cmd} \"$@\"; }}\n",
+                                    name = name,
+                                    cmd = raw_cmd
+                                ));
+                            }
+                        }
+                    }
+
+                    alias_commands
+                },
+                Err(_) => String::new(),
+            }
+        } else {
+            String::new()
+        };
+
+        let command_with_aliases = format!("{}\n{}", aliases, self.command);
+
         // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
-        let mut child = tokio::process::Command::new("bash")
+        let mut child = tokio::process::Command::new(&shell)
             .arg("-c")
-            .arg(&self.command)
+            .arg(&command_with_aliases)
             .stdin(Stdio::inherit())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .wrap_err_with(|| format!("Unable to spawn command '{}'", &self.command))?;
+            .wrap_err_with(|| format!("Unable to spawn command '{}' in shell '{}'", &self.command, &shell))?;
 
         let stdout = child.stdout.take().unwrap();
         let stdout = tokio::io::BufReader::new(stdout);
@@ -198,14 +247,14 @@ mod tests {
 
     #[ignore = "todo: fix failing on musl for some reason"]
     #[tokio::test]
-    async fn test_execute_bash_tool() {
+    async fn test_execute_shell_commands_tool() {
         let mut stdout = std::io::stdout();
 
         // Verifying stdout
         let v = serde_json::json!({
             "command": "echo Hello, world!",
         });
-        let out = serde_json::from_value::<ExecuteBash>(v)
+        let out = serde_json::from_value::<ExecuteShellCommands>(v)
             .unwrap()
             .invoke(&mut stdout)
             .await
@@ -223,7 +272,7 @@ mod tests {
         let v = serde_json::json!({
             "command": "echo Hello, world! 1>&2",
         });
-        let out = serde_json::from_value::<ExecuteBash>(v)
+        let out = serde_json::from_value::<ExecuteShellCommands>(v)
             .unwrap()
             .invoke(&mut stdout)
             .await
@@ -242,7 +291,7 @@ mod tests {
             "command": "exit 1",
             "interactive": false
         });
-        let out = serde_json::from_value::<ExecuteBash>(v)
+        let out = serde_json::from_value::<ExecuteShellCommands>(v)
             .unwrap()
             .invoke(&mut stdout)
             .await
@@ -291,7 +340,7 @@ mod tests {
             ("echo hello | sudo rm -rf /", true),
         ];
         for (cmd, expected) in cmds {
-            let tool = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            let tool = serde_json::from_value::<ExecuteShellCommands>(serde_json::json!({
                 "command": cmd,
             }))
             .unwrap();
