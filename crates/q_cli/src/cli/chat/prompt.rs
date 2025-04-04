@@ -41,6 +41,7 @@ const COMMANDS: &[&str] = &[
     "/acceptall",
     "/issue",
     "/quit",
+    "/prompt",
     "/profile",
     "/profile help",
     "/profile list",

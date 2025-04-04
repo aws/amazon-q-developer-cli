@@ -13,6 +13,7 @@ use std::io::{
     Read,
     Write,
 };
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -99,6 +100,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/issue</em>        <black!>Report an issue or make a feature request.</black!>
 <em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
 <em>/context</em>      <black!>(Beta) Manage context files for a profile</black!>
+<em>/prompt</em> <em><<file>></em>  <black!>Load a saved prompt from ~/.aws/amazonq/prompts</black!>
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
@@ -129,6 +131,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
+<em>/prompt</em> <em><<file>></em>  <black!>Load a saved prompt from ~/.aws/amazonq/prompts</black!>
 
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
@@ -402,6 +405,10 @@ where
         let re = Regex::new(r"((\x9B|\x1B\[)[0-?]*[ -\/]*[@-~])|([^\x00-\x7F]+)").unwrap();
 
         loop {
+            if self.interactive {
+                execute!(self.output, cursor::Show)?;
+            }
+
             debug_assert!(next_state.is_some());
             let chat_state = next_state.take().unwrap_or_default();
             debug!(?chat_state, "changing to state");
@@ -444,6 +451,10 @@ where
                 ChatState::Exit => return Ok(()),
             };
 
+            if self.interactive {
+                execute!(self.output, cursor::Show)?;
+            }
+
             match result {
                 Ok(state) => next_state = Some(state),
                 Err(e) => {
@@ -476,6 +487,7 @@ where
                             output,
                             style::SetAttribute(Attribute::Reset),
                             style::SetForegroundColor(Color::Reset),
+                            cursor::Show
                         )
                     };
 
@@ -486,6 +498,7 @@ where
                             self.output,
                             terminal::Clear(terminal::ClearType::CurrentLine),
                             cursor::MoveToColumn(0),
+                            cursor::Show
                         )?;
                     }
                     match e {
@@ -563,6 +576,7 @@ where
                     }
                 )),
                 style::SetForegroundColor(Color::Reset),
+                cursor::Show
             )?;
         }
 
@@ -707,6 +721,65 @@ where
                 ChatState::PromptUser {
                     tool_uses: Some(tool_uses),
                     skip_printing_tools: true,
+                }
+            },
+            Command::Prompt { filename } => {
+                let filename_with_ext = if filename.ends_with(".md") {
+                    filename
+                } else {
+                    format!("{}.md", filename)
+                };
+
+                let prompt_path = std::env::var("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_default()
+                    .join(".aws")
+                    .join("amazonq")
+                    .join("prompts")
+                    .join(&filename_with_ext);
+
+                if !prompt_path.exists() {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("\nPrompt file not found: {}\n\n", prompt_path.display())),
+                        style::SetForegroundColor(Color::Reset),
+                        cursor::Show
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        tool_uses: Some(tool_uses),
+                        skip_printing_tools: true,
+                    });
+                }
+
+                match std::fs::read_to_string(&prompt_path) {
+                    Ok(content) => {
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(format!("\nLoaded prompt: {}\n\n", filename_with_ext)),
+                            style::SetForegroundColor(Color::Reset),
+                            cursor::Show
+                        )?;
+
+                        return Ok(ChatState::HandleInput {
+                            input: content,
+                            tool_uses: Some(tool_uses),
+                        });
+                    },
+                    Err(e) => {
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!("\nError reading prompt file: {}\n\n", e)),
+                            style::SetForegroundColor(Color::Reset),
+                            cursor::Show
+                        )?;
+                        return Ok(ChatState::PromptUser {
+                            tool_uses: Some(tool_uses),
+                            skip_printing_tools: true,
+                        });
+                    },
                 }
             },
             Command::Quit => ChatState::Exit,
