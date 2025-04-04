@@ -428,7 +428,7 @@ where
     W: Write,
 {
     /// Opens the user's preferred editor to compose a prompt
-    fn open_editor() -> Result<String, ChatError> {
+    fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
         // Create a temporary file with a unique name
         let temp_dir = std::env::temp_dir();
         let file_name = format!("q_prompt_{}.md", Uuid::new_v4());
@@ -437,8 +437,9 @@ where
         // Get the editor from environment variable or use a default
         let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
 
-        // Write initial content to the file (optional)
-        fs::write(&temp_file_path, "# Enter your prompt here\n")
+        // Write initial content to the file if provided
+        let initial_content = initial_text.unwrap_or_default();
+        fs::write(&temp_file_path, &initial_content)
             .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {}", e).into()))?;
 
         // Open the editor
@@ -457,9 +458,6 @@ where
 
         // Clean up the temporary file
         let _ = fs::remove_file(&temp_file_path);
-
-        // Remove the initial comment if it's still there
-        let content = content.replace("# Enter your prompt here\n", "");
 
         Ok(content.trim().to_string())
     }
@@ -826,8 +824,8 @@ where
                     pending_tool_index,
                 }
             },
-            Command::PromptEditor => {
-                match Self::open_editor() {
+            Command::PromptEditor { initial_text } => {
+                match Self::open_editor(initial_text) {
                     Ok(content) => {
                         if content.trim().is_empty() {
                             execute!(
@@ -839,6 +837,7 @@ where
 
                             ChatState::PromptUser {
                                 tool_uses: Some(tool_uses),
+                                pending_tool_index,
                                 skip_printing_tools: true,
                             }
                         } else {
@@ -863,6 +862,7 @@ where
                             ChatState::HandleInput {
                                 input: content,
                                 tool_uses: Some(tool_uses),
+                                pending_tool_index,
                             }
                         }
                     },
@@ -876,6 +876,7 @@ where
 
                         ChatState::PromptUser {
                             tool_uses: Some(tool_uses),
+                            pending_tool_index,
                             skip_printing_tools: true,
                         }
                     },
@@ -1990,27 +1991,16 @@ mod tests {
 
     #[test]
     fn test_editor_content_processing() {
-        // Test various template scenarios
+        // Since we no longer have template replacement, this test is simplified
         let cases = vec![
-            ("# Enter your prompt here\nMy content", "My content"),
-            (
-                "# Enter your prompt here\n\nMultiple lines\nof content",
-                "\nMultiple lines\nof content",
-            ),
-            ("My content without template", "My content without template"),
+            ("My content", "My content"),
+            ("My content with newline\n", "My content with newline"),
+            ("", ""),
         ];
 
         for (input, expected) in cases {
-            let processed = input.replace("# Enter your prompt here\n", "").trim().to_string();
+            let processed = input.trim().to_string();
             assert_eq!(processed, expected.trim().to_string(), "Failed for input: {}", input);
         }
-
-        // Special case for just the template
-        let template_only = "# Enter your prompt here\n";
-        let processed = template_only
-            .replace("# Enter your prompt here\n", "")
-            .trim()
-            .to_string();
-        assert_eq!(processed, "", "Failed for template-only input");
     }
 }
