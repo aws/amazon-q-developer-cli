@@ -239,9 +239,7 @@ impl Command {
                             initial_text: Some(parts[1..].join(" ")),
                         }
                     } else {
-                        Self::PromptEditor {
-                            initial_text: None,
-                        }
+                        Self::PromptEditor { initial_text: None }
                     }
                 },
                 "issue" => {
