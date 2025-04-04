@@ -475,10 +475,10 @@ where
                     tool_uses,
                     pending_tool_index,
                 } => {
-                    let tool_uses_clone = tool_uses.clone().unwrap();
+                    let tool_uses_clone = tool_uses.clone();
                     tokio::select! {
                         res = self.handle_input(input, tool_uses, pending_tool_index) => res,
-                        Some(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: Some(tool_uses_clone) })
+                        Some(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: tool_uses_clone })
                     }
                 },
                 ChatState::ExecuteTools(tool_uses) => {
