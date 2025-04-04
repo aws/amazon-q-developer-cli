@@ -167,10 +167,6 @@ impl Validator for MultiLineValidator {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
         let input = ctx.input();
 
-        if input.trim().is_empty() {
-            return Ok(ValidationResult::Incomplete);
-        }
-
         // Check for explicit multi-line markers
         if input.starts_with("```") && !input.ends_with("```") {
             return Ok(ValidationResult::Incomplete);

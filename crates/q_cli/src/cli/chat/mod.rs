@@ -102,7 +102,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
-<cyan!>Use Alt+Enter to provide multi-line prompts.</cyan!>
+<cyan!>Use Alt(⌥) + Enter(⏎) to provide multi-line prompts.</cyan!>
 
 "};
 
@@ -131,8 +131,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
 
 <cyan,em>Tips:</cyan,em>
-<em>!{command}</em>    <black!>Quickly execute a command in your current session</black!>
-<em>Alt+Enter</em>     <black!>Insert new-line to provide multi-line prompt. Alternatively, [Ctrl+j]</black!>
+<em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
+<em>Alt(⌥) + Enter(⏎)</em>     <black!>Insert new-line to provide multi-line prompt. Alternatively, [Ctrl+j]</black!>
 
 "};
 
@@ -567,7 +567,13 @@ where
             let prompt = prompt::generate_prompt(self.conversation_state.current_profile());
 
             match (self.input_source.read_line(Some(&prompt))?, ctrl_c) {
-                (Some(line), _) => break line,
+                (Some(line), _) => {
+                    // Handle empty line case - reprompt the user
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    break line;
+                },
                 (None, false) => {
                     execute!(
                         self.output,
