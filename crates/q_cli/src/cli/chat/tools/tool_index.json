@@ -1,13 +1,13 @@
 {
-  "execute_bash": {
-    "name": "execute_bash",
-    "description": "Execute the specified bash command.",
+  "execute_shell_commands": {
+    "name": "execute_shell_commands",
+    "description": "Execute the specified shell command.",
     "input_schema": {
       "type": "object",
       "properties": {
         "command": {
           "type": "string",
-          "description": "Bash command to execute"
+          "description": "Shell command to execute"
         }
       },
       "required": [
