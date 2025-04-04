@@ -1886,4 +1886,298 @@ mod tests {
 
         assert_eq!(ctx.fs().read_to_string("/file.txt").await.unwrap(), "Hello, world!\n");
     }
+
+    #[tokio::test]
+    async fn test_flow_tool_permissions() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        let test_client = create_stream(serde_json::json!([
+            [
+                "Ok",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file1.txt",
+                    }
+                }
+            ],
+            [
+                "Done",
+            ],
+            [
+                "Ok",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file2.txt",
+                    }
+                }
+            ],
+            [
+                "Done",
+            ],
+            [
+                "Ok",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file3.txt",
+                    }
+                }
+            ],
+            [
+                "Done",
+            ],
+            [
+                "Ok",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file4.txt",
+                    }
+                }
+            ],
+            [
+                "Ok, I won't make it.",
+            ],
+            [
+                "Ok",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file5.txt",
+                    }
+                }
+            ],
+            [
+                "Done",
+            ],
+            [
+                "Ok",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file6.txt",
+                    }
+                }
+            ],
+            [
+                "Ok, I won't make it.",
+            ],
+        ]));
+
+        ChatContext::new(
+            Arc::clone(&ctx),
+            Settings::new_fake(),
+            std::io::stdout(),
+            None,
+            InputSource::new_mock(vec![
+                "/tools".to_string(),
+                "/tools help".to_string(),
+                "create a new file".to_string(),
+                "y".to_string(),
+                "create a new file".to_string(),
+                "t".to_string(),
+                "create a new file".to_string(), // should make without prompting due to 't'
+                "/tools untrust fs_write".to_string(),
+                "create a file".to_string(), // prompt again due to untrust
+                "n".to_string(),             // cancel
+                "/tools trust fs_write".to_string(),
+                "create a file".to_string(), // again without prompting due to '/tools trust'
+                "/tools reset".to_string(),
+                "create a file".to_string(), // prompt again due to reset
+                "n".to_string(),             // cancel
+                "exit".to_string(),
+            ]),
+            true,
+            test_client,
+            || Some(80),
+            None,
+            load_tools().expect("Tools failed to load."),
+            ToolPermissions::new(0),
+        )
+        .await
+        .unwrap()
+        .try_chat()
+        .await
+        .unwrap();
+
+        assert_eq!(ctx.fs().read_to_string("/file2.txt").await.unwrap(), "Hello, world!\n");
+        assert_eq!(ctx.fs().read_to_string("/file3.txt").await.unwrap(), "Hello, world!\n");
+        assert!(!ctx.fs().exists("/file4.txt"));
+        assert_eq!(ctx.fs().read_to_string("/file5.txt").await.unwrap(), "Hello, world!\n");
+        assert!(!ctx.fs().exists("/file6.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_flow_multiple_tools() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        let test_client = create_stream(serde_json::json!([
+            [
+                "Sure, I'll create a file for you",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file1.txt",
+                    }
+                },
+                {
+                    "tool_use_id": "2",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file2.txt",
+                    }
+                }
+            ],
+            [
+                "Done",
+            ],
+            [
+                "Sure, I'll create a file for you",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file3.txt",
+                    }
+                },
+                {
+                    "tool_use_id": "2",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file4.txt",
+                    }
+                }
+            ],
+            [
+                "Done",
+            ],
+        ]));
+
+        ChatContext::new(
+            Arc::clone(&ctx),
+            Settings::new_fake(),
+            std::io::stdout(),
+            None,
+            InputSource::new_mock(vec![
+                "create 2 new files parallel".to_string(),
+                "t".to_string(),
+                "/tools reset".to_string(),
+                "create 2 new files parallel".to_string(),
+                "y".to_string(),
+                "y".to_string(),
+                "exit".to_string(),
+            ]),
+            true,
+            test_client,
+            || Some(80),
+            None,
+            load_tools().expect("Tools failed to load."),
+            ToolPermissions::new(0),
+        )
+        .await
+        .unwrap()
+        .try_chat()
+        .await
+        .unwrap();
+
+        assert_eq!(ctx.fs().read_to_string("/file1.txt").await.unwrap(), "Hello, world!\n");
+        assert_eq!(ctx.fs().read_to_string("/file2.txt").await.unwrap(), "Hello, world!\n");
+        assert_eq!(ctx.fs().read_to_string("/file3.txt").await.unwrap(), "Hello, world!\n");
+        assert_eq!(ctx.fs().read_to_string("/file4.txt").await.unwrap(), "Hello, world!\n");
+    }
+
+    #[tokio::test]
+    async fn test_flow_tools_trust_all() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        let test_client = create_stream(serde_json::json!([
+            [
+                "Sure, I'll create a file for you",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file1.txt",
+                    }
+                }
+            ],
+            [
+                "Done",
+            ],
+            [
+                "Sure, I'll create a file for you",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "file_text": "Hello, world!",
+                        "path": "/file3.txt",
+                    }
+                }
+            ],
+            [
+                "Ok I won't.",
+            ],
+        ]));
+
+        ChatContext::new(
+            Arc::clone(&ctx),
+            Settings::new_fake(),
+            std::io::stdout(),
+            None,
+            InputSource::new_mock(vec![
+                "/tools trustall".to_string(),
+                "create a new file".to_string(),
+                "/tools reset".to_string(),
+                "create a new file".to_string(),
+                "exit".to_string(),
+            ]),
+            true,
+            test_client,
+            || Some(80),
+            None,
+            load_tools().expect("Tools failed to load."),
+            ToolPermissions::new(0),
+        )
+        .await
+        .unwrap()
+        .try_chat()
+        .await
+        .unwrap();
+
+        assert_eq!(ctx.fs().read_to_string("/file1.txt").await.unwrap(), "Hello, world!\n");
+        assert!(!ctx.fs().exists("/file2.txt"));
+    }
 }
