@@ -24,6 +24,10 @@ pub const AMAZONQ_FILENAME: &str = "AmazonQ.md";
 pub struct ContextConfig {
     /// List of file paths or glob patterns to include in the context.
     pub paths: Vec<String>,
+    /// Outputs from preprocessor tools to include in the context. Preprocessors are registered
+    /// from MCP so are not included in the serialized confile file.
+    #[serde(skip_serializing, skip_deserializing)]
+    preprocessor_outputs: Vec<(String, String)>,
 }
 
 #[allow(dead_code)]
@@ -43,6 +47,30 @@ pub struct ContextManager {
 }
 
 #[allow(dead_code)]
+impl ContextConfig {
+    /// Add a preprocessor output to the context configuration.
+    ///
+    /// # Arguments
+    /// * `name` - Name of the preprocessor
+    /// * `output` - Output content from the preprocessor
+    pub fn push_preprocessor_output(&mut self, name: String, output: String) {
+        self.preprocessor_outputs.push((name, output));
+    }
+
+    /// Get all preprocessor outputs.
+    ///
+    /// # Returns
+    /// A vector of (name, output) pairs
+    pub fn get_preprocessor_outputs(&self) -> &Vec<(String, String)> {
+        &self.preprocessor_outputs
+    }
+
+    /// Clear all preprocessor outputs.
+    pub fn clear_preprocessor_outputs(&mut self) {
+        self.preprocessor_outputs.clear();
+    }
+}
+
 impl ContextManager {
     /// Create a new ContextManager with default settings.
     ///
@@ -401,6 +429,25 @@ impl ContextManager {
 
         Ok(context_files)
     }
+
+    pub async fn get_preprocessor_outputs(&self) -> Result<Vec<(String, String)>> {
+        Ok(self.global_config.get_preprocessor_outputs().clone())
+    }
+
+    /// Get a combined list of preprocessor outputs and context files.
+    ///
+    /// This method combines the outputs from preprocessors and the context files
+    /// into a single list of strings.
+    ///
+    /// # Returns
+    /// A Result containing a vector of strings or an error
+    pub async fn get_all_context(&self, force: bool) -> Result<Vec<(String, String)>> {
+        let mut combined = Vec::new();
+        combined.extend(self.get_preprocessor_outputs().await?);
+        combined.extend(self.get_context_files(force).await?);
+
+        Ok(combined)
+    }
 }
 
 fn profile_dir_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
@@ -432,6 +479,7 @@ async fn load_global_config(ctx: &Context) -> Result<ContextConfig> {
                 "README.md".to_string(),
                 AMAZONQ_FILENAME.to_string(),
             ],
+            preprocessor_outputs: Vec::new(),
         })
     }
 }
@@ -709,6 +757,159 @@ mod tests {
             "adding a glob with no matching and without force should fail"
         );
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_context_config_preprocessor_operations() -> Result<()> {
+        let mut config = ContextConfig::default();
+        
+        // Test initial state
+        assert!(config.get_preprocessor_outputs().is_empty());
+        
+        // Test adding preprocessor outputs
+        config.push_preprocessor_output("test1".to_string(), "output1".to_string());
+        config.push_preprocessor_output("test2".to_string(), "output2".to_string());
+        
+        // Test retrieving preprocessor outputs
+        let outputs = config.get_preprocessor_outputs();
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs[0], ("test1".to_string(), "output1".to_string()));
+        assert_eq!(outputs[1], ("test2".to_string(), "output2".to_string()));
+        
+        // Test clearing preprocessor outputs
+        config.clear_preprocessor_outputs();
+        assert!(config.get_preprocessor_outputs().is_empty());
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_preprocessor_outputs() -> Result<()> {
+        let mut manager = create_test_context_manager().await?;
+        
+        // Initially empty
+        let outputs = manager.get_preprocessor_outputs().await?;
+        assert!(outputs.is_empty());
+        
+        // Add some preprocessor outputs
+        manager.global_config.push_preprocessor_output("test1".to_string(), "output1".to_string());
+        manager.global_config.push_preprocessor_output("test2".to_string(), "output2".to_string());
+        
+        // Verify they can be retrieved
+        let outputs = manager.get_preprocessor_outputs().await?;
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs[0], ("test1".to_string(), "output1".to_string()));
+        assert_eq!(outputs[1], ("test2".to_string(), "output2".to_string()));
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_all_context() -> Result<()> {
+        let mut manager = create_test_context_manager().await?;
+        let ctx = Arc::clone(&manager.ctx);
+        
+        // Create test files
+        ctx.fs().create_dir_all("test").await?;
+        ctx.fs().write("test/file1.md", "content1").await?;
+        ctx.fs().write("test/file2.md", "content2").await?;
+        
+        // Add paths to context
+        manager.add_paths(vec!["test/*.md".to_string()], false, false).await?;
+        
+        // Add preprocessor outputs
+        manager.global_config.push_preprocessor_output("pre1".to_string(), "preout1".to_string());
+        manager.global_config.push_preprocessor_output("pre2".to_string(), "preout2".to_string());
+        
+        // Get all context
+        let all_context = manager.get_all_context(false).await?;
+        
+        // Should have 4 items: 2 preprocessor outputs + 2 files
+        assert_eq!(all_context.len(), 4);
+        
+        // First two should be preprocessor outputs
+        assert_eq!(all_context[0], ("pre1".to_string(), "preout1".to_string()));
+        assert_eq!(all_context[1], ("pre2".to_string(), "preout2".to_string()));
+        
+        // Last two should be files (order may vary)
+        let has_file1 = all_context.iter().any(|(path, content)| 
+            path.ends_with("file1.md") && content == "content1");
+        let has_file2 = all_context.iter().any(|(path, content)| 
+            path.ends_with("file2.md") && content == "content2");
+            
+        assert!(has_file1, "Missing file1.md in context");
+        assert!(has_file2, "Missing file2.md in context");
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_process_path_with_validation() -> Result<()> {
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        let mut context_files = Vec::new();
+        
+        // Create test files
+        ctx.fs().create_dir_all("test").await?;
+        ctx.fs().write("test/valid.md", "valid content").await?;
+        
+        // Test with existing file - should succeed
+        process_path(&ctx, "test/valid.md", &mut context_files, false, true).await?;
+        assert_eq!(context_files.len(), 1);
+        assert!(context_files[0].0.ends_with("valid.md"));
+        assert_eq!(context_files[0].1, "valid content");
+        
+        // Test with non-existent file - should fail with validation
+        let result = process_path(&ctx, "test/nonexistent.md", &mut context_files, false, true).await;
+        assert!(result.is_err());
+        
+        // Test with non-existent file but force=true - should succeed
+        process_path(&ctx, "test/nonexistent.md", &mut context_files, true, true).await?;
+        assert_eq!(context_files.len(), 2);
+        assert!(context_files[1].0.ends_with("nonexistent.md"));
+        assert!(context_files[1].1.contains("does not exist yet"));
+        
+        // Test with non-matching glob pattern - should fail with validation
+        let result = process_path(&ctx, "test/*.txt", &mut context_files, false, true).await;
+        assert!(result.is_err());
+        
+        // Test with non-matching glob pattern but is_validation=false - should succeed but not add files
+        let len_before = context_files.len();
+        process_path(&ctx, "test/*.txt", &mut context_files, false, false).await?;
+        assert_eq!(context_files.len(), len_before, "No files should be added for non-matching glob when is_validation=false");
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_global_config() -> Result<()> {
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        
+        // Test default config when file doesn't exist
+        let config = load_global_config(&ctx).await?;
+        assert_eq!(config.paths.len(), 3);
+        assert!(config.paths.contains(&".amazonq/rules/**/*.md".to_string()));
+        assert!(config.paths.contains(&"README.md".to_string()));
+        assert!(config.paths.contains(&AMAZONQ_FILENAME.to_string()));
+        
+        // Create a custom config file
+        let global_path = directories::chat_global_context_path(&ctx)?;
+        if let Some(parent) = global_path.parent() {
+            ctx.fs().create_dir_all(parent).await?;
+        }
+        
+        let custom_config = ContextConfig {
+            paths: vec!["custom.md".to_string()],
+            preprocessor_outputs: Vec::new(),
+        };
+        let contents = serde_json::to_string_pretty(&custom_config)?;
+        ctx.fs().write(&global_path, contents).await?;
+        
+        // Test loading the custom config
+        let loaded_config = load_global_config(&ctx).await?;
+        assert_eq!(loaded_config.paths.len(), 1);
+        assert_eq!(loaded_config.paths[0], "custom.md");
+        
         Ok(())
     }
 }

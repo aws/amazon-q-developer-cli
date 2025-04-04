@@ -302,10 +302,11 @@ impl ToolManager {
                 },
             }
         }
+
         Ok(tool_specs)
     }
 
-    pub fn get_tool_from_tool_use(&self, value: ToolUse) -> Result<Tool, ToolResult> {
+    pub async fn get_tool_from_tool_use(&self, value: ToolUse) -> Result<Tool, ToolResult> {
         let map_err = |parse_error| ToolResult {
             tool_use_id: value.id.clone(),
             content: vec![ToolResultContentBlock::Text(format!(
@@ -347,6 +348,7 @@ impl ToolManager {
                 params.insert("name".to_owned(), serde_json::Value::String(tool_name.to_owned()));
                 params.insert("arguments".to_owned(), value.args);
                 let params = serde_json::Value::Object(params);
+
                 let custom_tool = CustomTool {
                     name: tool_name.to_owned(),
                     client: client.clone(),

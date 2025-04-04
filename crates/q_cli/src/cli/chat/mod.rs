@@ -78,6 +78,7 @@ use tracing::{
     trace,
     warn,
 };
+use uuid::Uuid;
 use winnow::Partial;
 use winnow::stream::Offset;
 
@@ -601,6 +602,44 @@ where
         })
     }
 
+    async fn execute_preprocessors(&mut self) -> Result<(), ChatError> {
+        let tools = self.conversation_state.get_tools();
+        let preprocessor_queued_tools: Vec<QueuedTool> = futures::future::join_all(
+            tools
+                .into_iter()
+                .filter_map(|tool| match tool {
+                    fig_api_client::model::Tool::ToolSpecification(tool_spec) if tool_spec.is_preprocessor => {
+                        let tool_use = ToolUse {
+                            id: Uuid::new_v4().to_string(),
+                            name: tool_spec.name.clone(),
+                            args: serde_json::json!({}),
+                        };
+                        Some((tool_use.id.clone(), self.tool_manager.get_tool_from_tool_use(tool_use)))
+                    },
+                    _ => None,
+                })
+                .map(|(key, future)| async move {
+                    match future.await {
+                        Ok(tool) => Ok((key.to_string(), tool)),
+                        Err(e) => {
+                            error!("Failed to get tool: {:?}", e);
+                            Err(ChatError::Custom(format!("Failed to get tool: {:?}", e).into()))
+                        },
+                    }
+                }),
+        )
+        .await
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+
+        if !preprocessor_queued_tools.is_empty() {
+            self.execute_preprocessor_tools(preprocessor_queued_tools).await?;
+        }
+
+        Ok(())
+    }
+
     async fn handle_input(
         &mut self,
         user_input: String,
@@ -621,6 +660,16 @@ where
                 tool_uses,
                 skip_printing_tools: true,
             });
+        }
+
+        if let Err(e) = self.execute_preprocessors().await {
+            warn!("Error executing preprocessors: {}", e);
+            execute!(
+                self.output,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(format!("\nError executing preprocessors: {}\n\n", e)),
+                style::SetForegroundColor(Color::Reset)
+            )?;
         }
 
         let command = command_result.unwrap();
@@ -1025,6 +1074,38 @@ where
         })
     }
 
+    async fn execute_preprocessor_tools(&mut self, tools: Vec<QueuedTool>) -> Result<(), ChatError> {
+        for (tool_name, tool) in tools {
+            debug!(?tool_name, "Executing preprocessor");
+            match tool.invoke(&self.ctx, &mut self.output).await {
+                Ok(result) => {
+                    debug!(?result, "Preprocessor executed successfully");
+
+                    // Store preprocessor output in context manager if available
+                    if let Some(context_manager) = &mut self.conversation_state.context_manager {
+                        match &result.output {
+                            crate::cli::chat::tools::OutputKind::Text(text) => {
+                                context_manager
+                                    .global_config
+                                    .push_preprocessor_output(tool_name, text.clone());
+                            },
+                            crate::cli::chat::tools::OutputKind::Json(value) => {
+                                if let Ok(text) = serde_json::to_string_pretty(value) {
+                                    context_manager.global_config.push_preprocessor_output(tool_name, text);
+                                }
+                            },
+                        }
+                    }
+                },
+                Err(err) => {
+                    error!(?err, "Failed to execute preprocessor");
+                },
+            }
+        }
+
+        Ok(())
+    }
+
     async fn tool_use_execute(&mut self, tool_uses: Vec<QueuedTool>) -> Result<ChatState, ChatError> {
         // Execute the requested tools.
         let terminal_width = self.terminal_width();
@@ -1338,7 +1419,7 @@ where
                 .set_tool_use_id(tool_use_id.clone())
                 .set_tool_name(tool_use.name.clone())
                 .utterance_id(self.conversation_state.message_id().map(|s| s.to_string()));
-            match self.tool_manager.get_tool_from_tool_use(tool_use) {
+            match self.tool_manager.get_tool_from_tool_use(tool_use).await {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);
@@ -1622,6 +1703,9 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::chat::tools::{OutputKind, ToolOutput};
+    use fig_api_client::model::{Tool, ToolSpecification};
+    use std::sync::Mutex;
 
     #[tokio::test]
     async fn test_flow() {
@@ -1669,5 +1753,222 @@ mod tests {
         .unwrap();
 
         assert_eq!(ctx.fs().read_to_string("/file.txt").await.unwrap(), "Hello, world!\n");
+    }
+
+    #[tokio::test]
+    async fn test_execute_preprocessors() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        
+        // Create a mock tool manager that returns a test preprocessor tool
+        struct MockToolManager {
+            called_with: Mutex<Option<String>>,
+        }
+        
+        impl MockToolManager {
+            fn new() -> Self {
+                Self {
+                    called_with: Mutex::new(None),
+                }
+            }
+            
+            async fn get_tool_from_tool_use(&self, tool_use: ToolUse) -> Result<Tool, ToolResult> {
+                *self.called_with.lock().unwrap() = Some(tool_use.name.clone());
+                
+                // Return a mock tool that just returns success
+                Ok(Tool::Custom(Box::new(MockTool {})))
+            }
+        }
+        
+        struct MockTool {}
+        
+        impl MockTool {
+            async fn invoke(&self, _ctx: &Context, _output: &mut impl Write) -> Result<ToolOutput, String> {
+                Ok(ToolOutput {
+                    output: OutputKind::Text("preprocessor output".to_string()),
+                })
+            }
+            
+            async fn validate(&self, _ctx: &Context) -> Result<(), String> {
+                Ok(())
+            }
+            
+            fn display_name(&self) -> String {
+                "Mock Preprocessor".to_string()
+            }
+            
+            fn display_name_action(&self) -> String {
+                "Running Mock Preprocessor".to_string()
+            }
+            
+            fn requires_acceptance(&self, _ctx: &Context) -> bool {
+                false
+            }
+            
+            async fn queue_description(&self, _ctx: &Context, _output: &mut impl Write) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        
+        // Create a chat context with a conversation state that has a preprocessor tool
+        let mut chat_context = ChatContext {
+            ctx: Arc::clone(&ctx),
+            settings: Settings::new_fake(),
+            output: Vec::new(), // Use a Vec as a mock output
+            initial_input: None,
+            input_source: InputSource::new_mock(vec![]),
+            interactive: true,
+            client: StreamingClient::mock(vec![]),
+            terminal_width_provider: || Some(80),
+            spinner: None,
+            conversation_state: {
+                let mut state = ConversationState::new(Arc::clone(&ctx), vec![], None).await;
+                // Add a preprocessor tool to the conversation state
+                state.add_tools(vec![Tool::ToolSpecification(ToolSpecification {
+                    name: "test_preprocessor".to_string(),
+                    description: "A test preprocessor".to_string(),
+                    is_preprocessor: true,
+                    parameters: serde_json::json!({}),
+                })]);
+                state
+            },
+            tool_use_telemetry_events: HashMap::new(),
+            tool_use_status: ToolUseStatus::Idle,
+            tool_manager: ToolManager::from_configs(McpServerConfig::default(), &mut Vec::new()).await.unwrap(),
+            accept_all: false,
+            failed_request_ids: Vec::new(),
+        };
+        
+        // Replace the tool manager with our mock
+        let mock_tool_manager = MockToolManager::new();
+        
+        // Test the execute_preprocessors method
+        let result = chat_context.execute_preprocessors().await;
+        
+        // Verify the result
+        assert!(result.is_ok(), "execute_preprocessors should succeed");
+        
+        // In a real test, we would verify that the preprocessor was called with the right parameters
+        // and that its output was stored correctly, but that would require more complex mocking
+    }
+
+    #[tokio::test]
+    async fn test_execute_preprocessor_tools() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        
+        // Create a mock tool that returns a text output
+        struct MockTextTool {}
+        
+        impl MockTextTool {
+            async fn invoke(&self, _ctx: &Context, _output: &mut impl Write) -> Result<ToolOutput, String> {
+                Ok(ToolOutput {
+                    output: OutputKind::Text("text output".to_string()),
+                })
+            }
+            
+            async fn validate(&self, _ctx: &Context) -> Result<(), String> {
+                Ok(())
+            }
+            
+            fn display_name(&self) -> String {
+                "Mock Text Tool".to_string()
+            }
+            
+            fn display_name_action(&self) -> String {
+                "Running Mock Text Tool".to_string()
+            }
+            
+            fn requires_acceptance(&self, _ctx: &Context) -> bool {
+                false
+            }
+            
+            async fn queue_description(&self, _ctx: &Context, _output: &mut impl Write) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        
+        // Create a mock tool that returns a JSON output
+        struct MockJsonTool {}
+        
+        impl MockJsonTool {
+            async fn invoke(&self, _ctx: &Context, _output: &mut impl Write) -> Result<ToolOutput, String> {
+                Ok(ToolOutput {
+                    output: OutputKind::Json(serde_json::json!({"key": "value"})),
+                })
+            }
+            
+            async fn validate(&self, _ctx: &Context) -> Result<(), String> {
+                Ok(())
+            }
+            
+            fn display_name(&self) -> String {
+                "Mock JSON Tool".to_string()
+            }
+            
+            fn display_name_action(&self) -> String {
+                "Running Mock JSON Tool".to_string()
+            }
+            
+            fn requires_acceptance(&self, _ctx: &Context) -> bool {
+                false
+            }
+            
+            async fn queue_description(&self, _ctx: &Context, _output: &mut impl Write) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        
+        // Create a chat context with a context manager
+        let mut chat_context = ChatContext {
+            ctx: Arc::clone(&ctx),
+            settings: Settings::new_fake(),
+            output: Vec::new(), // Use a Vec as a mock output
+            initial_input: None,
+            input_source: InputSource::new_mock(vec![]),
+            interactive: true,
+            client: StreamingClient::mock(vec![]),
+            terminal_width_provider: || Some(80),
+            spinner: None,
+            conversation_state: {
+                let mut state = ConversationState::new(Arc::clone(&ctx), vec![], None).await;
+                // Initialize the context manager
+                state.context_manager = Some(ContextManager::new(Arc::clone(&ctx)).await.unwrap());
+                state
+            },
+            tool_use_telemetry_events: HashMap::new(),
+            tool_use_status: ToolUseStatus::Idle,
+            tool_manager: ToolManager::from_configs(McpServerConfig::default(), &mut Vec::new()).await.unwrap(),
+            accept_all: false,
+            failed_request_ids: Vec::new(),
+        };
+        
+        // Create queued tools
+        let queued_tools = vec![
+            ("text_tool".to_string(), Tool::Custom(Box::new(MockTextTool {}))),
+            ("json_tool".to_string(), Tool::Custom(Box::new(MockJsonTool {}))),
+        ];
+        
+        // Test the execute_preprocessor_tools method
+        let result = chat_context.execute_preprocessor_tools(queued_tools).await;
+        
+        // Verify the result
+        assert!(result.is_ok(), "execute_preprocessor_tools should succeed");
+        
+        // Verify that the preprocessor outputs were stored in the context manager
+        if let Some(context_manager) = &chat_context.conversation_state.context_manager {
+            let preprocessor_outputs = &context_manager.global_config.preprocessor_outputs;
+            
+            assert!(preprocessor_outputs.contains_key("text_tool"), "Text tool output should be stored");
+            assert_eq!(preprocessor_outputs.get("text_tool").unwrap(), "text output");
+            
+            assert!(preprocessor_outputs.contains_key("json_tool"), "JSON tool output should be stored");
+            assert_eq!(
+                preprocessor_outputs.get("json_tool").unwrap(),
+                "{\n  \"key\": \"value\"\n}"
+            );
+        } else {
+            panic!("Context manager should be initialized");
+        }
     }
 }

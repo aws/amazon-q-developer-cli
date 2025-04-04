@@ -149,6 +149,8 @@ pub struct ToolSpecification {
     pub description: String,
     /// The input schema for the tool in JSON format.
     pub input_schema: ToolInputSchema,
+    /// Whether the tool is a preprocessor.
+    pub is_preprocessor: bool,
 }
 
 impl From<ToolSpecification> for amzn_codewhisperer_streaming_client::types::ToolSpecification {
@@ -756,6 +758,7 @@ mod tests {
                     input_schema: ToolInputSchema {
                         json: Some(Document::Null),
                     },
+                    is_preprocessor: false,
                 })]),
             }),
             user_intent: Some(UserIntent::ApplyCommonBestPractices),

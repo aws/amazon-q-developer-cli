@@ -105,6 +105,7 @@ impl ConversationState {
                         name: v.name,
                         description: v.description,
                         input_schema: v.input_schema.into(),
+                        is_preprocessor: v.is_preprocessor,
                     })
                 })
                 .collect(),
@@ -132,40 +133,8 @@ impl ConversationState {
             input
         };
 
-        // Get context files if available
-        let context_files = if let Some(context_manager) = &self.context_manager {
-            match context_manager.get_context_files(true).await {
-                Ok(files) => {
-                    if !files.is_empty() {
-                        let mut context_content = String::new();
-                        context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
-                        for (filename, content) in files {
-                            context_content.push_str(&format!("[{}]\n{}\n", filename, content));
-                        }
-                        context_content.push_str("--- CONTEXT FILES END ---\n\n");
-                        Some(context_content)
-                    } else {
-                        None
-                    }
-                },
-                Err(e) => {
-                    warn!("Failed to get context files: {}", e);
-                    None
-                },
-            }
-        } else {
-            None
-        };
-
-        // Combine context files with user input if available
-        let content = if let Some(context) = context_files {
-            format!("{}\n{}", context, input)
-        } else {
-            input
-        };
-
         let msg = UserInputMessage {
-            content,
+            content: input,
             user_input_message_context: Some(UserInputMessageContext {
                 shell_state: Some(build_shell_state()),
                 env_state: Some(build_env_state()),
@@ -349,6 +318,10 @@ impl ConversationState {
         self.next_message = Some(msg);
     }
 
+    pub fn get_tools(&self) -> &[Tool] {
+        &self.tools
+    }
+
     /// Sets the next user message with "cancelled" tool results.
     pub fn abandon_tool_use(&mut self, tools_to_be_abandoned: Vec<(String, super::tools::Tool)>, deny_input: String) {
         debug_assert!(self.next_message.is_none());
@@ -429,33 +402,33 @@ impl ConversationState {
             return None;
         };
 
-        match context_manager.get_context_files(true).await {
-            Ok(files) => {
-                if !files.is_empty() {
-                    let mut context_content = String::new();
-                    context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
-                    for (filename, content) in files {
-                        context_content.push_str(&format!("[{}]\n{}\n", filename, content));
-                    }
-                    context_content.push_str("--- CONTEXT FILES END ---\n\n");
+        match context_manager.get_all_context(true).await {
+            Ok(context) => {
+                let mut context_content = String::new();
 
-                    let user_msg = UserInputMessage {
-                        content: format!(
-                            "Here is some information from my local q rules files, use these when answering questions:\n\n{}",
-                            context_content
-                        ),
-                        user_input_message_context: None,
-                        user_intent: None,
-                    };
-                    let assistant_msg = AssistantResponseMessage {
-                        message_id: None,
-                        content: "I will use this when generating my response.".into(),
-                        tool_uses: None,
-                    };
-                    Some((user_msg, assistant_msg))
-                } else {
-                    None
+                // Add context entries
+                if !context.is_empty() {
+                    for entry in context.iter() {
+                        context_content.push_str("--- CONTEXT ENTRY BEGIN ---\n");
+                        context_content.push_str(&format!("[{}]\n{}\n", entry.0, entry.1));
+                        context_content.push_str("--- CONTEXT ENTRY END ---\n\n");
+                    }
                 }
+
+                let user_msg = UserInputMessage {
+                    content: format!(
+                        "Here is some information from my local q rules files, use these when answering questions:\n\n{}",
+                        context_content
+                    ),
+                    user_input_message_context: None,
+                    user_intent: None,
+                };
+                let assistant_msg = AssistantResponseMessage {
+                    message_id: None,
+                    content: "I will use this when generating my response.".into(),
+                    tool_uses: None,
+                };
+                Some((user_msg, assistant_msg))
             },
             Err(e) => {
                 warn!("Failed to get context files: {}", e);
