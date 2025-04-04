@@ -75,7 +75,7 @@ fig_telemetry = { path = "crates/fig_telemetry" }
 fig_telemetry_core = { path = "crates/fig_telemetry_core" }
 fig_test_utils = { path = "crates/fig_test_utils" }
 fig_util = { path = "crates/fig_util" }
-flate2 = "1.1.0"
+flate2 = "1.1.1"
 flume = "0.11.0"
 futures = "0.3.26"
 glob = "0.3.2"

@@ -1,3 +1,10 @@
+use std::io::Write;
+
+use crossterm::style::Color;
+use crossterm::{
+    queue,
+    style,
+};
 use eyre::Result;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -6,12 +13,12 @@ pub enum Command {
     Execute { command: String },
     Clear,
     Help,
-    AcceptAll,
     Issue { prompt: Option<String> },
     Quit,
     Profile { subcommand: ProfileSubcommand },
     Context { subcommand: ContextSubcommand },
     PromptEditor,
+    Tools { subcommand: Option<ToolsSubcommand> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +134,56 @@ Adding relevant files to your context helps Amazon Q provide more accurate and h
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolsSubcommand {
+    Trust { tool_name: String },
+    Untrust { tool_name: String },
+    TrustAll,
+    Reset,
+    Help,
+}
+
+impl ToolsSubcommand {
+    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available subcommands</cyan!>
+  <em>help</em>                           <black!>Show an explanation for the tools command</black!>
+  <em>trust <<tool name>></em>              <black!>Trust a specific tool for the session</black!>
+  <em>untrust <<tool name>></em>            <black!>Revert a tool to per-request confirmation</black!>
+  <em>trustall</em>                       <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
+  <em>reset</em>                          <black!>Reset all tools to default permission levels</black!>"};
+    const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /tools [SUBCOMMAND]</cyan!>
+
+<cyan!>Description</cyan!>
+  Show the current set of tools and their permission settings. 
+  Alternatively, specify a subcommand to modify the tool permissions."};
+    const TRUST_USAGE: &str = "/tools trust <tool name>";
+    const UNTRUST_USAGE: &str = "/tools untrust <tool name>";
+
+    fn usage_msg(header: impl AsRef<str>) -> String {
+        format!(
+            "{}\n\n{}\n\n{}",
+            header.as_ref(),
+            Self::BASE_COMMAND,
+            Self::AVAILABLE_COMMANDS
+        )
+    }
+
+    pub fn help_text() -> String {
+        color_print::cformat!(
+            r#"
+<magenta,em>Tool Permissions</magenta,em>
+
+By default, Amazon Q will ask for your permission to use certain tools. You can control which tools you
+trust so that no confirmation is required. These settings will last only for this session.
+
+{}
+
+{}"#,
+            Self::BASE_COMMAND,
+            Self::AVAILABLE_COMMANDS
+        )
+    }
+}
+
 impl Command {
     // Check if input is a common single-word command that should use slash prefix
     fn check_common_command(input: &str) -> Option<String> {
@@ -146,7 +203,7 @@ impl Command {
         }
     }
 
-    pub fn parse(input: &str) -> Result<Self, String> {
+    pub fn parse(input: &str, output: &mut impl Write) -> Result<Self, String> {
         let input = input.trim();
 
         // Check for common single-word commands without slash prefix
@@ -164,7 +221,18 @@ impl Command {
             return Ok(match parts[0].to_lowercase().as_str() {
                 "clear" => Self::Clear,
                 "help" => Self::Help,
-                "acceptall" => Self::AcceptAll,
+                "acceptall" => {
+                    let _ = queue!(
+                        output,
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print("\n/acceptall is deprecated. Use /tools instead.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    );
+
+                    Self::Tools {
+                        subcommand: Some(ToolsSubcommand::TrustAll),
+                    }
+                },
                 "editor" => Self::PromptEditor,
                 "issue" => {
                     if parts.len() > 1 {
@@ -348,6 +416,57 @@ impl Command {
                         },
                     }
                 },
+                "tools" => {
+                    if parts.len() < 2 {
+                        return Ok(Self::Tools { subcommand: None });
+                    }
+
+                    macro_rules! usage_err {
+                        ($subcommand:expr, $usage_str:expr) => {
+                            return Err(format!(
+                                "Invalid /tools {} arguments.\n\nUsage:\n  {}",
+                                $subcommand, $usage_str
+                            ))
+                        };
+                    }
+
+                    match parts[1].to_lowercase().as_str() {
+                        "trust" => {
+                            let tool_name = parts.get(2);
+                            match tool_name {
+                                Some(tool_name) => Self::Tools {
+                                    subcommand: Some(ToolsSubcommand::Trust {
+                                        tool_name: (*tool_name).to_string(),
+                                    }),
+                                },
+                                None => usage_err!("trust", ToolsSubcommand::TRUST_USAGE),
+                            }
+                        },
+                        "untrust" => {
+                            let tool_name = parts.get(2);
+                            match tool_name {
+                                Some(tool_name) => Self::Tools {
+                                    subcommand: Some(ToolsSubcommand::Untrust {
+                                        tool_name: (*tool_name).to_string(),
+                                    }),
+                                },
+                                None => usage_err!("untrust", ToolsSubcommand::UNTRUST_USAGE),
+                            }
+                        },
+                        "trustall" => Self::Tools {
+                            subcommand: Some(ToolsSubcommand::TrustAll),
+                        },
+                        "reset" => Self::Tools {
+                            subcommand: Some(ToolsSubcommand::Reset),
+                        },
+                        "help" => Self::Tools {
+                            subcommand: Some(ToolsSubcommand::Help),
+                        },
+                        other => {
+                            return Err(ToolsSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
+                        },
+                    }
+                },
                 _ => {
                     return Ok(Self::Ask {
                         prompt: input.to_string(),
@@ -374,6 +493,8 @@ mod tests {
 
     #[test]
     fn test_command_parse() {
+        let mut stdout = std::io::stdout();
+
         macro_rules! profile {
             ($subcommand:expr) => {
                 Command::Profile {
@@ -465,12 +586,13 @@ mod tests {
         ];
 
         for (input, parsed) in tests {
-            assert_eq!(&Command::parse(input).unwrap(), parsed, "{}", input);
+            assert_eq!(&Command::parse(input, &mut stdout).unwrap(), parsed, "{}", input);
         }
     }
 
     #[test]
     fn test_common_command_suggestions() {
+        let mut stdout = std::io::stdout();
         let test_cases = vec![
             (
                 "exit",
@@ -503,7 +625,7 @@ mod tests {
         ];
 
         for (input, expected_message) in test_cases {
-            let result = Command::parse(input);
+            let result = Command::parse(input, &mut stdout);
             assert!(result.is_err(), "Expected error for input: {}", input);
             assert_eq!(result.unwrap_err(), expected_message);
         }

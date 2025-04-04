@@ -212,7 +212,7 @@ Great for speeding up your ramp-up and navigating the repo more effectively.
 Several projects live here:
 
 - [`autocomplete`](packages/autocomplete/) - The autocomplete react app
-- [`dashboard`](packages/dashboard/) - The dashboard react app
+- [`dashboard`](packages/dashboard-app/) - The dashboard react app
 - [`figterm`](crates/figterm/) - figterm, our headless terminal/pseudoterminal that
   intercepts the user’s terminal edit buffer.
 - [`q_cli`](crates/q_cli/) - the `q` CLI, allows users to interface with Amazon Q Developer from

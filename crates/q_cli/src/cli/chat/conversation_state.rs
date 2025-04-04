@@ -33,7 +33,10 @@ use tracing::{
 };
 
 use super::context::ContextManager;
-use super::tools::ToolSpec;
+use super::tools::{
+    QueuedTool,
+    ToolSpec,
+};
 use super::truncate_safe;
 use crate::cli::chat::tools::{
     InputSchema,
@@ -64,7 +67,7 @@ pub struct ConversationState {
     /// e.g user messages prefixed with '> '. Should also be used to store errors posted in the
     /// chat.
     pub transcript: VecDeque<String>,
-    tools: Vec<Tool>,
+    pub tools: Vec<Tool>,
     /// Context manager for handling sticky context files
     pub context_manager: Option<ContextManager>,
     /// Cached value representing the length of the user context message.
@@ -350,12 +353,12 @@ impl ConversationState {
     }
 
     /// Sets the next user message with "cancelled" tool results.
-    pub fn abandon_tool_use(&mut self, tools_to_be_abandoned: Vec<(String, super::tools::Tool)>, deny_input: String) {
+    pub fn abandon_tool_use(&mut self, tools_to_be_abandoned: Vec<QueuedTool>, deny_input: String) {
         debug_assert!(self.next_message.is_none());
         let tool_results = tools_to_be_abandoned
             .into_iter()
-            .map(|(tool_use_id, _)| ToolResult {
-                tool_use_id,
+            .map(|tool| ToolResult {
+                tool_use_id: tool.id,
                 content: vec![ToolResultContentBlock::Text(
                     "Tool use was cancelled by the user".to_string(),
                 )],

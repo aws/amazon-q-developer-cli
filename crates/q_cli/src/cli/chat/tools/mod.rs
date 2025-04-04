@@ -4,6 +4,7 @@ pub mod fs_write;
 pub mod gh_issue;
 pub mod use_aws;
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{
     Path,
@@ -142,6 +143,78 @@ impl TryFrom<ToolUse> for Tool {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ToolPermission {
+    pub trusted: bool,
+}
+
+#[derive(Debug, Clone)]
+/// Holds overrides for tool permissions.
+/// Tools that do not have an associated ToolPermission should use
+/// their default logic to determine to permission.
+pub struct ToolPermissions {
+    pub permissions: HashMap<String, ToolPermission>,
+}
+
+impl ToolPermissions {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            permissions: HashMap::with_capacity(capacity),
+        }
+    }
+
+    pub fn is_trusted(&self, tool_name: &str) -> bool {
+        self.permissions.get(tool_name).is_some_and(|perm| perm.trusted)
+    }
+
+    /// Returns a label to describe the permission status for a given tool.
+    pub fn display_label(&self, tool_name: &str) -> String {
+        if self.has(tool_name) {
+            if self.is_trusted(tool_name) {
+                "Trusted".to_string()
+            } else {
+                "Per-request".to_string()
+            }
+        } else {
+            Self::default_permission_label(tool_name)
+        }
+    }
+
+    pub fn trust_tool(&mut self, tool_name: &str) {
+        self.permissions
+            .insert(tool_name.to_string(), ToolPermission { trusted: true });
+    }
+
+    pub fn untrust_tool(&mut self, tool_name: &str) {
+        self.permissions
+            .insert(tool_name.to_string(), ToolPermission { trusted: false });
+    }
+
+    pub fn reset(&mut self) {
+        self.permissions.clear();
+    }
+
+    pub fn has(&self, tool_name: &str) -> bool {
+        self.permissions.contains_key(tool_name)
+    }
+
+    /// Provide default permission labels for the built-in set of tools.
+    /// Unknown tools are assumed to be "Per-request"
+    // This "static" way avoids needing to construct a tool instance.
+    fn default_permission_label(tool_name: &str) -> String {
+        let label = match tool_name {
+            "fs_read" => "Trusted",
+            "fs_write" => "Per-request",
+            "execute_bash" => "Read-only commands",
+            "use_aws" => "Read-only commands",
+            "report_issue" => "Trusted",
+            _ => "Per-request",
+        };
+
+        format!("{label} [Default] ")
+    }
+}
+
 /// A tool specification to be sent to the model as part of a conversation. Maps to
 /// [BedrockToolSpecification].
 #[derive(Debug, Clone, Deserialize)]
@@ -149,6 +222,14 @@ pub struct ToolSpec {
     pub name: String,
     pub description: String,
     pub input_schema: InputSchema,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueuedTool {
+    pub id: String,
+    pub name: String,
+    pub accepted: bool,
+    pub tool: Tool,
 }
 
 /// The schema specification describing a tool's fields.
