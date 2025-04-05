@@ -14,5 +14,6 @@ site-url = "/amazon-q-developer-cli/"
 git-repository-url = "https://github.com/aws/amazon-q-developer-cli"
 edit-url-template = "https://github.com/aws/amazon-q-developer-cli/edit/main/{path}"
 
-[output.html.favicon]
-path = "assets/cli.png"
+# Favicon configuration commented out until proper image is provided
+# [output.html.favicon]
+# path = "assets/cli.png"
