@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use async_trait::async_trait;
 use eyre::Context;
+use owo_colors::OwoColorize;
 use semver::{
     Version,
     VersionReq,
@@ -12,6 +13,8 @@ use crate::cli::doctor::{
     DoctorCheck,
     DoctorError,
 };
+
+const FISH_VERSION_REQUEST: &str = ">=3.3.0";
 
 pub struct FishVersionCheck;
 
@@ -41,13 +44,19 @@ impl DoctorCheck for FishVersionCheck {
         )
         .context("failed parsing fish version")?;
 
-        if !VersionReq::parse(">=3.3.0").unwrap().matches(&version) {
-            return Err(DoctorError::error(format!(
-                "your fish version is outdated (need at least 3.3.0, found {version})"
-            )));
+        let version_req = VersionReq::parse(FISH_VERSION_REQUEST).context("failed to parse version requirement")?;
+        if version_req.matches(&version) {
+            Ok(())
+        } else {
+            Err(DoctorError::warning(format!(
+                "Using fish {version} may cause issues, it is recommended to either update to fish {} or switch to zsh.
+  - Install fish with Brew: {}
+  - Change shell default to ZSH: {}",
+                FISH_VERSION_REQUEST,
+                "brew install fish && fish".bright_magenta(),
+                "chsh -s /bin/zsh && zsh".bright_magenta()
+            )))
         }
-
-        Ok(())
     }
 }
 
