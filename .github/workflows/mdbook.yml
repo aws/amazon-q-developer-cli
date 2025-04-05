@@ -5,9 +5,9 @@
 name: Deploy mdBook site to Pages
 
 on:
-  # Runs on pushes targeting the default branch or the docs/fix-github-pages branch
+  # Runs on pushes targeting the default branch
   push:
-    branches: ["main", "docs/fix-github-pages"]
+    branches: ["main"]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -28,8 +28,7 @@ jobs:
   # Build job
   build:
     runs-on: ubuntu-latest
-    # Allow running on forks for testing
-    # if: github.event.repository.fork == false
+    if: github.event.repository.fork == false
     env:
       MDBOOK_VERSION: 0.4.36
     steps:
@@ -52,8 +51,7 @@ jobs:
   # Deployment job
   deploy:
     runs-on: ubuntu-latest
-    # Allow running on forks for testing
-    # if: github.event.repository.fork == false
+    if: github.event.repository.fork == false
     needs: build
     environment:
       name: github-pages
