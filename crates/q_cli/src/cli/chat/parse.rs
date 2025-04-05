@@ -138,9 +138,6 @@ pub fn interpret_markdown<'a, 'b>(
     match state.in_codeblock {
         false => {
             stateful_alt!(
-                // This pattern acts as a short circuit for alphanumeric plaintext
-                // More importantly, it's needed to support manual wordwrapping
-                text,
                 // multiline patterns
                 blockquote,
                 // linted_codeblock,
@@ -163,6 +160,8 @@ pub fn interpret_markdown<'a, 'b>(
                 ampersand,
                 quot,
                 line_ending,
+                // text
+                text,
                 // fallback
                 fallback
             );
@@ -299,7 +298,7 @@ fn blockquote<'a, 'b>(
             return Err(ErrMode::from_error_kind(i, ErrorKind::Fail));
         }
 
-        let level = repeat::<_, _, Vec<&'_ str>, _, _>(1.., terminated("&gt;", space0))
+        let level = repeat::<_, _, Vec<&'_ str>, _, _>(1.., terminated(">", space0))
             .parse_next(i)?
             .len();
         let print = "│ ".repeat(level);
@@ -743,7 +742,7 @@ mod tests {
     validate!(bulleted_item_1, "- bullet", [style::Print("• bullet")]);
     validate!(bulleted_item_2, "* bullet", [style::Print("• bullet")]);
     validate!(numbered_item_1, "1. number", [style::Print("1. number")]);
-    validate!(blockquote_1, "&gt; hello", [
+    validate!(blockquote_1, "> hello", [
         style::SetForegroundColor(BLOCKQUOTE_COLOR),
         style::Print("│ hello"),
     ]);
