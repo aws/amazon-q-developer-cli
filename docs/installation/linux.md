@@ -28,13 +28,15 @@ curl -LO https://d3op2l77j7wnti.cloudfront.net/amazon-q/latest/amazon-q-latest-x
 For other Linux distributions, you can download the appropriate package from:
 - [Amazon Q Developer CLI Downloads](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html#command-line-installing-alternative-linux)
 
-## Complete onboarding steps
+## Getting Started
 
-> Most developers will log in using Builder ID as it is the simplest way to authenticate. Enterpise developers will likely authenticate using IAM Identity Center.
+After installation, simply run:
 
-1. Log in when prompted.
-2. Complete the onboarding steps in order to customize your install.
-3. Open a new terminal session to start using Autocomplete and the `q` CLI.
+```bash
+q login
+```
+
+This will guide you through the authentication process (Builder ID or IAM Identity Center) and help you customize your installation. Once complete, open a new terminal session to start using Autocomplete and the `q` CLI.
 
 ## Support and Uninstall
 
