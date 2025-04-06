@@ -2,31 +2,21 @@
 
 ## Installation
 
-### Ubuntu/Debian
+### Direct Download
 
+#### Linux x86-64
 ```bash
-# Download the latest .deb package
-curl -LO https://d3op2l77j7wnti.cloudfront.net/amazon-q/latest/amazon-q-latest-amd64.deb
-
-# Install the package
-sudo dpkg -i amazon-q-latest-amd64.deb
-sudo apt-get install -f
+curl --proto '=https' --tlsv1.2 -sSf "https://desktop-release.codewhisperer.us-east-1.amazonaws.com/latest/q-x86_64-linux.zip" -o "q.zip"
+unzip q.zip
+sudo mv q /usr/local/bin/
 ```
 
-### AppImage
-
+#### Linux ARM (aarch64)
 ```bash
-# Download the latest AppImage
-curl -LO https://d3op2l77j7wnti.cloudfront.net/amazon-q/latest/amazon-q-latest-x86_64.AppImage
-
-# Run it directly (executable permissions are already set)
-./amazon-q-latest-x86_64.AppImage
+curl --proto '=https' --tlsv1.2 -sSf "https://desktop-release.codewhisperer.us-east-1.amazonaws.com/latest/q-aarch64-linux.zip" -o "q.zip"
+unzip q.zip
+sudo mv q /usr/local/bin/
 ```
-
-### Alternative Linux Builds
-
-For other Linux distributions, you can download the appropriate package from:
-- [Amazon Q Developer CLI Downloads](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html#command-line-installing-alternative-linux)
 
 ## Getting Started
 
