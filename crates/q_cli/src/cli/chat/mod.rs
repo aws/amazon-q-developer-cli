@@ -5,7 +5,6 @@ mod input_source;
 mod parse;
 mod parser;
 mod prompt;
-mod tool_manager;
 mod tools;
 use std::borrow::Cow;
 use std::collections::{
@@ -79,10 +78,6 @@ use thiserror::Error;
 use tokio::signal::unix::{
     SignalKind,
     signal,
-};
-use tool_manager::{
-    McpServerConfig,
-    ToolManager,
 };
 use tools::gh_issue::GhIssueContext;
 use tools::{
@@ -205,11 +200,6 @@ pub async fn chat(
         _ => StreamingClient::new().await?,
     };
 
-    let mcp_server_configs = McpServerConfig::load_config(&mut output).await.unwrap_or_else(|e| {
-        warn!("No mcp server config loaded: {}", e);
-        McpServerConfig::default()
-    });
-
     // If profile is specified, verify it exists before starting the chat
     if let Some(ref profile_name) = profile {
         // Create a temporary context manager to check if the profile exists
@@ -231,8 +221,7 @@ pub async fn chat(
         }
     }
 
-    let mut tool_manager = ToolManager::from_configs(mcp_server_configs).await?;
-    let tool_config = tool_manager.load_tools().await?;
+    let tool_config = load_tools()?;
     let mut tool_permissions = ToolPermissions::new(tool_config.len());
     if accept_all || trust_all_tools {
         for tool in tool_config.values() {
@@ -268,7 +257,6 @@ pub async fn chat(
         interactive,
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
-        tool_manager,
         profile,
         tool_config,
         tool_permissions,
@@ -333,8 +321,6 @@ pub struct ChatContext<W: Write> {
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
     /// State used to keep track of tool use relation
     tool_use_status: ToolUseStatus,
-    /// Abstraction that consolidates custom tools with native ones
-    tool_manager: ToolManager,
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
 }
@@ -350,13 +336,11 @@ impl<W: Write> ChatContext<W> {
         interactive: bool,
         client: StreamingClient,
         terminal_width_provider: fn() -> Option<usize>,
-        tool_manager: ToolManager,
         profile: Option<String>,
         tool_config: HashMap<String, ToolSpec>,
         tool_permissions: ToolPermissions,
     ) -> Result<Self> {
         let ctx_clone = Arc::clone(&ctx);
-        let conversation_state = ConversationState::new(ctx_clone, tool_config, profile).await;
         Ok(Self {
             ctx,
             settings,
@@ -368,10 +352,9 @@ impl<W: Write> ChatContext<W> {
             terminal_width_provider,
             spinner: None,
             tool_permissions,
-            conversation_state,
+            conversation_state: ConversationState::new(ctx_clone, tool_config, profile).await,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
-            tool_manager,
             failed_request_ids: Vec::new(),
         })
     }
@@ -1673,7 +1656,7 @@ where
                 .set_tool_use_id(tool_use_id.clone())
                 .set_tool_name(tool_use.name.clone())
                 .utterance_id(self.conversation_state.message_id().map(|s| s.to_string()));
-            match self.tool_manager.get_tool_from_tool_use(tool_use) {
+            match Tool::try_from(tool_use) {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);
@@ -1949,6 +1932,11 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
     StreamingClient::mock(mock)
 }
 
+/// Returns all tools supported by Q chat.
+fn load_tools() -> Result<HashMap<String, ToolSpec>> {
+    Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1975,9 +1963,6 @@ mod tests {
             ],
         ]));
 
-        let tool_manager = ToolManager::default();
-        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
-            .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
@@ -1991,9 +1976,8 @@ mod tests {
             true,
             test_client,
             || Some(80),
-            tool_manager,
             None,
-            tool_config,
+            load_tools().expect("Tools failed to load."),
             ToolPermissions::new(0),
         )
         .await
