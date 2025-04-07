@@ -657,7 +657,7 @@ where
                 style::SetForegroundColor(Color::Green),
                 style::Print("t"),
                 style::SetForegroundColor(Color::DarkGrey),
-                style::Print("' to trust this tool for the session. ["),
+                style::Print("' to trust (always allow) this tool for the session. ["),
                 style::SetForegroundColor(Color::Green),
                 style::Print("y"),
                 style::SetForegroundColor(Color::DarkGrey),
