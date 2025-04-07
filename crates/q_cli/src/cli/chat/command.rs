@@ -18,6 +18,7 @@ pub enum Command {
     Profile { subcommand: ProfileSubcommand },
     Context { subcommand: ContextSubcommand },
     PromptEditor { initial_text: Option<String> },
+    Compact { prompt: Option<String>, show_summary: bool, help: bool },
     Tools { subcommand: Option<ToolsSubcommand> },
 }
 
@@ -224,6 +225,47 @@ impl Command {
             return Ok(match parts[0].to_lowercase().as_str() {
                 "clear" => Self::Clear,
                 "help" => Self::Help,
+                "compact" => {
+                    let mut prompt = None;
+                    let mut show_summary = false;
+                    let mut help = false;
+                    
+                    // Check if "help" is the first subcommand
+                    if parts.len() > 1 && parts[1].to_lowercase() == "help" {
+                        help = true;
+                    } else {
+                        let mut remaining_parts = Vec::new();
+                        
+                        // Parse the parts to handle both prompt and flags
+                        for part in &parts[1..] {
+                            if *part == "--summary" {
+                                show_summary = true;
+                            } else {
+                                remaining_parts.push(*part);
+                            }
+                        }
+                        
+                        // Check if the last word is "--summary" (which would have been captured as part of the prompt)
+                        if !remaining_parts.is_empty() {
+                            let last_idx = remaining_parts.len() - 1;
+                            if remaining_parts[last_idx] == "--summary" {
+                                remaining_parts.pop();
+                                show_summary = true;
+                            }
+                        }
+                        
+                        // If we have remaining parts after parsing flags, join them as the prompt
+                        if !remaining_parts.is_empty() {
+                            prompt = Some(remaining_parts.join(" "));
+                        }
+                    }
+                    
+                    Self::Compact { 
+                        prompt,
+                        show_summary,
+                        help,
+                    }
+                },
                 "acceptall" => {
                     let _ = queue!(
                         output,
@@ -519,7 +561,21 @@ mod tests {
                 }
             };
         }
+        macro_rules! compact {
+            ($prompt:expr, $show_summary:expr) => {
+                Command::Compact {
+                    prompt: $prompt,
+                    show_summary: $show_summary,
+                    help: false,
+                }
+            };
+        }
         let tests = &[
+            ("/compact", compact!(None, false)),
+            ("/compact --summary", compact!(None, true)),
+            ("/compact custom prompt", compact!(Some("custom prompt".to_string()), false)),
+            ("/compact --summary custom prompt", compact!(Some("custom prompt".to_string()), true)),
+            ("/compact custom prompt --summary", compact!(Some("custom prompt".to_string()), true)),
             ("/profile list", profile!(ProfileSubcommand::List)),
             (
                 "/profile create new_profile",

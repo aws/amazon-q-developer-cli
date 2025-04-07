@@ -32,6 +32,7 @@ use tracing::{
     warn,
 };
 
+use super::chat_state::{MAX_CHARS, TokenWarningLevel};
 use super::context::ContextManager;
 use super::tools::{
     QueuedTool,
@@ -72,6 +73,8 @@ pub struct ConversationState {
     pub context_manager: Option<ContextManager>,
     /// Cached value representing the length of the user context message.
     context_message_length: Option<usize>,
+    /// Stores the latest conversation summary created by /compact
+    pub latest_summary: Option<String>,
 }
 
 impl ConversationState {
@@ -113,13 +116,27 @@ impl ConversationState {
                 .collect(),
             context_manager,
             context_message_length: None,
+            latest_summary: None,
         }
     }
 
-    /// Clears the conversation history.
-    pub fn clear(&mut self) {
+    /// Returns a vector representation of the history (for accessors)
+    pub fn history_as_vec(&self) -> Vec<ChatMessage> {
+        self.history.iter().cloned().collect()
+    }
+    
+    /// Returns the length of the conversation history
+    pub fn history_len(&self) -> usize {
+        self.history.len()
+    }
+    
+    /// Clears the conversation history and optionally the summary.
+    pub fn clear(&mut self, preserve_summary: bool) {
         self.next_message = None;
         self.history.clear();
+        if !preserve_summary {
+            self.latest_summary = None;
+        }
     }
 
     pub async fn append_new_user_message(&mut self, input: String) {
@@ -394,50 +411,124 @@ impl ConversationState {
     }
 
     /// Returns a pair of user and assistant messages to include as context in the message history
-    /// depending on [Self::context_manager].
+    /// including both summaries and context files if available.
     pub async fn context_messages(&self) -> Option<(UserInputMessage, AssistantResponseMessage)> {
-        let Some(context_manager) = &self.context_manager else {
-            return None;
-        };
-
-        match context_manager.get_context_files(true).await {
-            Ok(files) => {
-                if !files.is_empty() {
-                    let mut context_content = String::new();
-                    context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
-                    for (filename, content) in files {
-                        context_content.push_str(&format!("[{}]\n{}\n", filename, content));
+        let mut context_content = String::new();
+        let mut has_content = false;
+        
+        // Add summary if available - emphasize its importance more strongly
+        if let Some(summary) = &self.latest_summary {
+            context_content.push_str("--- CRITICAL: PREVIOUS CONVERSATION SUMMARY - THIS IS YOUR PRIMARY CONTEXT ---\n");
+            context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\n");
+            context_content.push_str("SUMMARY CONTENT:\n");
+            context_content.push_str(summary);
+            context_content.push_str("\n--- END SUMMARY - YOU MUST USE THIS INFORMATION IN YOUR RESPONSES ---\n\n");
+            has_content = true;
+        }
+        
+        // Add context files if available
+        if let Some(context_manager) = &self.context_manager {
+            match context_manager.get_context_files(true).await {
+                Ok(files) => {
+                    if !files.is_empty() {
+                        context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
+                        for (filename, content) in files {
+                            context_content.push_str(&format!("[{}]\n{}\n", filename, content));
+                        }
+                        context_content.push_str("--- CONTEXT FILES END ---\n\n");
+                        has_content = true;
                     }
-                    context_content.push_str("--- CONTEXT FILES END ---\n\n");
-
-                    let user_msg = UserInputMessage {
-                        content: format!(
-                            "Here is some information from my local q rules files, use these when answering questions:\n\n{}",
-                            context_content
-                        ),
-                        user_input_message_context: None,
-                        user_intent: None,
-                    };
-                    let assistant_msg = AssistantResponseMessage {
-                        message_id: None,
-                        content: "I will use this when generating my response.".into(),
-                        tool_uses: None,
-                    };
-                    Some((user_msg, assistant_msg))
-                } else {
-                    None
-                }
-            },
-            Err(e) => {
-                warn!("Failed to get context files: {}", e);
-                None
-            },
+                },
+                Err(e) => {
+                    warn!("Failed to get context files: {}", e);
+                },
+            }
+        }
+        
+        if has_content {
+            let user_msg = UserInputMessage {
+                content: format!(
+                    "Here is critical information you MUST consider when answering questions:\n\n{}",
+                    context_content
+                ),
+                user_input_message_context: None,
+                user_intent: None,
+            };
+            let assistant_msg = AssistantResponseMessage {
+                message_id: None,
+                content: "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into(),
+                tool_uses: None,
+            };
+            Some((user_msg, assistant_msg))
+        } else {
+            None
         }
     }
 
     /// The length of the user message used as context, if any.
     pub fn context_message_length(&self) -> Option<usize> {
         self.context_message_length
+    }
+
+    /// Calculate the total character count in the conversation
+    pub fn calculate_char_count(&self) -> usize {
+        // Calculate total character count in all messages
+        let mut total_chars = 0;
+        
+        // Count characters in history
+        for message in &self.history {
+            match message {
+                ChatMessage::UserInputMessage(msg) => {
+                    total_chars += msg.content.len();
+                    if let Some(ctx) = &msg.user_input_message_context {
+                        // Add tool result characters if any
+                        if let Some(results) = &ctx.tool_results {
+                            for result in results {
+                                for content in &result.content {
+                                    match content {
+                                        ToolResultContentBlock::Text(text) => total_chars += text.len(),
+                                        ToolResultContentBlock::Json(doc) => {
+                                            if let Some(s) = doc.as_string() {
+                                                total_chars += s.len();
+                                            } else {
+                                                // Approximate JSON size
+                                                total_chars += 100;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                ChatMessage::AssistantResponseMessage(msg) => {
+                    total_chars += msg.content.len();
+                    // Add tool uses if any
+                    if let Some(tool_uses) = &msg.tool_uses {
+                        // Approximation for tool uses
+                        total_chars += tool_uses.len() * 200;
+                    }
+                }
+            }
+        }
+        
+        // Add summary if it exists (it's also in the context sent to the model)
+        if let Some(summary) = &self.latest_summary {
+            total_chars += summary.len();
+        }
+        
+        total_chars
+    }
+
+    /// Get the current token warning level
+    pub fn get_token_warning_level(&self) -> TokenWarningLevel {
+        let total_chars = self.calculate_char_count();
+        
+        if total_chars >= MAX_CHARS {
+            TokenWarningLevel::Critical
+        } else {
+            TokenWarningLevel::None
+        }
     }
 
     pub fn append_user_transcript(&mut self, message: &str) {
