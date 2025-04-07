@@ -299,6 +299,7 @@ mod tests {
             ("echo hello | sudo rm -rf /", true),
             // `find` command arguments
             ("find important-dir/ -exec rm {} \\;", true),
+            ("find . -name '*.c' -execdir gcc -o '{}.out' '{}' \\;", true),
             ("find important-dir/ -delete", true),
             ("find important-dir/ -name '*.txt'", false),
         ];
