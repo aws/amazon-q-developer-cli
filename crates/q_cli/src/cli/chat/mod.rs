@@ -148,7 +148,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>rename</em>      <black!>Rename a profile</black!>
 <em>/context</em>      <black!>Manage context files for the chat session</black!>
   <em>help</em>        <black!>Show context help</black!>
-  <em>show</em>        <black!>Display current context configuration [--expand]</black!>
+  <em>show</em>        <black!>Display current context configuration</black!>
   <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
@@ -1007,7 +1007,7 @@ where
             Command::Context { subcommand } => {
                 if let Some(context_manager) = &mut self.conversation_state.context_manager {
                     match subcommand {
-                        command::ContextSubcommand::Show { expand } => {
+                        command::ContextSubcommand::Show => {
                             execute!(
                                 self.output,
                                 style::SetForegroundColor(Color::Green),
@@ -1057,12 +1057,12 @@ where
                                             style::Print("No files matched the configured context paths.\n\n"),
                                             style::SetForegroundColor(Color::Reset)
                                         )?;
-                                    } else if expand {
+                                    } else {
                                         // Show expanded file list when expand flag is set
                                         execute!(
                                             self.output,
                                             style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("Expanded files ({}):\n", context_files.len())),
+                                            style::Print(format!("Files in use ({}):\n", context_files.len())),
                                             style::SetForegroundColor(Color::Reset)
                                         )?;
 
@@ -1070,17 +1070,6 @@ where
                                             execute!(self.output, style::Print(format!("    {}\n", filename)))?;
                                         }
                                         execute!(self.output, style::Print("\n"))?;
-                                    } else {
-                                        // Just show the count when expand flag is not set
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!(
-                                                "Number of context files in use: {}\n",
-                                                context_files.len()
-                                            )),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
                                     }
                                 },
                                 Err(e) => {

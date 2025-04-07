@@ -70,9 +70,7 @@ Profiles allow you to organize and manage different sets of context files for di
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContextSubcommand {
-    Show {
-        expand: bool,
-    },
+    Show,
     Add {
         global: bool,
         force: bool,
@@ -92,8 +90,8 @@ impl ContextSubcommand {
     const ADD_USAGE: &str = "/context add [--global] [--force] <path1> [path2...]";
     const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available commands</cyan!>
   <em>help</em>                           <black!>Show an explanation for the context command</black!>
-  <em>show [--expand]</em>                <black!>Display current context configuration</black!>
-                                 <black!>Use --expand to list all matched files</black!>
+
+  <em>show</em>                           <black!>Display current context configuration</black!>
 
   <em>add [--global] [--force] <<paths...>></em>
                                  <black!>Add file(s) to context</black!>
@@ -107,7 +105,6 @@ impl ContextSubcommand {
                                  <black!>--global: Clear global context</black!>"};
     const CLEAR_USAGE: &str = "/context clear [--global]";
     const REMOVE_USAGE: &str = "/context rm [--global] <path1> [path2...]";
-    const SHOW_USAGE: &str = "/context show [--expand]";
 
     fn usage_msg(header: impl AsRef<str>) -> String {
         format!("{}\n\n{}", header.as_ref(), Self::AVAILABLE_COMMANDS)
@@ -339,21 +336,8 @@ impl Command {
                     }
 
                     match parts[1].to_lowercase().as_str() {
-                        "show" => {
-                            // Parse show command with optional --expand flag
-                            let mut expand = false;
-
-                            for part in &parts[2..] {
-                                if *part == "--expand" {
-                                    expand = true;
-                                } else {
-                                    usage_err!(ContextSubcommand::SHOW_USAGE);
-                                }
-                            }
-
-                            Self::Context {
-                                subcommand: ContextSubcommand::Show { expand },
-                            }
+                        "show" => Self::Context {
+                            subcommand: ContextSubcommand::Show,
                         },
                         "add" => {
                             // Parse add command with paths and flags
@@ -544,11 +528,7 @@ mod tests {
                 "/profile set p",
                 profile!(ProfileSubcommand::Set { name: "p".to_string() }),
             ),
-            ("/context show", context!(ContextSubcommand::Show { expand: false })),
-            (
-                "/context show --expand",
-                context!(ContextSubcommand::Show { expand: true }),
-            ),
+            ("/context show", context!(ContextSubcommand::Show)),
             (
                 "/context add p1 p2",
                 context!(ContextSubcommand::Add {
