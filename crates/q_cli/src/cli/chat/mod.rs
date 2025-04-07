@@ -110,7 +110,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 • Fix the build failures in this project.
 • List my s3 buckets in us-west-2.
 • Write unit tests for my application.
-• Help me understand my git status
+• Help me understand my git status.
 
 <em>/tools</em>        <black!>View and manage tools and permissions</black!>
 <em>/issue</em>        <black!>Report an issue or make a feature request</black!>
@@ -119,7 +119,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
-<cyan!>Use Alt(⌥) + Enter(⏎) to provide multi-line prompts.</cyan!>
+<cyan!>Use Ctrl(^) + j to provide multi-line prompts.</cyan!>
 
 "};
 
@@ -155,7 +155,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
-<em>Alt(⌥) + Enter(⏎)</em>     <black!>Insert new-line to provide multi-line prompt. Alternatively, [Ctrl+j]</black!>
+<em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
 
 "};
 
