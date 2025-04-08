@@ -279,9 +279,18 @@ fn code<'a, 'b>(
     state: &'b mut ParseState,
 ) -> impl FnMut(&mut Partial<&'a str>) -> PResult<(), Error<'a>> + 'b {
     move |i| {
-        "`".parse_next(i)?;
-        let code = terminated(take_until(0.., "`"), "`").parse_next(i)?;
-        let out = code.replace("&amp;", "&").replace("&gt;", ">").replace("&lt;", "<");
+        let start = i.checkpoint();
+
+        let display = match delimited::<_, _, _, _, Error<'a>, _, _, _>("`", take_until(1.., "`"), "`").parse_next(i) {
+            Ok(display) => display,
+            Err(_) => {
+                // If it doesn't match, reset position and fail
+                i.reset(&start);
+                return Err(ErrMode::from_error_kind(i, ErrorKind::Fail));
+            },
+        };
+
+        let out = display.replace("&amp;", "&").replace("&gt;", ">").replace("&lt;", "<");
 
         queue_newline_or_advance(&mut o, state, out.width())?;
         queue(&mut o, style::SetForegroundColor(Color::Green))?;
@@ -299,7 +308,7 @@ fn blockquote<'a, 'b>(
             return Err(ErrMode::from_error_kind(i, ErrorKind::Fail));
         }
 
-        let level = repeat::<_, _, Vec<&'_ str>, _, _>(1.., terminated("&gt;", space0))
+        let level = repeat::<_, _, Vec<&'_ str>, _, _>(1.., terminated(">", space0))
             .parse_next(i)?
             .len();
         let print = "│ ".repeat(level);
@@ -743,7 +752,7 @@ mod tests {
     validate!(bulleted_item_1, "- bullet", [style::Print("• bullet")]);
     validate!(bulleted_item_2, "* bullet", [style::Print("• bullet")]);
     validate!(numbered_item_1, "1. number", [style::Print("1. number")]);
-    validate!(blockquote_1, "&gt; hello", [
+    validate!(blockquote_1, "> hello", [
         style::SetForegroundColor(BLOCKQUOTE_COLOR),
         style::Print("│ hello"),
     ]);
