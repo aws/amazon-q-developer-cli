@@ -22,7 +22,7 @@
         },
         {
           "type": "added",
-          "description": "A new command `/ed` in `q chat` for composing prompts using the configured editor - [#1035](https://github.com/aws/amazon-q-developer-cli/pull/1035)"
+          "description": "A new command `/editor` in `q chat` for composing prompts using the configured editor - [#1035](https://github.com/aws/amazon-q-developer-cli/pull/1035)"
         },
         {
           "type": "added",
@@ -47,6 +47,10 @@
         {
           "type": "added",
           "description": "Improved `execute_bash` pipe safety checking in `q chat` - [#927](https://github.com/aws/amazon-q-developer-cli/pull/927)"
+        },
+        {
+          "type": "changed",
+          "description": "Executing `q` now enters `q chat` instead of opening the dashboard - [#987](https://github.com/aws/amazon-q-developer-cli/pull/987)"
         },
         {
           "type": "fixed",
