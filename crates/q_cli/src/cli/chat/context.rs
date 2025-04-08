@@ -110,12 +110,8 @@ impl ContextManager {
     /// # Returns
     /// A Result indicating success or an error
     pub async fn add_paths(&mut self, paths: Vec<String>, global: bool, force: bool) -> Result<()> {
-        // Get reference to the appropriate config
-        let config = if global {
-            &mut self.global_config
-        } else {
-            &mut self.profile_config
-        };
+        let mut all_paths = self.global_config.paths.clone();
+        all_paths.append(&mut self.profile_config.paths.clone());
 
         // Validate paths exist before adding them
         if !force {
@@ -134,10 +130,14 @@ impl ContextManager {
 
         // Add each path, checking for duplicates
         for path in paths {
-            if config.paths.contains(&path) {
-                return Err(eyre!("Path '{}' already exists in the context", path));
+            if all_paths.contains(&path) {
+                return Err(eyre!("Rule '{}' already exists.", path));
             }
-            config.paths.push(path);
+            if global {
+                self.global_config.paths.push(path);
+            } else {
+                self.profile_config.paths.push(path);
+            }
         }
 
         // Save the updated configuration
