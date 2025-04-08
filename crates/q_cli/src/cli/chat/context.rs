@@ -387,19 +387,51 @@ impl ContextManager {
     pub async fn get_context_files(&self, force: bool) -> Result<Vec<(String, String)>> {
         let mut context_files = Vec::new();
 
-        // Process global paths first
-        for path in &self.global_config.paths {
-            // Use is_validation=false for get_context_files to handle non-matching globs gracefully
-            process_path(&self.ctx, path, &mut context_files, force, false).await?;
-        }
-
-        // Then process profile-specific paths
-        for path in &self.profile_config.paths {
-            // Use is_validation=false for get_context_files to handle non-matching globs gracefully
-            process_path(&self.ctx, path, &mut context_files, force, false).await?;
-        }
+        self.collect_context_files(&self.global_config.paths, &mut context_files, force)
+            .await?;
+        self.collect_context_files(&self.profile_config.paths, &mut context_files, force)
+            .await?;
 
         Ok(context_files)
+    }
+
+    pub async fn get_context_files_by_path(&self, force: bool, path: &str) -> Result<Vec<(String, String)>> {
+        let mut context_files = Vec::new();
+        process_path(&self.ctx, path, &mut context_files, force, true).await?;
+        Ok(context_files)
+    }
+
+    /// Get all context files from the global configuration.
+    pub async fn get_global_context_files(&self, force: bool) -> Result<Vec<(String, String)>> {
+        let mut context_files = Vec::new();
+
+        self.collect_context_files(&self.global_config.paths, &mut context_files, force)
+            .await?;
+
+        Ok(context_files)
+    }
+
+    /// Get all context files from the current profile configuration.
+    pub async fn get_current_profile_context_files(&self, force: bool) -> Result<Vec<(String, String)>> {
+        let mut context_files = Vec::new();
+
+        self.collect_context_files(&self.profile_config.paths, &mut context_files, force)
+            .await?;
+
+        Ok(context_files)
+    }
+
+    async fn collect_context_files(
+        &self,
+        paths: &[String],
+        context_files: &mut Vec<(String, String)>,
+        force: bool,
+    ) -> Result<()> {
+        for path in paths {
+            // Use is_validation=false to handle non-matching globs gracefully
+            process_path(&self.ctx, path, context_files, force, false).await?;
+        }
+        Ok(())
     }
 }
 

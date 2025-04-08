@@ -101,6 +101,7 @@ use crate::cli::chat::parse::{
     interpret_markdown,
 };
 use crate::util::region_check;
+use crate::util::token_counter::TokenCounter;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
@@ -115,7 +116,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/tools</em>        <black!>View and manage tools and permissions</black!>
 <em>/issue</em>        <black!>Report an issue or make a feature request</black!>
 <em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
-<em>/context</em>      <black!>(Beta) Manage context files for a profile</black!>
+<em>/context</em>      <black!>(Beta) Manage context rules for a profile</black!>
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
@@ -1008,16 +1009,16 @@ where
                 if let Some(context_manager) = &mut self.conversation_state.context_manager {
                     match subcommand {
                         command::ContextSubcommand::Show => {
+                            // Display global context
                             execute!(
                                 self.output,
-                                style::SetForegroundColor(Color::Green),
-                                style::Print(format!("\ncurrent profile: {}\n\n", context_manager.current_profile)),
-                                style::SetForegroundColor(Color::Reset)
+                                style::SetAttribute(Attribute::Bold),
+                                style::SetForegroundColor(Color::Magenta),
+                                style::Print("\n🌍 global:\n"),
+                                style::SetAttribute(Attribute::Reset),
                             )?;
-
-                            // Display global context
-                            execute!(self.output, style::Print("global:\n"))?;
-
+                            let mut global_context_files = Vec::new();
+                            let mut profile_context_files = Vec::new();
                             if context_manager.global_config.paths.is_empty() {
                                 execute!(
                                     self.output,
@@ -1027,12 +1028,34 @@ where
                                 )?;
                             } else {
                                 for path in &context_manager.global_config.paths {
-                                    execute!(self.output, style::Print(format!("    {}\n", path)))?;
+                                    execute!(self.output, style::Print(format!("    {} ", path)))?;
+                                    if let Ok(context_files) =
+                                        context_manager.get_context_files_by_path(false, path).await
+                                    {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!(
+                                                "({} match{})",
+                                                context_files.len(),
+                                                if context_files.len() == 1 { "" } else { "es" }
+                                            )),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                        global_context_files.extend(context_files);
+                                    }
+                                    execute!(self.output, style::Print("\n"))?;
                                 }
                             }
 
                             // Display profile context
-                            execute!(self.output, style::Print("\nprofile:\n"))?;
+                            execute!(
+                                self.output,
+                                style::SetAttribute(Attribute::Bold),
+                                style::SetForegroundColor(Color::Magenta),
+                                style::Print(format!("\n👤 profile ({}):\n", context_manager.current_profile)),
+                                style::SetAttribute(Attribute::Reset),
+                            )?;
 
                             if context_manager.profile_config.paths.is_empty() {
                                 execute!(
@@ -1043,43 +1066,86 @@ where
                                 )?;
                             } else {
                                 for path in &context_manager.profile_config.paths {
-                                    execute!(self.output, style::Print(format!("    {}\n", path)))?;
-                                }
-                                execute!(self.output, style::Print("\n"))?;
-                            }
-
-                            match context_manager.get_context_files(false).await {
-                                Ok(context_files) => {
-                                    if context_files.is_empty() {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::DarkGrey),
-                                            style::Print("No files matched the configured context paths.\n\n"),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    } else {
-                                        // Show expanded file list when expand flag is set
+                                    execute!(self.output, style::Print(format!("    {} ", path)))?;
+                                    if let Ok(context_files) =
+                                        context_manager.get_context_files_by_path(false, path).await
+                                    {
                                         execute!(
                                             self.output,
                                             style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("Files in use ({}):\n", context_files.len())),
+                                            style::Print(format!(
+                                                "({} match{})",
+                                                context_files.len(),
+                                                if context_files.len() == 1 { "" } else { "es" }
+                                            )),
                                             style::SetForegroundColor(Color::Reset)
                                         )?;
-
-                                        for (filename, _) in context_files {
-                                            execute!(self.output, style::Print(format!("    {}\n", filename)))?;
-                                        }
-                                        execute!(self.output, style::Print("\n"))?;
+                                        profile_context_files.extend(context_files);
                                     }
-                                },
-                                Err(e) => {
+                                }
+                                execute!(self.output, style::Print("\n\n"))?;
+                            }
+
+                            if global_context_files.is_empty() && profile_context_files.is_empty() {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("No files in the current directory matched the rules above.\n\n"),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            } else {
+                                let total = global_context_files.len() + profile_context_files.len();
+                                let total_tokens = global_context_files
+                                    .iter()
+                                    .map(|(_, content)| TokenCounter::count_tokens(content))
+                                    .sum::<usize>()
+                                    + profile_context_files
+                                        .iter()
+                                        .map(|(_, content)| TokenCounter::count_tokens(content))
+                                        .sum::<usize>();
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Green),
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::Print(format!(
+                                        "{} matched file{} in use:\n",
+                                        total,
+                                        if total == 1 { "" } else { "s" }
+                                    )),
+                                    style::SetForegroundColor(Color::Reset),
+                                    style::SetAttribute(Attribute::Reset)
+                                )?;
+
+                                for (filename, content) in global_context_files {
+                                    let est_tokens = TokenCounter::count_tokens(&content);
                                     execute!(
                                         self.output,
-                                        style::SetForegroundColor(Color::Red),
-                                        style::Print(format!("Error retrieving context files: {}\n\n", e)),
-                                        style::SetForegroundColor(Color::Reset)
+                                        style::SetForegroundColor(Color::DarkYellow),
+                                        style::Print(format!("🌍 [~{} tokens]", est_tokens)),
+                                        style::SetForegroundColor(Color::Reset),
+                                        style::Print(format!("    {}\n", filename))
                                     )?;
-                                },
+                                }
+
+                                for (filename, content) in profile_context_files {
+                                    let est_tokens = TokenCounter::count_tokens(&content);
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::DarkYellow),
+                                        style::Print(format!("👤 [~{} tokens]", est_tokens)),
+                                        style::SetForegroundColor(Color::Reset),
+                                        style::Print(format!("    {}\n", filename))
+                                    )?;
+                                }
+
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Yellow),
+                                    style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+
+                                execute!(self.output, style::Print("\n"))?;
                             }
                         },
                         command::ContextSubcommand::Add { global, force, paths } => {
