@@ -30,6 +30,6 @@
     "@amzn/tsconfig": "workspace:^",
     "@bufbuild/buf": "^1.52.0",
     "@bufbuild/protoc-gen-es": "^2.2.3",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.3"
   }
 }

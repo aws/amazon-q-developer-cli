@@ -30,7 +30,7 @@
     "@vitest/coverage-v8": "^3.0.8",
     "eslint": "^9.18.0",
     "prettier": "^3.4.2",
-    "typescript": "^5.8.2",
+    "typescript": "^5.8.3",
     "vitest": "^3.0.8"
   },
   "publishConfig": {
