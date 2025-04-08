@@ -54,6 +54,10 @@
         },
         {
           "type": "fixed",
+          "description": "A missing Match criteria error in the ssh integration - [#1134](https://github.com/aws/amazon-q-developer-cli/pull/1134)"
+        },
+        {
+          "type": "fixed",
           "description": "Various issues in `q chat`"
         }
       ]
