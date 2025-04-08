@@ -326,7 +326,9 @@ impl Command {
                 },
                 "context" => {
                     if parts.len() < 2 {
-                        return Err(ContextSubcommand::usage_msg("Missing subcommand for /context."));
+                        return Ok(Self::Context {
+                            subcommand: ContextSubcommand::Help,
+                        });
                     }
 
                     macro_rules! usage_err {
