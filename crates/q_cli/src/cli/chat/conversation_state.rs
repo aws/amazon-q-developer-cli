@@ -135,40 +135,8 @@ impl ConversationState {
             input
         };
 
-        // Get context files if available
-        let context_files = if let Some(context_manager) = &self.context_manager {
-            match context_manager.get_context_files(true).await {
-                Ok(files) => {
-                    if !files.is_empty() {
-                        let mut context_content = String::new();
-                        context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
-                        for (filename, content) in files {
-                            context_content.push_str(&format!("[{}]\n{}\n", filename, content));
-                        }
-                        context_content.push_str("--- CONTEXT FILES END ---\n\n");
-                        Some(context_content)
-                    } else {
-                        None
-                    }
-                },
-                Err(e) => {
-                    warn!("Failed to get context files: {}", e);
-                    None
-                },
-            }
-        } else {
-            None
-        };
-
-        // Combine context files with user input if available
-        let content = if let Some(context) = context_files {
-            format!("{}\n{}", context, input)
-        } else {
-            input
-        };
-
         let msg = UserInputMessage {
-            content,
+            content: input,
             user_input_message_context: Some(UserInputMessageContext {
                 shell_state: Some(build_shell_state()),
                 env_state: Some(build_env_state()),
