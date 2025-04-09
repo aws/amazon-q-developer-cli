@@ -101,8 +101,8 @@ use crate::cli::chat::parse::{
     interpret_markdown,
 };
 use crate::util::region_check;
-use crate::util::token_counter::TokenCounter;
 use crate::util::spinner::play_notification_bell;
+use crate::util::token_counter::TokenCounter;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
