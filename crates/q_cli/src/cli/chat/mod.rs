@@ -149,7 +149,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>rename</em>      <black!>Rename a profile</black!>
 <em>/context</em>      <black!>Manage context files for the chat session</black!>
   <em>help</em>        <black!>Show context help</black!>
-  <em>show</em>        <black!>Display current context configuration</black!>
+  <em>show</em>        <black!>Display current context rules configuration [--expand]</black!>
   <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
@@ -1008,7 +1008,7 @@ where
             Command::Context { subcommand } => {
                 if let Some(context_manager) = &mut self.conversation_state.context_manager {
                     match subcommand {
-                        command::ContextSubcommand::Show => {
+                        command::ContextSubcommand::Show { expand } => {
                             // Display global context
                             execute!(
                                 self.output,
@@ -1125,6 +1125,14 @@ where
                                         style::SetForegroundColor(Color::Reset),
                                         style::Print(format!("    {}\n", filename))
                                     )?;
+                                    if expand {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::DarkGrey),
+                                            style::Print(format!("{}\n\n", content)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    }
                                 }
 
                                 for (filename, content) in profile_context_files {
@@ -1136,6 +1144,18 @@ where
                                         style::SetForegroundColor(Color::Reset),
                                         style::Print(format!("    {}\n", filename))
                                     )?;
+                                    if expand {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::DarkGrey),
+                                            style::Print(format!("{}\n\n", content)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    }
+                                }
+
+                                if expand {
+                                    execute!(self.output, style::Print(format!("{}\n\n", "▔".repeat(3))),)?;
                                 }
 
                                 execute!(

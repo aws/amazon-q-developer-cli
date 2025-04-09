@@ -57,6 +57,7 @@ const COMMANDS: &[&str] = &[
     "/profile set",
     "/context help",
     "/context show",
+    "/context show --expand",
     "/context add",
     "/context add --global",
     "/context rm",
