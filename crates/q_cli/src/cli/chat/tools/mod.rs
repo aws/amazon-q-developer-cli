@@ -205,8 +205,8 @@ impl ToolPermissions {
         let label = match tool_name {
             "fs_read" => "Trusted",
             "fs_write" => "Per-request",
-            "execute_bash" => "Read-only commands",
-            "use_aws" => "Read-only commands",
+            "execute_bash" => "Write-only commands",
+            "use_aws" => "Write-only commands",
             "report_issue" => "Trusted",
             _ => "Per-request",
         };

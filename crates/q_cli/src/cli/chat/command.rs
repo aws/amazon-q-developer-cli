@@ -156,7 +156,8 @@ impl ToolsSubcommand {
     const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /tools [SUBCOMMAND]</cyan!>
 
 <cyan!>Description</cyan!>
-  Show the current set of tools and their permission settings. 
+  Show the current set of tools and their permission setting.
+  The permission setting states when user confirmation is required. Trusted tools never require confirmation.
   Alternatively, specify a subcommand to modify the tool permissions."};
     const TRUST_USAGE: &str = "/tools trust <tool name>";
     const UNTRUST_USAGE: &str = "/tools untrust <tool name>";
