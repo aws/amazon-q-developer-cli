@@ -1690,7 +1690,10 @@ where
 
                 if self.interactive {
                     // Play notification bell when response is complete
-                    play_notification_bell();
+                    // Use the chat context's settings to determine if notifications are enabled
+                    if self.settings.get_bool_or("chat.enableNotifications", true) {
+                        play_notification_bell();
+                    }
                     queue!(self.output, style::ResetColor, style::SetAttribute(Attribute::Reset))?;
                     execute!(self.output, style::Print("\n"))?;
 
