@@ -194,6 +194,10 @@ impl ToolPermissions {
         self.permissions.clear();
     }
 
+    pub fn reset_tool(&mut self, tool_name: &str) {
+        self.permissions.remove(tool_name);
+    }
+
     pub fn has(&self, tool_name: &str) -> bool {
         self.permissions.contains_key(tool_name)
     }
