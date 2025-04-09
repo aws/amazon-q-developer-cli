@@ -102,6 +102,7 @@ use crate::cli::chat::parse::{
 };
 use crate::util::region_check;
 use crate::util::token_counter::TokenCounter;
+use crate::util::spinner::play_notification_bell;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
@@ -1686,7 +1687,10 @@ where
                     )
                     .await;
                 }
+
                 if self.interactive {
+                    // Play notification bell when response is complete
+                    play_notification_bell();
                     queue!(self.output, style::ResetColor, style::SetAttribute(Attribute::Reset))?;
                     execute!(self.output, style::Print("\n"))?;
 
