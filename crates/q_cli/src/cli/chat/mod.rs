@@ -160,6 +160,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 "};
 
+const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
+
 pub async fn chat(
     input: Option<String>,
     no_interactive: bool,
@@ -1509,6 +1511,7 @@ where
     }
 
     async fn handle_response(&mut self, response: SendMessageOutput) -> Result<ChatState, ChatError> {
+        let request_id = response.request_id().map(|s| s.to_string());
         let mut buf = String::new();
         let mut offset = 0;
         let mut ended = false;
@@ -1545,6 +1548,11 @@ where
                             tool_name_being_recvd = None;
                         },
                         parser::ResponseEvent::EndStream { message } => {
+                            // This log is attempting to help debug instances where users encounter
+                            // the response timeout message.
+                            if message.content == RESPONSE_TIMEOUT_CONTENT {
+                                error!(?request_id, ?message, "Encountered an unexpected model response");
+                            }
                             self.conversation_state.push_assistant_message(message);
                             ended = true;
                         },
@@ -1573,7 +1581,7 @@ where
                             self.conversation_state
                                 .push_assistant_message(AssistantResponseMessage {
                                     message_id: None,
-                                    content: "Response timed out - message took too long to generate".to_string(),
+                                    content: RESPONSE_TIMEOUT_CONTENT.to_string(),
                                     tool_uses: None,
                                 });
                             self.conversation_state
