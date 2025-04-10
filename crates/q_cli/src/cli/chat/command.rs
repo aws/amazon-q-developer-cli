@@ -318,7 +318,9 @@ impl Command {
                 "q" | "exit" | "quit" => Self::Quit,
                 "profile" => {
                     if parts.len() < 2 {
-                        return Err(ProfileSubcommand::usage_msg("Missing subcommand for /profile."));
+                        return Ok(Self::Profile {
+                            subcommand: ProfileSubcommand::Help,
+                        });
                     }
 
                     macro_rules! usage_err {
