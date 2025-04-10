@@ -32,7 +32,10 @@ use tracing::{
     warn,
 };
 
-use super::chat_state::{MAX_CHARS, TokenWarningLevel};
+use super::chat_state::{
+    MAX_CHARS,
+    TokenWarningLevel,
+};
 use super::context::ContextManager;
 use super::tools::{
     QueuedTool,
@@ -124,12 +127,12 @@ impl ConversationState {
     pub fn history_as_vec(&self) -> Vec<ChatMessage> {
         self.history.iter().cloned().collect()
     }
-    
+
     /// Returns the length of the conversation history
     pub fn history_len(&self) -> usize {
         self.history.len()
     }
-    
+
     /// Clears the conversation history and optionally the summary.
     pub fn clear(&mut self, preserve_summary: bool) {
         self.next_message = None;
@@ -415,17 +418,18 @@ impl ConversationState {
     pub async fn context_messages(&self) -> Option<(UserInputMessage, AssistantResponseMessage)> {
         let mut context_content = String::new();
         let mut has_content = false;
-        
+
         // Add summary if available - emphasize its importance more strongly
         if let Some(summary) = &self.latest_summary {
-            context_content.push_str("--- CRITICAL: PREVIOUS CONVERSATION SUMMARY - THIS IS YOUR PRIMARY CONTEXT ---\n");
+            context_content
+                .push_str("--- CRITICAL: PREVIOUS CONVERSATION SUMMARY - THIS IS YOUR PRIMARY CONTEXT ---\n");
             context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\n");
             context_content.push_str("SUMMARY CONTENT:\n");
             context_content.push_str(summary);
             context_content.push_str("\n--- END SUMMARY - YOU MUST USE THIS INFORMATION IN YOUR RESPONSES ---\n\n");
             has_content = true;
         }
-        
+
         // Add context files if available
         if let Some(context_manager) = &self.context_manager {
             match context_manager.get_context_files(true).await {
@@ -444,7 +448,7 @@ impl ConversationState {
                 },
             }
         }
-        
+
         if has_content {
             let user_msg = UserInputMessage {
                 content: format!(
@@ -474,7 +478,7 @@ impl ConversationState {
     pub fn calculate_char_count(&self) -> usize {
         // Calculate total character count in all messages
         let mut total_chars = 0;
-        
+
         // Count characters in history
         for message in &self.history {
             match message {
@@ -494,7 +498,7 @@ impl ConversationState {
                                                 // Approximate JSON size
                                                 total_chars += 100;
                                             }
-                                        }
+                                        },
                                     }
                                 }
                             }
@@ -508,22 +512,22 @@ impl ConversationState {
                         // Approximation for tool uses
                         total_chars += tool_uses.len() * 200;
                     }
-                }
+                },
             }
         }
-        
+
         // Add summary if it exists (it's also in the context sent to the model)
         if let Some(summary) = &self.latest_summary {
             total_chars += summary.len();
         }
-        
+
         total_chars
     }
 
     /// Get the current token warning level
     pub fn get_token_warning_level(&self) -> TokenWarningLevel {
         let total_chars = self.calculate_char_count();
-        
+
         if total_chars >= MAX_CHARS {
             TokenWarningLevel::Critical
         } else {

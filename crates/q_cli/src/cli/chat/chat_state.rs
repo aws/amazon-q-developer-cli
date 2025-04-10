@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+
 use fig_api_client::model::ChatMessage;
 
 /// Character count warning levels for conversation size
@@ -33,7 +34,7 @@ impl SummarizationState {
             show_summary: false,
         }
     }
-    
+
     pub fn with_prompt(prompt: Option<String>) -> Self {
         Self {
             original_history: None,
