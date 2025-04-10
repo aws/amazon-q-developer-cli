@@ -1,0 +1,42 @@
+{
+  "name": "root",
+  "private": true,
+  "author": "Amazon Web Services",
+  "repository": "https://github.com/aws/amazon-q-developer-cli",
+  "license": "MIT OR Apache-2.0",
+  "packageManager": "pnpm@10.0.0+sha256.43abf6e720fb7bc53c591b0862605c7d323d0a9d2dd33bcac07b062e13cf4948",
+  "type": "module",
+  "engines": {
+    "node": "^22.0.0"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "b": "turbo build",
+    "test": "vitest",
+    "test:ci": "vitest run --run --coverage",
+    "test:ui": "vitest --ui",
+    "coverage": "vitest run --coverage",
+    "lint": "turbo lint --parallel",
+    "lint:fix": "turbo lint:fix --parallel",
+    "dev": "turbo dev",
+    "dev:autocomplete": "pnpm -C packages/autocomplete dev",
+    "dev:dashboard": "pnpm -C packages/dashboard-app dev",
+    "preview:autocomplete": "pnpm -C packages/autocomplete preview",
+    "preview:dashboard": "pnpm -C packages/dashboard-app preview",
+    "clean": "turbo clean --parallel",
+    "prepare": "husky",
+    "precommit": "lint-staged --config .lintstagedrc.mjs",
+    "setup": "bash scripts/setup.sh"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.0.8",
+    "@vitest/ui": "^3.0.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.0",
+    "micromatch": "^4.0.8",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.3",
+    "turbo": "^2.5.0",
+    "vitest": "^3.0.8"
+  }
+}

@@ -1,0 +1,23 @@
+[
+    [
+        "Let me use the `use_aws` tool to get your item.",
+        {
+            "tool_use_id": "1",
+            "name": "use_aws",
+            "args": {
+              "service_name": "dynamodb",
+              "operation_name": "get-item",
+              "parameters": {
+                  "--table-name": "AGI_MEMORY",
+                  "--key": "{\"memory_id\": {\"S\": \"49d649c7-b772-4578-968c-c20240844a4a\"}}"
+              },
+              "region": "us-west-2",
+              "profile_name": "default",
+              "label": ""
+            }
+        }
+    ],
+    [
+        "Hope that looks good to you!"
+    ]
+]

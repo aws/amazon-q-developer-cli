@@ -1,0 +1,43 @@
+[package]
+name = "macos-utils"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2.workspace = true
+core-graphics.workspace = true
+core-foundation.workspace = true
+cocoa.workspace = true
+libc.workspace = true
+objc.workspace = true
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = [
+    "NSBitmapImageRep",
+    "NSGraphicsContext",
+    "NSImage",
+    "NSImageRep",
+    "NSWorkspace",
+    "NSRunningApplication",
+    "libc",
+] }
+objc2-foundation = { workspace = true, features = [
+    "block2",
+    "NSDictionary",
+    "NSDistributedNotificationCenter",
+    "NSEnumerator",
+    "NSOperation",
+    "NSProcessInfo",
+] }
+dashmap.workspace = true
+flume = "0.11.0"
+fnv = "1.0.7"
+accessibility-sys = { path = "./accessibility-master/accessibility-sys" }
+accessibility = { path = "./accessibility-master/accessibility" }
+appkit-nsworkspace-bindings.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+nix.workspace = true

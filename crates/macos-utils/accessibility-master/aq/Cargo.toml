@@ -1,0 +1,15 @@
+[package]
+name = "aq"
+version = "0.1.4"
+authors = ["Mack Straight <mack@discordapp.com>"]
+edition = "2018"
+license = "MIT / Apache-2.0"
+homepage = "https://github.com/eiz/accessibility"
+repository = "https://github.com/eiz/accessibility"
+description = "Accessibility query"
+publish = false
+
+[target.'cfg(target_os = "macos")'.dependencies]
+accessibility = { path = "../accessibility", version = "0.1.6" }
+core-foundation.workspace = true
+structopt = "0.3"

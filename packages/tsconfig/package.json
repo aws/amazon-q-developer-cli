@@ -1,0 +1,15 @@
+{
+  "name": "@amzn/tsconfig",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "author": "Amazon Web Services",
+  "repository": "https://github.com/aws/amazon-q-developer-cli",
+  "peerDependencies": {
+    "typescript": "*"
+  },
+  "files": [
+    "base.json",
+    "dom.json"
+  ]
+}

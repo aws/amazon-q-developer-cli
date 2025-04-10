@@ -1,0 +1,13 @@
+{
+  "name": "@aws/amazon-q-developer-cli-fuzzysort",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "Amazon Web Services",
+  "repository": "https://github.com/aws/amazon-q-developer-cli",
+  "type": "module",
+  "exports": "./fuzzysort.js",
+  "types": "./fuzzysort.d.ts",
+  "files": [
+    "*"
+  ]
+}

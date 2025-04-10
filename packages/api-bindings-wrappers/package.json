@@ -1,0 +1,39 @@
+{
+  "name": "@aws/amazon-q-developer-cli-api-bindings-wrappers",
+  "version": "0.2.0",
+  "license": "MIT OR Apache-2.0",
+  "author": "Amazon Web Services",
+  "repository": "https://github.com/aws/amazon-q-developer-cli",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "lint": "eslint src && prettier --check src",
+    "lint:fix": "eslint --fix src && prettier --write src",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aws/amazon-q-developer-cli-api-bindings": "workspace:~",
+    "loglevel": "^1.9.2"
+  },
+  "devDependencies": {
+    "@amzn/eslint-config": "workspace:^",
+    "@amzn/tsconfig": "workspace:^",
+    "@amzn/types": "workspace:^",
+    "@aws/amazon-q-developer-cli-shared": "workspace:^",
+    "@withfig/autocomplete-types": "^1.31.0",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.8.3"
+  }
+}

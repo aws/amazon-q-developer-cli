@@ -1,0 +1,54 @@
+name: "Bug report"
+description: "File an issue related to Amazon Q Developer CLI"
+
+title: "bug: "
+labels: ["NEED_TO_LABEL"]
+
+body:
+- type: checkboxes
+  id: "checks"
+  attributes:
+    label: "Checks"
+    options:
+    - label: "I have searched [github.com/aws/amazon-q-developer-cli/issues](https://github.com/aws/amazon-q-developer-cli/issues?q=) and there are no duplicates of my issue"
+      required: true
+    - label: "I have run `q doctor` in the affected terminal session"
+      required: true
+    - label: "I have run `q restart` and replicated the issue again"
+      required: true
+
+- type: input
+  id: "os"
+  attributes:
+    label: "Operating system"
+  validations:
+    required: true
+    
+- type: textarea
+  id: "expected"
+  attributes:
+    label: "Expected behaviour"
+    description: "What did you expect to happen?"
+  validations:
+    required: true
+    
+- type: textarea
+  id: "actual"
+  attributes:
+    label: "Actual behaviour"
+    description: "What actually happened? Please provide a screenshot or video if possible."
+  validations:
+    required: true
+
+- type: textarea
+  id: "reproduce"
+  attributes:
+    label: "Steps to reproduce"
+    description: "Are you able to reproduce this issue? If so, how?"
+
+- type: textarea
+  id: "environment"
+  attributes:
+    label: "Environment"
+    description: "If possible, run `q diagnostic` and paste the output below."
+    render: yaml

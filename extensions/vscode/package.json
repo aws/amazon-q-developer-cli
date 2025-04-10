@@ -1,0 +1,56 @@
+{
+  "name": "codewhisperer-for-command-line-companion",
+  "version": "1.0.0",
+  "private": true,
+  "displayName": "Amazon Q for command line",
+  "description": "The IDE companion extension for the Amazon Q for command line desktop app",
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "bugs": {
+    "url": "https://github.com/aws/q-command-line-discussions"
+  },
+  "publisher": "amazonwebservices",
+  "main": "./extension.js",
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "node ./test/runTest.js",
+    "build": "vsce package --skip-license --allow-missing-repository",
+    "build-install": "pnpm run build && code --install-extension codewhisperer-for-command-line-companion-*.vsix"
+  },
+  "fig": {
+    "build": {
+      "description": "Build extension and install in VSCode"
+    },
+    "package": {
+      "description": "Package extension as .vsix file"
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.14.0",
+    "@types/vscode": "~1.80.0",
+    "@vscode/test-electron": "^2.5.1",
+    "@vscode/vsce": "^2.32.0",
+    "eslint": "^9.18.0",
+    "glob": "^11.0.1",
+    "globals": "^16.0.0",
+    "mocha": "^10.8.2",
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,0 +1,49 @@
+# This is a somewhat unconventional buildspec. CodeBuild does not support MacOS. So here we invoke a remote build on a
+# MacOS x86 EC2 instance and pull the resulting artifacts from s3.
+# We're wrapping this in CodeBuild to maintain a common build interface across our platforms and because its a nice
+# little execution environment. This could obviously be improved a lot. It has no error checking, but a failure on
+# any line will stop the build anyway - and robustness isn't paramount yet.
+#
+version: 0.2
+env:
+  shell: bash
+phases:
+  build:
+    commands:
+      - export AWS_MAX_ATTEMPTS=10
+      - echo "path - $PATH"
+      - AWS_ACCOUNT=`aws sts get-caller-identity | jq -r '.Account'`
+      # For now assume there is a suitable EC2 instance running. Obviously, we could add a StepFunction here to
+      # get a new one, but this is a start
+      - INSTANCE_ID=`aws ec2 describe-instances --filters "Name=tag:Name,Values=FigIoDesktop MacOS aarch64 Build Server" "Name=instance-state-name,Values=running" | jq -r '.Reservations[0].Instances[0].InstanceId'`
+      - echo "ec2 instance id - $INSTANCE_ID"
+      # The name of the SSM document has to change every time its deployed, so go look for it
+      # We can make this an environment variable passed into CodeBuild.
+      - SSM_DOC=`aws ssm list-documents --filters Key="SearchKeyword",Values="fig-io-desktop-remote-macos-build" | jq -r ".DocumentIdentifiers[0].Name"`
+      - echo "ssm doc - $SSM_DOC"
+      - EXECUTION=`aws ssm send-command --instance-ids $INSTANCE_ID --document-name $SSM_DOC --parameters CommitId=$CODEBUILD_RESOLVED_SOURCE_VERSION,BuildId=$CODEBUILD_BUILD_ID --cloud-watch-output-config CloudWatchOutputEnabled=true,CloudWatchLogGroupName=fig-io-desktop-build-$AWS_ACCOUNT --timeout-seconds 120 --max-errors 0`
+      - COMMAND_ID=`echo $EXECUTION | jq -r '.Command.CommandId'`
+      - echo SSM command id is $COMMAND_ID
+      - STATUS='Pending'
+      - |
+        while [[ $STATUS == 'Pending' ]] || [[ $STATUS == 'InProgress' ]]; do
+            INVOCATION=`aws ssm get-command-invocation --instance-id $INSTANCE_ID --command-id $COMMAND_ID`
+            STATUS=`echo $INVOCATION | jq -r '.Status'`
+            echo SSM command invocation is $STATUS
+            sleep 30
+        done
+      - echo SSM command invocation status changed to $STATUS
+      # TODO(grant): change bucket name to env var
+      - aws s3 cp --recursive s3://fig-io-desktop-build-output-$AWS_ACCOUNT-$AWS_REGION/staging .
+      - aws s3 rm --recursive s3://fig-io-desktop-build-output-$AWS_ACCOUNT-$AWS_REGION/staging
+
+artifacts:
+  files:
+    - ./*.dmg
+    - ./*.tar.gz
+    - ./*.sig
+    - ./*.sha256
+    - license.txt
+    - CHANGELOG
+
+  discard-paths: "yes"

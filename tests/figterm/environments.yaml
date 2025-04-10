@@ -1,0 +1,31 @@
+services:
+  blank:
+    command: ["tests/bash", "tests/zsh", "tests/fish", "tests/config"]
+  emulate:
+    command: ["tests/zsh"]
+  oh-my-zsh:
+    command: ["tests/zsh"]
+    environment:
+      ZSH_THEME: robyrussell
+  oh-my-zsh-af-magic:
+    container_name: af-magic
+    build: ./configs/oh-my-zsh/
+    command: ["tests/zsh"]
+    environment:
+      ZSH_THEME: af-magic
+  oh-my-zsh-autosuggestions:
+    command: ["tests/zsh"]
+  zsh-history-substring-search:
+    command: ["tests/zsh"]
+  pure:
+    command: ["tests/zsh"]
+  prezto:
+    command: ["tests/zsh"]
+  starship:
+    command: ["tests/bash", "tests/zsh"]
+  # startup:
+  #   command: ["tests/startup"]
+  powerlevel10k:
+    command: ["tests/zsh"]
+  # TODO aliases
+  # TODO space_in_path

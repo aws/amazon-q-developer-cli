@@ -1,0 +1,20 @@
+[package]
+name = "figterm2"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+fig_ipc.workspace = true
+fig_proto.workspace = true
+fig_remote_ipc.workspace = true
+fig_util.workspace = true
+portable-pty.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+uuid.workspace = true

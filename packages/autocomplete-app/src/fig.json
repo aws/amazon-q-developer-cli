@@ -1,0 +1,230 @@
+{
+  "name": "autocomplete",
+  "contributes": {
+    "actions": [
+      {
+        "identifier": "insertSelected",
+        "name": "Insert selected",
+        "category": "Insertion",
+        "description": "Insert selected suggestion",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["enter"]
+      },
+      {
+        "identifier": "insertCommonPrefix",
+        "name": "Insert common prefix",
+        "category": "Insertion",
+        "description": "Insert shared prefix of available suggestions. Shake if there's no common prefix.",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["tab"]
+      },
+      {
+        "identifier": "insertCommonPrefixOrNavigateDown",
+        "name": "Insert common prefix or navigate",
+        "category": "Insertion",
+        "description": "Insert shared prefix of available suggestions. Navigate if there's no common prefix.",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "insertCommonPrefixOrInsertSelected",
+        "name": "Insert common prefix or insert selected",
+        "category": "Insertion",
+        "description": "Insert shared prefix of available suggestions. Insert currently selected suggestion if there's not common prefix.",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "insertSelectedAndExecute",
+        "name": "Insert selected and execute",
+        "category": "Insertion",
+        "description": "Insert selected suggestion and then execute the current command.",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "execute",
+        "name": "Execute",
+        "category": "Insertion",
+        "description": "Execute the current command.",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "hideAutocomplete",
+        "name": "Hide autocomplete",
+        "category": "General",
+        "description": "Hide the autocomplete window",
+        "availability": "ALWAYS",
+        "defaultBindings": ["esc"]
+      },
+      {
+        "identifier": "showAutocomplete",
+        "name": "Show autocomplete",
+        "category": "General",
+        "description": "Show the autocomplete window",
+        "availability": "ALWAYS",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "toggleAutocomplete",
+        "name": "Toggle autocomplete",
+        "description": "Toggle the visibility of the autocomplete window",
+        "availability": "ALWAYS",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "navigateUp",
+        "name": "Navigate up",
+        "category": "Navigation",
+        "description": "Scroll up one entry in the list of suggestions",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["shift+tab", "up", "control+p"]
+      },
+      {
+        "identifier": "navigateDown",
+        "name": "Navigate down",
+        "category": "Navigation",
+        "description": "Scroll down one entry in the list of suggestions",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["down", "control+n"]
+      },
+      {
+        "identifier": "selectSuggestion1",
+        "name": "Select 1st suggestion",
+        "description": "Select the 1st suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+1"]
+      },
+      {
+        "identifier": "selectSuggestion2",
+        "name": "Select 2nd suggestion",
+        "description": "Select the 2nd suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+2"]
+      },
+      {
+        "identifier": "selectSuggestion3",
+        "name": "Select 3rd suggestion",
+        "description": "Select the 3rd suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+3"]
+      },
+      {
+        "identifier": "selectSuggestion4",
+        "name": "Select 4th suggestion",
+        "description": "Select the 4th suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+4"]
+      },
+      {
+        "identifier": "selectSuggestion5",
+        "name": "Select 5th suggestion",
+        "description": "Select the 5th suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+5"]
+      },
+      {
+        "identifier": "selectSuggestion6",
+        "name": "Select 6th suggestion",
+        "description": "Select the 6th suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+6"]
+      },
+      {
+        "identifier": "selectSuggestion7",
+        "name": "Select 7th suggestion",
+        "description": "Select the 7th suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+7"]
+      },
+      {
+        "identifier": "selectSuggestion8",
+        "name": "Select 8th suggestion",
+        "description": "Select the 8th suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+8"]
+      },
+      {
+        "identifier": "selectSuggestion9",
+        "name": "Select 9th suggestion",
+        "description": "Select the 9th suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+9"]
+      },
+      {
+        "identifier": "selectSuggestion10",
+        "name": "Select 10th suggestion",
+        "description": "Select the 10th suggestion of the list",
+        "category": "Navigation",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["command+0"]
+      },
+      {
+        "identifier": "hideDescription",
+        "name": "Hide description popout",
+        "category": "Appearance",
+        "description": "Hide autocomplete description popout",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "showDescription",
+        "name": "Show description popout",
+        "category": "Appearance",
+        "description": "Show autocomplete description popout",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "toggleDescription",
+        "name": "Toggle description popout",
+        "category": "Appearance",
+        "description": "Toggle visibility of autocomplete description popout",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["control+k"]
+      },
+      {
+        "identifier": "toggleHistoryMode",
+        "name": "Toggle history mode",
+        "category": "General",
+        "description": "Toggle between history suggestions and autocomplete spec suggestions",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": ["control+r"]
+      },
+      {
+        "identifier": "toggleFuzzySearch",
+        "name": "Toggle fuzzy search",
+        "category": "General",
+        "description": "Toggle between normal prefix search and fuzzy search",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "increaseSize",
+        "name": "Increase window size",
+        "category": "Appearance",
+        "description": "Increase the size of the autocomplete window",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": []
+      },
+      {
+        "identifier": "decreaseSize",
+        "name": "Decrease window size",
+        "category": "Appearance",
+        "description": "Decrease the size of the autocomplete window",
+        "availability": "WHEN_FOCUSED",
+        "defaultBindings": []
+      }
+    ]
+  }
+}

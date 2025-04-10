@@ -1,0 +1,26 @@
+[
+    [
+        "I will use the `fs_write` tool. This should verify that the `create` command will not fail if the file already exists.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/test_file.sh",
+                "file_text": "#!/usr/bin/env sh\necho 'hello'\necho 'world'\n"
+            }
+        }
+    ],
+    [
+        "Now, overwriting.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/test_file.sh",
+                "file_text": "#!/usr/bin/env sh\necho 'goodbye'\necho 'world'\n"
+            }
+        }
+    ]
+]

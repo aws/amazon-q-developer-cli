@@ -1,0 +1,45 @@
+{
+  "name": "@aws/amazon-q-developer-cli-autocomplete-parser",
+  "version": "0.2.0",
+  "license": "MIT OR Apache-2.0",
+  "author": "Amazon Web Services",
+  "repository": "https://github.com/aws/amazon-q-developer-cli",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "test": "vitest",
+    "lint": "eslint src tests && prettier --check src tests",
+    "lint:fix": "eslint --fix src tests && prettier --write src tests",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aws/amazon-q-developer-cli-api-bindings-wrappers": "workspace:^",
+    "@aws/amazon-q-developer-cli-api-bindings": "workspace:^",
+    "@aws/amazon-q-developer-cli-shell-parser": "workspace:^",
+    "@fig/autocomplete-generators": "^2.4.0",
+    "@fig/autocomplete-helpers": "^2.0.0",
+    "@fig/autocomplete-shared": "^1.1.2",
+    "loglevel": "^1.9.2",
+    "semver": "^7.7.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@amzn/eslint-config": "workspace:^",
+    "@amzn/tsconfig": "workspace:^",
+    "@amzn/types": "workspace:^",
+    "@aws/amazon-q-developer-cli-shared": "workspace:^",
+    "@types/semver": "^7.5.8",
+    "@withfig/autocomplete-types": "^1.31.0",
+    "eslint": "^9.18.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.0.8"
+  }
+}

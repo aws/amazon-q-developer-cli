@@ -1,0 +1,79 @@
+syntax = "proto3";
+package fig_common;
+
+message Empty {}
+
+message Duration {
+  uint64 secs = 1;
+  uint32 nanos = 2;
+}
+
+message Json {
+  message Number {
+    oneof number {
+      uint64 u64 = 1;
+      sint64 i64 = 2;
+      double f64 = 3;
+    }
+  }
+  message Array {
+    repeated Json array = 1;
+  }
+  message Object {
+    map<string, Json> map = 1;
+  }
+
+  oneof value {
+    Empty null = 1;
+    bool bool = 2;
+    Number number = 3;
+    string string = 4;
+    Array array = 5;
+    Object object = 6;
+  }
+}
+
+message EnvironmentVariable {
+  string key = 1;
+  optional string value = 2;
+}
+
+message ShellContext {
+  reserved 6, 9, 12;
+
+  // pid of the shell
+  optional int32 pid = 1;
+  // /dev/ttys## of terminal session
+  optional string ttys = 2;
+  // the name of the process
+  optional string process_name = 3;
+  // the directory where the user ran the command
+  optional string current_working_directory = 4;
+  // the value of $TERM_SESSION_ID
+  optional string session_id = 5;
+  // the parent terminal of figterm
+  optional string terminal = 7;
+  // the hostname of the computer figterm is running on
+  optional string hostname = 8;
+  // path to the current shell exe
+  optional string shell_path = 10;
+  // name of the wsl instance
+  optional string wsl_distro = 11;
+  // environment variables in the shell
+  repeated EnvironmentVariable environment_variables = 13;
+  // the version of qterm
+  optional string qterm_version = 14;
+  // true if a command is running
+  optional bool preexec = 15;
+  // true if OSCs are locked
+  optional bool osc_lock = 16;
+  // the raw output of `alias` run in the shell
+  optional string alias = 17;
+}
+
+message FileData {
+  oneof data {
+    string text = 1;
+    bytes binary = 2;
+  }
+}

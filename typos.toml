@@ -1,0 +1,37 @@
+[files]
+extend-exclude = [
+  "tests",
+  "crates/amzn-codewhisperer-client",
+  "crates/amzn-codewhisperer-streaming-client",
+  "crates/amzn-consolas-client",
+  "crates/amzn-toolkit-telemetry",
+  "crates/amzn-qdeveloper-client",
+  "crates/amzn-qdeveloper-streaming-client",
+  "crates/aws-toolkit-telemetry-definitions/def.json",
+  "crates/zbus",
+  "crates/zbus_names",
+  "packages/fuzzysort",
+  "packages/dashboard-app/public/license/NOTICE.txt",
+  "pnpm-lock.yaml"
+]
+
+[default]
+extend-ignore-re = [
+  # Ignore lines with trailing `spellchecker:disable-line`
+  "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+]
+
+[default.extend-words]
+# These are correct in the context of Fig, but aren't normal words
+iterm = "iterm"
+preedit = "preedit"
+xmodifiers = "xmodifiers"
+zvariant = "zvariant"
+ser = "ser"
+sur = "sur"
+ratatui = "ratatui"
+typ = "typ"
+
+[type.rust.extend-identifiers]
+# typos really wanted to correct 2ND -> 2AND
+FROM_LEFT_2ND_BUTTON_PRESSED = "FROM_LEFT_2ND_BUTTON_PRESSED"

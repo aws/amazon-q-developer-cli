@@ -1,0 +1,29 @@
+{
+  "name": "amazon-q-for-cli-gnome-integration",
+  "author": "Amazon Q Developer",
+  "version": "1.0.0",
+  "description": "Adds support for Amazon Q for CLI completions with GNOME shell",
+  "repository": "git@github.com/aws/amazon-q-for-command-line",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "all": "node ./build-scripts/all.js",
+    "build": "npx tsc && node ./build-scripts/extension.js",
+    "types": "node ./build-scripts/types.js",
+    "clean": "rm -f ./types/.*.d.ts && rm -f *.zip",
+    "lint": "eslint src build-scripts && prettier --check src build-scripts types",
+    "lint:fix": "eslint --fix src build-scripts && prettier --write src build-scripts types"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "eslint": "9.18.0",
+    "globals": "^16.0.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.29.1"
+  },
+  "dependencies": {
+    "@girs/gjs": "4.0.0-beta.21",
+    "@girs/gnome-shell": "^46.0.2"
+  },
+  "sideEffects": false
+}

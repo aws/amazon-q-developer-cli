@@ -1,0 +1,31 @@
+// Copyright 2000-2021 JetBrains s.r.o. and other contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+
+plugins {
+  id 'java'
+  id 'org.jetbrains.intellij' version '1.16.0'
+}
+
+group 'org.intellij.sdk'
+version '1.0.4'
+
+sourceCompatibility = 17
+
+repositories {
+  mavenCentral()
+}
+
+// See https://github.com/JetBrains/gradle-intellij-plugin/
+intellij {
+  version = '2022.2'
+  plugins = ['org.jetbrains.plugins.terminal']
+}
+
+buildSearchableOptions {
+  enabled = false
+}
+
+patchPluginXml {
+  version = project.version
+  sinceBuild = '222'
+  untilBuild = '999'
+}

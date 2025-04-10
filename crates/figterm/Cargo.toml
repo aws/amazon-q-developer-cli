@@ -1,0 +1,90 @@
+[package]
+name = "figterm"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Tests that do not work on CI
+desktop-tests = []
+profiling_early_exit = []
+
+[dependencies]
+alacritty_terminal = { path = "../alacritty_terminal" }
+anyhow.workspace = true
+async-trait.workspace = true
+aws-types.workspace = true
+bitflags.workspace = true
+bstr.workspace = true
+bytes.workspace = true
+cfg-if.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+dashmap.workspace = true
+fig_api_client.workspace = true
+fig_auth.workspace = true
+fig_install.workspace = true
+fig_ipc.workspace = true
+fig_log.workspace = true
+fig_os_shim.workspace = true
+fig_proto.workspace = true
+fig_request.workspace = true
+fig_settings.workspace = true
+fig_telemetry.workspace = true
+fig_telemetry_core.workspace = true
+fig_util.workspace = true
+filedescriptor = "0.8"
+flume = "0.11.0"
+fnv = "1.0.7"
+indoc.workspace = true
+memmem = "0.1.1"
+mimalloc.workspace = true
+num-traits = "0.2"
+parking_lot.workspace = true
+pin-project = "1.1.10"
+portable-pty.workspace = true
+radix_trie = "0.2.1"
+regex.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+shell-color.workspace = true
+shell-words = "1.1"
+shellexpand = "3.1.0"
+shlex.workspace = true
+sysinfo.workspace = true
+time.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+which.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+lazy_static = "1.4"
+shared_library = "0.1"
+windows = { version = "0.58.0", features = ["Win32_System_Threading"] }
+winapi = { version = "0.3", features = [
+    "winuser",
+    "winnls",
+    "consoleapi",
+    "handleapi",
+    "fileapi",
+    "namedpipeapi",
+    "synchapi",
+] }
+winreg = "0.55.0"
+
+[dev-dependencies]
+assert_cmd = "2.0.8"
+predicates = "3.0.1"
+tempfile.workspace = true

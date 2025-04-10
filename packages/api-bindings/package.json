@@ -1,0 +1,44 @@
+{
+  "name": "@aws/amazon-q-developer-cli-api-bindings",
+  "version": "0.2.0",
+  "license": "MIT OR Apache-2.0",
+  "author": "Amazon Web Services",
+  "repository": "https://github.com/aws/amazon-q-developer-cli",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "clean": "rm -rf dist/",
+    "build": "npm run clean && npm run generate-requests && tsc",
+    "lint": "eslint src && prettier --check src",
+    "lint:fix": "eslint --fix src && prettier --write src",
+    "precommit": "lint-staged",
+    "prepublishOnly": "npm run build",
+    "generate-requests": "tsx codegen/generate-requests.ts && prettier -w src/requests.ts"
+  },
+  "dependencies": {
+    "@aws/amazon-q-developer-cli-proto": "workspace:^",
+    "@bufbuild/protobuf": "2.2.5"
+  },
+  "devDependencies": {
+    "@amzn/eslint-config": "workspace:^",
+    "@amzn/tsconfig": "workspace:^",
+    "@tsconfig/recommended": "^1.0.8",
+    "@types/node": "^22.14.0",
+    "@typescript/analyze-trace": "^0.10.1",
+    "eslint": "^9.18.0",
+    "lint-staged": "^15.5.0",
+    "prettier": "^3.4.2",
+    "ts-morph": "^25.0.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "npx eslint --cache --fix"
+  }
+}

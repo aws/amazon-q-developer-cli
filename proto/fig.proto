@@ -1,0 +1,724 @@
+syntax = "proto3";
+package fig;
+
+import "fig_common.proto";
+
+message ClientOriginatedMessage {
+  optional int64 id = 1;
+
+  oneof submessage {
+    PositionWindowRequest position_window_request = 101;
+    ReadFileRequest read_file_request = 104;
+    WriteFileRequest write_file_request = 105;
+    ContentsOfDirectoryRequest contents_of_directory_request = 106;
+    NotificationRequest notification_request = 107;
+    GetSettingsPropertyRequest get_settings_property_request = 108;
+    UpdateSettingsPropertyRequest update_settings_property_request = 109;
+    InsertTextRequest insert_text_request = 110;
+    UpdateApplicationPropertiesRequest update_application_properties_request = 111;
+    DestinationOfSymbolicLinkRequest destination_of_symbolic_link_request = 112;
+    TelemetryTrackRequest telemetry_track_request = 117;
+    OnboardingRequest onboarding_request = 118;
+    WindowFocusRequest window_focus_request = 119;
+    OpenInExternalApplicationRequest open_in_external_application_request = 120;
+    AppendToFileRequest append_to_file_request = 127;
+    GetLocalStateRequest get_local_state_request = 128;
+    UpdateLocalStateRequest update_local_state_request = 129;
+    RunProcessRequest run_process_request = 130;
+    CreateDirectoryRequest create_directory_request = 132;
+    InstallRequest install_request = 133;
+    TelemetryPageRequest telemetry_page_request = 134;
+    AggregateSessionMetricActionRequest aggregate_session_metric_action_request = 135;
+    // UserLoginRequest user_login_request = 136;
+    UserLogoutRequest user_logout_request = 137;
+    CheckForUpdatesRequest check_for_updates_request = 138;
+    UpdateApplicationRequest update_application_request = 139;
+    HistoryQueryRequest history_query_request = 140;
+    AuthStatusRequest auth_status_request = 141;
+    AuthBuilderIdStartDeviceAuthorizationRequest auth_builder_id_start_device_authorization_request = 142;
+    AuthBuilderIdPollCreateTokenRequest auth_builder_id_poll_create_token_request = 143;
+    PingRequest ping_request = 144;
+    CodewhispererListCustomizationRequest codewhisperer_list_customization_request = 145;
+    DragWindowRequest drag_window_request = 146;
+    AuthStartPkceAuthorizationRequest auth_start_pkce_authorization_request = 149;
+    AuthFinishPkceAuthorizationRequest auth_finish_pkce_authorization_request = 150;
+    AuthCancelPkceAuthorizationRequest auth_cancel_pkce_authorization_request = 151;
+    GetPlatformInfoRequest get_platform_info_request = 152;
+  }
+
+  reserved 115;
+}
+
+message ServerOriginatedMessage {
+  optional int64 id = 1;
+
+  // Responses to ClientOriginatedMessages of the corresponding type
+  oneof submessage {
+    string error = 2;
+    bool success = 3;
+    PositionWindowResponse position_window_response = 100;
+    ReadFileResponse read_file_response = 102;
+    ContentsOfDirectoryResponse contents_of_directory_response = 103;
+    GetSettingsPropertyResponse get_settings_property_response = 104;
+    DestinationOfSymbolicLinkResponse destination_of_symbolic_link_response = 105;
+    GetLocalStateResponse get_local_state_response = 110;
+    RunProcessResponse run_process_response = 111;
+    InstallResponse install_response = 113;
+    CheckForUpdatesResponse check_for_updates_response = 114;
+    HistoryQueryResponse history_query_response = 115;
+    AuthStatusResponse auth_status_response = 116;
+    AuthBuilderIdStartDeviceAuthorizationResponse auth_builder_id_start_device_authorization_response = 117;
+    AuthBuilderIdPollCreateTokenResponse auth_builder_id_poll_create_token_response = 118;
+    PingResponse ping_response = 119;
+    CodewhispererListCustomizationResponse codewhisperer_list_customization_response = 120;
+    AuthStartPkceAuthorizationResponse auth_start_pkce_authorization_response = 122;
+    AuthFinishPkceAuthorizationResponse auth_finish_pkce_authorization_response = 123;
+    AuthCancelPkceAuthorizationResponse auth_cancel_pkce_authorization_response = 124;
+    GetPlatformInfoResponse get_platform_info_response = 125;
+
+    Notification notification = 1000;
+  }
+}
+
+// Basic types
+
+message Point {
+  float x = 1;
+  float y = 2;
+}
+
+message Size {
+  float width = 1;
+  float height = 2;
+}
+
+message Frame {
+  Point origin = 1;
+  Size size = 2;
+}
+
+message Process {
+  optional int32 pid = 1;
+  optional string executable = 2;
+  optional string directory = 3;
+  repeated fig_common.EnvironmentVariable env = 4;
+}
+
+message FilePath {
+  string path = 1;
+  optional string relative_to = 2;
+  optional bool expand_tilde_in_path = 3;
+}
+
+enum Modifiers {
+  MODIFIERS_CONTROL = 0;
+  MODIFIERS_OPTION = 1;
+  MODIFIERS_COMMAND = 2;
+  MODIFIERS_SHIFT = 3;
+  MODIFIERS_FUNCTION = 4;
+  MODIFIERS_NUMPAD = 5;
+}
+
+message KeyEvent {
+  optional int32 apple_key_code = 1;
+  optional string characters = 2;
+  optional string characters_ignoring_modifiers = 3;
+  repeated Modifiers modifiers = 4;
+  optional bool is_repeat = 5;
+}
+
+message Screen {
+  optional Frame frame = 1;
+}
+
+message Session {
+  optional string session_id = 1;
+  optional Process frontmost_process = 2;
+  repeated fig_common.EnvironmentVariable env = 3;
+}
+
+message Application {
+  optional string bundle_identifier = 1;
+  optional string name = 2;
+}
+
+message Window {
+  optional string window_id = 1;
+  optional Frame frame = 2;
+  optional Session current_session = 3;
+  optional Application app = 4;
+  optional Screen current_screen = 5;
+}
+
+// Acts like a rust 'Result<(), String>'
+message Result {
+  enum Result {
+    RESULT_OK = 0;
+    RESULT_ERROR = 1;
+  }
+
+  Result result = 1;
+  optional string error = 2;
+}
+
+/// Requests
+
+message TextUpdate {
+  optional string insertion = 1;
+  optional int64 deletion = 2;
+  optional int64 offset = 3;
+  optional bool immediate = 4;
+  // client buffer at the time of the insertion request (prior to insertion)
+  optional string insertion_buffer = 5;
+}
+
+message InsertTextRequest {
+  oneof type {
+    string text = 1;
+    TextUpdate update = 2;
+  }
+  optional string terminal_session_id = 3;
+}
+
+message PositionWindowRequest {
+  Point anchor = 1;
+  Size size = 2;
+  optional bool dryrun = 3;
+}
+
+message PositionWindowResponse {
+  optional bool is_above = 1;
+  optional bool is_clipped = 2;
+}
+
+message ReadFileRequest {
+  FilePath path = 1;
+  optional bool is_binary_file = 2;
+}
+
+message ReadFileResponse {
+  oneof type {
+    bytes data = 1;
+    string text = 2;
+  }
+}
+
+message WriteFileRequest {
+  optional FilePath path = 1;
+
+  oneof data {
+    string text = 2;
+    bytes binary = 3;
+  }
+}
+
+message AppendToFileRequest {
+  optional FilePath path = 1;
+
+  oneof data {
+    string text = 2;
+    bytes binary = 3;
+  }
+}
+
+message ContentsOfDirectoryRequest {
+  optional FilePath directory = 1;
+}
+
+message ContentsOfDirectoryResponse {
+  repeated string file_names = 1;
+}
+
+message DestinationOfSymbolicLinkRequest {
+  optional FilePath path = 1;
+}
+
+message DestinationOfSymbolicLinkResponse {
+  optional FilePath destination = 1;
+}
+
+message CreateDirectoryRequest {
+  FilePath path = 1;
+  optional bool recursive = 2;
+}
+
+/// Settings
+
+message GetSettingsPropertyRequest {
+  optional string key = 1;
+}
+
+message GetSettingsPropertyResponse {
+  optional string json_blob = 1;
+  optional bool is_default = 2;
+}
+
+message UpdateSettingsPropertyRequest {
+  optional string key = 1;
+  optional string value = 2;
+}
+
+/// Telemetry
+message TelemetryProperty {
+  string key = 1;
+  string value = 2;
+}
+
+message TelemetryTrackRequest {
+  optional string event = 1;
+  repeated TelemetryProperty properties = 2 [deprecated = true];
+  optional string json_blob = 4;
+
+  // Specify the namespace associated with an action, namespace_id takes precedence.
+  optional string namespace = 5;
+  optional int64 namespace_id = 6;
+}
+
+message TelemetryPageRequest {
+  optional string category = 1;
+  optional string name = 2;
+  optional string json_blob = 3;
+}
+
+message AggregateSessionMetricActionRequest {
+  message Increment {
+    string field = 1;
+    optional int64 amount = 2;
+  }
+
+  oneof action {
+    Increment increment = 2;
+  }
+}
+
+/// Onboarding
+
+enum OnboardingAction {
+  ONBOARDING_ACTION_INSTALLATION_SCRIPT = 0;
+  ONBOARDING_ACTION_PROMPT_FOR_ACCESSIBILITY_PERMISSION = 1;
+  ONBOARDING_ACTION_LAUNCH_SHELL_ONBOARDING = 3;
+  ONBOARDING_ACTION_UNINSTALL = 4;
+  ONBOARDING_ACTION_CLOSE_ACCESSIBILITY_PROMPT_WINDOW = 5;
+  ONBOARDING_ACTION_REQUEST_RESTART = 6;
+  ONBOARDING_ACTION_CLOSE_INPUT_METHOD_PROMPT_WINDOW = 7;
+  ONBOARDING_ACTION_FINISH_ONBOARDING = 8;
+  // This should be ran after the user has logged in every time
+  ONBOARDING_ACTION_POST_LOGIN = 9;
+}
+
+message OnboardingRequest {
+  OnboardingAction action = 1;
+}
+
+/// Installation
+
+enum InstallComponent {
+  INSTALL_COMPONENT_DOTFILES = 0;
+  INSTALL_COMPONENT_IBUS = 1;
+  INSTALL_COMPONENT_ACCESSIBILITY = 2;
+  INSTALL_COMPONENT_INPUT_METHOD = 3;
+  INSTALL_COMPONENT_SSH = 4;
+  INSTALL_COMPONENT_DESKTOP_ENTRY = 5;
+  INSTALL_COMPONENT_AUTOSTART_ENTRY = 6;
+  INSTALL_COMPONENT_GNOME_EXTENSION = 7;
+}
+
+enum InstallAction {
+  INSTALL_ACTION_INSTALL = 0;
+  INSTALL_ACTION_UNINSTALL = 1;
+  INSTALL_ACTION_STATUS = 2;
+}
+
+message InstallRequest {
+  InstallComponent component = 1;
+  InstallAction action = 2;
+}
+
+message InstallResponse {
+  enum InstallationStatus {
+    INSTALLATION_STATUS_INSTALLED = 0;
+    INSTALLATION_STATUS_NOT_INSTALLED = 1;
+    // The integration is not supported on the given platform
+    INSTALLATION_STATUS_NOT_SUPPORTED = 2;
+  }
+
+  oneof response {
+    Result result = 1;
+    InstallationStatus installation_status = 2;
+  }
+}
+
+/// Platform
+
+enum Os {
+  OS_MACOS = 0;
+  OS_LINUX = 1;
+}
+
+enum DesktopEnvironment {
+  DESKTOP_ENVIRONMENT_GNOME = 0;
+}
+
+enum DisplayServerProtocol {
+  DISPLAY_SERVER_PROTOCOL_X11 = 0;
+  DISPLAY_SERVER_PROTOCOL_WAYLAND = 1;
+}
+
+enum AppBundleType {
+  APP_BUNDLE_TYPE_APPIMAGE = 0;
+  APP_BUNDLE_TYPE_DEB = 1;
+}
+
+message GetPlatformInfoRequest {}
+
+message GetPlatformInfoResponse {
+  Os os = 1;
+  optional DesktopEnvironment desktop_environment = 2;
+  optional DisplayServerProtocol display_server_protocol = 3;
+  optional AppBundleType app_bundle_type = 4;
+}
+
+/// User
+
+// todo
+// message UserLoginRequest {}
+
+message UserLogoutRequest {}
+
+/// Window Focus
+
+enum FocusAction {
+  FOCUS_ACTION_TAKE_FOCUS = 0;
+  FOCUS_ACTION_RETURN_FOCUS = 1;
+}
+
+message WindowFocusRequest {
+  optional FocusAction type = 1;
+}
+
+message OpenInExternalApplicationRequest {
+  optional string url = 1;
+}
+
+/// Updating actions
+
+// check for updates and return the latest version
+message CheckForUpdatesRequest {}
+
+message CheckForUpdatesResponse {
+  optional bool is_update_available = 1;
+  optional string version = 2;
+}
+
+// update to the latest version available
+message UpdateApplicationRequest {
+  optional bool ignore_rollout = 1;
+  optional bool interactive = 2;
+  optional bool relaunch_dashboard = 3;
+}
+
+/// Actions
+
+enum ActionAvailability {
+  ACTION_AVAILABILITY_ALWAYS = 0;
+  // the action can only be performed when the app has keyboard focus
+  ACTION_AVAILABILITY_WHEN_FOCUSED = 1;
+  // the action can only be performed when the app is visible
+  ACTION_AVAILABILITY_WHEN_VISIBLE = 2;
+  // the action can only be performed when the app is hidden
+  ACTION_AVAILABILITY_WHEN_HIDDEN = 3;
+}
+
+message Action {
+  // unique identifier for the action; not user facing.
+  optional string identifier = 1;
+  // name of action, will appear in user interfaces.
+  optional string name = 2;
+  // a quick summary of what the action will do
+  optional string description = 3;
+  optional string category = 4;
+  // when can this action be performed
+  optional ActionAvailability availability = 5;
+  repeated string default_bindings = 6;
+}
+
+/// App properties
+
+message ActionList {
+  repeated Action actions = 1;
+}
+
+message UpdateApplicationPropertiesRequest {
+  optional bool intercept_bound_keystrokes = 1;
+  optional bool intercept_global_keystrokes = 3;
+  optional ActionList action_list = 4;
+  optional string current_terminal_session_id = 5;
+
+  reserved 2;
+}
+
+/// Local State
+
+message GetLocalStateRequest {
+  optional string key = 1;
+}
+
+message GetLocalStateResponse {
+  optional string json_blob = 1;
+}
+
+message UpdateLocalStateRequest {
+  optional string key = 1;
+  optional string value = 2;
+}
+
+/// Run Process
+
+message RunProcessRequest {
+  string executable = 1;
+  repeated string arguments = 2;
+  optional string working_directory = 3;
+  repeated fig_common.EnvironmentVariable env = 4;
+  optional string terminal_session_id = 5;
+  optional fig_common.Duration timeout = 6;
+}
+
+message RunProcessResponse {
+  string stdout = 1;
+  string stderr = 2;
+  int32 exit_code = 3;
+}
+
+/// Macos Input Method
+
+enum InputMethodAction {
+  INPUT_METHOD_ACTION_REGISTER = 0;
+  INPUT_METHOD_ACTION_ENABLE = 1;
+  INPUT_METHOD_ACTION_SELECT = 2;
+  INPUT_METHOD_ACTION_DISABLE = 3;
+  INPUT_METHOD_ACTION_DESELECT = 4;
+  INPUT_METHOD_ACTION_STATUS = 5;
+}
+
+enum InputMethodState {
+  INPUT_METHOD_STATE_REGISTERED = 0;
+  INPUT_METHOD_STATE_ENABLED = 1;
+  INPUT_METHOD_STATE_SELECTED = 2;
+  INPUT_METHOD_STATE_UNKNOWN = 3;
+}
+
+/// History
+
+message HistoryQueryRequest {
+  message Param {
+    oneof type {
+      fig_common.Empty null = 1;
+      int64 integer = 2;
+      double float = 3;
+      string string = 4;
+      bytes blob = 5;
+    }
+  }
+
+  string query = 1;
+  repeated Param params = 2;
+}
+
+message HistoryQueryResponse {
+  string json_array = 1;
+}
+
+/// Auth
+
+message AuthStartPkceAuthorizationRequest {
+  // Issuer URL for IAM Identity Center
+  // Equivalent to the "start url" in device code authorization
+  optional string issuer_url = 1;
+  // Region for IAM Identity Center
+  optional string region = 2;
+}
+
+message AuthStartPkceAuthorizationResponse {
+  string auth_request_id = 1;
+  string url = 2;
+}
+
+message AuthFinishPkceAuthorizationRequest {
+  string auth_request_id = 1;
+}
+
+message AuthFinishPkceAuthorizationResponse {}
+
+message AuthCancelPkceAuthorizationRequest {}
+
+message AuthCancelPkceAuthorizationResponse {}
+
+message AuthBuilderIdStartDeviceAuthorizationRequest {
+  // Start URL for IAM Identity Center
+  optional string start_url = 1;
+  // Region for IAM Identity Center
+  optional string region = 2;
+}
+
+message AuthBuilderIdStartDeviceAuthorizationResponse {
+  string code = 1;
+  string url = 2;
+  string auth_request_id = 3;
+  int32 expires_in = 4;
+  int32 interval = 5;
+}
+
+message AuthBuilderIdPollCreateTokenRequest {
+  string auth_request_id = 1;
+}
+
+message AuthBuilderIdPollCreateTokenResponse {
+  enum PollStatus {
+    POLL_STATUS_COMPLETE = 0;
+    POLL_STATUS_PENDING = 1;
+    POLL_STATUS_ERROR = 2;
+  }
+
+  PollStatus status = 1;
+  optional string error = 2;
+  optional string error_verbose = 3;
+}
+
+message AuthStatusRequest {}
+
+message AuthStatusResponse {
+  enum AuthKind {
+    AUTH_KIND_BUILDER_ID = 0;
+    AUTH_KIND_IAM_IDENTITY_CENTER = 1;
+  }
+
+  bool authed = 1;
+  optional AuthKind auth_kind = 2;
+
+  optional string start_url = 3;
+  optional string region = 4;
+}
+
+message PingRequest {}
+
+message PingResponse {}
+
+message CodewhispererCustomization {
+  string arn = 1;
+  optional string name = 2;
+  optional string description = 3;
+}
+
+message CodewhispererListCustomizationRequest {}
+
+message CodewhispererListCustomizationResponse {
+  repeated CodewhispererCustomization customizations = 1;
+}
+
+message DragWindowRequest {}
+
+/// Notifications
+
+message NotificationRequest {
+  optional bool subscribe = 1;
+  optional NotificationType type = 2;
+}
+
+enum NotificationType {
+  NOTIFICATION_TYPE_ALL = 0;
+  NOTIFICATION_TYPE_NOTIFY_ON_EDITBUFFFER_CHANGE = 1;
+  NOTIFICATION_TYPE_NOTIFY_ON_SETTINGS_CHANGE = 2;
+  NOTIFICATION_TYPE_NOTIFY_ON_PROMPT = 3;
+  NOTIFICATION_TYPE_NOTIFY_ON_LOCATION_CHANGE = 4;
+  NOTIFICATION_TYPE_NOTIFY_ON_PROCESS_CHANGED = 5;
+  NOTIFICATION_TYPE_NOTIFY_ON_KEYBINDING_PRESSED = 6;
+  NOTIFICATION_TYPE_NOTIFY_ON_FOCUS_CHANGED = 7;
+  NOTIFICATION_TYPE_NOTIFY_ON_HISTORY_UPDATED = 8;
+  NOTIFICATION_TYPE_NOTIFY_ON_APPLICATION_UPDATE_AVAILABLE = 9;
+  NOTIFICATION_TYPE_NOTIFY_ON_LOCAL_STATE_CHANGED = 10;
+  NOTIFICATION_TYPE_NOTIFY_ON_EVENT = 11;
+  NOTIFICATION_TYPE_NOTIFY_ON_ACCESSIBILITY_CHANGE = 12;
+}
+
+message Notification {
+  oneof type {
+    EditBufferChangedNotification edit_buffer_notification = 1;
+    SettingsChangedNotification settings_changed_notification = 2;
+    ShellPromptReturnedNotification shell_prompt_returned_notification = 3;
+    // Unimplemented
+    LocationChangedNotification location_changed_notification = 4;
+    ProcessChangedNotification process_change_notification = 5;
+    KeybindingPressedNotification keybinding_pressed_notification = 6;
+    WindowFocusChangedNotification window_focus_changed_notification = 7;
+    // Unimplemented
+    HistoryUpdatedNotification history_updated_notification = 8;
+    // Unimplemented
+    LocalStateChangedNotification local_state_changed_notification = 10;
+    EventNotification event_notification = 11;
+    AccessibilityChangeNotification accessibility_change_notification = 12;
+  }
+}
+
+message EditBufferChangedNotification {
+  optional string session_id = 1;
+  optional int32 cursor = 2;
+  optional string buffer = 3;
+  optional fig_common.ShellContext context = 4;
+}
+
+message SettingsChangedNotification {
+  optional string json_blob = 1;
+}
+
+message ShellPromptReturnedNotification {
+  optional string session_id = 1;
+  optional Process shell = 2;
+}
+
+message LocationChangedNotification {
+  optional string session_id = 1;
+  optional string host_name = 2;
+  optional string user_name = 3;
+  optional string directory = 4;
+}
+
+message ProcessChangedNotification {
+  optional string session_id = 1;
+  optional Process new_process = 2;
+}
+
+message KeybindingPressedNotification {
+  optional KeyEvent keypress = 1;
+  optional string action = 2;
+  optional fig_common.ShellContext context = 3;
+}
+
+message WindowFocusChangedNotification {
+  optional Window window = 1;
+}
+
+message HistoryUpdatedNotification {
+  optional string command = 1;
+  // the name of the process
+  optional string process_name = 2;
+  // the directory where the user ran the command
+  optional string current_working_directory = 3;
+  // the value of $TERM_SESSION_ID
+  optional string session_id = 4;
+  optional string hostname = 5;
+  // the exit code of the command
+  optional int32 exit_code = 6;
+}
+
+message LocalStateChangedNotification {
+  optional string json_blob = 1;
+}
+
+message EventNotification {
+  optional string event_name = 1;
+  optional string payload = 2;
+}
+
+message AccessibilityChangeNotification {
+  bool enabled = 1;
+}

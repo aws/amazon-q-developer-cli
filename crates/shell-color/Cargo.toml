@@ -1,0 +1,19 @@
+[package]
+name = "shell-color"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bitflags.workspace = true
+nu-ansi-term = "0.50.0"
+nu-color-config = "0.103.0"
+
+[dev-dependencies]
+fig_test = { path = "../fig_test" }

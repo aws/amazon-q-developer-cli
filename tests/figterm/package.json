@@ -1,0 +1,61 @@
+{
+  "name": "dotenv",
+  "version": "1.0.0",
+  "license": "MIT OR Apache-2.0",
+  "author": "Amazon Web Services",
+  "description": "Testing for shell integration and qterm",
+  "main": "test.js",
+  "scripts": {
+    "test": "jest --runInBand --detectOpenHandles",
+    "lint": "eslint src",
+    "proto-gen": "cd ../proto/ && make local",
+    "precommit": "lint-staged",
+    "lint:fix": "npm run lint -- --fix"
+  },
+  "prettier": {
+    "printWidth": 80,
+    "semi": true,
+    "singleQuote": true,
+    "trailingComma": "es5"
+  },
+  "dependencies": {
+    "@jest/console": "^29.0.2",
+    "@jest/globals": "^29.0.2",
+    "@jest/reporters": "^29.0.2",
+    "@jest/test-result": "^29.0.2",
+    "@jest/types": "^29.0.2",
+    "@types/jest": "^29.0.0",
+    "@types/js-yaml": "^4.0.4",
+    "@types/long": "^5.0.0",
+    "@types/protobufjs": "^6.0.0",
+    "@types/uuid": "^8.3.1",
+    "chalk": "^5.0.1",
+    "fs": "^0.0.1-security",
+    "js-yaml": "^4.1.0",
+    "long": "^5.1.0",
+    "node-pty": "^0.10.1",
+    "protobufjs": "^7.0.0",
+    "ts-node": "^10.4.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.7.0",
+    "@typescript-eslint/parser": "^6.7.0",
+    "eslint-config-airbnb": "^19.0.4",
+    "eslint-config-prettier": "^8.9.0",
+    "eslint-plugin-import": "^2.27.4",
+    "eslint-plugin-jest": "^27.0.2",
+    "eslint-plugin-prettier": "^4.0.0",
+    "eslint": "^8.45.0",
+    "jest": "^28.1.0",
+    "lint-staged": "^13.0.0",
+    "ts-jest": "^28.0.2",
+    "typescript": "^5.0.4"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "prettier --write",
+      "eslint --cache --fix"
+    ]
+  }
+}

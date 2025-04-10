@@ -1,0 +1,450 @@
+{
+  "$schema": "./docs/assets/feed-schema.json",
+  "entries": [
+    {
+      "$comment": "This is the next release, any changes here",
+      "type": "release",
+      "date": "2999-01-01",
+      "version": "0.0.0",
+      "title": "Version 0.0.0",
+      "hidden": true,
+      "changes": []
+    },
+    {
+      "type": "release",
+      "date": "2025-04-10",
+      "version": "1.7.3",
+      "title": "Version 1.7.3",
+      "changes": [
+        {
+          "type": "added",
+          "description": "A new command `/tools` in `q chat` for granular tool permissioning - [#1054](https://github.com/aws/amazon-q-developer-cli/pull/1054)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/compact` in `q chat` for summarizing the conversation history - [#1128](https://github.com/aws/amazon-q-developer-cli/pull/1128)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/editor` in `q chat` for composing prompts using the configured editor - [#1035](https://github.com/aws/amazon-q-developer-cli/pull/1035)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/issue` in `q chat` for creating new GitHub issues - [#990](https://github.com/aws/amazon-q-developer-cli/pull/990)"
+        },
+        {
+          "type": "added",
+          "description": "A new tool `report_issue` in `q chat` for creating new GitHub issues - [#974](https://github.com/aws/amazon-q-developer-cli/pull/974)"
+        },
+        {
+          "type": "added",
+          "description": "An improved context file display in `q chat` - [#983](https://github.com/aws/amazon-q-developer-cli/pull/983)"
+        },
+        {
+          "type": "added",
+          "description": "Optional terminal notifications on completed responses - [#1135](https://github.com/aws/amazon-q-developer-cli/pull/1135)"
+        },
+        {
+          "type": "added",
+          "description": "An option `--no-interactive` to invoke `q chat` in a non-interactive mode - [#878](https://github.com/aws/amazon-q-developer-cli/pull/878)"
+        },
+        {
+          "type": "added",
+          "description": "File name autocompletion in `q chat` - [#930](https://github.com/aws/amazon-q-developer-cli/pull/930)"
+        },
+        {
+          "type": "added",
+          "description": "Improved `execute_bash` pipe safety checking in `q chat` - [#927](https://github.com/aws/amazon-q-developer-cli/pull/927)"
+        },
+        {
+          "type": "changed",
+          "description": "Executing `q` now enters `q chat` instead of opening the dashboard - [#987](https://github.com/aws/amazon-q-developer-cli/pull/987)"
+        },
+        {
+          "type": "fixed",
+          "description": "A missing Match criteria error in the ssh integration - [#1134](https://github.com/aws/amazon-q-developer-cli/pull/1134)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-03-20",
+      "version": "1.7.2",
+      "title": "Version 1.7.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for automatically adding files as context in `q chat` - [#834](https://github.com/aws/amazon-q-developer-cli/pull/834)"
+        },
+        {
+          "type": "added",
+          "description": "A search ability when reading the filesystem in `q chat` - [#811](https://github.com/aws/amazon-q-developer-cli/pull/811)"
+        },
+        {
+          "type": "added",
+          "description": "A larger maximum tool response size in `q chat` - [#850](https://github.com/aws/amazon-q-developer-cli/pull/850)"
+        },
+        {
+          "type": "fixed",
+          "description": "Detecting libc on certain Linux distributions during install - [#851](https://github.com/aws/amazon-q-developer-cli/pull/851)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-03-14",
+      "version": "1.7.1",
+      "title": "Version 1.7.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "An improved file diff in `q chat` - [#799](https://github.com/aws/amazon-q-developer-cli/pull/799)"
+        },
+        {
+          "type": "added",
+          "description": "Multi-line input support in `q chat` - [#831](https://github.com/aws/amazon-q-developer-cli/pull/831)"
+        },
+        {
+          "type": "added",
+          "description": "An append functionality with fs_write in `q chat` - [#764](https://github.com/aws/amazon-q-developer-cli/pull/764)"
+        },
+        {
+          "type": "added",
+          "description": "Support for WindSurf Next - [#814](https://github.com/aws/amazon-q-developer-cli/pull/814)"
+        },
+        {
+          "type": "changed",
+          "description": "Ctrl+C so that it exits `q chat` on first attempt - [#830](https://github.com/aws/amazon-q-developer-cli/pull/830)"
+        },
+        {
+          "type": "fixed",
+          "description": "Minor issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-03-05",
+      "version": "1.7.0",
+      "title": "Version 1.7.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "An enhanced `q chat` with agentic capabilities. See the [announcement post](https://aws.amazon.com/blogs/devops/introducing-the-enhanced-command-line-interface-in-amazon-q-developer/) for more information."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-02-20",
+      "version": "1.6.3",
+      "title": "Version 1.6.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-02-19",
+      "version": "1.6.2",
+      "title": "Version 1.6.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Trae [#488](https://github.com/aws/amazon-q-developer-cli/pull/488)"
+        },
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-02-03",
+      "version": "1.6.1",
+      "title": "Version 1.6.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Positron [#406](https://github.com/aws/amazon-q-developer-cli/pull/406)"
+        },
+        {
+          "type": "added",
+          "description": "Self-updating for Linux AppImage builds [#410](https://github.com/aws/amazon-q-developer-cli/pull/410)"
+        },
+        {
+          "type": "fixed",
+          "description": "Extra lines in inline recommendations [#446](https://github.com/aws/amazon-q-developer-cli/pull/446)"
+        },
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-01-06",
+      "version": "1.6.0",
+      "title": "Version 1.6.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Ghostty [#335](https://github.com/aws/amazon-q-developer-cli/pull/335)"
+        },
+        {
+          "type": "added",
+          "description": "Support for Guake [#260](https://github.com/aws/amazon-q-developer-cli/pull/260)"
+        },
+        {
+          "type": "fixed",
+          "description": "Accept text through pipes in `q chat` [#259](https://github.com/aws/amazon-q-developer-cli/pull/259)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-12-13",
+      "version": "1.5.1",
+      "title": "Version 1.5.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for WindSurf [#125](https://github.com/aws/amazon-q-developer-cli/pull/125)"
+        },
+        {
+          "type": "fixed",
+          "description": "Linux SSH installations unable to update [#235](https://github.com/aws/amazon-q-developer-cli/issues/235)"
+        },
+        {
+          "type": "fixed",
+          "description": "`q translate` providing macOS specific responses on Linux"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-11-21",
+      "version": "1.5.0",
+      "title": "Version 1.5.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for Linux desktop. See the [AWS documentation](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line.html) for more information."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-11-15",
+      "version": "1.4.6",
+      "title": "Version 1.4.6",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-26",
+      "version": "1.4.5",
+      "title": "Version 1.4.5",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-16",
+      "version": "1.4.4",
+      "title": "Version 1.4.4",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-13",
+      "version": "1.4.3",
+      "title": "Version 1.4.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-10",
+      "version": "1.4.2",
+      "title": "Version 1.4.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Linux install script error"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-09-09",
+      "version": "1.4.1",
+      "title": "Version 1.4.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-08-27",
+      "version": "1.4.0",
+      "title": "Version 1.4.0",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Frequent timeout errors in `q chat`"
+        },
+        {
+          "type": "fixed",
+          "description": "Bash integrations messing up prompt in ZSH child processes"
+        },
+        {
+          "type": "fixed",
+          "description": "Zsh integration errors when sourced via a non-interactive script"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-07-29",
+      "version": "1.3.3",
+      "title": "Version 1.3.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor issues"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-07-10",
+      "version": "1.3.2",
+      "title": "Version 1.3.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Setting to disable greeting in `q chat`, see [Chat](/chat) for the setting."
+        },
+        {
+          "type": "fixed",
+          "description": "Using `tmux` is now supported in ssh."
+        },
+        {
+          "type": "fixed",
+          "description": "Logging via the CLI would not show the \"Use with Pro license\" option."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-06-28",
+      "version": "1.3.1",
+      "title": "Version 1.3.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for readline style input in `q chat`."
+        },
+        {
+          "type": "fixed",
+          "description": "Pressing enter multiple times triggered `q translate` to immediately execute."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-06-24",
+      "version": "1.3.0",
+      "title": "Version 1.3.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "[PKCE-based authorization](https://aws.amazon.com/about-aws/whats-new/2024/05/aws-iam-identity-pkce-authorizations-aws-applications/) for login."
+        },
+        {
+          "type": "changed",
+          "description": "Menubar icon now indicates when there are issues with authentication or the app is not setup."
+        },
+        {
+          "type": "changed",
+          "description": "Added `quit` command to `q chat` ([#211](https://github.com/aws/q-command-line-discussions/discussions/211))."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-06-04",
+      "version": "1.2.0",
+      "title": "Version 1.2.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "AI-powered inline completions, see [Inline](/inline) for more info."
+        },
+        {
+          "type": "fixed",
+          "description": "Login infinite redirect for first time users."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2024-05-20",
+      "version": "1.1.0",
+      "title": "Version 1.1.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "The \"What's New\" page with the latest release notes and announcements."
+        },
+        {
+          "type": "added",
+          "description": "History loading for CLI Completions, press `ctrl+r` to switch to history mode. ([#57](https://github.com/aws/q-command-line-discussions/discussions/57))."
+        },
+        {
+          "type": "added",
+          "description": "Support for [`generateSpecCacheKey`](https://github.com/withfig/autocomplete-tools/pull/105) for CLI Completions."
+        }
+      ]
+    },
+    {
+      "type": "announcement",
+      "date": "2024-04-30",
+      "version": "1.0.0",
+      "title": "CodeWhisperer is now Amazon Q",
+      "description": "Amazon Q Developer is a generative artificial intelligence (AI) powered conversational assistant that can help you understand, build, extend, and operate AWS applications.",
+      "link": "https://aws.amazon.com/blogs/aws/amazon-q-developer-now-generally-available-includes-new-capabilities-to-reimagine-developer-experience/"
+    }
+  ]
+}

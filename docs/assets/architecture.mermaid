@@ -1,0 +1,45 @@
+%%{
+  init: {
+    "fontFamily": "monospace"
+  }
+}%%
+
+flowchart LR
+    term[fa:fa-terminal Terminal]
+    click term href "https://en.wikipedia.org/wiki/Terminal_emulator"
+      desktop[fa:fa-laptop-code Desktop App *]
+    click desktop href "fig_desktop"
+    subgraph webview[Web View]
+      style webview fill:transparent,stroke-dasharray: 5 5
+      autocomplete[fa:fa-window-restore Autocomplete *]
+      click autocomplete href "packages/autocomplete"
+      dashboard[fa:fa-window-maximize Dashboard *]
+      click dashboard href "packages/dashboard-app"
+    end
+    localCli[Q CLI *]
+    click localCli href "q_cli"
+    subgraph remote["Remote (SSH/WSL/Docker)"]
+      style remote fill:transparent,stroke-dasharray: 5 5
+      figterm[Figterm *]
+      click figterm href "figterm"
+      shell["Shell (bash)"]
+      click shell href "https://en.wikipedia.org/wiki/Unix_shell"
+      remoteCli[Q CLI *]
+      click remoteCli href "q_cli"
+      subgraph kernel[Kernel]
+        style kernel fill:transparent,stroke-dasharray: 5 5
+        pseudo[Pseudoterminal]
+        click pseudo href "https://en.wikipedia.org/wiki/Pseudoterminal"
+      end
+    end
+
+    localCli <-->|local proto *| desktop
+    term <-->|stdin/stdout| figterm
+    webview <-->|Fig.js *| desktop
+    desktop <==>|remote proto *| figterm
+    figterm <-->|stdin/stdout| pseudo
+    pseudo <-->|stdin/stdout| shell
+    shell -.->|"fork()"| figterm
+    shell --> remoteCli
+    remoteCli ==>|figterm proto *| figterm
+    desktop ===|remote proto *| remoteCli
