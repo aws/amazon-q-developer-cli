@@ -1,4 +1,3 @@
-mod chat_state;
 mod command;
 mod context;
 mod conversation_state;
@@ -6,14 +5,13 @@ mod input_source;
 mod parse;
 mod parser;
 mod prompt;
+mod summarization_state;
 mod tools;
 
-// Re-export types for use in this module
 use std::borrow::Cow;
 use std::collections::{
     HashMap,
     HashSet,
-    VecDeque,
 };
 use std::io::{
     IsTerminal,
@@ -31,10 +29,6 @@ use std::{
     fs,
 };
 
-use chat_state::{
-    SummarizationState,
-    TokenWarningLevel,
-};
 use command::{
     Command,
     ToolsSubcommand,
@@ -71,6 +65,10 @@ use fig_api_client::model::{
 use fig_os_shim::Context;
 use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
+use summarization_state::{
+    SummarizationState,
+    TokenWarningLevel,
+};
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -79,11 +77,11 @@ fn compact_help_text() -> String {
 <magenta,em>Conversation Compaction</magenta,em>
 
 The <em>/compact</em> command summarizes the conversation history to free up context space
-while preserving the essential information. This is useful for long-running conversations
+while preserving essential information. This is useful for long-running conversations
 that may eventually reach memory constraints.
 
 <cyan!>Usage</cyan!>
-  <em>/compact</em>                   <black!>Summarize conversation and clear history</black!>
+  <em>/compact</em>                   <black!>Summarize the conversation and clear history</black!>
   <em>/compact [prompt]</em>          <black!>Provide custom guidance for summarization</black!>
   <em>/compact --summary</em>         <black!>Show the summary after compacting</black!>
 
@@ -157,7 +155,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/issue</em>        <black!>Report an issue or make a feature request</black!>
 <em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
 <em>/context</em>      <black!>(Beta) Manage context files for a profile</black!>
-<em>/compact</em>      <black!>Summarize conversation to free up context space</black!>
+<em>/compact</em>      <black!>Summarize the conversation to free up context space</black!>
 <em>/help</em>         <black!>Show the help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
 
@@ -175,7 +173,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/editor</em>       <black!>Open $EDITOR (defaults to vi) to compose a prompt</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
-<em>/compact</em>      <black!>Summarize conversation to free up context space</black!>
+<em>/compact</em>      <black!>Summarize the conversation to free up context space</black!>
   <em>help</em>        <black!>Show help for the compact command</black!>
   <em>[prompt]</em>    <black!>Optional custom prompt to guide summarization</black!>
   <em>--summary</em>   <black!>Display the summary after compacting</black!>
@@ -858,7 +856,7 @@ where
                 execute!(
                     self.output,
                     style::SetForegroundColor(Color::Green),
-                    style::Print("\nConversation history and summary cleared.\n\n"),
+                    style::Print("\nConversation history cleared.\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
 
@@ -890,7 +888,7 @@ where
                 }
 
                 // Check if conversation history is long enough to compact
-                if self.conversation_state.history_len() <= 3 {
+                if self.conversation_state.history().len() <= 3 {
                     execute!(
                         self.output,
                         style::SetForegroundColor(Color::Yellow),
@@ -905,22 +903,11 @@ where
                     });
                 }
 
-                // Get private history field using accessor
-                let saved_history = VecDeque::from(self.conversation_state.history_as_vec().clone());
-
                 // Set up summarization state with history, custom prompt, and show_summary flag
                 let mut summarization_state = SummarizationState::with_prompt(prompt.clone());
-                summarization_state.original_history = Some(saved_history);
+                summarization_state.original_history = Some(self.conversation_state.history().clone());
                 summarization_state.show_summary = show_summary; // Store the show_summary flag
                 self.summarization_state = Some(summarization_state);
-
-                // Tell user we're working on the summary
-                execute!(
-                    self.output,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print("\nCompacting conversation history...\n"),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
 
                 // Create a summary request based on user input or default
                 let summary_request = match prompt {
@@ -971,7 +958,7 @@ where
 
                 // Use spinner while we wait
                 if self.interactive {
-                    queue!(self.output, cursor::Hide)?;
+                    execute!(self.output, cursor::Hide, style::Print("\n"))?;
                     self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
                 }
 
@@ -1821,7 +1808,13 @@ where
                 buf.push('\n');
             }
 
-            if tool_name_being_recvd.is_none() && !buf.is_empty() && self.interactive && self.spinner.is_some() {
+            // TODO: refactor summarization into a separate ChatState value
+            if tool_name_being_recvd.is_none()
+                && !buf.is_empty()
+                && self.interactive
+                && self.spinner.is_some()
+                && !is_summarization
+            {
                 drop(self.spinner.take());
                 queue!(
                     self.output,
@@ -1905,8 +1898,18 @@ where
 
         // Handle summarization completion if we were in summarization mode
         if let Some(summarization_state) = self.summarization_state.take() {
+            if self.spinner.is_some() {
+                drop(self.spinner.take());
+                queue!(
+                    self.output,
+                    terminal::Clear(terminal::ClearType::CurrentLine),
+                    cursor::MoveToColumn(0),
+                    cursor::Show
+                )?;
+            }
+
             // Get the latest message content (the summary)
-            let summary = match self.conversation_state.history_as_vec().last() {
+            let summary = match self.conversation_state.history().back() {
                 Some(ChatMessage::AssistantResponseMessage(message)) => message.content.clone(),
                 _ => "Summary could not be generated.".to_string(),
             };
@@ -1928,12 +1931,10 @@ where
             // Add the message
             self.conversation_state.push_assistant_message(special_message);
 
-            // Display confirmation message
-
             execute!(
                 self.output,
                 style::SetForegroundColor(Color::Green),
-                style::Print("\n✅ Conversation has been successfully summarized and cleared!\n\n"),
+                style::Print("✔ Conversation history has been compacted successfully!\n\n"),
                 style::SetForegroundColor(Color::DarkGrey)
             )?;
 
@@ -1969,10 +1970,9 @@ where
                     style::Print("\n"),
                     style::SetAttribute(Attribute::Bold),
                     style::Print("                       CONVERSATION SUMMARY"),
-                    style::SetAttribute(Attribute::Reset),
                     style::Print("\n"),
                     style::Print(&border),
-                    style::SetForegroundColor(Color::Reset),
+                    style::SetAttribute(Attribute::Reset),
                     style::Print("\n\n"),
                     style::Print(&summary),
                     style::Print("\n\n"),
@@ -1980,7 +1980,7 @@ where
                     style::Print("This summary is stored in memory and available to the assistant.\n"),
                     style::Print("It contains all important details from previous interactions.\n"),
                     style::Print(&border),
-                    style::Print("\n"),
+                    style::Print("\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
             }

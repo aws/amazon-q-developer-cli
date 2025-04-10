@@ -64,6 +64,9 @@ const COMMANDS: &[&str] = &[
     "/context rm --global",
     "/context clear",
     "/context clear --global",
+    "/compact",
+    "/compact help",
+    "/compact --summary",
 ];
 
 pub fn generate_prompt(current_profile: Option<&str>, warning: bool) -> String {
