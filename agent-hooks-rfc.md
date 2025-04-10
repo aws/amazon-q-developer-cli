@@ -5,7 +5,7 @@
 
 [summary]: #summary
 
-This RFC proposes adding Agent hooks to Amazon Q CLI, enabling users to define natural language cause-and-effect relationships that automatically trigger actions during query processing. These hooks allow for persistent automation of repetitive tasks without requiring explicit commands each time.
+This RFC proposes adding Agent hooks to Amazon Q CLI Chat, enabling users to define natural language cause-and-effect relationships that automatically trigger actions during query processing. These hooks allow for persistent automation of repetitive tasks without requiring explicit commands each time.
 
 # Motivation
 
@@ -16,8 +16,10 @@ Users often have recurring patterns in their workflows where certain actions sho
 - Running tests when a function is modified
 - Generating documentation when new modules are added
 - Enforcing code style or security checks when files are created or modified
+- Automating Git workflows when specific events occur
+- Integrating with project management tools like Jira to streamline development processes
 
-Currently, users must remember to perform these actions manually or set up complex automation outside of Q CLI. By integrating agent hooks directly into Q CLI, we can:
+Currently, users must remember to perform these actions manually or set up complex automation outside of Q CLI Chat. By integrating agent hooks directly into Q CLI Chat, we can:
 
 1. Reduce cognitive load on users by automating repetitive tasks
 2. Ensure consistency in workflows by automatically applying best practices
@@ -33,12 +35,12 @@ Currently, users must remember to perform these actions manually or set up compl
 Agent hooks are defined using natural language statements that describe a cause and an effect. The basic syntax is:
 
 ```
-q hook create "When [cause], then [effect]"
+/hook create "When [cause], then [effect]"
 ```
 
 For example:
 ```
-q hook create "When any file in src/components is created or modified, then update README.md with the new component information"
+/hook create "When any file in src/components is created or modified, then update README.md with the new component information"
 ```
 
 ## Listing and Managing Hooks
@@ -46,10 +48,10 @@ q hook create "When any file in src/components is created or modified, then upda
 Users can list, view, edit, and delete their hooks:
 
 ```
-q hook list
-q hook show <hook-id>
-q hook edit <hook-id> "When [new-cause], then [new-effect]"
-q hook delete <hook-id>
+/hook list
+/hook show <hook-id>
+/hook edit <hook-id> "When [new-cause], then [new-effect]"
+/hook delete <hook-id>
 ```
 
 ## Hook Activation
@@ -66,32 +68,57 @@ Hooks are automatically activated when Q CLI detects that the cause condition ha
 Users can control how hooks are executed:
 
 ```
-q hook config --notification=always|important-only|never
-q hook config --auto-execute=always|ask|never
-q hook disable <hook-id>
-q hook enable <hook-id>
+/hook config --notification=always|important-only|never
+/hook config --auto-execute=always|ask|never
+/hook disable <hook-id>
+/hook enable <hook-id>
 ```
 
 ## Example Use Cases
 
 1. **Documentation Maintenance**:
    ```
-   q hook create "When code in lib/ changes, then update API documentation"
+   /hook create "When code in lib/ changes, then update API documentation"
    ```
 
 2. **Testing Workflow**:
    ```
-   q hook create "When test files are modified, then run the affected tests"
+   /hook create "When test files are modified, then run the affected tests"
    ```
 
 3. **Project Standards**:
    ```
-   q hook create "When new JavaScript files are created, then ensure they have proper header comments"
+   /hook create "When new JavaScript files are created, then ensure they have proper header comments"
    ```
 
 4. **Dependency Management**:
    ```
-   q hook create "When package.json is modified, then check for security vulnerabilities"
+   /hook create "When package.json is modified, then check for security vulnerabilities"
+   ```
+
+5. **Cloud Resource Monitoring**:
+   ```
+   /hook create "When an SNS notification about EC2 instance termination is received, then update the inventory database"
+   ```
+
+6. **Terminal Adaptation**:
+   ```
+   /hook create "When terminal is resized, then adjust the display format of running commands"
+   ```
+
+7. **System Integration**:
+   ```
+   /hook create "When system goes into low power mode, then save all current work and suspend background tasks"
+   ```
+
+8. **Git Workflow Enhancement**:
+   ```
+   /hook create "When git pull is called, then review any merge conflicts and present them in a table with suggested actions"
+   ```
+
+9. **Jira Integration**:
+   ```
+   /hook create "When the Jira MCP is called to change the state of a ticket to Under Development, then create a new Git branch with the Jira ticket number and description based off latest main branch"
    ```
 
 # Reference-level explanation
@@ -126,6 +153,12 @@ enum Condition {
     FileEvent(FileEventCondition),
     CommandEvent(CommandEventCondition),
     TimeEvent(TimeEventCondition),
+    SystemEvent(SystemEventCondition),
+    TerminalEvent(TerminalEventCondition),
+    CloudEvent(CloudEventCondition),
+    CustomEvent(CustomEventCondition),
+    GitEvent(GitEventCondition),
+    JiraEvent(JiraEventCondition),
     // Other condition types
 }
 
@@ -155,44 +188,78 @@ For example, parsing "When any Python file in src/ is modified, then run unit te
 
 The system monitors relevant events through:
 
-1. File system watchers for file events
+1. File system watchers for file events (using efficient event-based APIs rather than polling)
 2. Command interception for command events
-3. Periodic checks for time-based events
+3. External event sources:
+   - Operating system events (process start/stop, network changes, etc.)
+   - Terminal events (resize, focus change, session start/end)
+   - Cloud service notifications (SNS, EventBridge, webhooks)
+   - Custom event publishers (via a plugin API)
+4. Periodic checks for time-based events
+
+### Hook Optimization
+
+To minimize performance impact, hooks are:
+
+1. Pre-parsed and compiled into optimized data structures at creation time
+2. Indexed by event type and target patterns for quick lookup
+3. Selectively activated based on workspace context
+4. Cached with relevant metadata to avoid redundant processing
+5. Prioritized based on usage patterns and importance
 
 ### Hook Execution Flow
 
 1. User performs an action (e.g., edits a file)
 2. Event Monitor detects the action and creates an Event object
-3. Matcher Engine compares the Event against all enabled hooks
-4. For each matching hook:
+3. Matcher Engine uses indexed lookup to quickly identify potentially matching hooks
+4. For each candidate hook, detailed matching is performed against pre-compiled conditions
+5. For each matching hook:
    a. If auto-execute is enabled, Action Executor performs the effect
    b. Otherwise, user is prompted for confirmation
-5. Results and notifications are displayed to the user
+6. Results and notifications are displayed to the user
 
 ### Persistence
 
-Hooks are stored in a JSON file in the Q CLI configuration directory:
+Hooks are stored in a JSON file in the Q CLI Chat configuration directory:
 
 ```
-~/.config/q-cli/hooks.json
+~/.aws/amazonq/hooks.json
 ```
 
 ## Integration Points
 
 The agent hooks system integrates with:
 
-1. **Q CLI Command System**: For registering hook management commands
+1. **Q CLI Chat Command System**: For registering hook management commands
 2. **File System Monitoring**: For detecting file events
 3. **Command Execution**: For intercepting and executing commands
 4. **NLP Pipeline**: For parsing natural language hook definitions
 5. **Notification System**: For alerting users about hook triggers
+6. **External Event Sources**:
+   - Operating system event APIs
+   - Terminal emulator events
+   - AWS service event streams (SNS, EventBridge)
+   - Custom event publishers via plugin architecture
+7. **Developer Tools**:
+   - Git operations and events
+   - IDE actions and events
+   - Build system outputs
+8. **Project Management Tools**:
+   - Jira API integration
+   - GitHub/GitLab issue events
+   - Trello board updates
 
 # Drawbacks
 
 [drawbacks]: #drawbacks
 
-1. **Complexity**: Adds significant complexity to the Q CLI system
-2. **Performance Impact**: Continuous monitoring for hook triggers could impact performance
+1. **Complexity**: Adds significant complexity to the Q CLI Chat system
+2. **Performance Impact**: Continuous monitoring for hook triggers could impact performance. This could be mitigated by:
+   - Pre-parsing hooks into optimized data structures at definition time
+   - Using event-based triggers rather than polling
+   - Implementing selective monitoring that only watches relevant files/directories
+   - Batching file system checks during idle periods
+   - Allowing users to configure monitoring frequency for non-critical hooks
 3. **Ambiguity**: Natural language processing may misinterpret user intentions
 4. **Security Concerns**: Automatic execution of actions could pose security risks
 5. **Learning Curve**: Users need to learn how to effectively define hooks
@@ -204,7 +271,7 @@ The agent hooks system integrates with:
 ## Why This Design?
 
 1. **Natural Language Interface**: Makes automation accessible to users without scripting knowledge
-2. **Integration with Existing Q CLI**: Leverages the existing NLP capabilities of Q
+2. **Integration with Existing Q CLI Chat**: Leverages the existing NLP capabilities of Q
 3. **Flexible Trigger System**: Supports various types of events and conditions
 4. **User Control**: Provides options for notification and execution preferences
 
@@ -221,7 +288,7 @@ Without agent hooks:
 1. Users continue to manually perform repetitive tasks
 2. Inconsistent application of best practices
 3. Higher cognitive load on users to remember workflow steps
-4. Missed opportunity to differentiate Q CLI with proactive assistance
+4. Missed opportunity to differentiate Q CLI Chat with proactive assistance
 
 # Unresolved questions
 
@@ -229,10 +296,15 @@ Without agent hooks:
 
 1. How complex can the natural language definitions be while maintaining reliable parsing?
 2. What is the performance impact of continuous monitoring for hook triggers?
+   - How can we optimize file system watching to minimize resource usage?
+   - What strategies can be employed to reduce the overhead of hook evaluation?
+   - How can we balance responsiveness with system resource consumption?
+   - Should hooks have different priority levels that affect monitoring frequency?
 3. How should conflicts between multiple matching hooks be resolved?
 4. What security measures are needed to prevent malicious hook definitions?
 5. How should hooks handle errors during execution?
 6. Should hooks be shareable between users or projects?
+7. What telemetry data should be collected to improve the hook system while respecting user privacy?
 
 # Future possibilities
 
@@ -248,3 +320,9 @@ Without agent hooks:
 8. **Visual Hook Editor**: GUI for creating and managing complex hooks
 9. **Hook Analytics**: Track hook usage and effectiveness
 10. **Cross-Project Hooks**: Apply hooks across multiple projects or repositories
+11. **Telemetry-Based Optimization**: Collect anonymous usage data to improve hook suggestions and performance
+12. **Telemetry-Driven Recommendations**: Suggest new hooks based on observed patterns in user workflows
+13. **Effectiveness Metrics**: Measure and report on time saved and productivity gains from hook automation
+14. **Adaptive Triggers**: Refine hook activation conditions based on telemetry data about false positives/negatives
+15. **Community Insights**: Aggregate anonymized telemetry to identify most valuable hook patterns across users
+16. **External Event Integration**: Support for third-party event sources through a standardized event adapter API
