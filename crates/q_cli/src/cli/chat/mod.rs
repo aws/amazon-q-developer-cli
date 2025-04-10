@@ -1284,10 +1284,10 @@ where
                                     let est_tokens = TokenCounter::count_tokens(&content);
                                     execute!(
                                         self.output,
-                                        style::SetForegroundColor(Color::DarkYellow),
-                                        style::Print(format!("🌍 [~{} tokens]", est_tokens)),
+                                        style::Print(format!("🌍 {} ", filename)),
+                                        style::SetForegroundColor(Color::DarkGrey),
+                                        style::Print(format!("(~{} tkns)\n", est_tokens)),
                                         style::SetForegroundColor(Color::Reset),
-                                        style::Print(format!("    {}\n", filename))
                                     )?;
                                     if expand {
                                         execute!(
@@ -1303,10 +1303,10 @@ where
                                     let est_tokens = TokenCounter::count_tokens(&content);
                                     execute!(
                                         self.output,
-                                        style::SetForegroundColor(Color::DarkYellow),
-                                        style::Print(format!("👤 [~{} tokens]", est_tokens)),
+                                        style::Print(format!("👤 {} ", filename)),
+                                        style::SetForegroundColor(Color::DarkGrey),
+                                        style::Print(format!("(~{} tkns)\n", est_tokens)),
                                         style::SetForegroundColor(Color::Reset),
-                                        style::Print(format!("    {}\n", filename))
                                     )?;
                                     if expand {
                                         execute!(
@@ -1324,9 +1324,7 @@ where
 
                                 execute!(
                                     self.output,
-                                    style::SetForegroundColor(Color::Yellow),
                                     style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
-                                    style::SetForegroundColor(Color::Reset)
                                 )?;
 
                                 execute!(self.output, style::Print("\n"))?;
