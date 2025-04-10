@@ -64,7 +64,7 @@ owo-colors = "4.2.0"
 parking_lot.workspace = true
 rand.workspace = true
 regex.workspace = true
-rustyline = { version = "15.0.0", features = ["derive"] }
+rustyline = { version = "15.0.0", features = ["derive", "custom-bindings"] }
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true

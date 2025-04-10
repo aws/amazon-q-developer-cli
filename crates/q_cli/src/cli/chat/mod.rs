@@ -1,6 +1,7 @@
 mod command;
 mod context;
 mod conversation_state;
+mod fzf_integration;
 mod input_source;
 mod parse;
 mod parser;

@@ -1,7 +1,9 @@
 use eyre::Result;
 use rustyline::error::ReadlineError;
+use rustyline::{Cmd, ConditionalEventHandler, Event, EventContext, EventHandler, KeyEvent, Movement, RepeatCount};
 
 use crate::cli::chat::prompt::rl;
+use crate::cli::chat::fzf_integration;
 
 #[derive(Debug)]
 pub struct InputSource(inner::Inner);
@@ -23,9 +25,45 @@ mod inner {
     }
 }
 
+// Custom event handler for fzf command selection
+struct FzfCommandSelector;
+
+impl ConditionalEventHandler for FzfCommandSelector {
+    fn handle(
+        &self,
+        _evt: &Event,
+        _n: RepeatCount,
+        _positive: bool,
+        _ctx: &EventContext<'_>,
+    ) -> Option<Cmd> {
+        // Launch fzf command selector
+        match fzf_integration::select_command() {
+            Ok(Some(command)) => {
+                // Return a command to replace the current line with the selected command
+                Some(Cmd::Replace(
+                    Movement::WholeBuffer,
+                    Some(command)
+                ))
+            },
+            _ => {
+                // If cancelled or error, do nothing
+                Some(Cmd::Noop)
+            }
+        }
+    }
+}
+
 impl InputSource {
     pub fn new() -> Result<Self> {
-        Ok(Self(inner::Inner::Readline(rl()?)))
+        let mut editor = rl()?;
+        
+        // Add custom keybinding for Ctrl+K to launch fzf command selector
+        editor.bind_sequence(
+            KeyEvent::ctrl('k'),
+            EventHandler::Conditional(Box::new(FzfCommandSelector))
+        );
+        
+        Ok(Self(inner::Inner::Readline(editor)))
     }
 
     #[allow(dead_code)]
@@ -61,6 +99,96 @@ impl InputSource {
             // Add to history so user can access it with up arrow
             let _ = rl.add_history_entry(content);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mock_input_source() {
+        let l1 = "Hello,".to_string();
+        let l2 = "Line 2".to_string();
+        let l3 = "World!".to_string();
+        let mut input = InputSource::new_mock(vec![l1.clone(), l2.clone(), l3.clone()]);
+
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l1);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l2);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l3);
+        assert!(input.read_line(None).unwrap().is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mock_input_source() {
+        let l1 = "Hello,".to_string();
+        let l2 = "Line 2".to_string();
+        let l3 = "World!".to_string();
+        let mut input = InputSource::new_mock(vec![l1.clone(), l2.clone(), l3.clone()]);
+
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l1);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l2);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l3);
+        assert!(input.read_line(None).unwrap().is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mock_input_source() {
+        let l1 = "Hello,".to_string();
+        let l2 = "Line 2".to_string();
+        let l3 = "World!".to_string();
+        let mut input = InputSource::new_mock(vec![l1.clone(), l2.clone(), l3.clone()]);
+
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l1);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l2);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l3);
+        assert!(input.read_line(None).unwrap().is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mock_input_source() {
+        let l1 = "Hello,".to_string();
+        let l2 = "Line 2".to_string();
+        let l3 = "World!".to_string();
+        let mut input = InputSource::new_mock(vec![l1.clone(), l2.clone(), l3.clone()]);
+
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l1);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l2);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l3);
+        assert!(input.read_line(None).unwrap().is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mock_input_source() {
+        let l1 = "Hello,".to_string();
+        let l2 = "Line 2".to_string();
+        let l3 = "World!".to_string();
+        let mut input = InputSource::new_mock(vec![l1.clone(), l2.clone(), l3.clone()]);
+
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l1);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l2);
+        assert_eq!(input.read_line(None).unwrap().unwrap(), l3);
+        assert!(input.read_line(None).unwrap().is_none());
     }
 }
 
