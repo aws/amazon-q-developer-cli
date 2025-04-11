@@ -63,7 +63,6 @@ mimalloc.workspace = true
 owo-colors = "4.2.0"
 parking_lot.workspace = true
 rand.workspace = true
-regex.workspace = true
 rustyline = { version = "15.0.0", features = ["derive", "custom-bindings"] }
 skim = "0.10.4"
 semver.workspace = true
@@ -91,7 +90,7 @@ winnow.workspace = true
 shell-color.workspace = true
 syntect = { version = "5.2.0", features = [ "default-syntaxes", "default-themes" ]}
 termion = "4.0.5"
-lazy_static = "1.5.0"
+regex.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
