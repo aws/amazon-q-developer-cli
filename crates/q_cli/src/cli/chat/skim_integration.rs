@@ -7,26 +7,16 @@ use crossterm::{
     execute,
 };
 use std::io::stdout;
-use std::path::Path;
-use std::collections::HashMap;
-use serde_json::Value;
 #[cfg(test)]
 use std::collections::HashSet;
 
 /// Load tool names from the tool_index.json file
 fn load_tool_names() -> Result<Vec<String>> {
-    // Path to the tool_index.json file
-    let tool_index_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/cli/chat/tools/tool_index.json");
+    // Use the existing load_tools function from the chat module
+    let tool_specs = super::load_tools()?;
     
-    // Read the file content
-    let file_content = std::fs::read_to_string(tool_index_path)?;
-    
-    // Parse the JSON
-    let tool_index: HashMap<String, Value> = serde_json::from_str(&file_content)?;
-    
-    // Extract tool names
-    let tool_names: Vec<String> = tool_index.keys().cloned().collect();
+    // Extract tool names from the tool specs
+    let tool_names: Vec<String> = tool_specs.keys().cloned().collect();
     
     Ok(tool_names)
 }
