@@ -1291,9 +1291,9 @@ dependencies = [
 
 [[package]]
 name = "bstr"
-version = "1.11.3"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "531a9155a481e2ee699d4f98f43c0ca4ff8ee1bfd55c31e9e98fb29d2b176fe0"
+checksum = "234113d19d0d7d613b40e86fb654acf958910802bcceab913a4f9e7cda03b1a4"
 dependencies = [
  "memchr",
  "regex-automata 0.4.9",
@@ -2711,6 +2711,7 @@ dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
+ "fig_request",
  "http 1.2.0",
  "tracing",
 ]
@@ -5058,6 +5059,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcp_client"
+version = "1.7.3"
+dependencies = [
+ "async-trait",
+ "nix 0.29.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6822,6 +6837,7 @@ dependencies = [
  "indoc",
  "insta",
  "macos-utils",
+ "mcp_client",
  "mimalloc",
  "nix 0.29.0",
  "objc2 0.5.2",
@@ -6838,6 +6854,8 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-color",
+ "shell-words",
+ "shellexpand",
  "shlex",
  "similar",
  "skim",
@@ -8838,9 +8856,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-vsock"
-version = "0.6.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad311033c354453d61b537cc239d8d7cc8e3d59c9eda2e8611a8b26e71f0e945"
+checksum = "1824fc0300433f400df6b6264a9ab00ba93f39d38c3157fb5f05183476c4af10"
 dependencies = [
  "bytes",
  "futures",

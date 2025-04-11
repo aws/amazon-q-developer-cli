@@ -14,6 +14,8 @@ use rustyline::{
 };
 
 use crate::cli::chat::context::ContextManager;
+use super::prompt::PromptGetInfo;
+
 use crate::cli::chat::prompt::rl;
 use crate::cli::chat::skim_integration;
 
@@ -65,8 +67,11 @@ impl ConditionalEventHandler for SkimCommandSelector {
 }
 
 impl InputSource {
-    pub fn new() -> Result<Self> {
-        let mut editor = rl()?;
+    pub fn new(
+        sender: std::sync::mpsc::Sender<()>,
+        receiver: std::sync::mpsc::Receiver<Vec<PromptGetInfo>>,
+    ) -> Result<Self> {
+        let mut editor = rl(sender, receiver)?;
 
         // Add custom keybinding for Ctrl+K to launch skim command selector
         // Initially with no context manager - it will be updated later

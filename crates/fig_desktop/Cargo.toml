@@ -75,7 +75,7 @@ rfd = "0.15.1"
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-shellexpand = "3.0.0"
+shellexpand.workspace = true
 sysinfo.workspace = true
 tao = { version = "0.31.1", features = ["serde"] }
 tempfile.workspace = true
