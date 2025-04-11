@@ -5,6 +5,7 @@ mod input_source;
 mod parse;
 mod parser;
 mod prompt;
+mod prompts;
 mod summarization_state;
 mod tools;
 
@@ -911,46 +912,8 @@ where
 
                 // Create a summary request based on user input or default
                 let summary_request = match prompt {
-                    Some(custom_prompt) => {
-                        // Make the custom instructions much more prominent and directive
-                        format!(
-                            "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
-                            FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
-                            IMPORTANT CUSTOM INSTRUCTION: {}\n\n\
-                            Your task is to create a structured summary document containing:\n\
-                            1) A bullet-point list of key topics/questions covered\n\
-                            2) Bullet points for all significant tools executed and their results\n\
-                            3) Bullet points for any code or technical information shared\n\
-                            4) A section of key insights gained\n\n\
-                            FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
-                            ## CONVERSATION SUMMARY\n\
-                            * Topic 1: Key information\n\
-                            * Topic 2: Key information\n\n\
-                            ## TOOLS EXECUTED\n\
-                            * Tool X: Result Y\n\n\
-                            Remember this is a DOCUMENT not a chat response. The custom instruction above modifies what to prioritize.\n\
-                            FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).",
-                            custom_prompt
-                        )
-                    },
-                    None => {
-                        // Default prompt
-                        "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
-                        FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
-                        Your task is to create a structured summary document containing:\n\
-                        1) A bullet-point list of key topics/questions covered\n\
-                        2) Bullet points for all significant tools executed and their results\n\
-                        3) Bullet points for any code or technical information shared\n\
-                        4) A section of key insights gained\n\n\
-                        FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
-                        ## CONVERSATION SUMMARY\n\
-                        * Topic 1: Key information\n\
-                        * Topic 2: Key information\n\n\
-                        ## TOOLS EXECUTED\n\
-                        * Tool X: Result Y\n\n\
-                        Remember this is a DOCUMENT not a chat response.\n\
-                        FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
-                    },
+                    Some(custom_prompt) => prompts::summary::with_custom_prompt(&custom_prompt),
+                    None => prompts::summary::default(),
                 };
 
                 // Add the summarization request
