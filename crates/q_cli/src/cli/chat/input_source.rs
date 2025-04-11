@@ -3,7 +3,7 @@ use rustyline::error::ReadlineError;
 use rustyline::{Cmd, ConditionalEventHandler, Event, EventContext, EventHandler, KeyEvent, Movement, RepeatCount};
 
 use crate::cli::chat::prompt::rl;
-use crate::cli::chat::fzf_integration;
+use crate::cli::chat::skim_integration;
 
 #[derive(Debug)]
 pub struct InputSource(inner::Inner);
@@ -25,10 +25,10 @@ mod inner {
     }
 }
 
-// Custom event handler for fzf command selection
-struct FzfCommandSelector;
+// Custom event handler for skim command selection
+struct SkimCommandSelector;
 
-impl ConditionalEventHandler for FzfCommandSelector {
+impl ConditionalEventHandler for SkimCommandSelector {
     fn handle(
         &self,
         _evt: &Event,
@@ -36,8 +36,8 @@ impl ConditionalEventHandler for FzfCommandSelector {
         _positive: bool,
         _ctx: &EventContext<'_>,
     ) -> Option<Cmd> {
-        // Launch fzf command selector
-        match fzf_integration::select_command() {
+        // Launch skim command selector
+        match skim_integration::select_command() {
             Ok(Some(command)) => {
                 // Return a command to replace the current line with the selected command
                 Some(Cmd::Replace(
@@ -57,10 +57,10 @@ impl InputSource {
     pub fn new() -> Result<Self> {
         let mut editor = rl()?;
         
-        // Add custom keybinding for Ctrl+K to launch fzf command selector
+        // Add custom keybinding for Ctrl+K to launch skim command selector
         editor.bind_sequence(
             KeyEvent::ctrl('k'),
-            EventHandler::Conditional(Box::new(FzfCommandSelector))
+            EventHandler::Conditional(Box::new(SkimCommandSelector))
         );
         
         Ok(Self(inner::Inner::Readline(editor)))
