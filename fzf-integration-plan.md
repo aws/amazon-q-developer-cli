@@ -163,3 +163,9 @@ Robust error handling for cases where:
 5. **Improved Performance**: Native implementation provides better performance
 
 The implementation successfully passes cargo check and build, and the functionality works the same as originally planned but with skim instead of fzf.
+
+
+read the library context at:
+
+/local/home/bergjak/bergjak2/rustyline
+/local/home/bergjak/bergjak2/skim

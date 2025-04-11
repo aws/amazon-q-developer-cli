@@ -35,7 +35,7 @@ clap_complete_fig = "4.4.0"
 color-eyre = "0.6.2"
 color-print = "0.3.5"
 convert_case.workspace = true
-crossterm = { version = "0.28.1", features = ["event-stream"] }
+crossterm = { version = "0.28.1", features = ["event-stream", "events"] }
 ctrlc = "3.4.6"
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 eyre = "0.6.8"
@@ -90,6 +90,7 @@ whoami.workspace = true
 winnow.workspace = true
 shell-color.workspace = true
 syntect = { version = "5.2.0", features = [ "default-syntaxes", "default-themes" ]}
+termion = "4.0.5"
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
