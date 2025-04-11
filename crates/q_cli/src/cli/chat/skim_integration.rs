@@ -1,5 +1,6 @@
 use std::io::{BufReader, Cursor, Write, stdout};
 
+use super::context::ContextManager;
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use eyre::{Result, eyre};
@@ -109,8 +110,25 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     }
 }
 
+/// Get all context paths from the context manager
+fn get_current_context_paths(context_manager: &ContextManager) -> Result<Vec<String>> {
+    let mut paths = Vec::new();
+
+    // Get global paths
+    for path in &context_manager.global_config.paths {
+        paths.push(format!("(global) {}", path));
+    }
+
+    // Get profile-specific paths
+    for path in &context_manager.profile_config.paths {
+        paths.push(format!("(profile: {}) {}", context_manager.current_profile, path));
+    }
+
+    Ok(paths)
+}
+
 /// Launch the command selector and handle the selected command
-pub fn select_command() -> Result<Option<String>> {
+pub fn select_command(context_manager: Option<&ContextManager>) -> Result<Option<String>> {
     let commands = get_available_commands();
 
     match launch_skim_selector(&commands, "Select command: ", false)? {
@@ -131,6 +149,51 @@ pub fn select_command() -> Result<Option<String>> {
                         },
                         _ => Ok(Some(selected_command.clone())), /* User cancelled file selection, return just the
                                                                   * command */
+                    }
+                },
+                Some(CommandType::ContextRemove(cmd)) => {
+                    // For context rm commands, we need to select from existing context paths
+                    if let Some(context_manager) = context_manager {
+                        let context_paths = get_current_context_paths(context_manager)?;
+
+                        if context_paths.is_empty() {
+                            return Ok(Some(format!("{} (No context paths found)", cmd)));
+                        }
+
+                        match launch_skim_selector(&context_paths, "Select paths to remove: ", true)? {
+                            Some(selected_paths) if !selected_paths.is_empty() => {
+                                // Extract the actual paths from the formatted strings
+                                let paths: Vec<String> = selected_paths
+                                    .iter()
+                                    .map(|p| {
+                                        // Extract the path part after the prefix
+                                        let parts: Vec<&str> = p.splitn(2, ") ").collect();
+                                        if parts.len() > 1 {
+                                            parts[1].to_string()
+                                        } else {
+                                            p.clone()
+                                        }
+                                    })
+                                    .collect();
+
+                                // Check if any global paths were selected
+                                let has_global = selected_paths.iter().any(|p| p.starts_with("(global)"));
+
+                                // Construct the full command with selected paths
+                                let mut full_cmd = cmd.to_string();
+                                if has_global {
+                                    full_cmd.push_str(" --global");
+                                }
+                                for path in paths {
+                                    full_cmd.push_str(&format!(" {}", path));
+                                }
+                                Ok(Some(full_cmd))
+                            },
+                            _ => Ok(Some(selected_command.clone())), // User cancelled path selection
+                        }
+                    } else {
+                        // No context manager available
+                        Ok(Some(selected_command.clone()))
                     }
                 },
                 Some(CommandType::Tools(_)) => {
@@ -175,6 +238,7 @@ pub fn select_command() -> Result<Option<String>> {
 #[derive(PartialEq)]
 enum CommandType {
     ContextAdd(String),
+    ContextRemove(String),
     Tools(&'static str),
     Profile(&'static str),
 }
@@ -183,6 +247,8 @@ impl CommandType {
     fn from_str(cmd: &str) -> Option<CommandType> {
         if cmd.starts_with("/context add") {
             Some(CommandType::ContextAdd(cmd.to_string()))
+        } else if cmd.starts_with("/context rm") {
+            Some(CommandType::ContextRemove(cmd.to_string()))
         } else {
             match cmd {
                 "/tools trust" => Some(CommandType::Tools("trust")),
@@ -214,6 +280,8 @@ mod tests {
         let hardcoded_commands = vec![
             "/context add",
             "/context add --global",
+            "/context rm",
+            "/context rm --global",
             "/tools trust",
             "/tools untrust",
             "/profile set",

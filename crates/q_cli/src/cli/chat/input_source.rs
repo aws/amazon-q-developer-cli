@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use eyre::Result;
 use rustyline::error::ReadlineError;
 use rustyline::{
@@ -11,6 +13,7 @@ use rustyline::{
     RepeatCount,
 };
 
+use crate::cli::chat::context::ContextManager;
 use crate::cli::chat::prompt::rl;
 use crate::cli::chat::skim_integration;
 
@@ -34,13 +37,21 @@ mod inner {
     }
 }
 
-// Custom event handler for skim command selection
-struct SkimCommandSelector;
+// Custom event handler for skim command selector
+struct SkimCommandSelector {
+    context_manager: Option<Arc<ContextManager>>,
+}
+
+impl SkimCommandSelector {
+    fn new(context_manager: Option<Arc<ContextManager>>) -> Self {
+        Self { context_manager }
+    }
+}
 
 impl ConditionalEventHandler for SkimCommandSelector {
     fn handle(&self, _evt: &Event, _n: RepeatCount, _positive: bool, _ctx: &EventContext<'_>) -> Option<Cmd> {
-        // Launch skim command selector
-        match skim_integration::select_command() {
+        // Launch skim command selector with the context manager if available
+        match skim_integration::select_command(self.context_manager.as_deref()) {
             Ok(Some(command)) => {
                 // Return a command to replace the current line with the selected command
                 Some(Cmd::Replace(Movement::WholeBuffer, Some(command)))
@@ -58,12 +69,24 @@ impl InputSource {
         let mut editor = rl()?;
 
         // Add custom keybinding for Ctrl+K to launch skim command selector
+        // Initially with no context manager - it will be updated later
         editor.bind_sequence(
             KeyEvent::ctrl('k'),
-            EventHandler::Conditional(Box::new(SkimCommandSelector)),
+            EventHandler::Conditional(Box::new(SkimCommandSelector::new(None))),
         );
 
         Ok(Self(inner::Inner::Readline(editor)))
+    }
+
+    // Update the context manager for the skim command selector
+    pub fn update_context_manager(&mut self, context_manager: Option<Arc<ContextManager>>) {
+        if let inner::Inner::Readline(rl) = &mut self.0 {
+            // Rebind the Ctrl+K key with the updated context manager
+            rl.bind_sequence(
+                KeyEvent::ctrl('k'),
+                EventHandler::Conditional(Box::new(SkimCommandSelector::new(context_manager))),
+            );
+        }
     }
 
     #[allow(dead_code)]

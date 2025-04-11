@@ -739,6 +739,11 @@ where
                 FigTool::ToolSpecification(t) => self.tool_permissions.is_trusted(&t.name),
             });
 
+            // Update the context manager in the input source for skim integration
+            if let Some(context_manager) = &self.conversation_state.context_manager {
+                self.input_source.update_context_manager(Some(Arc::clone(context_manager)));
+            }
+
             // Generate prompt based on active context profile and trusted tools
             let prompt = prompt::generate_prompt(self.conversation_state.current_profile(), all_tools_trusted);
 
