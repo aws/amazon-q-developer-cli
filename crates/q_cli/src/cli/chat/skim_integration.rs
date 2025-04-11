@@ -61,9 +61,8 @@ fn run_skim_with_options(options: &SkimOptions, items: SkimItemReceiver) -> Resu
     // Enter alternate screen to prevent skim output from persisting in terminal history
     execute!(stdout(), EnterAlternateScreen).map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
 
-    let selected_items = Skim::run_with(options, Some(items))
-        .map(|out| if out.is_abort { None } else { Some(out.selected_items) })
-        .unwrap_or(None);
+    let selected_items =
+        Skim::run_with(options, Some(items)).and_then(|out| if out.is_abort { None } else { Some(out.selected_items) });
 
     execute!(stdout(), LeaveAlternateScreen).map_err(|e| eyre!("Failed to leave alternate screen: {}", e))?;
 
@@ -107,7 +106,7 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(BufReader::new(
         std::process::Command::new("sh")
-            .args(&["-c", find_cmd])
+            .args(["-c", find_cmd])
             .stdout(std::process::Stdio::piped())
             .spawn()?
             .stdout
@@ -198,7 +197,7 @@ pub fn select_command(context_manager: Option<&ContextManager>) -> Result<Option
                     match select_files_with_skim()? {
                         Some(files) if !files.is_empty() => {
                             // Construct the full command with selected files
-                            let mut cmd = cmd.to_string();
+                            let mut cmd = cmd.clone();
                             for file in files {
                                 cmd.push_str(&format!(" {}", file));
                             }
@@ -214,7 +213,7 @@ pub fn select_command(context_manager: Option<&ContextManager>) -> Result<Option
                         match select_context_paths_with_skim(context_manager)? {
                             Some((paths, has_global)) if !paths.is_empty() => {
                                 // Construct the full command with selected paths
-                                let mut full_cmd = cmd.to_string();
+                                let mut full_cmd = cmd.clone();
                                 if has_global {
                                     full_cmd.push_str(" --global");
                                 }
