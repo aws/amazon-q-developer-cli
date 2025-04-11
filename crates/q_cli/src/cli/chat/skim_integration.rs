@@ -1,11 +1,23 @@
-use std::io::{BufReader, Cursor, Write, stdout};
+use std::io::{
+    BufReader,
+    Cursor,
+    Write,
+    stdout,
+};
 
-use super::context::ContextManager;
 use crossterm::execute;
-use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-use eyre::{Result, eyre};
+use crossterm::terminal::{
+    EnterAlternateScreen,
+    LeaveAlternateScreen,
+};
+use eyre::{
+    Result,
+    eyre,
+};
 use skim::prelude::*;
 use tempfile::NamedTempFile;
+
+use super::context::ContextManager;
 
 /// Load tool names from the tool_index.json file
 fn load_tool_names() -> Result<Vec<String>> {
@@ -146,10 +158,10 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
     match run_skim_with_options(&options, items)? {
         Some(items) if !items.is_empty() => {
             let selected_paths = extract_selections(items);
-            
+
             // Check if any global paths were selected
             let has_global = selected_paths.iter().any(|p| p.starts_with("(global)"));
-            
+
             // Extract the actual paths from the formatted strings
             let paths: Vec<String> = selected_paths
                 .iter()
@@ -163,7 +175,7 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
                     }
                 })
                 .collect();
-                
+
             Ok(Some((paths, has_global)))
         },
         _ => Ok(None), // User cancelled selection
