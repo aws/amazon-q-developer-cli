@@ -77,6 +77,8 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
         .multi(multi)
         .color(Some("fg:252,bg:234,hl:67,fg+:252,bg+:235,hl+:81"))
         .color(Some("info:144,prompt:161,spinner:135,pointer:135,marker:118"))
+        // Add no_clear option to clear the screen after selection
+        .no_clear(false)
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
     
@@ -138,6 +140,8 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
         .multi(true)
         .reverse(true)
         .prompt(Some("Select files: "))
+        // Add no_clear option to clear the screen after selection
+        .no_clear(false)
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
     
@@ -233,6 +237,8 @@ pub fn select_context_files_to_remove(global: bool) -> Result<Option<Vec<String>
         .multi(true)
         .reverse(true)
         .prompt(Some(prompt))
+        // Add no_clear option to clear the screen after selection
+        .no_clear(false)
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
     
@@ -341,6 +347,8 @@ pub fn select_command() -> Result<Option<String>> {
                     .height(Some("40%"))
                     .reverse(true)
                     .prompt(Some("Select tool: "))
+                    // Add no_clear option to clear the screen after selection
+                    .no_clear(false)
                     .build()
                     .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
                 
