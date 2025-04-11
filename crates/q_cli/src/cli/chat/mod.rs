@@ -305,7 +305,7 @@ pub async fn chat(
             queue!(
                 output,
                 style::SetForegroundColor(Color::Yellow),
-                style::Print("\n--accept-all is deprecated. Use --trust-all-tools instead."),
+                style::Print("\n--accept-all, -a is deprecated. Use --trust-all-tools instead."),
                 style::SetForegroundColor(Color::Reset),
             )?;
         }
@@ -368,7 +368,7 @@ pub enum ChatError {
     #[error("interrupted")]
     Interrupted { tool_uses: Option<Vec<QueuedTool>> },
     #[error(
-        "Tool approval required but --no-interactive was specified. Use --accept-all to automatically approve tools."
+        "Tool approval required but --no-interactive was specified. Use --trust-all-tools to automatically approve tools."
     )]
     NonInteractiveToolApproval,
 }
