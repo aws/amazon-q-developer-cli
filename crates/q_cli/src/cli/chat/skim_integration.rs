@@ -10,14 +10,8 @@ use tempfile::NamedTempFile;
 
 /// Load tool names from the tool_index.json file
 fn load_tool_names() -> Result<Vec<String>> {
-    // Use the existing load_tools function from the chat module
     let tool_specs = super::load_tools()?;
-    
-    // Extract the "name" field from each tool spec
-    let tool_names: Vec<String> = tool_specs.values()
-        .map(|spec| spec.name.clone())
-        .collect();
-    
+    let tool_names: Vec<String> = tool_specs.values().map(|spec| spec.name.clone()).collect();
     Ok(tool_names)
 }
 
@@ -70,16 +64,12 @@ fn extract_selections(items: Vec<Arc<dyn SkimItem>>) -> Vec<String> {
 
 /// Launch skim with the given items and return the selected item
 pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Result<Option<Vec<String>>> {
-    // Create a temporary file for skim input
-    let mut temp_file = NamedTempFile::new()?;
-    temp_file.write_all(items.join("\n").as_bytes())?;
+    let mut temp_file_for_skim_input = NamedTempFile::new()?;
+    temp_file_for_skim_input.write_all(items.join("\n").as_bytes())?;
 
-    // Build skim options
     let options = create_skim_options(prompt, multi)?;
-
-    // Create item reader
     let item_reader = SkimItemReader::default();
-    let items = item_reader.of_bufread(BufReader::new(std::fs::File::open(temp_file.path())?));
+    let items = item_reader.of_bufread(BufReader::new(std::fs::File::open(temp_file_for_skim_input.path())?));
 
     // Run skim and get selected items
     match run_skim_with_options(&options, items)? {
