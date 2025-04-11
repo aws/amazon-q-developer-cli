@@ -4,8 +4,7 @@ use eyre::{Result, eyre};
 use tempfile::NamedTempFile;
 use skim::prelude::*;
 use crossterm::{
-    terminal::{Clear, ClearType},
-    cursor::{MoveTo},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     execute,
 };
 use std::io::stdout;
@@ -69,14 +68,22 @@ fn format_commands_for_skim(commands: &[CommandInfo]) -> Vec<String> {
         .collect()
 }
 
-/// Clear the terminal screen after skim closes
-fn clear_screen_after_skim() -> Result<()> {
-    // Use crossterm to clear the screen and reset cursor position
+/// Enter alternate screen mode to prevent skim output from persisting in terminal history
+fn enter_alternate_screen() -> Result<()> {
     execute!(
         stdout(),
-        Clear(ClearType::All),
-        MoveTo(0, 0)
-    ).map_err(|e| eyre!("Failed to clear screen: {}", e))?;
+        EnterAlternateScreen
+    ).map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
+    
+    Ok(())
+}
+
+/// Leave alternate screen mode and restore the terminal
+fn leave_alternate_screen() -> Result<()> {
+    execute!(
+        stdout(),
+        LeaveAlternateScreen
+    ).map_err(|e| eyre!("Failed to leave alternate screen: {}", e))?;
     
     Ok(())
 }
@@ -102,6 +109,9 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(BufReader::new(std::fs::File::open(temp_file.path())?));
     
+    // Enter alternate screen to prevent skim output from persisting in terminal history
+    enter_alternate_screen()?;
+    
     // Run skim
     let selected_items = Skim::run_with(&options, Some(items))
         .map(|out| {
@@ -113,8 +123,8 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
         })
         .unwrap_or(None);
     
-    // Clear the screen after skim closes
-    clear_screen_after_skim()?;
+    // Leave alternate screen
+    leave_alternate_screen()?;
     
     // Parse the output
     match selected_items {
@@ -162,10 +172,14 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
     
-    // Create item reader and run skim
+    // Create item reader
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(std::io::Cursor::new(files));
     
+    // Enter alternate screen to prevent skim output from persisting in terminal history
+    enter_alternate_screen()?;
+    
+    // Run skim
     let selected_items = Skim::run_with(&options, Some(items))
         .map(|out| {
             if out.is_abort {
@@ -176,8 +190,8 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
         })
         .unwrap_or(None);
     
-    // Clear the screen after skim closes
-    clear_screen_after_skim()?;
+    // Leave alternate screen
+    leave_alternate_screen()?;
     
     // Parse the output
     match selected_items {
@@ -260,10 +274,14 @@ pub fn select_context_files_to_remove(global: bool) -> Result<Option<Vec<String>
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
     
-    // Create item reader and run skim
+    // Create item reader
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(std::io::Cursor::new(context_files.join("\n")));
     
+    // Enter alternate screen to prevent skim output from persisting in terminal history
+    enter_alternate_screen()?;
+    
+    // Run skim
     let selected_items = Skim::run_with(&options, Some(items))
         .map(|out| {
             if out.is_abort {
@@ -274,8 +292,8 @@ pub fn select_context_files_to_remove(global: bool) -> Result<Option<Vec<String>
         })
         .unwrap_or(None);
     
-    // Clear the screen after skim closes
-    clear_screen_after_skim()?;
+    // Leave alternate screen
+    leave_alternate_screen()?;
     
     // Parse the output
     match selected_items {
@@ -371,10 +389,14 @@ pub fn select_command() -> Result<Option<String>> {
                     .build()
                     .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
                 
-                // Create item reader and run skim
+                // Create item reader
                 let item_reader = SkimItemReader::default();
                 let items = item_reader.of_bufread(std::io::Cursor::new(tools.join("\n")));
                 
+                // Enter alternate screen to prevent skim output from persisting in terminal history
+                enter_alternate_screen()?;
+                
+                // Run skim
                 let selected_tool = Skim::run_with(&options, Some(items))
                     .map(|out| {
                         if out.is_abort || out.selected_items.is_empty() {
@@ -385,8 +407,8 @@ pub fn select_command() -> Result<Option<String>> {
                     })
                     .unwrap_or(None);
                 
-                // Clear the screen after skim closes
-                clear_screen_after_skim()?;
+                // Leave alternate screen
+                leave_alternate_screen()?;
                 
                 match selected_tool {
                     Some(tool) => Ok(Some(format!("{} {}", selected_command, tool))),
