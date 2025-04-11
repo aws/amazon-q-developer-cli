@@ -8559,9 +8559,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-vsock"
-version = "0.6.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad311033c354453d61b537cc239d8d7cc8e3d59c9eda2e8611a8b26e71f0e945"
+checksum = "1824fc0300433f400df6b6264a9ab00ba93f39d38c3157fb5f05183476c4af10"
 dependencies = [
  "bytes",
  "futures",
