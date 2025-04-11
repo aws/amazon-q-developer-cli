@@ -160,7 +160,6 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/quit</em>         <black!>Quit the application</black!>
 
 <cyan!>Use Ctrl(^) + j to provide multi-line prompts.</cyan!>
-
 "};
 
 const HELP_TEXT: &str = color_print::cstr! {"
@@ -204,6 +203,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
 "};
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
+const TRUST_ALL_TEXT: &str = color_print::cstr! {"\n<green!>All tools are now trusted (<red!>!</red!>). This <bold>disables</bold> acceptance prompting.\
+\nAgents can sometimes do unexpected things so understand the risks.</green!>"};
 
 pub async fn chat(
     input: Option<String>,
@@ -512,8 +513,14 @@ where
     }
 
     async fn try_chat(&mut self) -> Result<()> {
-        if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
-            execute!(self.output, style::Print(WELCOME_TEXT))?;
+        if self.interactive {
+            if self.settings.get_bool_or("chat.greeting.enabled", true) {
+                queue!(self.output, style::Print(WELCOME_TEXT))?;
+            }
+            if self.all_tools_trusted() {
+                queue!(self.output, style::Print(TRUST_ALL_TEXT))?;
+            }
+            execute!(self.output, style::Print("\n\n"))?;
         }
 
         let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
@@ -734,12 +741,8 @@ where
         // Require two consecutive sigint's to exit.
         let mut ctrl_c = false;
         let user_input = loop {
-            let all_tools_trusted = self.conversation_state.tools.iter().all(|t| match t {
-                FigTool::ToolSpecification(t) => self.tool_permissions.is_trusted(&t.name),
-            });
-
             // Generate prompt based on active context profile and trusted tools
-            let prompt = prompt::generate_prompt(self.conversation_state.current_profile(), all_tools_trusted);
+            let prompt = prompt::generate_prompt(self.conversation_state.current_profile(), self.all_tools_trusted());
 
             match (self.input_source.read_line(Some(&prompt))?, ctrl_c) {
                 (Some(line), _) => {
@@ -1429,29 +1432,91 @@ where
                 }
             },
             Command::Tools { subcommand } => {
+                let existing_tools: HashSet<&String> = self
+                    .conversation_state
+                    .tools
+                    .iter()
+                    .map(|FigTool::ToolSpecification(spec)| &spec.name)
+                    .collect();
+
                 match subcommand {
-                    Some(ToolsSubcommand::Trust { tool_name }) => {
-                        self.tool_permissions.trust_tool(&tool_name);
-                        queue!(
-                            self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nTool '{tool_name}' is now trusted. I will ")),
-                            style::SetAttribute(Attribute::Bold),
-                            style::Print("not"),
-                            style::SetAttribute(Attribute::Reset),
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(" ask for confirmation before running this tool."),
-                            style::SetForegroundColor(Color::Reset),
-                        )?;
+                    Some(ToolsSubcommand::Trust { tool_names }) => {
+                        let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) = tool_names
+                            .into_iter()
+                            .partition(|tool_name| existing_tools.contains(tool_name));
+
+                        if !invalid_tools.is_empty() {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!("\nCannot trust '{}', ", invalid_tools.join("', '"))),
+                                if invalid_tools.len() > 1 {
+                                    style::Print("they do not exist.")
+                                } else {
+                                    style::Print("it does not exist.")
+                                },
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        }
+                        if !valid_tools.is_empty() {
+                            valid_tools.iter().for_each(|t| self.tool_permissions.trust_tool(t));
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                if valid_tools.len() > 1 {
+                                    style::Print(format!("\nTools '{}' are ", valid_tools.join("', '")))
+                                } else {
+                                    style::Print(format!("\nTool '{}' is ", valid_tools[0]))
+                                },
+                                style::Print("now trusted. I will "),
+                                style::SetAttribute(Attribute::Bold),
+                                style::Print("not"),
+                                style::SetAttribute(Attribute::Reset),
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!(
+                                    " ask for confirmation before running {}.",
+                                    if valid_tools.len() > 1 {
+                                        "these tools"
+                                    } else {
+                                        "this tool"
+                                    }
+                                )),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        }
                     },
-                    Some(ToolsSubcommand::Untrust { tool_name }) => {
-                        self.tool_permissions.untrust_tool(&tool_name);
-                        queue!(
-                            self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nTool '{tool_name}' set to per-request confirmation."),),
-                            style::SetForegroundColor(Color::Reset),
-                        )?;
+                    Some(ToolsSubcommand::Untrust { tool_names }) => {
+                        let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) = tool_names
+                            .into_iter()
+                            .partition(|tool_name| existing_tools.contains(tool_name));
+
+                        if !invalid_tools.is_empty() {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!("\nCannot untrust '{}', ", invalid_tools.join("', '"))),
+                                if invalid_tools.len() > 1 {
+                                    style::Print("they do not exist.")
+                                } else {
+                                    style::Print("it does not exist.")
+                                },
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        }
+                        if !valid_tools.is_empty() {
+                            valid_tools.iter().for_each(|t| self.tool_permissions.untrust_tool(t));
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                if valid_tools.len() > 1 {
+                                    style::Print(format!("\nTools '{}' are ", valid_tools.join("', '")))
+                                } else {
+                                    style::Print(format!("\nTool '{}' is ", valid_tools[0]))
+                                },
+                                style::Print("set to per-request confirmation."),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        }
                     },
                     Some(ToolsSubcommand::TrustAll) => {
                         self.conversation_state
@@ -1460,17 +1525,7 @@ where
                             .for_each(|FigTool::ToolSpecification(spec)| {
                                 self.tool_permissions.trust_tool(spec.name.as_str());
                             });
-                        queue!(
-                            self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print("\nAll tools are now trusted. I will "),
-                            style::SetAttribute(Attribute::Bold),
-                            style::Print("not"),
-                            style::SetAttribute(Attribute::Reset),
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(" ask for confirmation before running any tools."),
-                            style::SetForegroundColor(Color::Reset),
-                        )?;
+                        queue!(self.output, style::Print(TRUST_ALL_TEXT),)?;
                     },
                     Some(ToolsSubcommand::Reset) => {
                         self.tool_permissions.reset();
@@ -2156,6 +2211,12 @@ where
 
     fn terminal_width(&self) -> usize {
         (self.terminal_width_provider)().unwrap_or(80)
+    }
+
+    fn all_tools_trusted(&self) -> bool {
+        self.conversation_state.tools.iter().all(|t| match t {
+            FigTool::ToolSpecification(t) => self.tool_permissions.is_trusted(&t.name),
+        })
     }
 
     /// Display character limit warnings based on current conversation size
