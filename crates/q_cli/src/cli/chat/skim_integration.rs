@@ -7,6 +7,7 @@ use crossterm::{
     execute,
 };
 use std::io::stdout;
+use std::collections::HashSet;
 
 /// Represents a command
 #[derive(Debug, Clone)]
@@ -166,7 +167,7 @@ pub fn select_command() -> Result<Option<String>> {
                     },
                     _ => Ok(Some(selected_command.clone())), // User cancelled file selection, return just the command
                 }
-            } else if selected_command == "/context add --global" || selected_command == "/context add --force" {
+            } else if selected_command == "/context add --global" {
                 // For context add with flags, we need to select files
                 match select_files_with_skim()? {
                     Some(files) if !files.is_empty() => {
@@ -222,5 +223,41 @@ pub fn select_command() -> Result<Option<String>> {
             }
         },
         _ => Ok(None), // User cancelled command selection
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test to verify that all hardcoded command strings in select_command
+    /// are present in the COMMANDS array from prompt.rs
+    #[test]
+    fn test_hardcoded_commands_in_commands_array() {
+        // Get the set of available commands from prompt.rs
+        let available_commands: HashSet<String> = get_available_commands()
+            .iter()
+            .map(|cmd| cmd.command.clone())
+            .collect();
+
+        // List of hardcoded commands used in select_command
+        let hardcoded_commands = vec![
+            "/context add",
+            "/context add --global",
+            "/tools trust",
+            "/tools untrust",
+            "/profile set",
+            "/profile delete",
+            "/profile rename",
+            "/profile create",
+        ];
+
+        // Check that each hardcoded command is in the COMMANDS array
+        for cmd in hardcoded_commands {
+            assert!(
+                available_commands.contains(cmd),
+                "Command '{}' is used in select_command but not defined in COMMANDS array",
+                cmd
+            );
+        }
     }
 }
