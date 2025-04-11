@@ -56,7 +56,7 @@ use crate::cli::chat::tools::{
 const MAX_CURRENT_WORKING_DIRECTORY_LEN: usize = 256;
 
 /// Limit to send the number of messages as part of chat.
-const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 250;
+const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 100;
 
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone)]
@@ -206,64 +206,51 @@ impl ConversationState {
     ///    message is set without tool results, then the user message will have cancelled tool
     ///    results.
     pub fn fix_history(&mut self) {
-        // Trim the conversation history by finding a valid cut point that preserves tool use/result pairs
+        // Trim the conversation history by finding the second oldest message from the user without
+        // tool results - this will be the new oldest message in the history.
+        //
         // Note that we reserve 2 slots for [ConversationState::context_messages].
         if self.history.len() > MAX_CONVERSATION_STATE_HISTORY_LEN - 2 {
-            // Basic cut index based on window size
-            let mut valid_cut_index = self.history.len() - (MAX_CONVERSATION_STATE_HISTORY_LEN - 2);
-            let mut history_len = self.history.len();
-            debug!("history length is {history_len}");
-            debug!("basic cut index is {valid_cut_index}");
-
-            // Map tool use IDs to their message indices
-            let mut tool_use_ids: HashMap<String, usize> = HashMap::new();
-            let mut tool_result_ids: HashMap<String, usize> = HashMap::new();
-
-            // Build the tool use/result mappings
-            for (i, msg) in self.history.iter().enumerate() {
-                match msg {
-                    ChatMessage::AssistantResponseMessage(m) => {
-                        if let Some(tool_uses) = &m.tool_uses {
-                            for tool_use in tool_uses {
-                                tool_use_ids.insert(tool_use.tool_use_id.clone(), i);
-                            }
-                        }
-                    },
-                    ChatMessage::UserInputMessage(m) => {
-                        if let Some(ctx) = &m.user_input_message_context {
-                            if let Some(tool_results) = &ctx.tool_results {
-                                for tool_result in tool_results {
-                                    tool_result_ids.insert(tool_result.tool_use_id.clone(), i);
-                                }
-                            }
-                        }
-                    },
-                }
-            }
-
-            // Ensure we don't break any tool use/result pairs
-            for (tool_id, use_index) in &tool_use_ids {
-                if let Some(result_index) = tool_result_ids.get(tool_id) {
-                    // If the tool use would be cut but the tool result would remain,
-                    // or vice versa, adjust the cut index to preserve the pair
-                    if (*use_index < valid_cut_index && *result_index >= valid_cut_index)
-                        || (*use_index >= valid_cut_index && *result_index < valid_cut_index)
-                    {
-                        // Move the cut point to include both the tool use and tool result
-                        valid_cut_index = valid_cut_index.min(*use_index).min(*result_index);
-                        debug!(
-                            "adjusting cut index to {valid_cut_index} to preserve tool use/result pair for {tool_id}"
-                        );
+            match self
+                .history
+                .iter()
+                .enumerate()
+                // Skip the first message which should be from the user.
+                .skip(1)
+                .find(|(_, m)| -> bool {
+                    match m {
+                        ChatMessage::UserInputMessage(m) => {
+                            matches!(
+                                m.user_input_message_context.as_ref(),
+                                Some(ctx) if ctx.tool_results.as_ref().is_none_or(|v| v.is_empty())
+                            ) && !m.content.is_empty()
+                        },
+                        ChatMessage::AssistantResponseMessage(_) => false,
                     }
-                }
-            }
-
-            // Apply the cut at the valid index
-            if valid_cut_index > 0 {
-                debug!("removing the first {valid_cut_index} elements in the history");
-                self.history.drain(..valid_cut_index);
-                history_len = self.history.len();
-                debug!("history length is {history_len}");
+                })
+                .map(|v| v.0)
+            {
+                Some(i) => {
+                    debug!("removing the first {i} elements in the history");
+                    self.history.drain(..i);
+                },
+                None => {
+                    debug!("no valid starting user message found in the history, clearing");
+                    self.history.clear();
+                    // Edge case: if the next message contains tool results, then we have to just
+                    // abandon them.
+                    match &mut self.next_message {
+                        Some(UserInputMessage {
+                            ref mut content,
+                            user_input_message_context: Some(ctx),
+                            ..
+                        }) if ctx.tool_results.as_ref().is_some_and(|r| !r.is_empty()) => {
+                            *content = "The conversation history has overflowed, clearing state".to_string();
+                            ctx.tool_results.take();
+                        },
+                        _ => {},
+                    }
+                },
             }
         }
 
