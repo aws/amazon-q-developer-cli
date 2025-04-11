@@ -1,11 +1,11 @@
 mod command;
 mod context;
 mod conversation_state;
-mod skim_integration;
 mod input_source;
 mod parse;
 mod parser;
 mod prompt;
+mod skim_integration;
 mod summarization_state;
 mod tools;
 

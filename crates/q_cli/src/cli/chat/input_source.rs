@@ -1,6 +1,15 @@
 use eyre::Result;
 use rustyline::error::ReadlineError;
-use rustyline::{Cmd, ConditionalEventHandler, Event, EventContext, EventHandler, KeyEvent, Movement, RepeatCount};
+use rustyline::{
+    Cmd,
+    ConditionalEventHandler,
+    Event,
+    EventContext,
+    EventHandler,
+    KeyEvent,
+    Movement,
+    RepeatCount,
+};
 
 use crate::cli::chat::prompt::rl;
 use crate::cli::chat::skim_integration;
@@ -29,26 +38,17 @@ mod inner {
 struct SkimCommandSelector;
 
 impl ConditionalEventHandler for SkimCommandSelector {
-    fn handle(
-        &self,
-        _evt: &Event,
-        _n: RepeatCount,
-        _positive: bool,
-        _ctx: &EventContext<'_>,
-    ) -> Option<Cmd> {
+    fn handle(&self, _evt: &Event, _n: RepeatCount, _positive: bool, _ctx: &EventContext<'_>) -> Option<Cmd> {
         // Launch skim command selector
         match skim_integration::select_command() {
             Ok(Some(command)) => {
                 // Return a command to replace the current line with the selected command
-                Some(Cmd::Replace(
-                    Movement::WholeBuffer,
-                    Some(command)
-                ))
+                Some(Cmd::Replace(Movement::WholeBuffer, Some(command)))
             },
             _ => {
                 // If cancelled or error, do nothing
                 Some(Cmd::Noop)
-            }
+            },
         }
     }
 }
@@ -56,13 +56,13 @@ impl ConditionalEventHandler for SkimCommandSelector {
 impl InputSource {
     pub fn new() -> Result<Self> {
         let mut editor = rl()?;
-        
+
         // Add custom keybinding for Ctrl+K to launch skim command selector
         editor.bind_sequence(
             KeyEvent::ctrl('k'),
-            EventHandler::Conditional(Box::new(SkimCommandSelector))
+            EventHandler::Conditional(Box::new(SkimCommandSelector)),
         );
-        
+
         Ok(Self(inner::Inner::Readline(editor)))
     }
 
@@ -119,4 +119,3 @@ mod tests {
         assert!(input.read_line(None).unwrap().is_none());
     }
 }
-

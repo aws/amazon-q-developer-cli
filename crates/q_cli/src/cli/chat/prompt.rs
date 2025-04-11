@@ -311,4 +311,3 @@ mod tests {
         assert!(completions.is_empty());
     }
 }
-

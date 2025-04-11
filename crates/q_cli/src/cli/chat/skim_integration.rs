@@ -1,11 +1,20 @@
-use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
+use std::io::{
+    BufReader,
+    Cursor,
+    Write,
+    stdout,
 };
-use eyre::{Result, eyre};
+
+use crossterm::execute;
+use crossterm::terminal::{
+    EnterAlternateScreen,
+    LeaveAlternateScreen,
+};
+use eyre::{
+    Result,
+    eyre,
+};
 use skim::prelude::*;
-use std::io::stdout;
-use std::io::{BufReader, Cursor, Write};
 use tempfile::NamedTempFile;
 
 /// Load tool names from the tool_index.json file
@@ -132,7 +141,8 @@ pub fn select_command() -> Result<Option<String>> {
                             }
                             Ok(Some(cmd))
                         },
-                        _ => Ok(Some(selected_command.clone())), // User cancelled file selection, return just the command
+                        _ => Ok(Some(selected_command.clone())), /* User cancelled file selection, return just the
+                                                                  * command */
                     }
                 },
                 Some(CommandType::Tools(_)) => {
@@ -155,7 +165,8 @@ pub fn select_command() -> Result<Option<String>> {
 
                     match selected_tool {
                         Some(tool) => Ok(Some(format!("{} {}", selected_command, tool))),
-                        None => Ok(Some(selected_command.clone())), // User cancelled tool selection, return just the command
+                        None => Ok(Some(selected_command.clone())), /* User cancelled tool selection, return just the
+                                                                     * command */
                     }
                 },
                 Some(CommandType::Profile(_)) => {
@@ -200,8 +211,9 @@ impl CommandType {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::HashSet;
+
+    use super::*;
 
     /// Test to verify that all hardcoded command strings in select_command
     /// are present in the COMMANDS array from prompt.rs
@@ -230,7 +242,8 @@ mod tests {
                 cmd
             );
 
-            // This should assert that all the commands we assert are present in the match statement of select_command()
+            // This should assert that all the commands we assert are present in the match statement of
+            // select_command()
             assert!(
                 CommandType::from_str(cmd).is_some(),
                 "Command '{}' cannot be parsed into a CommandType",
