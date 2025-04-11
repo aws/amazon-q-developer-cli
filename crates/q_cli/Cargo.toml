@@ -66,7 +66,7 @@ parking_lot.workspace = true
 rand.workspace = true
 regex.workspace = true
 rustyline = { version = "15.0.0", features = ["derive", "custom-bindings"] }
-skim = "0.10.4"
+skim = "0.16.1"
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -13,9 +13,8 @@ use rustyline::{
     RepeatCount,
 };
 
-use crate::cli::chat::context::ContextManager;
 use super::prompt::PromptGetInfo;
-
+use crate::cli::chat::context::ContextManager;
 use crate::cli::chat::prompt::rl;
 use crate::cli::chat::skim_integration;
 

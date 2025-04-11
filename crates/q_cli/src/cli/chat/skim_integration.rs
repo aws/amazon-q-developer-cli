@@ -41,21 +41,23 @@ pub fn get_available_commands() -> Vec<String> {
 
 /// Format commands for skim display
 /// Create a standard set of skim options with consistent styling
-fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions<'_>> {
+fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions> {
     SkimOptionsBuilder::default()
-        .height(Some("100%"))
-        .prompt(Some(prompt))
+        .height("100%".to_string())
+        .prompt(prompt.to_string())
         .reverse(true)
         .multi(multi)
-        .color(Some("fg:252,bg:234,hl:67,fg+:252,bg+:235,hl+:81"))
-        .color(Some("info:144,prompt:161,spinner:135,pointer:135,marker:118"))
+        .color(Some("fg:252,bg:234,hl:67,fg+:252,bg+:235,hl+:81".to_string()))
+        .color(Some(
+            "info:144,prompt:161,spinner:135,pointer:135,marker:118".to_string(),
+        ))
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))
 }
 
 /// Run skim with the given options and items in an alternate screen
 /// This helper function handles entering/exiting the alternate screen and running skim
-fn run_skim_with_options(options: &SkimOptions<'_>, items: SkimItemReceiver) -> Result<Option<Vec<Arc<dyn SkimItem>>>> {
+fn run_skim_with_options(options: &SkimOptions, items: SkimItemReceiver) -> Result<Option<Vec<Arc<dyn SkimItem>>>> {
     // Enter alternate screen to prevent skim output from persisting in terminal history
     execute!(stdout(), EnterAlternateScreen).map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
 
