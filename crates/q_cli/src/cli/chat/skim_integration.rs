@@ -7,6 +7,7 @@ use crossterm::{
     execute,
 };
 use std::io::stdout;
+#[cfg(test)]
 use std::collections::HashSet;
 
 /// Represents a command
@@ -154,21 +155,8 @@ pub fn select_command() -> Result<Option<String>> {
             let selected_command = &selections[0];
             
             // Check if the command needs parameters
-            if selected_command == "/context add" {
-                // For context add, we need to select files
-                match select_files_with_skim()? {
-                    Some(files) if !files.is_empty() => {
-                        // Construct the full command with selected files
-                        let mut cmd = selected_command.clone();
-                        for file in files {
-                            cmd.push_str(&format!(" {}", file));
-                        }
-                        Ok(Some(cmd))
-                    },
-                    _ => Ok(Some(selected_command.clone())), // User cancelled file selection, return just the command
-                }
-            } else if selected_command == "/context add --global" {
-                // For context add with flags, we need to select files
+            if selected_command.starts_with("/context add") {
+                // For context add commands, we need to select files
                 match select_files_with_skim()? {
                     Some(files) if !files.is_empty() => {
                         // Construct the full command with selected files
