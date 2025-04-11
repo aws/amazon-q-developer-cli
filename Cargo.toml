@@ -249,3 +249,6 @@ opt-level = 3
 
 [profile.dev.package.similar]
 opt-level = 3
+
+[profile.dev.package.backtrace]
+opt-level = 3
