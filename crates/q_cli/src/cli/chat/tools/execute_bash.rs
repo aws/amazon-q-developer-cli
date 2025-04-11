@@ -89,92 +89,16 @@ impl ExecuteBash {
         false
     }
 
-    pub async fn invoke(&self, mut updates: impl Write) -> Result<InvokeOutput> {
-        // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
-        let mut child = tokio::process::Command::new("bash")
-            .arg("-c")
-            .arg(&self.command)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .wrap_err_with(|| format!("Unable to spawn command '{}'", &self.command))?;
-
-        let stdout = child.stdout.take().unwrap();
-        let stdout = tokio::io::BufReader::new(stdout);
-        let mut stdout = stdout.lines();
-
-        let stderr = child.stderr.take().unwrap();
-        let stderr = tokio::io::BufReader::new(stderr);
-        let mut stderr = stderr.lines();
-
-        const LINE_COUNT: usize = 1024;
-        let mut stdout_buf = VecDeque::with_capacity(LINE_COUNT);
-        let mut stderr_buf = VecDeque::with_capacity(LINE_COUNT);
-
-        let mut stdout_done = false;
-        let mut stderr_done = false;
-        let exit_status = loop {
-            select! {
-                biased;
-                line = stdout.next_line(), if !stdout_done => match line {
-                    Ok(Some(line)) => {
-                        writeln!(updates, "{line}")?;
-                        if stdout_buf.len() >= LINE_COUNT {
-                            stdout_buf.pop_front();
-                        }
-                        stdout_buf.push_back(line);
-                    },
-                    Ok(None) => stdout_done = true,
-                    Err(err) => error!(%err, "Failed to read stdout of child process"),
-                },
-                line = stderr.next_line(), if !stderr_done => match line {
-                    Ok(Some(line)) => {
-                        writeln!(updates, "{line}")?;
-                        if stderr_buf.len() >= LINE_COUNT {
-                            stderr_buf.pop_front();
-                        }
-                        stderr_buf.push_back(line);
-                    },
-                    Ok(None) => stderr_done = true,
-                    Err(err) => error!(%err, "Failed to read stderr of child process"),
-                },
-                exit_status = child.wait() => {
-                    break exit_status;
-                },
-            };
-        }
-        .wrap_err_with(|| format!("No exit status for '{}'", &self.command))?;
-
-        updates.flush()?;
-
-        let stdout = stdout_buf.into_iter().collect::<Vec<_>>().join("\n");
-        let stderr = stderr_buf.into_iter().collect::<Vec<_>>().join("\n");
-
-        let output = serde_json::json!({
-            "exit_status": exit_status.code().unwrap_or(0).to_string(),
-            "stdout": format!(
-                "{}{}",
-                truncate_safe(&stdout, MAX_TOOL_RESPONSE_SIZE / 3),
-                if stdout.len() > MAX_TOOL_RESPONSE_SIZE / 3 {
-                    " ... truncated"
-                } else {
-                    ""
-                }
-            ),
-            "stderr": format!(
-                "{}{}",
-                truncate_safe(&stderr, MAX_TOOL_RESPONSE_SIZE / 3),
-                if stderr.len() > MAX_TOOL_RESPONSE_SIZE / 3 {
-                    " ... truncated"
-                } else {
-                    ""
-                }
-            ),
+    pub async fn invoke(&self, updates: impl Write) -> Result<InvokeOutput> {
+        let output = run_command(&self.command, MAX_TOOL_RESPONSE_SIZE / 3, Some(updates)).await?;
+        let result = serde_json::json!({
+            "exit_status": output.exit_status.unwrap_or(0).to_string(),
+            "stdout": output.stdout,
+            "stderr": output.stderr,
         });
 
         Ok(InvokeOutput {
-            output: OutputKind::Json(output),
+            output: OutputKind::Json(result),
         })
     }
 
@@ -198,6 +122,115 @@ impl ExecuteBash {
         // TODO: probably some small amount of PATH checking
         Ok(())
     }
+}
+
+pub struct CommandResult {
+    pub exit_status: Option<i32>,
+    /// Truncated stdout
+    pub stdout: String,
+    /// Truncated stderr
+    pub stderr: String,
+}
+
+/// Run a bash command.
+/// # Arguments
+/// * `max_result_size` - max size of output streams, truncating if required
+/// * `updates` - output stream to push informational messages about the progress
+/// # Returns
+/// A [`CommandResult`]
+pub async fn run_command<W: Write>(
+    command: &str,
+    max_result_size: usize,
+    mut updates: Option<W>,
+) -> Result<CommandResult> {
+    // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
+    let mut child = tokio::process::Command::new("bash")
+        .arg("-c")
+        .arg(command)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .wrap_err_with(|| format!("Unable to spawn command '{}'", command))?;
+
+    let stdout = child.stdout.take().unwrap();
+    let stdout = tokio::io::BufReader::new(stdout);
+    let mut stdout = stdout.lines();
+
+    let stderr = child.stderr.take().unwrap();
+    let stderr = tokio::io::BufReader::new(stderr);
+    let mut stderr = stderr.lines();
+
+    const LINE_COUNT: usize = 1024;
+    let mut stdout_buf = VecDeque::with_capacity(LINE_COUNT);
+    let mut stderr_buf = VecDeque::with_capacity(LINE_COUNT);
+
+    let mut stdout_done = false;
+    let mut stderr_done = false;
+    let exit_status = loop {
+        select! {
+            biased;
+            line = stdout.next_line(), if !stdout_done => match line {
+                Ok(Some(line)) => {
+                    if let Some(u) = updates.as_mut() {
+                        writeln!(u, "{line}")?;
+                    }
+                    if stdout_buf.len() >= LINE_COUNT {
+                        stdout_buf.pop_front();
+                    }
+                    stdout_buf.push_back(line);
+                },
+                Ok(None) => stdout_done = true,
+                Err(err) => error!(%err, "Failed to read stdout of child process"),
+            },
+            line = stderr.next_line(), if !stderr_done => match line {
+                Ok(Some(line)) => {
+                    if let Some(u) = updates.as_mut() {
+                        writeln!(u, "{line}")?;
+                    }
+                    if stderr_buf.len() >= LINE_COUNT {
+                        stderr_buf.pop_front();
+                    }
+                    stderr_buf.push_back(line);
+                },
+                Ok(None) => stderr_done = true,
+                Err(err) => error!(%err, "Failed to read stderr of child process"),
+            },
+            exit_status = child.wait() => {
+                break exit_status;
+            },
+        };
+    }
+    .wrap_err_with(|| format!("No exit status for '{}'", command))?;
+
+    if let Some(u) = updates.as_mut() {
+        u.flush()?;
+    }
+
+    let stdout = stdout_buf.into_iter().collect::<Vec<_>>().join("\n");
+    let stderr = stderr_buf.into_iter().collect::<Vec<_>>().join("\n");
+
+    Ok(CommandResult {
+        exit_status: exit_status.code(),
+        stdout: format!(
+            "{}{}",
+            truncate_safe(&stdout, max_result_size),
+            if stdout.len() > max_result_size {
+                " ... truncated"
+            } else {
+                ""
+            }
+        ),
+        stderr: format!(
+            "{}{}",
+            truncate_safe(&stderr, max_result_size),
+            if stderr.len() > max_result_size {
+                " ... truncated"
+            } else {
+                ""
+            }
+        ),
+    })
 }
 
 #[cfg(test)]
