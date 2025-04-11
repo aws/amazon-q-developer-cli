@@ -1,5 +1,4 @@
 use std::io::{Write, BufReader};
-use std::path::Path;
 use eyre::{Result, eyre};
 use tempfile::NamedTempFile;
 use skim::prelude::*;
@@ -181,107 +180,7 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     }
 }
 
-/// Get the current context files from the context config file
-pub fn get_context_files(global: bool) -> Result<Vec<String>> {
-    // Get the context config file path
-    let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let config_dir = Path::new(&home_dir).join(".q").join("context");
-    
-    let config_file = if global {
-        config_dir.join("global.json")
-    } else {
-        // Get the current profile
-        let profile_file = config_dir.join("current_profile");
-        let profile = if profile_file.exists() {
-            std::fs::read_to_string(profile_file)?
-        } else {
-            "default".to_string()
-        };
-        
-        config_dir.join(format!("{}.json", profile))
-    };
-    
-    // Check if the config file exists
-    if !config_file.exists() {
-        return Ok(Vec::new());
-    }
-    
-    // Read the config file
-    let config_content = std::fs::read_to_string(config_file)?;
-    let config: serde_json::Value = serde_json::from_str(&config_content)?;
-    
-    // Extract the paths
-    let paths = match config.get("paths") {
-        Some(serde_json::Value::Array(paths)) => {
-            paths.iter()
-                .filter_map(|p| p.as_str().map(|s| s.to_string()))
-                .collect()
-        },
-        _ => Vec::new(),
-    };
-    
-    Ok(paths)
-}
-
-/// Select context files to remove using skim
-pub fn select_context_files_to_remove(global: bool) -> Result<Option<Vec<String>>> {
-    // Get the current context files
-    let context_files = get_context_files(global)?;
-    
-    if context_files.is_empty() {
-        return Ok(None);
-    }
-    
-    // Set prompt based on context type
-    let prompt = if global {
-        "Select global context files to remove: "
-    } else {
-        "Select context files to remove: "
-    };
-    
-    // Create skim options
-    let options = SkimOptionsBuilder::default()
-        .height(Some("40%"))
-        .multi(true)
-        .reverse(true)
-        .prompt(Some(prompt))
-        .build()
-        .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
-    
-    // Create item reader
-    let item_reader = SkimItemReader::default();
-    let items = item_reader.of_bufread(std::io::Cursor::new(context_files.join("\n")));
-    
-    // Enter alternate screen to prevent skim output from persisting in terminal history
-    enter_alternate_screen()?;
-    
-    // Run skim
-    let selected_items = Skim::run_with(&options, Some(items))
-        .map(|out| {
-            if out.is_abort {
-                None
-            } else {
-                Some(out.selected_items)
-            }
-        })
-        .unwrap_or(None);
-    
-    // Leave alternate screen
-    leave_alternate_screen()?;
-    
-    // Parse the output
-    match selected_items {
-        Some(items) if !items.is_empty() => {
-            let selections: Vec<String> = items
-                .iter()
-                .map(|item| item.output().to_string())
-                .collect();
-            
-            Ok(Some(selections))
-        },
-        _ => Ok(None), // User cancelled or no selection
-    }
-}
+// Removed context file retrieval functions as they were not working correctly
 
 /// Launch the command selector and handle the selected command
 pub fn select_command() -> Result<Option<String>> {
@@ -309,32 +208,6 @@ pub fn select_command() -> Result<Option<String>> {
             } else if selected_command == "/context add --global" || selected_command == "/context add --force" {
                 // For context add with flags, we need to select files
                 match select_files_with_skim()? {
-                    Some(files) if !files.is_empty() => {
-                        // Construct the full command with selected files
-                        let mut cmd = selected_command.clone();
-                        for file in files {
-                            cmd.push_str(&format!(" {}", file));
-                        }
-                        Ok(Some(cmd))
-                    },
-                    _ => Ok(Some(selected_command.clone())), // User cancelled file selection, return just the command
-                }
-            } else if selected_command == "/context rm" {
-                // For context rm, we need to select context files to remove
-                match select_context_files_to_remove(false)? {
-                    Some(files) if !files.is_empty() => {
-                        // Construct the full command with selected files
-                        let mut cmd = selected_command.clone();
-                        for file in files {
-                            cmd.push_str(&format!(" {}", file));
-                        }
-                        Ok(Some(cmd))
-                    },
-                    _ => Ok(Some(selected_command.clone())), // User cancelled file selection, return just the command
-                }
-            } else if selected_command == "/context rm --global" {
-                // For context rm --global, we need to select global context files to remove
-                match select_context_files_to_remove(true)? {
                     Some(files) if !files.is_empty() => {
                         // Construct the full command with selected files
                         let mut cmd = selected_command.clone();
