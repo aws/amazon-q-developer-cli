@@ -89,7 +89,6 @@ whoami.workspace = true
 winnow.workspace = true
 shell-color.workspace = true
 syntect = { version = "5.2.0", features = [ "default-syntaxes", "default-themes" ]}
-termion = "4.0.5"
 regex.workspace = true
 
 [target.'cfg(unix)'.dependencies]
