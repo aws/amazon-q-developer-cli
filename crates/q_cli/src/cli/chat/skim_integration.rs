@@ -7,8 +7,29 @@ use crossterm::{
     execute,
 };
 use std::io::stdout;
+use std::path::Path;
+use std::collections::HashMap;
+use serde_json::Value;
 #[cfg(test)]
 use std::collections::HashSet;
+
+/// Load tool names from the tool_index.json file
+fn load_tool_names() -> Result<Vec<String>> {
+    // Path to the tool_index.json file
+    let tool_index_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/cli/chat/tools/tool_index.json");
+    
+    // Read the file content
+    let file_content = std::fs::read_to_string(tool_index_path)?;
+    
+    // Parse the JSON
+    let tool_index: HashMap<String, Value> = serde_json::from_str(&file_content)?;
+    
+    // Extract tool names
+    let tool_names: Vec<String> = tool_index.keys().cloned().collect();
+    
+    Ok(tool_names)
+}
 
 /// Represents a command
 #[derive(Debug, Clone)]
@@ -170,13 +191,20 @@ pub fn select_command() -> Result<Option<String>> {
                 }
             } else if selected_command == "/tools trust" || selected_command == "/tools untrust" {
                 // For tools trust/untrust, we need to select a tool
-                let tools = vec![
-                    "fs_read".to_string(),
-                    "fs_write".to_string(),
-                    "execute_bash".to_string(),
-                    "use_aws".to_string(),
-                    "report_issue".to_string(),
-                ];
+                // Load tool names from the tool_index.json file
+                let tools = match load_tool_names() {
+                    Ok(tools) => tools,
+                    Err(_) => {
+                        // Fallback to hardcoded list if loading fails
+                        vec![
+                            "fs_read".to_string(),
+                            "fs_write".to_string(),
+                            "execute_bash".to_string(),
+                            "use_aws".to_string(),
+                            "report_issue".to_string(),
+                        ]
+                    }
+                };
                 
                 // Create skim options for tool selection
                 let options = SkimOptionsBuilder::default()
