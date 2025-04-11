@@ -1,4 +1,4 @@
-use std::io::{Write, BufReader};
+use std::io::{Write, BufReader, Cursor};
 use eyre::{Result, eyre};
 use tempfile::NamedTempFile;
 use skim::prelude::*;
@@ -39,24 +39,36 @@ fn format_commands_for_skim(commands: &[CommandInfo]) -> Vec<String> {
         .collect()
 }
 
-/// Enter alternate screen mode to prevent skim output from persisting in terminal history
-fn enter_alternate_screen() -> Result<()> {
-    execute!(
-        stdout(),
-        EnterAlternateScreen
-    ).map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
+/// Run skim with the given options and items in an alternate screen
+/// This helper function handles entering/exiting the alternate screen and running skim
+fn run_skim_with_options(options: &SkimOptions<'_>, items: SkimItemReceiver) -> Result<Option<Vec<Arc<dyn SkimItem>>>> {
+    // Enter alternate screen to prevent skim output from persisting in terminal history
+    execute!(stdout(), EnterAlternateScreen)
+        .map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
     
-    Ok(())
+    // Run skim
+    let selected_items = Skim::run_with(options, Some(items))
+        .map(|out| {
+            if out.is_abort {
+                None
+            } else {
+                Some(out.selected_items)
+            }
+        })
+        .unwrap_or(None);
+    
+    // Leave alternate screen
+    execute!(stdout(), LeaveAlternateScreen)
+        .map_err(|e| eyre!("Failed to leave alternate screen: {}", e))?;
+    
+    Ok(selected_items)
 }
 
-/// Leave alternate screen mode and restore the terminal
-fn leave_alternate_screen() -> Result<()> {
-    execute!(
-        stdout(),
-        LeaveAlternateScreen
-    ).map_err(|e| eyre!("Failed to leave alternate screen: {}", e))?;
-    
-    Ok(())
+/// Extract string selections from skim items
+fn extract_selections(items: Vec<Arc<dyn SkimItem>>) -> Vec<String> {
+    items.iter()
+        .map(|item| item.output().to_string())
+        .collect()
 }
 
 /// Launch skim with the given items and return the selected item
@@ -80,31 +92,10 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(BufReader::new(std::fs::File::open(temp_file.path())?));
     
-    // Enter alternate screen to prevent skim output from persisting in terminal history
-    enter_alternate_screen()?;
-    
-    // Run skim
-    let selected_items = Skim::run_with(&options, Some(items))
-        .map(|out| {
-            if out.is_abort {
-                None
-            } else {
-                Some(out.selected_items)
-            }
-        })
-        .unwrap_or(None);
-    
-    // Leave alternate screen
-    leave_alternate_screen()?;
-    
-    // Parse the output
-    match selected_items {
+    // Run skim and get selected items
+    match run_skim_with_options(&options, items)? {
         Some(items) if !items.is_empty() => {
-            let selections: Vec<String> = items
-                .iter()
-                .map(|item| item.output().to_string())
-                .collect();
-            
+            let selections = extract_selections(items);
             Ok(Some(selections))
         },
         _ => Ok(None), // User cancelled or no selection
@@ -140,40 +131,17 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     
     // Create item reader
     let item_reader = SkimItemReader::default();
-    let items = item_reader.of_bufread(std::io::Cursor::new(files));
+    let items = item_reader.of_bufread(Cursor::new(files));
     
-    // Enter alternate screen to prevent skim output from persisting in terminal history
-    enter_alternate_screen()?;
-    
-    // Run skim
-    let selected_items = Skim::run_with(&options, Some(items))
-        .map(|out| {
-            if out.is_abort {
-                None
-            } else {
-                Some(out.selected_items)
-            }
-        })
-        .unwrap_or(None);
-    
-    // Leave alternate screen
-    leave_alternate_screen()?;
-    
-    // Parse the output
-    match selected_items {
+    // Run skim and get selected items
+    match run_skim_with_options(&options, items)? {
         Some(items) if !items.is_empty() => {
-            let selections: Vec<String> = items
-                .iter()
-                .map(|item| item.output().to_string())
-                .collect();
-            
+            let selections = extract_selections(items);
             Ok(Some(selections))
         },
         _ => Ok(None), // User cancelled or no selection
     }
 }
-
-// Removed context file retrieval functions as they were not working correctly
 
 /// Launch the command selector and handle the selected command
 pub fn select_command() -> Result<Option<String>> {
@@ -231,24 +199,13 @@ pub fn select_command() -> Result<Option<String>> {
                 
                 // Create item reader
                 let item_reader = SkimItemReader::default();
-                let items = item_reader.of_bufread(std::io::Cursor::new(tools.join("\n")));
+                let items = item_reader.of_bufread(Cursor::new(tools.join("\n")));
                 
-                // Enter alternate screen to prevent skim output from persisting in terminal history
-                enter_alternate_screen()?;
-                
-                // Run skim
-                let selected_tool = Skim::run_with(&options, Some(items))
-                    .map(|out| {
-                        if out.is_abort || out.selected_items.is_empty() {
-                            None
-                        } else {
-                            Some(out.selected_items[0].output().to_string())
-                        }
-                    })
-                    .unwrap_or(None);
-                
-                // Leave alternate screen
-                leave_alternate_screen()?;
+                // Run skim and get selected tool
+                let selected_tool = match run_skim_with_options(&options, items)? {
+                    Some(items) if !items.is_empty() => Some(items[0].output().to_string()),
+                    _ => None,
+                };
                 
                 match selected_tool {
                     Some(tool) => Ok(Some(format!("{} {}", selected_command, tool))),
