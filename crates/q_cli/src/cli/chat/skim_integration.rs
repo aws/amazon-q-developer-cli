@@ -8,14 +8,13 @@ use crossterm::{
 };
 use std::io::stdout;
 
-/// Represents a command with its description
+/// Represents a command
 #[derive(Debug, Clone)]
 pub struct CommandInfo {
     pub command: String,
-    pub description: String,
 }
 
-/// Get all available commands with their descriptions
+/// Get all available commands
 pub fn get_available_commands() -> Vec<CommandInfo> {
     // Import the COMMANDS array directly from prompt.rs
     // This is the single source of truth for available commands
@@ -26,7 +25,6 @@ pub fn get_available_commands() -> Vec<CommandInfo> {
     for &cmd in commands_array {
         commands.push(CommandInfo {
             command: cmd.to_string(),
-            description: "".to_string(), // Empty description since we're just focusing on commands
         });
     }
     
@@ -37,7 +35,7 @@ pub fn get_available_commands() -> Vec<CommandInfo> {
 fn format_commands_for_skim(commands: &[CommandInfo]) -> Vec<String> {
     commands
         .iter()
-        .map(|cmd| format!("{:<30} {}", cmd.command, cmd.description))
+        .map(|cmd| cmd.command.clone())
         .collect()
 }
 
