@@ -3,6 +3,12 @@ use std::path::Path;
 use eyre::{Result, eyre};
 use tempfile::NamedTempFile;
 use skim::prelude::*;
+use crossterm::{
+    terminal::{Clear, ClearType},
+    cursor::{MoveTo},
+    execute,
+};
+use std::io::stdout;
 
 /// Represents a command with its description
 #[derive(Debug, Clone)]
@@ -63,6 +69,18 @@ fn format_commands_for_skim(commands: &[CommandInfo]) -> Vec<String> {
         .collect()
 }
 
+/// Clear the terminal screen after skim closes
+fn clear_screen_after_skim() -> Result<()> {
+    // Use crossterm to clear the screen and reset cursor position
+    execute!(
+        stdout(),
+        Clear(ClearType::All),
+        MoveTo(0, 0)
+    ).map_err(|e| eyre!("Failed to clear screen: {}", e))?;
+    
+    Ok(())
+}
+
 /// Launch skim with the given items and return the selected item
 pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Result<Option<Vec<String>>> {
     // Create a temporary file for skim input
@@ -77,8 +95,6 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
         .multi(multi)
         .color(Some("fg:252,bg:234,hl:67,fg+:252,bg+:235,hl+:81"))
         .color(Some("info:144,prompt:161,spinner:135,pointer:135,marker:118"))
-        // Add no_clear option to clear the screen after selection
-        .no_clear(false)
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
     
@@ -96,6 +112,9 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
             }
         })
         .unwrap_or(None);
+    
+    // Clear the screen after skim closes
+    clear_screen_after_skim()?;
     
     // Parse the output
     match selected_items {
@@ -140,8 +159,6 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
         .multi(true)
         .reverse(true)
         .prompt(Some("Select files: "))
-        // Add no_clear option to clear the screen after selection
-        .no_clear(false)
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
     
@@ -158,6 +175,9 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
             }
         })
         .unwrap_or(None);
+    
+    // Clear the screen after skim closes
+    clear_screen_after_skim()?;
     
     // Parse the output
     match selected_items {
@@ -237,8 +257,6 @@ pub fn select_context_files_to_remove(global: bool) -> Result<Option<Vec<String>
         .multi(true)
         .reverse(true)
         .prompt(Some(prompt))
-        // Add no_clear option to clear the screen after selection
-        .no_clear(false)
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
     
@@ -255,6 +273,9 @@ pub fn select_context_files_to_remove(global: bool) -> Result<Option<Vec<String>
             }
         })
         .unwrap_or(None);
+    
+    // Clear the screen after skim closes
+    clear_screen_after_skim()?;
     
     // Parse the output
     match selected_items {
@@ -347,8 +368,6 @@ pub fn select_command() -> Result<Option<String>> {
                     .height(Some("40%"))
                     .reverse(true)
                     .prompt(Some("Select tool: "))
-                    // Add no_clear option to clear the screen after selection
-                    .no_clear(false)
                     .build()
                     .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
                 
@@ -365,6 +384,9 @@ pub fn select_command() -> Result<Option<String>> {
                         }
                     })
                     .unwrap_or(None);
+                
+                // Clear the screen after skim closes
+                clear_screen_after_skim()?;
                 
                 match selected_tool {
                     Some(tool) => Ok(Some(format!("{} {}", selected_command, tool))),
