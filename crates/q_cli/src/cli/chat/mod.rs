@@ -1297,8 +1297,9 @@ where
                                         )?;
                                         profile_context_files.extend(context_files);
                                     }
+                                    execute!(self.output, style::Print("\n"))?;
                                 }
-                                execute!(self.output, style::Print("\n\n"))?;
+                                execute!(self.output, style::Print("\n"))?;
                             }
 
                             if global_context_files.is_empty() && profile_context_files.is_empty() {
