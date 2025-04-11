@@ -92,26 +92,25 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
 
 /// Select files using skim
 pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
-    // Use find to get a list of files
-    let find_output = std::process::Command::new("find")
-        .args(&[".", "-type", "f", "-not", "-path", "*/\\.*"])
-        .output()?;
-
-    if !find_output.status.success() {
-        return Err(eyre!("Failed to list files"));
-    }
-
-    let files = String::from_utf8(find_output.stdout)?;
-    let file_list: Vec<String> = files.lines().map(|s| s.to_string()).collect();
-
-    if file_list.is_empty() {
-        return Ok(None);
-    }
-
+    // Create skim options with appropriate settings
     let options = create_skim_options("Select files: ", true)?;
+    
+    // Create a command that will be executed by skim
+    // This avoids loading all files into memory at once
+    let find_cmd = "find . -type f -not -path '*/\\.*'";
+    
+    // Create a command collector that will execute the find command
     let item_reader = SkimItemReader::default();
-    let items = item_reader.of_bufread(Cursor::new(files));
+    let items = item_reader.of_bufread(BufReader::new(
+        std::process::Command::new("sh")
+            .args(&["-c", find_cmd])
+            .stdout(std::process::Stdio::piped())
+            .spawn()?
+            .stdout
+            .ok_or_else(|| eyre!("Failed to get stdout from command"))?
+    ));
 
+    // Run skim with the command output as a stream
     match run_skim_with_options(&options, items)? {
         Some(items) if !items.is_empty() => {
             let selections = extract_selections(items);
