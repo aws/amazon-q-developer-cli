@@ -1,19 +1,8 @@
-use std::io::{
-    BufReader,
-    Cursor,
-    Write,
-    stdout,
-};
+use std::io::{BufReader, Cursor, Write, stdout};
 
 use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen,
-    LeaveAlternateScreen,
-};
-use eyre::{
-    Result,
-    eyre,
-};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use eyre::{Result, eyre};
 use skim::prelude::*;
 use tempfile::NamedTempFile;
 
@@ -41,7 +30,7 @@ pub fn get_available_commands() -> Vec<String> {
 /// Create a standard set of skim options with consistent styling
 fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions<'_>> {
     SkimOptionsBuilder::default()
-        .height(Some("40%"))
+        .height(Some("100%"))
         .prompt(Some(prompt))
         .reverse(true)
         .multi(multi)
@@ -94,11 +83,11 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
 pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     // Create skim options with appropriate settings
     let options = create_skim_options("Select files: ", true)?;
-    
+
     // Create a command that will be executed by skim
     // This avoids loading all files into memory at once
     let find_cmd = "find . -type f -not -path '*/\\.*'";
-    
+
     // Create a command collector that will execute the find command
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(BufReader::new(
@@ -107,7 +96,7 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
             .stdout(std::process::Stdio::piped())
             .spawn()?
             .stdout
-            .ok_or_else(|| eyre!("Failed to get stdout from command"))?
+            .ok_or_else(|| eyre!("Failed to get stdout from command"))?,
     ));
 
     // Run skim with the command output as a stream
