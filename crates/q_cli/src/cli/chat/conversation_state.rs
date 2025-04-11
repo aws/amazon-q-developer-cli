@@ -116,6 +116,7 @@ impl ConversationState {
                         name: v.name,
                         description: v.description,
                         input_schema: v.input_schema.into(),
+                        is_preprocessor: v.is_preprocessor,
                     })
                 })
                 .collect(),
