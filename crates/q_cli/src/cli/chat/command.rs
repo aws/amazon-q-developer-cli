@@ -43,6 +43,7 @@ pub enum Command {
     Tools {
         subcommand: Option<ToolsSubcommand>,
     },
+    Usage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -627,6 +628,7 @@ impl Command {
                         },
                     }
                 },
+                "usage" => Self::Usage,
                 _ => {
                     return Ok(Self::Ask {
                         prompt: input.to_string(),
