@@ -102,12 +102,7 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
         Some(items) if !items.is_empty() => {
             let selections: Vec<String> = items
                 .iter()
-                .map(|item| {
-                    // Extract the command part (everything before the description)
-                    let line = item.output();
-                    let parts: Vec<&str> = line.splitn(2, "  ").collect();
-                    parts[0].trim().to_string()
-                })
+                .map(|item| item.output().to_string())
                 .collect();
             
             Ok(Some(selections))
