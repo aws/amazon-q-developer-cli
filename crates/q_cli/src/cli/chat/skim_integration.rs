@@ -110,21 +110,64 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     }
 }
 
-/// Get all context paths from the context manager
-fn get_current_context_paths(context_manager: &ContextManager) -> Result<Vec<String>> {
-    let mut paths = Vec::new();
+/// Select context paths using skim
+pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Result<Option<(Vec<String>, bool)>> {
+    // Get all context paths
+    let mut global_paths = Vec::new();
+    let mut profile_paths = Vec::new();
 
     // Get global paths
     for path in &context_manager.global_config.paths {
-        paths.push(format!("(global) {}", path));
+        global_paths.push(format!("(global) {}", path));
     }
 
     // Get profile-specific paths
     for path in &context_manager.profile_config.paths {
-        paths.push(format!("(profile: {}) {}", context_manager.current_profile, path));
+        profile_paths.push(format!("(profile: {}) {}", context_manager.current_profile, path));
     }
 
-    Ok(paths)
+    // Combine paths, but keep track of which are global
+    let mut all_paths = Vec::new();
+    all_paths.extend(global_paths);
+    all_paths.extend(profile_paths);
+
+    if all_paths.is_empty() {
+        return Ok(None); // No paths to select
+    }
+
+    // Create skim options
+    let options = create_skim_options("Select paths to remove: ", true)?;
+
+    // Create item reader
+    let item_reader = SkimItemReader::default();
+    let items = item_reader.of_bufread(Cursor::new(all_paths.join("\n")));
+
+    // Run skim and get selected paths
+    match run_skim_with_options(&options, items)? {
+        Some(items) if !items.is_empty() => {
+            let selected_paths = extract_selections(items);
+            
+            // Check if any global paths were selected
+            let has_global = selected_paths.iter().any(|p| p.starts_with("(global)"));
+            
+            // Extract the actual paths from the formatted strings
+            let paths: Vec<String> = selected_paths
+                .iter()
+                .map(|p| {
+                    // Extract the path part after the prefix
+                    let parts: Vec<&str> = p.splitn(2, ") ").collect();
+                    if parts.len() > 1 {
+                        parts[1].to_string()
+                    } else {
+                        p.clone()
+                    }
+                })
+                .collect();
+                
+            Ok(Some((paths, has_global)))
+        },
+        _ => Ok(None), // User cancelled selection
+    }
 }
 
 /// Launch the command selector and handle the selected command
@@ -154,31 +197,8 @@ pub fn select_command(context_manager: Option<&ContextManager>) -> Result<Option
                 Some(CommandType::ContextRemove(cmd)) => {
                     // For context rm commands, we need to select from existing context paths
                     if let Some(context_manager) = context_manager {
-                        let context_paths = get_current_context_paths(context_manager)?;
-
-                        if context_paths.is_empty() {
-                            return Ok(Some(format!("{} (No context paths found)", cmd)));
-                        }
-
-                        match launch_skim_selector(&context_paths, "Select paths to remove: ", true)? {
-                            Some(selected_paths) if !selected_paths.is_empty() => {
-                                // Extract the actual paths from the formatted strings
-                                let paths: Vec<String> = selected_paths
-                                    .iter()
-                                    .map(|p| {
-                                        // Extract the path part after the prefix
-                                        let parts: Vec<&str> = p.splitn(2, ") ").collect();
-                                        if parts.len() > 1 {
-                                            parts[1].to_string()
-                                        } else {
-                                            p.clone()
-                                        }
-                                    })
-                                    .collect();
-
-                                // Check if any global paths were selected
-                                let has_global = selected_paths.iter().any(|p| p.starts_with("(global)"));
-
+                        match select_context_paths_with_skim(context_manager)? {
+                            Some((paths, has_global)) if !paths.is_empty() => {
                                 // Construct the full command with selected paths
                                 let mut full_cmd = cmd.to_string();
                                 if has_global {
@@ -189,7 +209,8 @@ pub fn select_command(context_manager: Option<&ContextManager>) -> Result<Option
                                 }
                                 Ok(Some(full_cmd))
                             },
-                            _ => Ok(Some(selected_command.clone())), // User cancelled path selection
+                            Some((_, _)) => Ok(Some(format!("{} (No paths selected)", cmd))),
+                            None => Ok(Some(selected_command.clone())), // User cancelled path selection
                         }
                     } else {
                         // No context manager available
