@@ -5,6 +5,7 @@ mod input_source;
 mod parse;
 mod parser;
 mod prompt;
+mod skim_integration;
 mod summarization_state;
 mod tool_manager;
 mod tools;
@@ -772,6 +773,12 @@ where
             let all_tools_trusted = self.conversation_state.tools.iter().all(|t| match t {
                 FigTool::ToolSpecification(t) => self.tool_permissions.is_trusted(&t.name),
             });
+
+            // Update the context manager in the input source for skim integration
+            if let Some(context_manager) = self.conversation_state.context_manager.clone() {
+                let arc_context_manager = Arc::new(context_manager);
+                self.input_source.update_context_manager(Some(arc_context_manager));
+            }
 
             // Generate prompt based on active context profile and trusted tools
             let prompt = prompt::generate_prompt(self.conversation_state.current_profile(), all_tools_trusted);
@@ -2539,6 +2546,11 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
         mock.push(stream);
     }
     StreamingClient::mock(mock)
+}
+
+/// Returns all tools supported by Q chat.
+pub fn load_tools() -> Result<HashMap<String, ToolSpec>> {
+    Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
 }
 
 #[cfg(test)]
