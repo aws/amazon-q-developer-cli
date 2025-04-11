@@ -22,7 +22,6 @@ use fig_api_client::model::{
 };
 use fig_os_shim::Context;
 use fig_util::Shell;
-use mcp_client::Prompt;
 use rand::distr::{
     Alphanumeric,
     SampleString,
@@ -135,40 +134,6 @@ impl ConversationState {
         self.history.clear();
         if !preserve_summary {
             self.latest_summary = None;
-        }
-    }
-
-    pub fn append_prompts(&mut self, mut prompts: VecDeque<Prompt>) {
-        while let Some(prompt) = prompts.pop_front() {
-            let Prompt { role, content } = prompt;
-            match role {
-                mcp_client::Role::User => {
-                    let user_msg = UserInputMessage {
-                        content: content.into(),
-                        user_input_message_context: Some(UserInputMessageContext {
-                            shell_state: Some(build_shell_state()),
-                            env_state: Some(build_env_state()),
-                            tool_results: None,
-                            tools: if self.tools.is_empty() {
-                                None
-                            } else {
-                                Some(self.tools.clone())
-                            },
-                            ..Default::default()
-                        }),
-                        user_intent: None,
-                    };
-                    self.history.push_back(ChatMessage::UserInputMessage(user_msg));
-                },
-                mcp_client::Role::Assistant => {
-                    let assistant_msg = AssistantResponseMessage {
-                        message_id: None,
-                        tool_uses: None,
-                        content: content.into(),
-                    };
-                    self.push_assistant_message(assistant_msg);
-                },
-            }
         }
     }
 
@@ -657,7 +622,7 @@ mod tests {
 
     use super::*;
     use crate::cli::chat::context::AMAZONQ_FILENAME;
-    use crate::cli::chat::tool_manager::ToolManager;
+    use crate::cli::chat::load_tools;
 
     #[test]
     fn test_truncate_safe() {
@@ -763,9 +728,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
-        let mut tool_manager = ToolManager::default();
-        let mut conversation_state =
-            ConversationState::new(Context::new_fake(), tool_manager.load_tools().await.unwrap(), None).await;
+        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
@@ -785,9 +748,7 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
         // Build a long conversation history of tool use results.
-        let mut tool_manager = ToolManager::default();
-        let mut conversation_state =
-            ConversationState::new(Context::new_fake(), tool_manager.load_tools().await.unwrap(), None).await;
+        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
         conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
@@ -809,8 +770,7 @@ mod tests {
         }
 
         // Build a long conversation history of user messages mixed in with tool results.
-        let mut conversation_state =
-            ConversationState::new(Context::new_fake(), tool_manager.load_tools().await.unwrap(), None).await;
+        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
         conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
@@ -846,8 +806,7 @@ mod tests {
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         ctx.fs().write(AMAZONQ_FILENAME, "test context").await.unwrap();
 
-        let mut tool_manager = ToolManager::default();
-        let mut conversation_state = ConversationState::new(ctx, tool_manager.load_tools().await.unwrap(), None).await;
+        let mut conversation_state = ConversationState::new(ctx, load_tools().unwrap(), None).await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.

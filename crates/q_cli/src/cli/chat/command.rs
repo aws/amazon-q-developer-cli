@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::Write;
 
 use crossterm::style::Color;
@@ -7,10 +6,6 @@ use crossterm::{
     style,
 };
 use eyre::Result;
-use serde::{
-    Deserialize,
-    Serialize,
-};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -165,7 +160,6 @@ more accurate and helpful responses.
 pub enum ToolsSubcommand {
     Trust { tool_name: String },
     Untrust { tool_name: String },
-    Prompts { subcommand: PromptsSubcommand },
     TrustAll,
     Reset,
     Help,
@@ -177,8 +171,7 @@ impl ToolsSubcommand {
   <em>trust <<tool name>></em>              <black!>Trust a specific tool for the session</black!>
   <em>untrust <<tool name>></em>            <black!>Revert a tool to per-request confirmation</black!>
   <em>trustall</em>                       <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
-  <em>reset</em>                          <black!>Reset all tools to default permission levels</black!>
-  <em>prompts</em>                        <black!>Reusable templates from mcp servers installed</black!>"};
+  <em>reset</em>                          <black!>Reset all tools to default permission levels</black!>"};
     const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /tools [SUBCOMMAND]</cyan!>
 
 <cyan!>Description</cyan!>
@@ -214,58 +207,6 @@ trust so that no confirmation is required. These settings will last only for thi
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptsSubcommand {
-    List { search_word: Option<String> },
-    Get { get_command: PromptsGetCommand },
-    Help,
-}
-
-impl PromptsSubcommand {
-    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available subcommands</cyan!>
-  <em>help</em>                                                     <black!>Show an explanation for the prompts command</black!>
-  <em>list [search word]</em>                                       <black!>List available prompts from a tool or show all available prompts</black!>"};
-    const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /tools prompts [SUBCOMMAND]</cyan!>
-
-<cyan!>Description</cyan!>
-  Show the current set of reusuable prompts from the current fleet of mcp servers."};
-    const PROMPTS_USAGE: &str = "/tools prompts list [tool name]\n/tools prompts help";
-
-    pub fn help_text() -> String {
-        color_print::cformat!(
-            r#"
-<magenta,em>Tool Prompts</magenta,em>
-
-Prompts are reusable templates that help you quickly access common workflows and tasks. 
-These templates are provided by the mcp servers you have installed and configured.
-
-To actually retrieve a prompt, directly start with the following command (without prepending /tools prompt):
-<em>?<<server name>> <<prompt>> [--arg=value]</em>                      <black!>Retrieve prompt specified</black!>
-Or if you prefer the long way:
-<em>/tools prompts get <<server name>> <<prompt>> [--arg=value]</em>    <black!>Retrieve prompt specified</black!>
-
-{}
-
-{}"#,
-            Self::BASE_COMMAND,
-            Self::AVAILABLE_COMMANDS
-        )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PromptsGetCommand {
-    pub server_name: String,
-    pub params: PromptsGetParam,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PromptsGetParam {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub arguments: Option<serde_json::Value>,
-}
-
 impl Command {
     // Check if input is a common single-word command that should use slash prefix
     fn check_common_command(input: &str) -> Option<String> {
@@ -278,7 +219,7 @@ impl Command {
                 "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear."
                     .to_string(),
             ),
-            "help" => Some(
+            "help" | "?" => Some(
                 "Did you mean to use the command '/help' for help? Type '/help' to see available commands.".to_string(),
             ),
             _ => None,
@@ -594,34 +535,6 @@ impl Command {
                         "help" => Self::Tools {
                             subcommand: Some(ToolsSubcommand::Help),
                         },
-                        "prompts" => {
-                            let subcommand = parts.get(2);
-                            match subcommand {
-                                Some(c) if c.to_lowercase() == "list" => Self::Tools {
-                                    subcommand: Some(ToolsSubcommand::Prompts {
-                                        subcommand: PromptsSubcommand::List {
-                                            search_word: parts.get(3).map(|v| (*v).to_string()),
-                                        },
-                                    }),
-                                },
-                                Some(c) if c.to_lowercase() == "help" => Self::Tools {
-                                    subcommand: Some(ToolsSubcommand::Prompts {
-                                        subcommand: PromptsSubcommand::Help,
-                                    }),
-                                },
-                                Some(c) if c.to_lowercase() == "get" => {
-                                    // Need to reconstruct the input because simple splitting of
-                                    // white space might not be sufficient
-                                    let command = parts[3..].join(" ");
-                                    let get_command = parse_input_to_prompts_get_command(command.as_str())?;
-                                    let subcommand = PromptsSubcommand::Get { get_command };
-                                    Self::Tools {
-                                        subcommand: Some(ToolsSubcommand::Prompts { subcommand }),
-                                    }
-                                },
-                                _ => usage_err!("prompts", PromptsSubcommand::PROMPTS_USAGE),
-                            }
-                        },
                         other => {
                             return Err(ToolsSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
                         },
@@ -635,14 +548,6 @@ impl Command {
             });
         }
 
-        if let Some(command) = input.strip_prefix('?') {
-            let get_command = parse_input_to_prompts_get_command(command)?;
-            let subcommand = PromptsSubcommand::Get { get_command };
-            return Ok(Self::Tools {
-                subcommand: Some(ToolsSubcommand::Prompts { subcommand }),
-            });
-        }
-
         if let Some(command) = input.strip_prefix("!") {
             return Ok(Self::Execute {
                 command: command.to_string(),
@@ -653,49 +558,6 @@ impl Command {
             prompt: input.to_string(),
         })
     }
-}
-
-fn parse_input_to_prompts_get_command(command: &str) -> Result<PromptsGetCommand, String> {
-    let input = shell_words::split(command).map_err(|e| format!("Error splitting command for prompts: {:?}", e))?;
-    let mut iter = input.into_iter();
-    let server_name = iter.next().ok_or("Server name needs to be specified")?;
-    let prompt_name = iter.next().ok_or("Prompt name needs to be specified")?;
-    let mut map = HashMap::<String, String>::new();
-    while let Some(arg) = iter.next() {
-        if let Some(trimmed) = arg.strip_prefix("--") {
-            if let Some((k, v)) = trimmed.split_once('=') {
-                map.insert(k.to_string(), v.to_string());
-            } else if let Some(next) = iter.next() {
-                if !next.starts_with('-') {
-                    iter.next(); // consume
-                    map.insert(trimmed.to_string(), next);
-                } else {
-                    map.insert(trimmed.to_string(), "true".to_string());
-                }
-            } else {
-                map.insert(trimmed.to_string(), "true".to_string());
-            }
-        } else {
-            return Err(
-                "You must only supply named arguments prefixed with --. Positional arguments are not accepted"
-                    .to_owned(),
-            );
-        }
-    }
-    let params = PromptsGetParam {
-        name: prompt_name,
-        arguments: {
-            if map.is_empty() {
-                None
-            } else {
-                Some(
-                    serde_json::to_value(map)
-                        .map_err(|e| format!("Error serializing arguments for prompts get: {:?}", e))?,
-                )
-            }
-        },
-    };
-    Ok(PromptsGetCommand { server_name, params })
 }
 
 #[cfg(test)]
@@ -850,6 +712,10 @@ mod tests {
             ),
             (
                 "help",
+                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.",
+            ),
+            (
+                "?",
                 "Did you mean to use the command '/help' for help? Type '/help' to see available commands.",
             ),
         ];
