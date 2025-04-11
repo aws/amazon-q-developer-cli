@@ -1,23 +1,21 @@
-use std::io::{Write, BufReader, Cursor};
-use eyre::{Result, eyre};
-use tempfile::NamedTempFile;
-use skim::prelude::*;
 use crossterm::{
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
+use eyre::{Result, eyre};
+use skim::prelude::*;
 use std::io::stdout;
-#[cfg(test)]
-use std::collections::HashSet;
+use std::io::{BufReader, Cursor, Write};
+use tempfile::NamedTempFile;
 
 /// Load tool names from the tool_index.json file
 fn load_tool_names() -> Result<Vec<String>> {
     // Use the existing load_tools function from the chat module
     let tool_specs = super::load_tools()?;
-    
+
     // Extract tool names from the tool specs
     let tool_names: Vec<String> = tool_specs.keys().cloned().collect();
-    
+
     Ok(tool_names)
 }
 
@@ -32,7 +30,7 @@ pub fn get_available_commands() -> Vec<CommandInfo> {
     // Import the COMMANDS array directly from prompt.rs
     // This is the single source of truth for available commands
     let commands_array = super::prompt::COMMANDS;
-    
+
     // Create CommandInfo objects from the COMMANDS array
     let mut commands = Vec::new();
     for &cmd in commands_array {
@@ -40,58 +38,14 @@ pub fn get_available_commands() -> Vec<CommandInfo> {
             command: cmd.to_string(),
         });
     }
-    
+
     commands
 }
 
 /// Format commands for skim display
-fn format_commands_for_skim(commands: &[CommandInfo]) -> Vec<String> {
-    commands
-        .iter()
-        .map(|cmd| cmd.command.clone())
-        .collect()
-}
-
-/// Run skim with the given options and items in an alternate screen
-/// This helper function handles entering/exiting the alternate screen and running skim
-fn run_skim_with_options(options: &SkimOptions<'_>, items: SkimItemReceiver) -> Result<Option<Vec<Arc<dyn SkimItem>>>> {
-    // Enter alternate screen to prevent skim output from persisting in terminal history
-    execute!(stdout(), EnterAlternateScreen)
-        .map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
-    
-    // Run skim
-    let selected_items = Skim::run_with(options, Some(items))
-        .map(|out| {
-            if out.is_abort {
-                None
-            } else {
-                Some(out.selected_items)
-            }
-        })
-        .unwrap_or(None);
-    
-    // Leave alternate screen
-    execute!(stdout(), LeaveAlternateScreen)
-        .map_err(|e| eyre!("Failed to leave alternate screen: {}", e))?;
-    
-    Ok(selected_items)
-}
-
-/// Extract string selections from skim items
-fn extract_selections(items: Vec<Arc<dyn SkimItem>>) -> Vec<String> {
-    items.iter()
-        .map(|item| item.output().to_string())
-        .collect()
-}
-
-/// Launch skim with the given items and return the selected item
-pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Result<Option<Vec<String>>> {
-    // Create a temporary file for skim input
-    let mut temp_file = NamedTempFile::new()?;
-    temp_file.write_all(items.join("\n").as_bytes())?;
-    
-    // Build skim options
-    let options = SkimOptionsBuilder::default()
+/// Create a standard set of skim options with consistent styling
+fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions<'_>> {
+    SkimOptionsBuilder::default()
         .height(Some("40%"))
         .prompt(Some(prompt))
         .reverse(true)
@@ -99,12 +53,66 @@ pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Resu
         .color(Some("fg:252,bg:234,hl:67,fg+:252,bg+:235,hl+:81"))
         .color(Some("info:144,prompt:161,spinner:135,pointer:135,marker:118"))
         .build()
-        .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
-    
+        .map_err(|e| eyre!("Failed to build skim options: {}", e))
+}fn format_commands_for_skim(commands: &[CommandInfo]) -> Vec<String> {
+/// Run skim with the given options and items in an alternate screen
+/// This helper function handles entering/exiting the alternate screen and running skim
+fn run_skim_with_options(options: &SkimOptions<'_>, items: SkimItemReceiver) -> Result<Option<Vec<Arc<dyn SkimItem>>>> {
+    // Enter alternate screen to prevent skim output from persisting in terminal history
+    execute!(stdout(), EnterAlternateScreen).map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
+
+    // Run skim
+    let selected_items = Skim::run_with(options, Some(items))
+        .map(|out| if out.is_abort { None } else { Some(out.selected_items) })
+        .unwrap_or(None);
+
+    // Leave alternate screen
+    execute!(stdout(), LeaveAlternateScreen).map_err(|e| eyre!("Failed to leave alternate screen: {}", e))?;
+
+    Ok(selected_items)
+}
+
+/// Extract string selections from skim items
+fn extract_selections(items: Vec<Arc<dyn SkimItem>>) -> Vec<String> {
+    items.iter().map(|item| item.output().to_string()).collect()
+}    commands.iter().map(|cmd| cmd.command.clone()).collect()
+}
+
+/// Run skim with the given options and items in an alternate screen
+/// This helper function handles entering/exiting the alternate screen and running skim
+fn run_skim_with_options(options: &SkimOptions<'_>, items: SkimItemReceiver) -> Result<Option<Vec<Arc<dyn SkimItem>>>> {
+    // Enter alternate screen to prevent skim output from persisting in terminal history
+    execute!(stdout(), EnterAlternateScreen).map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
+
+    // Run skim
+    let selected_items = Skim::run_with(options, Some(items))
+        .map(|out| if out.is_abort { None } else { Some(out.selected_items) })
+        .unwrap_or(None);
+
+    // Leave alternate screen
+    execute!(stdout(), LeaveAlternateScreen).map_err(|e| eyre!("Failed to leave alternate screen: {}", e))?;
+
+    Ok(selected_items)
+}
+
+/// Extract string selections from skim items
+fn extract_selections(items: Vec<Arc<dyn SkimItem>>) -> Vec<String> {
+    items.iter().map(|item| item.output().to_string()).collect()
+}
+
+/// Launch skim with the given items and return the selected item
+pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Result<Option<Vec<String>>> {
+    // Create a temporary file for skim input
+    let mut temp_file = NamedTempFile::new()?;
+    temp_file.write_all(items.join("\n").as_bytes())?;
+
+    // Build skim options
+    let options = create_skim_options(prompt, multi)?;
+
     // Create item reader
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(BufReader::new(std::fs::File::open(temp_file.path())?));
-    
+
     // Run skim and get selected items
     match run_skim_with_options(&options, items)? {
         Some(items) if !items.is_empty() => {
@@ -121,31 +129,25 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     let find_output = std::process::Command::new("find")
         .args(&[".", "-type", "f", "-not", "-path", "*/\\.*"])
         .output()?;
-    
+
     if !find_output.status.success() {
         return Err(eyre!("Failed to list files"));
     }
-    
+
     let files = String::from_utf8(find_output.stdout)?;
     let file_list: Vec<String> = files.lines().map(|s| s.to_string()).collect();
-    
+
     if file_list.is_empty() {
         return Ok(None);
     }
-    
+
     // Create skim options
-    let options = SkimOptionsBuilder::default()
-        .height(Some("40%"))
-        .multi(true)
-        .reverse(true)
-        .prompt(Some("Select files: "))
-        .build()
-        .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
-    
+    let options = create_skim_options("Select files: ", true)?;
+
     // Create item reader
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(Cursor::new(files));
-    
+
     // Run skim and get selected items
     match run_skim_with_options(&options, items)? {
         Some(items) if !items.is_empty() => {
@@ -156,82 +158,105 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     }
 }
 
+#[derive(PartialEq)]
+enum CommandType {
+    ContextAdd(String),
+    Tools(&'static str),
+    Profile(&'static str),
+}
+
+impl CommandType {
+    fn from_str(cmd: &str) -> Option<CommandType> {
+        if cmd.starts_with("/context add") {
+            Some(CommandType::ContextAdd(cmd.to_string()))
+        } else {
+            match cmd {
+                "/tools trust" => Some(CommandType::Tools("trust")),
+                "/tools untrust" => Some(CommandType::Tools("untrust")),
+                "/profile set" => Some(CommandType::Profile("set")),
+                "/profile delete" => Some(CommandType::Profile("delete")),
+                "/profile rename" => Some(CommandType::Profile("rename")),
+                "/profile create" => Some(CommandType::Profile("create")),
+                _ => None,
+            }
+        }
+    }
+}
+
 /// Launch the command selector and handle the selected command
 pub fn select_command() -> Result<Option<String>> {
     let commands = get_available_commands();
     let formatted_commands = format_commands_for_skim(&commands);
-    
+
     match launch_skim_selector(&formatted_commands, "Select command: ", false)? {
         Some(selections) if !selections.is_empty() => {
             let selected_command = &selections[0];
-            
-            // Check if the command needs parameters
-            if selected_command.starts_with("/context add") {
-                // For context add commands, we need to select files
-                match select_files_with_skim()? {
-                    Some(files) if !files.is_empty() => {
-                        // Construct the full command with selected files
-                        let mut cmd = selected_command.clone();
-                        for file in files {
-                            cmd.push_str(&format!(" {}", file));
-                        }
-                        Ok(Some(cmd))
-                    },
-                    _ => Ok(Some(selected_command.clone())), // User cancelled file selection, return just the command
-                }
-            } else if selected_command == "/tools trust" || selected_command == "/tools untrust" {
-                // For tools trust/untrust, we need to select a tool
-                // Load tool names from the tool_index.json file
-                let tools = load_tool_names()?;
-                
-                // Create skim options for tool selection
-                let options = SkimOptionsBuilder::default()
-                    .height(Some("40%"))
-                    .reverse(true)
-                    .prompt(Some("Select tool: "))
-                    .build()
-                    .map_err(|e| eyre!("Failed to build skim options: {}", e))?;
-                
-                // Create item reader
-                let item_reader = SkimItemReader::default();
-                let items = item_reader.of_bufread(Cursor::new(tools.join("\n")));
-                
-                // Run skim and get selected tool
-                let selected_tool = match run_skim_with_options(&options, items)? {
-                    Some(items) if !items.is_empty() => Some(items[0].output().to_string()),
-                    _ => None,
-                };
-                
-                match selected_tool {
-                    Some(tool) => Ok(Some(format!("{} {}", selected_command, tool))),
-                    None => Ok(Some(selected_command.clone())), // User cancelled tool selection, return just the command
-                }
-            } else if selected_command == "/profile set" || selected_command == "/profile delete" || 
-                      selected_command == "/profile rename" || selected_command == "/profile create" {
-                // For profile operations, we'd need to prompt for the name
-                // For now, just return the command and let the user type the name
-                Ok(Some(selected_command.clone()))
-            } else {
-                // Command doesn't need additional parameters
-                Ok(Some(selected_command.clone()))
+
+            match CommandType::from_str(selected_command) {
+                Some(CommandType::ContextAdd(cmd)) => {
+                    // For context add commands, we need to select files
+                    match select_files_with_skim()? {
+                        Some(files) if !files.is_empty() => {
+                            // Construct the full command with selected files
+                            let mut cmd = cmd.to_string();
+                            for file in files {
+                                cmd.push_str(&format!(" {}", file));
+                            }
+                            Ok(Some(cmd))
+                        },
+                        _ => Ok(Some(selected_command.clone())), // User cancelled file selection, return just the command
+                    }
+                },
+                Some(CommandType::Tools(_)) => {
+                    // For tools trust/untrust, we need to select a tool
+                    // Load tool names from the tool_index.json file
+                    let tools = load_tool_names()?;
+
+                    // Create skim options for tool selection
+                    let options = create_skim_options("Select tool: ", false)?;
+
+                    // Create item reader
+                    let item_reader = SkimItemReader::default();
+                    let items = item_reader.of_bufread(Cursor::new(tools.join("\n")));
+
+                    // Run skim and get selected tool
+                    let selected_tool = match run_skim_with_options(&options, items)? {
+                        Some(items) if !items.is_empty() => Some(items[0].output().to_string()),
+                        _ => None,
+                    };
+
+                    match selected_tool {
+                        Some(tool) => Ok(Some(format!("{} {}", selected_command, tool))),
+                        None => Ok(Some(selected_command.clone())), // User cancelled tool selection, return just the command
+                    }
+                },
+                Some(CommandType::Profile(_)) => {
+                    // For profile operations, we'd need to prompt for the name
+                    // For now, just return the command and let the user type the name
+                    Ok(Some(selected_command.clone()))
+                },
+                None => {
+                    // Command doesn't need additional parameters
+                    Ok(Some(selected_command.clone()))
+                },
             }
         },
         _ => Ok(None), // User cancelled command selection
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     /// Test to verify that all hardcoded command strings in select_command
     /// are present in the COMMANDS array from prompt.rs
     #[test]
     fn test_hardcoded_commands_in_commands_array() {
         // Get the set of available commands from prompt.rs
-        let available_commands: HashSet<String> = get_available_commands()
-            .iter()
-            .map(|cmd| cmd.command.clone())
-            .collect();
+        let available_commands: HashSet<String> =
+            get_available_commands().iter().map(|cmd| cmd.command.clone()).collect();
 
         // List of hardcoded commands used in select_command
         let hardcoded_commands = vec![
