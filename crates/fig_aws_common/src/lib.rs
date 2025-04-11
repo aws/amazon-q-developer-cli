@@ -1,3 +1,4 @@
+pub mod http_client;
 mod sdk_error_display;
 mod user_agent_override_interceptor;
 
