@@ -192,19 +192,7 @@ pub fn select_command() -> Result<Option<String>> {
             } else if selected_command == "/tools trust" || selected_command == "/tools untrust" {
                 // For tools trust/untrust, we need to select a tool
                 // Load tool names from the tool_index.json file
-                let tools = match load_tool_names() {
-                    Ok(tools) => tools,
-                    Err(_) => {
-                        // Fallback to hardcoded list if loading fails
-                        vec![
-                            "fs_read".to_string(),
-                            "fs_write".to_string(),
-                            "execute_bash".to_string(),
-                            "use_aws".to_string(),
-                            "report_issue".to_string(),
-                        ]
-                    }
-                };
+                let tools = load_tool_names()?;
                 
                 // Create skim options for tool selection
                 let options = SkimOptionsBuilder::default()
