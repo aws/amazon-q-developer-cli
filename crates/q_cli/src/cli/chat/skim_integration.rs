@@ -12,31 +12,23 @@ use tempfile::NamedTempFile;
 fn load_tool_names() -> Result<Vec<String>> {
     // Use the existing load_tools function from the chat module
     let tool_specs = super::load_tools()?;
-
-    // Extract tool names from the tool specs
-    let tool_names: Vec<String> = tool_specs.keys().cloned().collect();
-
+    
+    // Extract the "name" field from each tool spec
+    let tool_names: Vec<String> = tool_specs.values()
+        .map(|spec| spec.name.clone())
+        .collect();
+    
     Ok(tool_names)
 }
 
-/// Represents a command
-#[derive(Debug, Clone)]
-pub struct CommandInfo {
-    pub command: String,
-}
-
-/// Get all available commands
-pub fn get_available_commands() -> Vec<CommandInfo> {
+pub fn get_available_commands() -> Vec<String> {
     // Import the COMMANDS array directly from prompt.rs
     // This is the single source of truth for available commands
     let commands_array = super::prompt::COMMANDS;
 
-    // Create CommandInfo objects from the COMMANDS array
     let mut commands = Vec::new();
     for &cmd in commands_array {
-        commands.push(CommandInfo {
-            command: cmd.to_string(),
-        });
+        commands.push(cmd.to_string());
     }
 
     commands
@@ -54,28 +46,6 @@ fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions<'_>> {
         .color(Some("info:144,prompt:161,spinner:135,pointer:135,marker:118"))
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))
-}fn format_commands_for_skim(commands: &[CommandInfo]) -> Vec<String> {
-/// Run skim with the given options and items in an alternate screen
-/// This helper function handles entering/exiting the alternate screen and running skim
-fn run_skim_with_options(options: &SkimOptions<'_>, items: SkimItemReceiver) -> Result<Option<Vec<Arc<dyn SkimItem>>>> {
-    // Enter alternate screen to prevent skim output from persisting in terminal history
-    execute!(stdout(), EnterAlternateScreen).map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
-
-    // Run skim
-    let selected_items = Skim::run_with(options, Some(items))
-        .map(|out| if out.is_abort { None } else { Some(out.selected_items) })
-        .unwrap_or(None);
-
-    // Leave alternate screen
-    execute!(stdout(), LeaveAlternateScreen).map_err(|e| eyre!("Failed to leave alternate screen: {}", e))?;
-
-    Ok(selected_items)
-}
-
-/// Extract string selections from skim items
-fn extract_selections(items: Vec<Arc<dyn SkimItem>>) -> Vec<String> {
-    items.iter().map(|item| item.output().to_string()).collect()
-}    commands.iter().map(|cmd| cmd.command.clone()).collect()
 }
 
 /// Run skim with the given options and items in an alternate screen
@@ -84,12 +54,10 @@ fn run_skim_with_options(options: &SkimOptions<'_>, items: SkimItemReceiver) -> 
     // Enter alternate screen to prevent skim output from persisting in terminal history
     execute!(stdout(), EnterAlternateScreen).map_err(|e| eyre!("Failed to enter alternate screen: {}", e))?;
 
-    // Run skim
     let selected_items = Skim::run_with(options, Some(items))
         .map(|out| if out.is_abort { None } else { Some(out.selected_items) })
         .unwrap_or(None);
 
-    // Leave alternate screen
     execute!(stdout(), LeaveAlternateScreen).map_err(|e| eyre!("Failed to leave alternate screen: {}", e))?;
 
     Ok(selected_items)
@@ -141,14 +109,10 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
         return Ok(None);
     }
 
-    // Create skim options
     let options = create_skim_options("Select files: ", true)?;
-
-    // Create item reader
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(Cursor::new(files));
 
-    // Run skim and get selected items
     match run_skim_with_options(&options, items)? {
         Some(items) if !items.is_empty() => {
             let selections = extract_selections(items);
@@ -158,37 +122,11 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     }
 }
 
-#[derive(PartialEq)]
-enum CommandType {
-    ContextAdd(String),
-    Tools(&'static str),
-    Profile(&'static str),
-}
-
-impl CommandType {
-    fn from_str(cmd: &str) -> Option<CommandType> {
-        if cmd.starts_with("/context add") {
-            Some(CommandType::ContextAdd(cmd.to_string()))
-        } else {
-            match cmd {
-                "/tools trust" => Some(CommandType::Tools("trust")),
-                "/tools untrust" => Some(CommandType::Tools("untrust")),
-                "/profile set" => Some(CommandType::Profile("set")),
-                "/profile delete" => Some(CommandType::Profile("delete")),
-                "/profile rename" => Some(CommandType::Profile("rename")),
-                "/profile create" => Some(CommandType::Profile("create")),
-                _ => None,
-            }
-        }
-    }
-}
-
 /// Launch the command selector and handle the selected command
 pub fn select_command() -> Result<Option<String>> {
     let commands = get_available_commands();
-    let formatted_commands = format_commands_for_skim(&commands);
 
-    match launch_skim_selector(&formatted_commands, "Select command: ", false)? {
+    match launch_skim_selector(&commands, "Select command: ", false)? {
         Some(selections) if !selections.is_empty() => {
             let selected_command = &selections[0];
 
@@ -245,6 +183,31 @@ pub fn select_command() -> Result<Option<String>> {
     }
 }
 
+#[derive(PartialEq)]
+enum CommandType {
+    ContextAdd(String),
+    Tools(&'static str),
+    Profile(&'static str),
+}
+
+impl CommandType {
+    fn from_str(cmd: &str) -> Option<CommandType> {
+        if cmd.starts_with("/context add") {
+            Some(CommandType::ContextAdd(cmd.to_string()))
+        } else {
+            match cmd {
+                "/tools trust" => Some(CommandType::Tools("trust")),
+                "/tools untrust" => Some(CommandType::Tools("untrust")),
+                "/profile set" => Some(CommandType::Profile("set")),
+                "/profile delete" => Some(CommandType::Profile("delete")),
+                "/profile rename" => Some(CommandType::Profile("rename")),
+                "/profile create" => Some(CommandType::Profile("create")),
+                _ => None,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,8 +218,7 @@ mod tests {
     #[test]
     fn test_hardcoded_commands_in_commands_array() {
         // Get the set of available commands from prompt.rs
-        let available_commands: HashSet<String> =
-            get_available_commands().iter().map(|cmd| cmd.command.clone()).collect();
+        let available_commands: HashSet<String> = get_available_commands().iter().map(|cmd| cmd.clone()).collect();
 
         // List of hardcoded commands used in select_command
         let hardcoded_commands = vec![
@@ -275,6 +237,13 @@ mod tests {
             assert!(
                 available_commands.contains(cmd),
                 "Command '{}' is used in select_command but not defined in COMMANDS array",
+                cmd
+            );
+
+            // This should assert that all the commands we assert are present in the match statement of select_command()
+            assert!(
+                CommandType::from_str(cmd).is_some(),
+                "Command '{}' cannot be parsed into a CommandType",
                 cmd
             );
         }
