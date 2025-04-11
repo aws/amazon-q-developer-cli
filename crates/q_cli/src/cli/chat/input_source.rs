@@ -87,7 +87,6 @@ impl InputSource {
                 EventHandler::Conditional(Box::new(SkimCommandSelector::new(context_manager))),
             );
         }
-
     }
 
     #[allow(dead_code)]

@@ -2328,7 +2328,6 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
 
 /// Returns all tools supported by Q chat.
 pub fn load_tools() -> Result<HashMap<String, ToolSpec>> {
-
     Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
 }
 
