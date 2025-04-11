@@ -35,7 +35,7 @@ use rustyline::{
 };
 use winnow::stream::AsChar;
 
-const COMMANDS: &[&str] = &[
+pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
     "/editor",
@@ -248,6 +248,68 @@ pub fn rl() -> Result<Editor<ChatHelper, DefaultHistory>> {
     );
 
     Ok(rl)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_prompt() {
+        // Test default prompt (no profile)
+        assert_eq!(generate_prompt(None, false), "> ".magenta().to_string());
+        // Test default prompt with warning
+        assert_eq!(generate_prompt(None, true), format!("{}{}", "!".red(), "> ".magenta()));
+        // Test default profile (should be same as no profile)
+        assert_eq!(generate_prompt(Some("default"), false), "> ".magenta().to_string());
+        // Test custom profile
+        assert_eq!(
+            generate_prompt(Some("test-profile"), false),
+            format!("{}{}", "[test-profile] ".cyan(), "> ".magenta())
+        );
+        // Test another custom profile with warning
+        assert_eq!(
+            generate_prompt(Some("dev"), true),
+            format!("{}{}{}", "[dev] ".cyan(), "!".red(), "> ".magenta())
+        );
+    }
+
+    #[test]
+    fn test_chat_completer_command_completion() {
+        let completer = ChatCompleter::new();
+        let line = "/h";
+        let pos = 2; // Position at the end of "/h"
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Get completions
+        let (start, completions) = completer.complete(line, pos, &ctx).unwrap();
+
+        // Verify start position
+        assert_eq!(start, 0);
+
+        // Verify completions contain expected commands
+        assert!(completions.contains(&"/help".to_string()));
+    }
+
+    #[test]
+    fn test_chat_completer_no_completion() {
+        let completer = ChatCompleter::new();
+        let line = "Hello, how are you?";
+        let pos = line.len();
+
+        // Create a mock context with empty history
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        // Get completions
+        let (_, completions) = completer.complete(line, pos, &ctx).unwrap();
+
+        // Verify no completions are returned for regular text
+        assert!(completions.is_empty());
+    }
 }
 
 #[cfg(test)]

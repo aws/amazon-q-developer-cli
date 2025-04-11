@@ -91,6 +91,7 @@ winnow.workspace = true
 shell-color.workspace = true
 syntect = { version = "5.2.0", features = [ "default-syntaxes", "default-themes" ]}
 termion = "4.0.5"
+lazy_static = "1.5.0"
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

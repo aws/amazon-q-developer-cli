@@ -6827,6 +6827,7 @@ dependencies = [
  "indicatif",
  "indoc",
  "insta",
+ "lazy_static",
  "macos-utils",
  "mimalloc",
  "nix 0.29.0",

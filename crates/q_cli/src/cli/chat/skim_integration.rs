@@ -18,46 +18,20 @@ pub struct CommandInfo {
 
 /// Get all available commands with their descriptions
 pub fn get_available_commands() -> Vec<CommandInfo> {
-    vec![
-        CommandInfo { command: "/help".to_string(), description: "Show the help dialogue".to_string() },
-        CommandInfo { command: "/clear".to_string(), description: "Clear the conversation history".to_string() },
-        CommandInfo { command: "/quit".to_string(), description: "Quit the application".to_string() },
-        CommandInfo { command: "/issue".to_string(), description: "Report an issue or make a feature request".to_string() },
-        CommandInfo { command: "/editor".to_string(), description: "Open editor to compose a prompt".to_string() },
-        CommandInfo { command: "/compact".to_string(), description: "Summarize conversation to free up context space".to_string() },
-        CommandInfo { command: "/compact --summary".to_string(), description: "Summarize and display the summary".to_string() },
-        CommandInfo { command: "/compact help".to_string(), description: "Show help for the compact command".to_string() },
-        
-        // Tools commands
-        CommandInfo { command: "/tools".to_string(), description: "View and manage tools and permissions".to_string() },
-        CommandInfo { command: "/tools help".to_string(), description: "Show an explanation for the tools command".to_string() },
-        CommandInfo { command: "/tools trust".to_string(), description: "Trust a specific tool for the session".to_string() },
-        CommandInfo { command: "/tools untrust".to_string(), description: "Revert a tool to per-request confirmation".to_string() },
-        CommandInfo { command: "/tools trustall".to_string(), description: "Trust all tools (no confirmation required)".to_string() },
-        CommandInfo { command: "/tools reset".to_string(), description: "Reset all tools to default permission levels".to_string() },
-        
-        // Profile commands
-        CommandInfo { command: "/profile".to_string(), description: "Manage profiles".to_string() },
-        CommandInfo { command: "/profile help".to_string(), description: "Show profile help".to_string() },
-        CommandInfo { command: "/profile list".to_string(), description: "List profiles".to_string() },
-        CommandInfo { command: "/profile create".to_string(), description: "Create a new profile".to_string() },
-        CommandInfo { command: "/profile delete".to_string(), description: "Delete a profile".to_string() },
-        CommandInfo { command: "/profile rename".to_string(), description: "Rename a profile".to_string() },
-        CommandInfo { command: "/profile set".to_string(), description: "Set the current profile".to_string() },
-        
-        // Context commands
-        CommandInfo { command: "/context".to_string(), description: "Manage context files for the chat session".to_string() },
-        CommandInfo { command: "/context help".to_string(), description: "Show context help".to_string() },
-        CommandInfo { command: "/context show".to_string(), description: "Display current context rules configuration".to_string() },
-        CommandInfo { command: "/context show --expand".to_string(), description: "Display context rules with file contents".to_string() },
-        CommandInfo { command: "/context add".to_string(), description: "Add file(s) to context".to_string() },
-        CommandInfo { command: "/context add --global".to_string(), description: "Add file(s) to global context".to_string() },
-        CommandInfo { command: "/context add --force".to_string(), description: "Add file(s) to context, ignoring size limits".to_string() },
-        CommandInfo { command: "/context rm".to_string(), description: "Remove file(s) from context".to_string() },
-        CommandInfo { command: "/context rm --global".to_string(), description: "Remove file(s) from global context".to_string() },
-        CommandInfo { command: "/context clear".to_string(), description: "Clear all files from current context".to_string() },
-        CommandInfo { command: "/context clear --global".to_string(), description: "Clear all files from global context".to_string() },
-    ]
+    // Import the COMMANDS array directly from prompt.rs
+    // This is the single source of truth for available commands
+    let commands_array = super::prompt::COMMANDS;
+    
+    // Create CommandInfo objects from the COMMANDS array
+    let mut commands = Vec::new();
+    for &cmd in commands_array {
+        commands.push(CommandInfo {
+            command: cmd.to_string(),
+            description: "".to_string(), // Empty description since we're just focusing on commands
+        });
+    }
+    
+    commands
 }
 
 /// Format commands for skim display
