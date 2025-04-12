@@ -47,10 +47,6 @@ fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions> {
         .prompt(prompt.to_string())
         .reverse(true)
         .multi(multi)
-        .color(Some("fg:252,bg:234,hl:67,fg+:252,bg+:235,hl+:81".to_string()))
-        .color(Some(
-            "info:144,prompt:161,spinner:135,pointer:135,marker:118".to_string(),
-        ))
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))
 }
