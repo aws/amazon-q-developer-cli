@@ -121,7 +121,6 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
 
 /// Select context paths using skim
 pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Result<Option<(Vec<String>, bool)>> {
-    // Get all context paths
     let mut global_paths = Vec::new();
     let mut profile_paths = Vec::new();
 
@@ -180,7 +179,7 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
 }
 
 /// Launch the command selector and handle the selected command
-pub fn select_command(context_manager: Option<&ContextManager>) -> Result<Option<String>> {
+pub fn select_command(context_manager: &ContextManager) -> Result<Option<String>> {
     let commands = get_available_commands();
 
     match launch_skim_selector(&commands, "Select command: ", false)? {
@@ -205,25 +204,20 @@ pub fn select_command(context_manager: Option<&ContextManager>) -> Result<Option
                 },
                 Some(CommandType::ContextRemove(cmd)) => {
                     // For context rm commands, we need to select from existing context paths
-                    if let Some(context_manager) = context_manager {
-                        match select_context_paths_with_skim(context_manager)? {
-                            Some((paths, has_global)) if !paths.is_empty() => {
-                                // Construct the full command with selected paths
-                                let mut full_cmd = cmd.clone();
-                                if has_global {
-                                    full_cmd.push_str(" --global");
-                                }
-                                for path in paths {
-                                    full_cmd.push_str(&format!(" {}", path));
-                                }
-                                Ok(Some(full_cmd))
-                            },
-                            Some((_, _)) => Ok(Some(format!("{} (No paths selected)", cmd))),
-                            None => Ok(Some(selected_command.clone())), // User cancelled path selection
-                        }
-                    } else {
-                        // No context manager available
-                        Ok(Some(selected_command.clone()))
+                    match select_context_paths_with_skim(context_manager)? {
+                        Some((paths, has_global)) if !paths.is_empty() => {
+                            // Construct the full command with selected paths
+                            let mut full_cmd = cmd.clone();
+                            if has_global {
+                                full_cmd.push_str(" --global");
+                            }
+                            for path in paths {
+                                full_cmd.push_str(&format!(" {}", path));
+                            }
+                            Ok(Some(full_cmd))
+                        },
+                        Some((_, _)) => Ok(Some(format!("{} (No paths selected)", cmd))),
+                        None => Ok(Some(selected_command.clone())), // User cancelled path selection
                     }
                 },
                 Some(CommandType::Tools(_)) => {

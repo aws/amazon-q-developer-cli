@@ -732,18 +732,20 @@ where
             )?;
         }
 
+        // Do this here so that the skim integration sees an updated view of the context *during the current
+        // q session*. (e.g., if I add files to context, that won't show up for skim for the current
+        // q session unless we do this in prompt_user... unless you can find a better way)
+        if let Some(ref context_manager) = self.conversation_state.context_manager {
+            self.input_source
+                .create_skim_command_selector(Arc::new(context_manager.clone()));
+        }
+
         // Require two consecutive sigint's to exit.
         let mut ctrl_c = false;
         let user_input = loop {
             let all_tools_trusted = self.conversation_state.tools.iter().all(|t| match t {
                 FigTool::ToolSpecification(t) => self.tool_permissions.is_trusted(&t.name),
             });
-
-            // Update the context manager in the input source for skim integration
-            if let Some(context_manager) = self.conversation_state.context_manager.clone() {
-                let arc_context_manager = Arc::new(context_manager);
-                self.input_source.update_context_manager(Some(arc_context_manager));
-            }
 
             // Generate prompt based on active context profile and trusted tools
             let prompt = prompt::generate_prompt(self.conversation_state.current_profile(), all_tools_trusted);
