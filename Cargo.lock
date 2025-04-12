@@ -6625,6 +6625,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-color",
+ "shell-words",
  "shlex",
  "similar",
  "spinners",

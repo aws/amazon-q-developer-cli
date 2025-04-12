@@ -484,15 +484,31 @@ where
         let temp_file_path = temp_dir.join(file_name);
 
         // Get the editor from environment variable or use a default
-        let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+        let editor_cmd = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+
+        // Parse the editor command to handle arguments
+        let mut parts = shell_words::split(&editor_cmd)
+            .map_err(|e| ChatError::Custom(format!("Failed to parse EDITOR command: {}", e).into()))?;
+
+        if parts.is_empty() {
+            return Err(ChatError::Custom("EDITOR environment variable is empty".into()));
+        }
+
+        let editor_bin = parts.remove(0);
 
         // Write initial content to the file if provided
         let initial_content = initial_text.unwrap_or_default();
         fs::write(&temp_file_path, &initial_content)
             .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {}", e).into()))?;
 
-        // Open the editor
-        let status = ProcessCommand::new(editor)
+        // Open the editor with the parsed command and arguments
+        let mut cmd = ProcessCommand::new(editor_bin);
+        // Add any arguments that were part of the EDITOR variable
+        for arg in parts {
+            cmd.arg(arg);
+        }
+        // Add the file path as the last argument
+        let status = cmd
             .arg(&temp_file_path)
             .status()
             .map_err(|e| ChatError::Custom(format!("Failed to open editor: {}", e).into()))?;
