@@ -7,7 +7,10 @@ use std::process::{
 use std::time::Duration;
 
 use anstream::println;
-use clap::Subcommand;
+use clap::{
+    Args,
+    Subcommand,
+};
 use crossterm::style::Stylize;
 use eyre::{
     Result,
@@ -46,7 +49,7 @@ use crate::util::{
 #[derive(Subcommand, Debug, PartialEq, Eq)]
 pub enum RootUserSubcommand {
     /// Login
-    Login,
+    Login(LoginArgs),
     /// Logout
     Logout,
     /// Prints details about the current user
@@ -55,6 +58,29 @@ pub enum RootUserSubcommand {
         #[arg(long, short, value_enum, default_value_t)]
         format: OutputFormat,
     },
+}
+
+#[derive(Args, Debug, PartialEq, Eq, Clone)]
+pub struct LoginArgs {
+    /// License type (pro for Identity Center, free for Builder ID)
+    #[arg(long, value_enum)]
+    pub license: Option<LicenseType>,
+
+    /// Identity provider URL (for Identity Center)
+    #[arg(long)]
+    pub identity_provider: Option<String>,
+
+    /// Region (for Identity Center)
+    #[arg(long)]
+    pub region: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum LicenseType {
+    /// Free license with Builder ID
+    Free,
+    /// Pro license with Identity Center
+    Pro,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,7 +103,7 @@ impl Display for AuthMethod {
 impl RootUserSubcommand {
     pub async fn execute(self) -> Result<ExitCode> {
         match self {
-            Self::Login => {
+            Self::Login(args) => {
                 if fig_auth::is_logged_in().await {
                     eyre::bail!(
                         "Already logged in, please logout with {} first",
@@ -85,7 +111,7 @@ impl RootUserSubcommand {
                     );
                 }
 
-                login_interactive().await?;
+                login_interactive(args).await?;
 
                 Ok(ExitCode::SUCCESS)
             },
@@ -155,23 +181,44 @@ impl UserSubcommand {
     }
 }
 
-pub async fn login_interactive() -> Result<()> {
-    let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
-    let i = match choose("Select login method", &options)? {
-        Some(i) => i,
-        None => bail!("No login method selected"),
+pub async fn login_interactive(args: LoginArgs) -> Result<()> {
+    let login_method = match args.license {
+        Some(LicenseType::Free) => AuthMethod::BuilderId,
+        Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
+        None => {
+            // No license specified, prompt the user to choose
+            let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
+            let i = match choose("Select login method", &options)? {
+                Some(i) => i,
+                None => bail!("No login method selected"),
+            };
+            options[i]
+        },
     };
-    let login_method = options[i];
+
     match login_method {
         AuthMethod::BuilderId | AuthMethod::IdentityCenter => {
             let (start_url, region) = match login_method {
                 AuthMethod::BuilderId => (None, None),
                 AuthMethod::IdentityCenter => {
-                    let default_start_url = fig_settings::state::get_string("auth.idc.start-url").ok().flatten();
-                    let default_region = fig_settings::state::get_string("auth.idc.region").ok().flatten();
+                    let default_start_url = args
+                        .identity_provider
+                        .or_else(|| fig_settings::state::get_string("auth.idc.start-url").ok().flatten());
+                    let default_region = args
+                        .region
+                        .or_else(|| fig_settings::state::get_string("auth.idc.region").ok().flatten());
 
-                    let start_url = input("Enter Start URL", default_start_url.as_deref())?;
-                    let region = input("Enter Region", default_region.as_deref())?;
+                    let start_url = if let Some(url) = default_start_url.clone() {
+                        url
+                    } else {
+                        input("Enter Start URL", default_start_url.as_deref())?
+                    };
+
+                    let region = if let Some(reg) = default_region.clone() {
+                        reg
+                    } else {
+                        input("Enter Region", default_region.as_deref())?
+                    };
 
                     let _ = fig_settings::state::set_value("auth.idc.start-url", start_url.clone());
                     let _ = fig_settings::state::set_value("auth.idc.region", region.clone());

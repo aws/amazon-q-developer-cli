@@ -55,7 +55,7 @@ impl SshIntegration {
         Ok(FileIntegration {
             path: self.get_integration_path()?,
             contents: indoc::formatdoc! {"
-                Match exec=\"command -v {bin_name} && {bin_name} internal generate-ssh --remote-host %h --remote-port %p --remote-username %r\"
+                Match exec \"command -v {bin_name} && {bin_name} internal generate-ssh --remote-host %h --remote-port %p --remote-username %r\"
                     Include \"{include_path}\"
             "},
             #[cfg(unix)]

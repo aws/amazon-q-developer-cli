@@ -64,18 +64,19 @@ const COMMANDS: &[&str] = &[
     "/context rm --global",
     "/context clear",
     "/context clear --global",
+    "/compact",
+    "/compact help",
+    "/compact --summary",
 ];
 
-pub fn generate_prompt(current_profile: Option<&str>) -> String {
-    if let Some(profile_name) = &current_profile {
-        if *profile_name != "default" {
-            // Format with profile name for non-default profiles
-            return format!("[{}] > ", profile_name);
-        }
-    }
+pub fn generate_prompt(current_profile: Option<&str>, warning: bool) -> String {
+    let warning_symbol = if warning { "!".red().to_string() } else { "".to_string() };
+    let profile_part = current_profile
+        .filter(|&p| p != "default")
+        .map(|p| format!("[{p}] ").cyan().to_string())
+        .unwrap_or_default();
 
-    // Default prompt
-    "> ".to_string()
+    format!("{profile_part}{warning_symbol}{}", "> ".magenta())
 }
 
 /// Complete commands that start with a slash
@@ -203,21 +204,6 @@ impl Validator for ChatHelper {
 }
 
 impl Highlighter for ChatHelper {
-    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
-        // Check if the prompt contains a context profile indicator
-        if let Some(profile_end) = prompt.find("] ") {
-            // Split the prompt into context part and the rest
-            let context_part = &prompt[..=profile_end];
-            let rest = &prompt[(profile_end + 1)..];
-
-            // Color the context part cyan and the rest magenta
-            Cow::Owned(format!("{}{}", context_part.cyan(), rest.magenta()))
-        } else {
-            // Default prompt with magenta color
-            Cow::Owned(prompt.magenta().to_string())
-        }
-    }
-
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
         Cow::Owned(format!("\x1b[1m{hint}\x1b[m"))
     }
@@ -271,13 +257,21 @@ mod tests {
     #[test]
     fn test_generate_prompt() {
         // Test default prompt (no profile)
-        assert_eq!(generate_prompt(None), "> ");
+        assert_eq!(generate_prompt(None, false), "> ".magenta().to_string());
+        // Test default prompt with warning
+        assert_eq!(generate_prompt(None, true), format!("{}{}", "!".red(), "> ".magenta()));
         // Test default profile (should be same as no profile)
-        assert_eq!(generate_prompt(Some("default")), "> ");
+        assert_eq!(generate_prompt(Some("default"), false), "> ".magenta().to_string());
         // Test custom profile
-        assert_eq!(generate_prompt(Some("test-profile")), "[test-profile] > ");
-        // Test another custom profile
-        assert_eq!(generate_prompt(Some("dev")), "[dev] > ");
+        assert_eq!(
+            generate_prompt(Some("test-profile"), false),
+            format!("{}{}", "[test-profile] ".cyan(), "> ".magenta())
+        );
+        // Test another custom profile with warning
+        assert_eq!(
+            generate_prompt(Some("dev"), true),
+            format!("{}{}{}", "[dev] ".cyan(), "!".red(), "> ".magenta())
+        );
     }
 
     #[test]

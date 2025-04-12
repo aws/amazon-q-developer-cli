@@ -184,10 +184,10 @@ pub enum CliRootCommands {
     Chat {
         /// (Deprecated, use --trust-all-tools) Enabling this flag allows the model to execute
         /// all commands without first accepting them.
-        #[arg(short, long)]
+        #[arg(short, long, hide = true)]
         accept_all: bool,
         /// Print the first response to STDOUT without interactive mode. This will fail if the
-        /// prompt requests permissions to use a tool, unless --accept-all is also used.
+        /// prompt requests permissions to use a tool, unless --trust-all-tools is also used.
         #[arg(long)]
         no_interactive: bool,
         /// The first question to ask
@@ -221,7 +221,7 @@ impl CliRootCommands {
             CliRootCommands::Init(_) => "init",
             CliRootCommands::Theme(_) => "theme",
             CliRootCommands::Issue(_) => "issue",
-            CliRootCommands::RootUser(RootUserSubcommand::Login) => "login",
+            CliRootCommands::RootUser(RootUserSubcommand::Login(_)) => "login",
             CliRootCommands::RootUser(RootUserSubcommand::Logout) => "logout",
             CliRootCommands::RootUser(RootUserSubcommand::Whoami { .. }) => "whoami",
             CliRootCommands::User(_) => "user",

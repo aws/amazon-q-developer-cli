@@ -5,6 +5,7 @@ use std::collections::{
 use std::env;
 use std::sync::Arc;
 
+use aws_smithy_types::Document;
 use fig_api_client::model::{
     AssistantResponseMessage,
     ChatMessage,
@@ -33,6 +34,10 @@ use tracing::{
 };
 
 use super::context::ContextManager;
+use super::summarization_state::{
+    MAX_CHARS,
+    TokenWarningLevel,
+};
 use super::tools::{
     QueuedTool,
     ToolSpec,
@@ -72,6 +77,8 @@ pub struct ConversationState {
     pub context_manager: Option<ContextManager>,
     /// Cached value representing the length of the user context message.
     context_message_length: Option<usize>,
+    /// Stores the latest conversation summary created by /compact
+    pub latest_summary: Option<String>,
 }
 
 impl ConversationState {
@@ -113,13 +120,21 @@ impl ConversationState {
                 .collect(),
             context_manager,
             context_message_length: None,
+            latest_summary: None,
         }
     }
 
-    /// Clears the conversation history.
-    pub fn clear(&mut self) {
+    pub fn history(&self) -> &VecDeque<ChatMessage> {
+        &self.history
+    }
+
+    /// Clears the conversation history and optionally the summary.
+    pub fn clear(&mut self, preserve_summary: bool) {
         self.next_message = None;
         self.history.clear();
+        if !preserve_summary {
+            self.latest_summary = None;
+        }
     }
 
     pub async fn append_new_user_message(&mut self, input: String) {
@@ -135,40 +150,8 @@ impl ConversationState {
             input
         };
 
-        // Get context files if available
-        let context_files = if let Some(context_manager) = &self.context_manager {
-            match context_manager.get_context_files(true).await {
-                Ok(files) => {
-                    if !files.is_empty() {
-                        let mut context_content = String::new();
-                        context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
-                        for (filename, content) in files {
-                            context_content.push_str(&format!("[{}]\n{}\n", filename, content));
-                        }
-                        context_content.push_str("--- CONTEXT FILES END ---\n\n");
-                        Some(context_content)
-                    } else {
-                        None
-                    }
-                },
-                Err(e) => {
-                    warn!("Failed to get context files: {}", e);
-                    None
-                },
-            }
-        } else {
-            None
-        };
-
-        // Combine context files with user input if available
-        let content = if let Some(context) = context_files {
-            format!("{}\n{}", context, input)
-        } else {
-            input
-        };
-
         let msg = UserInputMessage {
-            content,
+            content: input,
             user_input_message_context: Some(UserInputMessageContext {
                 shell_state: Some(build_shell_state()),
                 env_state: Some(build_env_state()),
@@ -426,50 +409,121 @@ impl ConversationState {
     }
 
     /// Returns a pair of user and assistant messages to include as context in the message history
-    /// depending on [Self::context_manager].
+    /// including both summaries and context files if available.
     pub async fn context_messages(&self) -> Option<(UserInputMessage, AssistantResponseMessage)> {
-        let Some(context_manager) = &self.context_manager else {
-            return None;
-        };
+        let mut context_content = String::new();
+        let mut has_content = false;
 
-        match context_manager.get_context_files(true).await {
-            Ok(files) => {
-                if !files.is_empty() {
-                    let mut context_content = String::new();
-                    context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
-                    for (filename, content) in files {
-                        context_content.push_str(&format!("[{}]\n{}\n", filename, content));
+        // Add summary if available - emphasize its importance more strongly
+        if let Some(summary) = &self.latest_summary {
+            context_content
+                .push_str("--- CRITICAL: PREVIOUS CONVERSATION SUMMARY - THIS IS YOUR PRIMARY CONTEXT ---\n");
+            context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\n");
+            context_content.push_str("SUMMARY CONTENT:\n");
+            context_content.push_str(summary);
+            context_content.push_str("\n--- END SUMMARY - YOU MUST USE THIS INFORMATION IN YOUR RESPONSES ---\n\n");
+            has_content = true;
+        }
+
+        // Add context files if available
+        if let Some(context_manager) = &self.context_manager {
+            match context_manager.get_context_files(true).await {
+                Ok(files) => {
+                    if !files.is_empty() {
+                        context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
+                        for (filename, content) in files {
+                            context_content.push_str(&format!("[{}]\n{}\n", filename, content));
+                        }
+                        context_content.push_str("--- CONTEXT FILES END ---\n\n");
+                        has_content = true;
                     }
-                    context_content.push_str("--- CONTEXT FILES END ---\n\n");
+                },
+                Err(e) => {
+                    warn!("Failed to get context files: {}", e);
+                },
+            }
+        }
 
-                    let user_msg = UserInputMessage {
-                        content: format!(
-                            "Here is some information from my local q rules files, use these when answering questions:\n\n{}",
-                            context_content
-                        ),
-                        user_input_message_context: None,
-                        user_intent: None,
-                    };
-                    let assistant_msg = AssistantResponseMessage {
-                        message_id: None,
-                        content: "I will use this when generating my response.".into(),
-                        tool_uses: None,
-                    };
-                    Some((user_msg, assistant_msg))
-                } else {
-                    None
-                }
-            },
-            Err(e) => {
-                warn!("Failed to get context files: {}", e);
-                None
-            },
+        if has_content {
+            let user_msg = UserInputMessage {
+                content: format!(
+                    "Here is critical information you MUST consider when answering questions:\n\n{}",
+                    context_content
+                ),
+                user_input_message_context: None,
+                user_intent: None,
+            };
+            let assistant_msg = AssistantResponseMessage {
+                message_id: None,
+                content: "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into(),
+                tool_uses: None,
+            };
+            Some((user_msg, assistant_msg))
+        } else {
+            None
         }
     }
 
     /// The length of the user message used as context, if any.
     pub fn context_message_length(&self) -> Option<usize> {
         self.context_message_length
+    }
+
+    /// Calculate the total character count in the conversation
+    pub fn calculate_char_count(&self) -> usize {
+        let mut total_chars = 0;
+        for message in &self.history {
+            match message {
+                ChatMessage::UserInputMessage(msg) => {
+                    total_chars += msg.content.len();
+                    if let Some(ctx) = &msg.user_input_message_context {
+                        // Add tool result characters if any
+                        if let Some(results) = &ctx.tool_results {
+                            for result in results {
+                                for content in &result.content {
+                                    match content {
+                                        ToolResultContentBlock::Text(text) => {
+                                            total_chars += text.len();
+                                        },
+                                        ToolResultContentBlock::Json(doc) => {
+                                            total_chars += calculate_document_char_count(doc);
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                ChatMessage::AssistantResponseMessage(msg) => {
+                    total_chars += msg.content.len();
+                    if let Some(tool_uses) = &msg.tool_uses {
+                        total_chars += tool_uses
+                            .iter()
+                            .map(|v| calculate_document_char_count(&v.input))
+                            .reduce(|acc, e| acc + e)
+                            .unwrap_or_default();
+                    }
+                },
+            }
+        }
+
+        // Add summary if it exists (it's also in the context sent to the model)
+        if let Some(summary) = &self.latest_summary {
+            total_chars += summary.len();
+        }
+
+        total_chars
+    }
+
+    /// Get the current token warning level
+    pub fn get_token_warning_level(&self) -> TokenWarningLevel {
+        let total_chars = self.calculate_char_count();
+
+        if total_chars >= MAX_CHARS {
+            TokenWarningLevel::Critical
+        } else {
+            TokenWarningLevel::None
+        }
     }
 
     pub fn append_user_transcript(&mut self, message: &str) {
@@ -544,8 +598,22 @@ fn build_shell_state() -> ShellState {
     }
 }
 
+fn calculate_document_char_count(document: &Document) -> usize {
+    match document {
+        Document::Object(hash_map) => hash_map
+            .values()
+            .fold(0, |acc, e| acc + calculate_document_char_count(e)),
+        Document::Array(vec) => vec.iter().fold(0, |acc, e| acc + calculate_document_char_count(e)),
+        Document::Number(_) => 1,
+        Document::String(s) => s.len(),
+        Document::Bool(_) => 1,
+        Document::Null => 1,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use aws_smithy_types::Number;
     use fig_api_client::model::{
         AssistantResponseMessage,
         ToolResultStatus,
@@ -570,6 +638,50 @@ mod tests {
         assert!(env_state.current_working_directory.is_some());
         assert!(env_state.operating_system.as_ref().is_some_and(|os| !os.is_empty()));
         println!("{env_state:?}");
+    }
+
+    #[test]
+    fn test_calculate_document_char_count() {
+        // Test simple types
+        assert_eq!(calculate_document_char_count(&Document::String("hello".to_string())), 5);
+        assert_eq!(calculate_document_char_count(&Document::Number(Number::PosInt(123))), 1);
+        assert_eq!(calculate_document_char_count(&Document::Bool(true)), 1);
+        assert_eq!(calculate_document_char_count(&Document::Null), 1);
+
+        // Test array
+        let array = Document::Array(vec![
+            Document::String("test".to_string()),
+            Document::Number(Number::PosInt(42)),
+            Document::Bool(false),
+        ]);
+        assert_eq!(calculate_document_char_count(&array), 6); // "test" (4) + Number (1) + Bool (1)
+
+        // Test object
+        let mut obj = HashMap::new();
+        obj.insert("key1".to_string(), Document::String("value1".to_string()));
+        obj.insert("key2".to_string(), Document::Number(Number::PosInt(99)));
+        let object = Document::Object(obj);
+        assert_eq!(calculate_document_char_count(&object), 7); // "value1" (6) + Number (1)
+
+        // Test nested structure
+        let mut nested_obj = HashMap::new();
+        let mut inner_obj = HashMap::new();
+        inner_obj.insert("inner_key".to_string(), Document::String("inner_value".to_string()));
+        nested_obj.insert("outer_key".to_string(), Document::Object(inner_obj));
+        nested_obj.insert(
+            "array_key".to_string(),
+            Document::Array(vec![
+                Document::String("item1".to_string()),
+                Document::String("item2".to_string()),
+            ]),
+        );
+
+        let complex = Document::Object(nested_obj);
+        assert_eq!(calculate_document_char_count(&complex), 21); // "inner_value" (11) + "item1" (5) + "item2" (5)
+
+        // Test empty structures
+        assert_eq!(calculate_document_char_count(&Document::Array(vec![])), 0);
+        assert_eq!(calculate_document_char_count(&Document::Object(HashMap::new())), 0);
     }
 
     fn assert_conversation_state_invariants(state: FigConversationState, i: usize) {

@@ -24,12 +24,12 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@bufbuild/protobuf": "2.2.3"
+    "@bufbuild/protobuf": "2.2.5"
   },
   "devDependencies": {
     "@amzn/tsconfig": "workspace:^",
-    "@bufbuild/buf": "^1.50.1",
-    "@bufbuild/protoc-gen-es": "^2.2.3",
-    "typescript": "^5.8.2"
+    "@bufbuild/buf": "^1.52.0",
+    "@bufbuild/protoc-gen-es": "^2.2.5",
+    "typescript": "^5.8.3"
   }
 }

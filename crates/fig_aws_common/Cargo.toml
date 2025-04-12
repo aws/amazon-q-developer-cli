@@ -12,6 +12,7 @@ aws-runtime = "1.4.4"
 aws-smithy-runtime-api.workspace = true
 aws-smithy-types.workspace = true
 aws-types.workspace = true
+fig_request.workspace = true
 http.workspace = true
 tracing.workspace = true
 
