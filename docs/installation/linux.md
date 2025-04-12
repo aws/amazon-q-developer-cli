@@ -8,14 +8,14 @@
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf "https://desktop-release.codewhisperer.us-east-1.amazonaws.com/latest/q-x86_64-linux.zip" -o "q.zip"
 unzip q.zip
-sudo ./install.sh
+q/install.sh
 ```
 
 #### Linux ARM (aarch64)
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf "https://desktop-release.codewhisperer.us-east-1.amazonaws.com/latest/q-aarch64-linux.zip" -o "q.zip"
 unzip q.zip
-sudo ./install.sh
+q/install.sh
 ```
 
 ## Getting Started
