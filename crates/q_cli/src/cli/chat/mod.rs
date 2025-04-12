@@ -161,6 +161,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/quit</em>         <black!>Quit the application</black!>
 
 <cyan!>Use Ctrl(^) + j to provide multi-line prompts.</cyan!>
+<cyan!>Use Ctrl(^) + k to fuzzily search commands and context.</cyan!>
 
 "};
 
