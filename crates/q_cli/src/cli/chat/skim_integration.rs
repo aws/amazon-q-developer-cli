@@ -14,10 +14,46 @@ use eyre::{
     Result,
     eyre,
 };
+use rustyline::{
+    Cmd,
+    ConditionalEventHandler,
+    EventContext,
+    RepeatCount,
+};
 use skim::prelude::*;
 use tempfile::NamedTempFile;
 
 use super::context::ContextManager;
+
+// Custom event handler for skim command selector
+pub struct SkimCommandSelector {
+    context_manager: Arc<ContextManager>,
+}
+
+impl SkimCommandSelector {
+    pub fn new(context_manager: Arc<ContextManager>) -> Self {
+        Self { context_manager }
+    }
+}
+
+impl ConditionalEventHandler for SkimCommandSelector {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        _n: RepeatCount,
+        _positive: bool,
+        _ctx: &EventContext<'_>,
+    ) -> Option<Cmd> {
+        // Launch skim command selector with the context manager if available
+        match select_command(self.context_manager.as_ref()) {
+            Ok(Some(command)) => Some(Cmd::Insert(1, command)),
+            _ => {
+                // If cancelled or error, do nothing
+                Some(Cmd::Noop)
+            },
+        }
+    }
+}
 
 /// Load tool names from the tool_index.json file
 fn load_tool_names() -> Result<Vec<String>> {

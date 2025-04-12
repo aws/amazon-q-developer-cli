@@ -3,18 +3,13 @@ use std::sync::Arc;
 use eyre::Result;
 use rustyline::error::ReadlineError;
 use rustyline::{
-    Cmd,
-    ConditionalEventHandler,
-    Event,
-    EventContext,
     EventHandler,
     KeyEvent,
-    RepeatCount,
 };
 
+use super::skim_integration::SkimCommandSelector;
 use crate::cli::chat::context::ContextManager;
 use crate::cli::chat::prompt::rl;
-use crate::cli::chat::skim_integration;
 
 #[derive(Debug)]
 pub struct InputSource(inner::Inner);
@@ -33,30 +28,6 @@ mod inner {
             index: usize,
             lines: Vec<String>,
         },
-    }
-}
-
-// Custom event handler for skim command selector
-struct SkimCommandSelector {
-    context_manager: Arc<ContextManager>,
-}
-
-impl SkimCommandSelector {
-    fn new(context_manager: Arc<ContextManager>) -> Self {
-        Self { context_manager }
-    }
-}
-
-impl ConditionalEventHandler for SkimCommandSelector {
-    fn handle(&self, _evt: &Event, _n: RepeatCount, _positive: bool, _ctx: &EventContext<'_>) -> Option<Cmd> {
-        // Launch skim command selector with the context manager if available
-        match skim_integration::select_command(self.context_manager.as_ref()) {
-            Ok(Some(command)) => Some(Cmd::Insert(1, command)),
-            _ => {
-                // If cancelled or error, do nothing
-                Some(Cmd::Noop)
-            },
-        }
     }
 }
 
