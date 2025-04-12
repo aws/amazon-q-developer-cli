@@ -98,7 +98,7 @@ impl StreamingClient {
     }
 
     pub async fn send_message(&self, conversation_state: ConversationState) -> Result<SendMessageOutput, Error> {
-        debug!("Sending conversation: {:?}", conversation_state);
+        debug!("Sending conversation: {:#?}", conversation_state);
         let ConversationState {
             conversation_id,
             user_input_message,
@@ -132,8 +132,15 @@ impl StreamingClient {
                     Ok(resp) => Ok(SendMessageOutput::Codewhisperer(resp)),
                     Err(e) => {
                         let is_quota_breach = e.raw_response().is_some_and(|resp| resp.status().as_u16() == 429);
+                        let is_context_window_overflow = e.as_service_error().is_some_and(|err| {
+                            matches!(err, err if err.meta().code() == Some("ValidationException")
+                                && err.meta().message() == Some("Input is too long."))
+                        });
+
                         if is_quota_breach {
                             Err(Error::QuotaBreach("quota has reached its limit"))
+                        } else if is_context_window_overflow {
+                            Err(Error::ContextWindowOverflow)
                         } else {
                             Err(e.into())
                         }

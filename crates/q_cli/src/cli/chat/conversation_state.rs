@@ -56,7 +56,7 @@ use crate::cli::chat::tools::{
 const MAX_CURRENT_WORKING_DIRECTORY_LEN: usize = 256;
 
 /// Limit to send the number of messages as part of chat.
-const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 100;
+const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 250;
 
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone)]
@@ -66,7 +66,9 @@ pub struct ConversationState {
     /// The next user message to be sent as part of the conversation. Required to be [Some] before
     /// calling [Self::as_sendable_conversation_state].
     pub next_message: Option<UserInputMessage>,
-    history: VecDeque<ChatMessage>,
+    history: VecDeque<(UserInputMessage, AssistantResponseMessage)>,
+    /// The range in the history sendable to the backend (start inclusive, end exclusive).
+    valid_history_range: (usize, usize),
     /// Similar to history in that stores user and assistant responses, except that it is not used
     /// in message requests. Instead, the responses are expected to be in human-readable format,
     /// e.g user messages prefixed with '> '. Should also be used to store errors posted in the
@@ -78,7 +80,7 @@ pub struct ConversationState {
     /// Cached value representing the length of the user context message.
     context_message_length: Option<usize>,
     /// Stores the latest conversation summary created by /compact
-    pub latest_summary: Option<String>,
+    latest_summary: Option<String>,
 }
 
 impl ConversationState {
@@ -107,6 +109,7 @@ impl ConversationState {
             conversation_id,
             next_message: None,
             history: VecDeque::new(),
+            valid_history_range: Default::default(),
             transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
             tools: tool_config
                 .into_values()
@@ -124,7 +127,7 @@ impl ConversationState {
         }
     }
 
-    pub fn history(&self) -> &VecDeque<ChatMessage> {
+    pub fn history(&self) -> &VecDeque<(UserInputMessage, AssistantResponseMessage)> {
         &self.history
     }
 
@@ -137,7 +140,11 @@ impl ConversationState {
         }
     }
 
-    pub async fn append_new_user_message(&mut self, input: String) {
+    pub fn reset_next_user_message(&mut self) {
+        self.next_message = None;
+    }
+
+    pub async fn set_next_user_message(&mut self, input: String) {
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
         if let Some(next_message) = self.next_message.as_ref() {
             warn!(?next_message, "next_message should not exist");
@@ -168,16 +175,18 @@ impl ConversationState {
         self.next_message = Some(msg);
     }
 
-    /// This should be called sometime after [Self::as_sendable_conversation_state], and before the
-    /// next user message is set.
+    /// Sets the response message according to the currently set [Self::next_message].
     pub fn push_assistant_message(&mut self, message: AssistantResponseMessage) {
-        debug_assert!(self.next_message.is_none(), "next_message should not exist");
-        if let Some(next_message) = self.next_message.as_ref() {
-            warn!(?next_message, "next_message should not exist");
+        debug_assert!(self.next_message.is_some(), "next_message should exist");
+        let mut next_user_message = self.next_message.take().expect("next user message should exist");
+
+        // Don't include the tool spec in all user messages in the history.
+        if let Some(ctx) = next_user_message.user_input_message_context.as_mut() {
+            ctx.tools.take();
         }
 
         self.append_assistant_transcript(&message);
-        self.history.push_back(ChatMessage::AssistantResponseMessage(message));
+        self.history.push_back((next_user_message, message));
     }
 
     /// Returns the conversation id.
@@ -189,10 +198,7 @@ impl ConversationState {
     ///
     /// This is equivalent to `utterance_id` in the Q API.
     pub fn message_id(&self) -> Option<&str> {
-        self.history.iter().last().and_then(|m| match &m {
-            ChatMessage::AssistantResponseMessage(m) => m.message_id.as_deref(),
-            ChatMessage::UserInputMessage(_) => None,
-        })
+        self.history.back().and_then(|(_, msg)| msg.message_id.as_deref())
     }
 
     /// Updates the history so that, when non-empty, the following invariants are in place:
@@ -200,43 +206,35 @@ impl ConversationState {
     ///    dropped.
     /// 2. The first message is from the user, and does not contain tool results. Oldest messages
     ///    are dropped.
-    /// 3. The last message is from the assistant. The last message is dropped if it is from the
-    ///    user.
-    /// 4. If the last message is from the assistant and it contains tool uses, and a next user
-    ///    message is set without tool results, then the user message will have cancelled tool
-    ///    results.
-    pub fn fix_history(&mut self) {
+    /// 3. If the last message from the assistant contains tool results, and a next user message is
+    ///    set without tool results, then the user message will have "cancelled" tool results.
+    pub fn enforce_conversation_invariants(&mut self) {
+        self.valid_history_range = (0, self.history.len());
         // Trim the conversation history by finding the second oldest message from the user without
         // tool results - this will be the new oldest message in the history.
         //
-        // Note that we reserve 2 slots for [ConversationState::context_messages].
-        if self.history.len() > MAX_CONVERSATION_STATE_HISTORY_LEN - 2 {
+        // Note that we reserve extra slots for [ConversationState::context_messages].
+        if (self.history.len() * 2) > MAX_CONVERSATION_STATE_HISTORY_LEN - 6 {
             match self
                 .history
                 .iter()
                 .enumerate()
-                // Skip the first message which should be from the user.
                 .skip(1)
-                .find(|(_, m)| -> bool {
-                    match m {
-                        ChatMessage::UserInputMessage(m) => {
-                            matches!(
-                                m.user_input_message_context.as_ref(),
-                                Some(ctx) if ctx.tool_results.as_ref().is_none_or(|v| v.is_empty())
-                            ) && !m.content.is_empty()
-                        },
-                        ChatMessage::AssistantResponseMessage(_) => false,
-                    }
+                .find(|(_, (m, _))| -> bool {
+                    matches!(
+                        m.user_input_message_context.as_ref(),
+                        Some(ctx) if ctx.tool_results.as_ref().is_none_or(|v| v.is_empty())
+                    ) && !m.content.is_empty()
                 })
                 .map(|v| v.0)
             {
                 Some(i) => {
-                    debug!("removing the first {i} elements in the history");
-                    self.history.drain(..i);
+                    debug!("removing the first {i} user/assistant response pairs in the history");
+                    self.valid_history_range.0 = i;
                 },
                 None => {
                     debug!("no valid starting user message found in the history, clearing");
-                    self.history.clear();
+                    self.valid_history_range = (0, 0);
                     // Edge case: if the next message contains tool results, then we have to just
                     // abandon them.
                     match &mut self.next_message {
@@ -254,19 +252,17 @@ impl ConversationState {
             }
         }
 
-        if let Some(ChatMessage::UserInputMessage(msg)) = self.history.iter().last() {
-            debug!(?msg, "last message in history is from the user, dropping");
-            self.history.pop_back();
-        }
-
-        // If the last message from the assistant contains tool uses, we need to ensure that the
-        // next user message contains tool results.
+        // If the last message from the assistant contains tool uses AND next_message is set, we need to
+        // ensure that next_message contains tool results.
         match (self.history.iter().last(), &mut self.next_message) {
             (
-                Some(ChatMessage::AssistantResponseMessage(AssistantResponseMessage {
-                    tool_uses: Some(tool_uses),
-                    ..
-                })),
+                Some((
+                    _,
+                    AssistantResponseMessage {
+                        tool_uses: Some(tool_uses),
+                        ..
+                    },
+                )),
                 Some(msg),
             ) if !tool_uses.is_empty() => match msg.user_input_message_context.as_mut() {
                 Some(ctx) => {
@@ -367,37 +363,107 @@ impl ConversationState {
         self.next_message = Some(msg);
     }
 
-    /// Returns a [FigConversationState] capable of being sent by
-    /// [fig_api_client::StreamingClient] while preparing the current conversation state to be sent
-    /// in the next message.
+    /// Returns a [FigConversationState] capable of being sent by [fig_api_client::StreamingClient].
     pub async fn as_sendable_conversation_state(&mut self) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
-        self.fix_history();
+        self.enforce_conversation_invariants();
+        debug!(?self.valid_history_range, ?self.history, "draining history");
+        self.history.drain(self.valid_history_range.1..);
+        self.history.drain(..self.valid_history_range.0);
+        debug!(?self.valid_history_range, ?self.history, "drained history");
 
-        // The current state we want to send
-        let mut curr_state = self.clone();
+        self.backend_conversation_state()
+            .await
+            .into_fig_conversation_state()
+            .expect("unable to construct conversation state")
+    }
 
-        if let Some((user, assistant)) = self.context_messages().await {
-            self.context_message_length = Some(user.content.len());
-            curr_state
+    /// Returns a conversation state representation which reflects the exact conversation to send
+    /// back to the model.
+    pub async fn backend_conversation_state(&mut self) -> BackendConversationState<'_> {
+        self.enforce_conversation_invariants();
+        let context_messages = self.context_messages().await;
+        BackendConversationState {
+            conversation_id: self.conversation_id.as_str(),
+            next_user_message: self.next_message.as_ref(),
+            history: self
                 .history
-                .push_front(ChatMessage::AssistantResponseMessage(assistant));
-            curr_state.history.push_front(ChatMessage::UserInputMessage(user));
+                .range(self.valid_history_range.0..self.valid_history_range.1),
+            context_messages,
         }
+    }
 
-        // Updating `self` so that the current next_message is moved to history.
-        let mut last_message = self.next_message.take().unwrap();
-        if let Some(ctx) = &mut last_message.user_input_message_context {
-            // Don't include the tool spec in all user messages in the history.
-            ctx.tools.take();
-        }
-        self.history.push_back(ChatMessage::UserInputMessage(last_message));
+    /// Returns a [FigConversationState] capable of replacing the history of the current
+    /// conversation with a summary generated by the model.
+    pub async fn create_summary_request(&mut self, custom_prompt: Option<impl AsRef<str>>) -> FigConversationState {
+        let summary_request = match custom_prompt {
+            Some(custom_prompt) => {
+                // Make the custom instructions much more prominent and directive
+                format!(
+                    "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
+                            FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
+                            IMPORTANT CUSTOM INSTRUCTION: {}\n\n\
+                            Your task is to create a structured summary document containing:\n\
+                            1) A bullet-point list of key topics/questions covered\n\
+                            2) Bullet points for all significant tools executed and their results\n\
+                            3) Bullet points for any code or technical information shared\n\
+                            4) A section of key insights gained\n\n\
+                            FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
+                            ## CONVERSATION SUMMARY\n\
+                            * Topic 1: Key information\n\
+                            * Topic 2: Key information\n\n\
+                            ## TOOLS EXECUTED\n\
+                            * Tool X: Result Y\n\n\
+                            Remember this is a DOCUMENT not a chat response. The custom instruction above modifies what to prioritize.\n\
+                            FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).",
+                    custom_prompt.as_ref()
+                )
+            },
+            None => {
+                // Default prompt
+                "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
+                        FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
+                        Your task is to create a structured summary document containing:\n\
+                        1) A bullet-point list of key topics/questions covered\n\
+                        2) Bullet points for all significant tools executed and their results\n\
+                        3) Bullet points for any code or technical information shared\n\
+                        4) A section of key insights gained\n\n\
+                        FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
+                        ## CONVERSATION SUMMARY\n\
+                        * Topic 1: Key information\n\
+                        * Topic 2: Key information\n\n\
+                        ## TOOLS EXECUTED\n\
+                        * Tool X: Result Y\n\n\
+                        Remember this is a DOCUMENT not a chat response.\n\
+                        FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
+            },
+        };
 
+        let conv_state = self.backend_conversation_state().await;
+        let history_len = conv_state.history.len();
+        // Include everything but the last message in the history.
+        let history = flatten_history(conv_state.history.take(history_len - 2));
         FigConversationState {
-            conversation_id: Some(curr_state.conversation_id),
-            user_input_message: curr_state.next_message.expect("no user input message available"),
-            history: Some(curr_state.history.into()),
+            conversation_id: Some(self.conversation_id.clone()),
+            user_input_message: UserInputMessage {
+                content: summary_request,
+                user_input_message_context: None,
+                user_intent: None,
+            },
+            history: Some(history),
         }
+    }
+
+    pub fn replace_history_with_summary(&mut self, summary: String) {
+        self.history.drain(..(self.history.len() - 1));
+        self.latest_summary = Some(summary);
+        // If the last message contains tool results, then we add the results to the content field
+        // instead.
+        // if let Some((user, _)) = self.history.back_mut() {
+        //     if let Some(ctx) = user.user_input_message_context {
+        //         ctx.tool_results.
+        //     }
+        // }
     }
 
     pub fn current_profile(&self) -> Option<&str> {
@@ -408,9 +474,15 @@ impl ConversationState {
         }
     }
 
-    /// Returns a pair of user and assistant messages to include as context in the message history
+    /// Returns pairs of user and assistant messages to include as context in the message history
     /// including both summaries and context files if available.
-    pub async fn context_messages(&self) -> Option<(UserInputMessage, AssistantResponseMessage)> {
+    ///
+    /// TODO:
+    /// - Either add support for multiple context messages if the context is too large to fit inside
+    ///   a single user message, or handle this case more gracefully. For now, always return 2
+    ///   messages.
+    /// - Cache this return for some period of time.
+    pub async fn context_messages(&mut self) -> Option<Vec<(UserInputMessage, AssistantResponseMessage)>> {
         let mut context_content = String::new();
         let mut has_content = false;
 
@@ -458,7 +530,8 @@ impl ConversationState {
                 content: "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into(),
                 tool_uses: None,
             };
-            Some((user_msg, assistant_msg))
+            self.context_message_length = Some(user_msg.content.len());
+            Some(vec![(user_msg, assistant_msg)])
         } else {
             None
         }
@@ -470,54 +543,13 @@ impl ConversationState {
     }
 
     /// Calculate the total character count in the conversation
-    pub fn calculate_char_count(&self) -> usize {
-        let mut total_chars = 0;
-        for message in &self.history {
-            match message {
-                ChatMessage::UserInputMessage(msg) => {
-                    total_chars += msg.content.len();
-                    if let Some(ctx) = &msg.user_input_message_context {
-                        // Add tool result characters if any
-                        if let Some(results) = &ctx.tool_results {
-                            for result in results {
-                                for content in &result.content {
-                                    match content {
-                                        ToolResultContentBlock::Text(text) => {
-                                            total_chars += text.len();
-                                        },
-                                        ToolResultContentBlock::Json(doc) => {
-                                            total_chars += calculate_document_char_count(doc);
-                                        },
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                ChatMessage::AssistantResponseMessage(msg) => {
-                    total_chars += msg.content.len();
-                    if let Some(tool_uses) = &msg.tool_uses {
-                        total_chars += tool_uses
-                            .iter()
-                            .map(|v| calculate_document_char_count(&v.input))
-                            .reduce(|acc, e| acc + e)
-                            .unwrap_or_default();
-                    }
-                },
-            }
-        }
-
-        // Add summary if it exists (it's also in the context sent to the model)
-        if let Some(summary) = &self.latest_summary {
-            total_chars += summary.len();
-        }
-
-        total_chars
+    pub async fn calculate_char_count(&mut self) -> usize {
+        self.backend_conversation_state().await.char_count()
     }
 
     /// Get the current token warning level
-    pub fn get_token_warning_level(&self) -> TokenWarningLevel {
-        let total_chars = self.calculate_char_count();
+    pub async fn get_token_warning_level(&mut self) -> TokenWarningLevel {
+        let total_chars = self.calculate_char_count().await;
 
         if total_chars >= MAX_CHARS {
             TokenWarningLevel::Critical
@@ -542,6 +574,165 @@ impl ConversationState {
             self.transcript.pop_front();
         }
         self.transcript.push_back(message);
+    }
+}
+
+pub type BackendConversationState<'a> = BackendConversationStateImpl<
+    'a,
+    std::collections::vec_deque::Iter<'a, (UserInputMessage, AssistantResponseMessage)>,
+    Option<Vec<(UserInputMessage, AssistantResponseMessage)>>,
+>;
+
+#[derive(Debug, Clone)]
+pub struct BackendConversationStateImpl<'a, T, U> {
+    pub conversation_id: &'a str,
+    pub next_user_message: Option<&'a UserInputMessage>,
+    pub history: T,
+    pub context_messages: U,
+}
+
+impl
+    BackendConversationStateImpl<
+        '_,
+        std::collections::vec_deque::Iter<'_, (UserInputMessage, AssistantResponseMessage)>,
+        Option<Vec<(UserInputMessage, AssistantResponseMessage)>>,
+    >
+{
+    fn into_fig_conversation_state(self) -> eyre::Result<FigConversationState> {
+        // let history_len =
+        //     (self.context_messages.as_ref().map(|v| v.len()).unwrap_or_default() + self.history.len()) *
+        // 2;
+        //
+        let history = flatten_history(self.context_messages.unwrap_or_default().iter().chain(self.history));
+
+        Ok(FigConversationState {
+            conversation_id: Some(self.conversation_id.to_string()),
+            user_input_message: self
+                .next_user_message
+                .cloned()
+                .ok_or(eyre::eyre!("next user message is not set"))?,
+            history: Some(history),
+        })
+    }
+}
+
+/// Converts a list of message pairs into a flattened list of ChatMessage.
+fn flatten_history<'a, T>(history: T) -> Vec<ChatMessage>
+where
+    T: Iterator<Item = &'a (UserInputMessage, AssistantResponseMessage)>,
+{
+    history.fold(Vec::new(), |mut acc, (user, assistant)| {
+        acc.push(ChatMessage::UserInputMessage(user.clone()));
+        acc.push(ChatMessage::AssistantResponseMessage(assistant.clone()));
+        acc
+    })
+}
+
+// impl<'a, T> BackendConversationStateImpl<'a, T, Option<Vec<(UserInputMessage,
+// AssistantResponseMessage)>>> where
+//     T:  std::iter::ExactSizeIterator<Item = &'a(UserInputMessage, AssistantResponseMessage)>,
+// {
+//     fn into_fig_conversation_state(self) -> eyre::Result<FigConversationState> {
+//         let history_len =
+//             (self.context_messages.as_ref().map(|v| v.len()).unwrap_or_default() +
+// self.history.len()) * 2;
+//
+//         // Convert a list of message pairs into a flattened list of ChatMessage.
+//         let history = self
+//             .context_messages
+//             .unwrap_or_default()
+//             .iter()
+//             .chain(self.history)
+//             .fold(Vec::with_capacity(history_len), |mut acc, (user, assistant)| {
+//                 acc.push(ChatMessage::UserInputMessage(user.clone()));
+//                 acc.push(ChatMessage::AssistantResponseMessage(assistant.clone()));
+//                 acc
+//             });
+//
+//         Ok(FigConversationState {
+//             conversation_id: Some(self.conversation_id.to_string()),
+//             user_input_message: self
+//                 .next_user_message
+//                 .cloned()
+//                 .ok_or(eyre::eyre!("next user message is not set"))?,
+//             history: Some(history),
+//         })
+//     }
+// }
+
+/// A trait for types that represent some number of characters (aka bytes). For use in calculating
+/// context window size utilization.
+trait CharCount {
+    /// Returns the number of characters contained within this type.
+    ///
+    /// One "character" is essentially the same as one "byte"
+    fn char_count(&self) -> usize;
+}
+
+impl CharCount for BackendConversationState<'_> {
+    fn char_count(&self) -> usize {
+        let mut total_chars = 0;
+
+        // Count the chars used by the messages in the history.
+        // this clone is cheap
+        let history = self.history.clone();
+        for (user, assistant) in history {
+            total_chars += user.char_count();
+            total_chars += assistant.char_count();
+        }
+
+        // Add any chars from context messages, if available.
+        total_chars += self
+            .context_messages
+            .as_ref()
+            .map(|v| {
+                v.iter().fold(0, |acc, (user, assistant)| {
+                    acc + user.char_count() + assistant.char_count()
+                })
+            })
+            .unwrap_or_default();
+
+        total_chars
+    }
+}
+
+impl CharCount for UserInputMessage {
+    fn char_count(&self) -> usize {
+        let mut total_chars = 0;
+        total_chars += self.content.len();
+        if let Some(ctx) = &self.user_input_message_context {
+            // Add tool result characters if any
+            if let Some(results) = &ctx.tool_results {
+                for result in results {
+                    for content in &result.content {
+                        match content {
+                            ToolResultContentBlock::Text(text) => {
+                                total_chars += text.len();
+                            },
+                            ToolResultContentBlock::Json(doc) => {
+                                total_chars += calculate_document_char_count(doc);
+                            },
+                        }
+                    }
+                }
+            }
+        }
+        total_chars
+    }
+}
+
+impl CharCount for AssistantResponseMessage {
+    fn char_count(&self) -> usize {
+        let mut total_chars = 0;
+        total_chars += self.content.len();
+        if let Some(tool_uses) = &self.tool_uses {
+            total_chars += tool_uses
+                .iter()
+                .map(|v| calculate_document_char_count(&v.input))
+                .reduce(|acc, e| acc + e)
+                .unwrap_or_default();
+        }
+        total_chars
     }
 }
 
@@ -717,6 +908,38 @@ mod tests {
             }
         }
 
+        if let Some(history) = state.history.as_ref() {
+            for (i, msg) in history.iter().enumerate() {
+                // User message checks.
+                if let ChatMessage::UserInputMessage(user) = msg {
+                    assert!(
+                        user.user_input_message_context
+                            .as_ref()
+                            .is_none_or(|ctx| ctx.tools.is_none()),
+                        "the tool specification should be empty for all user messages in the history"
+                    );
+
+                    // Check that messages with tool results are immediately preceded by an
+                    // assistant message with tool uses.
+                    if user
+                        .user_input_message_context
+                        .as_ref()
+                        .is_some_and(|ctx| ctx.tool_results.is_some())
+                    {
+                        match history.get(i - 1) {
+                            Some(ChatMessage::AssistantResponseMessage(assistant)) => {
+                                assert!(assistant.tool_uses.is_some());
+                            },
+                            _ => panic!(
+                                "expected an assistant response message with tool uses at index: {}",
+                                i - 1
+                            ),
+                        }
+                    }
+                }
+            }
+        }
+
         let actual_history_len = state.history.unwrap_or_default().len();
         assert!(
             actual_history_len <= MAX_CONVERSATION_STATE_HISTORY_LEN,
@@ -732,7 +955,7 @@ mod tests {
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
-        conversation_state.append_new_user_message("start".to_string()).await;
+        conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
             assert_conversation_state_invariants(s, i);
@@ -741,7 +964,7 @@ mod tests {
                 content: i.to_string(),
                 tool_uses: None,
             });
-            conversation_state.append_new_user_message(i.to_string()).await;
+            conversation_state.set_next_user_message(i.to_string()).await;
         }
     }
 
@@ -749,7 +972,7 @@ mod tests {
     async fn test_conversation_state_history_handling_with_tool_results() {
         // Build a long conversation history of tool use results.
         let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
-        conversation_state.append_new_user_message("start".to_string()).await;
+        conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
             assert_conversation_state_invariants(s, i);
@@ -771,7 +994,7 @@ mod tests {
 
         // Build a long conversation history of user messages mixed in with tool results.
         let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
-        conversation_state.append_new_user_message("start".to_string()).await;
+        conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
             assert_conversation_state_invariants(s, i);
@@ -796,7 +1019,7 @@ mod tests {
                     content: i.to_string(),
                     tool_uses: None,
                 });
-                conversation_state.append_new_user_message(i.to_string()).await;
+                conversation_state.set_next_user_message(i.to_string()).await;
             }
         }
     }
@@ -810,7 +1033,7 @@ mod tests {
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
-        conversation_state.append_new_user_message("start".to_string()).await;
+        conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
 
@@ -836,7 +1059,7 @@ mod tests {
                 content: i.to_string(),
                 tool_uses: None,
             });
-            conversation_state.append_new_user_message(i.to_string()).await;
+            conversation_state.set_next_user_message(i.to_string()).await;
         }
     }
 }
