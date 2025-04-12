@@ -706,7 +706,8 @@ where
             }
         }
 
-        if !skip_printing_tools && pending_tool_index.is_some() {
+        let show_tool_use_confirmation_dialog = !skip_printing_tools && pending_tool_index.is_some();
+        if show_tool_use_confirmation_dialog {
             execute!(
                 self.output,
                 style::SetForegroundColor(Color::DarkGrey),
@@ -731,36 +732,9 @@ where
             )?;
         }
 
-        // Require two consecutive sigint's to exit.
-        let mut ctrl_c = false;
-        let user_input = loop {
-            let all_tools_trusted = self.conversation_state.tools.iter().all(|t| match t {
-                FigTool::ToolSpecification(t) => self.tool_permissions.is_trusted(&t.name),
-            });
-
-            // Generate prompt based on active context profile and trusted tools
-            let prompt = prompt::generate_prompt(self.conversation_state.current_profile(), all_tools_trusted);
-
-            match (self.input_source.read_line(Some(&prompt))?, ctrl_c) {
-                (Some(line), _) => {
-                    // Handle empty line case - reprompt the user
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    break line;
-                },
-                (None, false) => {
-                    execute!(
-                        self.output,
-                        style::Print(format!(
-                            "\n(To exit, press Ctrl+C or Ctrl+D again or type {})\n\n",
-                            "/quit".green()
-                        ))
-                    )?;
-                    ctrl_c = true;
-                },
-                (None, true) => return Ok(ChatState::Exit),
-            }
+        let user_input = match self.read_user_input(&self.generate_tool_trust_prompt(), false) {
+            Some(input) => input,
+            None => return Ok(ChatState::Exit),
         };
 
         self.conversation_state.append_user_transcript(&user_input);
@@ -850,15 +824,38 @@ where
                 }
             },
             Command::Clear => {
-                // Clear the conversation including summary
-                self.conversation_state.clear(false);
-
+                execute!(self.output, cursor::Show)?;
                 execute!(
                     self.output,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("\nAre you sure? This will erase the conversation history for the current session. "),
+                    style::Print("["),
                     style::SetForegroundColor(Color::Green),
-                    style::Print("\nConversation history cleared.\n\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    style::Print("y"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("/"),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("n"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("]:\n\n"),
+                    style::SetForegroundColor(Color::Reset),
                 )?;
+
+                // Setting `exit_on_single_ctrl_c` for better ux: exit the confirmation dialog rather than the CLI
+                let user_input = match self.read_user_input("> ".yellow().to_string().as_str(), true) {
+                    Some(input) => input,
+                    None => "".to_string(),
+                };
+
+                if ["y", "Y"].contains(&user_input.as_str()) {
+                    self.conversation_state.clear(true);
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Green),
+                        style::Print("\nConversation history cleared.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                }
 
                 ChatState::PromptUser {
                     tool_uses: None,
@@ -2140,6 +2137,46 @@ where
             .map_err(|e| ChatError::Custom(format!("failed to print tool: {}", e).into()))?;
         queue!(self.output, style::Print("\n"))?;
         Ok(())
+    }
+
+    /// Helper function to read user input with a prompt and Ctrl+C handling
+    fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
+        let mut ctrl_c = false;
+        loop {
+            match (self.input_source.read_line(Some(prompt)), ctrl_c) {
+                (Ok(Some(line)), _) => {
+                    if line.trim().is_empty() {
+                        continue; // Reprompt if the input is empty
+                    }
+                    return Some(line);
+                },
+                (Ok(None), false) => {
+                    if exit_on_single_ctrl_c {
+                        return None;
+                    }
+                    execute!(
+                        self.output,
+                        style::Print(format!(
+                            "\n(To exit the CLI, press Ctrl+C or Ctrl+D again or type {})\n\n",
+                            "/quit".green()
+                        ))
+                    )
+                    .unwrap_or_default();
+                    ctrl_c = true;
+                },
+                (Ok(None), true) => return None, // Exit if Ctrl+C was pressed twice
+                (Err(_), _) => return None,
+            }
+        }
+    }
+
+    /// Helper function to generate a prompt based on the current context
+    fn generate_tool_trust_prompt(&self) -> String {
+        let all_tools_trusted = self.conversation_state.tools.iter().all(|t| match t {
+            FigTool::ToolSpecification(t) => self.tool_permissions.is_trusted(&t.name),
+        });
+
+        prompt::generate_prompt(self.conversation_state.current_profile(), all_tools_trusted)
     }
 
     async fn send_tool_use_telemetry(&mut self) {
