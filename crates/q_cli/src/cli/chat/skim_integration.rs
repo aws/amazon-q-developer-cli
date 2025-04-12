@@ -25,12 +25,12 @@ use tempfile::NamedTempFile;
 
 use super::context::ContextManager;
 
-// Custom event handler for skim command selector
 pub struct SkimCommandSelector {
     context_manager: Arc<ContextManager>,
 }
 
 impl SkimCommandSelector {
+    /// This allows the ConditionalEventHandler handle function to be bound to a KeyEvent.
     pub fn new(context_manager: Arc<ContextManager>) -> Self {
         Self { context_manager }
     }
@@ -261,14 +261,9 @@ pub fn select_command(context_manager: &ContextManager) -> Result<Option<String>
                     // Load tool names from the tool_index.json file
                     let tools = load_tool_names()?;
 
-                    // Create skim options for tool selection
                     let options = create_skim_options("Select tool: ", false)?;
-
-                    // Create item reader
                     let item_reader = SkimItemReader::default();
                     let items = item_reader.of_bufread(Cursor::new(tools.join("\n")));
-
-                    // Run skim and get selected tool
                     let selected_tool = match run_skim_with_options(&options, items)? {
                         Some(items) if !items.is_empty() => Some(items[0].output().to_string()),
                         _ => None,

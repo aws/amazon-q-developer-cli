@@ -737,7 +737,7 @@ where
         // q session unless we do this in prompt_user... unless you can find a better way)
         if let Some(ref context_manager) = self.conversation_state.context_manager {
             self.input_source
-                .create_skim_command_selector(Arc::new(context_manager.clone()));
+                .put_skim_command_selector(Arc::new(context_manager.clone()));
         }
 
         // Require two consecutive sigint's to exit.

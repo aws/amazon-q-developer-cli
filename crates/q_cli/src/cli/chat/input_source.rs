@@ -36,7 +36,7 @@ impl InputSource {
         Ok(Self(inner::Inner::Readline(rl()?)))
     }
 
-    pub fn create_skim_command_selector(&mut self, context_manager: Arc<ContextManager>) {
+    pub fn put_skim_command_selector(&mut self, context_manager: Arc<ContextManager>) {
         if let inner::Inner::Readline(rl) = &mut self.0 {
             rl.bind_sequence(
                 KeyEvent::ctrl('k'),
