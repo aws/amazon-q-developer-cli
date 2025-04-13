@@ -1,6 +1,45 @@
 use std::collections::VecDeque;
-use std::io::Write;
-use std::process::Stdio;
+use std::io::{
+    self,
+    Write,
+};
+use std::os::fd::{
+    AsFd,
+    AsRawFd,
+    FromRawFd,
+    RawFd,
+};
+use std::path::Path;
+
+use console::strip_ansi_codes;
+use fig_os_shim::Context;
+use filedescriptor::FileDescriptor;
+use nix::fcntl::{
+    FcntlArg,
+    FdFlag,
+    OFlag,
+    fcntl,
+    open,
+};
+use nix::libc;
+use nix::pty::{
+    Winsize,
+    grantpt,
+    posix_openpt,
+    ptsname,
+    unlockpt,
+};
+use nix::sys::signal::{
+    SigHandler,
+    Signal,
+    signal,
+};
+use nix::sys::stat::Mode;
+use portable_pty::unix::close_random_fds;
+use tokio::io::unix::AsyncFd;
+use tokio::select;
+use tokio::sync::mpsc::channel;
+nix::ioctl_write_ptr_bad!(ioctl_tiocswinsz, libc::TIOCSWINSZ, Winsize);
 
 use crossterm::queue;
 use crossterm::style::{
@@ -11,10 +50,7 @@ use eyre::{
     Context as EyreContext,
     Result,
 };
-use fig_os_shim::Context;
 use serde::Deserialize;
-use tokio::io::AsyncBufReadExt;
-use tokio::select;
 use tracing::error;
 
 use super::{
@@ -27,11 +63,21 @@ use crate::cli::chat::truncate_safe;
 const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ExecuteBash {
+pub struct ExecuteShellCommands {
     pub command: String,
 }
 
-impl ExecuteBash {
+/// Helper function to set the close-on-exec flag for a raw descriptor
+fn cloexec(fd: RawFd) -> Result<()> {
+    let flags = fcntl(fd, FcntlArg::F_GETFD)?;
+    fcntl(
+        fd,
+        FcntlArg::F_SETFD(FdFlag::from_bits_truncate(flags) | FdFlag::FD_CLOEXEC),
+    )?;
+    Ok(())
+}
+
+impl ExecuteShellCommands {
     pub fn requires_acceptance(&self) -> bool {
         let Some(args) = shlex::split(&self.command) else {
             return true;
@@ -90,66 +136,164 @@ impl ExecuteBash {
     }
 
     pub async fn invoke(&self, mut updates: impl Write) -> Result<InvokeOutput> {
-        // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
-        let mut child = tokio::process::Command::new("bash")
+        // The pseudoterminal must be initialized with O_NONBLOCK since on macOS, the
+        // it can not be safely set with fcntl() later on.
+        // https://github.com/pkgw/stund/blob/master/tokio-pty-process/src/lib.rs#L127-L133
+        cfg_if::cfg_if! {
+            if #[cfg(any(target_os = "macos", target_os = "linux"))] {
+                let oflag = OFlag::O_RDWR | OFlag::O_NONBLOCK;
+            } else if #[cfg(target_os = "freebsd")] {
+                let oflag = OFlag::O_RDWR;
+            }
+        }
+        let master_pty = std::sync::Arc::new(posix_openpt(oflag).context("Failed to openpt")?);
+
+        // Allow pseudoterminal pair to be generated
+        grantpt(&master_pty).context("Failed to grantpt")?;
+        unlockpt(&master_pty).context("Failed to unlockpt")?;
+
+        // Get the name of the pseudoterminal
+        // SAFETY: This is done before any threads are spawned, thus it being
+        // non thread safe is not an issue
+        let pty_name = { unsafe { ptsname(&master_pty) }? };
+
+        // This will be the reader
+        let slave_pty = open(Path::new(&pty_name), OFlag::O_RDWR, Mode::empty())?;
+
+        let winsize = Winsize {
+            ws_row: 30,
+            ws_col: 100,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        unsafe { ioctl_tiocswinsz(slave_pty, &winsize) }?;
+
+        cloexec(master_pty.as_fd().as_raw_fd())?;
+        cloexec(slave_pty.as_raw_fd())?;
+
+        let shell: String = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
+
+        let slave_fd = unsafe { FileDescriptor::from_raw_fd(slave_pty.as_raw_fd()) };
+
+        let mut base_command = tokio::process::Command::new(&shell);
+        let command = base_command
             .arg("-c")
+            .arg("-l")
+            .arg("-i")
             .arg(&self.command)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .wrap_err_with(|| format!("Unable to spawn command '{}'", &self.command))?;
+            .stdin(slave_fd.as_stdio()?)
+            .stdout(slave_fd.as_stdio()?)
+            .stderr(slave_fd.as_stdio()?);
 
-        let stdout = child.stdout.take().unwrap();
-        let stdout = tokio::io::BufReader::new(stdout);
-        let mut stdout = stdout.lines();
+        let pre_exec_fn = move || {
+            // Clean up a few things before we exec the program
+            // Clear out any potentially problematic signal
+            // dispositions that we might have inherited
+            for signo in [
+                Signal::SIGCHLD,
+                Signal::SIGHUP,
+                Signal::SIGINT,
+                Signal::SIGQUIT,
+                Signal::SIGTERM,
+                Signal::SIGALRM,
+            ] {
+                unsafe { signal(signo, SigHandler::SigDfl) }?;
+            }
 
-        let stderr = child.stderr.take().unwrap();
-        let stderr = tokio::io::BufReader::new(stderr);
-        let mut stderr = stderr.lines();
+            // Establish ourselves as a session leader.
+            nix::unistd::setsid()?;
+
+            // Clippy wants us to explicitly cast TIOCSCTTY using
+            // type::from(), but the size and potentially signedness
+            // are system dependent, which is why we're using `as _`.
+            // Suppress this lint for this section of code.
+            {
+                // Set the pty as the controlling terminal.
+                // Failure to do this means that delivery of
+                // SIGWINCH won't happen when we resize the
+                // terminal, among other undesirable effects.
+                if unsafe { libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 } {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+
+            close_random_fds();
+
+            Ok(())
+        };
+
+        unsafe { command.pre_exec(pre_exec_fn) };
+
+        let mut child = command.spawn()?;
+
+        let async_master = AsyncFd::new(master_pty.as_fd().as_raw_fd())?;
 
         const LINE_COUNT: usize = 1024;
-        let mut stdout_buf = VecDeque::with_capacity(LINE_COUNT);
-        let mut stderr_buf = VecDeque::with_capacity(LINE_COUNT);
 
-        let mut stdout_done = false;
-        let mut stderr_done = false;
+        let (tx, mut rx) = channel(LINE_COUNT);
+        let mut buffer = [0u8; LINE_COUNT];
+
+        tokio::spawn(async move {
+            loop {
+                match async_master.readable().await {
+                    Ok(mut guard) => {
+                        let n = match guard.try_io(|inner| {
+                            nix::unistd::read(inner.get_ref().as_raw_fd(), &mut buffer)
+                                .map_err(|e| std::io::Error::from_raw_os_error(e as i32))
+                        }) {
+                            Ok(Ok(n)) => n,
+                            Ok(Err(e)) => {
+                                print!("{} ", e);
+                                error!(%e, "Read error");
+                                break;
+                            },
+                            Err(_) => continue,
+                        };
+
+                        if n == 0 {
+                            break;
+                        }
+
+                        let raw_output = &buffer[..n];
+                        if tx.send(raw_output.to_vec()).await.is_err() {
+                            error!("channel closed");
+                            break;
+                        }
+                    },
+                    Err(e) => {
+                        error!(%e, "readable failed");
+                        break;
+                    },
+                }
+            }
+        });
+
+        let mut stdout_lines: VecDeque<String> = VecDeque::with_capacity(LINE_COUNT);
+
         let exit_status = loop {
             select! {
                 biased;
-                line = stdout.next_line(), if !stdout_done => match line {
-                    Ok(Some(line)) => {
-                        writeln!(updates, "{line}")?;
-                        if stdout_buf.len() >= LINE_COUNT {
-                            stdout_buf.pop_front();
+                Some(line) = rx.recv() => {
+                    updates.write_all(&line)?;
+                    updates.flush()?;
+
+                    if let Ok(text) = std::str::from_utf8(&line) {
+                        for subline in text.split_inclusive('\n') {
+                            if stdout_lines.len() >= LINE_COUNT {
+                                stdout_lines.pop_front();
+                            }
+                            stdout_lines.push_back(strip_ansi_codes(subline).to_string().trim().to_string());
                         }
-                        stdout_buf.push_back(line);
-                    },
-                    Ok(None) => stdout_done = true,
-                    Err(err) => error!(%err, "Failed to read stdout of child process"),
-                },
-                line = stderr.next_line(), if !stderr_done => match line {
-                    Ok(Some(line)) => {
-                        writeln!(updates, "{line}")?;
-                        if stderr_buf.len() >= LINE_COUNT {
-                            stderr_buf.pop_front();
-                        }
-                        stderr_buf.push_back(line);
-                    },
-                    Ok(None) => stderr_done = true,
-                    Err(err) => error!(%err, "Failed to read stderr of child process"),
-                },
-                exit_status = child.wait() => {
-                    break exit_status;
-                },
+                    }
+                }
+                status = child.wait() => {
+                    break status;
+                }
             };
         }
         .wrap_err_with(|| format!("No exit status for '{}'", &self.command))?;
 
-        updates.flush()?;
-
-        let stdout = stdout_buf.into_iter().collect::<Vec<_>>().join("\n");
-        let stderr = stderr_buf.into_iter().collect::<Vec<_>>().join("\n");
+        let stdout = stdout_lines.into_iter().collect::<String>();
 
         let output = serde_json::json!({
             "exit_status": exit_status.code().unwrap_or(0).to_string(),
@@ -162,16 +306,9 @@ impl ExecuteBash {
                     ""
                 }
             ),
-            "stderr": format!(
-                "{}{}",
-                truncate_safe(&stderr, MAX_TOOL_RESPONSE_SIZE / 3),
-                if stderr.len() > MAX_TOOL_RESPONSE_SIZE / 3 {
-                    " ... truncated"
-                } else {
-                    ""
-                }
-            ),
         });
+
+        child.kill().await?;
 
         Ok(InvokeOutput {
             output: OutputKind::Json(output),
@@ -206,14 +343,14 @@ mod tests {
 
     #[ignore = "todo: fix failing on musl for some reason"]
     #[tokio::test]
-    async fn test_execute_bash_tool() {
+    async fn test_execute_shell_commands_tool() {
         let mut stdout = std::io::stdout();
 
         // Verifying stdout
         let v = serde_json::json!({
             "command": "echo Hello, world!",
         });
-        let out = serde_json::from_value::<ExecuteBash>(v)
+        let out = serde_json::from_value::<ExecuteShellCommands>(v)
             .unwrap()
             .invoke(&mut stdout)
             .await
@@ -222,25 +359,6 @@ mod tests {
         if let OutputKind::Json(json) = out.output {
             assert_eq!(json.get("exit_status").unwrap(), &0.to_string());
             assert_eq!(json.get("stdout").unwrap(), "Hello, world!");
-            assert_eq!(json.get("stderr").unwrap(), "");
-        } else {
-            panic!("Expected JSON output");
-        }
-
-        // Verifying stderr
-        let v = serde_json::json!({
-            "command": "echo Hello, world! 1>&2",
-        });
-        let out = serde_json::from_value::<ExecuteBash>(v)
-            .unwrap()
-            .invoke(&mut stdout)
-            .await
-            .unwrap();
-
-        if let OutputKind::Json(json) = out.output {
-            assert_eq!(json.get("exit_status").unwrap(), &0.to_string());
-            assert_eq!(json.get("stdout").unwrap(), "");
-            assert_eq!(json.get("stderr").unwrap(), "Hello, world!");
         } else {
             panic!("Expected JSON output");
         }
@@ -250,7 +368,7 @@ mod tests {
             "command": "exit 1",
             "interactive": false
         });
-        let out = serde_json::from_value::<ExecuteBash>(v)
+        let out = serde_json::from_value::<ExecuteShellCommands>(v)
             .unwrap()
             .invoke(&mut stdout)
             .await
@@ -258,7 +376,6 @@ mod tests {
         if let OutputKind::Json(json) = out.output {
             assert_eq!(json.get("exit_status").unwrap(), &1.to_string());
             assert_eq!(json.get("stdout").unwrap(), "");
-            assert_eq!(json.get("stderr").unwrap(), "");
         } else {
             panic!("Expected JSON output");
         }
@@ -304,7 +421,7 @@ mod tests {
             ("find important-dir/ -name '*.txt'", false),
         ];
         for (cmd, expected) in cmds {
-            let tool = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            let tool = serde_json::from_value::<ExecuteShellCommands>(serde_json::json!({
                 "command": cmd,
             }))
             .unwrap();

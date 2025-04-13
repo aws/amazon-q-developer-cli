@@ -1,4 +1,4 @@
-pub mod execute_bash;
+pub mod execute_shell_commands;
 pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
@@ -15,7 +15,7 @@ use aws_smithy_types::{
     Document,
     Number as SmithyNumber,
 };
-use execute_bash::ExecuteBash;
+use execute_shell_commands::ExecuteShellCommands;
 use eyre::Result;
 use fig_api_client::model::{
     ToolResult,
@@ -38,7 +38,7 @@ pub const MAX_TOOL_RESPONSE_SIZE: usize = 800000;
 pub enum Tool {
     FsRead(FsRead),
     FsWrite(FsWrite),
-    ExecuteBash(ExecuteBash),
+    ExecuteShellCommands(ExecuteShellCommands),
     UseAws(UseAws),
     GhIssue(GhIssue),
 }
@@ -49,7 +49,7 @@ impl Tool {
         match self {
             Tool::FsRead(_) => "Read from filesystem",
             Tool::FsWrite(_) => "Write to filesystem",
-            Tool::ExecuteBash(_) => "Execute shell command",
+            Tool::ExecuteShellCommands(_) => "Execute shell command",
             Tool::UseAws(_) => "Use AWS CLI",
             Tool::GhIssue(_) => "Prepare GitHub issue",
         }
@@ -60,7 +60,9 @@ impl Tool {
         match self {
             Tool::FsRead(_) => "Reading from filesystem",
             Tool::FsWrite(_) => "Writing to filesystem",
-            Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
+            Tool::ExecuteShellCommands(execute_shell_commands) => {
+                return format!("Executing `{}`", execute_shell_commands.command);
+            },
             Tool::UseAws(_) => "Using AWS CLI",
             Tool::GhIssue(_) => "Preparing GitHub issue",
         }
@@ -72,7 +74,7 @@ impl Tool {
         match self {
             Tool::FsRead(_) => false,
             Tool::FsWrite(_) => true,
-            Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
+            Tool::ExecuteShellCommands(execute_shell_commands) => execute_shell_commands.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
             Tool::GhIssue(_) => false,
         }
@@ -83,7 +85,7 @@ impl Tool {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(context, updates).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(context, updates).await,
-            Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
+            Tool::ExecuteShellCommands(execute_shell_commands) => execute_shell_commands.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
         }
@@ -94,7 +96,7 @@ impl Tool {
         match self {
             Tool::FsRead(fs_read) => fs_read.queue_description(ctx, updates).await,
             Tool::FsWrite(fs_write) => fs_write.queue_description(ctx, updates),
-            Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
+            Tool::ExecuteShellCommands(execute_shell_commands) => execute_shell_commands.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
         }
@@ -105,7 +107,7 @@ impl Tool {
         match self {
             Tool::FsRead(fs_read) => fs_read.validate(ctx).await,
             Tool::FsWrite(fs_write) => fs_write.validate(ctx).await,
-            Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
+            Tool::ExecuteShellCommands(execute_shell_commands) => execute_shell_commands.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
         }
@@ -127,7 +129,9 @@ impl TryFrom<ToolUse> for Tool {
         Ok(match value.name.as_str() {
             "fs_read" => Self::FsRead(serde_json::from_value::<FsRead>(value.args).map_err(map_err)?),
             "fs_write" => Self::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?),
-            "execute_bash" => Self::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
+            "execute_shell_commands" => {
+                Self::ExecuteShellCommands(serde_json::from_value::<ExecuteShellCommands>(value.args).map_err(map_err)?)
+            },
             "use_aws" => Self::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Self::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
             unknown => {
