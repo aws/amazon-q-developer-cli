@@ -95,6 +95,7 @@ pub enum HookType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct HookConfig {
     pub conversation_start: Vec<Hook>,
     pub per_prompt: Vec<Hook>,
@@ -233,15 +234,15 @@ impl HookExecutor {
         let timeout = Duration::from_millis(hook.timeout_ms);
 
         // Run with timeout
-        match tokio::time::timeout(timeout, command_future).await? {
-            Ok(result) => match result.exit_status.unwrap_or(0) {
-                0 => Ok(result.stdout),
-                code => Err(eyre!("command returned non-zero exit code: {}", code)),
+        match tokio::time::timeout(timeout, command_future).await {
+            Ok(result) => {
+                let result = result?;
+                match result.exit_status.unwrap_or(0) {
+                    0 => Ok(result.stdout),
+                    code => Err(eyre!("command returned non-zero exit code: {}", code)),
+                }
             },
-            Err(_) => Err(eyre!(
-                "command failed to start or timed out after {} ms",
-                timeout.as_millis()
-            )),
+            Err(_) => Err(eyre!("command timed out after {} ms", timeout.as_millis())),
         }
     }
 

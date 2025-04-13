@@ -28,6 +28,7 @@ pub const AMAZONQ_FILENAME: &str = "AmazonQ.md";
 
 /// Configuration for context files, containing paths to include in the context.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct ContextConfig {
     /// List of file paths or glob patterns to include in the context.
     pub paths: Vec<String>,
@@ -503,11 +504,10 @@ impl ContextManager {
         self.save_config(global).await
     }
 
-    /// Sets the "disabled" field on any [`Hook`] with the given name to be true or false
+    /// Sets the "disabled" field on any [`Hook`] with the given name
     /// # Arguments
-    /// * `enable` - If true, the "disabled" field are is to false. If false, the "disabled" field
-    ///   is set to true
-    pub async fn enable_hook(&mut self, name: &str, global: bool, enable: bool) -> Result<()> {
+    /// * `disable` - Set "disabled" field to this value
+    pub async fn set_hook_disabled(&mut self, name: &str, global: bool, disable: bool) -> Result<()> {
         let config = self.get_config_mut(global);
 
         config
@@ -516,16 +516,15 @@ impl ContextManager {
             .iter_mut()
             .chain(config.hooks.per_prompt.iter_mut())
             .filter(|h| h.name == name)
-            .for_each(|h| h.disabled = !enable);
+            .for_each(|h| h.disabled = disable);
 
         self.save_config(global).await
     }
 
-    /// Sets the "disabled" field on all [`Hook`]s to be true or false
+    /// Sets the "disabled" field on all [`Hook`]s
     /// # Arguments
-    /// * `enable` - If true, all "disabled" fields are set to false. If false, all "disabled"
-    ///   fields are set to true
-    pub async fn enable_all_hooks(&mut self, global: bool, enable: bool) -> Result<()> {
+    /// * `disable` - Set all "disabled" fields to this value
+    pub async fn set_all_hooks_disabled(&mut self, global: bool, disable: bool) -> Result<()> {
         let config = self.get_config_mut(global);
 
         config
@@ -533,7 +532,7 @@ impl ContextManager {
             .conversation_start
             .iter_mut()
             .chain(config.hooks.per_prompt.iter_mut())
-            .for_each(|h| h.disabled = !enable);
+            .for_each(|h| h.disabled = disable);
 
         self.save_config(global).await
     }
