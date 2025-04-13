@@ -3,6 +3,7 @@ mod commands;
 mod context;
 mod context_adapter;
 mod conversation_state;
+mod hooks;
 mod input_source;
 mod parse;
 mod parser;
