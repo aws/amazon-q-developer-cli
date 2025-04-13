@@ -89,8 +89,8 @@ whoami.workspace = true
 winnow.workspace = true
 shell-color.workspace = true
 syntect = { version = "5.2.0", features = [ "default-syntaxes", "default-themes" ]}
-chrono = "0.4.40"
-once_cell = "1.21.3"
+chrono.workspace = true
+once_cell.workspace = true
 dirs.workspace = true
 
 [target.'cfg(unix)'.dependencies]
@@ -115,4 +115,3 @@ criterion = "0.5.1"
 insta.workspace = true
 paste = "1.0.11"
 predicates = "3.0"
-mockall = "0.12.1"

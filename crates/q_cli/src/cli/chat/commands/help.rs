@@ -4,10 +4,14 @@ use std::pin::Pin;
 use eyre::Result;
 use fig_os_shim::Context;
 
-use crate::cli::chat::QueuedTool;
 use crate::cli::chat::commands::CommandHandler;
-use crate::cli::chat::conversation_state::ChatState;
+use crate::cli::chat::{
+    ChatState,
+    QueuedTool,
+};
 
+// TODO: In the future, this help text should be generated dynamically from the command registry
+// TODO: We need to support subcommands in the help text generation, e.g., /profile create
 /// Comprehensive help text with formatting
 pub const HELP_TEXT: &str = color_print::cstr! {"
 

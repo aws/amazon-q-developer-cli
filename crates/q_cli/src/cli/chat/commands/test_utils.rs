@@ -1,12 +1,4 @@
-use std::io::{
-    Cursor,
-    Read,
-    Write,
-};
-use std::sync::{
-    Arc,
-    Mutex,
-};
+use std::sync::Arc;
 
 use fig_os_shim::Context;
 

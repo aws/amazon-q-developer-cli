@@ -80,6 +80,7 @@ impl UseQCommand {
     }
 
     /// Check if this specific command requires confirmation
+    #[allow(dead_code)]
     pub fn command_requires_confirmation(&self, _ctx: &Context) -> bool {
         // Get the command name without the leading slash
         let cmd = self.command.trim_start_matches('/');
@@ -111,10 +112,7 @@ impl UseQCommand {
             "profile" => {
                 // Check subcommand for profile
                 if let Some(subcommand) = &self.subcommand {
-                    match subcommand.as_str() {
-                        "delete" => true,
-                        _ => false,
-                    }
+                    matches!(subcommand.as_str(), "delete")
                 } else {
                     false
                 }
@@ -122,11 +120,7 @@ impl UseQCommand {
             "context" => {
                 // Check subcommand for context
                 if let Some(subcommand) = &self.subcommand {
-                    match subcommand.as_str() {
-                        "clear" => true,
-                        "rm" => true,
-                        _ => false,
-                    }
+                    matches!(subcommand.as_str(), "clear" | "rm")
                 } else {
                     false
                 }
@@ -134,10 +128,7 @@ impl UseQCommand {
             "tools" => {
                 // Check subcommand for tools
                 if let Some(subcommand) = &self.subcommand {
-                    match subcommand.as_str() {
-                        "reset" => true,
-                        _ => false,
-                    }
+                    matches!(subcommand.as_str(), "reset")
                 } else {
                     false
                 }
@@ -213,7 +204,7 @@ impl UseQCommand {
             Ok(chat_state) => {
                 // Convert ChatState to appropriate InvokeOutput
                 match chat_state {
-                    crate::cli::chat::conversation_state::ChatState::Exit => {
+                    crate::cli::chat::ChatState::Exit => {
                         // Special handling for Exit state - we need to propagate this back to the main application
                         // First, provide a message that will be shown to the user
                         let output = InvokeOutput {
@@ -225,12 +216,10 @@ impl UseQCommand {
 
                         Ok(output)
                     },
-                    crate::cli::chat::conversation_state::ChatState::DisplayHelp { help_text, .. } => {
-                        Ok(InvokeOutput {
-                            output: OutputKind::Text(help_text),
-                        })
-                    },
-                    crate::cli::chat::conversation_state::ChatState::PromptUser {
+                    crate::cli::chat::ChatState::DisplayHelp { help_text, .. } => Ok(InvokeOutput {
+                        output: OutputKind::Text(help_text),
+                    }),
+                    crate::cli::chat::ChatState::PromptUser {
                         skip_printing_tools, ..
                     } => {
                         if skip_printing_tools {

@@ -16,9 +16,11 @@ use fig_os_shim::Context;
 pub use remove::RemoveContextCommand;
 pub use show::ShowContextCommand;
 
-use crate::cli::chat::QueuedTool;
 use crate::cli::chat::commands::CommandHandler;
-use crate::cli::chat::conversation_state::ChatState;
+use crate::cli::chat::{
+    ChatState,
+    QueuedTool,
+};
 
 /// Handler for the context command
 pub struct ContextCommand;

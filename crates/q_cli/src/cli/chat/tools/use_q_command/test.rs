@@ -10,8 +10,8 @@ mod tests {
     use eyre::Result;
     use fig_os_shim::Context;
 
+    use crate::cli::chat::ChatState;
     use crate::cli::chat::commands::CommandRegistry;
-    use crate::cli::chat::conversation_state::ChatState;
     use crate::cli::chat::tools::use_q_command::schema::UseQCommand;
     use crate::cli::chat::tools::{
         OutputKind,

@@ -397,9 +397,12 @@ impl<W: Write> Drop for ChatContext<W> {
 /// The chat execution state.
 ///
 /// Intended to provide more robust handling around state transitions while dealing with, e.g.,
+/// The chat execution state.
+///
+/// Intended to provide more robust handling around state transitions while dealing with, e.g.,
 /// tool validation, execution, response stream handling, etc.
 #[derive(Debug)]
-enum ChatState {
+pub enum ChatState {
     /// Prompt the user with `tool_uses`, if available.
     PromptUser {
         /// Tool uses to present to the user.
@@ -422,6 +425,12 @@ enum ChatState {
     ExecuteTools(Vec<QueuedTool>),
     /// Consume the response stream and display to the user.
     HandleResponseStream(SendMessageOutput),
+    /// Display help text to the user.
+    DisplayHelp {
+        help_text: String,
+        tool_uses: Option<Vec<QueuedTool>>,
+        pending_tool_index: Option<usize>,
+    },
     /// Exit the chat.
     Exit,
 }
@@ -554,6 +563,18 @@ where
                 ChatState::HandleResponseStream(response) => tokio::select! {
                     res = self.handle_response(response) => res,
                     Some(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: None })
+                },
+                ChatState::DisplayHelp {
+                    help_text,
+                    tool_uses,
+                    pending_tool_index,
+                } => {
+                    execute!(self.output, style::Print(help_text))?;
+                    Ok(ChatState::PromptUser {
+                        tool_uses,
+                        pending_tool_index,
+                        skip_printing_tools: true,
+                    })
                 },
                 ChatState::Exit => return Ok(()),
             };
@@ -944,34 +965,12 @@ where
                         .execute(vec![], &self.ctx, Some(tool_uses.clone()), pending_tool_index)
                         .await;
 
-                    // Convert the result to the expected type
-                    match result {
-                        Ok(commands::handler::ChatState::DisplayHelp { help_text, .. }) => {
-                            execute!(self.output, style::Print(help_text))?;
-                            return Ok(ChatState::PromptUser {
-                                tool_uses: Some(tool_uses),
-                                pending_tool_index,
-                                skip_printing_tools: true,
-                            });
-                        },
-                        _ => {
-                            // Fallback to direct implementation if the handler returns an unexpected state
-                            execute!(self.output, style::Print(commands::help::HELP_TEXT))?;
-                            return Ok(ChatState::PromptUser {
-                                tool_uses: Some(tool_uses),
-                                pending_tool_index,
-                                skip_printing_tools: true,
-                            });
-                        },
-                    }
+                    // Handle the result directly since we're now using the same ChatState type
+                    // If the help command fails, propagate the error rather than falling back
+                    return result.map_err(|e| ChatError::Custom(format!("Help command failed: {}", e).into()));
                 } else {
-                    // Fallback in case the help command is not registered (should not happen)
-                    execute!(self.output, style::Print(commands::help::HELP_TEXT))?;
-                    return Ok(ChatState::PromptUser {
-                        tool_uses: Some(tool_uses),
-                        pending_tool_index,
-                        skip_printing_tools: true,
-                    });
+                    // If the help command is not registered, this is a programming error
+                    return Err(ChatError::Custom("Help command not found in registry".into()));
                 }
             },
             Command::Issue { prompt } => {

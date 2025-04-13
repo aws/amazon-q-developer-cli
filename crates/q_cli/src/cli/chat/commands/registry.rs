@@ -4,7 +4,6 @@ use std::sync::OnceLock;
 use eyre::Result;
 use fig_os_shim::Context;
 
-use crate::cli::chat::QueuedTool;
 use crate::cli::chat::commands::{
     ClearCommand,
     CommandHandler,
@@ -12,7 +11,10 @@ use crate::cli::chat::commands::{
     HelpCommand,
     QuitCommand,
 };
-use crate::cli::chat::conversation_state::ChatState;
+use crate::cli::chat::{
+    ChatState,
+    QueuedTool,
+};
 
 /// A registry of available commands that can be executed
 pub struct CommandRegistry {
@@ -56,22 +58,41 @@ impl CommandRegistry {
     }
 
     /// Check if a command exists
+    #[allow(dead_code)]
     pub fn command_exists(&self, name: &str) -> bool {
         self.commands.contains_key(name)
     }
 
     /// Get all command names
+    #[allow(dead_code)]
     pub fn command_names(&self) -> Vec<&String> {
         self.commands.keys().collect()
     }
 
-    /// Generate a description of all available commands
+    /// Generate a description of all available commands for help text
+    #[allow(dead_code)]
     pub fn generate_commands_description(&self) -> String {
         let mut description = String::new();
 
         for name in self.command_names() {
             if let Some(handler) = self.get(name) {
                 description.push_str(&format!("{} - {}\n", handler.usage(), handler.description()));
+            }
+        }
+
+        description
+    }
+
+    /// Generate detailed descriptions with examples for LLM tool descriptions
+    #[allow(dead_code)]
+    pub fn generate_llm_descriptions(&self) -> String {
+        let mut description = String::new();
+
+        for name in self.command_names() {
+            if let Some(handler) = self.get(name) {
+                description.push_str(&format!("Command: {}\n", handler.usage()));
+                description.push_str(&format!("Description: {}\n", handler.llm_description()));
+                description.push('\n');
             }
         }
 
@@ -86,7 +107,7 @@ impl CommandRegistry {
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
     ) -> Result<ChatState> {
-        let (name, args) = self.parse_command(input)?;
+        let (name, args) = Self::parse_command(input)?;
 
         if let Some(handler) = self.get(name) {
             let parsed_args = handler.parse_args(args)?;
@@ -102,12 +123,12 @@ impl CommandRegistry {
     }
 
     /// Parse a command string into name and arguments
-    fn parse_command<'a>(&self, input: &'a str) -> Result<(&'a str, Vec<&'a str>)> {
+    fn parse_command(input: &str) -> Result<(&str, Vec<&str>)> {
         let input = input.trim();
 
         // Handle slash commands
-        if input.starts_with('/') {
-            let parts: Vec<&str> = input[1..].splitn(2, ' ').collect();
+        if let Some(stripped) = input.strip_prefix('/') {
+            let parts: Vec<&str> = stripped.splitn(2, ' ').collect();
             let command = parts[0];
             let args = if parts.len() > 1 {
                 parts[1].split_whitespace().collect()
@@ -125,9 +146,6 @@ impl CommandRegistry {
 
 #[cfg(test)]
 mod tests {
-    use mockall::predicate::*;
-    use mockall::*;
-
     use super::*;
 
     #[test]
@@ -184,24 +202,24 @@ mod tests {
 
     #[test]
     fn test_parse_command() {
-        let registry = CommandRegistry::new();
+        let _registry = CommandRegistry::new();
 
         // Test valid command
-        let result = registry.parse_command("/test arg1 arg2");
+        let result = CommandRegistry::parse_command("/test arg1 arg2");
         assert!(result.is_ok());
         let (name, args) = result.unwrap();
         assert_eq!(name, "test");
         assert_eq!(args, vec!["arg1", "arg2"]);
 
         // Test command with no args
-        let result = registry.parse_command("/test");
+        let result = CommandRegistry::parse_command("/test");
         assert!(result.is_ok());
         let (name, args) = result.unwrap();
         assert_eq!(name, "test");
         assert_eq!(args, Vec::<&str>::new());
 
         // Test invalid command (no slash)
-        let result = registry.parse_command("test arg1 arg2");
+        let result = CommandRegistry::parse_command("test arg1 arg2");
         assert!(result.is_err());
     }
 }

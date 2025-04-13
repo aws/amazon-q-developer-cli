@@ -4,15 +4,19 @@ use std::pin::Pin;
 use eyre::Result;
 use fig_os_shim::Context;
 
-use crate::cli::chat::QueuedTool;
-pub use crate::cli::chat::conversation_state::ChatState;
+use crate::cli::chat::{
+    ChatState,
+    QueuedTool,
+};
 
 /// Trait for command handlers
 pub trait CommandHandler: Send + Sync {
     /// Returns the name of the command
+    #[allow(dead_code)]
     fn name(&self) -> &'static str;
 
-    /// Returns a description of the command
+    /// Returns a short description of the command for help text
+    #[allow(dead_code)]
     fn description(&self) -> &'static str;
 
     /// Returns usage information for the command
@@ -20,6 +24,14 @@ pub trait CommandHandler: Send + Sync {
 
     /// Returns detailed help text for the command
     fn help(&self) -> String;
+
+    /// Returns a detailed description with examples for LLM tool descriptions
+    /// This is used to provide more context to the LLM about how to use the command
+    #[allow(dead_code)]
+    fn llm_description(&self) -> String {
+        // Default implementation returns the regular help text
+        self.help()
+    }
 
     /// Execute the command with the given arguments
     ///
