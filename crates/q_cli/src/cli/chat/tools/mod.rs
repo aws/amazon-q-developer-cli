@@ -3,6 +3,7 @@ pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
 pub mod use_aws;
+pub mod use_q_command;
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -28,6 +29,7 @@ use fs_write::FsWrite;
 use gh_issue::GhIssue;
 use serde::Deserialize;
 use use_aws::UseAws;
+use use_q_command::UseQCommand;
 
 use super::parser::ToolUse;
 
@@ -41,6 +43,7 @@ pub enum Tool {
     ExecuteBash(ExecuteBash),
     UseAws(UseAws),
     GhIssue(GhIssue),
+    UseQCommand(UseQCommand),
 }
 
 impl Tool {
@@ -52,6 +55,7 @@ impl Tool {
             Tool::ExecuteBash(_) => "Execute shell command",
             Tool::UseAws(_) => "Use AWS CLI",
             Tool::GhIssue(_) => "Prepare GitHub issue",
+            Tool::UseQCommand(_) => "Execute Q command",
         }
     }
 
@@ -63,18 +67,20 @@ impl Tool {
             Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
             Tool::UseAws(_) => "Using AWS CLI",
             Tool::GhIssue(_) => "Preparing GitHub issue",
+            Tool::UseQCommand(_) => "Executing Q command",
         }
         .to_owned()
     }
 
     /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.
-    pub fn requires_acceptance(&self, _ctx: &Context) -> bool {
+    pub fn requires_acceptance(&self, ctx: &Context) -> bool {
         match self {
             Tool::FsRead(_) => false,
             Tool::FsWrite(_) => true,
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
             Tool::GhIssue(_) => false,
+            Tool::UseQCommand(_) => UseQCommand::requires_acceptance(ctx),
         }
     }
 
@@ -86,6 +92,7 @@ impl Tool {
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
+            Tool::UseQCommand(use_q_command) => use_q_command.invoke(context, updates).await,
         }
     }
 
@@ -97,6 +104,7 @@ impl Tool {
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
+            Tool::UseQCommand(use_q_command) => use_q_command.queue_description(updates),
         }
     }
 
@@ -108,6 +116,9 @@ impl Tool {
             Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
+            Tool::UseQCommand(use_q_command) => use_q_command
+                .validate(ctx)
+                .map_err(|e| eyre::eyre!("Tool validation failed: {:?}", e)),
         }
     }
 }
@@ -130,6 +141,7 @@ impl TryFrom<ToolUse> for Tool {
             "execute_bash" => Self::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Self::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Self::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
+            "use_q_command" => Self::UseQCommand(serde_json::from_value::<UseQCommand>(value.args).map_err(map_err)?),
             unknown => {
                 return Err(ToolResult {
                     tool_use_id: value.id,

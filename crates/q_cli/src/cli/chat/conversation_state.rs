@@ -6,6 +6,7 @@ use std::env;
 use std::sync::Arc;
 
 use aws_smithy_types::Document;
+use fig_api_client::clients::SendMessageOutput;
 use fig_api_client::model::{
     AssistantResponseMessage,
     ChatMessage,
@@ -17,6 +18,7 @@ use fig_api_client::model::{
     ToolResult,
     ToolResultContentBlock,
     ToolSpecification,
+    ToolUse,
     UserInputMessage,
     UserInputMessageContext,
 };
@@ -57,6 +59,51 @@ const MAX_CURRENT_WORKING_DIRECTORY_LEN: usize = 256;
 
 /// Limit to send the number of messages as part of chat.
 const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 100;
+
+/// Possible states for the chat conversation.
+#[derive(Debug)]
+pub enum ChatState {
+    /// Prompt the user with `tool_uses`, if available.
+    PromptUser {
+        /// Tool uses to present to the user.
+        tool_uses: Option<Vec<QueuedTool>>,
+        /// Tracks the next tool in tool_uses that needs user acceptance.
+        pending_tool_index: Option<usize>,
+        /// Used to avoid displaying the tool info at inappropriate times, e.g. after clear or help
+        /// commands.
+        skip_printing_tools: bool,
+    },
+    /// Handle the user input, depending on if any tools require execution.
+    HandleInput {
+        input: String,
+        tool_uses: Option<Vec<QueuedTool>>,
+        pending_tool_index: Option<usize>,
+    },
+    /// Validate the list of tool uses provided by the model.
+    ValidateTools(Vec<ToolUse>),
+    /// Execute the list of tools.
+    ExecuteTools(Vec<QueuedTool>),
+    /// Consume the response stream and display to the user.
+    HandleResponseStream(SendMessageOutput),
+    /// Display help text to the user.
+    DisplayHelp {
+        help_text: String,
+        tool_uses: Option<Vec<QueuedTool>>,
+        pending_tool_index: Option<usize>,
+    },
+    /// Exit the chat.
+    Exit,
+}
+
+impl Default for ChatState {
+    fn default() -> Self {
+        Self::PromptUser {
+            tool_uses: None,
+            pending_tool_index: None,
+            skip_printing_tools: false,
+        }
+    }
+}
 
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone)]

@@ -1,5 +1,7 @@
 mod command;
+mod commands;
 mod context;
+mod context_adapter;
 mod conversation_state;
 mod input_source;
 mod parse;
@@ -33,7 +35,9 @@ use command::{
     Command,
     ToolsSubcommand,
 };
+use commands::CommandRegistry;
 use context::ContextManager;
+pub use context_adapter::ContextExt;
 use conversation_state::ConversationState;
 use crossterm::style::{
     Attribute,
@@ -160,46 +164,6 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/quit</em>         <black!>Quit the application</black!>
 
 <cyan!>Use Ctrl(^) + j to provide multi-line prompts.</cyan!>
-
-"};
-
-const HELP_TEXT: &str = color_print::cstr! {"
-
-<magenta,em>q</magenta,em> (Amazon Q Chat)
-
-<cyan,em>Commands:</cyan,em>
-<em>/clear</em>        <black!>Clear the conversation history</black!>
-<em>/issue</em>        <black!>Report an issue or make a feature request</black!>
-<em>/editor</em>       <black!>Open $EDITOR (defaults to vi) to compose a prompt</black!>
-<em>/help</em>         <black!>Show this help dialogue</black!>
-<em>/quit</em>         <black!>Quit the application</black!>
-<em>/compact</em>      <black!>Summarize the conversation to free up context space</black!>
-  <em>help</em>        <black!>Show help for the compact command</black!>
-  <em>[prompt]</em>    <black!>Optional custom prompt to guide summarization</black!>
-  <em>--summary</em>   <black!>Display the summary after compacting</black!>
-<em>/tools</em>        <black!>View and manage tools and permissions</black!>
-  <em>help</em>        <black!>Show an explanation for the trust command</black!>
-  <em>trust</em>       <black!>Trust a specific tool for the session</black!>
-  <em>untrust</em>     <black!>Revert a tool to per-request confirmation</black!>
-  <em>trustall</em>    <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
-  <em>reset</em>       <black!>Reset all tools to default permission levels</black!>
-<em>/profile</em>      <black!>Manage profiles</black!>
-  <em>help</em>        <black!>Show profile help</black!>
-  <em>list</em>        <black!>List profiles</black!>
-  <em>set</em>         <black!>Set the current profile</black!>
-  <em>create</em>      <black!>Create a new profile</black!>
-  <em>delete</em>      <black!>Delete a profile</black!>
-  <em>rename</em>      <black!>Rename a profile</black!>
-<em>/context</em>      <black!>Manage context files for the chat session</black!>
-  <em>help</em>        <black!>Show context help</black!>
-  <em>show</em>        <black!>Display current context rules configuration [--expand]</black!>
-  <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
-  <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
-  <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
-
-<cyan,em>Tips:</cyan,em>
-<em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
-<em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
 
 "};
 
@@ -970,11 +934,44 @@ where
                 ));
             },
             Command::Help => {
-                execute!(self.output, style::Print(HELP_TEXT))?;
-                ChatState::PromptUser {
-                    tool_uses: Some(tool_uses),
-                    pending_tool_index,
-                    skip_printing_tools: true,
+                // Get the command registry
+                let registry = CommandRegistry::global();
+
+                // Get the help command handler
+                if let Some(handler) = registry.get("help") {
+                    // Execute the help command through the registry
+                    let result = handler
+                        .execute(vec![], &self.ctx, Some(tool_uses.clone()), pending_tool_index)
+                        .await;
+
+                    // Convert the result to the expected type
+                    match result {
+                        Ok(commands::handler::ChatState::DisplayHelp { help_text, .. }) => {
+                            execute!(self.output, style::Print(help_text))?;
+                            return Ok(ChatState::PromptUser {
+                                tool_uses: Some(tool_uses),
+                                pending_tool_index,
+                                skip_printing_tools: true,
+                            });
+                        },
+                        _ => {
+                            // Fallback to direct implementation if the handler returns an unexpected state
+                            execute!(self.output, style::Print(commands::help::HELP_TEXT))?;
+                            return Ok(ChatState::PromptUser {
+                                tool_uses: Some(tool_uses),
+                                pending_tool_index,
+                                skip_printing_tools: true,
+                            });
+                        },
+                    }
+                } else {
+                    // Fallback in case the help command is not registered (should not happen)
+                    execute!(self.output, style::Print(commands::help::HELP_TEXT))?;
+                    return Ok(ChatState::PromptUser {
+                        tool_uses: Some(tool_uses),
+                        pending_tool_index,
+                        skip_printing_tools: true,
+                    });
                 }
             },
             Command::Issue { prompt } => {
@@ -1596,6 +1593,16 @@ where
                 style::SetForegroundColor(Color::Reset),
             )?;
             let invoke_result = tool.tool.invoke(&self.ctx, &mut self.output).await;
+
+            // Check if we should exit after tool execution (specifically for the quit command)
+            if let Tool::UseQCommand(_) = &tool.tool {
+                if crate::cli::chat::tools::use_q_command::tool::should_exit() {
+                    // Reset the flag for future use
+                    crate::cli::chat::tools::use_q_command::tool::reset_exit_flag();
+                    // Return Exit state to terminate the application
+                    return Ok(ChatState::Exit);
+                }
+            }
 
             if self.interactive && self.spinner.is_some() {
                 queue!(
@@ -2322,7 +2329,14 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
 
 /// Returns all tools supported by Q chat.
 fn load_tools() -> Result<HashMap<String, ToolSpec>> {
-    Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
+    // Load the base tools from the static file
+    let mut tools: HashMap<String, ToolSpec> = serde_json::from_str(include_str!("tools/tool_index.json"))?;
+
+    // Add the use_q_command tool dynamically
+    let use_q_command_spec = tools::use_q_command::get_tool_spec();
+    tools.insert("use_q_command".to_string(), use_q_command_spec);
+
+    Ok(tools)
 }
 
 #[cfg(test)]
