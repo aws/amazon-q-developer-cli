@@ -60,6 +60,15 @@ impl UseQCommand {
     pub fn validate(&self, _ctx: &Context) -> Result<(), ToolResult> {
         // Validate that the command is one of the known commands
         let cmd = self.command.trim_start_matches('/');
+
+        // Get the command registry to check if the command exists
+        let registry = CommandRegistry::global();
+
+        if registry.get(cmd).is_some() {
+            return Ok(());
+        }
+
+        // Fall back to the previous implementation for commands not in the registry
         match cmd {
             "quit" | "clear" | "help" | "context" | "profile" | "tools" | "issue" => Ok(()),
             _ => Err(ToolResult {
@@ -73,22 +82,14 @@ impl UseQCommand {
         }
     }
 
-    pub fn requires_acceptance(_ctx: &Context) -> bool {
-        // All commands executed through use_q_command require user acceptance by default
-        // This provides a security boundary between the AI and command execution
-        true
-    }
-
-    /// Check if this specific command requires confirmation
-    #[allow(dead_code)]
-    pub fn command_requires_confirmation(&self, _ctx: &Context) -> bool {
-        // Get the command name without the leading slash
+    pub fn requires_acceptance(&self, _ctx: &Context) -> bool {
+        // Check if the command is one that should be trusted without confirmation
         let cmd = self.command.trim_start_matches('/');
 
         // Get the command registry
         let registry = CommandRegistry::global();
 
-        // Check if the command exists in the registry
+        // Check if the command exists and requires confirmation
         if let Some(handler) = registry.get(cmd) {
             // Prepare arguments for the command
             let mut args = Vec::new();
@@ -101,40 +102,12 @@ impl UseQCommand {
                 }
             }
 
-            // Check if the command handler requires confirmation
             return handler.requires_confirmation(&args);
         }
 
-        // Fall back to the previous implementation for commands not in the registry
-        match cmd {
-            "quit" => true,
-            "clear" => false,
-            "profile" => {
-                // Check subcommand for profile
-                if let Some(subcommand) = &self.subcommand {
-                    matches!(subcommand.as_str(), "delete")
-                } else {
-                    false
-                }
-            },
-            "context" => {
-                // Check subcommand for context
-                if let Some(subcommand) = &self.subcommand {
-                    matches!(subcommand.as_str(), "clear" | "rm")
-                } else {
-                    false
-                }
-            },
-            "tools" => {
-                // Check subcommand for tools
-                if let Some(subcommand) = &self.subcommand {
-                    matches!(subcommand.as_str(), "reset")
-                } else {
-                    false
-                }
-            },
-            _ => false,
-        }
+        // For commands not in the registry, default to requiring acceptance
+        // This provides a security boundary between the AI and command execution
+        true
     }
 
     /// Format the command string with subcommand and arguments
@@ -208,7 +181,7 @@ impl UseQCommand {
                         // Special handling for Exit state - we need to propagate this back to the main application
                         // First, provide a message that will be shown to the user
                         let output = InvokeOutput {
-                            output: OutputKind::Text("I'll exit the application after this response. Your chat history and context will be saved for next time.".to_string()),
+                            output: OutputKind::Text("I'll exit the application after this response.".to_string()),
                         };
 
                         // Then set a special flag that will be checked by the tool execution code
@@ -216,9 +189,20 @@ impl UseQCommand {
 
                         Ok(output)
                     },
-                    crate::cli::chat::ChatState::DisplayHelp { help_text, .. } => Ok(InvokeOutput {
-                        output: OutputKind::Text(help_text),
-                    }),
+                    crate::cli::chat::ChatState::DisplayHelp { help_text, .. } => {
+                        // Print the help text directly to the output instead of returning it for display
+                        queue!(
+                            updates,
+                            style::ResetColor,
+                            style::Print(help_text),
+                            style::Print("\n"),
+                            style::ResetColor,
+                        )?;
+
+                        Ok(InvokeOutput {
+                            output: OutputKind::Text("Help information has been displayed directly to the user.  DO NOT give further information in your response, other than an acknowledgement.".to_string())
+                        })
+                    },
                     crate::cli::chat::ChatState::PromptUser {
                         skip_printing_tools, ..
                     } => {

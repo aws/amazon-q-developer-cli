@@ -83,20 +83,25 @@ impl CommandRegistry {
         description
     }
 
-    /// Generate detailed descriptions with examples for LLM tool descriptions
+    /// Generate structured command information for LLM reference
     #[allow(dead_code)]
-    pub fn generate_llm_descriptions(&self) -> String {
-        let mut description = String::new();
+    pub fn generate_llm_descriptions(&self) -> serde_json::Value {
+        let mut commands = serde_json::Map::new();
 
         for name in self.command_names() {
             if let Some(handler) = self.get(name) {
-                description.push_str(&format!("Command: {}\n", handler.usage()));
-                description.push_str(&format!("Description: {}\n", handler.llm_description()));
-                description.push('\n');
+                commands.insert(
+                    name.to_string(),
+                    serde_json::json!({
+                        "description": handler.llm_description(),
+                        "usage": handler.usage(),
+                        "help": handler.help()
+                    }),
+                );
             }
         }
 
-        description
+        serde_json::json!(commands)
     }
 
     /// Parse and execute a command string

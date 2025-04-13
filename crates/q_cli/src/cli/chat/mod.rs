@@ -569,6 +569,7 @@ where
                     tool_uses,
                     pending_tool_index,
                 } => {
+                    // Print the help text directly without LLM interpretation
                     execute!(self.output, style::Print(help_text))?;
                     Ok(ChatState::PromptUser {
                         tool_uses,

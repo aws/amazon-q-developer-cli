@@ -80,7 +80,7 @@ impl Tool {
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
             Tool::GhIssue(_) => false,
-            Tool::UseQCommand(_) => UseQCommand::requires_acceptance(ctx),
+            Tool::UseQCommand(use_q_command) => use_q_command.requires_acceptance(ctx),
         }
     }
 
