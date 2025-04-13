@@ -26,15 +26,6 @@ pub struct SummarizationState {
 }
 
 impl SummarizationState {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self {
-            original_history: None,
-            custom_prompt: None,
-            show_summary: false,
-        }
-    }
-
     pub fn with_prompt(prompt: Option<String>) -> Self {
         Self {
             original_history: None,
