@@ -162,6 +162,7 @@ pub enum ToolsSubcommand {
     Untrust { tool_name: String },
     TrustAll,
     Reset,
+    ResetSingle { tool_name: String },
     Help,
 }
 
@@ -171,7 +172,8 @@ impl ToolsSubcommand {
   <em>trust <<tool name>></em>              <black!>Trust a specific tool for the session</black!>
   <em>untrust <<tool name>></em>            <black!>Revert a tool to per-request confirmation</black!>
   <em>trustall</em>                       <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
-  <em>reset</em>                          <black!>Reset all tools to default permission levels</black!>"};
+  <em>reset</em>                          <black!>Reset all tools to default permission levels</black!>
+  <em>reset <<tool name>></em>              <black!>Reset a single tool to default permission level</black!>"};
     const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /tools [SUBCOMMAND]</cyan!>
 
 <cyan!>Description</cyan!>
@@ -538,8 +540,18 @@ impl Command {
                         "trustall" => Self::Tools {
                             subcommand: Some(ToolsSubcommand::TrustAll),
                         },
-                        "reset" => Self::Tools {
-                            subcommand: Some(ToolsSubcommand::Reset),
+                        "reset" => {
+                            let tool_name = parts.get(2);
+                            match tool_name {
+                                Some(tool_name) => Self::Tools {
+                                    subcommand: Some(ToolsSubcommand::ResetSingle {
+                                        tool_name: (*tool_name).to_string(),
+                                    }),
+                                },
+                                None => Self::Tools {
+                                    subcommand: Some(ToolsSubcommand::Reset),
+                                },
+                            }
                         },
                         "help" => Self::Tools {
                             subcommand: Some(ToolsSubcommand::Help),

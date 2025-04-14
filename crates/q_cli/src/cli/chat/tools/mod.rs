@@ -28,6 +28,7 @@ use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
 use serde::Deserialize;
+use tracing::warn;
 use use_aws::UseAws;
 use use_q_command::UseQCommand;
 
@@ -204,6 +205,14 @@ impl ToolPermissions {
 
     pub fn reset(&mut self) {
         self.permissions.clear();
+    }
+
+    pub fn reset_tool(&mut self, tool_name: &str) {
+        if !self.permissions.contains_key(tool_name) {
+            warn!("No custom permissions set for tool '{tool_name}' to reset");
+            return;
+        }
+        self.permissions.remove(tool_name);
     }
 
     pub fn has(&self, tool_name: &str) -> bool {

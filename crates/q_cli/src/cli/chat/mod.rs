@@ -1427,6 +1427,15 @@ where
                             style::SetForegroundColor(Color::Reset),
                         )?;
                     },
+                    Some(ToolsSubcommand::ResetSingle { tool_name }) => {
+                        self.tool_permissions.reset_tool(&tool_name);
+                        queue!(
+                            self.output,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(format!("\nReset tool '{}' to the default permission level.", tool_name)),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                    },
                     Some(ToolsSubcommand::Help) => {
                         queue!(
                             self.output,
