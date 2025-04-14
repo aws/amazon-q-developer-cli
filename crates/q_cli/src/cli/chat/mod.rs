@@ -1491,13 +1491,25 @@ where
                         )?;
                     },
                     Some(ToolsSubcommand::ResetSingle { tool_name }) => {
-                        self.tool_permissions.reset_tool(&tool_name);
-                        queue!(
-                            self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nReset tool '{}' to the default permission level.", tool_name)),
-                            style::SetForegroundColor(Color::Reset),
-                        )?;
+                        if self.tool_permissions.has(&tool_name) {
+                            self.tool_permissions.reset_tool(&tool_name);
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!("\nReset tool '{}' to the default permission level.", tool_name)),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        } else {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!(
+                                    "\nTool '{}' does not exist or is already in default settings.",
+                                    tool_name
+                                )),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        }
                     },
                     Some(ToolsSubcommand::Help) => {
                         queue!(
