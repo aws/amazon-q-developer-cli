@@ -37,7 +37,7 @@ use fig_api_client::model::{
 use fig_os_shim::Context;
 use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
-use hooks::Hook;
+use hooks::{Hook, HookTrigger};
 use summarization_state::{SummarizationState, TokenWarningLevel};
 
 /// Help text for the compact command
@@ -753,8 +753,9 @@ where
 
                     let hook_results = cm.run_hooks(&mut self.output).await;
 
-                    let (start_hooks, prompt_hooks): (Vec<_>, Vec<_>) =
-                        hook_results.iter().partition(|(hook, _)| hook.is_conversation_start);
+                    let (start_hooks, prompt_hooks): (Vec<_>, Vec<_>) = hook_results
+                        .iter()
+                        .partition(|(hook, _)| hook.trigger == HookTrigger::ConversationStart);
 
                     (
                         (!start_hooks.is_empty()).then(|| format_context(&start_hooks, true)),
@@ -831,7 +832,8 @@ where
                 if ["y", "Y"].contains(&user_input.as_str()) {
                     self.conversation_state.clear(true);
                     if let Some(cm) = self.conversation_state.context_manager.as_mut() {
-                        cm.hook_executor.execution_cache.clear();
+                        cm.hook_executor.global_cache.clear();
+                        cm.hook_executor.profile_cache.clear();
                     }
                     execute!(
                         self.output,
@@ -1416,60 +1418,128 @@ where
                                 match subcommand {
                                     command::HooksSubcommand::Add {
                                         name,
-                                        r#type,
+                                        trigger,
                                         command,
                                         global,
                                     } => {
-                                        context_manager
-                                            .add_hook(
-                                                Hook::new_inline_hook(&name, command, false),
-                                                global,
-                                                r#type == "conversation_start",
-                                            )
-                                            .await
-                                            .map_err(map_chat_error)?;
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("\nAdded {} hook '{name}'.\n\n", scope(global))),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
+                                        let trigger = if trigger == "conversation_start" {
+                                            HookTrigger::ConversationStart
+                                        } else {
+                                            HookTrigger::PerPrompt
+                                        };
+
+                                        let result = context_manager
+                                            .add_hook(name.clone(), Hook::new_inline_hook(trigger, command), global)
+                                            .await;
+                                        match result {
+                                            Ok(_) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Green),
+                                                    style::Print(format!(
+                                                        "\nAdded {} hook '{name}'.\n\n",
+                                                        scope(global)
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                            Err(e) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Red),
+                                                    style::Print(format!(
+                                                        "\nCannot add {} hook '{name}': {}\n\n",
+                                                        scope(global),
+                                                        e
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                        }
                                     },
                                     command::HooksSubcommand::Remove { name, global } => {
-                                        context_manager
-                                            .remove_hook(&name, global)
-                                            .await
-                                            .map_err(map_chat_error)?;
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("\nRemoved {} hook '{name}'.\n\n", scope(global))),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
+                                        let result = context_manager.remove_hook(&name, global).await;
+                                        match result {
+                                            Ok(_) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Green),
+                                                    style::Print(format!(
+                                                        "\nRemoved {} hook '{name}'.\n\n",
+                                                        scope(global)
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                            Err(e) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Red),
+                                                    style::Print(format!(
+                                                        "\nCannot remove {} hook '{name}': {}\n\n",
+                                                        scope(global),
+                                                        e
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                        }
                                     },
                                     command::HooksSubcommand::Enable { name, global } => {
-                                        context_manager
-                                            .set_hook_disabled(&name, global, false)
-                                            .await
-                                            .map_err(map_chat_error)?;
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("\nEnabled {} hook '{name}'.\n\n", scope(global))),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
+                                        let result = context_manager.set_hook_disabled(&name, global, false).await;
+                                        match result {
+                                            Ok(_) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Green),
+                                                    style::Print(format!(
+                                                        "\nEnabled {} hook '{name}'.\n\n",
+                                                        scope(global)
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                            Err(e) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Red),
+                                                    style::Print(format!(
+                                                        "\nCannot enable {} hook '{name}': {}\n\n",
+                                                        scope(global),
+                                                        e
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                        }
                                     },
                                     command::HooksSubcommand::Disable { name, global } => {
-                                        context_manager
-                                            .set_hook_disabled(&name, global, true)
-                                            .await
-                                            .map_err(map_chat_error)?;
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("\nDisabled {} hook '{name}'.\n\n", scope(global))),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
+                                        let result = context_manager.set_hook_disabled(&name, global, true).await;
+                                        match result {
+                                            Ok(_) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Green),
+                                                    style::Print(format!(
+                                                        "\nDisabled {} hook '{name}'.\n\n",
+                                                        scope(global)
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                            Err(e) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Red),
+                                                    style::Print(format!(
+                                                        "\nCannot disable {} hook '{name}': {}\n\n",
+                                                        scope(global),
+                                                        e
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                        }
                                     },
                                     command::HooksSubcommand::EnableAll { global } => {
                                         context_manager
@@ -1507,14 +1577,16 @@ where
                             } else {
                                 fn print_hook_section(
                                     output: &mut impl Write,
-                                    hooks: &Vec<Hook>,
-                                    conversation_start: bool,
+                                    hooks: &HashMap<String, Hook>,
+                                    trigger: HookTrigger,
                                 ) -> Result<()> {
-                                    let section = if conversation_start {
-                                        "Conversation start"
-                                    } else {
-                                        "Per prompt"
+                                    let section = match trigger {
+                                        HookTrigger::ConversationStart => "Conversation Start",
+                                        HookTrigger::PerPrompt => "Per Prompt",
                                     };
+                                    let hooks: Vec<(&String, &Hook)> =
+                                        hooks.iter().filter(|(_, h)| h.trigger == trigger).collect();
+
                                     queue!(
                                         output,
                                         style::SetForegroundColor(Color::Cyan),
@@ -1530,16 +1602,16 @@ where
                                             style::SetForegroundColor(Color::Reset)
                                         )?;
                                     } else {
-                                        for hook in hooks {
+                                        for (name, hook) in hooks {
                                             if hook.disabled {
                                                 queue!(
                                                     output,
                                                     style::SetForegroundColor(Color::DarkGrey),
-                                                    style::Print(format!("      {} (disabled)\n", hook.name)),
+                                                    style::Print(format!("      {} (disabled)\n", name)),
                                                     style::SetForegroundColor(Color::Reset)
                                                 )?;
                                             } else {
-                                                queue!(output, style::Print(format!("      {}\n", hook.name)),)?;
+                                                queue!(output, style::Print(format!("      {}\n", name)),)?;
                                             }
                                         }
                                     }
@@ -1555,14 +1627,14 @@ where
 
                                 print_hook_section(
                                     &mut self.output,
-                                    &context_manager.global_config.hooks.conversation_start,
-                                    true,
+                                    &context_manager.global_config.hooks,
+                                    HookTrigger::ConversationStart,
                                 )
                                 .map_err(map_chat_error)?;
                                 print_hook_section(
                                     &mut self.output,
-                                    &context_manager.global_config.hooks.per_prompt,
-                                    false,
+                                    &context_manager.global_config.hooks,
+                                    HookTrigger::PerPrompt,
                                 )
                                 .map_err(map_chat_error)?;
 
@@ -1576,14 +1648,14 @@ where
 
                                 print_hook_section(
                                     &mut self.output,
-                                    &context_manager.profile_config.hooks.conversation_start,
-                                    true,
+                                    &context_manager.profile_config.hooks,
+                                    HookTrigger::ConversationStart,
                                 )
                                 .map_err(map_chat_error)?;
                                 print_hook_section(
                                     &mut self.output,
-                                    &context_manager.profile_config.hooks.per_prompt,
-                                    false,
+                                    &context_manager.profile_config.hooks,
+                                    HookTrigger::PerPrompt,
                                 )
                                 .map_err(map_chat_error)?;
 

@@ -104,7 +104,7 @@ pub enum HooksSubcommand {
         name: String,
 
         #[arg(long, value_parser = ["per_prompt", "conversation_start"])]
-        r#type: String,
+        trigger: String,
 
         #[arg(long, value_parser = clap::value_parser!(String))]
         command: String,
@@ -191,7 +191,7 @@ impl ContextSubcommand {
 
   <em>hooks add [--global] <<name>></em>        <black!>Add a new command context hook</black!>
                                          <black!>--global: Add to global hooks</black!>
-         <em>--type <<type>></em>                <black!>Type of hook, valid options: `per_prompt` or `conversation_start`</black!>
+         <em>--trigger <<trigger>></em>           <black!>When to trigger the hook, valid options: `per_prompt` or `conversation_start`</black!>
          <em>--command <<command>></em>             <black!>Shell command to execute</black!>
 
   <em>hooks rm [--global] <<name>></em>         <black!>Remove an existing context hook</black!>
@@ -864,12 +864,12 @@ mod tests {
                 context!(ContextSubcommand::Hooks { subcommand: None }),
             ),
             (
-                "/context hooks add test --type per_prompt --command 'echo 1' --global",
+                "/context hooks add test --trigger per_prompt --command 'echo 1' --global",
                 context!(ContextSubcommand::Hooks {
                     subcommand: Some(HooksSubcommand::Add {
                         name: "test".to_string(),
                         global: true,
-                        r#type: "per_prompt".to_string(),
+                        trigger: "per_prompt".to_string(),
                         command: "echo 1".to_string()
                     })
                 }),
