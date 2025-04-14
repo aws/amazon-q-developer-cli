@@ -746,7 +746,6 @@ where
         let user_input = match self.read_user_input(&self.generate_tool_trust_prompt(), false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
-
         };
 
         self.conversation_state.append_user_transcript(&user_input);
