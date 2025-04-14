@@ -1523,7 +1523,7 @@ where
                             .tools
                             .iter()
                             .map(|FigTool::ToolSpecification(spec)| {
-                                let width = longest - spec.name.len() + 4;
+                                let width = longest - spec.name.len() + 10;
                                 format!(
                                     "- {}{:>width$}{}",
                                     spec.name,
@@ -1536,12 +1536,16 @@ where
 
                         queue!(
                             self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print("\nCurrent tool permissions:"),
-                            style::SetForegroundColor(Color::Reset),
+                            style::Print("\nTrusted tools can be run without confirmation\n"),
                             style::Print(format!("\n{}\n", tool_permissions.join("\n"))),
+                            style::SetForegroundColor(Color::DarkGrey),
+                            style::Print(format!("\n{}\n", "* Default settings")),
+                            style::Print("\n💡 Use "),
                             style::SetForegroundColor(Color::Green),
-                            style::Print("\nUse /tools help to edit permissions."),
+                            style::Print("/tools help"),
+                            style::SetForegroundColor(Color::Reset),
+                            style::SetForegroundColor(Color::DarkGrey),
+                            style::Print(" to edit permissions."),
                             style::SetForegroundColor(Color::Reset),
                         )?;
                     },
