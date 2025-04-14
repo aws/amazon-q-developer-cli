@@ -487,8 +487,8 @@ where
         let editor_cmd = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
 
         // Parse the editor command to handle arguments
-        let mut parts = shell_words::split(&editor_cmd)
-            .map_err(|e| ChatError::Custom(format!("Failed to parse EDITOR command: {}", e).into()))?;
+        let mut parts =
+            shlex::split(&editor_cmd).ok_or_else(|| ChatError::Custom("Failed to parse EDITOR command".into()))?;
 
         if parts.is_empty() {
             return Err(ChatError::Custom("EDITOR environment variable is empty".into()));

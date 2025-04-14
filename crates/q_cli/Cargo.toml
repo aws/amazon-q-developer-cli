@@ -89,7 +89,6 @@ whoami.workspace = true
 winnow.workspace = true
 shell-color.workspace = true
 syntect = { version = "5.2.0", features = [ "default-syntaxes", "default-themes" ]}
-shell-words = "1.1.0"
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
