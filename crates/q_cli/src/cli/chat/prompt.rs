@@ -39,6 +39,7 @@ const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
     "/editor",
+    "/prompt",
     "/issue",
     // "/acceptall", /// Functional, but deprecated in favor of /tools trustall
     "/quit",

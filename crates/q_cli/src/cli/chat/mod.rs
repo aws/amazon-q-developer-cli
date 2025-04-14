@@ -25,6 +25,7 @@ use std::process::{
 };
 use std::sync::Arc;
 use std::time::Duration;
+use std::path::PathBuf;
 use std::{
     env,
     fs,
@@ -153,6 +154,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 • Help me understand my git status.
 
 <em>/tools</em>        <black!>View and manage tools and permissions</black!>
+<em>/prompt</em> <em><<file>></em>  <black!>Load a saved prompt from ~/.aws/amazonq/prompts</black!>
 <em>/issue</em>        <black!>Report an issue or make a feature request</black!>
 <em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
 <em>/context</em>      <black!>(Beta) Manage context files for a profile</black!>
@@ -184,6 +186,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>untrust</em>     <black!>Revert a tool to per-request confirmation</black!>
   <em>trustall</em>    <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
   <em>reset</em>       <black!>Reset all tools to default permission levels</black!>
+<em>/prompt</em> <em><<file>></em>  <black!>Load a saved prompt from ~/.aws/amazonq/prompts</black!>
 <em>/profile</em>      <black!>Manage profiles</black!>
   <em>help</em>        <black!>Show profile help</black!>
   <em>list</em>        <black!>List profiles</black!>
@@ -547,6 +550,9 @@ where
         let re = Regex::new(r"((\x9B|\x1B\[)[0-?]*[ -\/]*[@-~])|([^\x00-\x7F]+)").unwrap();
 
         loop {
+            if self.interactive {
+                execute!(self.output, cursor::Show)?;
+            }
             debug_assert!(next_state.is_some());
             let chat_state = next_state.take().unwrap_or_default();
             debug!(?chat_state, "changing to state");
@@ -592,9 +598,11 @@ where
                     res = self.handle_response(response) => res,
                     Some(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: None })
                 },
-                ChatState::Exit => return Ok(()),
+                ChatState::Exit => return Ok(())
             };
-
+            if self.interactive {
+                execute!(self.output, cursor::Show)?;
+            }
             match result {
                 Ok(state) => next_state = Some(state),
                 Err(e) => {
@@ -627,6 +635,7 @@ where
                             output,
                             style::SetAttribute(Attribute::Reset),
                             style::SetForegroundColor(Color::Reset),
+                            cursor::Show
                         )
                     };
 
@@ -637,6 +646,7 @@ where
                             self.output,
                             terminal::Clear(terminal::ClearType::CurrentLine),
                             cursor::MoveToColumn(0),
+                            cursor::Show
                         )?;
                     }
                     match e {
@@ -729,6 +739,7 @@ where
                 style::SetForegroundColor(Color::DarkGrey),
                 style::Print("]:\n\n"),
                 style::SetForegroundColor(Color::Reset),
+                cursor::Show
             )?;
         }
 
@@ -976,6 +987,69 @@ where
                     tool_uses: Some(tool_uses),
                     pending_tool_index,
                     skip_printing_tools: true,
+                }
+            },
+            Command::Prompt { filename } => {
+                // Ensure the name has .md extension
+                let filename_with_ext = if filename.ends_with(".md") {
+                    filename
+                } else {
+                    format!("{}.md", filename)
+                };
+                // Get the prompt file path
+                let prompt_path = std::env::var("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_default()
+                    .join(".aws")
+                    .join("amazonq")
+                    .join("prompts")
+                    .join(&filename_with_ext);
+                // Check if file exists
+                if !prompt_path.exists() {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("\nPrompt file not found: {}\n\n", prompt_path.display())),
+                        style::SetForegroundColor(Color::Reset),
+                        cursor::Show // Ensure cursor is visible
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        tool_uses: Some(tool_uses),
+                        pending_tool_index,
+                        skip_printing_tools: true,
+                    });
+                }
+                // Read the prompt file
+                match std::fs::read_to_string(&prompt_path) {
+                    Ok(content) => {
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(format!("\nLoaded prompt: {}\n\n", filename_with_ext)),
+                            style::SetForegroundColor(Color::Reset),
+                            cursor::Show // Ensure cursor is visible
+                        )?;
+                        // Use the prompt content as user input
+                        return Ok(ChatState::HandleInput {
+                            input: content,
+                            pending_tool_index,
+                            tool_uses: Some(tool_uses),
+                        });
+                    },
+                    Err(e) => {
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!("\nError reading prompt file: {}\n\n", e)),
+                            style::SetForegroundColor(Color::Reset),
+                            cursor::Show // Ensure cursor is visible
+                        )?;
+                        return Ok(ChatState::PromptUser {
+                            tool_uses: Some(tool_uses),
+                            pending_tool_index,
+                            skip_printing_tools: true,
+                        });
+                    },
                 }
             },
             Command::Issue { prompt } => {

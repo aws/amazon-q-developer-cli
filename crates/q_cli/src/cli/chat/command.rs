@@ -38,6 +38,7 @@ pub enum Command {
     Tools {
         subcommand: Option<ToolsSubcommand>,
     },
+    Prompt { filename: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -498,6 +499,13 @@ impl Command {
                         },
                     }
                 },
+                "prompt" => {
+                    if parts.len() < 2 {
+                        return Err("Missing filename for /prompt. Usage: /prompt <filename>".to_string());
+                    }
+                    let filename = parts[1..].join(" ");
+                    Self::Prompt { filename }
+                },
                 "tools" => {
                     if parts.len() < 2 {
                         return Ok(Self::Tools { subcommand: None });
@@ -687,6 +695,12 @@ mod tests {
             }),
             ("/issue \"there was an error in the chat\"", Command::Issue {
                 prompt: Some("\"there was an error in the chat\"".to_string()),
+            }),
+            ("/prompt my-prompt", Command::Prompt {
+                filename: "my-prompt".to_string(),
+            }),
+            ("/prompt my prompt with spaces", Command::Prompt {
+                filename: "my prompt with spaces".to_string(),
             }),
         ];
 
