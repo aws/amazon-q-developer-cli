@@ -236,6 +236,14 @@ impl Command {
             return Err(suggestion);
         }
 
+        // Check if the input starts with a literal backslash followed by a slash
+        // This allows users to escape the slash if they actually want to start with one
+        if input.starts_with("\\/") {
+            return Ok(Self::Ask {
+                prompt: input[1..].to_string(), // Remove the backslash but keep the slash
+            });
+        }
+
         if let Some(command) = input.strip_prefix("/") {
             let parts: Vec<&str> = command.split_whitespace().collect();
 
@@ -561,10 +569,13 @@ impl Command {
                         },
                     }
                 },
-                _ => {
-                    return Ok(Self::Ask {
-                        prompt: input.to_string(),
-                    });
+                unknown_command => {
+                    // If the command starts with a slash but isn't recognized,
+                    // return an error instead of treating it as a prompt
+                    return Err(format!(
+                        "Unknown command: '/{}'. Type '/help' to see available commands.\nTo use a literal slash at the beginning of your message, escape it with a backslash (e.g., '\\//hey' for '/hey').",
+                        unknown_command
+                    ));
                 },
             });
         }
