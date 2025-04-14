@@ -2842,7 +2842,7 @@ dependencies = [
  "nix 0.29.0",
  "prost",
  "prost-build",
- "prost-reflect",
+ "prost-reflect 0.15.1",
  "prost-reflect-build",
  "rand 0.9.0",
  "rmp-serde",
@@ -6485,10 +6485,21 @@ version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b5edd582b62f5cde844716e66d92565d7faf7ab1445c8cebce6e00fba83ddb2"
 dependencies = [
- "base64 0.22.1",
  "once_cell",
  "prost",
- "prost-reflect-derive",
+ "prost-reflect-derive 0.14.0",
+ "prost-types",
+]
+
+[[package]]
+name = "prost-reflect"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "134584672a2f89128da60df70d4b9d2eddfeb3ab00ab9c854ee7ee360ea7a7fc"
+dependencies = [
+ "base64 0.22.1",
+ "prost",
+ "prost-reflect-derive 0.15.0",
  "prost-types",
  "serde",
  "serde-value",
@@ -6501,7 +6512,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50e2537231d94dd2778920c2ada37dd9eb1ac0325bb3ee3ee651bd44c1134123"
 dependencies = [
  "prost-build",
- "prost-reflect",
+ "prost-reflect 0.14.7",
 ]
 
 [[package]]
@@ -6509,6 +6520,17 @@ name = "prost-reflect-derive"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4fce6b22f15cc8d8d400a2b98ad29202b33bd56c7d9ddd815bc803a807ecb65"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
+name = "prost-reflect-derive"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f9e9c69a80ab4bc26209fc9de4d2dfd12f26e26590cba0bc975bd4f81f4e94c"
 dependencies = [
  "proc-macro2",
  "quote",
