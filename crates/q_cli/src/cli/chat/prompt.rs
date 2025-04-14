@@ -35,7 +35,7 @@ use rustyline::{
 };
 use winnow::stream::AsChar;
 
-const COMMANDS: &[&str] = &[
+pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
     "/editor",
