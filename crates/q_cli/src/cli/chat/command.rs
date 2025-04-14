@@ -426,13 +426,18 @@ impl Command {
                             let mut force = false;
                             let mut paths = Vec::new();
 
-                            for part in &parts[2..] {
-                                if *part == "--global" {
+                            let args = match shlex::split(&parts[2..].join(" ")) {
+                                Some(args) => args,
+                                None => return Err("Failed to parse quoted arguments".to_string()),
+                            };
+
+                            for arg in &args {
+                                if arg == "--global" {
                                     global = true;
-                                } else if *part == "--force" || *part == "-f" {
+                                } else if arg == "--force" || arg == "-f" {
                                     force = true;
                                 } else {
-                                    paths.push((*part).to_string());
+                                    paths.push(arg.to_string());
                                 }
                             }
 
@@ -448,12 +453,16 @@ impl Command {
                             // Parse rm command with paths and --global flag
                             let mut global = false;
                             let mut paths = Vec::new();
+                            let args = match shlex::split(&parts[2..].join(" ")) {
+                                Some(args) => args,
+                                None => return Err("Failed to parse quoted arguments".to_string()),
+                            };
 
-                            for part in &parts[2..] {
-                                if *part == "--global" {
+                            for arg in &args {
+                                if arg == "--global" {
                                     global = true;
                                 } else {
-                                    paths.push((*part).to_string());
+                                    paths.push(arg.to_string());
                                 }
                             }
 
