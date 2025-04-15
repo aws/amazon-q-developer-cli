@@ -325,31 +325,11 @@ trust so that no confirmation is required. These settings will last only for thi
 }
 
 impl Command {
-    // Check if input is a common single-word command that should use slash prefix
-    fn check_common_command(input: &str) -> Option<String> {
-        let input_lower = input.trim().to_lowercase();
-        match input_lower.as_str() {
-            "exit" | "quit" | "q" | "exit()" => {
-                Some("Did you mean to use the command '/quit' to exit? Type '/quit' to exit.".to_string())
-            },
-            "clear" | "cls" => Some(
-                "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear."
-                    .to_string(),
-            ),
-            "help" | "?" => Some(
-                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.".to_string(),
-            ),
-            _ => None,
-        }
-    }
-
     pub fn parse(input: &str, output: &mut impl Write) -> Result<Self, String> {
         let input = input.trim();
 
-        // Check for common single-word commands without slash prefix
-        if let Some(suggestion) = Self::check_common_command(input) {
-            return Err(suggestion);
-        }
+        // No longer checking for common commands without slash prefix
+        // This allows the LLM to decide whether to use the use_q_command tool
 
         // Check if the input starts with a literal backslash followed by a slash
         // This allows users to escape the slash if they actually want to start with one
@@ -928,42 +908,7 @@ mod tests {
 
     #[test]
     fn test_common_command_suggestions() {
-        let mut stdout = std::io::stdout();
-        let test_cases = vec![
-            (
-                "exit",
-                "Did you mean to use the command '/quit' to exit? Type '/quit' to exit.",
-            ),
-            (
-                "quit",
-                "Did you mean to use the command '/quit' to exit? Type '/quit' to exit.",
-            ),
-            (
-                "q",
-                "Did you mean to use the command '/quit' to exit? Type '/quit' to exit.",
-            ),
-            (
-                "clear",
-                "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear.",
-            ),
-            (
-                "cls",
-                "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear.",
-            ),
-            (
-                "help",
-                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.",
-            ),
-            (
-                "?",
-                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.",
-            ),
-        ];
-
-        for (input, expected_message) in test_cases {
-            let result = Command::parse(input, &mut stdout);
-            assert!(result.is_err(), "Expected error for input: {}", input);
-            assert_eq!(result.unwrap_err(), expected_message);
-        }
+        // This test is no longer needed since we've removed the check_common_command function
+        // and no longer return errors for common commands without slash prefix
     }
 }

@@ -106,8 +106,9 @@ mod tests {
             ChatState::DisplayHelp { .. } => {
                 match tool_result.output {
                     OutputKind::Text(text) => {
-                        // The tool output should contain help text or success message
-                        assert!(text.contains("help") || text.contains("command"));
+                        // The help command now displays help directly to the user and returns a message
+                        // indicating that it has been displayed, so we check for that message instead
+                        assert!(text.contains("Help information has been displayed"));
 
                         // The output buffer should contain the command execution message
                         let buffer_text = String::from_utf8_lossy(&output_buffer).to_string();
