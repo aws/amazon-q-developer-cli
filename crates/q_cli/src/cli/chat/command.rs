@@ -339,6 +339,14 @@ impl Command {
             });
         }
 
+        // Check if the input starts with a literal backslash followed by a slash
+        // This allows users to escape the slash if they actually want to start with one
+        if input.starts_with("\\/") {
+            return Ok(Self::Ask {
+                prompt: input[1..].to_string(), // Remove the backslash but keep the slash
+            });
+        }
+
         if let Some(command) = input.strip_prefix("/") {
             let parts: Vec<&str> = command.split_whitespace().collect();
 
