@@ -1,4 +1,4 @@
-# Consolidated Implementation Plan for RFC 0002: use_q_command_tool
+# Consolidated Implementation Plan for RFC 0002: internal_command_tool
 
 ## Implementation Workflow
 1. Make incremental changes
@@ -12,7 +12,7 @@
 
 ## Overview
 
-The `use_q_command` tool enables the AI assistant to directly execute internal commands within the q chat system, improving user experience by handling vague or incorrectly typed requests more gracefully.
+The `internal_command` tool enables the AI assistant to directly execute internal commands within the q chat system, improving user experience by handling vague or incorrectly typed requests more gracefully.
 
 ## Implementation Phases
 
@@ -65,22 +65,22 @@ Updated the command parsing logic to use the new command registry.
 #### 1.6 Unit Tests for Command Registry ✅
 Added comprehensive unit tests for the command registry and handlers.
 
-### Phase 2: use_q_command Tool Implementation (1 week) ✅
+### Phase 2: internal_command Tool Implementation (1 week) ✅
 
 #### 2.1 Create Tool Structure ✅
-Created the basic structure for the `use_q_command` tool.
+Created the basic structure for the `internal_command` tool.
 
 #### 2.2 Implement Tool Schema ✅
-Defined the schema for the `use_q_command` tool.
+Defined the schema for the `internal_command` tool.
 
 #### 2.3 Implement Tool Logic ✅
 Implemented the core logic for the tool, including validation, execution, and security checks.
 
 #### 2.4 Register Tool in Tool Registry ✅
-Updated the tool registry to include the new `use_q_command` tool.
+Updated the tool registry to include the new `internal_command` tool.
 
-#### 2.5 Unit Tests for use_q_command Tool ✅
-Added comprehensive unit tests for the `use_q_command` tool.
+#### 2.5 Unit Tests for internal_command Tool ✅
+Added comprehensive unit tests for the `internal_command` tool.
 
 ### Phase 3: Command Implementation (2 weeks) ✅
 
@@ -240,7 +240,7 @@ Added comprehensive unit tests for all command handlers.
 
 ## Security Measures
 
-The `use_q_command` tool implements several security measures to ensure safe operation:
+The `internal_command` tool implements several security measures to ensure safe operation:
 
 ### 1. Command Validation
 
@@ -262,27 +262,27 @@ The tool includes comprehensive AI integration features:
 
 ```rust
 /// Examples of natural language that should trigger this tool:
-/// - "Clear my conversation" -> use_q_command with command="clear"
-/// - "I want to add a file as context" -> use_q_command with command="context", subcommand="add"
-/// - "Show me the available profiles" -> use_q_command with command="profile", subcommand="list"
-/// - "Exit the application" -> use_q_command with command="quit"
-/// - "Add this file to my context" -> use_q_command with command="context", subcommand="add",
+/// - "Clear my conversation" -> internal_command with command="clear"
+/// - "I want to add a file as context" -> internal_command with command="context", subcommand="add"
+/// - "Show me the available profiles" -> internal_command with command="profile", subcommand="list"
+/// - "Exit the application" -> internal_command with command="quit"
+/// - "Add this file to my context" -> internal_command with command="context", subcommand="add",
 ///   args=["file.txt"]
-/// - "How do I switch profiles?" -> use_q_command with command="profile", subcommand="help"
-/// - "I need to report a bug" -> use_q_command with command="issue"
-/// - "Let me trust the file write tool" -> use_q_command with command="tools", subcommand="trust",
+/// - "How do I switch profiles?" -> internal_command with command="profile", subcommand="help"
+/// - "I need to report a bug" -> internal_command with command="issue"
+/// - "Let me trust the file write tool" -> internal_command with command="tools", subcommand="trust",
 ///   args=["fs_write"]
-/// - "Show what tools are available" -> use_q_command with command="tools", subcommand="list"
-/// - "I want to start fresh" -> use_q_command with command="clear"
-/// - "Can you help me create a new profile?" -> use_q_command with command="profile",
+/// - "Show what tools are available" -> internal_command with command="tools", subcommand="list"
+/// - "I want to start fresh" -> internal_command with command="clear"
+/// - "Can you help me create a new profile?" -> internal_command with command="profile",
 ///   subcommand="create"
-/// - "I'd like to see what context files I have" -> use_q_command with command="context",
+/// - "I'd like to see what context files I have" -> internal_command with command="context",
 ///   subcommand="show"
-/// - "Remove the second context file" -> use_q_command with command="context", subcommand="rm", args=["2"]
-/// - "Trust all tools for this session" -> use_q_command with command="tools", subcommand="trustall"
-/// - "Reset tool permissions to default" -> use_q_command with command="tools", subcommand="reset"
-/// - "I want to compact the conversation" -> use_q_command with command="compact"
-/// - "Show me the help for context commands" -> use_q_command with command="context", subcommand="help"
+/// - "Remove the second context file" -> internal_command with command="context", subcommand="rm", args=["2"]
+/// - "Trust all tools for this session" -> internal_command with command="tools", subcommand="trustall"
+/// - "Reset tool permissions to default" -> internal_command with command="tools", subcommand="reset"
+/// - "I want to compact the conversation" -> internal_command with command="compact"
+/// - "Show me the help for context commands" -> internal_command with command="context", subcommand="help"
 ```
 
 ### Command Parameter Extraction
@@ -367,7 +367,7 @@ Legend:
 
 ## Integration Tests
 
-The integration tests verify that commands executed through the `use_q_command` tool behave identically to commands executed directly:
+The integration tests verify that commands executed through the `internal_command` tool behave identically to commands executed directly:
 
 ```rust
 /// Test context setup for integration tests
@@ -400,9 +400,9 @@ impl TestContext {
             .await
     }
 
-    /// Execute a command via the use_q_command tool
-    async fn execute_via_tool(&mut self, command: UseQCommand) -> Result<InvokeOutput> {
-        let tool = Tool::UseQCommand(command);
+    /// Execute a command via the internal_command tool
+    async fn execute_via_tool(&mut self, command: InternalCommand) -> Result<InvokeOutput> {
+        let tool = Tool::InternalCommand(command);
         tool.invoke(&self.context, &mut self.output_buffer).await
     }
 }
@@ -436,7 +436,7 @@ impl TestContext {
    - Ensure comprehensive test coverage for all commands
 
 2. **Begin Phase 5: Documentation and Refinement**
-   - Update user documentation with information about the use_q_command tool
+   - Update user documentation with information about the internal_command tool
    - Update developer documentation with information about the command registry
    - Perform final testing and fix any remaining bugs
 
@@ -469,8 +469,8 @@ impl TestContext {
 
 ### Maintenance Burden
 
-**Risk**: As new commands are added to the system, the `use_q_command` tool will need to be updated.
-**Mitigation**: Design the command registry to be extensible, allowing new commands to be added without modifying the `use_q_command` tool.
+**Risk**: As new commands are added to the system, the `internal_command` tool will need to be updated.
+**Mitigation**: Design the command registry to be extensible, allowing new commands to be added without modifying the `internal_command` tool.
 
 ## AI Command Interpretation Test Coverage Tracking
 
@@ -497,6 +497,6 @@ impl TestContext {
 
 ## Conclusion
 
-The implementation of the `use_q_command` tool has significantly enhanced the Amazon Q CLI's ability to understand and execute user intent. With the completion of Phase 4, the tool is now capable of recognizing natural language queries and executing appropriate commands.
+The implementation of the `internal_command` tool has significantly enhanced the Amazon Q CLI's ability to understand and execute user intent. With the completion of Phase 4, the tool is now capable of recognizing natural language queries and executing appropriate commands.
 
 The next steps focus on completing the command registry migration and updating documentation to ensure a consistent and reliable user experience across all commands.
