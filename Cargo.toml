@@ -134,7 +134,7 @@ strum = { version = "0.27.1", features = ["derive"] }
 sysinfo = "0.32.0"
 thiserror = "2.0.12"
 tempfile = "3.18.0"
-time = { version = "0.3.39", features = [
+time = { version = "0.3.41", features = [
     "parsing",
     "formatting",
     "local-offset",
