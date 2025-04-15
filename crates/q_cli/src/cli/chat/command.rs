@@ -42,6 +42,7 @@ pub enum Command {
     Tools {
         subcommand: Option<ToolsSubcommand>,
     },
+    Usage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -696,6 +697,7 @@ impl Command {
                         },
                     }
                 },
+                "usage" => Self::Usage,
                 unknown_command => {
                     // If the command starts with a slash but isn't recognized,
                     // return an error instead of treating it as a prompt

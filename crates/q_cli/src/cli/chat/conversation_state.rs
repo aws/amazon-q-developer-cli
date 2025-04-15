@@ -190,6 +190,11 @@ impl ConversationState {
         self.conversation_id.as_ref()
     }
 
+    /// Returns the conversation history.
+    pub fn get_chat_history(&self) -> Vec<ChatMessage> {
+        self.history.iter().cloned().collect()
+    }
+
     /// Returns the message id associated with the last assistant message, if present.
     ///
     /// This is equivalent to `utterance_id` in the Q API.
