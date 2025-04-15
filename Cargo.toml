@@ -157,7 +157,7 @@ url = "2.5.4"
 uuid = { version = "1.15.1", features = ["v4", "serde"] }
 walkdir = "2.5.0"
 which = "6.0.3"
-whoami = "1.5.1"
+whoami = "1.6.0"
 winnow = "0.6.2"
 
 # Keep these minor synced with reqwest
