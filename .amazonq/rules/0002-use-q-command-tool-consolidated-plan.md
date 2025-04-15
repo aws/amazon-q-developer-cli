@@ -1,14 +1,17 @@
 # Consolidated Implementation Plan for RFC 0002: internal_command_tool
 
 ## Implementation Workflow
-1. Make incremental changes
-2. Compile with `cargo build -p q_cli`
-3. Format with `cargo +nightly fmt`
-4. Run clippy with `cargo clippy -p q_cli`
-5. Test with `cargo test -p q_cli`
-6. Commit working changes with detailed commit messages
-7. Run `/compact` after each commit to maintain clean conversation history
-8. Update the implementation plan with completions
+1. Make incremental changes to one component at a time
+2. Before each commit, run the following commands in sequence:
+   - `cargo build -p q_cli` to compile and check for build errors
+   - `cargo +nightly fmt` to format code according to Rust style guidelines
+   - `cargo clippy -p q_cli` to check for code quality issues
+   - `cargo test -p q_cli` to ensure all tests pass
+3. Commit working changes with detailed commit messages following the Conventional Commits specification
+4. After each commit, run `/compact` to maintain clean conversation history
+   - If automatic compaction isn't possible, prompt the user to run `/compact` manually
+5. Update the implementation plan to mark completed tasks and identify next steps
+6. Repeat the process for the next component or feature
 
 ## Overview
 
@@ -428,17 +431,37 @@ impl TestContext {
   - **7.4**: Week 12
   - **7.5**: Week 12
 
-## Next Steps
+## Current and Next Steps
 
-1. **Complete Phase 6: Command Registry Migration**
-   - Continue migrating remaining commands to the new command registry system
-   - Document the migration process and results
-   - Ensure comprehensive test coverage for all commands
+### Current Step: Complete the migration of basic commands (Phase 6.2)
 
-2. **Begin Phase 5: Documentation and Refinement**
-   - Update user documentation with information about the internal_command tool
-   - Update developer documentation with information about the command registry
-   - Perform final testing and fix any remaining bugs
+1. **Complete the `quit` command migration**:
+   - Verify consistent behavior with confirmation prompts
+   - Test exit behavior works correctly
+   - Run the following commands before committing:
+     ```
+     cargo build -p q_cli
+     cargo +nightly fmt
+     cargo clippy -p q_cli
+     cargo test -p q_cli
+     ```
+   - Commit changes with a descriptive message following Conventional Commits format
+   - Run `/compact` after the commit (or prompt user to do so manually)
+   - Update the implementation plan to mark this task as completed
+
+2. **Complete the `clear` command migration**:
+   - Ensure conversation state is properly cleared
+   - Verify transcript handling
+   - Follow the same pre-commit and post-commit process as above
+
+### Next Steps:
+
+1. **Begin Phase 6.3: Migrate Complex Commands with Existing Handlers**
+   - Start with the `context` command and its subcommands
+   - Ensure proper argument parsing
+   - Implement whitespace handling for file paths using shlex
+   - Verify file operations work correctly
+   - Follow the same pre-commit and post-commit process
 
 ## Success Metrics
 
