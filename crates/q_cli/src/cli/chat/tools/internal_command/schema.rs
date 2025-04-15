@@ -18,32 +18,33 @@ use serde::{
 /// 5. The user wants to perform a common action that has a direct command equivalent
 ///
 /// Examples of natural language that should trigger this tool:
-/// - "Clear my conversation" -> use_q_command with command="clear"
-/// - "I want to add a file as context" -> use_q_command with command="context", subcommand="add"
-/// - "Show me the available profiles" -> use_q_command with command="profile", subcommand="list"
-/// - "Exit the application" -> use_q_command with command="quit"
-/// - "Add this file to my context" -> use_q_command with command="context", subcommand="add",
+/// - "Clear my conversation" -> internal_command with command="clear"
+/// - "I want to add a file as context" -> internal_command with command="context", subcommand="add"
+/// - "Show me the available profiles" -> internal_command with command="profile", subcommand="list"
+/// - "Exit the application" -> internal_command with command="quit"
+/// - "Add this file to my context" -> internal_command with command="context", subcommand="add",
 ///   args=["file.txt"]
-/// - "How do I switch profiles?" -> use_q_command with command="profile", subcommand="help"
-/// - "I need to report a bug" -> use_q_command with command="issue"
-/// - "Let me trust the file write tool" -> use_q_command with command="tools", subcommand="trust",
-///   args=["fs_write"]
-/// - "Show what tools are available" -> use_q_command with command="tools", subcommand="list"
-/// - "I want to start fresh" -> use_q_command with command="clear"
-/// - "Can you help me create a new profile?" -> use_q_command with command="profile",
+/// - "How do I switch profiles?" -> internal_command with command="profile", subcommand="help"
+/// - "I need to report a bug" -> internal_command with command="issue"
+/// - "Let me trust the file write tool" -> internal_command with command="tools",
+///   subcommand="trust", args=["fs_write"]
+/// - "Show what tools are available" -> internal_command with command="tools", subcommand="list"
+/// - "I want to start fresh" -> internal_command with command="clear"
+/// - "Can you help me create a new profile?" -> internal_command with command="profile",
 ///   subcommand="create"
-/// - "I'd like to see what context files I have" -> use_q_command with command="context",
+/// - "I'd like to see what context files I have" -> internal_command with command="context",
 ///   subcommand="show"
-/// - "Remove the second context file" -> use_q_command with command="context", subcommand="rm",
+/// - "Remove the second context file" -> internal_command with command="context", subcommand="rm",
 ///   args=["2"]
-/// - "Trust all tools for this session" -> use_q_command with command="tools",
+/// - "Trust all tools for this session" -> internal_command with command="tools",
 ///   subcommand="trustall"
-/// - "Reset tool permissions to default" -> use_q_command with command="tools", subcommand="reset"
-/// - "I want to compact the conversation" -> use_q_command with command="compact"
-/// - "Show me the help for context commands" -> use_q_command with command="context",
+/// - "Reset tool permissions to default" -> internal_command with command="tools",
+///   subcommand="reset"
+/// - "I want to compact the conversation" -> internal_command with command="compact"
+/// - "Show me the help for context commands" -> internal_command with command="context",
 ///   subcommand="help"
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UseQCommand {
+pub struct InternalCommand {
     /// The command to execute (without the leading slash)
     ///
     /// Available commands:
@@ -202,13 +203,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_use_q_command_deserialize() {
+    fn test_internal_command_deserialize() {
         // Test with minimal fields
         let json = json!({
             "command": "quit"
         });
 
-        let command: UseQCommand = serde_json::from_value(json).unwrap();
+        let command: InternalCommand = serde_json::from_value(json).unwrap();
         assert_eq!(command.command, "quit");
         assert!(command.subcommand.is_none());
         assert!(command.args.is_none());
@@ -226,7 +227,7 @@ mod tests {
             "tool_use_id": "test-id"
         });
 
-        let command: UseQCommand = serde_json::from_value(json).unwrap();
+        let command: InternalCommand = serde_json::from_value(json).unwrap();
         assert_eq!(command.command, "context");
         assert_eq!(command.subcommand, Some("add".to_string()));
         assert_eq!(command.args, Some(vec!["file.txt".to_string()]));

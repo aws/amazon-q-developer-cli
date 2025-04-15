@@ -22,7 +22,7 @@ use serde::{
 };
 
 use crate::cli::chat::commands::CommandRegistry;
-use crate::cli::chat::tools::use_q_command::schema::UseQCommand;
+use crate::cli::chat::tools::internal_command::schema::InternalCommand;
 use crate::cli::chat::tools::{
     InvokeOutput,
     OutputKind,
@@ -43,7 +43,7 @@ pub fn reset_exit_flag() {
 
 /// Response from executing a Q command
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UseQCommandResponse {
+pub struct InternalCommandResponse {
     /// Whether the command was executed successfully
     pub success: bool,
 
@@ -56,7 +56,7 @@ pub struct UseQCommandResponse {
     pub error: Option<String>,
 }
 
-impl UseQCommand {
+impl InternalCommand {
     pub fn validate(&self, _ctx: &Context) -> Result<(), ToolResult> {
         // Validate that the command is one of the known commands
         let cmd = self.command.trim_start_matches('/');

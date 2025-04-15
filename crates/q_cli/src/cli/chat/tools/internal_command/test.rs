@@ -1,6 +1,6 @@
-//! Unit tests for the use_q_command tool.
+//! Unit tests for the internal_command tool.
 //!
-//! These tests verify that commands executed through the use_q_command tool
+//! These tests verify that commands executed through the internal_command tool
 //! behave identically to commands executed directly.
 
 #[cfg(test)]
@@ -12,16 +12,16 @@ mod tests {
 
     use crate::cli::chat::ChatState;
     use crate::cli::chat::commands::CommandRegistry;
-    use crate::cli::chat::tools::use_q_command::schema::UseQCommand;
+    use crate::cli::chat::tools::internal_command::schema::InternalCommand;
     use crate::cli::chat::tools::{
         OutputKind,
         Tool,
     };
 
     #[test]
-    fn test_use_q_command_schema() -> Result<()> {
+    fn test_internal_command_schema() -> Result<()> {
         // Create a basic command
-        let command = UseQCommand {
+        let command = InternalCommand {
             command: "help".to_string(),
             subcommand: None,
             args: None,
@@ -37,7 +37,7 @@ mod tests {
         assert!(command.tool_use_id.is_none());
 
         // Create a command with subcommand
-        let command_with_subcommand = UseQCommand {
+        let command_with_subcommand = InternalCommand {
             command: "context".to_string(),
             subcommand: Some("add".to_string()),
             args: Some(vec!["file.txt".to_string()]),
@@ -56,7 +56,7 @@ mod tests {
         let mut flags = HashMap::new();
         flags.insert("force".to_string(), "true".to_string());
 
-        let command_with_flags = UseQCommand {
+        let command_with_flags = InternalCommand {
             command: "context".to_string(),
             subcommand: Some("add".to_string()),
             args: Some(vec!["file.txt".to_string()]),
@@ -86,7 +86,7 @@ mod tests {
         let direct_result = registry.parse_and_execute("/help", &context, None, None).await?;
 
         // Create a help command for the tool
-        let tool_command = UseQCommand {
+        let tool_command = InternalCommand {
             command: "help".to_string(),
             subcommand: None,
             args: None,
@@ -95,7 +95,7 @@ mod tests {
         };
 
         // Create the tool
-        let tool = Tool::UseQCommand(tool_command);
+        let tool = Tool::InternalCommand(tool_command);
 
         // Execute the tool
         let mut output_buffer = Vec::new();

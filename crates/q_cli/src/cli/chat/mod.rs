@@ -13,32 +13,73 @@ mod summarization_state;
 mod tools;
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
-use std::io::{IsTerminal, Read, Write};
-use std::process::{Command as ProcessCommand, ExitCode};
+use std::collections::{
+    HashMap,
+    HashSet,
+};
+use std::io::{
+    IsTerminal,
+    Read,
+    Write,
+};
+use std::process::{
+    Command as ProcessCommand,
+    ExitCode,
+};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{env, fs};
+use std::{
+    env,
+    fs,
+};
 
-use command::{Command, ToolsSubcommand};
+use command::{
+    Command,
+    ToolsSubcommand,
+};
 use commands::CommandRegistry;
 use context::ContextManager;
 pub use context_adapter::ContextExt;
 use conversation_state::ConversationState;
-use crossterm::style::{Attribute, Color, Stylize};
-use crossterm::{cursor, execute, queue, style, terminal};
-use eyre::{ErrReport, Result, bail};
+use crossterm::style::{
+    Attribute,
+    Color,
+    Stylize,
+};
+use crossterm::{
+    cursor,
+    execute,
+    queue,
+    style,
+    terminal,
+};
+use eyre::{
+    ErrReport,
+    Result,
+    bail,
+};
 use fig_api_client::StreamingClient;
 use fig_api_client::clients::SendMessageOutput;
 use fig_api_client::model::{
-    AssistantResponseMessage, ChatMessage, ChatResponseStream, Tool as FigTool, ToolResult, ToolResultContentBlock,
+    AssistantResponseMessage,
+    ChatMessage,
+    ChatResponseStream,
+    Tool as FigTool,
+    ToolResult,
+    ToolResultContentBlock,
     ToolResultStatus,
 };
 use fig_os_shim::Context;
 use fig_settings::Settings;
 use fig_util::CLI_BINARY_NAME;
-use hooks::{Hook, HookTrigger};
-use summarization_state::{SummarizationState, TokenWarningLevel};
+use hooks::{
+    Hook,
+    HookTrigger,
+};
+use summarization_state::{
+    SummarizationState,
+    TokenWarningLevel,
+};
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -70,20 +111,43 @@ that may eventually reach memory constraints.
     )
 }
 use input_source::InputSource;
-use parser::{RecvErrorKind, ResponseParser, ToolUse};
+use parser::{
+    RecvErrorKind,
+    ResponseParser,
+    ToolUse,
+};
 use regex::Regex;
 use serde_json::Map;
-use spinners::{Spinner, Spinners};
+use spinners::{
+    Spinner,
+    Spinners,
+};
 use thiserror::Error;
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::signal::unix::{
+    SignalKind,
+    signal,
+};
 use tools::gh_issue::GhIssueContext;
-use tools::{QueuedTool, Tool, ToolPermissions, ToolSpec};
-use tracing::{debug, error, trace, warn};
+use tools::{
+    QueuedTool,
+    Tool,
+    ToolPermissions,
+    ToolSpec,
+};
+use tracing::{
+    debug,
+    error,
+    trace,
+    warn,
+};
 use uuid::Uuid;
 use winnow::Partial;
 use winnow::stream::Offset;
 
-use crate::cli::chat::parse::{ParseState, interpret_markdown};
+use crate::cli::chat::parse::{
+    ParseState,
+    interpret_markdown,
+};
 use crate::util::region_check;
 use crate::util::spinner::play_notification_bell;
 use crate::util::token_counter::TokenCounter;
@@ -1863,10 +1927,10 @@ where
             let invoke_result = tool.tool.invoke(&self.ctx, &mut self.output).await;
 
             // Check if we should exit after tool execution (specifically for the quit command)
-            if let Tool::UseQCommand(_) = &tool.tool {
-                if crate::cli::chat::tools::use_q_command::tool::should_exit() {
+            if let Tool::InternalCommand(_) = &tool.tool {
+                if crate::cli::chat::tools::internal_command::tool::should_exit() {
                     // Reset the flag for future use
-                    crate::cli::chat::tools::use_q_command::tool::reset_exit_flag();
+                    crate::cli::chat::tools::internal_command::tool::reset_exit_flag();
                     // Return Exit state to terminate the application
                     return Ok(ChatState::Exit);
                 }
@@ -2641,9 +2705,9 @@ pub fn load_tools() -> Result<HashMap<String, ToolSpec>> {
     // Load the base tools from the static file
     let mut tools: HashMap<String, ToolSpec> = serde_json::from_str(include_str!("tools/tool_index.json"))?;
 
-    // Add the use_q_command tool dynamically
-    let use_q_command_spec = tools::use_q_command::get_tool_spec();
-    tools.insert("use_q_command".to_string(), use_q_command_spec);
+    // Add the internal_command tool dynamically
+    let internal_command_spec = tools::internal_command::get_tool_spec();
+    tools.insert("internal_command".to_string(), internal_command_spec);
 
     Ok(tools)
 }
