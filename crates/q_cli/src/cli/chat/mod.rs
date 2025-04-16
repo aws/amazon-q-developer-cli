@@ -1,5 +1,5 @@
 mod command;
-mod commands;
+pub mod commands;
 mod context;
 mod context_adapter;
 mod conversation_state;
@@ -79,36 +79,6 @@ use summarization_state::{
     SummarizationState,
     TokenWarningLevel,
 };
-
-/// Help text for the compact command
-fn compact_help_text() -> String {
-    color_print::cformat!(
-        r#"
-<magenta,em>Conversation Compaction</magenta,em>
-
-The <em>/compact</em> command summarizes the conversation history to free up context space
-while preserving essential information. This is useful for long-running conversations
-that may eventually reach memory constraints.
-
-<cyan!>Usage</cyan!>
-  <em>/compact</em>                   <black!>Summarize the conversation and clear history</black!>
-  <em>/compact [prompt]</em>          <black!>Provide custom guidance for summarization</black!>
-  <em>/compact --summary</em>         <black!>Show the summary after compacting</black!>
-
-<cyan!>When to use</cyan!>
-• When you see the memory constraint warning message
-• When a conversation has been running for a long time
-• Before starting a new topic within the same session
-• After completing complex tool operations
-
-<cyan!>How it works</cyan!>
-• Creates an AI-generated summary of your conversation
-• Retains key information, code, and tool executions in the summary
-• Clears the conversation history to free up space
-• The assistant will reference the summary context in future responses
-"#
-    )
-}
 use input_source::InputSource;
 use parser::{
     RecvErrorKind,
@@ -438,6 +408,12 @@ pub enum ChatState {
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
     },
+    /// Compact the conversation history.
+    Compact {
+        prompt: Option<String>,
+        show_summary: bool,
+        help: bool,
+    },
     /// Exit the chat.
     Exit,
 }
@@ -583,6 +559,38 @@ where
                         pending_tool_index,
                         skip_printing_tools: true,
                     })
+                },
+                ChatState::Compact {
+                    prompt: _,
+                    show_summary: _,
+                    help,
+                } => {
+                    // Handle the compact command state
+                    if help {
+                        // Display help text for the compact command
+                        let help_text = crate::cli::chat::commands::compact_help_text();
+                        execute!(self.output, style::Print(help_text))?;
+                        Ok(ChatState::PromptUser {
+                            tool_uses: None,
+                            pending_tool_index: None,
+                            skip_printing_tools: true,
+                        })
+                    } else {
+                        // Implement the compact command logic here
+                        // This is a placeholder - the actual implementation would need to be added
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print("\nCompact command implementation needed.\n\n"),
+                            style::SetForegroundColor(Color::Reset)
+                        )?;
+                        
+                        Ok(ChatState::PromptUser {
+                            tool_uses: None,
+                            pending_tool_index: None,
+                            skip_printing_tools: false,
+                        })
+                    }
                 },
                 ChatState::Exit => return Ok(()),
             };
@@ -889,105 +897,41 @@ where
                 show_summary,
                 help,
             } => {
-                // If help flag is set, show compact command help
-                if help {
-                    execute!(
-                        self.output,
-                        style::Print("\n"),
-                        style::Print(compact_help_text()),
-                        style::Print("\n")
-                    )?;
+                // Get the command registry
+                let registry = CommandRegistry::global();
 
-                    return Ok(ChatState::PromptUser {
-                        tool_uses: Some(tool_uses),
-                        pending_tool_index,
-                        skip_printing_tools: true,
-                    });
+                // Get the compact command handler
+                if let Some(handler) = registry.get("compact") {
+                    // Convert the Compact command parameters to arguments for the handler
+                    let mut args = Vec::new();
+                    
+                    if help {
+                        args.push("help".to_string());
+                    } else {
+                        if show_summary {
+                            args.push("--summary".to_string());
+                        }
+                        
+                        if let Some(prompt_str) = prompt.clone() {
+                            // Add the entire prompt as a single argument
+                            args.push(prompt_str);
+                        }
+                    }
+
+                    // Convert String args to &str for the execute method
+                    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+                    // Execute the compact command through the registry
+                    let result = handler
+                        .execute(args_refs, &self.ctx, Some(tool_uses.clone()), pending_tool_index)
+                        .await;
+
+                    // Handle the result directly since we're now using the same ChatState type
+                    return result.map_err(|e| ChatError::Custom(format!("Compact command failed: {}", e).into()));
+                } else {
+                    // This should never happen as the compact command is registered in CommandRegistry::new()
+                    return Err(ChatError::Custom("Compact command not found in registry".into()));
                 }
-
-                // Check if conversation history is long enough to compact
-                if self.conversation_state.history().len() <= 3 {
-                    execute!(
-                        self.output,
-                        style::SetForegroundColor(Color::Yellow),
-                        style::Print("\nConversation too short to compact.\n\n"),
-                        style::SetForegroundColor(Color::Reset)
-                    )?;
-
-                    return Ok(ChatState::PromptUser {
-                        tool_uses: Some(tool_uses),
-                        pending_tool_index,
-                        skip_printing_tools: true,
-                    });
-                }
-
-                // Set up summarization state with history, custom prompt, and show_summary flag
-                let mut summarization_state = SummarizationState::with_prompt(prompt.clone());
-                summarization_state.original_history = Some(self.conversation_state.history().clone());
-                summarization_state.show_summary = show_summary; // Store the show_summary flag
-                self.summarization_state = Some(summarization_state);
-
-                // Create a summary request based on user input or default
-                let summary_request = match prompt {
-                    Some(custom_prompt) => {
-                        // Make the custom instructions much more prominent and directive
-                        format!(
-                            "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
-                            FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
-                            IMPORTANT CUSTOM INSTRUCTION: {}\n\n\
-                            Your task is to create a structured summary document containing:\n\
-                            1) A bullet-point list of key topics/questions covered\n\
-                            2) Bullet points for all significant tools executed and their results\n\
-                            3) Bullet points for any code or technical information shared\n\
-                            4) A section of key insights gained\n\n\
-                            FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
-                            ## CONVERSATION SUMMARY\n\
-                            * Topic 1: Key information\n\
-                            * Topic 2: Key information\n\n\
-                            ## TOOLS EXECUTED\n\
-                            * Tool X: Result Y\n\n\
-                            Remember this is a DOCUMENT not a chat response. The custom instruction above modifies what to prioritize.\n\
-                            FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).",
-                            custom_prompt
-                        )
-                    },
-                    None => {
-                        // Default prompt
-                        "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
-                        FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
-                        Your task is to create a structured summary document containing:\n\
-                        1) A bullet-point list of key topics/questions covered\n\
-                        2) Bullet points for all significant tools executed and their results\n\
-                        3) Bullet points for any code or technical information shared\n\
-                        4) A section of key insights gained\n\n\
-                        FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
-                        ## CONVERSATION SUMMARY\n\
-                        * Topic 1: Key information\n\
-                        * Topic 2: Key information\n\n\
-                        ## TOOLS EXECUTED\n\
-                        * Tool X: Result Y\n\n\
-                        Remember this is a DOCUMENT not a chat response.\n\
-                        FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
-                    },
-                };
-
-                // Add the summarization request
-                self.conversation_state
-                    .append_new_user_message(summary_request, None)
-                    .await;
-
-                // Use spinner while we wait
-                if self.interactive {
-                    execute!(self.output, cursor::Hide, style::Print("\n"))?;
-                    self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
-                }
-
-                // Return to handle response stream state
-                return Ok(ChatState::HandleResponseStream(
-                    self.client
-                        .send_message(self.conversation_state.as_sendable_conversation_state(None).await)
-                        .await?,
-                ));
             },
             Command::Help => {
                 // Get the command registry

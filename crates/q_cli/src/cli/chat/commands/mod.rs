@@ -13,6 +13,7 @@ pub mod test_utils;
 
 pub use clear::ClearCommand;
 pub use compact::CompactCommand;
+pub use compact::compact_help_text;
 pub use context::ContextCommand;
 pub use handler::CommandHandler;
 pub use help::HelpCommand;

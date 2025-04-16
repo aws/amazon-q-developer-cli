@@ -6,7 +6,6 @@ use eyre::Result;
 use fig_os_shim::Context;
 
 use crate::cli::chat::commands::CommandHandler;
-use crate::cli::chat::summarization_state::SummarizationState;
 use crate::cli::chat::{ChatState, QueuedTool};
 
 /// Handler for the compact command
@@ -54,8 +53,8 @@ Examples:
         &'a self,
         args: Vec<&'a str>,
         _ctx: &'a Context,
-        tool_uses: Option<Vec<QueuedTool>>,
-        pending_tool_index: Option<usize>,
+        _tool_uses: Option<Vec<QueuedTool>>,
+        _pending_tool_index: Option<usize>,
     ) -> Pin<Box<dyn Future<Output = Result<ChatState>> + Send + 'a>> {
         Box::pin(async move {
             // Parse arguments
@@ -103,7 +102,7 @@ Examples:
 }
 
 /// Help text for the compact command
-fn compact_help_text() -> String {
+pub fn compact_help_text() -> String {
     cformat!(
         r#"
 <magenta,em>Conversation Compaction</magenta,em>
