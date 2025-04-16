@@ -54,7 +54,6 @@ use crossterm::{
     terminal,
 };
 use eyre::{
-    ErrReport,
     Result,
     bail,
 };
@@ -150,7 +149,7 @@ use crate::cli::chat::parse::{
 };
 use crate::util::region_check;
 use crate::util::spinner::play_notification_bell;
-use crate::util::token_counter::TokenCounter;
+// use crate::util::token_counter::TokenCounter;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
@@ -1219,523 +1218,125 @@ where
                 }
             },
             Command::Context { subcommand } => {
-                if let Some(context_manager) = &mut self.conversation_state.context_manager {
-                    match subcommand {
+                // Get the command registry
+                let registry = CommandRegistry::global();
+
+                // Get the context command handler
+                if let Some(handler) = registry.get("context") {
+                    // Convert the ContextSubcommand to arguments for the handler
+                    let args = match &subcommand {
                         command::ContextSubcommand::Show { expand } => {
-                            // Display global context
-                            execute!(
-                                self.output,
-                                style::SetAttribute(Attribute::Bold),
-                                style::SetForegroundColor(Color::Magenta),
-                                style::Print("\n🌍 global:\n"),
-                                style::SetAttribute(Attribute::Reset),
-                            )?;
-                            let mut global_context_files = Vec::new();
-                            let mut profile_context_files = Vec::new();
-                            if context_manager.global_config.paths.is_empty() {
-                                execute!(
-                                    self.output,
-                                    style::SetForegroundColor(Color::DarkGrey),
-                                    style::Print("    <none>\n"),
-                                    style::SetForegroundColor(Color::Reset)
-                                )?;
-                            } else {
-                                for path in &context_manager.global_config.paths {
-                                    execute!(self.output, style::Print(format!("    {} ", path)))?;
-                                    if let Ok(context_files) =
-                                        context_manager.get_context_files_by_path(false, path).await
-                                    {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!(
-                                                "({} match{})",
-                                                context_files.len(),
-                                                if context_files.len() == 1 { "" } else { "es" }
-                                            )),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                        global_context_files.extend(context_files);
-                                    }
-                                    execute!(self.output, style::Print("\n"))?;
-                                }
+                            let mut args = vec!["show"];
+                            if *expand {
+                                args.push("--expand");
                             }
-
-                            // Display profile context
-                            execute!(
-                                self.output,
-                                style::SetAttribute(Attribute::Bold),
-                                style::SetForegroundColor(Color::Magenta),
-                                style::Print(format!("\n👤 profile ({}):\n", context_manager.current_profile)),
-                                style::SetAttribute(Attribute::Reset),
-                            )?;
-
-                            if context_manager.profile_config.paths.is_empty() {
-                                execute!(
-                                    self.output,
-                                    style::SetForegroundColor(Color::DarkGrey),
-                                    style::Print("    <none>\n\n"),
-                                    style::SetForegroundColor(Color::Reset)
-                                )?;
-                            } else {
-                                for path in &context_manager.profile_config.paths {
-                                    execute!(self.output, style::Print(format!("    {} ", path)))?;
-                                    if let Ok(context_files) =
-                                        context_manager.get_context_files_by_path(false, path).await
-                                    {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!(
-                                                "({} match{})",
-                                                context_files.len(),
-                                                if context_files.len() == 1 { "" } else { "es" }
-                                            )),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                        profile_context_files.extend(context_files);
-                                    }
-                                    execute!(self.output, style::Print("\n"))?;
-                                }
-                                execute!(self.output, style::Print("\n"))?;
-                            }
-
-                            if global_context_files.is_empty() && profile_context_files.is_empty() {
-                                execute!(
-                                    self.output,
-                                    style::SetForegroundColor(Color::DarkGrey),
-                                    style::Print("No files in the current directory matched the rules above.\n\n"),
-                                    style::SetForegroundColor(Color::Reset)
-                                )?;
-                            } else {
-                                let total = global_context_files.len() + profile_context_files.len();
-                                let total_tokens = global_context_files
-                                    .iter()
-                                    .map(|(_, content)| TokenCounter::count_tokens(content))
-                                    .sum::<usize>()
-                                    + profile_context_files
-                                        .iter()
-                                        .map(|(_, content)| TokenCounter::count_tokens(content))
-                                        .sum::<usize>();
-                                execute!(
-                                    self.output,
-                                    style::SetForegroundColor(Color::Green),
-                                    style::SetAttribute(Attribute::Bold),
-                                    style::Print(format!(
-                                        "{} matched file{} in use:\n",
-                                        total,
-                                        if total == 1 { "" } else { "s" }
-                                    )),
-                                    style::SetForegroundColor(Color::Reset),
-                                    style::SetAttribute(Attribute::Reset)
-                                )?;
-
-                                for (filename, content) in global_context_files {
-                                    let est_tokens = TokenCounter::count_tokens(&content);
-                                    execute!(
-                                        self.output,
-                                        style::Print(format!("🌍 {} ", filename)),
-                                        style::SetForegroundColor(Color::DarkGrey),
-                                        style::Print(format!("(~{} tkns)\n", est_tokens)),
-                                        style::SetForegroundColor(Color::Reset),
-                                    )?;
-                                    if expand {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::DarkGrey),
-                                            style::Print(format!("{}\n\n", content)),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    }
-                                }
-
-                                for (filename, content) in profile_context_files {
-                                    let est_tokens = TokenCounter::count_tokens(&content);
-                                    execute!(
-                                        self.output,
-                                        style::Print(format!("👤 {} ", filename)),
-                                        style::SetForegroundColor(Color::DarkGrey),
-                                        style::Print(format!("(~{} tkns)\n", est_tokens)),
-                                        style::SetForegroundColor(Color::Reset),
-                                    )?;
-                                    if expand {
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::DarkGrey),
-                                            style::Print(format!("{}\n\n", content)),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    }
-                                }
-
-                                if expand {
-                                    execute!(self.output, style::Print(format!("{}\n\n", "▔".repeat(3))),)?;
-                                }
-
-                                execute!(
-                                    self.output,
-                                    style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
-                                )?;
-
-                                execute!(self.output, style::Print("\n"))?;
-                            }
+                            args
                         },
                         command::ContextSubcommand::Add { global, force, paths } => {
-                            match context_manager.add_paths(paths.clone(), global, force).await {
-                                Ok(_) => {
-                                    let target = if global { "global" } else { "profile" };
-                                    execute!(
-                                        self.output,
-                                        style::SetForegroundColor(Color::Green),
-                                        style::Print(format!(
-                                            "\nAdded {} path(s) to {} context.\n\n",
-                                            paths.len(),
-                                            target
-                                        )),
-                                        style::SetForegroundColor(Color::Reset)
-                                    )?;
-                                },
-                                Err(e) => {
-                                    execute!(
-                                        self.output,
-                                        style::SetForegroundColor(Color::Red),
-                                        style::Print(format!("\nError: {}\n\n", e)),
-                                        style::SetForegroundColor(Color::Reset)
-                                    )?;
-                                },
+                            let mut args = vec!["add"];
+                            if *global {
+                                args.push("--global");
                             }
+                            if *force {
+                                args.push("--force");
+                            }
+                            for path in paths {
+                                args.push(path);
+                            }
+                            args
                         },
                         command::ContextSubcommand::Remove { global, paths } => {
-                            match context_manager.remove_paths(paths.clone(), global).await {
-                                Ok(_) => {
-                                    let target = if global { "global" } else { "profile" };
-                                    execute!(
-                                        self.output,
-                                        style::SetForegroundColor(Color::Green),
-                                        style::Print(format!(
-                                            "\nRemoved {} path(s) from {} context.\n\n",
-                                            paths.len(),
-                                            target
-                                        )),
-                                        style::SetForegroundColor(Color::Reset)
-                                    )?;
-                                },
-                                Err(e) => {
-                                    execute!(
-                                        self.output,
-                                        style::SetForegroundColor(Color::Red),
-                                        style::Print(format!("\nError: {}\n\n", e)),
-                                        style::SetForegroundColor(Color::Reset)
-                                    )?;
-                                },
+                            let mut args = vec!["rm"];
+                            if *global {
+                                args.push("--global");
                             }
+                            for path in paths {
+                                args.push(path);
+                            }
+                            args
                         },
-                        command::ContextSubcommand::Clear { global } => match context_manager.clear(global).await {
-                            Ok(_) => {
-                                let target = if global {
-                                    "global".to_string()
-                                } else {
-                                    format!("profile '{}'", context_manager.current_profile)
-                                };
-                                execute!(
-                                    self.output,
-                                    style::SetForegroundColor(Color::Green),
-                                    style::Print(format!("\nCleared context for {}\n\n", target)),
-                                    style::SetForegroundColor(Color::Reset)
-                                )?;
-                            },
-                            Err(e) => {
-                                execute!(
-                                    self.output,
-                                    style::SetForegroundColor(Color::Red),
-                                    style::Print(format!("\nError: {}\n\n", e)),
-                                    style::SetForegroundColor(Color::Reset)
-                                )?;
-                            },
+                        command::ContextSubcommand::Clear { global } => {
+                            let mut args = vec!["clear"];
+                            if *global {
+                                args.push("--global");
+                            }
+                            args
                         },
                         command::ContextSubcommand::Help => {
-                            execute!(
-                                self.output,
-                                style::Print("\n"),
-                                style::Print(command::ContextSubcommand::help_text()),
-                                style::Print("\n")
-                            )?;
+                            vec!["help"]
                         },
                         command::ContextSubcommand::Hooks { subcommand } => {
-                            fn map_chat_error(e: ErrReport) -> ChatError {
-                                ChatError::Custom(e.to_string().into())
-                            }
-
-                            let scope = |g: bool| if g { "global" } else { "profile" };
-                            if let Some(subcommand) = subcommand {
-                                match subcommand {
+                            let mut args = vec!["hooks"];
+                            if let Some(hook_subcommand) = subcommand {
+                                match hook_subcommand {
                                     command::HooksSubcommand::Add {
                                         name,
                                         trigger,
                                         command,
                                         global,
                                     } => {
-                                        let trigger = if trigger == "conversation_start" {
-                                            HookTrigger::ConversationStart
-                                        } else {
-                                            HookTrigger::PerPrompt
-                                        };
-
-                                        let result = context_manager
-                                            .add_hook(name.clone(), Hook::new_inline_hook(trigger, command), global)
-                                            .await;
-                                        match result {
-                                            Ok(_) => {
-                                                execute!(
-                                                    self.output,
-                                                    style::SetForegroundColor(Color::Green),
-                                                    style::Print(format!(
-                                                        "\nAdded {} hook '{name}'.\n\n",
-                                                        scope(global)
-                                                    )),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            },
-                                            Err(e) => {
-                                                execute!(
-                                                    self.output,
-                                                    style::SetForegroundColor(Color::Red),
-                                                    style::Print(format!(
-                                                        "\nCannot add {} hook '{name}': {}\n\n",
-                                                        scope(global),
-                                                        e
-                                                    )),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            },
+                                        args.push("add");
+                                        args.push(name);
+                                        args.push("--trigger");
+                                        args.push(trigger);
+                                        args.push("--command");
+                                        args.push(command);
+                                        if *global {
+                                            args.push("--global");
                                         }
                                     },
                                     command::HooksSubcommand::Remove { name, global } => {
-                                        let result = context_manager.remove_hook(&name, global).await;
-                                        match result {
-                                            Ok(_) => {
-                                                execute!(
-                                                    self.output,
-                                                    style::SetForegroundColor(Color::Green),
-                                                    style::Print(format!(
-                                                        "\nRemoved {} hook '{name}'.\n\n",
-                                                        scope(global)
-                                                    )),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            },
-                                            Err(e) => {
-                                                execute!(
-                                                    self.output,
-                                                    style::SetForegroundColor(Color::Red),
-                                                    style::Print(format!(
-                                                        "\nCannot remove {} hook '{name}': {}\n\n",
-                                                        scope(global),
-                                                        e
-                                                    )),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            },
+                                        args.push("rm");
+                                        args.push(name);
+                                        if *global {
+                                            args.push("--global");
                                         }
                                     },
                                     command::HooksSubcommand::Enable { name, global } => {
-                                        let result = context_manager.set_hook_disabled(&name, global, false).await;
-                                        match result {
-                                            Ok(_) => {
-                                                execute!(
-                                                    self.output,
-                                                    style::SetForegroundColor(Color::Green),
-                                                    style::Print(format!(
-                                                        "\nEnabled {} hook '{name}'.\n\n",
-                                                        scope(global)
-                                                    )),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            },
-                                            Err(e) => {
-                                                execute!(
-                                                    self.output,
-                                                    style::SetForegroundColor(Color::Red),
-                                                    style::Print(format!(
-                                                        "\nCannot enable {} hook '{name}': {}\n\n",
-                                                        scope(global),
-                                                        e
-                                                    )),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            },
+                                        args.push("enable");
+                                        args.push(name);
+                                        if *global {
+                                            args.push("--global");
                                         }
                                     },
                                     command::HooksSubcommand::Disable { name, global } => {
-                                        let result = context_manager.set_hook_disabled(&name, global, true).await;
-                                        match result {
-                                            Ok(_) => {
-                                                execute!(
-                                                    self.output,
-                                                    style::SetForegroundColor(Color::Green),
-                                                    style::Print(format!(
-                                                        "\nDisabled {} hook '{name}'.\n\n",
-                                                        scope(global)
-                                                    )),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            },
-                                            Err(e) => {
-                                                execute!(
-                                                    self.output,
-                                                    style::SetForegroundColor(Color::Red),
-                                                    style::Print(format!(
-                                                        "\nCannot disable {} hook '{name}': {}\n\n",
-                                                        scope(global),
-                                                        e
-                                                    )),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            },
+                                        args.push("disable");
+                                        args.push(name);
+                                        if *global {
+                                            args.push("--global");
                                         }
                                     },
                                     command::HooksSubcommand::EnableAll { global } => {
-                                        context_manager
-                                            .set_all_hooks_disabled(global, false)
-                                            .await
-                                            .map_err(map_chat_error)?;
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("\nEnabled all {} hooks.\n\n", scope(global))),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
+                                        args.push("enable-all");
+                                        if *global {
+                                            args.push("--global");
+                                        }
                                     },
                                     command::HooksSubcommand::DisableAll { global } => {
-                                        context_manager
-                                            .set_all_hooks_disabled(global, true)
-                                            .await
-                                            .map_err(map_chat_error)?;
-                                        execute!(
-                                            self.output,
-                                            style::SetForegroundColor(Color::Green),
-                                            style::Print(format!("\nDisabled all {} hooks.\n\n", scope(global))),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
+                                        args.push("disable-all");
+                                        if *global {
+                                            args.push("--global");
+                                        }
                                     },
                                     command::HooksSubcommand::Help => {
-                                        execute!(
-                                            self.output,
-                                            style::Print("\n"),
-                                            style::Print(command::ContextSubcommand::hooks_help_text()),
-                                            style::Print("\n")
-                                        )?;
+                                        args.push("help");
                                     },
                                 }
-                            } else {
-                                fn print_hook_section(
-                                    output: &mut impl Write,
-                                    hooks: &HashMap<String, Hook>,
-                                    trigger: HookTrigger,
-                                ) -> Result<()> {
-                                    let section = match trigger {
-                                        HookTrigger::ConversationStart => "Conversation Start",
-                                        HookTrigger::PerPrompt => "Per Prompt",
-                                    };
-                                    let hooks: Vec<(&String, &Hook)> =
-                                        hooks.iter().filter(|(_, h)| h.trigger == trigger).collect();
-
-                                    queue!(
-                                        output,
-                                        style::SetForegroundColor(Color::Cyan),
-                                        style::Print(format!("    {section}:\n")),
-                                        style::SetForegroundColor(Color::Reset),
-                                    )?;
-
-                                    if hooks.is_empty() {
-                                        queue!(
-                                            output,
-                                            style::SetForegroundColor(Color::DarkGrey),
-                                            style::Print("      <none>\n"),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    } else {
-                                        for (name, hook) in hooks {
-                                            if hook.disabled {
-                                                queue!(
-                                                    output,
-                                                    style::SetForegroundColor(Color::DarkGrey),
-                                                    style::Print(format!("      {} (disabled)\n", name)),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            } else {
-                                                queue!(output, style::Print(format!("      {}\n", name)),)?;
-                                            }
-                                        }
-                                    }
-                                    Ok(())
-                                }
-                                queue!(
-                                    self.output,
-                                    style::SetAttribute(Attribute::Bold),
-                                    style::SetForegroundColor(Color::Magenta),
-                                    style::Print("\n🌍 global:\n"),
-                                    style::SetAttribute(Attribute::Reset),
-                                )?;
-
-                                print_hook_section(
-                                    &mut self.output,
-                                    &context_manager.global_config.hooks,
-                                    HookTrigger::ConversationStart,
-                                )
-                                .map_err(map_chat_error)?;
-                                print_hook_section(
-                                    &mut self.output,
-                                    &context_manager.global_config.hooks,
-                                    HookTrigger::PerPrompt,
-                                )
-                                .map_err(map_chat_error)?;
-
-                                queue!(
-                                    self.output,
-                                    style::SetAttribute(Attribute::Bold),
-                                    style::SetForegroundColor(Color::Magenta),
-                                    style::Print(format!("\n👤 profile ({}):\n", &context_manager.current_profile)),
-                                    style::SetAttribute(Attribute::Reset),
-                                )?;
-
-                                print_hook_section(
-                                    &mut self.output,
-                                    &context_manager.profile_config.hooks,
-                                    HookTrigger::ConversationStart,
-                                )
-                                .map_err(map_chat_error)?;
-                                print_hook_section(
-                                    &mut self.output,
-                                    &context_manager.profile_config.hooks,
-                                    HookTrigger::PerPrompt,
-                                )
-                                .map_err(map_chat_error)?;
-
-                                execute!(
-                                    self.output,
-                                    style::Print(format!(
-                                        "\nUse {} to manage hooks.\n\n",
-                                        "/context hooks help".to_string().dark_green()
-                                    )),
-                                )?;
                             }
+                            args
                         },
-                    }
-                    // fig_telemetry::send_context_command_executed
-                } else {
-                    execute!(
-                        self.output,
-                        style::SetForegroundColor(Color::Red),
-                        style::Print("\nContext management is not available.\n\n"),
-                        style::SetForegroundColor(Color::Reset)
-                    )?;
-                }
+                    };
 
-                ChatState::PromptUser {
-                    tool_uses: Some(tool_uses),
-                    pending_tool_index,
-                    skip_printing_tools: true,
+                    // Execute the context command through the registry
+                    let result = handler
+                        .execute(args, &self.ctx, Some(tool_uses.clone()), pending_tool_index)
+                        .await;
+
+                    // Handle the result directly since we're now using the same ChatState type
+                    return result.map_err(|e| ChatError::Custom(format!("Context command failed: {}", e).into()));
+                } else {
+                    // This should never happen as the context command is registered in CommandRegistry::new()
+                    return Err(ChatError::Custom("Context command not found in registry".into()));
                 }
             },
             Command::Tools { subcommand } => {

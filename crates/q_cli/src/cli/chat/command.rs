@@ -244,6 +244,7 @@ the output as context to Amazon Q.
         )
     }
 
+    #[allow(dead_code)]
     pub fn hooks_help_text() -> String {
         color_print::cformat!(
             r#"

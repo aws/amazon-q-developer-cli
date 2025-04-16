@@ -61,6 +61,7 @@ pub struct Hook {
 }
 
 impl Hook {
+    #[allow(dead_code)]
     pub fn new_inline_hook(trigger: HookTrigger, command: String) -> Self {
         Self {
             trigger,
