@@ -160,13 +160,17 @@ Added comprehensive unit tests for all command handlers.
   - Modify `Command::Help` handler to delegate to CommandRegistry ✅
   - Make help command trusted (doesn't require confirmation) ✅
 
-- **quit**: Simple command with confirmation requirement 🟡
-  - Ensure consistent behavior with confirmation prompts
-  - Verify exit behavior works correctly
+- **quit**: Simple command with confirmation requirement ✅
+  - Ensure consistent behavior with confirmation prompts ✅
+  - Verify exit behavior works correctly ✅
+  - Remove direct implementation fallback ✅
+  - Improve error handling for missing command handler ✅
 
-- **clear**: Simple command without confirmation 🟡
-  - Ensure conversation state is properly cleared
-  - Verify transcript handling
+- **clear**: Simple command without confirmation ✅
+  - Ensure conversation state is properly cleared ✅
+  - Verify transcript handling ✅
+  - Remove direct implementation fallback ✅
+  - Improve error handling for missing command handler ✅
 
 #### 6.3 Migrate Complex Commands with Existing Handlers
 - **context**: Command with subcommands ⚪
@@ -354,8 +358,8 @@ For each command migration, we will create a detailed comparison document with:
 | Command | Subcommands | Status | Notes |
 |---------|-------------|--------|-------|
 | help | N/A | 🟢 Completed | First command migrated as a test case. Help command is now trusted and doesn't require confirmation. |
-| quit | N/A | 🟡 In Progress | Simple command with confirmation requirement |
-| clear | N/A | 🟡 In Progress | Simple command without confirmation |
+| quit | N/A | 🟢 Completed | Simple command with confirmation requirement. Direct implementation removed. |
+| clear | N/A | 🟢 Completed | Simple command without confirmation. Direct implementation removed. |
 | context | add, rm, clear, show | ⚪ Not Started | Complex command with file operations |
 | profile | list, create, delete, set, rename | ⚪ Not Started | Complex command with state management |
 | tools | list, enable, disable, trust, untrust, reset | ⚪ Not Started | Complex command with permission management |
@@ -433,11 +437,13 @@ impl TestContext {
 
 ## Current and Next Steps
 
-### Current Step: Complete the migration of basic commands (Phase 6.2)
+### Current Step: Begin Phase 6.3: Migrate Complex Commands with Existing Handlers
 
-1. **Complete the `quit` command migration**:
-   - Verify consistent behavior with confirmation prompts
-   - Test exit behavior works correctly
+1. **Start with the `context` command and its subcommands**:
+   - Migrate each subcommand individually
+   - Ensure proper argument parsing
+   - Implement whitespace handling for file paths using shlex
+   - Verify file operations work correctly
    - Run the following commands before committing:
      ```
      cargo build -p q_cli
@@ -449,18 +455,12 @@ impl TestContext {
    - Run `/compact` after the commit (or prompt user to do so manually)
    - Update the implementation plan to mark this task as completed
 
-2. **Complete the `clear` command migration**:
-   - Ensure conversation state is properly cleared
-   - Verify transcript handling
-   - Follow the same pre-commit and post-commit process as above
-
 ### Next Steps:
 
-1. **Begin Phase 6.3: Migrate Complex Commands with Existing Handlers**
-   - Start with the `context` command and its subcommands
-   - Ensure proper argument parsing
-   - Implement whitespace handling for file paths using shlex
-   - Verify file operations work correctly
+1. **Continue Phase 6.3: Migrate Complex Commands with Existing Handlers**
+   - After `context` command, move on to the `profile` command and its subcommands
+   - Ensure profile management works correctly
+   - Verify error handling
    - Follow the same pre-commit and post-commit process
 
 ## Success Metrics
