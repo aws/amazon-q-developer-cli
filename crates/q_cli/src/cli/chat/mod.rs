@@ -2080,7 +2080,7 @@ where
                 play_notification_bell(!allowed);
             }
 
-            self.print_tool_description(tool, allowed).await?;
+            self.print_tool_descriptions(tool, allowed).await?;
 
             if allowed {
                 tool.accepted = true;
@@ -2101,7 +2101,6 @@ where
         }
 
         // Execute the requested tools.
-        let terminal_width = self.terminal_width();
         let mut tool_results = vec![];
 
         for tool in tool_uses {
@@ -2109,14 +2108,6 @@ where
             tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_accepted = true);
 
             let tool_start = std::time::Instant::now();
-            queue!(
-                self.output,
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(format!("\n{}...\n", tool.tool.display_name_action())),
-                style::SetForegroundColor(Color::DarkGrey),
-                style::Print(format!("{}\n", "▔".repeat(terminal_width))),
-                style::SetForegroundColor(Color::Reset),
-            )?;
             let invoke_result = tool.tool.invoke(&self.ctx, &mut self.output).await;
 
             if self.interactive && self.spinner.is_some() {
@@ -2131,14 +2122,18 @@ where
 
             let tool_time = std::time::Instant::now().duration_since(tool_start);
             let tool_time = format!("{}.{}", tool_time.as_secs(), tool_time.subsec_millis());
+            const CONTINUATION_LINE: &str = " ⋮ ";
 
             match invoke_result {
                 Ok(result) => {
                     debug!("tool result output: {:#?}", result);
                     execute!(
                         self.output,
+                        style::Print(CONTINUATION_LINE),
+                        style::Print("\n"),
                         style::SetForegroundColor(Color::Green),
-                        style::Print(format!("🟢 Completed in {}s", tool_time)),
+                        style::SetAttribute(Attribute::Bold),
+                        style::Print(format!(" ● Completed in {}s", tool_time)),
                         style::SetForegroundColor(Color::Reset),
                         style::Print("\n"),
                     )?;
@@ -2154,9 +2149,11 @@ where
                     error!(?err, "An error occurred processing the tool");
                     execute!(
                         self.output,
+                        style::Print(CONTINUATION_LINE),
+                        style::Print("\n"),
                         style::SetAttribute(Attribute::Bold),
                         style::SetForegroundColor(Color::Red),
-                        style::Print(format!("🔴 Execution failed after {}s:\n", tool_time)),
+                        style::Print(format!(" ● Execution failed after {}s:\n", tool_time)),
                         style::SetAttribute(Attribute::Reset),
                         style::SetForegroundColor(Color::Red),
                         style::Print(&err),
@@ -2644,25 +2641,32 @@ where
         };
     }
 
-    async fn print_tool_description(&mut self, tool_use: &QueuedTool, trusted: bool) -> Result<(), ChatError> {
-        let terminal_width = self.terminal_width();
+    async fn print_tool_descriptions(&mut self, tool_use: &QueuedTool, trusted: bool) -> Result<(), ChatError> {
+        const TOOL_BULLET: &str = " ● ";
+        const CONTINUATION_LINE: &str = " ⋮ ";
+
         queue!(
             self.output,
-            style::SetForegroundColor(Color::Green),
-            style::Print(format!("[Tool Request{}] ", if trusted { " - Trusted" } else { "" })),
-            style::SetForegroundColor(Color::Cyan),
-            style::Print(format!("{}\n", tool_use.tool.display_name())),
-            style::SetForegroundColor(Color::Reset),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print(format!("{}\n", "▔".repeat(terminal_width))),
-            style::SetForegroundColor(Color::Reset),
+            style::SetForegroundColor(Color::Magenta),
+            style::Print(format!(
+                "🛠️  Using tool: {} {}\n",
+                tool_use.tool.display_name(),
+                if trusted { "(trusted)".dark_green() } else { "".reset() }
+            )),
+            style::SetForegroundColor(Color::Reset)
         )?;
+        queue!(self.output, style::Print(CONTINUATION_LINE))?;
+        queue!(self.output, style::Print("\n"))?;
+        queue!(self.output, style::Print(TOOL_BULLET))?;
+
+        self.output.flush()?;
+
         tool_use
             .tool
             .queue_description(&self.ctx, &mut self.output)
             .await
             .map_err(|e| ChatError::Custom(format!("failed to print tool: {}", e).into()))?;
-        queue!(self.output, style::Print("\n"))?;
+
         Ok(())
     }
 
