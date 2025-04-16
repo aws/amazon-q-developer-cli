@@ -1,5 +1,5 @@
 mod clear;
-mod context;
+pub mod context;
 pub mod handler;
 pub mod help;
 mod quit;

@@ -33,7 +33,10 @@ impl CommandRegistry {
         registry.register("quit", Box::new(QuitCommand::new()));
         registry.register("clear", Box::new(ClearCommand::new()));
         registry.register("help", Box::new(HelpCommand::new()));
+
+        // Register context command and its subcommands
         registry.register("context", Box::new(ContextCommand::new()));
+
         // We'll need to update these once we implement the modules
         // registry.register("profile", Box::new(ProfileCommand::new()));
         // registry.register("tools", Box::new(ToolsCommand::new()));

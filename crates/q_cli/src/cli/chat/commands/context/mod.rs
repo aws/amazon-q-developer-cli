@@ -48,6 +48,28 @@ impl CommandHandler for ContextCommand {
         crate::cli::chat::command::ContextSubcommand::help_text()
     }
 
+    fn llm_description(&self) -> String {
+        r#"The context command allows you to manage context files for the chat session.
+
+Available subcommands:
+- add: Add files to the context
+- rm/remove: Remove files from the context
+- clear: Clear all context files
+- show/list: Show current context files
+- help: Show help for context commands
+
+Examples:
+- /context add file.txt - Add a file to the context
+- /context add --global file.txt - Add a file to the global context
+- /context add --force file.txt - Add a file to the context, even if it's large
+- /context rm file.txt - Remove a file from the context
+- /context rm 1 - Remove the first file from the context
+- /context clear - Clear all context files
+- /context show - Show current context files
+- /context show --expand - Show current context files with their content"#
+            .to_string()
+    }
+
     fn execute<'a>(
         &'a self,
         args: Vec<&'a str>,
