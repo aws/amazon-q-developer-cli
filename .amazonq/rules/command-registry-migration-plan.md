@@ -37,9 +37,9 @@ For each command, we will follow this process:
 
 | Command | Subcommands | Handler Implemented | Tests Written | Migration Complete | Notes |
 |---------|-------------|---------------------|---------------|-------------------|-------|
-| help    | -           | ✅                  | ✅            | ❌                | First test case |
-| quit    | -           | ✅                  | ✅            | ❌                | Requires confirmation |
-| clear   | -           | ✅                  | ✅            | ❌                | - |
+| help    | -           | ✅                  | ✅            | ✅                | First test case |
+| quit    | -           | ✅                  | ✅            | ✅                | Requires confirmation |
+| clear   | -           | ✅                  | ✅            | ✅                | - |
 | context | add         | ✅                  | ✅            | ❌                | File operations |
 |         | rm          | ✅                  | ✅            | ❌                | File operations |
 |         | clear       | ✅                  | ✅            | ❌                | - |
