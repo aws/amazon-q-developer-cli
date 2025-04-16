@@ -6,6 +6,7 @@ use fig_os_shim::Context;
 
 use crate::cli::chat::commands::{
     ClearCommand,
+    CompactCommand,
     CommandHandler,
     ContextCommand,
     HelpCommand,
@@ -33,6 +34,7 @@ impl CommandRegistry {
         registry.register("quit", Box::new(QuitCommand::new()));
         registry.register("clear", Box::new(ClearCommand::new()));
         registry.register("help", Box::new(HelpCommand::new()));
+        registry.register("compact", Box::new(CompactCommand::new()));
 
         // Register context command and its subcommands
         registry.register("context", Box::new(ContextCommand::new()));

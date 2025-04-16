@@ -1,4 +1,5 @@
 mod clear;
+mod compact;
 pub mod context;
 pub mod handler;
 pub mod help;
@@ -11,6 +12,7 @@ pub mod test_utils;
 // mod tools;
 
 pub use clear::ClearCommand;
+pub use compact::CompactCommand;
 pub use context::ContextCommand;
 pub use handler::CommandHandler;
 pub use help::HelpCommand;
