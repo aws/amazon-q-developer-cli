@@ -2076,6 +2076,10 @@ where
                 !tool.tool.requires_acceptance(&self.ctx)
             };
 
+            if self.settings.get_bool_or("chat.enableNotifications", false) {
+                play_notification_bell(!allowed);
+            }
+
             self.print_tool_description(tool, allowed).await?;
 
             if allowed {
@@ -2389,7 +2393,8 @@ where
                 }
 
                 if self.interactive && self.settings.get_bool_or("chat.enableNotifications", false) {
-                    play_notification_bell();
+                    // For final responses (no tools suggested), always play the bell
+                    play_notification_bell(tool_uses.is_empty());
                 }
 
                 // Handle citations for non-summarization responses
