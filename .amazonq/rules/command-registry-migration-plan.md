@@ -40,10 +40,10 @@ For each command, we will follow this process:
 | help    | -           | ✅                  | ✅            | ✅                | First test case |
 | quit    | -           | ✅                  | ✅            | ✅                | Requires confirmation |
 | clear   | -           | ✅                  | ✅            | ✅                | - |
-| context | add         | ✅                  | ✅            | ❌                | File operations |
-|         | rm          | ✅                  | ✅            | ❌                | File operations |
-|         | clear       | ✅                  | ✅            | ❌                | - |
-|         | show        | ✅                  | ✅            | ❌                | - |
+| context | add         | ✅                  | ✅            | ✅                | File operations |
+|         | rm          | ✅                  | ✅            | ✅                | File operations |
+|         | clear       | ✅                  | ✅            | ✅                | - |
+|         | show        | ✅                  | ✅            | ✅                | - |
 | profile | list        | ✅                  | ✅            | ❌                | - |
 |         | create      | ✅                  | ✅            | ❌                | - |
 |         | delete      | ✅                  | ✅            | ❌                | Requires confirmation |

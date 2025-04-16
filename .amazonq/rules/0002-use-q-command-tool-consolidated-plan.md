@@ -173,7 +173,7 @@ Added comprehensive unit tests for all command handlers.
   - Improve error handling for missing command handler ✅
 
 #### 6.3 Migrate Complex Commands with Existing Handlers
-- **context**: Command with subcommands ⚪
+- **context**: Command with subcommands 🟡
   - Migrate each subcommand individually
   - Ensure proper argument parsing
   - Implement whitespace handling for file paths using shlex
