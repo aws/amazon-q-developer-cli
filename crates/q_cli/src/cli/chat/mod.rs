@@ -879,54 +879,10 @@ where
                         .await;
 
                     // Handle the result directly since we're now using the same ChatState type
-                    // If the clear command fails, propagate the error rather than falling back
                     return result.map_err(|e| ChatError::Custom(format!("Clear command failed: {}", e).into()));
                 } else {
-                    // If the clear command is not registered, fall back to the direct implementation
-                    execute!(self.output, cursor::Show)?;
-                    execute!(
-                        self.output,
-                        style::SetForegroundColor(Color::DarkGrey),
-                        style::Print(
-                            "\nAre you sure? This will erase the conversation history and context from hooks for the current session. "
-                        ),
-                        style::Print("["),
-                        style::SetForegroundColor(Color::Green),
-                        style::Print("y"),
-                        style::SetForegroundColor(Color::DarkGrey),
-                        style::Print("/"),
-                        style::SetForegroundColor(Color::Green),
-                        style::Print("n"),
-                        style::SetForegroundColor(Color::DarkGrey),
-                        style::Print("]:\n\n"),
-                        style::SetForegroundColor(Color::Reset),
-                    )?;
-
-                    // Setting `exit_on_single_ctrl_c` for better ux: exit the confirmation dialog rather than the CLI
-                    let user_input = match self.read_user_input("> ".yellow().to_string().as_str(), true) {
-                        Some(input) => input,
-                        None => "".to_string(),
-                    };
-
-                    if ["y", "Y"].contains(&user_input.as_str()) {
-                        self.conversation_state.clear(true);
-                        if let Some(cm) = self.conversation_state.context_manager.as_mut() {
-                            cm.hook_executor.global_cache.clear();
-                            cm.hook_executor.profile_cache.clear();
-                        }
-                        execute!(
-                            self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print("\nConversation history cleared.\n\n"),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    }
-
-                    return Ok(ChatState::PromptUser {
-                        tool_uses: None,
-                        pending_tool_index: None,
-                        skip_printing_tools: true,
-                    });
+                    // This should never happen as the clear command is registered in CommandRegistry::new()
+                    return Err(ChatError::Custom("Clear command not found in registry".into()));
                 }
             },
             Command::Compact {
@@ -1135,11 +1091,10 @@ where
                         .await;
 
                     // Handle the result directly since we're now using the same ChatState type
-                    // If the quit command fails, propagate the error rather than falling back
                     return result.map_err(|e| ChatError::Custom(format!("Quit command failed: {}", e).into()));
                 } else {
-                    // If the quit command is not registered, fall back to the direct implementation
-                    return Ok(ChatState::Exit);
+                    // This should never happen as the quit command is registered in CommandRegistry::new()
+                    return Err(ChatError::Custom("Quit command not found in registry".into()));
                 }
             },
             Command::Profile { subcommand } => {
