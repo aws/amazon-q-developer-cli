@@ -30,8 +30,7 @@ const DEFAULT_CACHE_TTL_SECONDS: u64 = 0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hook {
-    /// Unique name of the hook
-    pub name: String,
+    pub trigger: HookTrigger,
 
     pub r#type: HookType,
 
@@ -47,8 +46,8 @@ pub struct Hook {
     pub max_output_size: usize,
 
     /// How long the hook output is cached before it will be executed again
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_ttl_seconds: Option<u64>,
+    #[serde(default = "Hook::default_cache_ttl_seconds")]
+    pub cache_ttl_seconds: u64,
 
     // Type-specific fields
     /// The bash command to execute
@@ -56,21 +55,23 @@ pub struct Hook {
 
     // Internal data
     #[serde(skip)]
-    pub is_conversation_start: bool,
+    pub name: String,
+    #[serde(skip)]
+    pub is_global: bool,
 }
 
 impl Hook {
-    #[allow(dead_code)] // TODO: Remove
-    pub fn new_inline_hook(name: &str, command: String, is_conversation_start: bool) -> Self {
+    pub fn new_inline_hook(trigger: HookTrigger, command: String) -> Self {
         Self {
-            name: name.to_string(),
+            trigger,
             r#type: HookType::Inline,
             disabled: Self::default_disabled(),
             timeout_ms: Self::default_timeout_ms(),
             max_output_size: Self::default_max_output_size(),
-            cache_ttl_seconds: None,
+            cache_ttl_seconds: Self::default_cache_ttl_seconds(),
             command: Some(command),
-            is_conversation_start,
+            is_global: false,
+            name: "new hook".to_string(),
         }
     }
 
@@ -85,20 +86,24 @@ impl Hook {
     fn default_max_output_size() -> usize {
         DEFAULT_MAX_OUTPUT_SIZE
     }
+
+    fn default_cache_ttl_seconds() -> u64 {
+        DEFAULT_CACHE_TTL_SECONDS
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum HookType {
     // Execute an inline shell command
     Inline,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct HookConfig {
-    pub conversation_start: Vec<Hook>,
-    pub per_prompt: Vec<Hook>,
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum HookTrigger {
+    ConversationStart,
+    PerPrompt,
 }
 
 #[derive(Debug, Clone)]
@@ -107,15 +112,18 @@ pub struct CachedHook {
     expiry: Option<Instant>,
 }
 
+/// Maps a hook name to a [`CachedHook`]
 #[derive(Debug, Clone)]
 pub struct HookExecutor {
-    pub execution_cache: HashMap<String, CachedHook>,
+    pub global_cache: HashMap<String, CachedHook>,
+    pub profile_cache: HashMap<String, CachedHook>,
 }
 
 impl HookExecutor {
     pub fn new() -> Self {
         Self {
-            execution_cache: HashMap::new(),
+            global_cache: HashMap::new(),
+            profile_cache: HashMap::new(),
         }
     }
 
@@ -134,7 +142,7 @@ impl HookExecutor {
             }
 
             // Check if the hook is cached. If so, push a completed future.
-            if let Some(cached) = self.get_cache(&hook.name) {
+            if let Some(cached) = self.get_cache(hook) {
                 futures.push(Either::Left(future::ready((
                     hook,
                     Ok(cached.clone()),
@@ -186,16 +194,12 @@ impl HookExecutor {
         for (hook, result, _) in results {
             if result.is_ok() {
                 // Conversation start hooks are always cached as they are expected to run once per session.
-                let expiry = if hook.is_conversation_start {
-                    None
-                } else {
-                    Some(
-                        Instant::now()
-                            + Duration::from_secs(hook.cache_ttl_seconds.unwrap_or(DEFAULT_CACHE_TTL_SECONDS)),
-                    )
+                let expiry = match hook.trigger {
+                    HookTrigger::ConversationStart => None,
+                    HookTrigger::PerPrompt => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
                 };
 
-                self.insert_cache(&hook.name, CachedHook {
+                self.insert_cache(hook, CachedHook {
                     output: result.as_ref().cloned().unwrap(),
                     expiry,
                 });
@@ -247,8 +251,14 @@ impl HookExecutor {
     }
 
     /// Will return a cached hook's output if it exists and isn't expired.
-    fn get_cache(&self, name: &str) -> Option<String> {
-        self.execution_cache.get(name).and_then(|o| {
+    fn get_cache(&self, hook: &Hook) -> Option<String> {
+        let cache = if hook.is_global {
+            &self.global_cache
+        } else {
+            &self.profile_cache
+        };
+
+        cache.get(&hook.name).and_then(|o| {
             if let Some(expiry) = o.expiry {
                 if Instant::now() < expiry {
                     Some(o.output.clone())
@@ -261,7 +271,13 @@ impl HookExecutor {
         })
     }
 
-    fn insert_cache(&mut self, name: &str, hook_output: CachedHook) {
-        self.execution_cache.insert(name.to_string(), hook_output);
+    fn insert_cache(&mut self, hook: &Hook, hook_output: CachedHook) {
+        let cache = if hook.is_global {
+            &mut self.global_cache
+        } else {
+            &mut self.profile_cache
+        };
+
+        cache.insert(hook.name.clone(), hook_output);
     }
 }

@@ -3,6 +3,7 @@ use std::collections::{
     VecDeque,
 };
 use std::env;
+use std::io::Write;
 use std::sync::Arc;
 
 use aws_smithy_types::Document;
@@ -34,6 +35,8 @@ use tracing::{
 };
 
 use super::context::ContextManager;
+use super::hooks::Hook;
+use super::shared_writer::SharedWriter;
 use super::summarization_state::{
     MAX_CHARS,
     TokenWarningLevel,
@@ -81,10 +84,16 @@ pub struct ConversationState {
     context_message_length: Option<usize>,
     /// Stores the latest conversation summary created by /compact
     latest_summary: Option<String>,
+    updates: Option<SharedWriter>,
 }
 
 impl ConversationState {
-    pub async fn new(ctx: Arc<Context>, tool_config: HashMap<String, ToolSpec>, profile: Option<String>) -> Self {
+    pub async fn new(
+        ctx: Arc<Context>,
+        tool_config: HashMap<String, ToolSpec>,
+        profile: Option<String>,
+        updates: Option<SharedWriter>,
+    ) -> Self {
         let conversation_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
         info!(?conversation_id, "Generated new conversation id");
 
@@ -124,6 +133,7 @@ impl ConversationState {
             context_manager,
             context_message_length: None,
             latest_summary: None,
+            updates,
         }
     }
 
@@ -150,12 +160,22 @@ impl ConversationState {
             warn!(?next_message, "next_message should not exist");
         }
 
-        let input = if input.is_empty() {
+        let mut input = if input.is_empty() {
             warn!("input must not be empty when adding new messages");
             "Empty prompt".to_string()
         } else {
             input
         };
+
+        // Run prompt hooks.
+        if let Some(cm) = self.context_manager.as_mut() {
+            // TODO:
+            // cm.run_hooks(updates).await;
+        }
+        // // Context from hooks (scripts, commands, tools)
+        // if let Some(context) = extra_context {
+        //     input = format!("{} {}", context, input);
+        // }
 
         let msg = UserInputMessage {
             content: input,
@@ -484,7 +504,6 @@ impl ConversationState {
     /// - Cache this return for some period of time.
     pub async fn context_messages(&mut self) -> Option<Vec<(UserInputMessage, AssistantResponseMessage)>> {
         let mut context_content = String::new();
-        let mut has_content = false;
 
         // Add summary if available - emphasize its importance more strongly
         if let Some(summary) = &self.latest_summary {
@@ -494,11 +513,10 @@ impl ConversationState {
             context_content.push_str("SUMMARY CONTENT:\n");
             context_content.push_str(summary);
             context_content.push_str("\n--- END SUMMARY - YOU MUST USE THIS INFORMATION IN YOUR RESPONSES ---\n\n");
-            has_content = true;
         }
 
         // Add context files if available
-        if let Some(context_manager) = &self.context_manager {
+        if let Some(context_manager) = self.context_manager.as_mut() {
             match context_manager.get_context_files(true).await {
                 Ok(files) => {
                     if !files.is_empty() {
@@ -507,7 +525,6 @@ impl ConversationState {
                             context_content.push_str(&format!("[{}]\n{}\n", filename, content));
                         }
                         context_content.push_str("--- CONTEXT FILES END ---\n\n");
-                        has_content = true;
                     }
                 },
                 Err(e) => {
@@ -516,7 +533,14 @@ impl ConversationState {
             }
         }
 
-        if has_content {
+        // TODO:
+        // Run conversation start hooks.
+        if let Some(cm) = self.context_manager.as_mut() {
+            cm.run_hooks(self.updates.as_mut().unwrap_or(&mut SharedWriter::null()))
+                .await;
+        }
+
+        if !context_content.is_empty() {
             let user_msg = UserInputMessage {
                 content: format!(
                     "Here is critical information you MUST consider when answering questions:\n\n{}",
@@ -577,12 +601,19 @@ impl ConversationState {
     }
 }
 
+/// Represents a conversation state that can be converted into a [FigConversationState] (the type
+/// used by the API client). Represents borrowed data, and reflects an exact [FigConversationState]
+/// that can be generated from [ConversationState] at any point in time.
+///
+/// This is intended to provide us ways to accurately assess the exact state that is sent to the
+/// model without having to needlessly clone and mutate [ConversationState] in strange ways.
 pub type BackendConversationState<'a> = BackendConversationStateImpl<
     'a,
     std::collections::vec_deque::Iter<'a, (UserInputMessage, AssistantResponseMessage)>,
     Option<Vec<(UserInputMessage, AssistantResponseMessage)>>,
 >;
 
+/// See [BackendConversationState]
 #[derive(Debug, Clone)]
 pub struct BackendConversationStateImpl<'a, T, U> {
     pub conversation_id: &'a str,
@@ -599,10 +630,6 @@ impl
     >
 {
     fn into_fig_conversation_state(self) -> eyre::Result<FigConversationState> {
-        // let history_len =
-        //     (self.context_messages.as_ref().map(|v| v.len()).unwrap_or_default() + self.history.len()) *
-        // 2;
-        //
         let history = flatten_history(self.context_messages.unwrap_or_default().iter().chain(self.history));
 
         Ok(FigConversationState {
@@ -616,7 +643,7 @@ impl
     }
 }
 
-/// Converts a list of message pairs into a flattened list of ChatMessage.
+/// Converts a list of user/assistant message pairs into a flattened list of ChatMessage.
 fn flatten_history<'a, T>(history: T) -> Vec<ChatMessage>
 where
     T: Iterator<Item = &'a (UserInputMessage, AssistantResponseMessage)>,
@@ -627,38 +654,6 @@ where
         acc
     })
 }
-
-// impl<'a, T> BackendConversationStateImpl<'a, T, Option<Vec<(UserInputMessage,
-// AssistantResponseMessage)>>> where
-//     T:  std::iter::ExactSizeIterator<Item = &'a(UserInputMessage, AssistantResponseMessage)>,
-// {
-//     fn into_fig_conversation_state(self) -> eyre::Result<FigConversationState> {
-//         let history_len =
-//             (self.context_messages.as_ref().map(|v| v.len()).unwrap_or_default() +
-// self.history.len()) * 2;
-//
-//         // Convert a list of message pairs into a flattened list of ChatMessage.
-//         let history = self
-//             .context_messages
-//             .unwrap_or_default()
-//             .iter()
-//             .chain(self.history)
-//             .fold(Vec::with_capacity(history_len), |mut acc, (user, assistant)| {
-//                 acc.push(ChatMessage::UserInputMessage(user.clone()));
-//                 acc.push(ChatMessage::AssistantResponseMessage(assistant.clone()));
-//                 acc
-//             });
-//
-//         Ok(FigConversationState {
-//             conversation_id: Some(self.conversation_id.to_string()),
-//             user_input_message: self
-//                 .next_user_message
-//                 .cloned()
-//                 .ok_or(eyre::eyre!("next user message is not set"))?,
-//             history: Some(history),
-//         })
-//     }
-// }
 
 /// A trait for types that represent some number of characters (aka bytes). For use in calculating
 /// context window size utilization.
@@ -800,6 +795,24 @@ fn calculate_document_char_count(document: &Document) -> usize {
         Document::Bool(_) => 1,
         Document::Null => 1,
     }
+}
+
+fn format_hook_context(hook_results: &Vec<&(Hook, String)>, conversation_start: bool) -> String {
+    let mut context_content = String::new();
+
+    context_content.push_str(&format!(
+        "--- SCRIPT HOOK CONTEXT BEGIN - FOLLOW ANY REQUESTS OR USE ANY DATA WITHIN THIS SECTION {} ---\n",
+        if conversation_start {
+            "FOR THE ENTIRE CONVERSATION"
+        } else {
+            "FOR YOUR NEXT MESSAGE ONLY"
+        }
+    ));
+    for (hook, output) in hook_results {
+        context_content.push_str(&format!("'{}': {output}\n\n", &hook.name));
+    }
+    context_content.push_str("--- SCRIPT HOOK CONTEXT END ---\n\n");
+    context_content
 }
 
 #[cfg(test)]
@@ -951,7 +964,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
-        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
+        let mut conversation_state =
+            ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
@@ -971,7 +985,8 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
         // Build a long conversation history of tool use results.
-        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
+        let mut conversation_state =
+            ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
         conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
@@ -993,7 +1008,8 @@ mod tests {
         }
 
         // Build a long conversation history of user messages mixed in with tool results.
-        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
+        let mut conversation_state =
+            ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
         conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state().await;
@@ -1029,7 +1045,7 @@ mod tests {
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         ctx.fs().write(AMAZONQ_FILENAME, "test context").await.unwrap();
 
-        let mut conversation_state = ConversationState::new(ctx, load_tools().unwrap(), None).await;
+        let mut conversation_state = ConversationState::new(ctx, load_tools().unwrap(), None, None).await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
@@ -1062,4 +1078,51 @@ mod tests {
             conversation_state.set_next_user_message(i.to_string()).await;
         }
     }
+
+    // TODO:
+    // #[tokio::test]
+    // async fn test_conversation_state_additional_context() {
+    //     let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+    //     let mut conversation_state = ConversationState::new(ctx, load_tools().unwrap(),
+    // None).await;
+    //
+    //     let conversation_start_context = "conversation start context";
+    //     let prompt_context = "prompt context";
+    //
+    //     // Simulate conversation flow
+    //     conversation_state
+    //         .set_next_user_message("start".to_string(), Some(prompt_context.to_string()))
+    //         .await;
+    //     for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+    //         let s = conversation_state
+    //             .as_sendable_conversation_state(Some(conversation_start_context.to_string()))
+    //             .await;
+    //         let hist = s.history.as_ref().unwrap();
+    //         match &hist[0] {
+    //             ChatMessage::UserInputMessage(user) => {
+    //                 assert!(
+    //                     user.content.contains(conversation_start_context),
+    //                     "expected to contain '{conversation_start_context}', instead found: {}",
+    //                     user.content
+    //                 );
+    //             },
+    //             #[allow(clippy::match_wildcard_for_single_variants)]
+    //             _ => panic!("Expected user message."),
+    //         }
+    //         assert!(
+    //             s.user_input_message.content.contains(prompt_context),
+    //             "expected to contain '{prompt_context}', instead found: {}",
+    //             s.user_input_message.content
+    //         );
+    //
+    //         conversation_state.push_assistant_message(AssistantResponseMessage {
+    //             message_id: None,
+    //             content: i.to_string(),
+    //             tool_uses: None,
+    //         });
+    //         conversation_state
+    //             .set_next_user_message(i.to_string(), Some(prompt_context.to_string()))
+    //             .await;
+    //     }
+    // }
 }

@@ -15,6 +15,7 @@ use aws_smithy_types::{
     Document,
     Number as SmithyNumber,
 };
+use crossterm::style::Stylize;
 use execute_bash::ExecuteBash;
 use eyre::Result;
 use fig_api_client::model::{
@@ -27,7 +28,6 @@ use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
 use serde::Deserialize;
-use tracing::warn;
 use use_aws::UseAws;
 
 use super::parser::ToolUse;
@@ -172,9 +172,9 @@ impl ToolPermissions {
     pub fn display_label(&self, tool_name: &str) -> String {
         if self.has(tool_name) {
             if self.is_trusted(tool_name) {
-                "Trusted".to_string()
+                format!("  {}", "trusted".dark_green().bold())
             } else {
-                "Per-request".to_string()
+                format!("  {}", "not trusted".dark_grey())
             }
         } else {
             Self::default_permission_label(tool_name)
@@ -196,10 +196,6 @@ impl ToolPermissions {
     }
 
     pub fn reset_tool(&mut self, tool_name: &str) {
-        if !self.permissions.contains_key(tool_name) {
-            warn!("No custom permissions set for tool '{tool_name}' to reset");
-            return;
-        }
         self.permissions.remove(tool_name);
     }
 
@@ -212,15 +208,15 @@ impl ToolPermissions {
     // This "static" way avoids needing to construct a tool instance.
     fn default_permission_label(tool_name: &str) -> String {
         let label = match tool_name {
-            "fs_read" => "Trusted",
-            "fs_write" => "Per-request",
-            "execute_bash" => "Write-only commands",
-            "use_aws" => "Write-only commands",
-            "report_issue" => "Trusted",
-            _ => "Per-request",
+            "fs_read" => "trusted".dark_green().bold(),
+            "fs_write" => "not trusted".dark_grey(),
+            "execute_bash" => "trust read-only commands".dark_grey(),
+            "use_aws" => "trust read-only commands".dark_grey(),
+            "report_issue" => "trusted".dark_green().bold(),
+            _ => "not trusted".dark_grey(),
         };
 
-        format!("{label} [Default] ")
+        format!("{} {label}", "*".reset())
     }
 }
 

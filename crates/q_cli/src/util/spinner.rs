@@ -53,8 +53,12 @@ pub enum SpinnerComponent {
 }
 
 /// Play the terminal bell notification sound
-/// This is a separate function to make it easier to call from multiple places
-pub fn play_notification_bell() {
+pub fn play_notification_bell(requires_confirmation: bool) {
+    // Don't play bell for tools that don't require confirmation
+    if !requires_confirmation {
+        return;
+    }
+
     // Check if we should play the bell based on terminal type
     if should_play_bell() {
         print!("\x07"); // ASCII bell character

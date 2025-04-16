@@ -277,9 +277,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.97"
+version = "1.0.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
+checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "appkit-nsworkspace-bindings"
@@ -3000,7 +3000,7 @@ dependencies = [
  "nix 0.29.0",
  "prost",
  "prost-build",
- "prost-reflect",
+ "prost-reflect 0.15.1",
  "prost-reflect-build",
  "rand 0.9.0",
  "rmp-serde",
@@ -3245,7 +3245,6 @@ dependencies = [
  "serde_json",
  "shared_library",
  "shell-color",
- "shell-words",
  "shellexpand",
  "shlex",
  "sysinfo 0.32.1",
@@ -6693,10 +6692,21 @@ version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b5edd582b62f5cde844716e66d92565d7faf7ab1445c8cebce6e00fba83ddb2"
 dependencies = [
- "base64 0.22.1",
  "once_cell",
  "prost",
- "prost-reflect-derive",
+ "prost-reflect-derive 0.14.0",
+ "prost-types",
+]
+
+[[package]]
+name = "prost-reflect"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "134584672a2f89128da60df70d4b9d2eddfeb3ab00ab9c854ee7ee360ea7a7fc"
+dependencies = [
+ "base64 0.22.1",
+ "prost",
+ "prost-reflect-derive 0.15.0",
  "prost-types",
  "serde",
  "serde-value",
@@ -6709,7 +6719,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50e2537231d94dd2778920c2ada37dd9eb1ac0325bb3ee3ee651bd44c1134123"
 dependencies = [
  "prost-build",
- "prost-reflect",
+ "prost-reflect 0.14.7",
 ]
 
 [[package]]
@@ -6717,6 +6727,17 @@ name = "prost-reflect-derive"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4fce6b22f15cc8d8d400a2b98ad29202b33bd56c7d9ddd815bc803a807ecb65"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
+name = "prost-reflect-derive"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f9e9c69a80ab4bc26209fc9de4d2dfd12f26e26590cba0bc975bd4f81f4e94c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7982,9 +8003,9 @@ checksum = "24188a676b6ae68c3b2cb3a01be17fbf7240ce009799bb56d5b1409051e78fde"
 
 [[package]]
 name = "shellexpand"
-version = "3.1.0"
+version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da03fa3b94cc19e3ebfc88c4229c49d8f08cdbd1228870a45f0ffdf84988e14b"
+checksum = "8b1fdf65dd6331831494dd616b30351c38e96e45921a27745cf98490458b90bb"
 dependencies = [
  "dirs",
 ]

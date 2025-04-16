@@ -1,12 +1,18 @@
 pub struct TokenCounter;
 
 impl TokenCounter {
+    pub const TOKEN_TO_CHAR_RATIO: usize = 3;
+
     /// Estimates the number of tokens in the input content.
-    /// Currently uses a simple heuristic: content length / 3
+    /// Currently uses a simple heuristic: content length / TOKEN_TO_CHAR_RATIO
     ///
     /// Rounds up to the nearest multiple of 10 to avoid giving users a false sense of precision.
     pub fn count_tokens(content: &str) -> usize {
-        (content.len() / 3 + 5) / 10 * 10
+        (content.len() / Self::TOKEN_TO_CHAR_RATIO + 5) / 10 * 10
+    }
+
+    pub const fn token_to_chars(token: usize) -> usize {
+        token * Self::TOKEN_TO_CHAR_RATIO
     }
 }
 

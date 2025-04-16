@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{
     Path,
@@ -22,7 +23,6 @@ use super::hooks::{
     Hook,
     HookExecutor,
 };
-use crate::cli::chat::hooks::HookConfig;
 
 pub const AMAZONQ_FILENAME: &str = "AmazonQ.md";
 
@@ -32,7 +32,9 @@ pub const AMAZONQ_FILENAME: &str = "AmazonQ.md";
 pub struct ContextConfig {
     /// List of file paths or glob patterns to include in the context.
     pub paths: Vec<String>,
-    pub hooks: HookConfig,
+
+    /// Map of Hook Name to [`Hook`]. The hook name serves as the hook's ID.
+    pub hooks: HashMap<String, Hook>,
 }
 
 #[allow(dead_code)]
@@ -353,6 +355,7 @@ impl ContextManager {
     /// A Result indicating success or an error
     pub async fn switch_profile(&mut self, name: &str) -> Result<()> {
         validate_profile_name(name)?;
+        self.hook_executor.profile_cache.clear();
 
         // Special handling for default profile - it always exists
         if name == "default" {
@@ -459,35 +462,15 @@ impl ContextManager {
     ///   config.
     /// * `conversation_start` - If true, add the hook to conversation_start. Otherwise, it will be
     ///   added to per_prompt.
-    pub async fn add_hook(&mut self, hook: Hook, global: bool, conversation_start: bool) -> Result<()> {
-        if self.num_hooks_with_name(&hook.name) > 0 {
-            return Err(eyre!(
-                "Cannot add hook, another hook with this name already exists in global or profile context."
-            ));
-        }
-
+    pub async fn add_hook(&mut self, name: String, hook: Hook, global: bool) -> Result<()> {
         let config = self.get_config_mut(global);
 
-        let hook_vec = if conversation_start {
-            &mut config.hooks.conversation_start
-        } else {
-            &mut config.hooks.per_prompt
-        };
+        if config.hooks.contains_key(&name) {
+            return Err(eyre!("name already exists."));
+        }
 
-        hook_vec.push(hook);
+        config.hooks.insert(name, hook);
         self.save_config(global).await
-    }
-
-    fn num_hooks_with_name(&self, name: &str) -> usize {
-        self.global_config
-            .hooks
-            .conversation_start
-            .iter()
-            .chain(self.global_config.hooks.per_prompt.iter())
-            .chain(self.profile_config.hooks.conversation_start.iter())
-            .chain(self.profile_config.hooks.per_prompt.iter())
-            .filter(|h| h.name == name)
-            .count()
     }
 
     /// Delete hook(s) by name
@@ -498,8 +481,11 @@ impl ContextManager {
     pub async fn remove_hook(&mut self, name: &str, global: bool) -> Result<()> {
         let config = self.get_config_mut(global);
 
-        config.hooks.conversation_start.retain(|h| h.name != name);
-        config.hooks.per_prompt.retain(|h| h.name != name);
+        if !config.hooks.contains_key(name) {
+            return Err(eyre!("does not exist."));
+        }
+
+        config.hooks.remove(name);
 
         self.save_config(global).await
     }
@@ -510,13 +496,13 @@ impl ContextManager {
     pub async fn set_hook_disabled(&mut self, name: &str, global: bool, disable: bool) -> Result<()> {
         let config = self.get_config_mut(global);
 
-        config
-            .hooks
-            .conversation_start
-            .iter_mut()
-            .chain(config.hooks.per_prompt.iter_mut())
-            .filter(|h| h.name == name)
-            .for_each(|h| h.disabled = disable);
+        if !config.hooks.contains_key(name) {
+            return Err(eyre!("does not exist."));
+        }
+
+        if let Some(hook) = config.hooks.get_mut(name) {
+            hook.disabled = disable;
+        }
 
         self.save_config(global).await
     }
@@ -527,12 +513,7 @@ impl ContextManager {
     pub async fn set_all_hooks_disabled(&mut self, global: bool, disable: bool) -> Result<()> {
         let config = self.get_config_mut(global);
 
-        config
-            .hooks
-            .conversation_start
-            .iter_mut()
-            .chain(config.hooks.per_prompt.iter_mut())
-            .for_each(|h| h.disabled = disable);
+        config.hooks.iter_mut().for_each(|(_, h)| h.disabled = disable);
 
         self.save_config(global).await
     }
@@ -545,27 +526,19 @@ impl ContextManager {
     pub async fn run_hooks(&mut self, updates: &mut impl Write) -> Vec<(Hook, String)> {
         let mut hooks: Vec<&Hook> = Vec::new();
 
-        // Collect all conversation start hooks
-        hooks.extend(
-            self.global_config
-                .hooks
-                .conversation_start
-                .iter_mut()
-                .chain(self.profile_config.hooks.conversation_start.iter_mut())
-                .map(|h| {
-                    h.is_conversation_start = true;
-                    &*h
-                }),
-        );
+        // Set internal hook states
+        let configs = [
+            (&mut self.global_config.hooks, true),
+            (&mut self.profile_config.hooks, false),
+        ];
 
-        // Collect all per-prompt hooks
-        hooks.extend(
-            self.global_config
-                .hooks
-                .per_prompt
-                .iter()
-                .chain(self.profile_config.hooks.per_prompt.iter()),
-        );
+        for (hook_list, is_global) in configs {
+            hooks.extend(hook_list.iter_mut().map(|(name, h)| {
+                h.name = name.to_string();
+                h.is_global = is_global;
+                &*h
+            }));
+        }
 
         self.hook_executor.run_hooks(hooks, updates).await
     }
@@ -600,7 +573,7 @@ async fn load_global_config(ctx: &Context) -> Result<ContextConfig> {
                 "README.md".to_string(),
                 AMAZONQ_FILENAME.to_string(),
             ],
-            hooks: HookConfig::default(),
+            hooks: HashMap::new(),
         })
     }
 }
