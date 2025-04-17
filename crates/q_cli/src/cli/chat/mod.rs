@@ -1,4 +1,5 @@
 mod command;
+mod consts;
 mod context;
 mod conversation_state;
 mod hooks;
@@ -8,7 +9,7 @@ mod parser;
 mod prompt;
 mod shared_writer;
 mod skim_integration;
-mod summarization_state;
+mod token_counter;
 mod tools;
 
 use std::borrow::Cow;
@@ -36,8 +37,12 @@ use command::{
     Command,
     ToolsSubcommand,
 };
+use consts::CONTEXT_WINDOW_SIZE;
 use context::ContextManager;
-use conversation_state::ConversationState;
+use conversation_state::{
+    ConversationState,
+    TokenWarningLevel,
+};
 use crossterm::style::{
     Attribute,
     Color,
@@ -72,12 +77,8 @@ use hooks::{
     Hook,
     HookTrigger,
 };
+use rand::seq::IndexedRandom;
 use shared_writer::SharedWriter;
-use summarization_state::{
-    CONTEXT_WINDOW_SIZE,
-    SummarizationState,
-    TokenWarningLevel,
-};
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -121,6 +122,10 @@ use spinners::{
     Spinners,
 };
 use thiserror::Error;
+use token_counter::{
+    TokenCount,
+    TokenCounter,
+};
 use tokio::signal::unix::{
     SignalKind,
     signal,
@@ -148,7 +153,6 @@ use crate::cli::chat::parse::{
 };
 use crate::util::region_check;
 use crate::util::spinner::play_notification_bell;
-use crate::util::token_counter::TokenCounter;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
@@ -653,36 +657,6 @@ impl ChatContext {
         match result {
             Ok(state) => Ok(state),
             Err(e) => {
-                // let mut print_error =
-                //     |output: &mut W, prepend_msg: &str, report: Option<eyre::Report>| -> Result<(), std::io::Error> {
-                //         queue!(
-                //             output,
-                //             style::SetAttribute(Attribute::Bold),
-                //             style::SetForegroundColor(Color::Red),
-                //         )?;
-                //
-                //         match report {
-                //             Some(report) => {
-                //                 let text = re
-                //                     .replace_all(&format!("{}: {:?}\n", prepend_msg, report), "")
-                //                     .into_owned();
-                //
-                //                 queue!(output, style::Print(&text),)?;
-                //                 self.conversation_state.append_transcript(text);
-                //             },
-                //             None => {
-                //                 queue!(output, style::Print(prepend_msg), style::Print("\n"))?;
-                //                 self.conversation_state.append_transcript(prepend_msg.to_string());
-                //             },
-                //         }
-                //
-                //         execute!(
-                //             output,
-                //             style::SetAttribute(Attribute::Reset),
-                //             style::SetForegroundColor(Color::Reset),
-                //         )
-                //     };
-
                 macro_rules! print_err {
                     ($prepend_msg:expr, $err:expr) => {{
                         queue!(
@@ -728,24 +702,35 @@ impl ChatContext {
                         execute!(self.output, style::Print("\n\n"))?;
                         // If there was an interrupt during tool execution, then we add fake
                         // messages to "reset" the chat state.
-                        if let Some(tool_uses) = inter {
-                            self.conversation_state
-                                .abandon_tool_use(tool_uses, "The user interrupted the tool execution.".to_string());
-                            let _ = self.conversation_state.as_sendable_conversation_state().await;
-                            self.conversation_state
-                                .push_assistant_message(AssistantResponseMessage {
-                                    message_id: None,
-                                    content: "Tool uses were interrupted, waiting for the next user prompt".to_string(),
-                                    tool_uses: None,
-                                });
+                        match inter {
+                            Some(tool_uses) if !tool_uses.is_empty() => {
+                                self.conversation_state.abandon_tool_use(
+                                    tool_uses,
+                                    "The user interrupted the tool execution.".to_string(),
+                                );
+                                let _ = self.conversation_state.as_sendable_conversation_state().await;
+                                self.conversation_state
+                                    .push_assistant_message(AssistantResponseMessage {
+                                        message_id: None,
+                                        content: "Tool uses were interrupted, waiting for the next user prompt"
+                                            .to_string(),
+                                        tool_uses: None,
+                                    });
+                            },
+                            _ => (),
                         }
                     },
                     ChatError::Client(err) => match err {
                         // Errors from attempting to send too large of a conversation history. In
                         // this case, attempt to automatically compact the history for the user.
                         fig_api_client::Error::ContextWindowOverflow => {
-                            let history_too_small =
-                                self.conversation_state.backend_conversation_state().await.history.len() < 2;
+                            let history_too_small = self
+                                .conversation_state
+                                .backend_conversation_state(true)
+                                .await
+                                .history
+                                .len()
+                                < 2;
                             if history_too_small {
                                 print_err!(
                                     "Your conversation is too large - try reducing the size of
@@ -801,6 +786,9 @@ impl ChatContext {
         show_summary: bool,
         help: bool,
     ) -> Result<ChatState, ChatError> {
+        let hist = self.conversation_state.history();
+        debug!(?hist, "compacting history");
+
         // If help flag is set, show compact command help
         if help {
             execute!(
@@ -848,9 +836,7 @@ impl ChatContext {
             loop {
                 match parser.recv().await {
                     Ok(parser::ResponseEvent::EndStream { message }) => {
-                        // self.conversation_state.push_assistant_message(message);
                         break message.content;
-                        // break String::new();
                     },
                     Ok(_) => (),
                     Err(err) => {
@@ -951,18 +937,19 @@ impl ChatContext {
 
         // If a next message is set, then retry the request.
         if self.conversation_state.next_message.is_some() {
-            return Ok(ChatState::HandleResponseStream(
+            Ok(ChatState::HandleResponseStream(
                 self.client
                     .send_message(self.conversation_state.as_sendable_conversation_state().await)
                     .await?,
-            ));
+            ))
+        } else {
+            // Otherwise, return back to the prompt for any pending tool uses.
+            Ok(ChatState::PromptUser {
+                tool_uses,
+                pending_tool_index,
+                skip_printing_tools: true,
+            })
         }
-
-        Ok(ChatState::PromptUser {
-            tool_uses: None,
-            pending_tool_index: None,
-            skip_printing_tools: true,
-        })
     }
 
     /// Read input from the user.
@@ -1077,40 +1064,11 @@ impl ChatContext {
                 // Otherwise continue with normal chat on 'n' or other responses
                 self.tool_use_status = ToolUseStatus::Idle;
 
-                // Run all available hooks.
-                // Results from per-prompt hooks are attached to new user messages.
-                // Results from conversation-start hooks are attached to the top of the conversation state along
-                // with other context.
-                let (conversation_start_context, prompt_context) = if let Some(cm) =
-                    &mut self.conversation_state.context_manager
-                {
-                    let format_context = |hook_results: &Vec<&(Hook, String)>, conversation_start: bool| {
-                        let mut context_content = String::new();
-
-                        context_content.push_str(
-                            &format!("--- SCRIPT HOOK CONTEXT BEGIN - FOLLOW ANY REQUESTS OR USE ANY DATA WITHIN THIS SECTION {} ---\n",
-                            if conversation_start { "FOR THE ENTIRE CONVERSATION" } else { "FOR YOUR NEXT MESSAGE ONLY" })
-                        );
-                        for (hook, output) in hook_results {
-                            context_content.push_str(&format!("'{}': {output}\n\n", &hook.name));
-                        }
-                        context_content.push_str("--- SCRIPT HOOK CONTEXT END ---\n\n");
-                        context_content
-                    };
-
-                    let hook_results = cm.run_hooks(&mut self.output).await;
-
-                    let (start_hooks, prompt_hooks): (Vec<_>, Vec<_>) = hook_results
-                        .iter()
-                        .partition(|(hook, _)| hook.trigger == HookTrigger::ConversationStart);
-
-                    (
-                        (!start_hooks.is_empty()).then(|| format_context(&start_hooks, true)),
-                        (!prompt_hooks.is_empty()).then(|| format_context(&prompt_hooks, false)),
-                    )
+                if pending_tool_index.is_some() {
+                    self.conversation_state.abandon_tool_use(tool_uses, user_input);
                 } else {
-                    (None, None)
-                };
+                    self.conversation_state.set_next_user_message(user_input).await;
+                }
 
                 if self.interactive {
                     queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
@@ -1118,12 +1076,6 @@ impl ChatContext {
                     queue!(self.output, cursor::Hide)?;
                     execute!(self.output, style::Print("\n"))?;
                     self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
-                }
-
-                if pending_tool_index.is_some() {
-                    self.conversation_state.abandon_tool_use(tool_uses, user_input);
-                } else {
-                    self.conversation_state.set_next_user_message(user_input).await;
                 }
 
                 self.send_tool_use_telemetry().await;
@@ -2056,6 +2008,15 @@ impl ChatContext {
             },
             Command::Usage => {
                 // TODO:
+                let state = self.conversation_state.backend_conversation_state(true).await;
+                let data = state.get_utilization();
+
+                let context_token_count: TokenCount = data.context_messages.into();
+                let assistant_token_count: TokenCount = data.assistant_messages.into();
+                let user_token_count: TokenCount = data.user_messages.into();
+                let total_token_used: TokenCount =
+                    (data.context_messages + data.user_messages + data.assistant_messages).into();
+
                 // let context_messages = self.conversation_state.context_messages().await;
                 // let chat_history = self.conversation_state.get_chat_history();
                 // let assistant_messages = chat_history
@@ -2097,111 +2058,111 @@ impl ChatContext {
                 //
                 // let total_token_used: usize = context_token_count + assistant_token_count + user_token_count;
                 //
-                // let window_width = self.terminal_width();
-                // let progress_bar_width = std::cmp::min(window_width, 80); // set a max width for the progress bar
-                // for better aesthetic
-                //
-                // let context_width =
-                //     ((context_token_count as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as
-                // usize; let assistant_width =
-                //     ((assistant_token_count as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as
-                // usize; let user_width =
-                //     ((user_token_count as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as
-                // usize;
-                //
-                // let left_over_width = progress_bar_width
-                //     - std::cmp::min(context_width + assistant_width + user_width, progress_bar_width);
-                //
-                // queue!(
-                //     self.output,
-                //     style::Print(format!(
-                //         "\nCurrent context window ({} of {}k tokens used)\n",
-                //         total_token_used,
-                //         CONTEXT_WINDOW_SIZE / 1000
-                //     )),
-                //     style::SetForegroundColor(Color::DarkCyan),
-                //     // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too
-                // empty     style::Print("|".repeat(if context_width == 0 && context_token_count >
-                // 0 {         1
-                //     } else {
-                //         0
-                //     })),
-                //     style::Print("█".repeat(context_width)),
-                //     style::SetForegroundColor(Color::Blue),
-                //     style::Print("|".repeat(if assistant_width == 0 && assistant_token_count > 0 {
-                //         1
-                //     } else {
-                //         0
-                //     })),
-                //     style::Print("█".repeat(assistant_width)),
-                //     style::SetForegroundColor(Color::Magenta),
-                //     style::Print("|".repeat(if user_width == 0 && user_token_count > 0 { 1 } else { 0 })),
-                //     style::Print("█".repeat(user_width)),
-                //     style::SetForegroundColor(Color::DarkGrey),
-                //     style::Print("█".repeat(left_over_width)),
-                //     style::Print(" "),
-                //     style::SetForegroundColor(Color::Reset),
-                //     style::Print(format!(
-                //         "{:.2}%",
-                //         (total_token_used as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
-                //     )),
-                // )?;
-                //
-                // queue!(self.output, style::Print("\n\n"))?;
-                // self.output.flush()?;
-                //
-                // queue!(
-                //     self.output,
-                //     style::SetForegroundColor(Color::DarkCyan),
-                //     style::Print("█ Context files: "),
-                //     style::SetForegroundColor(Color::Reset),
-                //     style::Print(format!(
-                //         "~{} tokens ({:.2}%)\n",
-                //         context_token_count,
-                //         (context_token_count as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
-                //     )),
-                //     style::SetForegroundColor(Color::Blue),
-                //     style::Print("█ Q responses: "),
-                //     style::SetForegroundColor(Color::Reset),
-                //     style::Print(format!(
-                //         "  ~{} tokens ({:.2}%)\n",
-                //         assistant_token_count,
-                //         (assistant_token_count as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
-                //     )),
-                //     style::SetForegroundColor(Color::Magenta),
-                //     style::Print("█ Your prompts: "),
-                //     style::SetForegroundColor(Color::Reset),
-                //     style::Print(format!(
-                //         " ~{} tokens ({:.2}%)\n\n",
-                //         user_token_count,
-                //         (user_token_count as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
-                //     )),
-                // )?;
-                //
-                // queue!(
-                //     self.output,
-                //     style::SetAttribute(Attribute::Bold),
-                //     style::Print("\n💡 Pro Tips:\n"),
-                //     style::SetAttribute(Attribute::Reset),
-                //     style::SetForegroundColor(Color::DarkGrey),
-                //     style::Print("Run "),
-                //     style::SetForegroundColor(Color::DarkGreen),
-                //     style::Print("/compact"),
-                //     style::SetForegroundColor(Color::DarkGrey),
-                //     style::Print(" to replace the conversation history with its summary\n"),
-                //     style::Print("Run "),
-                //     style::SetForegroundColor(Color::DarkGreen),
-                //     style::Print("/clear"),
-                //     style::SetForegroundColor(Color::DarkGrey),
-                //     style::Print(" to erase the entire chat history\n"),
-                //     style::Print("Run "),
-                //     style::SetForegroundColor(Color::DarkGreen),
-                //     style::Print("/context show"),
-                //     style::SetForegroundColor(Color::DarkGrey),
-                //     style::Print(" to see tokens per context file\n\n"),
-                //     style::SetForegroundColor(Color::Reset),
-                // )?;
-                //
+                let window_width = self.terminal_width();
+                // set a max width for the progress bar for better aesthetic
+                let progress_bar_width = std::cmp::min(window_width, 80);
+
+                let context_width = ((context_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64)
+                    * progress_bar_width as f64) as usize;
+                let assistant_width = ((assistant_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64)
+                    * progress_bar_width as f64) as usize;
+                let user_width = ((user_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64)
+                    * progress_bar_width as f64) as usize;
+
+                let left_over_width = progress_bar_width
+                    - std::cmp::min(context_width + assistant_width + user_width, progress_bar_width);
+
+                queue!(
+                    self.output,
+                    style::Print(format!(
+                        "\nCurrent context window ({} of {}k tokens used)\n",
+                        total_token_used,
+                        CONTEXT_WINDOW_SIZE / 1000
+                    )),
+                    style::SetForegroundColor(Color::DarkCyan),
+                    // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too
+                    // empty
+                    style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
+                        1
+                    } else {
+                        0
+                    })),
+                    style::Print("█".repeat(context_width)),
+                    style::SetForegroundColor(Color::Blue),
+                    style::Print("|".repeat(if assistant_width == 0 && *assistant_token_count > 0 {
+                        1
+                    } else {
+                        0
+                    })),
+                    style::Print("█".repeat(assistant_width)),
+                    style::SetForegroundColor(Color::Magenta),
+                    style::Print("|".repeat(if user_width == 0 && *user_token_count > 0 { 1 } else { 0 })),
+                    style::Print("█".repeat(user_width)),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("█".repeat(left_over_width)),
+                    style::Print(" "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(format!(
+                        "{:.2}%",
+                        (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    )),
+                )?;
+
+                queue!(self.output, style::Print("\n\n"))?;
+                self.output.flush()?;
+
+                queue!(
+                    self.output,
+                    style::SetForegroundColor(Color::DarkCyan),
+                    style::Print("█ Context files: "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(format!(
+                        "~{} tokens ({:.2}%)\n",
+                        context_token_count,
+                        (context_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    )),
+                    style::SetForegroundColor(Color::Blue),
+                    style::Print("█ Q responses: "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(format!(
+                        "  ~{} tokens ({:.2}%)\n",
+                        assistant_token_count,
+                        (assistant_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    )),
+                    style::SetForegroundColor(Color::Magenta),
+                    style::Print("█ Your prompts: "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(format!(
+                        " ~{} tokens ({:.2}%)\n\n",
+                        user_token_count,
+                        (user_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    )),
+                )?;
+
+                queue!(
+                    self.output,
+                    style::SetAttribute(Attribute::Bold),
+                    style::Print("\n💡 Pro Tips:\n"),
+                    style::SetAttribute(Attribute::Reset),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("Run "),
+                    style::SetForegroundColor(Color::DarkGreen),
+                    style::Print("/compact"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(" to replace the conversation history with its summary\n"),
+                    style::Print("Run "),
+                    style::SetForegroundColor(Color::DarkGreen),
+                    style::Print("/clear"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(" to erase the entire chat history\n"),
+                    style::Print("Run "),
+                    style::SetForegroundColor(Color::DarkGreen),
+                    style::Print("/context show"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(" to see tokens per context file\n\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+
                 ChatState::PromptUser {
                     tool_uses: Some(tool_uses),
                     pending_tool_index,

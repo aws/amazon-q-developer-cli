@@ -18,6 +18,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use tracing::debug;
 
 use super::hooks::{
     Hook,
@@ -549,7 +550,7 @@ fn profile_dir_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
 }
 
 /// Path to the context config file for `profile_name`.
-fn profile_context_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
+pub fn profile_context_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
     Ok(directories::chat_profiles_dir(ctx)?
         .join(profile_name)
         .join("context.json"))
@@ -560,6 +561,7 @@ fn profile_context_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
 /// If the global configuration file doesn't exist, returns a default configuration.
 async fn load_global_config(ctx: &Context) -> Result<ContextConfig> {
     let global_path = directories::chat_global_context_path(&ctx)?;
+    debug!(?global_path, "loading profile config");
     if ctx.fs().exists(&global_path) {
         let contents = ctx.fs().read_to_string(&global_path).await?;
         let config: ContextConfig =
@@ -583,6 +585,7 @@ async fn load_global_config(ctx: &Context) -> Result<ContextConfig> {
 /// If the profile configuration file doesn't exist, creates a default configuration.
 async fn load_profile_config(ctx: &Context, profile_name: &str) -> Result<ContextConfig> {
     let profile_path = profile_context_path(ctx, profile_name)?;
+    debug!(?profile_path, "loading profile config");
     if ctx.fs().exists(&profile_path) {
         let contents = ctx.fs().read_to_string(&profile_path).await?;
         let config: ContextConfig =

@@ -30,9 +30,8 @@ use gh_issue::GhIssue;
 use serde::Deserialize;
 use use_aws::UseAws;
 
+use super::consts::MAX_TOOL_RESPONSE_SIZE;
 use super::parser::ToolUse;
-
-pub const MAX_TOOL_RESPONSE_SIZE: usize = 800000;
 
 /// Represents an executable tool use.
 #[derive(Debug, Clone)]
@@ -282,6 +281,33 @@ pub fn serde_value_to_document(value: serde_json::Value) -> Document {
                 .map(|(k, v)| (k, serde_value_to_document(v)))
                 .collect::<_>(),
         ),
+    }
+}
+
+pub fn document_to_serde_value(value: Document) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Document::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, document_to_serde_value(v)))
+                .collect::<_>(),
+        ),
+        Document::Array(vec) => Value::Array(vec.clone().into_iter().map(document_to_serde_value).collect::<_>()),
+        Document::Number(number) => {
+            if let Ok(v) = TryInto::<u64>::try_into(number) {
+                Value::Number(v.into())
+            } else if let Ok(v) = TryInto::<i64>::try_into(number) {
+                Value::Number(v.into())
+            } else {
+                Value::Number(
+                    serde_json::Number::from_f64(number.to_f64_lossy())
+                        .unwrap_or(serde_json::Number::from_f64(0.0).expect("converting from 0.0 will not fail")),
+                )
+            }
+        },
+        Document::String(s) => serde_json::Value::String(s),
+        Document::Bool(b) => serde_json::Value::Bool(b),
+        Document::Null => serde_json::Value::Null,
     }
 }
 
