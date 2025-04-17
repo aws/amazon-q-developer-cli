@@ -8,7 +8,8 @@
    - `cargo clippy -p q_cli` to check for code quality issues
    - `cargo test -p q_cli` to ensure all tests pass
 3. Commit working changes with detailed commit messages following the Conventional Commits specification
-4. After each commit, run `/compact` to maintain clean conversation history
+4. After each commit, run `/compact` with the show summary option to maintain clean conversation history
+   - Use `/compact` to compact the conversation and show a summary of changes
    - If automatic compaction isn't possible, prompt the user to run `/compact` manually
 5. Update the implementation plan to mark completed tasks and identify next steps
 6. Repeat the process for the next component or feature
@@ -458,7 +459,7 @@ impl TestContext {
      cargo test -p q_cli
      ```
    - Commit changes with a descriptive message following Conventional Commits format
-   - Run `/compact` after the commit (or prompt user to do so manually)
+   - Run `/compact` with show summary option after the commit (or prompt user to do so manually)
    - Update the implementation plan to mark this task as completed
 
 ### Next Steps:
