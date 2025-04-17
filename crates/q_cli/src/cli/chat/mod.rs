@@ -1,4 +1,5 @@
 mod command;
+mod consts;
 mod context;
 mod conversation_state;
 mod hooks;
@@ -6,8 +7,9 @@ mod input_source;
 mod parse;
 mod parser;
 mod prompt;
+mod shared_writer;
 mod skim_integration;
-mod summarization_state;
+mod token_counter;
 mod tools;
 
 use std::borrow::Cow;
@@ -35,8 +37,12 @@ use command::{
     Command,
     ToolsSubcommand,
 };
+use consts::CONTEXT_WINDOW_SIZE;
 use context::ContextManager;
-use conversation_state::ConversationState;
+use conversation_state::{
+    ConversationState,
+    TokenWarningLevel,
+};
 use crossterm::style::{
     Attribute,
     Color,
@@ -58,7 +64,6 @@ use fig_api_client::StreamingClient;
 use fig_api_client::clients::SendMessageOutput;
 use fig_api_client::model::{
     AssistantResponseMessage,
-    ChatMessage,
     ChatResponseStream,
     Tool as FigTool,
     ToolResult,
@@ -72,11 +77,7 @@ use hooks::{
     Hook,
     HookTrigger,
 };
-use summarization_state::{
-    CONTEXT_WINDOW_SIZE,
-    SummarizationState,
-    TokenWarningLevel,
-};
+use shared_writer::SharedWriter;
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -120,6 +121,10 @@ use spinners::{
     Spinners,
 };
 use thiserror::Error;
+use token_counter::{
+    TokenCount,
+    TokenCounter,
+};
 use tokio::signal::unix::{
     SignalKind,
     signal,
@@ -147,7 +152,6 @@ use crate::cli::chat::parse::{
 };
 use crate::util::region_check;
 use crate::util::spinner::play_notification_bell;
-use crate::util::token_counter::TokenCounter;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
@@ -249,9 +253,9 @@ pub async fn chat(
         input
     };
 
-    let mut output: Box<dyn Write> = match interactive {
-        true => Box::new(std::io::stderr()),
-        false => Box::new(std::io::stdout()),
+    let mut output = match interactive {
+        true => SharedWriter::stderr(),
+        false => SharedWriter::stdout(),
     };
 
     let client = match ctx.env().get("Q_MOCK_CHAT_RESPONSE") {
@@ -359,11 +363,11 @@ pub enum ChatError {
     NonInteractiveToolApproval,
 }
 
-pub struct ChatContext<W: Write> {
+pub struct ChatContext {
     ctx: Arc<Context>,
     settings: Settings,
     /// The [Write] destination for printing conversation text.
-    output: W,
+    output: SharedWriter,
     initial_input: Option<String>,
     input_source: InputSource,
     interactive: bool,
@@ -382,16 +386,14 @@ pub struct ChatContext<W: Write> {
     tool_use_status: ToolUseStatus,
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
-    /// Track the current summarization state if we're in the middle of a /compact operation
-    summarization_state: Option<SummarizationState>,
 }
 
-impl<W: Write> ChatContext<W> {
+impl ChatContext {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         ctx: Arc<Context>,
         settings: Settings,
-        output: W,
+        output: SharedWriter,
         input: Option<String>,
         input_source: InputSource,
         interactive: bool,
@@ -402,6 +404,7 @@ impl<W: Write> ChatContext<W> {
         tool_permissions: ToolPermissions,
     ) -> Result<Self> {
         let ctx_clone = Arc::clone(&ctx);
+        let output_clone = output.clone();
         Ok(Self {
             ctx,
             settings,
@@ -413,16 +416,15 @@ impl<W: Write> ChatContext<W> {
             terminal_width_provider,
             spinner: None,
             tool_permissions,
-            conversation_state: ConversationState::new(ctx_clone, tool_config, profile).await,
+            conversation_state: ConversationState::new(ctx_clone, tool_config, profile, Some(output_clone)).await,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
             failed_request_ids: Vec::new(),
-            summarization_state: None,
         })
     }
 }
 
-impl<W: Write> Drop for ChatContext<W> {
+impl Drop for ChatContext {
     fn drop(&mut self) {
         if let Some(spinner) = &mut self.spinner {
             spinner.stop();
@@ -471,6 +473,17 @@ enum ChatState {
     ExecuteTools(Vec<QueuedTool>),
     /// Consume the response stream and display to the user.
     HandleResponseStream(SendMessageOutput),
+    /// Compact the chat history.
+    CompactHistory {
+        tool_uses: Option<Vec<QueuedTool>>,
+        pending_tool_index: Option<usize>,
+        /// Custom prompt to include as part of history compaction.
+        prompt: Option<String>,
+        /// Whether or not the summary should be shown on compact success.
+        show_summary: bool,
+        /// Whether or not to show the /compact help text.
+        help: bool,
+    },
     /// Exit the chat.
     Exit,
 }
@@ -485,10 +498,7 @@ impl Default for ChatState {
     }
 }
 
-impl<W> ChatContext<W>
-where
-    W: Write,
-{
+impl ChatContext {
     /// Opens the user's preferred editor to compose a prompt
     fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
         // Create a temporary file with a unique name
@@ -571,9 +581,6 @@ where
             });
         }
 
-        // Remove non-ASCII and ANSI characters.
-        let re = Regex::new(r"((\x9B|\x1B\[)[0-?]*[ -\/]*[@-~])|([^\x00-\x7F]+)").unwrap();
-
         loop {
             debug_assert!(next_state.is_some());
             let chat_state = next_state.take().unwrap_or_default();
@@ -603,6 +610,19 @@ where
                         Some(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: tool_uses_clone })
                     }
                 },
+                ChatState::CompactHistory {
+                    tool_uses,
+                    pending_tool_index,
+                    prompt,
+                    show_summary,
+                    help,
+                } => {
+                    let tool_uses_clone = tool_uses.clone();
+                    tokio::select! {
+                        res = self.compact_history(tool_uses, pending_tool_index, prompt, show_summary, help) => res,
+                        Some(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: tool_uses_clone })
+                    }
+                },
                 ChatState::ExecuteTools(tool_uses) => {
                     let tool_uses_clone = tool_uses.clone();
                     tokio::select! {
@@ -623,61 +643,73 @@ where
                 ChatState::Exit => return Ok(()),
             };
 
-            match result {
-                Ok(state) => next_state = Some(state),
-                Err(e) => {
-                    let mut print_error = |output: &mut W,
-                                           prepend_msg: &str,
-                                           report: Option<eyre::Report>|
-                     -> Result<(), std::io::Error> {
+            next_state = Some(self.handle_state_execution_result(result).await?);
+        }
+    }
+
+    /// Handles the result of processing a [ChatState], returning the next [ChatState] to change
+    /// to.
+    async fn handle_state_execution_result(
+        &mut self,
+        result: Result<ChatState, ChatError>,
+    ) -> Result<ChatState, ChatError> {
+        // Remove non-ASCII and ANSI characters.
+        let re = Regex::new(r"((\x9B|\x1B\[)[0-?]*[ -\/]*[@-~])|([^\x00-\x7F]+)").unwrap();
+        match result {
+            Ok(state) => Ok(state),
+            Err(e) => {
+                macro_rules! print_err {
+                    ($prepend_msg:expr, $err:expr) => {{
                         queue!(
-                            output,
+                            self.output,
                             style::SetAttribute(Attribute::Bold),
                             style::SetForegroundColor(Color::Red),
                         )?;
 
-                        match report {
-                            Some(report) => {
-                                let text = re
-                                    .replace_all(&format!("{}: {:?}\n", prepend_msg, report), "")
-                                    .into_owned();
+                        let report = eyre::Report::from($err);
 
-                                queue!(output, style::Print(&text),)?;
-                                self.conversation_state.append_transcript(text);
-                            },
-                            None => {
-                                queue!(output, style::Print(prepend_msg), style::Print("\n"))?;
-                                self.conversation_state.append_transcript(prepend_msg.to_string());
-                            },
-                        }
+                        let text = re
+                            .replace_all(&format!("{}: {:?}\n", $prepend_msg, report), "")
+                            .into_owned();
+
+                        queue!(self.output, style::Print(&text),)?;
+                        self.conversation_state.append_transcript(text);
 
                         execute!(
-                            output,
+                            self.output,
                             style::SetAttribute(Attribute::Reset),
                             style::SetForegroundColor(Color::Reset),
-                        )
-                    };
-
-                    error!(?e, "An error occurred processing the current state");
-                    if self.interactive && self.spinner.is_some() {
-                        drop(self.spinner.take());
-                        queue!(
-                            self.output,
-                            terminal::Clear(terminal::ClearType::CurrentLine),
-                            cursor::MoveToColumn(0),
                         )?;
-                    }
-                    match e {
-                        ChatError::Interrupted { tool_uses: inter } => {
-                            execute!(self.output, style::Print("\n\n"))?;
-                            // If there was an interrupt during tool execution, then we add fake
-                            // messages to "reset" the chat state.
-                            if let Some(tool_uses) = inter {
+                    }};
+                }
+
+                macro_rules! print_default_error {
+                    ($err:expr) => {
+                        print_err!("Amazon Q is having trouble responding right now", $err);
+                    };
+                }
+
+                error!(?e, "An error occurred processing the current state");
+                if self.interactive && self.spinner.is_some() {
+                    drop(self.spinner.take());
+                    queue!(
+                        self.output,
+                        terminal::Clear(terminal::ClearType::CurrentLine),
+                        cursor::MoveToColumn(0),
+                    )?;
+                }
+                match e {
+                    ChatError::Interrupted { tool_uses: inter } => {
+                        execute!(self.output, style::Print("\n\n"))?;
+                        // If there was an interrupt during tool execution, then we add fake
+                        // messages to "reset" the chat state.
+                        match inter {
+                            Some(tool_uses) if !tool_uses.is_empty() => {
                                 self.conversation_state.abandon_tool_use(
                                     tool_uses,
                                     "The user interrupted the tool execution.".to_string(),
                                 );
-                                let _ = self.conversation_state.as_sendable_conversation_state(None).await;
+                                let _ = self.conversation_state.as_sendable_conversation_state().await;
                                 self.conversation_state
                                     .push_assistant_message(AssistantResponseMessage {
                                         message_id: None,
@@ -685,35 +717,239 @@ where
                                             .to_string(),
                                         tool_uses: None,
                                     });
+                            },
+                            _ => (),
+                        }
+                    },
+                    ChatError::Client(err) => match err {
+                        // Errors from attempting to send too large of a conversation history. In
+                        // this case, attempt to automatically compact the history for the user.
+                        fig_api_client::Error::ContextWindowOverflow => {
+                            let history_too_small = self
+                                .conversation_state
+                                .backend_conversation_state(true)
+                                .await
+                                .history
+                                .len()
+                                < 2;
+                            if history_too_small {
+                                print_err!(
+                                    "Your conversation is too large - try reducing the size of
+                                the context being passed",
+                                    err
+                                );
+                                return Ok(ChatState::PromptUser {
+                                    tool_uses: None,
+                                    pending_tool_index: None,
+                                    skip_printing_tools: false,
+                                });
                             }
+
+                            return Ok(ChatState::CompactHistory {
+                                tool_uses: None,
+                                pending_tool_index: None,
+                                prompt: None,
+                                show_summary: false,
+                                help: false,
+                            });
                         },
-                        ChatError::Client(err) => {
-                            if let fig_api_client::Error::QuotaBreach(msg) = err {
-                                print_error(&mut self.output, msg, None)?;
-                            } else {
-                                print_error(
-                                    &mut self.output,
-                                    "Amazon Q is having trouble responding right now",
-                                    Some(err.into()),
-                                )?;
-                            }
+                        fig_api_client::Error::QuotaBreach(msg) => {
+                            print_err!(msg, err);
                         },
                         _ => {
-                            print_error(
-                                &mut self.output,
-                                "Amazon Q is having trouble responding right now",
-                                Some(e.into()),
-                            )?;
+                            print_default_error!(err);
                         },
-                    }
-                    self.conversation_state.fix_history();
-                    next_state = Some(ChatState::PromptUser {
-                        tool_uses: None,
-                        pending_tool_index: None,
-                        skip_printing_tools: false,
-                    });
-                },
+                    },
+                    _ => {
+                        print_default_error!(e);
+                    },
+                }
+                self.conversation_state.enforce_conversation_invariants();
+                self.conversation_state.reset_next_user_message();
+                Ok(ChatState::PromptUser {
+                    tool_uses: None,
+                    pending_tool_index: None,
+                    skip_printing_tools: false,
+                })
+            },
+        }
+    }
+
+    /// Compacts the conversation history, replacing the history with a summary generated by the
+    /// model.
+    ///
+    /// The last two user messages in the history are not included in the compaction process.
+    async fn compact_history(
+        &mut self,
+        tool_uses: Option<Vec<QueuedTool>>,
+        pending_tool_index: Option<usize>,
+        custom_prompt: Option<String>,
+        show_summary: bool,
+        help: bool,
+    ) -> Result<ChatState, ChatError> {
+        let hist = self.conversation_state.history();
+        debug!(?hist, "compacting history");
+
+        // If help flag is set, show compact command help
+        if help {
+            execute!(
+                self.output,
+                style::Print("\n"),
+                style::Print(compact_help_text()),
+                style::Print("\n")
+            )?;
+
+            return Ok(ChatState::PromptUser {
+                tool_uses,
+                pending_tool_index,
+                skip_printing_tools: true,
+            });
+        }
+
+        if self.conversation_state.history().len() < 2 {
+            execute!(
+                self.output,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("\nConversation too short to compact.\n\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+
+            return Ok(ChatState::PromptUser {
+                tool_uses,
+                pending_tool_index,
+                skip_printing_tools: true,
+            });
+        }
+
+        // Send a request for summarizing the history.
+        let summary_state = self
+            .conversation_state
+            .create_summary_request(custom_prompt.as_ref())
+            .await;
+        if self.interactive {
+            execute!(self.output, cursor::Hide, style::Print("\n"))?;
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
+        }
+        let response = self.client.send_message(summary_state).await?;
+
+        let summary = {
+            let mut parser = ResponseParser::new(response);
+            loop {
+                match parser.recv().await {
+                    Ok(parser::ResponseEvent::EndStream { message }) => {
+                        break message.content;
+                    },
+                    Ok(_) => (),
+                    Err(err) => {
+                        if let Some(request_id) = &err.request_id {
+                            self.failed_request_ids.push(request_id.clone());
+                        };
+                        return Err(err.into());
+                    },
+                }
             }
+        };
+
+        if self.interactive && self.spinner.is_some() {
+            drop(self.spinner.take());
+            queue!(
+                self.output,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+                cursor::Show
+            )?;
+        }
+
+        if let Some(message_id) = self.conversation_state.message_id() {
+            fig_telemetry::send_chat_added_message(
+                self.conversation_state.conversation_id().to_owned(),
+                message_id.to_owned(),
+                self.conversation_state.context_message_length(),
+            )
+            .await;
+        }
+
+        self.conversation_state.replace_history_with_summary(summary.clone());
+
+        // Print output to the user.
+        {
+            execute!(
+                self.output,
+                style::SetForegroundColor(Color::Green),
+                style::Print("✔ Conversation history has been compacted successfully!\n\n"),
+                style::SetForegroundColor(Color::DarkGrey)
+            )?;
+
+            let mut output = Vec::new();
+            if let Some(custom_prompt) = &custom_prompt {
+                execute!(
+                    output,
+                    style::Print(format!("• Custom prompt applied: {}\n", custom_prompt))
+                )?;
+            }
+            execute!(
+                output,
+                style::Print(
+                    "• The assistant has access to all previous tool executions, code analysis, and discussion details\n"
+                ),
+                style::Print("• The assistant will reference specific information from the summary when relevant\n"),
+                style::Print("• Use '/compact --summary' to view summaries when compacting\n\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+            animate_output(&mut self.output, &output)?;
+
+            // Display the summary if the show_summary flag is set
+            if show_summary {
+                // Add a border around the summary for better visual separation
+                let terminal_width = self.terminal_width();
+                let border = "═".repeat(terminal_width.min(80));
+                execute!(
+                    self.output,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&border),
+                    style::Print("\n"),
+                    style::SetAttribute(Attribute::Bold),
+                    style::Print("                       CONVERSATION SUMMARY"),
+                    style::Print("\n"),
+                    style::Print(&border),
+                    style::SetAttribute(Attribute::Reset),
+                    style::Print("\n\n"),
+                )?;
+
+                execute!(
+                    output,
+                    style::Print(&summary),
+                    style::Print("\n\n"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("This summary is stored in memory and available to the assistant.\n"),
+                    style::Print("It contains all important details from previous interactions.\n"),
+                )?;
+                animate_output(&mut self.output, &output)?;
+
+                execute!(
+                    self.output,
+                    style::Print(&border),
+                    style::Print("\n\n"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+            }
+        }
+
+        // If a next message is set, then retry the request.
+        if self.conversation_state.next_message.is_some() {
+            Ok(ChatState::HandleResponseStream(
+                self.client
+                    .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                    .await?,
+            ))
+        } else {
+            // Otherwise, return back to the prompt for any pending tool uses.
+            Ok(ChatState::PromptUser {
+                tool_uses,
+                pending_tool_index,
+                skip_printing_tools: true,
+            })
         }
     }
 
@@ -730,7 +966,7 @@ where
         // Check token usage and display warnings if needed
         if pending_tool_index.is_none() {
             // Only display warnings when not waiting for tool approval
-            if let Err(e) = self.display_char_warnings() {
+            if let Err(e) = self.display_char_warnings().await {
                 warn!("Failed to display character limit warnings: {}", e);
             }
         }
@@ -829,40 +1065,13 @@ where
                 // Otherwise continue with normal chat on 'n' or other responses
                 self.tool_use_status = ToolUseStatus::Idle;
 
-                // Run all available hooks.
-                // Results from per-prompt hooks are attached to new user messages.
-                // Results from conversation-start hooks are attached to the top of the conversation state along
-                // with other context.
-                let (conversation_start_context, prompt_context) = if let Some(cm) =
-                    &mut self.conversation_state.context_manager
-                {
-                    let format_context = |hook_results: &Vec<&(Hook, String)>, conversation_start: bool| {
-                        let mut context_content = String::new();
-
-                        context_content.push_str(
-                            &format!("--- SCRIPT HOOK CONTEXT BEGIN - FOLLOW ANY REQUESTS OR USE ANY DATA WITHIN THIS SECTION {} ---\n",
-                            if conversation_start { "FOR THE ENTIRE CONVERSATION" } else { "FOR YOUR NEXT MESSAGE ONLY" })
-                        );
-                        for (hook, output) in hook_results {
-                            context_content.push_str(&format!("'{}': {output}\n\n", &hook.name));
-                        }
-                        context_content.push_str("--- SCRIPT HOOK CONTEXT END ---\n\n");
-                        context_content
-                    };
-
-                    let hook_results = cm.run_hooks(&mut self.output).await;
-
-                    let (start_hooks, prompt_hooks): (Vec<_>, Vec<_>) = hook_results
-                        .iter()
-                        .partition(|(hook, _)| hook.trigger == HookTrigger::ConversationStart);
-
-                    (
-                        (!start_hooks.is_empty()).then(|| format_context(&start_hooks, true)),
-                        (!prompt_hooks.is_empty()).then(|| format_context(&prompt_hooks, false)),
-                    )
+                if pending_tool_index.is_some() {
+                    self.conversation_state.abandon_tool_use(tool_uses, user_input);
                 } else {
-                    (None, None)
-                };
+                    self.conversation_state.set_next_user_message(user_input).await;
+                }
+
+                let conv_state = self.conversation_state.as_sendable_conversation_state().await;
 
                 if self.interactive {
                     queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
@@ -872,25 +1081,9 @@ where
                     self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
                 }
 
-                if pending_tool_index.is_some() {
-                    self.conversation_state.abandon_tool_use(tool_uses, user_input);
-                } else {
-                    self.conversation_state
-                        .append_new_user_message(user_input, prompt_context)
-                        .await;
-                }
-
                 self.send_tool_use_telemetry().await;
 
-                ChatState::HandleResponseStream(
-                    self.client
-                        .send_message(
-                            self.conversation_state
-                                .as_sendable_conversation_state(conversation_start_context)
-                                .await,
-                        )
-                        .await?,
-                )
+                ChatState::HandleResponseStream(self.client.send_message(conv_state).await?)
             },
             Command::Execute { command } => {
                 queue!(self.output, style::Print('\n'))?;
@@ -953,105 +1146,8 @@ where
                 show_summary,
                 help,
             } => {
-                // If help flag is set, show compact command help
-                if help {
-                    execute!(
-                        self.output,
-                        style::Print("\n"),
-                        style::Print(compact_help_text()),
-                        style::Print("\n")
-                    )?;
-
-                    return Ok(ChatState::PromptUser {
-                        tool_uses: Some(tool_uses),
-                        pending_tool_index,
-                        skip_printing_tools: true,
-                    });
-                }
-
-                // Check if conversation history is long enough to compact
-                if self.conversation_state.history().len() <= 3 {
-                    execute!(
-                        self.output,
-                        style::SetForegroundColor(Color::Yellow),
-                        style::Print("\nConversation too short to compact.\n\n"),
-                        style::SetForegroundColor(Color::Reset)
-                    )?;
-
-                    return Ok(ChatState::PromptUser {
-                        tool_uses: Some(tool_uses),
-                        pending_tool_index,
-                        skip_printing_tools: true,
-                    });
-                }
-
-                // Set up summarization state with history, custom prompt, and show_summary flag
-                let mut summarization_state = SummarizationState::with_prompt(prompt.clone());
-                summarization_state.original_history = Some(self.conversation_state.history().clone());
-                summarization_state.show_summary = show_summary; // Store the show_summary flag
-                self.summarization_state = Some(summarization_state);
-
-                // Create a summary request based on user input or default
-                let summary_request = match prompt {
-                    Some(custom_prompt) => {
-                        // Make the custom instructions much more prominent and directive
-                        format!(
-                            "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
-                            FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
-                            IMPORTANT CUSTOM INSTRUCTION: {}\n\n\
-                            Your task is to create a structured summary document containing:\n\
-                            1) A bullet-point list of key topics/questions covered\n\
-                            2) Bullet points for all significant tools executed and their results\n\
-                            3) Bullet points for any code or technical information shared\n\
-                            4) A section of key insights gained\n\n\
-                            FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
-                            ## CONVERSATION SUMMARY\n\
-                            * Topic 1: Key information\n\
-                            * Topic 2: Key information\n\n\
-                            ## TOOLS EXECUTED\n\
-                            * Tool X: Result Y\n\n\
-                            Remember this is a DOCUMENT not a chat response. The custom instruction above modifies what to prioritize.\n\
-                            FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).",
-                            custom_prompt
-                        )
-                    },
-                    None => {
-                        // Default prompt
-                        "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
-                        FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
-                        Your task is to create a structured summary document containing:\n\
-                        1) A bullet-point list of key topics/questions covered\n\
-                        2) Bullet points for all significant tools executed and their results\n\
-                        3) Bullet points for any code or technical information shared\n\
-                        4) A section of key insights gained\n\n\
-                        FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
-                        ## CONVERSATION SUMMARY\n\
-                        * Topic 1: Key information\n\
-                        * Topic 2: Key information\n\n\
-                        ## TOOLS EXECUTED\n\
-                        * Tool X: Result Y\n\n\
-                        Remember this is a DOCUMENT not a chat response.\n\
-                        FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
-                    },
-                };
-
-                // Add the summarization request
-                self.conversation_state
-                    .append_new_user_message(summary_request, None)
-                    .await;
-
-                // Use spinner while we wait
-                if self.interactive {
-                    execute!(self.output, cursor::Hide, style::Print("\n"))?;
-                    self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
-                }
-
-                // Return to handle response stream state
-                return Ok(ChatState::HandleResponseStream(
-                    self.client
-                        .send_message(self.conversation_state.as_sendable_conversation_state(None).await)
-                        .await?,
-                ));
+                self.compact_history(Some(tool_uses), pending_tool_index, prompt, show_summary, help)
+                    .await?
             },
             Command::Help => {
                 execute!(self.output, style::Print(HELP_TEXT))?;
@@ -1910,56 +2006,25 @@ where
                 }
             },
             Command::Usage => {
-                let context_messages = self.conversation_state.context_messages(None).await;
-                let chat_history = self.conversation_state.get_chat_history();
-                let assistant_messages = chat_history
-                    .iter()
-                    .filter_map(|message| {
-                        if let fig_api_client::model::ChatMessage::AssistantResponseMessage(msg) = message {
-                            Some(msg)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
+                let state = self.conversation_state.backend_conversation_state(true).await;
+                let data = state.get_utilization();
 
-                let user_messages = chat_history
-                    .iter()
-                    .filter_map(|message| {
-                        if let fig_api_client::model::ChatMessage::UserInputMessage(msg) = message {
-                            Some(msg)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-
-                let context_token_count = context_messages
-                    .iter()
-                    .map(|msg| TokenCounter::count_tokens(&msg.0.content))
-                    .sum::<usize>();
-
-                let assistant_token_count = assistant_messages
-                    .iter()
-                    .map(|msg| TokenCounter::count_tokens(&msg.content))
-                    .sum::<usize>();
-
-                let user_token_count = user_messages
-                    .iter()
-                    .map(|msg| TokenCounter::count_tokens(&msg.content))
-                    .sum::<usize>();
-
-                let total_token_used: usize = context_token_count + assistant_token_count + user_token_count;
+                let context_token_count: TokenCount = data.context_messages.into();
+                let assistant_token_count: TokenCount = data.assistant_messages.into();
+                let user_token_count: TokenCount = data.user_messages.into();
+                let total_token_used: TokenCount =
+                    (data.context_messages + data.user_messages + data.assistant_messages).into();
 
                 let window_width = self.terminal_width();
-                let progress_bar_width = std::cmp::min(window_width, 80); // set a max width for the progress bar for better aesthetic
+                // set a max width for the progress bar for better aesthetic
+                let progress_bar_width = std::cmp::min(window_width, 80);
 
-                let context_width =
-                    ((context_token_count as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
-                let assistant_width =
-                    ((assistant_token_count as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
-                let user_width =
-                    ((user_token_count as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
+                let context_width = ((context_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64)
+                    * progress_bar_width as f64) as usize;
+                let assistant_width = ((assistant_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64)
+                    * progress_bar_width as f64) as usize;
+                let user_width = ((user_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64)
+                    * progress_bar_width as f64) as usize;
 
                 let left_over_width = progress_bar_width
                     - std::cmp::min(context_width + assistant_width + user_width, progress_bar_width);
@@ -1972,22 +2037,23 @@ where
                         CONTEXT_WINDOW_SIZE / 1000
                     )),
                     style::SetForegroundColor(Color::DarkCyan),
-                    // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too empty
-                    style::Print("|".repeat(if context_width == 0 && context_token_count > 0 {
+                    // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too
+                    // empty
+                    style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
                         1
                     } else {
                         0
                     })),
                     style::Print("█".repeat(context_width)),
                     style::SetForegroundColor(Color::Blue),
-                    style::Print("|".repeat(if assistant_width == 0 && assistant_token_count > 0 {
+                    style::Print("|".repeat(if assistant_width == 0 && *assistant_token_count > 0 {
                         1
                     } else {
                         0
                     })),
                     style::Print("█".repeat(assistant_width)),
                     style::SetForegroundColor(Color::Magenta),
-                    style::Print("|".repeat(if user_width == 0 && user_token_count > 0 { 1 } else { 0 })),
+                    style::Print("|".repeat(if user_width == 0 && *user_token_count > 0 { 1 } else { 0 })),
                     style::Print("█".repeat(user_width)),
                     style::SetForegroundColor(Color::DarkGrey),
                     style::Print("█".repeat(left_over_width)),
@@ -1995,7 +2061,7 @@ where
                     style::SetForegroundColor(Color::Reset),
                     style::Print(format!(
                         "{:.2}%",
-                        (total_token_used as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                        (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
                     )),
                 )?;
 
@@ -2010,7 +2076,7 @@ where
                     style::Print(format!(
                         "~{} tokens ({:.2}%)\n",
                         context_token_count,
-                        (context_token_count as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                        (context_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
                     )),
                     style::SetForegroundColor(Color::Blue),
                     style::Print("█ Q responses: "),
@@ -2018,7 +2084,7 @@ where
                     style::Print(format!(
                         "  ~{} tokens ({:.2}%)\n",
                         assistant_token_count,
-                        (assistant_token_count as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                        (assistant_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
                     )),
                     style::SetForegroundColor(Color::Magenta),
                     style::Print("█ Your prompts: "),
@@ -2026,7 +2092,7 @@ where
                     style::Print(format!(
                         " ~{} tokens ({:.2}%)\n\n",
                         user_token_count,
-                        (user_token_count as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                        (user_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
                     )),
                 )?;
 
@@ -2188,7 +2254,7 @@ where
         self.send_tool_use_telemetry().await;
         return Ok(ChatState::HandleResponseStream(
             self.client
-                .send_message(self.conversation_state.as_sendable_conversation_state(None).await)
+                .send_message(self.conversation_state.as_sendable_conversation_state().await)
                 .await?,
         ));
     }
@@ -2204,8 +2270,6 @@ where
         let mut tool_uses = Vec::new();
         let mut tool_name_being_recvd: Option<String> = None;
 
-        // Flag to track if we're processing a summarization response
-        let is_summarization = self.summarization_state.is_some();
         loop {
             match parser.recv().await {
                 Ok(msg_event) => {
@@ -2271,16 +2335,15 @@ where
                                     tool_uses: None,
                                 });
                             self.conversation_state
-                                .append_new_user_message(
+                                .set_next_user_message(
                                     "You took too long to respond - try to split up the work into smaller steps."
                                         .to_string(),
-                                    None,
                                 )
                                 .await;
                             self.send_tool_use_telemetry().await;
                             return Ok(ChatState::HandleResponseStream(
                                 self.client
-                                    .send_message(self.conversation_state.as_sendable_conversation_state(None).await)
+                                    .send_message(self.conversation_state.as_sendable_conversation_state().await)
                                     .await?,
                             ));
                         },
@@ -2313,7 +2376,7 @@ where
                             self.send_tool_use_telemetry().await;
                             return Ok(ChatState::HandleResponseStream(
                                 self.client
-                                    .send_message(self.conversation_state.as_sendable_conversation_state(None).await)
+                                    .send_message(self.conversation_state.as_sendable_conversation_state().await)
                                     .await?,
                             ));
                         },
@@ -2329,13 +2392,7 @@ where
                 buf.push('\n');
             }
 
-            // TODO: refactor summarization into a separate ChatState value
-            if tool_name_being_recvd.is_none()
-                && !buf.is_empty()
-                && self.interactive
-                && self.spinner.is_some()
-                && !is_summarization
-            {
+            if tool_name_being_recvd.is_none() && !buf.is_empty() && self.interactive && self.spinner.is_some() {
                 drop(self.spinner.take());
                 queue!(
                     self.output,
@@ -2345,28 +2402,25 @@ where
                 )?;
             }
 
-            // For summarization, we capture the summary but don't print it
-            if !is_summarization {
-                // Print the response for normal cases
-                loop {
-                    let input = Partial::new(&buf[offset..]);
-                    match interpret_markdown(input, &mut self.output, &mut state) {
-                        Ok(parsed) => {
-                            offset += parsed.offset_from(&input);
-                            self.output.flush()?;
-                            state.newline = state.set_newline;
-                            state.set_newline = false;
-                        },
-                        Err(err) => match err.into_inner() {
-                            Some(err) => return Err(ChatError::Custom(err.to_string().into())),
-                            None => break, // Data was incomplete
-                        },
-                    }
-
-                    // TODO: We should buffer output based on how much we have to parse, not as a constant
-                    // Do not remove unless you are nabochay :)
-                    std::thread::sleep(Duration::from_millis(8));
+            // Print the response for normal cases
+            loop {
+                let input = Partial::new(&buf[offset..]);
+                match interpret_markdown(input, &mut self.output, &mut state) {
+                    Ok(parsed) => {
+                        offset += parsed.offset_from(&input);
+                        self.output.flush()?;
+                        state.newline = state.set_newline;
+                        state.set_newline = false;
+                    },
+                    Err(err) => match err.into_inner() {
+                        Some(err) => return Err(ChatError::Custom(err.to_string().into())),
+                        None => break, // Data was incomplete
+                    },
                 }
+
+                // TODO: We should buffer output based on how much we have to parse, not as a constant
+                // Do not remove unless you are nabochay :)
+                std::thread::sleep(Duration::from_millis(8));
             }
 
             // Set spinner after showing all of the assistant text content so far.
@@ -2396,8 +2450,7 @@ where
                     play_notification_bell(tool_uses.is_empty());
                 }
 
-                // Handle citations for non-summarization responses
-                if self.interactive && !is_summarization {
+                if self.interactive {
                     queue!(self.output, style::ResetColor, style::SetAttribute(Attribute::Reset))?;
                     execute!(self.output, style::Print("\n"))?;
 
@@ -2416,103 +2469,6 @@ where
 
                 break;
             }
-        }
-
-        // Handle summarization completion if we were in summarization mode
-        if let Some(summarization_state) = self.summarization_state.take() {
-            if self.spinner.is_some() {
-                drop(self.spinner.take());
-                queue!(
-                    self.output,
-                    terminal::Clear(terminal::ClearType::CurrentLine),
-                    cursor::MoveToColumn(0),
-                    cursor::Show
-                )?;
-            }
-
-            // Get the latest message content (the summary)
-            let summary = match self.conversation_state.history().back() {
-                Some(ChatMessage::AssistantResponseMessage(message)) => message.content.clone(),
-                _ => "Summary could not be generated.".to_string(),
-            };
-
-            // Store the summary in conversation_state
-            self.conversation_state.latest_summary = Some(summary.clone());
-
-            // Clear the conversation but preserve the summary we just created
-            self.conversation_state.clear(true);
-
-            // Create a special first assistant message that tells the user a summary is available
-            // Emphasize that the model will actively reference the summary
-            let special_message = AssistantResponseMessage {
-                message_id: None,
-                content: "Your conversation has been summarized and the history cleared. The summary contains the key points, tools used, code discussed, and insights from your previous conversation. I'll reference this summary when answering your future questions.".to_string(),
-                tool_uses: None,
-            };
-
-            // Add the message
-            self.conversation_state.push_assistant_message(special_message);
-
-            execute!(
-                self.output,
-                style::SetForegroundColor(Color::Green),
-                style::Print("✔ Conversation history has been compacted successfully!\n\n"),
-                style::SetForegroundColor(Color::DarkGrey)
-            )?;
-
-            // Print custom prompt info if available
-            if let Some(custom_prompt) = &summarization_state.custom_prompt {
-                execute!(
-                    self.output,
-                    style::Print(format!("• Custom prompt applied: {}\n", custom_prompt))
-                )?;
-            }
-
-            execute!(
-                self.output,
-                style::Print(
-                    "• The assistant has access to all previous tool executions, code analysis, and discussion details\n"
-                ),
-                style::Print("• The assistant will reference specific information from the summary when relevant\n"),
-                style::Print("• Use '/compact --summary' to view summaries when compacting\n\n"),
-                style::SetForegroundColor(Color::Reset)
-            )?;
-
-            // Display the summary if the show_summary flag is set
-            if summarization_state.show_summary {
-                // Add a border around the summary for better visual separation
-                let terminal_width = self.terminal_width();
-                let border = "═".repeat(terminal_width.min(80));
-
-                execute!(
-                    self.output,
-                    style::Print("\n"),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print(&border),
-                    style::Print("\n"),
-                    style::SetAttribute(Attribute::Bold),
-                    style::Print("                       CONVERSATION SUMMARY"),
-                    style::Print("\n"),
-                    style::Print(&border),
-                    style::SetAttribute(Attribute::Reset),
-                    style::Print("\n\n"),
-                    style::Print(&summary),
-                    style::Print("\n\n"),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print("This summary is stored in memory and available to the assistant.\n"),
-                    style::Print("It contains all important details from previous interactions.\n"),
-                    style::Print(&border),
-                    style::Print("\n\n"),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
-            }
-
-            // Return to prompt user without showing tools
-            return Ok(ChatState::PromptUser {
-                tool_uses: None,
-                pending_tool_index: None,
-                skip_printing_tools: true,
-            });
         }
 
         if !tool_uses.is_empty() {
@@ -2612,7 +2568,7 @@ where
 
             let response = self
                 .client
-                .send_message(self.conversation_state.as_sendable_conversation_state(None).await)
+                .send_message(self.conversation_state.as_sendable_conversation_state().await)
                 .await?;
             return Ok(ChatState::HandleResponseStream(response));
         }
@@ -2730,9 +2686,8 @@ where
     }
 
     /// Display character limit warnings based on current conversation size
-    fn display_char_warnings(&mut self) -> Result<(), std::io::Error> {
-        // Check character count and warning level
-        let warning_level = self.conversation_state.get_token_warning_level();
+    async fn display_char_warnings(&mut self) -> Result<(), std::io::Error> {
+        let warning_level = self.conversation_state.get_token_warning_level().await;
 
         match warning_level {
             TokenWarningLevel::Critical => {
@@ -2895,6 +2850,14 @@ pub fn load_tools() -> Result<HashMap<String, ToolSpec>> {
     Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
 }
 
+pub fn animate_output(output: &mut impl Write, bytes: &[u8]) -> Result<(), ChatError> {
+    for b in bytes.chunks(12) {
+        output.write_all(b)?;
+        std::thread::sleep(Duration::from_millis(16));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2924,7 +2887,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
-            std::io::stdout(),
+            SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
                 "create a new file".to_string(),
@@ -3047,7 +3010,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
-            std::io::stdout(),
+            SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
                 "/tools".to_string(),
@@ -3145,7 +3108,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
-            std::io::stdout(),
+            SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
                 "create 2 new files parallel".to_string(),
@@ -3215,7 +3178,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
-            std::io::stdout(),
+            SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
                 "/tools trustall".to_string(),
