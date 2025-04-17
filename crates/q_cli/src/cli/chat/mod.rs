@@ -1265,8 +1265,8 @@ where
                                 style::Print("\n🌍 global:\n"),
                                 style::SetAttribute(Attribute::Reset),
                             )?;
-                            let mut global_context_files = Vec::new();
-                            let mut profile_context_files = Vec::new();
+                            let mut global_context_files = HashSet::new();
+                            let mut profile_context_files = HashSet::new();
                             if context_manager.global_config.paths.is_empty() {
                                 execute!(
                                     self.output,

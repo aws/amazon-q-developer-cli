@@ -403,6 +403,9 @@ impl ContextManager {
         self.collect_context_files(&self.profile_config.paths, &mut context_files, force)
             .await?;
 
+        context_files.sort_by(|a, b| a.0.cmp(&b.0));
+        context_files.dedup_by(|a, b| a.0 == b.0);
+
         Ok(context_files)
     }
 
