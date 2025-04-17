@@ -199,7 +199,7 @@ impl GhIssue {
     pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
         Ok(queue!(
             updates,
-            style::Print("I will prepare a github issue with our conversation history.\n"),
+            style::Print("I will prepare a github issue with our conversation history.\n\n"),
             style::SetForegroundColor(Color::Green),
             style::Print(format!("Title: {}\n", &self.title)),
             style::ResetColor

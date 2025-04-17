@@ -47,24 +47,12 @@ impl Tool {
     /// The display name of a tool
     pub fn display_name(&self) -> &'static str {
         match self {
-            Tool::FsRead(_) => "Read from filesystem",
-            Tool::FsWrite(_) => "Write to filesystem",
-            Tool::ExecuteBash(_) => "Execute shell command",
-            Tool::UseAws(_) => "Use AWS CLI",
-            Tool::GhIssue(_) => "Prepare GitHub issue",
+            Tool::FsRead(_) => "fs_read",
+            Tool::FsWrite(_) => "fs_write",
+            Tool::ExecuteBash(_) => "execute_bash",
+            Tool::UseAws(_) => "use_aws",
+            Tool::GhIssue(_) => "gh_issue",
         }
-    }
-
-    // TODO: Remove, just roll with it for now ya?
-    pub fn display_name_action(&self) -> String {
-        match self {
-            Tool::FsRead(_) => "Reading from filesystem",
-            Tool::FsWrite(_) => "Writing to filesystem",
-            Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
-            Tool::UseAws(_) => "Using AWS CLI",
-            Tool::GhIssue(_) => "Preparing GitHub issue",
-        }
-        .to_owned()
     }
 
     /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.
