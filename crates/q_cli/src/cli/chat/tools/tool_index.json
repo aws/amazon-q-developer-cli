@@ -147,6 +147,33 @@
       ]
     }
   },
+  "web_search": {
+    "name": "web_search",
+    "description": "Search/scrape the web for the specified query.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The search query to use. This is optional when mode is set to scrape since the target_url will be used instead."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Scrape"
+          ],
+          "description": "Scrape mode will return the html representation of the page. search mode will return the first 10 results from the search engine."
+        },
+        "target_url": {
+          "type": "string",
+          "description": "The target URL to scrape. This is only used in scrape mode."
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    }
+  },
   "gh_issue": {
     "name": "report_issue",
     "description": "Opens the browser to a pre-filled gh (GitHub) issue template to report chat issues, bugs, or feature requests. Pre-filled information includes the conversation transcript, chat context, and chat request IDs from the service.",

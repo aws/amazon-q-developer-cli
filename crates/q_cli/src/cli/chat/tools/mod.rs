@@ -3,6 +3,7 @@ pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
 pub mod use_aws;
+pub mod web_search;
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -29,6 +30,7 @@ use fs_write::FsWrite;
 use gh_issue::GhIssue;
 use serde::Deserialize;
 use use_aws::UseAws;
+use web_search::WebSearch;
 
 use super::parser::ToolUse;
 
@@ -42,6 +44,7 @@ pub enum Tool {
     ExecuteBash(ExecuteBash),
     UseAws(UseAws),
     GhIssue(GhIssue),
+    WebSearch(WebSearch),
 }
 
 impl Tool {
@@ -53,6 +56,7 @@ impl Tool {
             Tool::ExecuteBash(_) => "execute_bash",
             Tool::UseAws(_) => "use_aws",
             Tool::GhIssue(_) => "gh_issue",
+            Tool::WebSearch(_) => "web_search",
         }
     }
 
@@ -64,6 +68,7 @@ impl Tool {
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
             Tool::GhIssue(_) => false,
+            Tool::WebSearch(_) => false,
         }
     }
 
@@ -75,6 +80,7 @@ impl Tool {
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
+            Tool::WebSearch(web_search) => web_search.invoke(updates).await,
         }
     }
 
@@ -86,6 +92,7 @@ impl Tool {
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
+            Tool::WebSearch(web_search) => web_search.queue_description(updates),
         }
     }
 
@@ -97,6 +104,7 @@ impl Tool {
             Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
+            Tool::WebSearch(web_search) => web_search.validate(ctx).await,
         }
     }
 }
@@ -119,6 +127,7 @@ impl TryFrom<ToolUse> for Tool {
             "execute_bash" => Self::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Self::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Self::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
+            "web_search" => Self::WebSearch(serde_json::from_value::<WebSearch>(value.args).map_err(map_err)?),
             unknown => {
                 return Err(ToolResult {
                     tool_use_id: value.id,
@@ -201,6 +210,7 @@ impl ToolPermissions {
             "execute_bash" => "trust read-only commands".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
+            "web_search" => "trusted".dark_green().bold(),
             _ => "not trusted".dark_grey(),
         };
 
