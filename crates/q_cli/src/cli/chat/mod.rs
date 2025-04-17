@@ -476,7 +476,12 @@ enum ChatState {
         pending_tool_index: Option<usize>,
     },
     /// Compact the conversation.
-    Compact { prompt: Option<String>, show_summary: bool },
+    Compact {
+        prompt: Option<String>,
+        show_summary: bool,
+        #[allow(dead_code)]
+        help: bool,
+    },
     /// Consume the response stream and display to the user.
     HandleResponseStream(SendMessageOutput),
     /// Exit the chat.
@@ -640,7 +645,11 @@ where
                         skip_printing_tools: true,
                     })
                 },
-                ChatState::Compact { prompt, show_summary } => {
+                ChatState::Compact {
+                    prompt,
+                    show_summary,
+                    help: _,
+                } => {
                     // For now, just convert to a regular input command
                     let input = if let Some(p) = prompt {
                         format!("/compact {}", p)
@@ -2926,7 +2935,13 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
 
 /// Returns all tools supported by Q chat.
 pub fn load_tools() -> Result<HashMap<String, ToolSpec>> {
-    Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
+    // Load tools from the JSON file
+    let mut tools: HashMap<String, ToolSpec> = serde_json::from_str(include_str!("tools/tool_index.json"))?;
+
+    // Add internal_command tool dynamically using the get_tool_spec function
+    tools.insert("internal_command".to_string(), tools::internal_command::get_tool_spec());
+
+    Ok(tools)
 }
 
 #[cfg(test)]
