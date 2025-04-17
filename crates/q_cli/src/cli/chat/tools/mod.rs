@@ -61,7 +61,9 @@ impl Tool {
         }
     }
 
-    // TODO: Remove, just roll with it for now ya?
+    // TODO: This method is currently unused. Consider removing it or implementing its usage
+    // as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
+    #[allow(dead_code)]
     pub fn display_name_action(&self) -> String {
         match self {
             Tool::FsRead(_) => "Reading from filesystem",

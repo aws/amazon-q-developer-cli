@@ -856,6 +856,9 @@ mod tests {
 }
 
 /// Extension trait for Context to provide access to conversation state and stdout
+// TODO: This trait is currently unused. Consider removing it or merging with the implementation
+// in context_adapter.rs as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
+#[allow(dead_code)]
 pub trait ContextExt {
     /// Get the conversation state from the context
     fn get_conversation_state(&self) -> Result<&mut crate::cli::chat::conversation_state::ConversationState>;

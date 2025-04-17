@@ -8,6 +8,10 @@ pub use schema::InternalCommand;
 use crate::cli::chat::ToolSpec;
 
 /// Get the tool specification for internal_command
+///
+/// TODO: This function is currently unused. Consider removing it or implementing its usage
+/// as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
+#[allow(dead_code)]
 pub fn get_tool_spec() -> ToolSpec {
     serde_json::from_value(serde_json::json!({
         "description": "Execute internal commands within the q chat system. This tool allows the AI assistant to directly execute q commands on behalf of the user.\n\nAvailable commands:\n\n- /clear: Clear the conversation history\n  Usage: /clear\n- /context: Manage context files for the chat session\n  Usage: /context [subcommand]\n- /help: Show help information\n  Usage: /help\n- /quit: Exit the application\n  Usage: /quit\n",

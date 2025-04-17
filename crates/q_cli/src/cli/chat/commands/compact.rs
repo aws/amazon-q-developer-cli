@@ -87,10 +87,7 @@ Examples:
             }
 
             // Return the Compact command state
-            Ok(ChatState::Compact {
-                prompt: prompt.map(|s| s.to_string()),
-                show_summary,
-            })
+            Ok(ChatState::Compact { prompt, show_summary })
         })
     }
 

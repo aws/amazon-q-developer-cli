@@ -238,6 +238,12 @@ Added comprehensive unit tests for all command handlers.
   - Evaluate the unused `command_requires_confirmation` method in `UseQCommand` - either remove it or make it call the command handler's `requires_confirmation` method directly
   - Review the unused methods in `CommandHandler` trait (`name`, `description`, `llm_description`) - implement functionality that uses them or remove them
   - Review the unused methods in `CommandRegistry` implementation (`command_exists`, `command_names`, `generate_commands_description`, `generate_llm_descriptions`) - implement functionality that uses them or remove them
+  - Review and address unused traits, methods and functions marked with TODO comments and `#[allow(dead_code)]` attributes:
+    - Unused `ContextExt` trait in `context.rs` - consider removing or merging with implementation in `context_adapter.rs`
+    - Unused `display_name_action` method in `Tool` implementation - consider removing or implementing its usage
+    - Unused `get_tool_spec` function in `internal_command/mod.rs` - consider removing or implementing its usage
+    - Unused `should_exit` and `reset_exit_flag` functions in `internal_command/tool.rs` - consider removing or implementing their usage
+    - Unused `new` function in `InternalCommand` implementation - consider removing or implementing its usage
 
 #### 7.5 Final Quality Assurance
 - Run comprehensive test suite with high coverage

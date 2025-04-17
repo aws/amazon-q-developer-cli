@@ -33,11 +33,17 @@ use crate::cli::chat::tools::{
 static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 
 // Function to check if the application should exit
+/// TODO: This function is currently unused. Consider removing it or implementing its usage
+/// as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
+#[allow(dead_code)]
 pub fn should_exit() -> bool {
     SHOULD_EXIT.load(Ordering::SeqCst)
 }
 
 // Function to reset the exit flag (useful for tests)
+/// TODO: This function is currently unused. Consider removing it or implementing its usage
+/// as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
+#[allow(dead_code)]
 pub fn reset_exit_flag() {
     SHOULD_EXIT.store(false, Ordering::SeqCst);
 }
@@ -58,6 +64,11 @@ pub struct InternalCommandResponse {
 }
 
 impl InternalCommand {
+    /// Create a new InternalCommand instance
+    ///
+    /// TODO: This function is currently unused. Consider removing it or implementing its usage
+    /// as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
+    #[allow(dead_code)]
     pub fn new(
         command: String,
         subcommand: Option<String>,
