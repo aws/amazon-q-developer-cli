@@ -38,8 +38,12 @@ impl InputSource {
 
     pub fn put_skim_command_selector(&mut self, context_manager: Arc<ContextManager>) {
         if let inner::Inner::Readline(rl) = &mut self.0 {
+            let key_char = match fig_settings::settings::get_string_opt("chat.skimCommandKey").as_deref() {
+                Some(key) if key.len() == 1 => key.chars().next().unwrap_or('k'),
+                _ => 'k', // Default to 'k' if setting is missing or invalid
+            };
             rl.bind_sequence(
-                KeyEvent::ctrl('k'),
+                KeyEvent::ctrl(key_char),
                 EventHandler::Conditional(Box::new(SkimCommandSelector::new(context_manager))),
             );
         }

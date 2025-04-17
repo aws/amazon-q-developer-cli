@@ -168,7 +168,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>/quit</em>         <black!>Quit the application</black!>
 
 <cyan!>Use Ctrl(^) + j to provide multi-line prompts.</cyan!>
-<cyan!>Use Ctrl(^) + k to fuzzily search commands and context (use tab to select multiple files).</cyan!>
+<cyan!>Use Ctrl(^) + k to fuzzily search commands and context.</cyan!>
 
 "};
 
@@ -211,6 +211,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
 <em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
+<em>Ctrl(^) + k</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
+                      <black!>Change the keybind to ctrl+x with: q settings chat.skimCommandKey x (where x is any key)</black!>
 
 "};
 
