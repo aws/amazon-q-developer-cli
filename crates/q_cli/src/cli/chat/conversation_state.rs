@@ -360,7 +360,6 @@ impl ConversationState {
 
     /// Sets the next user message with "cancelled" tool results.
     pub fn abandon_tool_use(&mut self, tools_to_be_abandoned: Vec<QueuedTool>, deny_input: String) {
-        debug_assert!(self.next_message.is_none());
         let tool_results = tools_to_be_abandoned
             .into_iter()
             .map(|tool| ToolResult {

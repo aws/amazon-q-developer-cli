@@ -77,7 +77,6 @@ use hooks::{
     Hook,
     HookTrigger,
 };
-use rand::seq::IndexedRandom;
 use shared_writer::SharedWriter;
 
 /// Help text for the compact command
@@ -1072,6 +1071,8 @@ impl ChatContext {
                     self.conversation_state.set_next_user_message(user_input).await;
                 }
 
+                let conv_state = self.conversation_state.as_sendable_conversation_state().await;
+
                 if self.interactive {
                     queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
                     queue!(self.output, style::SetForegroundColor(Color::Reset))?;
@@ -1082,11 +1083,7 @@ impl ChatContext {
 
                 self.send_tool_use_telemetry().await;
 
-                ChatState::HandleResponseStream(
-                    self.client
-                        .send_message(self.conversation_state.as_sendable_conversation_state().await)
-                        .await?,
-                )
+                ChatState::HandleResponseStream(self.client.send_message(conv_state).await?)
             },
             Command::Execute { command } => {
                 queue!(self.output, style::Print('\n'))?;
@@ -2009,7 +2006,6 @@ impl ChatContext {
                 }
             },
             Command::Usage => {
-                // TODO:
                 let state = self.conversation_state.backend_conversation_state(true).await;
                 let data = state.get_utilization();
 
@@ -2019,47 +2015,6 @@ impl ChatContext {
                 let total_token_used: TokenCount =
                     (data.context_messages + data.user_messages + data.assistant_messages).into();
 
-                // let context_messages = self.conversation_state.context_messages().await;
-                // let chat_history = self.conversation_state.get_chat_history();
-                // let assistant_messages = chat_history
-                //     .iter()
-                //     .filter_map(|message| {
-                //         if let fig_api_client::model::ChatMessage::AssistantResponseMessage(msg) = message {
-                //             Some(msg)
-                //         } else {
-                //             None
-                //         }
-                //     })
-                //     .collect::<Vec<_>>();
-                //
-                // let user_messages = chat_history
-                //     .iter()
-                //     .filter_map(|message| {
-                //         if let fig_api_client::model::ChatMessage::UserInputMessage(msg) = message {
-                //             Some(msg)
-                //         } else {
-                //             None
-                //         }
-                //     })
-                //     .collect::<Vec<_>>();
-                //
-                // let context_token_count = context_messages
-                //     .iter()
-                //     .map(|msg| TokenCounter::count_tokens(&msg.0.content))
-                //     .sum::<usize>();
-                //
-                // let assistant_token_count = assistant_messages
-                //     .iter()
-                //     .map(|msg| TokenCounter::count_tokens(&msg.content))
-                //     .sum::<usize>();
-                //
-                // let user_token_count = user_messages
-                //     .iter()
-                //     .map(|msg| TokenCounter::count_tokens(&msg.content))
-                //     .sum::<usize>();
-                //
-                // let total_token_used: usize = context_token_count + assistant_token_count + user_token_count;
-                //
                 let window_width = self.terminal_width();
                 // set a max width for the progress bar for better aesthetic
                 let progress_bar_width = std::cmp::min(window_width, 80);
