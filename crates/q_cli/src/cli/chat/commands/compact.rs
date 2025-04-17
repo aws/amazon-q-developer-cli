@@ -6,7 +6,10 @@ use eyre::Result;
 use fig_os_shim::Context;
 
 use crate::cli::chat::commands::CommandHandler;
-use crate::cli::chat::{ChatState, QueuedTool};
+use crate::cli::chat::{
+    ChatState,
+    QueuedTool,
+};
 
 /// Handler for the compact command
 pub struct CompactCommand;
@@ -60,11 +63,11 @@ Examples:
             // Parse arguments
             let mut prompt = None;
             let mut show_summary = false;
-            let mut help = false;
+            let mut _help = false;
 
             // Check if "help" is the first argument
             if !args.is_empty() && args[0].to_lowercase() == "help" {
-                help = true;
+                _help = true;
             } else {
                 let mut remaining_parts = Vec::new();
 
@@ -87,7 +90,6 @@ Examples:
             Ok(ChatState::Compact {
                 prompt: prompt.map(|s| s.to_string()),
                 show_summary,
-                help,
             })
         })
     }
@@ -145,7 +147,7 @@ mod tests {
             match state {
                 ChatState::Compact { help, .. } => {
                     assert!(help);
-                }
+                },
                 _ => panic!("Expected Compact state with help=true"),
             }
         }
@@ -168,7 +170,7 @@ mod tests {
                     assert_eq!(prompt, None);
                     assert_eq!(show_summary, false);
                     assert_eq!(help, false);
-                }
+                },
                 _ => panic!("Expected Compact state"),
             }
         }
@@ -193,7 +195,7 @@ mod tests {
                     assert_eq!(prompt, Some("focus on code examples".to_string()));
                     assert_eq!(show_summary, false);
                     assert_eq!(help, false);
-                }
+                },
                 _ => panic!("Expected Compact state"),
             }
         }
@@ -216,7 +218,7 @@ mod tests {
                     assert_eq!(prompt, None);
                     assert_eq!(show_summary, true);
                     assert_eq!(help, false);
-                }
+                },
                 _ => panic!("Expected Compact state"),
             }
         }
@@ -227,12 +229,7 @@ mod tests {
         let command = CompactCommand::new();
         let ctx = create_test_context();
         let result = command
-            .execute(
-                vec!["focus", "on", "code", "examples", "--summary"],
-                &ctx,
-                None,
-                None,
-            )
+            .execute(vec!["focus", "on", "code", "examples", "--summary"], &ctx, None, None)
             .await;
         assert!(result.is_ok());
 
@@ -246,7 +243,7 @@ mod tests {
                     assert_eq!(prompt, Some("focus on code examples".to_string()));
                     assert_eq!(show_summary, true);
                     assert_eq!(help, false);
-                }
+                },
                 _ => panic!("Expected Compact state"),
             }
         }

@@ -16,6 +16,7 @@ use aws_smithy_types::{
     Document,
     Number as SmithyNumber,
 };
+use crossterm::style::Stylize;
 use execute_bash::ExecuteBash;
 use eyre::Result;
 use fig_api_client::model::{
@@ -186,9 +187,9 @@ impl ToolPermissions {
     pub fn display_label(&self, tool_name: &str) -> String {
         if self.has(tool_name) {
             if self.is_trusted(tool_name) {
-                "Trusted".to_string()
+                format!("  {}", "trusted".dark_green().bold())
             } else {
-                "Per-request".to_string()
+                format!("  {}", "not trusted".dark_grey())
             }
         } else {
             Self::default_permission_label(tool_name)
@@ -226,17 +227,17 @@ impl ToolPermissions {
     // This "static" way avoids needing to construct a tool instance.
     fn default_permission_label(tool_name: &str) -> String {
         let label = match tool_name {
-            "fs_read" => "Trusted",
-            "fs_write" => "Per-request",
-            "execute_bash" => "Write-only commands",
-            "use_aws" => "Write-only commands",
-            "report_issue" => "Trusted",
-            "use_q_command" => "Per-request",
-            "internal_command" => "Per-request",
-            _ => "Per-request",
+            "fs_read" => "trusted".dark_green().bold(),
+            "fs_write" => "not trusted".dark_grey(),
+            "execute_bash" => "trust read-only commands".dark_grey(),
+            "use_aws" => "trust read-only commands".dark_grey(),
+            "report_issue" => "trusted".dark_green().bold(),
+            "use_q_command" => "trust read-only commands".dark_grey(),
+            "internal_command" => "trust read-only commands".dark_grey(),
+            _ => "not trusted".dark_grey(),
         };
 
-        format!("{label} [Default] ")
+        format!("{} {label}", "*".reset())
     }
 }
 

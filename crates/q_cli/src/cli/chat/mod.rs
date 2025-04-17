@@ -1,7 +1,6 @@
 mod command;
-pub mod commands;
+mod commands;
 mod context;
-mod context_adapter;
 mod conversation_state;
 mod hooks;
 mod input_source;
@@ -37,9 +36,7 @@ use command::{
     Command,
     ToolsSubcommand,
 };
-use commands::CommandRegistry;
 use context::ContextManager;
-pub use context_adapter::ContextExt;
 use conversation_state::ConversationState;
 use crossterm::style::{
     Attribute,
@@ -54,6 +51,7 @@ use crossterm::{
     terminal,
 };
 use eyre::{
+    ErrReport,
     Result,
     bail,
 };
@@ -76,9 +74,40 @@ use hooks::{
     HookTrigger,
 };
 use summarization_state::{
+    CONTEXT_WINDOW_SIZE,
     SummarizationState,
     TokenWarningLevel,
 };
+
+/// Help text for the compact command
+fn compact_help_text() -> String {
+    color_print::cformat!(
+        r#"
+<magenta,em>Conversation Compaction</magenta,em>
+
+The <em>/compact</em> command summarizes the conversation history to free up context space
+while preserving essential information. This is useful for long-running conversations
+that may eventually reach memory constraints.
+
+<cyan!>Usage</cyan!>
+  <em>/compact</em>                   <black!>Summarize the conversation and clear history</black!>
+  <em>/compact [prompt]</em>          <black!>Provide custom guidance for summarization</black!>
+  <em>/compact --summary</em>         <black!>Show the summary after compacting</black!>
+
+<cyan!>When to use</cyan!>
+• When you see the memory constraint warning message
+• When a conversation has been running for a long time
+• Before starting a new topic within the same session
+• After completing complex tool operations
+
+<cyan!>How it works</cyan!>
+• Creates an AI-generated summary of your conversation
+• Retains key information, code, and tool executions in the summary
+• Clears the conversation history to free up space
+• The assistant will reference the summary context in future responses
+"#
+    )
+}
 use input_source::InputSource;
 use parser::{
     RecvErrorKind,
@@ -119,7 +148,7 @@ use crate::cli::chat::parse::{
 };
 use crate::util::region_check;
 use crate::util::spinner::play_notification_bell;
-// use crate::util::token_counter::TokenCounter;
+use crate::util::token_counter::TokenCounter;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
@@ -141,6 +170,48 @@ const WELCOME_TEXT: &str = color_print::cstr! {"
 
 <cyan!>Use Ctrl(^) + j to provide multi-line prompts.</cyan!>
 <cyan!>Use Ctrl(^) + k to fuzzily search commands and context (use tab to select multiple files).</cyan!>
+
+"};
+
+const HELP_TEXT: &str = color_print::cstr! {"
+
+<magenta,em>q</magenta,em> (Amazon Q Chat)
+
+<cyan,em>Commands:</cyan,em>
+<em>/clear</em>        <black!>Clear the conversation history</black!>
+<em>/issue</em>        <black!>Report an issue or make a feature request</black!>
+<em>/editor</em>       <black!>Open $EDITOR (defaults to vi) to compose a prompt</black!>
+<em>/help</em>         <black!>Show this help dialogue</black!>
+<em>/quit</em>         <black!>Quit the application</black!>
+<em>/compact</em>      <black!>Summarize the conversation to free up context space</black!>
+  <em>help</em>        <black!>Show help for the compact command</black!>
+  <em>[prompt]</em>    <black!>Optional custom prompt to guide summarization</black!>
+  <em>--summary</em>   <black!>Display the summary after compacting</black!>
+<em>/tools</em>        <black!>View and manage tools and permissions</black!>
+  <em>help</em>        <black!>Show an explanation for the trust command</black!>
+  <em>trust</em>       <black!>Trust a specific tool for the session</black!>
+  <em>untrust</em>     <black!>Revert a tool to per-request confirmation</black!>
+  <em>trustall</em>    <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
+  <em>reset</em>       <black!>Reset all tools to default permission levels</black!>
+<em>/profile</em>      <black!>Manage profiles</black!>
+  <em>help</em>        <black!>Show profile help</black!>
+  <em>list</em>        <black!>List profiles</black!>
+  <em>set</em>         <black!>Set the current profile</black!>
+  <em>create</em>      <black!>Create a new profile</black!>
+  <em>delete</em>      <black!>Delete a profile</black!>
+  <em>rename</em>      <black!>Rename a profile</black!>
+<em>/context</em>      <black!>Manage context files and hooks for the chat session</black!>
+  <em>help</em>        <black!>Show context help</black!>
+  <em>show</em>        <black!>Display current context rules configuration [--expand]</black!>
+  <em>add</em>         <black!>Add file(s) to context [--global] [--force]</black!>
+  <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
+  <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
+  <em>hooks</em>       <black!>View and manage context hooks</black!>
+<em>/usage</em>      <black!>Show current session's context window usage</black!>
+
+<cyan,em>Tips:</cyan,em>
+<em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
+<em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
 
 "};
 
@@ -374,12 +445,9 @@ impl<W: Write> Drop for ChatContext<W> {
 /// The chat execution state.
 ///
 /// Intended to provide more robust handling around state transitions while dealing with, e.g.,
-/// The chat execution state.
-///
-/// Intended to provide more robust handling around state transitions while dealing with, e.g.,
 /// tool validation, execution, response stream handling, etc.
 #[derive(Debug)]
-pub enum ChatState {
+enum ChatState {
     /// Prompt the user with `tool_uses`, if available.
     PromptUser {
         /// Tool uses to present to the user.
@@ -400,20 +468,16 @@ pub enum ChatState {
     ValidateTools(Vec<ToolUse>),
     /// Execute the list of tools.
     ExecuteTools(Vec<QueuedTool>),
-    /// Consume the response stream and display to the user.
-    HandleResponseStream(SendMessageOutput),
     /// Display help text to the user.
     DisplayHelp {
         help_text: String,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
     },
-    /// Compact the conversation history.
-    Compact {
-        prompt: Option<String>,
-        show_summary: bool,
-        help: bool,
-    },
+    /// Compact the conversation.
+    Compact { prompt: Option<String>, show_summary: bool },
+    /// Consume the response stream and display to the user.
+    HandleResponseStream(SendMessageOutput),
     /// Exit the chat.
     Exit,
 }
@@ -440,15 +504,31 @@ where
         let temp_file_path = temp_dir.join(file_name);
 
         // Get the editor from environment variable or use a default
-        let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+        let editor_cmd = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+
+        // Parse the editor command to handle arguments
+        let mut parts =
+            shlex::split(&editor_cmd).ok_or_else(|| ChatError::Custom("Failed to parse EDITOR command".into()))?;
+
+        if parts.is_empty() {
+            return Err(ChatError::Custom("EDITOR environment variable is empty".into()));
+        }
+
+        let editor_bin = parts.remove(0);
 
         // Write initial content to the file if provided
         let initial_content = initial_text.unwrap_or_default();
         fs::write(&temp_file_path, &initial_content)
             .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {}", e).into()))?;
 
-        // Open the editor
-        let status = ProcessCommand::new(editor)
+        // Open the editor with the parsed command and arguments
+        let mut cmd = ProcessCommand::new(editor_bin);
+        // Add any arguments that were part of the EDITOR variable
+        for arg in parts {
+            cmd.arg(arg);
+        }
+        // Add the file path as the last argument
+        let status = cmd
             .arg(&temp_file_path)
             .status()
             .map_err(|e| ChatError::Custom(format!("Failed to open editor: {}", e).into()))?;
@@ -552,7 +632,6 @@ where
                     tool_uses,
                     pending_tool_index,
                 } => {
-                    // Print the help text directly without LLM interpretation
                     execute!(self.output, style::Print(help_text))?;
                     Ok(ChatState::PromptUser {
                         tool_uses,
@@ -560,36 +639,18 @@ where
                         skip_printing_tools: true,
                     })
                 },
-                ChatState::Compact {
-                    prompt: _,
-                    show_summary: _,
-                    help,
-                } => {
-                    // Handle the compact command state
-                    if help {
-                        // Display help text for the compact command
-                        let help_text = crate::cli::chat::commands::compact_help_text();
-                        execute!(self.output, style::Print(help_text))?;
-                        Ok(ChatState::PromptUser {
-                            tool_uses: None,
-                            pending_tool_index: None,
-                            skip_printing_tools: true,
-                        })
+                ChatState::Compact { prompt, show_summary } => {
+                    // For now, just convert to a regular input command
+                    let input = if let Some(p) = prompt {
+                        format!("/compact {}", p)
                     } else {
-                        // Implement the compact command logic here
-                        // This is a placeholder - the actual implementation would need to be added
-                        execute!(
-                            self.output,
-                            style::SetForegroundColor(Color::Yellow),
-                            style::Print("\nCompact command implementation needed.\n\n"),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                        
-                        Ok(ChatState::PromptUser {
-                            tool_uses: None,
-                            pending_tool_index: None,
-                            skip_printing_tools: false,
-                        })
+                        "/compact".to_string()
+                    };
+
+                    if show_summary {
+                        self.handle_input(format!("{} --summary", input), None, None).await
+                    } else {
+                        self.handle_input(input, None, None).await
                     }
                 },
                 ChatState::Exit => return Ok(()),
@@ -875,21 +936,49 @@ where
                 }
             },
             Command::Clear => {
-                // Get the command registry
-                let registry = CommandRegistry::global();
+                execute!(self.output, cursor::Show)?;
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(
+                        "\nAre you sure? This will erase the conversation history and context from hooks for the current session. "
+                    ),
+                    style::Print("["),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("y"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("/"),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("n"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("]:\n\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
 
-                // Get the clear command handler
-                if let Some(handler) = registry.get("clear") {
-                    // Execute the clear command through the registry
-                    let result = handler
-                        .execute(vec![], &self.ctx, Some(tool_uses.clone()), pending_tool_index)
-                        .await;
+                // Setting `exit_on_single_ctrl_c` for better ux: exit the confirmation dialog rather than the CLI
+                let user_input = match self.read_user_input("> ".yellow().to_string().as_str(), true) {
+                    Some(input) => input,
+                    None => "".to_string(),
+                };
 
-                    // Handle the result directly since we're now using the same ChatState type
-                    return result.map_err(|e| ChatError::Custom(format!("Clear command failed: {}", e).into()));
-                } else {
-                    // This should never happen as the clear command is registered in CommandRegistry::new()
-                    return Err(ChatError::Custom("Clear command not found in registry".into()));
+                if ["y", "Y"].contains(&user_input.as_str()) {
+                    self.conversation_state.clear(true);
+                    if let Some(cm) = self.conversation_state.context_manager.as_mut() {
+                        cm.hook_executor.global_cache.clear();
+                        cm.hook_executor.profile_cache.clear();
+                    }
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Green),
+                        style::Print("\nConversation history cleared.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                }
+
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    pending_tool_index: None,
+                    skip_printing_tools: true,
                 }
             },
             Command::Compact {
@@ -897,59 +986,112 @@ where
                 show_summary,
                 help,
             } => {
-                // Get the command registry
-                let registry = CommandRegistry::global();
+                // If help flag is set, show compact command help
+                if help {
+                    execute!(
+                        self.output,
+                        style::Print("\n"),
+                        style::Print(compact_help_text()),
+                        style::Print("\n")
+                    )?;
 
-                // Get the compact command handler
-                if let Some(handler) = registry.get("compact") {
-                    // Convert the Compact command parameters to arguments for the handler
-                    let mut args = Vec::new();
-                    
-                    if help {
-                        args.push("help".to_string());
-                    } else {
-                        if show_summary {
-                            args.push("--summary".to_string());
-                        }
-                        
-                        if let Some(prompt_str) = prompt.clone() {
-                            // Add the entire prompt as a single argument
-                            args.push(prompt_str);
-                        }
-                    }
-
-                    // Convert String args to &str for the execute method
-                    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-
-                    // Execute the compact command through the registry
-                    let result = handler
-                        .execute(args_refs, &self.ctx, Some(tool_uses.clone()), pending_tool_index)
-                        .await;
-
-                    // Handle the result directly since we're now using the same ChatState type
-                    return result.map_err(|e| ChatError::Custom(format!("Compact command failed: {}", e).into()));
-                } else {
-                    // This should never happen as the compact command is registered in CommandRegistry::new()
-                    return Err(ChatError::Custom("Compact command not found in registry".into()));
+                    return Ok(ChatState::PromptUser {
+                        tool_uses: Some(tool_uses),
+                        pending_tool_index,
+                        skip_printing_tools: true,
+                    });
                 }
+
+                // Check if conversation history is long enough to compact
+                if self.conversation_state.history().len() <= 3 {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print("\nConversation too short to compact.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+
+                    return Ok(ChatState::PromptUser {
+                        tool_uses: Some(tool_uses),
+                        pending_tool_index,
+                        skip_printing_tools: true,
+                    });
+                }
+
+                // Set up summarization state with history, custom prompt, and show_summary flag
+                let mut summarization_state = SummarizationState::with_prompt(prompt.clone());
+                summarization_state.original_history = Some(self.conversation_state.history().clone());
+                summarization_state.show_summary = show_summary; // Store the show_summary flag
+                self.summarization_state = Some(summarization_state);
+
+                // Create a summary request based on user input or default
+                let summary_request = match prompt {
+                    Some(custom_prompt) => {
+                        // Make the custom instructions much more prominent and directive
+                        format!(
+                            "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
+                            FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
+                            IMPORTANT CUSTOM INSTRUCTION: {}\n\n\
+                            Your task is to create a structured summary document containing:\n\
+                            1) A bullet-point list of key topics/questions covered\n\
+                            2) Bullet points for all significant tools executed and their results\n\
+                            3) Bullet points for any code or technical information shared\n\
+                            4) A section of key insights gained\n\n\
+                            FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
+                            ## CONVERSATION SUMMARY\n\
+                            * Topic 1: Key information\n\
+                            * Topic 2: Key information\n\n\
+                            ## TOOLS EXECUTED\n\
+                            * Tool X: Result Y\n\n\
+                            Remember this is a DOCUMENT not a chat response. The custom instruction above modifies what to prioritize.\n\
+                            FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).",
+                            custom_prompt
+                        )
+                    },
+                    None => {
+                        // Default prompt
+                        "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
+                        FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
+                        Your task is to create a structured summary document containing:\n\
+                        1) A bullet-point list of key topics/questions covered\n\
+                        2) Bullet points for all significant tools executed and their results\n\
+                        3) Bullet points for any code or technical information shared\n\
+                        4) A section of key insights gained\n\n\
+                        FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
+                        ## CONVERSATION SUMMARY\n\
+                        * Topic 1: Key information\n\
+                        * Topic 2: Key information\n\n\
+                        ## TOOLS EXECUTED\n\
+                        * Tool X: Result Y\n\n\
+                        Remember this is a DOCUMENT not a chat response.\n\
+                        FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
+                    },
+                };
+
+                // Add the summarization request
+                self.conversation_state
+                    .append_new_user_message(summary_request, None)
+                    .await;
+
+                // Use spinner while we wait
+                if self.interactive {
+                    execute!(self.output, cursor::Hide, style::Print("\n"))?;
+                    self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
+                }
+
+                // Return to handle response stream state
+                return Ok(ChatState::HandleResponseStream(
+                    self.client
+                        .send_message(self.conversation_state.as_sendable_conversation_state(None).await)
+                        .await?,
+                ));
             },
             Command::Help => {
-                // Get the command registry
-                let registry = CommandRegistry::global();
-
-                // Get the help command handler
-                if let Some(handler) = registry.get("help") {
-                    // Execute the help command through the registry
-                    let result = handler
-                        .execute(vec![], &self.ctx, Some(tool_uses.clone()), pending_tool_index)
-                        .await;
-
-                    // Handle the result directly since we're now using the same ChatState type
-                    // If the help command fails, propagate the error rather than falling back
-                    return result.map_err(|e| ChatError::Custom(format!("Help command failed: {}", e).into()));
-                } else {
-                    // If the help command is not registered, this is a programming error
-                    return Err(ChatError::Custom("Help command not found in registry".into()));
+                execute!(self.output, style::Print(HELP_TEXT))?;
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    pending_tool_index,
+                    skip_printing_tools: true,
                 }
             },
             Command::Issue { prompt } => {
@@ -1022,24 +1164,7 @@ where
                     },
                 }
             },
-            Command::Quit => {
-                // Get the command registry
-                let registry = CommandRegistry::global();
-
-                // Get the quit command handler
-                if let Some(handler) = registry.get("quit") {
-                    // Execute the quit command through the registry
-                    let result = handler
-                        .execute(vec![], &self.ctx, Some(tool_uses.clone()), pending_tool_index)
-                        .await;
-
-                    // Handle the result directly since we're now using the same ChatState type
-                    return result.map_err(|e| ChatError::Custom(format!("Quit command failed: {}", e).into()));
-                } else {
-                    // This should never happen as the quit command is registered in CommandRegistry::new()
-                    return Err(ChatError::Custom("Quit command not found in registry".into()));
-                }
-            },
+            Command::Quit => ChatState::Exit,
             Command::Profile { subcommand } => {
                 if let Some(context_manager) = &mut self.conversation_state.context_manager {
                     macro_rules! print_err {
@@ -1162,125 +1287,523 @@ where
                 }
             },
             Command::Context { subcommand } => {
-                // Get the command registry
-                let registry = CommandRegistry::global();
-
-                // Get the context command handler
-                if let Some(handler) = registry.get("context") {
-                    // Convert the ContextSubcommand to arguments for the handler
-                    let args = match &subcommand {
+                if let Some(context_manager) = &mut self.conversation_state.context_manager {
+                    match subcommand {
                         command::ContextSubcommand::Show { expand } => {
-                            let mut args = vec!["show"];
-                            if *expand {
-                                args.push("--expand");
+                            // Display global context
+                            execute!(
+                                self.output,
+                                style::SetAttribute(Attribute::Bold),
+                                style::SetForegroundColor(Color::Magenta),
+                                style::Print("\n🌍 global:\n"),
+                                style::SetAttribute(Attribute::Reset),
+                            )?;
+                            let mut global_context_files = Vec::new();
+                            let mut profile_context_files = Vec::new();
+                            if context_manager.global_config.paths.is_empty() {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("    <none>\n"),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            } else {
+                                for path in &context_manager.global_config.paths {
+                                    execute!(self.output, style::Print(format!("    {} ", path)))?;
+                                    if let Ok(context_files) =
+                                        context_manager.get_context_files_by_path(false, path).await
+                                    {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!(
+                                                "({} match{})",
+                                                context_files.len(),
+                                                if context_files.len() == 1 { "" } else { "es" }
+                                            )),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                        global_context_files.extend(context_files);
+                                    }
+                                    execute!(self.output, style::Print("\n"))?;
+                                }
                             }
-                            args
+
+                            // Display profile context
+                            execute!(
+                                self.output,
+                                style::SetAttribute(Attribute::Bold),
+                                style::SetForegroundColor(Color::Magenta),
+                                style::Print(format!("\n👤 profile ({}):\n", context_manager.current_profile)),
+                                style::SetAttribute(Attribute::Reset),
+                            )?;
+
+                            if context_manager.profile_config.paths.is_empty() {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("    <none>\n\n"),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            } else {
+                                for path in &context_manager.profile_config.paths {
+                                    execute!(self.output, style::Print(format!("    {} ", path)))?;
+                                    if let Ok(context_files) =
+                                        context_manager.get_context_files_by_path(false, path).await
+                                    {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!(
+                                                "({} match{})",
+                                                context_files.len(),
+                                                if context_files.len() == 1 { "" } else { "es" }
+                                            )),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                        profile_context_files.extend(context_files);
+                                    }
+                                    execute!(self.output, style::Print("\n"))?;
+                                }
+                                execute!(self.output, style::Print("\n"))?;
+                            }
+
+                            if global_context_files.is_empty() && profile_context_files.is_empty() {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("No files in the current directory matched the rules above.\n\n"),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            } else {
+                                let total = global_context_files.len() + profile_context_files.len();
+                                let total_tokens = global_context_files
+                                    .iter()
+                                    .map(|(_, content)| TokenCounter::count_tokens(content))
+                                    .sum::<usize>()
+                                    + profile_context_files
+                                        .iter()
+                                        .map(|(_, content)| TokenCounter::count_tokens(content))
+                                        .sum::<usize>();
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Green),
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::Print(format!(
+                                        "{} matched file{} in use:\n",
+                                        total,
+                                        if total == 1 { "" } else { "s" }
+                                    )),
+                                    style::SetForegroundColor(Color::Reset),
+                                    style::SetAttribute(Attribute::Reset)
+                                )?;
+
+                                for (filename, content) in global_context_files {
+                                    let est_tokens = TokenCounter::count_tokens(&content);
+                                    execute!(
+                                        self.output,
+                                        style::Print(format!("🌍 {} ", filename)),
+                                        style::SetForegroundColor(Color::DarkGrey),
+                                        style::Print(format!("(~{} tkns)\n", est_tokens)),
+                                        style::SetForegroundColor(Color::Reset),
+                                    )?;
+                                    if expand {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::DarkGrey),
+                                            style::Print(format!("{}\n\n", content)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    }
+                                }
+
+                                for (filename, content) in profile_context_files {
+                                    let est_tokens = TokenCounter::count_tokens(&content);
+                                    execute!(
+                                        self.output,
+                                        style::Print(format!("👤 {} ", filename)),
+                                        style::SetForegroundColor(Color::DarkGrey),
+                                        style::Print(format!("(~{} tkns)\n", est_tokens)),
+                                        style::SetForegroundColor(Color::Reset),
+                                    )?;
+                                    if expand {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::DarkGrey),
+                                            style::Print(format!("{}\n\n", content)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    }
+                                }
+
+                                if expand {
+                                    execute!(self.output, style::Print(format!("{}\n\n", "▔".repeat(3))),)?;
+                                }
+
+                                execute!(
+                                    self.output,
+                                    style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
+                                )?;
+
+                                execute!(self.output, style::Print("\n"))?;
+                            }
                         },
                         command::ContextSubcommand::Add { global, force, paths } => {
-                            let mut args = vec!["add"];
-                            if *global {
-                                args.push("--global");
+                            match context_manager.add_paths(paths.clone(), global, force).await {
+                                Ok(_) => {
+                                    let target = if global { "global" } else { "profile" };
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!(
+                                            "\nAdded {} path(s) to {} context.\n\n",
+                                            paths.len(),
+                                            target
+                                        )),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("\nError: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
                             }
-                            if *force {
-                                args.push("--force");
-                            }
-                            for path in paths {
-                                args.push(path);
-                            }
-                            args
                         },
                         command::ContextSubcommand::Remove { global, paths } => {
-                            let mut args = vec!["rm"];
-                            if *global {
-                                args.push("--global");
+                            match context_manager.remove_paths(paths.clone(), global).await {
+                                Ok(_) => {
+                                    let target = if global { "global" } else { "profile" };
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print(format!(
+                                            "\nRemoved {} path(s) from {} context.\n\n",
+                                            paths.len(),
+                                            target
+                                        )),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
+                                Err(e) => {
+                                    execute!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print(format!("\nError: {}\n\n", e)),
+                                        style::SetForegroundColor(Color::Reset)
+                                    )?;
+                                },
                             }
-                            for path in paths {
-                                args.push(path);
-                            }
-                            args
                         },
-                        command::ContextSubcommand::Clear { global } => {
-                            let mut args = vec!["clear"];
-                            if *global {
-                                args.push("--global");
-                            }
-                            args
+                        command::ContextSubcommand::Clear { global } => match context_manager.clear(global).await {
+                            Ok(_) => {
+                                let target = if global {
+                                    "global".to_string()
+                                } else {
+                                    format!("profile '{}'", context_manager.current_profile)
+                                };
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(format!("\nCleared context for {}\n\n", target)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            },
+                            Err(e) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nError: {}\n\n", e)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                            },
                         },
                         command::ContextSubcommand::Help => {
-                            vec!["help"]
+                            execute!(
+                                self.output,
+                                style::Print("\n"),
+                                style::Print(command::ContextSubcommand::help_text()),
+                                style::Print("\n")
+                            )?;
                         },
                         command::ContextSubcommand::Hooks { subcommand } => {
-                            let mut args = vec!["hooks"];
-                            if let Some(hook_subcommand) = subcommand {
-                                match hook_subcommand {
+                            fn map_chat_error(e: ErrReport) -> ChatError {
+                                ChatError::Custom(e.to_string().into())
+                            }
+
+                            let scope = |g: bool| if g { "global" } else { "profile" };
+                            if let Some(subcommand) = subcommand {
+                                match subcommand {
                                     command::HooksSubcommand::Add {
                                         name,
                                         trigger,
                                         command,
                                         global,
                                     } => {
-                                        args.push("add");
-                                        args.push(name);
-                                        args.push("--trigger");
-                                        args.push(trigger);
-                                        args.push("--command");
-                                        args.push(command);
-                                        if *global {
-                                            args.push("--global");
+                                        let trigger = if trigger == "conversation_start" {
+                                            HookTrigger::ConversationStart
+                                        } else {
+                                            HookTrigger::PerPrompt
+                                        };
+
+                                        let result = context_manager
+                                            .add_hook(name.clone(), Hook::new_inline_hook(trigger, command), global)
+                                            .await;
+                                        match result {
+                                            Ok(_) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Green),
+                                                    style::Print(format!(
+                                                        "\nAdded {} hook '{name}'.\n\n",
+                                                        scope(global)
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                            Err(e) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Red),
+                                                    style::Print(format!(
+                                                        "\nCannot add {} hook '{name}': {}\n\n",
+                                                        scope(global),
+                                                        e
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
                                         }
                                     },
                                     command::HooksSubcommand::Remove { name, global } => {
-                                        args.push("rm");
-                                        args.push(name);
-                                        if *global {
-                                            args.push("--global");
+                                        let result = context_manager.remove_hook(&name, global).await;
+                                        match result {
+                                            Ok(_) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Green),
+                                                    style::Print(format!(
+                                                        "\nRemoved {} hook '{name}'.\n\n",
+                                                        scope(global)
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                            Err(e) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Red),
+                                                    style::Print(format!(
+                                                        "\nCannot remove {} hook '{name}': {}\n\n",
+                                                        scope(global),
+                                                        e
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
                                         }
                                     },
                                     command::HooksSubcommand::Enable { name, global } => {
-                                        args.push("enable");
-                                        args.push(name);
-                                        if *global {
-                                            args.push("--global");
+                                        let result = context_manager.set_hook_disabled(&name, global, false).await;
+                                        match result {
+                                            Ok(_) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Green),
+                                                    style::Print(format!(
+                                                        "\nEnabled {} hook '{name}'.\n\n",
+                                                        scope(global)
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                            Err(e) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Red),
+                                                    style::Print(format!(
+                                                        "\nCannot enable {} hook '{name}': {}\n\n",
+                                                        scope(global),
+                                                        e
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
                                         }
                                     },
                                     command::HooksSubcommand::Disable { name, global } => {
-                                        args.push("disable");
-                                        args.push(name);
-                                        if *global {
-                                            args.push("--global");
+                                        let result = context_manager.set_hook_disabled(&name, global, true).await;
+                                        match result {
+                                            Ok(_) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Green),
+                                                    style::Print(format!(
+                                                        "\nDisabled {} hook '{name}'.\n\n",
+                                                        scope(global)
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
+                                            Err(e) => {
+                                                execute!(
+                                                    self.output,
+                                                    style::SetForegroundColor(Color::Red),
+                                                    style::Print(format!(
+                                                        "\nCannot disable {} hook '{name}': {}\n\n",
+                                                        scope(global),
+                                                        e
+                                                    )),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            },
                                         }
                                     },
                                     command::HooksSubcommand::EnableAll { global } => {
-                                        args.push("enable-all");
-                                        if *global {
-                                            args.push("--global");
-                                        }
+                                        context_manager
+                                            .set_all_hooks_disabled(global, false)
+                                            .await
+                                            .map_err(map_chat_error)?;
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!("\nEnabled all {} hooks.\n\n", scope(global))),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
                                     },
                                     command::HooksSubcommand::DisableAll { global } => {
-                                        args.push("disable-all");
-                                        if *global {
-                                            args.push("--global");
-                                        }
+                                        context_manager
+                                            .set_all_hooks_disabled(global, true)
+                                            .await
+                                            .map_err(map_chat_error)?;
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print(format!("\nDisabled all {} hooks.\n\n", scope(global))),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
                                     },
                                     command::HooksSubcommand::Help => {
-                                        args.push("help");
+                                        execute!(
+                                            self.output,
+                                            style::Print("\n"),
+                                            style::Print(command::ContextSubcommand::hooks_help_text()),
+                                            style::Print("\n")
+                                        )?;
                                     },
                                 }
+                            } else {
+                                fn print_hook_section(
+                                    output: &mut impl Write,
+                                    hooks: &HashMap<String, Hook>,
+                                    trigger: HookTrigger,
+                                ) -> Result<()> {
+                                    let section = match trigger {
+                                        HookTrigger::ConversationStart => "Conversation Start",
+                                        HookTrigger::PerPrompt => "Per Prompt",
+                                    };
+                                    let hooks: Vec<(&String, &Hook)> =
+                                        hooks.iter().filter(|(_, h)| h.trigger == trigger).collect();
+
+                                    queue!(
+                                        output,
+                                        style::SetForegroundColor(Color::Cyan),
+                                        style::Print(format!("    {section}:\n")),
+                                        style::SetForegroundColor(Color::Reset),
+                                    )?;
+
+                                    if hooks.is_empty() {
+                                        queue!(
+                                            output,
+                                            style::SetForegroundColor(Color::DarkGrey),
+                                            style::Print("      <none>\n"),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    } else {
+                                        for (name, hook) in hooks {
+                                            if hook.disabled {
+                                                queue!(
+                                                    output,
+                                                    style::SetForegroundColor(Color::DarkGrey),
+                                                    style::Print(format!("      {} (disabled)\n", name)),
+                                                    style::SetForegroundColor(Color::Reset)
+                                                )?;
+                                            } else {
+                                                queue!(output, style::Print(format!("      {}\n", name)),)?;
+                                            }
+                                        }
+                                    }
+                                    Ok(())
+                                }
+                                queue!(
+                                    self.output,
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::SetForegroundColor(Color::Magenta),
+                                    style::Print("\n🌍 global:\n"),
+                                    style::SetAttribute(Attribute::Reset),
+                                )?;
+
+                                print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.global_config.hooks,
+                                    HookTrigger::ConversationStart,
+                                )
+                                .map_err(map_chat_error)?;
+                                print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.global_config.hooks,
+                                    HookTrigger::PerPrompt,
+                                )
+                                .map_err(map_chat_error)?;
+
+                                queue!(
+                                    self.output,
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::SetForegroundColor(Color::Magenta),
+                                    style::Print(format!("\n👤 profile ({}):\n", &context_manager.current_profile)),
+                                    style::SetAttribute(Attribute::Reset),
+                                )?;
+
+                                print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.profile_config.hooks,
+                                    HookTrigger::ConversationStart,
+                                )
+                                .map_err(map_chat_error)?;
+                                print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.profile_config.hooks,
+                                    HookTrigger::PerPrompt,
+                                )
+                                .map_err(map_chat_error)?;
+
+                                execute!(
+                                    self.output,
+                                    style::Print(format!(
+                                        "\nUse {} to manage hooks.\n\n",
+                                        "/context hooks help".to_string().dark_green()
+                                    )),
+                                )?;
                             }
-                            args
                         },
-                    };
-
-                    // Execute the context command through the registry
-                    let result = handler
-                        .execute(args, &self.ctx, Some(tool_uses.clone()), pending_tool_index)
-                        .await;
-
-                    // Handle the result directly since we're now using the same ChatState type
-                    return result.map_err(|e| ChatError::Custom(format!("Context command failed: {}", e).into()));
+                    }
+                    // fig_telemetry::send_context_command_executed
                 } else {
-                    // This should never happen as the context command is registered in CommandRegistry::new()
-                    return Err(ChatError::Custom("Context command not found in registry".into()));
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("\nContext management is not available.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                }
+
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    pending_tool_index,
+                    skip_printing_tools: true,
                 }
             },
             Command::Tools { subcommand } => {
@@ -1337,13 +1860,25 @@ where
                         )?;
                     },
                     Some(ToolsSubcommand::ResetSingle { tool_name }) => {
-                        self.tool_permissions.reset_tool(&tool_name);
-                        queue!(
-                            self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nReset tool '{}' to the default permission level.", tool_name)),
-                            style::SetForegroundColor(Color::Reset),
-                        )?;
+                        if self.tool_permissions.has(&tool_name) {
+                            self.tool_permissions.reset_tool(&tool_name);
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!("\nReset tool '{}' to the default permission level.", tool_name)),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        } else {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!(
+                                    "\nTool '{}' does not exist or is already in default settings.",
+                                    tool_name
+                                )),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        }
                     },
                     Some(ToolsSubcommand::Help) => {
                         queue!(
@@ -1369,7 +1904,7 @@ where
                             .tools
                             .iter()
                             .map(|FigTool::ToolSpecification(spec)| {
-                                let width = longest - spec.name.len() + 4;
+                                let width = longest - spec.name.len() + 10;
                                 format!(
                                     "- {}{:>width$}{}",
                                     spec.name,
@@ -1382,12 +1917,16 @@ where
 
                         queue!(
                             self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print("\nCurrent tool permissions:"),
-                            style::SetForegroundColor(Color::Reset),
+                            style::Print("\nTrusted tools can be run without confirmation\n"),
                             style::Print(format!("\n{}\n", tool_permissions.join("\n"))),
+                            style::SetForegroundColor(Color::DarkGrey),
+                            style::Print(format!("\n{}\n", "* Default settings")),
+                            style::Print("\n💡 Use "),
                             style::SetForegroundColor(Color::Green),
-                            style::Print("\nUse /tools help to edit permissions."),
+                            style::Print("/tools help"),
+                            style::SetForegroundColor(Color::Reset),
+                            style::SetForegroundColor(Color::DarkGrey),
+                            style::Print(" to edit permissions."),
                             style::SetForegroundColor(Color::Reset),
                         )?;
                     },
@@ -1396,6 +1935,157 @@ where
                 // Put spacing between previous output as to not be overwritten by
                 // during PromptUser.
                 execute!(self.output, style::Print("\n\n"),)?;
+
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    pending_tool_index,
+                    skip_printing_tools: true,
+                }
+            },
+            Command::Usage => {
+                let context_messages = self.conversation_state.context_messages(None).await;
+                let chat_history = self.conversation_state.get_chat_history();
+                let assistant_messages = chat_history
+                    .iter()
+                    .filter_map(|message| {
+                        if let fig_api_client::model::ChatMessage::AssistantResponseMessage(msg) = message {
+                            Some(msg)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                let user_messages = chat_history
+                    .iter()
+                    .filter_map(|message| {
+                        if let fig_api_client::model::ChatMessage::UserInputMessage(msg) = message {
+                            Some(msg)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                let context_token_count = context_messages
+                    .iter()
+                    .map(|msg| TokenCounter::count_tokens(&msg.0.content))
+                    .sum::<usize>();
+
+                let assistant_token_count = assistant_messages
+                    .iter()
+                    .map(|msg| TokenCounter::count_tokens(&msg.content))
+                    .sum::<usize>();
+
+                let user_token_count = user_messages
+                    .iter()
+                    .map(|msg| TokenCounter::count_tokens(&msg.content))
+                    .sum::<usize>();
+
+                let total_token_used: usize = context_token_count + assistant_token_count + user_token_count;
+
+                let window_width = self.terminal_width();
+                let progress_bar_width = std::cmp::min(window_width, 80); // set a max width for the progress bar for better aesthetic
+
+                let context_width =
+                    ((context_token_count as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
+                let assistant_width =
+                    ((assistant_token_count as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
+                let user_width =
+                    ((user_token_count as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
+
+                let left_over_width = progress_bar_width
+                    - std::cmp::min(context_width + assistant_width + user_width, progress_bar_width);
+
+                queue!(
+                    self.output,
+                    style::Print(format!(
+                        "\nCurrent context window ({} of {}k tokens used)\n",
+                        total_token_used,
+                        CONTEXT_WINDOW_SIZE / 1000
+                    )),
+                    style::SetForegroundColor(Color::DarkCyan),
+                    // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too empty
+                    style::Print("|".repeat(if context_width == 0 && context_token_count > 0 {
+                        1
+                    } else {
+                        0
+                    })),
+                    style::Print("█".repeat(context_width)),
+                    style::SetForegroundColor(Color::Blue),
+                    style::Print("|".repeat(if assistant_width == 0 && assistant_token_count > 0 {
+                        1
+                    } else {
+                        0
+                    })),
+                    style::Print("█".repeat(assistant_width)),
+                    style::SetForegroundColor(Color::Magenta),
+                    style::Print("|".repeat(if user_width == 0 && user_token_count > 0 { 1 } else { 0 })),
+                    style::Print("█".repeat(user_width)),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("█".repeat(left_over_width)),
+                    style::Print(" "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(format!(
+                        "{:.2}%",
+                        (total_token_used as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    )),
+                )?;
+
+                queue!(self.output, style::Print("\n\n"))?;
+                self.output.flush()?;
+
+                queue!(
+                    self.output,
+                    style::SetForegroundColor(Color::DarkCyan),
+                    style::Print("█ Context files: "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(format!(
+                        "~{} tokens ({:.2}%)\n",
+                        context_token_count,
+                        (context_token_count as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    )),
+                    style::SetForegroundColor(Color::Blue),
+                    style::Print("█ Q responses: "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(format!(
+                        "  ~{} tokens ({:.2}%)\n",
+                        assistant_token_count,
+                        (assistant_token_count as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    )),
+                    style::SetForegroundColor(Color::Magenta),
+                    style::Print("█ Your prompts: "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(format!(
+                        " ~{} tokens ({:.2}%)\n\n",
+                        user_token_count,
+                        (user_token_count as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    )),
+                )?;
+
+                queue!(
+                    self.output,
+                    style::SetAttribute(Attribute::Bold),
+                    style::Print("\n💡 Pro Tips:\n"),
+                    style::SetAttribute(Attribute::Reset),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("Run "),
+                    style::SetForegroundColor(Color::DarkGreen),
+                    style::Print("/compact"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(" to replace the conversation history with its summary\n"),
+                    style::Print("Run "),
+                    style::SetForegroundColor(Color::DarkGreen),
+                    style::Print("/clear"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(" to erase the entire chat history\n"),
+                    style::Print("Run "),
+                    style::SetForegroundColor(Color::DarkGreen),
+                    style::Print("/context show"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(" to see tokens per context file\n\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
 
                 ChatState::PromptUser {
                     tool_uses: Some(tool_uses),
@@ -1421,7 +2111,11 @@ where
                 !tool.tool.requires_acceptance(&self.ctx)
             };
 
-            self.print_tool_description(tool, allowed).await?;
+            if self.settings.get_bool_or("chat.enableNotifications", false) {
+                play_notification_bell(!allowed);
+            }
+
+            self.print_tool_descriptions(tool, allowed).await?;
 
             if allowed {
                 tool.accepted = true;
@@ -1442,7 +2136,6 @@ where
         }
 
         // Execute the requested tools.
-        let terminal_width = self.terminal_width();
         let mut tool_results = vec![];
 
         for tool in tool_uses {
@@ -1450,25 +2143,7 @@ where
             tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_accepted = true);
 
             let tool_start = std::time::Instant::now();
-            queue!(
-                self.output,
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(format!("\n{}...\n", tool.tool.display_name_action())),
-                style::SetForegroundColor(Color::DarkGrey),
-                style::Print(format!("{}\n", "▔".repeat(terminal_width))),
-                style::SetForegroundColor(Color::Reset),
-            )?;
             let invoke_result = tool.tool.invoke(&self.ctx, &mut self.output).await;
-
-            // Check if we should exit after tool execution (specifically for the quit command)
-            if let Tool::InternalCommand(_) = &tool.tool {
-                if crate::cli::chat::tools::internal_command::tool::should_exit() {
-                    // Reset the flag for future use
-                    crate::cli::chat::tools::internal_command::tool::reset_exit_flag();
-                    // Return Exit state to terminate the application
-                    return Ok(ChatState::Exit);
-                }
-            }
 
             if self.interactive && self.spinner.is_some() {
                 queue!(
@@ -1482,14 +2157,18 @@ where
 
             let tool_time = std::time::Instant::now().duration_since(tool_start);
             let tool_time = format!("{}.{}", tool_time.as_secs(), tool_time.subsec_millis());
+            const CONTINUATION_LINE: &str = " ⋮ ";
 
             match invoke_result {
                 Ok(result) => {
                     debug!("tool result output: {:#?}", result);
                     execute!(
                         self.output,
+                        style::Print(CONTINUATION_LINE),
+                        style::Print("\n"),
                         style::SetForegroundColor(Color::Green),
-                        style::Print(format!("🟢 Completed in {}s", tool_time)),
+                        style::SetAttribute(Attribute::Bold),
+                        style::Print(format!(" ● Completed in {}s", tool_time)),
                         style::SetForegroundColor(Color::Reset),
                         style::Print("\n"),
                     )?;
@@ -1505,9 +2184,11 @@ where
                     error!(?err, "An error occurred processing the tool");
                     execute!(
                         self.output,
+                        style::Print(CONTINUATION_LINE),
+                        style::Print("\n"),
                         style::SetAttribute(Attribute::Bold),
                         style::SetForegroundColor(Color::Red),
-                        style::Print(format!("🔴 Execution failed after {}s:\n", tool_time)),
+                        style::Print(format!(" ● Execution failed after {}s:\n", tool_time)),
                         style::SetAttribute(Attribute::Reset),
                         style::SetForegroundColor(Color::Red),
                         style::Print(&err),
@@ -1744,7 +2425,8 @@ where
                 }
 
                 if self.interactive && self.settings.get_bool_or("chat.enableNotifications", false) {
-                    play_notification_bell();
+                    // For final responses (no tools suggested), always play the bell
+                    play_notification_bell(tool_uses.is_empty());
                 }
 
                 // Handle citations for non-summarization responses
@@ -1994,25 +2676,32 @@ where
         };
     }
 
-    async fn print_tool_description(&mut self, tool_use: &QueuedTool, trusted: bool) -> Result<(), ChatError> {
-        let terminal_width = self.terminal_width();
+    async fn print_tool_descriptions(&mut self, tool_use: &QueuedTool, trusted: bool) -> Result<(), ChatError> {
+        const TOOL_BULLET: &str = " ● ";
+        const CONTINUATION_LINE: &str = " ⋮ ";
+
         queue!(
             self.output,
-            style::SetForegroundColor(Color::Green),
-            style::Print(format!("[Tool Request{}] ", if trusted { " - Trusted" } else { "" })),
-            style::SetForegroundColor(Color::Cyan),
-            style::Print(format!("{}\n", tool_use.tool.display_name())),
-            style::SetForegroundColor(Color::Reset),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print(format!("{}\n", "▔".repeat(terminal_width))),
-            style::SetForegroundColor(Color::Reset),
+            style::SetForegroundColor(Color::Magenta),
+            style::Print(format!(
+                "🛠️  Using tool: {} {}\n",
+                tool_use.tool.display_name(),
+                if trusted { "(trusted)".dark_green() } else { "".reset() }
+            )),
+            style::SetForegroundColor(Color::Reset)
         )?;
+        queue!(self.output, style::Print(CONTINUATION_LINE))?;
+        queue!(self.output, style::Print("\n"))?;
+        queue!(self.output, style::Print(TOOL_BULLET))?;
+
+        self.output.flush()?;
+
         tool_use
             .tool
             .queue_description(&self.ctx, &mut self.output)
             .await
             .map_err(|e| ChatError::Custom(format!("failed to print tool: {}", e).into()))?;
-        queue!(self.output, style::Print("\n"))?;
+
         Ok(())
     }
 
@@ -2236,14 +2925,7 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
 
 /// Returns all tools supported by Q chat.
 pub fn load_tools() -> Result<HashMap<String, ToolSpec>> {
-    // Load the base tools from the static file
-    let mut tools: HashMap<String, ToolSpec> = serde_json::from_str(include_str!("tools/tool_index.json"))?;
-
-    // Add the internal_command tool dynamically
-    let internal_command_spec = tools::internal_command::get_tool_spec();
-    tools.insert("internal_command".to_string(), internal_command_spec);
-
-    Ok(tools)
+    Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
 }
 
 #[cfg(test)]

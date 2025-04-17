@@ -114,6 +114,7 @@ impl ExecuteBash {
             updates,
             style::SetForegroundColor(Color::Green),
             style::Print(&self.command),
+            style::Print("\n\n"),
             style::ResetColor
         )?)
     }

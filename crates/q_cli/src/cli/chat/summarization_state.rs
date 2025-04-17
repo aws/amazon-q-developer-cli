@@ -2,17 +2,20 @@ use std::collections::VecDeque;
 
 use fig_api_client::model::ChatMessage;
 
+use crate::util::token_counter::TokenCounter;
+
 /// Character count warning levels for conversation size
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenWarningLevel {
     /// No warning, conversation is within normal limits
     None,
-    /// Critical level - at single warning threshold (500K characters)
+    /// Critical level - at single warning threshold (600K characters)
     Critical,
 }
 
 /// Constants for character-based warning threshold
-pub const MAX_CHARS: usize = 500000; // Character-based warning threshold
+pub const CONTEXT_WINDOW_SIZE: usize = 200_000; // tokens
+pub const MAX_CHARS: usize = TokenCounter::token_to_chars(CONTEXT_WINDOW_SIZE); // Character-based warning threshold
 
 /// State for tracking summarization process
 #[derive(Debug, Clone)]

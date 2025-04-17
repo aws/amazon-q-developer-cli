@@ -6,8 +6,8 @@ use fig_os_shim::Context;
 
 use crate::cli::chat::commands::{
     ClearCommand,
-    CompactCommand,
     CommandHandler,
+    CompactCommand,
     ContextCommand,
     HelpCommand,
     QuitCommand,

@@ -67,6 +67,7 @@ pub const COMMANDS: &[&str] = &[
     "/compact",
     "/compact help",
     "/compact --summary",
+    "/usage",
 ];
 
 pub fn generate_prompt(current_profile: Option<&str>, warning: bool) -> String {

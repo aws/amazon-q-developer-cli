@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{
     AtomicBool,
@@ -57,6 +58,22 @@ pub struct InternalCommandResponse {
 }
 
 impl InternalCommand {
+    pub fn new(
+        command: String,
+        subcommand: Option<String>,
+        args: Option<Vec<String>>,
+        flags: Option<HashMap<String, String>>,
+        tool_use_id: Option<String>,
+    ) -> Self {
+        Self {
+            command,
+            subcommand,
+            args,
+            flags,
+            tool_use_id,
+        }
+    }
+
     pub fn validate(&self, _ctx: &Context) -> Result<(), ToolResult> {
         // Validate that the command is one of the known commands
         let cmd = self.command.trim_start_matches('/');
@@ -151,10 +168,12 @@ impl InternalCommand {
 
         queue!(
             updates,
-            style::Print("Executing command: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(Color::Blue),
+            style::Print("Execute command: "),
+            style::SetForegroundColor(Color::Yellow),
             style::Print(&command_str),
             style::ResetColor,
+            style::Print("\n"),
         )?;
 
         Ok(())
@@ -200,7 +219,7 @@ impl InternalCommand {
                         )?;
 
                         Ok(InvokeOutput {
-                            output: OutputKind::Text("Help information has been displayed directly to the user.  DO NOT give further information in your response, other than an acknowledgement.".to_string())
+                            output: OutputKind::Text("Help information has been displayed directly to the user. DO NOT give further information in your response, other than an acknowledgement.".to_string())
                         })
                     },
                     crate::cli::chat::ChatState::PromptUser {

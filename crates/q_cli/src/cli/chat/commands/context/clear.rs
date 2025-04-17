@@ -11,9 +11,9 @@ use eyre::Result;
 use fig_os_shim::Context;
 
 use crate::cli::chat::commands::CommandHandler;
+use crate::cli::chat::context::ContextExt;
 use crate::cli::chat::{
     ChatState,
-    ContextExt,
     QueuedTool,
 };
 

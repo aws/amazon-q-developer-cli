@@ -854,3 +854,12 @@ mod tests {
         Ok(())
     }
 }
+
+/// Extension trait for Context to provide access to conversation state and stdout
+pub trait ContextExt {
+    /// Get the conversation state from the context
+    fn get_conversation_state(&self) -> Result<&mut crate::cli::chat::conversation_state::ConversationState>;
+
+    /// Get stdout for writing output
+    fn stdout(&self) -> Box<dyn Write>;
+}

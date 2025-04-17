@@ -17,6 +17,7 @@ pub use remove::RemoveContextCommand;
 pub use show::ShowContextCommand;
 
 use crate::cli::chat::commands::CommandHandler;
+use crate::cli::chat::context::ContextExt;
 use crate::cli::chat::{
     ChatState,
     QueuedTool,
