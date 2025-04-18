@@ -23,6 +23,7 @@ use super::hooks::{
     Hook,
     HookExecutor,
 };
+use crate::cli::chat::conversation_state::ConversationState;
 
 pub const AMAZONQ_FILENAME: &str = "AmazonQ.md";
 
@@ -856,13 +857,23 @@ mod tests {
 }
 
 /// Extension trait for Context to provide access to conversation state and stdout
-// TODO: This trait is currently unused. Consider removing it or merging with the implementation
-// in context_adapter.rs as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
-#[allow(dead_code)]
 pub trait ContextExt {
-    /// Get the conversation state from the context
-    fn get_conversation_state(&self) -> Result<&mut crate::cli::chat::conversation_state::ConversationState>;
+    /// Get a writer for stdout that implements Send
+    fn stdout(&self) -> Box<dyn Write + Send>;
 
-    /// Get stdout for writing output
-    fn stdout(&self) -> Box<dyn Write>;
+    /// Get the current conversation state
+    fn get_conversation_state(&self) -> Result<&mut ConversationState>;
+}
+
+impl ContextExt for Context {
+    fn stdout(&self) -> Box<dyn Write + Send> {
+        // Return a thread-safe stdout wrapper
+        Box::new(std::io::stdout())
+    }
+
+    fn get_conversation_state(&self) -> Result<&mut ConversationState> {
+        // This is a placeholder implementation
+        // In the real implementation, we would get the conversation state from the context
+        Err(eyre::eyre!("ConversationState not available in this context"))
+    }
 }
