@@ -10,6 +10,7 @@ use crate::cli::chat::commands::{
     CompactCommand,
     ContextCommand,
     HelpCommand,
+    ProfileCommand,
     QuitCommand,
 };
 use crate::cli::chat::{
@@ -39,8 +40,10 @@ impl CommandRegistry {
         // Register context command and its subcommands
         registry.register("context", Box::new(ContextCommand::new()));
 
+        // Register profile command and its subcommands
+        registry.register("profile", Box::new(ProfileCommand::new()));
+
         // We'll need to update these once we implement the modules
-        // registry.register("profile", Box::new(ProfileCommand::new()));
         // registry.register("tools", Box::new(ToolsCommand::new()));
 
         registry
@@ -89,7 +92,6 @@ impl CommandRegistry {
     }
 
     /// Generate structured command information for LLM reference
-    #[allow(dead_code)]
     pub fn generate_llm_descriptions(&self) -> serde_json::Value {
         let mut commands = serde_json::Map::new();
 

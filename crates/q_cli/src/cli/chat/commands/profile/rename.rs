@@ -1,15 +1,21 @@
+use std::future::Future;
 use std::io::Write;
+use std::pin::Pin;
 
-use crossterm::{
-    queue,
-    style::{self, Color},
+use crossterm::queue;
+use crossterm::style::{
+    self,
+    Color,
 };
-use eyre::{Result, eyre};
+use eyre::Result;
 use fig_os_shim::Context;
 
 use crate::cli::chat::commands::CommandHandler;
-use crate::cli::chat::ChatState;
-use crate::cli::chat::QueuedTool;
+use crate::cli::chat::context::ContextExt;
+use crate::cli::chat::{
+    ChatState,
+    QueuedTool,
+};
 
 /// Handler for the profile rename command
 pub struct RenameProfileCommand {
@@ -30,79 +36,100 @@ impl CommandHandler for RenameProfileCommand {
     fn name(&self) -> &'static str {
         "rename"
     }
-    
+
     fn description(&self) -> &'static str {
         "Rename a profile"
     }
-    
+
     fn usage(&self) -> &'static str {
-        "/profile rename <old_profile_name> <new_profile_name>"
+        "/profile rename <old-name> <new-name>"
     }
-    
+
     fn help(&self) -> String {
-        "Rename a profile from <old_profile_name> to <new_profile_name>.".to_string()
+        "Rename a profile from <old-name> to <new-name>. You cannot rename the default profile.".to_string()
     }
-    
-    fn execute(
-        &self, 
-        _args: Vec<&str>, 
-        ctx: &Context,
+
+    fn execute<'a>(
+        &'a self,
+        _args: Vec<&'a str>,
+        ctx: &'a Context,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
-    ) -> Result<ChatState> {
-        // Check if names are provided
-        if self.old_name.is_empty() || self.new_name.is_empty() {
-            return Err(eyre!("Profile names cannot be empty. Usage: {}", self.usage()));
-        }
-        
-        // Get the conversation state from the context
-        let mut stdout = ctx.stdout();
-        let conversation_state = ctx.get_conversation_state()?;
-        
-        // Get the context manager
-        let Some(context_manager) = &mut conversation_state.context_manager else {
-            queue!(
-                stdout,
-                style::SetForegroundColor(Color::Red),
-                style::Print("Error: Context manager not initialized\n"),
-                style::ResetColor
-            )?;
-            stdout.flush()?;
-            return Ok(ChatState::PromptUser {
-                tool_uses,
-                pending_tool_index,
-                skip_printing_tools: true,
-            });
-        };
-        
-        // Rename the profile
-        match context_manager.rename_profile(&self.old_name, &self.new_name).await {
-            Ok(_) => {
-                // Success message
-                queue!(
-                    stdout,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format!("Renamed profile '{}' to '{}'\n", self.old_name, self.new_name)),
-                    style::ResetColor
-                )?;
-                stdout.flush()?;
-            },
-            Err(e) => {
-                // Error message
+    ) -> Pin<Box<dyn Future<Output = Result<ChatState>> + Send + 'a>> {
+        Box::pin(async move {
+            // Get the conversation state from the context
+            let mut stdout = ctx.stdout();
+            let conversation_state = ctx.get_conversation_state()?;
+
+            // Get the context manager
+            let Some(context_manager) = &mut conversation_state.context_manager else {
                 queue!(
                     stdout,
                     style::SetForegroundColor(Color::Red),
-                    style::Print(format!("Error: {}\n", e)),
+                    style::Print("Error: Context manager not initialized\n"),
                     style::ResetColor
                 )?;
                 stdout.flush()?;
+                return Ok(ChatState::PromptUser {
+                    tool_uses,
+                    pending_tool_index,
+                    skip_printing_tools: true,
+                });
+            };
+
+            // Rename the profile
+            match context_manager.rename_profile(&self.old_name, &self.new_name).await {
+                Ok(_) => {
+                    // Success message
+                    queue!(
+                        stdout,
+                        style::SetForegroundColor(Color::Green),
+                        style::Print(format!("\nRenamed profile: {} -> {}\n\n", self.old_name, self.new_name)),
+                        style::ResetColor
+                    )?;
+                },
+                Err(e) => {
+                    // Error message
+                    queue!(
+                        stdout,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("\nError renaming profile: {}\n\n", e)),
+                        style::ResetColor
+                    )?;
+                },
             }
-        }
-        
-        Ok(ChatState::PromptUser {
-            tool_uses,
-            pending_tool_index,
-            skip_printing_tools: true,
+
+            stdout.flush()?;
+
+            Ok(ChatState::PromptUser {
+                tool_uses,
+                pending_tool_index,
+                skip_printing_tools: true,
+            })
         })
+    }
+
+    fn requires_confirmation(&self, _args: &[&str]) -> bool {
+        false // Rename command doesn't require confirmation
+    }
+
+    fn parse_args<'a>(&self, args: Vec<&'a str>) -> Result<Vec<&'a str>> {
+        Ok(args)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::chat::commands::test_utils::create_test_context;
+
+    #[tokio::test]
+    async fn test_rename_profile_command() {
+        let command = RenameProfileCommand::new("old", "new");
+        assert_eq!(command.name(), "rename");
+        assert_eq!(command.description(), "Rename a profile");
+        assert_eq!(command.usage(), "/profile rename <old-name> <new-name>");
+
+        // Note: Full testing would require mocking the context manager
     }
 }

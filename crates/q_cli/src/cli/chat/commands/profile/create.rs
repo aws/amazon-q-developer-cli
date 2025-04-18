@@ -1,15 +1,21 @@
+use std::future::Future;
 use std::io::Write;
+use std::pin::Pin;
 
-use crossterm::{
-    queue,
-    style::{self, Color},
+use crossterm::queue;
+use crossterm::style::{
+    self,
+    Color,
 };
-use eyre::{Result, eyre};
+use eyre::Result;
 use fig_os_shim::Context;
 
 use crate::cli::chat::commands::CommandHandler;
-use crate::cli::chat::ChatState;
-use crate::cli::chat::QueuedTool;
+use crate::cli::chat::context::ContextExt;
+use crate::cli::chat::{
+    ChatState,
+    QueuedTool,
+};
 
 /// Handler for the profile create command
 pub struct CreateProfileCommand {
@@ -18,9 +24,7 @@ pub struct CreateProfileCommand {
 
 impl CreateProfileCommand {
     pub fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-        }
+        Self { name: name.to_string() }
     }
 }
 
@@ -28,79 +32,117 @@ impl CommandHandler for CreateProfileCommand {
     fn name(&self) -> &'static str {
         "create"
     }
-    
+
     fn description(&self) -> &'static str {
-        "Create a new profile with the specified name"
+        "Create a new profile"
     }
-    
+
     fn usage(&self) -> &'static str {
-        "/profile create <profile_name>"
+        "/profile create <name>"
     }
-    
+
     fn help(&self) -> String {
-        "Create a new profile with the specified name. Profiles allow you to organize and manage different sets of context files for different projects or tasks.".to_string()
+        "Create a new profile with the specified name. Profile names can only contain alphanumeric characters, hyphens, and underscores.".to_string()
     }
-    
-    fn execute(
-        &self, 
-        _args: Vec<&str>, 
-        ctx: &Context,
+
+    fn execute<'a>(
+        &'a self,
+        _args: Vec<&'a str>,
+        ctx: &'a Context,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
-    ) -> Result<ChatState> {
-        // Check if name is provided
-        if self.name.is_empty() {
-            return Err(eyre!("Profile name cannot be empty. Usage: {}", self.usage()));
-        }
-        
-        // Get the conversation state from the context
-        let mut stdout = ctx.stdout();
-        let conversation_state = ctx.get_conversation_state()?;
-        
-        // Get the context manager
-        let Some(context_manager) = &conversation_state.context_manager else {
-            queue!(
-                stdout,
-                style::SetForegroundColor(Color::Red),
-                style::Print("Error: Context manager not initialized\n"),
-                style::ResetColor
-            )?;
-            stdout.flush()?;
-            return Ok(ChatState::PromptUser {
-                tool_uses,
-                pending_tool_index,
-                skip_printing_tools: true,
-            });
-        };
-        
-        // Create the profile
-        match context_manager.create_profile(&self.name).await {
-            Ok(_) => {
-                // Success message
-                queue!(
-                    stdout,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format!("Profile '{}' created successfully\n", self.name)),
-                    style::ResetColor
-                )?;
-                stdout.flush()?;
-            },
-            Err(e) => {
-                // Error message
+    ) -> Pin<Box<dyn Future<Output = Result<ChatState>> + Send + 'a>> {
+        Box::pin(async move {
+            // Get the conversation state from the context
+            let mut stdout = ctx.stdout();
+            let conversation_state = ctx.get_conversation_state()?;
+
+            // Get the context manager
+            let Some(context_manager) = &mut conversation_state.context_manager else {
                 queue!(
                     stdout,
                     style::SetForegroundColor(Color::Red),
-                    style::Print(format!("Error: {}\n", e)),
+                    style::Print("Error: Context manager not initialized\n"),
                     style::ResetColor
                 )?;
                 stdout.flush()?;
+                return Ok(ChatState::PromptUser {
+                    tool_uses,
+                    pending_tool_index,
+                    skip_printing_tools: true,
+                });
+            };
+
+            // Create the profile
+            match context_manager.create_profile(&self.name).await {
+                Ok(_) => {
+                    // Success message
+                    queue!(
+                        stdout,
+                        style::SetForegroundColor(Color::Green),
+                        style::Print(format!("\nCreated profile: {}\n\n", self.name)),
+                        style::ResetColor
+                    )?;
+
+                    // Switch to the newly created profile
+                    if let Err(e) = context_manager.switch_profile(&self.name).await {
+                        queue!(
+                            stdout,
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print(format!("Warning: Failed to switch to the new profile: {}\n\n", e)),
+                            style::ResetColor
+                        )?;
+                    } else {
+                        queue!(
+                            stdout,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(format!("Switched to profile: {}\n\n", self.name)),
+                            style::ResetColor
+                        )?;
+                    }
+                },
+                Err(e) => {
+                    // Error message
+                    queue!(
+                        stdout,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("\nError creating profile: {}\n\n", e)),
+                        style::ResetColor
+                    )?;
+                },
             }
-        }
-        
-        Ok(ChatState::PromptUser {
-            tool_uses,
-            pending_tool_index,
-            skip_printing_tools: true,
+
+            stdout.flush()?;
+
+            Ok(ChatState::PromptUser {
+                tool_uses,
+                pending_tool_index,
+                skip_printing_tools: true,
+            })
         })
+    }
+
+    fn requires_confirmation(&self, _args: &[&str]) -> bool {
+        false // Create command doesn't require confirmation
+    }
+
+    fn parse_args<'a>(&self, args: Vec<&'a str>) -> Result<Vec<&'a str>> {
+        Ok(args)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::chat::commands::test_utils::create_test_context;
+
+    #[tokio::test]
+    async fn test_create_profile_command() {
+        let command = CreateProfileCommand::new("test");
+        assert_eq!(command.name(), "create");
+        assert_eq!(command.description(), "Create a new profile");
+        assert_eq!(command.usage(), "/profile create <name>");
+
+        // Note: Full testing would require mocking the context manager
     }
 }
