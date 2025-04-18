@@ -1,4 +1,8 @@
 use aws_smithy_types::Document;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -284,7 +288,7 @@ impl From<ToolResultContentBlock> for amzn_qdeveloper_streaming_client::types::T
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolResultStatus {
     Error,
     Success,
@@ -497,7 +501,7 @@ impl From<amzn_qdeveloper_streaming_client::types::ChatResponseStream> for ChatR
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EnvState {
     pub operating_system: Option<String>,
     pub current_working_directory: Option<String>,
@@ -534,7 +538,7 @@ impl From<EnvState> for amzn_qdeveloper_streaming_client::types::EnvState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvironmentVariable {
     pub key: String,
     pub value: String,
@@ -598,9 +602,10 @@ impl From<ShellHistoryEntry> for amzn_qdeveloper_streaming_client::types::ShellH
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellState {
     pub shell_name: String,
+    #[serde(skip)]
     pub shell_history: Option<Vec<ShellHistoryEntry>>,
 }
 

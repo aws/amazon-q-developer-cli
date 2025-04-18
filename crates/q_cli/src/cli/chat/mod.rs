@@ -4,6 +4,7 @@ mod context;
 mod conversation_state;
 mod hooks;
 mod input_source;
+mod message;
 mod parse;
 mod parser;
 mod prompt;
@@ -48,6 +49,7 @@ use crossterm::style::{
     Color,
     Stylize,
 };
+use crossterm::terminal::ClearType;
 use crossterm::{
     cursor,
     execute,
@@ -55,6 +57,7 @@ use crossterm::{
     style,
     terminal,
 };
+use dialoguer::console::strip_ansi_codes;
 use eyre::{
     ErrReport,
     Result,
@@ -63,19 +66,25 @@ use eyre::{
 use fig_api_client::StreamingClient;
 use fig_api_client::clients::SendMessageOutput;
 use fig_api_client::model::{
-    AssistantResponseMessage,
     ChatResponseStream,
     Tool as FigTool,
-    ToolResult,
-    ToolResultContentBlock,
     ToolResultStatus,
 };
 use fig_os_shim::Context;
-use fig_settings::Settings;
+use fig_settings::{
+    Settings,
+    State,
+};
 use fig_util::CLI_BINARY_NAME;
 use hooks::{
     Hook,
     HookTrigger,
+};
+use message::{
+    AssistantMessage,
+    AssistantToolUse,
+    ToolUseResult,
+    ToolUseResultBlock,
 };
 use shared_writer::SharedWriter;
 
@@ -112,7 +121,6 @@ use input_source::InputSource;
 use parser::{
     RecvErrorKind,
     ResponseParser,
-    ToolUse,
 };
 use regex::Regex;
 use serde_json::Map;
@@ -155,27 +163,45 @@ use crate::util::spinner::play_notification_bell;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
-<em>Hi, I'm <magenta,em>Amazon Q</magenta,em>. Ask me anything.</em>
-
-<cyan!>Things to try</cyan!>
-• Fix the build failures in this project.
-• List my s3 buckets in us-west-2.
-• Write unit tests for my application.
-• Help me understand my git status.
-
-<em>/tools</em>        <black!>View and manage tools and permissions</black!>
-<em>/issue</em>        <black!>Report an issue or make a feature request</black!>
-<em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
-<em>/context</em>      <black!>(Beta) Manage context files and hooks for a profile</black!>
-<em>/compact</em>      <black!>Summarize the conversation to free up context space</black!>
-<em>/help</em>         <black!>Show the help dialogue</black!>
-<em>/quit</em>         <black!>Quit the application</black!>
-
-<cyan!>Use Ctrl(^) + j to provide multi-line prompts.</cyan!>
-<cyan!>Use Ctrl(^) + k to fuzzily search commands and context.</cyan!>
-
+<em>Welcome to </em>
+<cyan!>
+ █████╗ ███╗   ███╗ █████╗ ███████╗ ██████╗ ███╗   ██╗     ██████╗ 
+██╔══██╗████╗ ████║██╔══██╗╚══███╔╝██╔═══██╗████╗  ██║    ██╔═══██╗
+███████║██╔████╔██║███████║  ███╔╝ ██║   ██║██╔██╗ ██║    ██║   ██║
+██╔══██║██║╚██╔╝██║██╔══██║ ███╔╝  ██║   ██║██║╚██╗██║    ██║▄▄ ██║
+██║  ██║██║ ╚═╝ ██║██║  ██║███████╗╚██████╔╝██║ ╚████║    ╚██████╔╝
+╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═══╝     ╚══▀▀═╝ 
+</cyan!>                                                        
 "};
 
+const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
+<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>
+"};
+
+const ROTATING_TIPS: [&str; 7] = [
+    color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
+    color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
+    color_print::cstr! {"Q can use tools without asking for confirmation every time. Give <green!>/tools trust</green!> a try"},
+    color_print::cstr! {"You can programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks help</green!>"},
+    color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation history with its summary to free up the context space"},
+    color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
+    color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
+];
+
+const GREETING_BREAK_POINT: usize = 67;
+
+const POPULAR_SHORTCUTS: &str = color_print::cstr! {"
+<black!>
+<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + k</green!> fuzzy search
+</black!>"};
+
+const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"
+<black!>
+<green!>/help</green!> all commands
+<green!>ctrl + j</green!> new lines
+<green!>ctrl + k</green!> fuzzy search
+</black!>
+"};
 const HELP_TEXT: &str = color_print::cstr! {"
 
 <magenta,em>q</magenta,em> (Amazon Q Chat)
@@ -314,6 +340,7 @@ pub async fn chat(
     let mut chat = ChatContext::new(
         ctx,
         Settings::new(),
+        State::new(),
         output,
         input,
         InputSource::new()?,
@@ -366,6 +393,8 @@ pub enum ChatError {
 pub struct ChatContext {
     ctx: Arc<Context>,
     settings: Settings,
+    /// The [State] to use for the chat context.
+    state: State,
     /// The [Write] destination for printing conversation text.
     output: SharedWriter,
     initial_input: Option<String>,
@@ -393,6 +422,7 @@ impl ChatContext {
     pub async fn new(
         ctx: Arc<Context>,
         settings: Settings,
+        state: State,
         output: SharedWriter,
         input: Option<String>,
         input_source: InputSource,
@@ -408,6 +438,7 @@ impl ChatContext {
         Ok(Self {
             ctx,
             settings,
+            state,
             output,
             initial_input: input,
             input_source,
@@ -468,7 +499,7 @@ enum ChatState {
         pending_tool_index: Option<usize>,
     },
     /// Validate the list of tool uses provided by the model.
-    ValidateTools(Vec<ToolUse>),
+    ValidateTools(Vec<AssistantToolUse>),
     /// Execute the list of tools.
     ExecuteTools(Vec<QueuedTool>),
     /// Consume the response stream and display to the user.
@@ -550,10 +581,134 @@ impl ChatContext {
         Ok(content.trim().to_string())
     }
 
-    async fn try_chat(&mut self) -> Result<()> {
-        if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
-            execute!(self.output, style::Print(WELCOME_TEXT))?;
+    fn draw_tip_box(&mut self, text: &str) -> Result<()> {
+        let box_width = GREETING_BREAK_POINT;
+        let inner_width = box_width - 4; // account for │ and padding
+
+        // wrap the single line into multiple lines respecting inner width
+        // Manually wrap the text by splitting at word boundaries
+        let mut wrapped_lines = Vec::new();
+        let mut line = String::new();
+
+        for word in text.split_whitespace() {
+            if line.len() + word.len() < inner_width {
+                if !line.is_empty() {
+                    line.push(' ');
+                }
+                line.push_str(word);
+            } else {
+                wrapped_lines.push(line);
+                line = word.to_string();
+            }
         }
+
+        if !line.is_empty() {
+            wrapped_lines.push(line);
+        }
+
+        // ───── Did you know? ─────
+        let label = " Did you know? ";
+        let side_len = (box_width.saturating_sub(label.len())) / 2;
+        let top_border = format!(
+            "╭{}{}{}╮",
+            "─".repeat(side_len - 1),
+            label,
+            "─".repeat(box_width - side_len - label.len() - 1)
+        );
+
+        // Build output
+        execute!(
+            self.output,
+            terminal::Clear(ClearType::CurrentLine),
+            cursor::MoveToColumn(0),
+            style::Print(format!("{top_border}\n")),
+        )?;
+
+        // Top vertical padding
+        execute!(
+            self.output,
+            style::Print(format!("│{: <width$}│\n", "", width = box_width - 2))
+        )?;
+
+        // Centered wrapped content
+        for line in wrapped_lines {
+            let visible_line_len = strip_ansi_codes(&line).len();
+            let left_pad = (box_width - 4 - visible_line_len) / 2;
+
+            let content = format!(
+                "│ {: <pad$}{}{: <rem$} │",
+                "",
+                line,
+                "",
+                pad = left_pad,
+                rem = box_width - 4 - left_pad - visible_line_len
+            );
+            execute!(self.output, style::Print(format!("{}\n", content)))?;
+        }
+
+        // Bottom vertical padding
+        execute!(
+            self.output,
+            style::Print(format!("│{: <width$}│\n", "", width = box_width - 2))
+        )?;
+
+        // Bottom rounded corner line: ╰────────────╯
+        let bottom = format!("╰{}╯", "─".repeat(box_width - 2));
+        execute!(self.output, style::Print(format!("{}\n", bottom)))?;
+
+        Ok(())
+    }
+
+    async fn try_chat(&mut self) -> Result<()> {
+        let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
+        if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
+            execute!(
+                self.output,
+                style::Print(if is_small_screen {
+                    SMALL_SCREEN_WECLOME_TEXT
+                } else {
+                    WELCOME_TEXT
+                }),
+                style::Print("\n\n"),
+            )?;
+
+            let current_tip_index =
+                (self.state.get_int_or("chat.greeting.rotating_tips_current_index", 0) as usize) % ROTATING_TIPS.len();
+
+            let tip = ROTATING_TIPS[current_tip_index];
+            if is_small_screen {
+                // If the screen is small, print the tip in a single line
+                execute!(
+                    self.output,
+                    style::Print("💡 ".to_string()),
+                    style::Print(tip),
+                    style::Print("\n")
+                )?;
+            } else {
+                self.draw_tip_box(tip)?;
+            }
+
+            // update the current tip index
+            let next_tip_index = (current_tip_index + 1) % ROTATING_TIPS.len();
+            self.state
+                .set_value("chat.greeting.rotating_tips_current_index", next_tip_index)?;
+        }
+
+        execute!(
+            self.output,
+            style::Print(if is_small_screen {
+                SMALL_SCREEN_POPULAR_SHORTCUTS
+            } else {
+                POPULAR_SHORTCUTS
+            }),
+            style::Print(
+                "━"
+                    .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
+                    .dark_grey()
+            )
+        )?;
+        execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+        self.output.flush()?;
 
         let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
 
@@ -711,12 +866,10 @@ impl ChatContext {
                                 );
                                 let _ = self.conversation_state.as_sendable_conversation_state().await;
                                 self.conversation_state
-                                    .push_assistant_message(AssistantResponseMessage {
-                                        message_id: None,
-                                        content: "Tool uses were interrupted, waiting for the next user prompt"
-                                            .to_string(),
-                                        tool_uses: None,
-                                    });
+                                    .push_assistant_message(AssistantMessage::new_response(
+                                        None,
+                                        "Tool uses were interrupted, waiting for the next user prompt".to_string(),
+                                    ));
                             },
                             _ => (),
                         }
@@ -837,7 +990,7 @@ impl ChatContext {
             loop {
                 match parser.recv().await {
                     Ok(parser::ResponseEvent::EndStream { message }) => {
-                        break message.content;
+                        break message.content().to_string();
                     },
                     Ok(_) => (),
                     Err(err) => {
@@ -937,7 +1090,7 @@ impl ChatContext {
         }
 
         // If a next message is set, then retry the request.
-        if self.conversation_state.next_message.is_some() {
+        if self.conversation_state.next_user_message().is_some() {
             Ok(ChatState::HandleResponseStream(
                 self.client
                     .send_message(self.conversation_state.as_sendable_conversation_state().await)
@@ -1361,8 +1514,8 @@ impl ChatContext {
                                 style::Print("\n🌍 global:\n"),
                                 style::SetAttribute(Attribute::Reset),
                             )?;
-                            let mut global_context_files = Vec::new();
-                            let mut profile_context_files = Vec::new();
+                            let mut global_context_files = HashSet::new();
+                            let mut profile_context_files = HashSet::new();
                             if context_manager.global_config.paths.is_empty() {
                                 execute!(
                                     self.output,
@@ -2207,7 +2360,7 @@ impl ChatContext {
                     )?;
 
                     tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
-                    tool_results.push(ToolResult {
+                    tool_results.push(ToolUseResult {
                         tool_use_id: tool.id,
                         content: vec![result.into()],
                         status: ToolResultStatus::Success,
@@ -2230,9 +2383,9 @@ impl ChatContext {
                     )?;
 
                     tool_telemetry.and_modify(|ev| ev.is_success = Some(false));
-                    tool_results.push(ToolResult {
+                    tool_results.push(ToolUseResult {
                         tool_use_id: tool.id,
-                        content: vec![ToolResultContentBlock::Text(format!(
+                        content: vec![ToolUseResultBlock::Text(format!(
                             "An error occurred processing the tool: \n{}",
                             &err
                         ))],
@@ -2300,10 +2453,10 @@ impl ChatContext {
                         parser::ResponseEvent::EndStream { message } => {
                             // This log is attempting to help debug instances where users encounter
                             // the response timeout message.
-                            if message.content == RESPONSE_TIMEOUT_CONTENT {
+                            if message.content() == RESPONSE_TIMEOUT_CONTENT {
                                 error!(?request_id, ?message, "Encountered an unexpected model response");
                             }
-                            self.conversation_state.push_assistant_message(message);
+                            self.conversation_state.push_assistant_message(message.into());
                             ended = true;
                         },
                     }
@@ -2329,11 +2482,10 @@ impl ChatContext {
                             // For stream timeouts, we'll tell the model to try and split its response into
                             // smaller chunks.
                             self.conversation_state
-                                .push_assistant_message(AssistantResponseMessage {
-                                    message_id: None,
-                                    content: RESPONSE_TIMEOUT_CONTENT.to_string(),
-                                    tool_uses: None,
-                                });
+                                .push_assistant_message(AssistantMessage::new_response(
+                                    None,
+                                    RESPONSE_TIMEOUT_CONTENT.to_string(),
+                                ));
                             self.conversation_state
                                 .set_next_user_message(
                                     "You took too long to respond - try to split up the work into smaller steps."
@@ -2365,9 +2517,9 @@ impl ChatContext {
                             }
 
                             self.conversation_state.push_assistant_message(*message);
-                            let tool_results = vec![ToolResult {
+                            let tool_results = vec![ToolUseResult {
                                     tool_use_id,
-                                    content: vec![ToolResultContentBlock::Text(
+                                    content: vec![ToolUseResultBlock::Text(
                                         "The generated tool was too large, try again but this time split up the work between multiple tool uses".to_string(),
                                     )],
                                     status: ToolResultStatus::Error,
@@ -2482,11 +2634,11 @@ impl ChatContext {
         }
     }
 
-    async fn validate_tools(&mut self, tool_uses: Vec<ToolUse>) -> Result<ChatState, ChatError> {
+    async fn validate_tools(&mut self, tool_uses: Vec<AssistantToolUse>) -> Result<ChatState, ChatError> {
         let conv_id = self.conversation_state.conversation_id().to_owned();
         debug!(?tool_uses, "Validating tool uses");
         let mut queued_tools: Vec<QueuedTool> = Vec::new();
-        let mut tool_results: Vec<ToolResult> = Vec::new();
+        let mut tool_results: Vec<ToolUseResult> = Vec::new();
 
         for tool_use in tool_uses {
             let tool_use_id = tool_use.id.clone();
@@ -2512,9 +2664,9 @@ impl ChatContext {
                         },
                         Err(err) => {
                             tool_telemetry.is_valid = Some(false);
-                            tool_results.push(ToolResult {
+                            tool_results.push(ToolUseResult {
                                 tool_use_id: tool_use_id.clone(),
-                                content: vec![ToolResultContentBlock::Text(format!(
+                                content: vec![ToolUseResultBlock::Text(format!(
                                     "Failed to validate tool parameters: {err}"
                                 ))],
                                 status: ToolResultStatus::Error,
@@ -2541,9 +2693,12 @@ impl ChatContext {
             )?;
             for tool_result in &tool_results {
                 for block in &tool_result.content {
-                    let content = match block {
-                        ToolResultContentBlock::Text(t) => Some(t.as_str()),
-                        ToolResultContentBlock::Json(d) => d.as_string(),
+                    let content: Option<Cow<'_, str>> = match block {
+                        ToolUseResultBlock::Text(t) => Some(t.as_str().into()),
+                        ToolUseResultBlock::Json(d) => serde_json::to_string(d)
+                            .map_err(|err| error!(?err, "failed to serialize tool result content"))
+                            .map(Into::into)
+                            .ok(),
                     };
                     if let Some(content) = content {
                         queue!(
@@ -2887,6 +3042,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
+            State::new_fake(),
             SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -3010,6 +3166,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
+            State::new_fake(),
             SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -3108,6 +3265,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
+            State::new_fake(),
             SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -3178,6 +3336,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
+            State::new_fake(),
             SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![

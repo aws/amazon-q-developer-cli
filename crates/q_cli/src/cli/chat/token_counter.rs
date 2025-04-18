@@ -1,15 +1,15 @@
 use std::ops::Deref;
 
-use aws_smithy_types::Document;
-use fig_api_client::model::{
-    AssistantResponseMessage,
-    ToolResultContentBlock,
-    UserInputMessage,
-};
-
 use super::conversation_state::{
     BackendConversationState,
     ConversationSize,
+};
+use super::message::{
+    AssistantMessage,
+    ToolUseResult,
+    ToolUseResultBlock,
+    UserMessage,
+    UserMessageContent,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -115,39 +115,37 @@ impl CharCounter for ConversationSize {
     }
 }
 
-impl CharCounter for UserInputMessage {
+impl CharCounter for UserMessage {
     fn char_count(&self) -> CharCount {
         let mut total_chars = 0;
-        total_chars += self.content.len();
-        if let Some(ctx) = &self.user_input_message_context {
-            // Add tool result characters if any
-            if let Some(results) = &ctx.tool_results {
-                for result in results {
-                    for content in &result.content {
-                        match content {
-                            ToolResultContentBlock::Text(text) => {
-                                total_chars += text.len();
-                            },
-                            ToolResultContentBlock::Json(doc) => {
-                                total_chars += calculate_document_char_count(doc);
-                            },
-                        }
-                    }
-                }
-            }
+        total_chars += self.additional_context().len();
+        match self.content() {
+            UserMessageContent::Prompt { prompt } => {
+                total_chars += prompt.len();
+            },
+            UserMessageContent::CancelledToolUses {
+                prompt,
+                tool_use_results,
+            } => {
+                total_chars += prompt.as_ref().map_or(0, String::len);
+                total_chars += tool_use_results.as_slice().char_count().0;
+            },
+            UserMessageContent::ToolUseResults { tool_use_results } => {
+                total_chars += tool_use_results.as_slice().char_count().0;
+            },
         }
         total_chars.into()
     }
 }
 
-impl CharCounter for AssistantResponseMessage {
+impl CharCounter for AssistantMessage {
     fn char_count(&self) -> CharCount {
         let mut total_chars = 0;
-        total_chars += self.content.len();
-        if let Some(tool_uses) = &self.tool_uses {
+        total_chars += self.content().len();
+        if let Some(tool_uses) = self.tool_uses() {
             total_chars += tool_uses
                 .iter()
-                .map(|v| calculate_document_char_count(&v.input))
+                .map(|v| calculate_value_char_count(&v.args))
                 .reduce(|acc, e| acc + e)
                 .unwrap_or_default();
         }
@@ -155,24 +153,33 @@ impl CharCounter for AssistantResponseMessage {
     }
 }
 
-fn calculate_document_char_count(document: &Document) -> usize {
+impl CharCounter for &[ToolUseResult] {
+    fn char_count(&self) -> CharCount {
+        self.iter()
+            .flat_map(|v| &v.content)
+            .fold(0, |acc, v| {
+                acc + match v {
+                    ToolUseResultBlock::Json(v) => calculate_value_char_count(v),
+                    ToolUseResultBlock::Text(s) => s.len(),
+                }
+            })
+            .into()
+    }
+}
+
+fn calculate_value_char_count(document: &serde_json::Value) -> usize {
     match document {
-        Document::Object(hash_map) => hash_map
-            .values()
-            .fold(0, |acc, e| acc + calculate_document_char_count(e)),
-        Document::Array(vec) => vec.iter().fold(0, |acc, e| acc + calculate_document_char_count(e)),
-        Document::Number(_) => 1,
-        Document::String(s) => s.len(),
-        Document::Bool(_) => 1,
-        Document::Null => 1,
+        serde_json::Value::Null => 1,
+        serde_json::Value::Bool(_) => 1,
+        serde_json::Value::Number(_) => 1,
+        serde_json::Value::String(s) => s.len(),
+        serde_json::Value::Array(vec) => vec.iter().fold(0, |acc, v| acc + calculate_value_char_count(v)),
+        serde_json::Value::Object(map) => map.values().fold(0, |acc, v| acc + calculate_value_char_count(v)),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use aws_smithy_types::Number;
 
     use super::*;
 
@@ -184,46 +191,61 @@ mod tests {
     }
 
     #[test]
-    fn test_calculate_document_char_count() {
+    fn test_calculate_value_char_count() {
         // Test simple types
-        assert_eq!(calculate_document_char_count(&Document::String("hello".to_string())), 5);
-        assert_eq!(calculate_document_char_count(&Document::Number(Number::PosInt(123))), 1);
-        assert_eq!(calculate_document_char_count(&Document::Bool(true)), 1);
-        assert_eq!(calculate_document_char_count(&Document::Null), 1);
+        assert_eq!(
+            calculate_value_char_count(&serde_json::Value::String("hello".to_string())),
+            5
+        );
+        assert_eq!(
+            calculate_value_char_count(&serde_json::Value::Number(serde_json::Number::from(123))),
+            1
+        );
+        assert_eq!(calculate_value_char_count(&serde_json::Value::Bool(true)), 1);
+        assert_eq!(calculate_value_char_count(&serde_json::Value::Null), 1);
 
         // Test array
-        let array = Document::Array(vec![
-            Document::String("test".to_string()),
-            Document::Number(Number::PosInt(42)),
-            Document::Bool(false),
+        let array = serde_json::Value::Array(vec![
+            serde_json::Value::String("test".to_string()),
+            serde_json::Value::Number(serde_json::Number::from(42)),
+            serde_json::Value::Bool(false),
         ]);
-        assert_eq!(calculate_document_char_count(&array), 6); // "test" (4) + Number (1) + Bool (1)
+        assert_eq!(calculate_value_char_count(&array), 6); // "test" (4) + Number (1) + Bool (1)
 
         // Test object
-        let mut obj = HashMap::new();
-        obj.insert("key1".to_string(), Document::String("value1".to_string()));
-        obj.insert("key2".to_string(), Document::Number(Number::PosInt(99)));
-        let object = Document::Object(obj);
-        assert_eq!(calculate_document_char_count(&object), 7); // "value1" (6) + Number (1)
+        let mut obj = serde_json::Map::new();
+        obj.insert("key1".to_string(), serde_json::Value::String("value1".to_string()));
+        obj.insert(
+            "key2".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(99)),
+        );
+        let object = serde_json::Value::Object(obj);
+        assert_eq!(calculate_value_char_count(&object), 7); // "value1" (6) + Number (1)
 
         // Test nested structure
-        let mut nested_obj = HashMap::new();
-        let mut inner_obj = HashMap::new();
-        inner_obj.insert("inner_key".to_string(), Document::String("inner_value".to_string()));
-        nested_obj.insert("outer_key".to_string(), Document::Object(inner_obj));
+        let mut nested_obj = serde_json::Map::new();
+        let mut inner_obj = serde_json::Map::new();
+        inner_obj.insert(
+            "inner_key".to_string(),
+            serde_json::Value::String("inner_value".to_string()),
+        );
+        nested_obj.insert("outer_key".to_string(), serde_json::Value::Object(inner_obj));
         nested_obj.insert(
             "array_key".to_string(),
-            Document::Array(vec![
-                Document::String("item1".to_string()),
-                Document::String("item2".to_string()),
+            serde_json::Value::Array(vec![
+                serde_json::Value::String("item1".to_string()),
+                serde_json::Value::String("item2".to_string()),
             ]),
         );
 
-        let complex = Document::Object(nested_obj);
-        assert_eq!(calculate_document_char_count(&complex), 21); // "inner_value" (11) + "item1" (5) + "item2" (5)
+        let complex = serde_json::Value::Object(nested_obj);
+        assert_eq!(calculate_value_char_count(&complex), 21); // "inner_value" (11) + "item1" (5) + "item2" (5)
 
         // Test empty structures
-        assert_eq!(calculate_document_char_count(&Document::Array(vec![])), 0);
-        assert_eq!(calculate_document_char_count(&Document::Object(HashMap::new())), 0);
+        assert_eq!(calculate_value_char_count(&serde_json::Value::Array(vec![])), 0);
+        assert_eq!(
+            calculate_value_char_count(&serde_json::Value::Object(serde_json::Map::new())),
+            0
+        );
     }
 }
