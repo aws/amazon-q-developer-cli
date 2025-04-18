@@ -23,7 +23,10 @@ use fig_os_shim::Context;
 use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
-use serde::Deserialize;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use use_aws::UseAws;
 
 pub const MAX_TOOL_RESPONSE_SIZE: usize = 800000;
@@ -189,12 +192,14 @@ impl ToolPermissions {
 
 /// A tool specification to be sent to the model as part of a conversation. Maps to
 /// [BedrockToolSpecification].
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolSpec {
     pub name: String,
     pub description: String,
     #[serde(alias = "inputSchema")]
     pub input_schema: InputSchema,
+    #[serde(default, alias = "preprocessor")]
+    pub is_preprocessor: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -206,10 +211,56 @@ pub struct QueuedTool {
 }
 
 /// The schema specification describing a tool's fields.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct InputSchema(pub serde_json::Value);
 
 /// The output received from invoking a [Tool].
+
+#[cfg(test)]
+mod tool_spec_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_tool_spec_serialization_with_preprocessor() {
+        let tool_spec = ToolSpec {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            input_schema: InputSchema(json!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string"
+                    }
+                }
+            })),
+            is_preprocessor: true,
+        };
+
+        let serialized = serde_json::to_string(&tool_spec).unwrap();
+        let deserialized: ToolSpec = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.name, "test_tool");
+        assert_eq!(deserialized.description, "A test tool");
+        assert_eq!(deserialized.is_preprocessor, true);
+    }
+
+    #[tokio::test]
+    async fn test_tool_spec_deserialization_default_preprocessor() {
+        let json_str = r#"{
+            "name": "test_tool",
+            "description": "A test tool",
+            "inputSchema": {"type": "object"}
+        }"#;
+
+        let deserialized: ToolSpec = serde_json::from_str(json_str).unwrap();
+
+        assert_eq!(deserialized.name, "test_tool");
+        assert_eq!(deserialized.description, "A test tool");
+        assert_eq!(deserialized.is_preprocessor, false);
+    }
+}
 #[derive(Debug, Default)]
 pub struct InvokeOutput {
     pub output: OutputKind,
