@@ -113,11 +113,134 @@ mod tests {
                         // The output buffer should contain the command execution message
                         let buffer_text = String::from_utf8_lossy(&output_buffer).to_string();
                         assert!(buffer_text.contains("Executing command:"));
+
+                        // Verify that the next_state is set to PromptUser
+                        match tool_result.next_state {
+                            Some(ChatState::PromptUser { .. }) => {
+                                // This is the expected state
+                            },
+                            None => panic!("Expected next_state to be set to PromptUser"),
+                            Some(other) => panic!("Expected PromptUser state, got {:?}", other),
+                        }
                     },
                     _ => panic!("Expected text output"),
                 }
             },
             _ => panic!("Expected DisplayHelp state"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_exit_command_execution() -> Result<()> {
+        // Create a test context
+        let context = Context::builder().build_fake();
+
+        // Get the command registry
+        let registry = CommandRegistry::global();
+
+        // Execute exit command directly
+        let direct_result = registry.parse_and_execute("/quit", &context, None, None).await?;
+
+        // Create an exit command for the tool
+        let tool_command = InternalCommand {
+            command: "quit".to_string(),
+            subcommand: None,
+            args: None,
+            flags: None,
+            tool_use_id: Some("test-id".to_string()),
+        };
+
+        // Create the tool
+        let tool = Tool::InternalCommand(tool_command);
+
+        // Execute the tool
+        let mut output_buffer = Vec::new();
+        let tool_result = tool.invoke(&context, &mut output_buffer).await?;
+
+        // Compare results
+        match direct_result {
+            ChatState::Exit => {
+                match tool_result.output {
+                    OutputKind::Text(text) => {
+                        // The exit command should return a message indicating that it will exit
+                        assert!(text.contains("exit the application"));
+
+                        // The output buffer should contain the command execution message
+                        let buffer_text = String::from_utf8_lossy(&output_buffer).to_string();
+                        assert!(buffer_text.contains("Executing command:"));
+
+                        // Verify that the next_state is set to Exit
+                        match tool_result.next_state {
+                            Some(ChatState::Exit) => {
+                                // This is the expected state
+                            },
+                            None => panic!("Expected next_state to be set to Exit"),
+                            Some(other) => panic!("Expected Exit state, got {:?}", other),
+                        }
+                    },
+                    _ => panic!("Expected text output"),
+                }
+            },
+            _ => panic!("Expected Exit state"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_clear_command_execution() -> Result<()> {
+        // Create a test context
+        let context = Context::builder().build_fake();
+
+        // Get the command registry
+        let registry = CommandRegistry::global();
+
+        // Execute clear command directly
+        let direct_result = registry.parse_and_execute("/clear", &context, None, None).await?;
+
+        // Create a clear command for the tool
+        let tool_command = InternalCommand {
+            command: "clear".to_string(),
+            subcommand: None,
+            args: None,
+            flags: None,
+            tool_use_id: Some("test-id".to_string()),
+        };
+
+        // Create the tool
+        let tool = Tool::InternalCommand(tool_command);
+
+        // Execute the tool
+        let mut output_buffer = Vec::new();
+        let tool_result = tool.invoke(&context, &mut output_buffer).await?;
+
+        // Compare results
+        match direct_result {
+            ChatState::PromptUser { .. } => {
+                match tool_result.output {
+                    OutputKind::Text(text) => {
+                        // The clear command should return a message indicating that it cleared the conversation
+                        assert!(text.contains("cleared") || text.contains("Successfully executed command"));
+
+                        // The output buffer should contain the command execution message
+                        let buffer_text = String::from_utf8_lossy(&output_buffer).to_string();
+                        assert!(buffer_text.contains("Executing command:"));
+
+                        // Verify that the next_state is set to PromptUser
+                        match tool_result.next_state {
+                            Some(ChatState::PromptUser { .. }) => {
+                                // This is the expected state
+                            },
+                            None => panic!("Expected next_state to be set to PromptUser"),
+                            Some(other) => panic!("Expected PromptUser state, got {:?}", other),
+                        }
+                    },
+                    _ => panic!("Expected text output"),
+                }
+            },
+            _ => panic!("Expected PromptUser state"),
         }
 
         Ok(())

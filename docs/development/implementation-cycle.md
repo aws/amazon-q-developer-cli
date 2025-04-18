@@ -1,6 +1,6 @@
 # Implementation Cycle
 
-This document outlines the standard implementation cycle for making changes to the Amazon Q CLI codebase, particularly for the `use_q_command` tool and command registry migration.
+This document outlines the standard implementation cycle for making changes to the Amazon Q CLI codebase, particularly for the `internal_command` tool and command registry migration (note - previously called `use_q_command` - we should update any references we find).
 
 ## Standard Implementation Cycle
 

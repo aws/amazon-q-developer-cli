@@ -6,10 +6,10 @@
 mod ai_command_interpretation;
 mod basic_commands;
 mod context_commands;
+mod internal_command_integration;
 mod other_commands;
 mod profile_commands;
 mod tools_commands;
-mod use_q_command_integration;
 
 use std::env;
 

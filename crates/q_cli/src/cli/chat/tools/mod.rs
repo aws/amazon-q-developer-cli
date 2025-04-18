@@ -235,7 +235,6 @@ impl ToolPermissions {
             "execute_bash" => "trust read-only commands".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
-            "use_q_command" => "trust read-only commands".dark_grey(),
             "internal_command" => "trust read-only commands".dark_grey(),
             _ => "not trusted".dark_grey(),
         };

@@ -331,7 +331,7 @@ impl Command {
         let input = input.trim();
 
         // No longer checking for common commands without slash prefix
-        // This allows the LLM to decide whether to use the use_q_command tool
+        // This allows the LLM to decide whether to use the internal_command tool
 
         // Check if the input starts with a literal backslash followed by a slash
         // This allows users to escape the slash if they actually want to start with one

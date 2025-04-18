@@ -1,13 +1,13 @@
 # Command Execution Flow
 
-This document describes the command execution flow in the Amazon Q CLI, focusing on how commands are processed from user input to execution, particularly with the `use_q_command` tool integration.
+This document describes the command execution flow in the Amazon Q CLI, focusing on how commands are processed from user input to execution, particularly with the `internal_command` tool integration (previously called `use_q_command`).
 
 ## Overview
 
 The Amazon Q CLI supports two primary methods for executing commands:
 
 1. **Direct Command Execution**: User types a command directly in the CLI (e.g., `/help`)
-2. **AI-Assisted Command Execution**: User expresses intent in natural language, and the AI uses the `use_q_command` tool to execute the appropriate command
+2. **AI-Assisted Command Execution**: User expresses intent in natural language, and the AI uses the `internal_command` tool to execute the appropriate command
 
 Both paths ultimately use the same command handlers, ensuring consistent behavior regardless of how a command is invoked.
 
@@ -51,7 +51,7 @@ sequenceDiagram
     participant User
     participant CLI as CLI Interface
     participant AI as AI Assistant
-    participant Tool as use_q_command Tool
+    participant Tool as internal_command Tool
     participant Registry as Command Registry
     participant Handler as Command Handler
     participant State as Chat State
@@ -60,7 +60,7 @@ sequenceDiagram
     CLI->>AI: Process request
     
     alt AI recognizes command intent
-        AI->>Tool: Invoke use_q_command
+        AI->>Tool: Invoke internal_command
         Tool->>Registry: Lookup command
         
         alt Command exists
@@ -146,7 +146,7 @@ classDiagram
 graph TD
     A[User Input] -->|Direct Command| B[Command Parser]
     A -->|Natural Language| C[AI Assistant]
-    C -->|use_q_command tool| D[UseQCommand]
+    C -->|internal_command tool| D[InternalCommand]
     B --> E[CommandRegistry]
     D --> E
     E --> F[Command Handler]
@@ -163,12 +163,12 @@ graph TD
     end
 ```
 
-## use_q_command Tool Flow
+## internal_command Tool Flow
 
 ```mermaid
 sequenceDiagram
     participant AI as AI Assistant
-    participant Tool as use_q_command Tool
+    participant Tool as internal_command Tool
     participant Registry as Command Registry
     participant Handler as Command Handler
     participant User
@@ -204,7 +204,7 @@ sequenceDiagram
 #### AI-Assisted Path
 
 - User expresses intent in natural language (e.g., "Show me the available commands")
-- The AI assistant recognizes the intent and invokes the `use_q_command` tool
+- The AI assistant recognizes the intent and invokes the `internal_command` tool
 - The tool constructs a command with:
   - Command name (e.g., `help`)
   - Subcommand (if applicable)
@@ -304,12 +304,12 @@ pub trait CommandHandler: Send + Sync {
 }
 ```
 
-## use_q_command Tool Integration
+## internal_command Tool Integration
 
-The `use_q_command` tool provides a bridge between natural language processing and command execution:
+The `internal_command` tool provides a bridge between natural language processing and command execution:
 
 ```rust
-pub struct UseQCommand {
+pub struct InternalCommand {
     /// The command to execute (e.g., "help", "context", "profile")
     pub command: String,
     
@@ -362,8 +362,8 @@ The command execution flow is tested at multiple levels:
 ### AI-Assisted Path
 
 1. User asks "What commands are available?"
-2. AI recognizes intent and calls `use_q_command` with `command: "help"`
-3. `UseQCommand` constructs command string `/help`
+2. AI recognizes intent and calls `internal_command` with `command: "help"`
+3. `InternalCommand` constructs command string `/help`
 4. `CommandRegistry` retrieves the `HelpCommand` handler
 5. `HelpCommand::execute` is called with empty arguments
 6. Help text is displayed to the user

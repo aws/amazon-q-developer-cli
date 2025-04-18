@@ -1,11 +1,11 @@
-- Feature Name: use_q_command_tool
+- Feature Name: internal_command_tool
 - Start Date: 2025-03-28
 
 # Summary
 
 [summary]: #summary
 
-This RFC proposes adding a new tool called `use_q_command` to the Amazon Q Developer CLI that will enable the AI assistant to directly execute internal commands within the q chat system. This will improve user experience by handling vague or incorrectly typed requests more gracefully and providing more direct assistance with command execution.
+This RFC proposes adding a new tool called `internal_command` to the Amazon Q Developer CLI that will enable the AI assistant to directly execute internal commands within the q chat system. This will improve user experience by handling vague or incorrectly typed requests more gracefully and providing more direct assistance with command execution.
 
 # Motivation
 
@@ -23,7 +23,7 @@ Additionally, users may not be familiar with all available internal commands, th
 
 [guide-level-explanation]: #guide-level-explanation
 
-The `use_q_command` tool allows the AI assistant to directly execute internal commands within the q chat system on behalf of the user. This creates a more natural and fluid interaction model where users can express their intent in natural language, and the AI can take appropriate action.
+The `internal_command` tool allows the AI assistant to directly execute internal commands within the q chat system on behalf of the user. This creates a more natural and fluid interaction model where users can express their intent in natural language, and the AI can take appropriate action.
 
 For example, instead of this interaction:
 
@@ -59,10 +59,10 @@ This feature makes the Amazon Q Developer CLI more intuitive and responsive to u
 
 ## Tool Interface
 
-The `use_q_command` tool will be implemented as part of the existing tools framework in the `q_cli` crate. It will have the following interface:
+The `internal_command` tool will be implemented as part of the existing tools framework in the `q_cli` crate. It will have the following interface:
 
 ```rust
-pub struct UseQCommand {
+pub struct InternalCommand {
     /// The command to execute (e.g., "quit", "context", "settings")
     pub command: String,
     
@@ -90,7 +90,7 @@ pub struct UseQCommandResponse {
 
 ## Implementation Details
 
-The tool will be implemented in the `q_cli` crate under `src/cli/chat/tools/use_q_command/`. The implementation will:
+The tool will be implemented in the `q_cli` crate under `src/cli/chat/tools/internal_command/`. The implementation will:
 
 1. Parse the incoming request into the appropriate internal command format
 2. Validate the command and arguments
@@ -121,11 +121,11 @@ src/cli/chat/
 │   ├── fs_write.rs
 │   ├── gh_issue.rs
 │   ├── use_aws.rs
-│   └── use_q_command/  # New tool that uses the command registry
+│   └── internal_command/  # New tool that uses the command registry
 └── mod.rs
 ```
 
-This structure parallels the existing `tools/` directory, creating a clear separation between tools (which are used by the AI) and commands (which are used by both users and the AI via the `use_q_command` tool).
+This structure parallels the existing `tools/` directory, creating a clear separation between tools (which are used by the AI) and commands (which are used by both users and the AI via the `internal_command` tool).
 
 ### Command Registry Pattern
 
@@ -298,7 +298,7 @@ impl Tool for UseQCommand {
     }
     
     fn requires_acceptance(&self, _ctx: &Context) -> bool {
-        // All commands executed through use_q_command require user acceptance by default
+        // All commands executed through internal_command require user acceptance by default
         // This provides a security boundary between the AI and command execution
         true
     }
@@ -363,7 +363,7 @@ impl UseQCommand {
 
 To ensure security when allowing AI to execute commands:
 
-1. **Default to Requiring Confirmation**: All commands executed through `use_q_command` will require user confirmation by default
+1. **Default to Requiring Confirmation**: All commands executed through `internal_command` will require user confirmation by default if they are mutative, or will automatically proceed if read-only.
 2. **Permission Persistence**: Users can choose to trust specific commands using the existing permission system
 3. **Command Auditing**: All commands executed by the AI will be logged for audit purposes
 4. **Scope Limitation**: Commands will only have access to the same resources as when executed directly by the user
@@ -425,7 +425,7 @@ To ensure security:
 
 ### Phase 1: Core Implementation
 
-1. Create the basic tool structure in `src/cli/chat/tools/use_q_command/`
+1. Create the basic tool structure in `src/cli/chat/tools/internal_command/`
 2. Implement command parsing and validation
 3. Implement execution for session management commands
 4. Add unit tests for basic functionality
@@ -456,7 +456,7 @@ There are several potential drawbacks to this feature:
 
 3. **Implementation Complexity**: The feature requires careful integration with the existing command infrastructure and robust error handling.
 
-4. **Maintenance Burden**: As new commands are added to the system, the `use_q_command` tool will need to be updated to support them.
+4. **Maintenance Burden**: As new commands are added to the system, the `internal_command` tool will need to be updated to support them.
 
 5. **Potential for Misuse**: Users might become overly reliant on the AI executing commands, reducing their understanding of the underlying system.
 
