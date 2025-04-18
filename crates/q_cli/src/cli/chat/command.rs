@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Write;
 
 use clap::{
@@ -274,8 +275,8 @@ in global or local profiles.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolsSubcommand {
-    Trust { tool_name: String },
-    Untrust { tool_name: String },
+    Trust { tool_names: HashSet<String> },
+    Untrust { tool_names: HashSet<String> },
     TrustAll,
     Reset,
     ResetSingle { tool_name: String },
@@ -285,8 +286,8 @@ pub enum ToolsSubcommand {
 impl ToolsSubcommand {
     const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available subcommands</cyan!>
   <em>help</em>                           <black!>Show an explanation for the tools command</black!>
-  <em>trust <<tool name>></em>              <black!>Trust a specific tool for the session</black!>
-  <em>untrust <<tool name>></em>            <black!>Revert a tool to per-request confirmation</black!>
+  <em>trust <<tools...>></em>               <black!>Trust a specific tool or tools for the session</black!>
+  <em>untrust <<tools...>></em>             <black!>Revert a tool or tools to per-request confirmation</black!>
   <em>trustall</em>                       <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
   <em>reset</em>                          <black!>Reset all tools to default permission levels</black!>
   <em>reset <<tool name>></em>              <black!>Reset a single tool to default permission level</black!>"};
@@ -296,8 +297,8 @@ impl ToolsSubcommand {
   Show the current set of tools and their permission setting.
   The permission setting states when user confirmation is required. Trusted tools never require confirmation.
   Alternatively, specify a subcommand to modify the tool permissions."};
-    const TRUST_USAGE: &str = "/tools trust <tool name>";
-    const UNTRUST_USAGE: &str = "/tools untrust <tool name>";
+    const TRUST_USAGE: &str = "/tools trust <tools...>";
+    const UNTRUST_USAGE: &str = "/tools untrust <tools...>";
 
     fn usage_msg(header: impl AsRef<str>) -> String {
         format!(
@@ -652,25 +653,31 @@ impl Command {
 
                     match parts[1].to_lowercase().as_str() {
                         "trust" => {
-                            let tool_name = parts.get(2);
-                            match tool_name {
-                                Some(tool_name) => Self::Tools {
-                                    subcommand: Some(ToolsSubcommand::Trust {
-                                        tool_name: (*tool_name).to_string(),
-                                    }),
-                                },
-                                None => usage_err!("trust", ToolsSubcommand::TRUST_USAGE),
+                            let mut tool_names = HashSet::new();
+                            for part in &parts[2..] {
+                                tool_names.insert((*part).to_string());
+                            }
+
+                            if tool_names.is_empty() {
+                                usage_err!("trust", ToolsSubcommand::TRUST_USAGE);
+                            }
+
+                            Self::Tools {
+                                subcommand: Some(ToolsSubcommand::Trust { tool_names }),
                             }
                         },
                         "untrust" => {
-                            let tool_name = parts.get(2);
-                            match tool_name {
-                                Some(tool_name) => Self::Tools {
-                                    subcommand: Some(ToolsSubcommand::Untrust {
-                                        tool_name: (*tool_name).to_string(),
-                                    }),
-                                },
-                                None => usage_err!("untrust", ToolsSubcommand::UNTRUST_USAGE),
+                            let mut tool_names = HashSet::new();
+                            for part in &parts[2..] {
+                                tool_names.insert((*part).to_string());
+                            }
+
+                            if tool_names.is_empty() {
+                                usage_err!("untrust", ToolsSubcommand::UNTRUST_USAGE);
+                            }
+
+                            Self::Tools {
+                                subcommand: Some(ToolsSubcommand::Untrust { tool_names }),
                             }
                         },
                         "trustall" => Self::Tools {
