@@ -84,6 +84,6 @@ winapi = { version = "0.3", features = [
 winreg = "0.55.0"
 
 [dev-dependencies]
-assert_cmd = "2.0.8"
+assert_cmd = "2.0.17"
 predicates = "3.0.1"
 tempfile.workspace = true
