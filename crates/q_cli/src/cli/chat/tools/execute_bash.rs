@@ -97,9 +97,7 @@ impl ExecuteBash {
             "stderr": output.stderr,
         });
 
-        Ok(InvokeOutput {
-            output: OutputKind::Json(result),
-        })
+        Ok(InvokeOutput::with_output(OutputKind::Json(result)))
     }
 
     pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {

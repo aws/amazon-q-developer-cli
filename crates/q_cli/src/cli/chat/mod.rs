@@ -448,7 +448,7 @@ impl<W: Write> Drop for ChatContext<W> {
 /// Intended to provide more robust handling around state transitions while dealing with, e.g.,
 /// tool validation, execution, response stream handling, etc.
 #[derive(Debug)]
-enum ChatState {
+pub enum ChatState {
     /// Prompt the user with `tool_uses`, if available.
     PromptUser {
         /// Tool uses to present to the user.

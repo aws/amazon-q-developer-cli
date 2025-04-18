@@ -63,11 +63,11 @@ Examples:
             // Parse arguments
             let mut prompt = None;
             let mut show_summary = false;
-            let mut _help = false;
+            let mut help = false;
 
             // Check if "help" is the first argument
             if !args.is_empty() && args[0].to_lowercase() == "help" {
-                _help = true;
+                help = true;
             } else {
                 let mut remaining_parts = Vec::new();
 
@@ -87,7 +87,11 @@ Examples:
             }
 
             // Return the Compact command state
-            Ok(ChatState::Compact { prompt, show_summary })
+            Ok(ChatState::Compact {
+                prompt,
+                show_summary,
+                help,
+            })
         })
     }
 

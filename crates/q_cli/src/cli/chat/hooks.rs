@@ -114,7 +114,7 @@ pub struct CachedHook {
 }
 
 /// Maps a hook name to a [`CachedHook`]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HookExecutor {
     pub global_cache: HashMap<String, CachedHook>,
     pub profile_cache: HashMap<String, CachedHook>,
@@ -122,10 +122,7 @@ pub struct HookExecutor {
 
 impl HookExecutor {
     pub fn new() -> Self {
-        Self {
-            global_cache: HashMap::new(),
-            profile_cache: HashMap::new(),
-        }
+        Self::default()
     }
 
     /// Run all the currently enabled hooks from both the global and profile contexts

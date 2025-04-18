@@ -91,13 +91,11 @@ impl UseAws {
         );
 
         if status.eq("0") {
-            Ok(InvokeOutput {
-                output: OutputKind::Json(serde_json::json!({
-                    "exit_status": status,
-                    "stdout": stdout,
-                    "stderr": stderr.clone()
-                })),
-            })
+            Ok(InvokeOutput::with_output(OutputKind::Json(serde_json::json!({
+                "exit_status": status,
+                "stdout": stdout,
+                "stderr": stderr.clone()
+            }))))
         } else {
             Err(eyre::eyre!(stderr))
         }

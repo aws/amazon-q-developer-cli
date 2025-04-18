@@ -1,9 +1,5 @@
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::atomic::{
-    AtomicBool,
-    Ordering,
-};
 
 use crossterm::queue;
 use crossterm::style::{
@@ -28,25 +24,6 @@ use crate::cli::chat::tools::{
     InvokeOutput,
     OutputKind,
 };
-
-// Static flag to indicate that the application should exit after tool execution
-static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
-
-// Function to check if the application should exit
-/// TODO: This function is currently unused. Consider removing it or implementing its usage
-/// as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
-#[allow(dead_code)]
-pub fn should_exit() -> bool {
-    SHOULD_EXIT.load(Ordering::SeqCst)
-}
-
-// Function to reset the exit flag (useful for tests)
-/// TODO: This function is currently unused. Consider removing it or implementing its usage
-/// as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
-#[allow(dead_code)]
-pub fn reset_exit_flag() {
-    SHOULD_EXIT.store(false, Ordering::SeqCst);
-}
 
 /// Response from executing a Q command
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,13 +186,11 @@ impl InternalCommand {
                 match chat_state {
                     crate::cli::chat::ChatState::Exit => {
                         // Special handling for Exit state - we need to propagate this back to the main application
-                        // First, provide a message that will be shown to the user
+                        // Provide a message that will be shown to the user and pass through the Exit state
                         let output = InvokeOutput {
                             output: OutputKind::Text("I'll exit the application after this response.".to_string()),
+                            next_state: Some(chat_state), // Pass the Exit state through
                         };
-
-                        // Then set a special flag that will be checked by the tool execution code
-                        SHOULD_EXIT.store(true, std::sync::atomic::Ordering::SeqCst);
 
                         Ok(output)
                     },
@@ -230,7 +205,12 @@ impl InternalCommand {
                         )?;
 
                         Ok(InvokeOutput {
-                            output: OutputKind::Text("Help information has been displayed directly to the user. DO NOT give further information in your response, other than an acknowledgement.".to_string())
+                            output: OutputKind::Text("Help information has been displayed directly to the user. DO NOT give further information in your response, other than an acknowledgement.".to_string()),
+                            next_state: Some(crate::cli::chat::ChatState::PromptUser {
+                                tool_uses: None,
+                                pending_tool_index: None,
+                                skip_printing_tools: false,
+                            }),
                         })
                     },
                     crate::cli::chat::ChatState::PromptUser {
@@ -240,26 +220,34 @@ impl InternalCommand {
                             // This typically happens after a clear command
                             Ok(InvokeOutput {
                                 output: OutputKind::Text("I've cleared our conversation history. We're starting with a fresh chat, but any context files you've added are still available.".to_string()),
+                                next_state: Some(chat_state), // Pass the PromptUser state through
                             })
                         } else {
                             // For other cases that return to prompt
                             Ok(InvokeOutput {
                                 output: OutputKind::Text(format!("Successfully executed command: {}", cmd_str)),
+                                next_state: Some(chat_state), // Pass the PromptUser state through
                             })
                         }
                     },
                     _ => {
-                        // For other states, provide a generic success message
+                        // For other states, provide a generic success message but also pass through the chat_state
                         Ok(InvokeOutput {
                             output: OutputKind::Text(format!("Successfully executed command: {}", cmd_str)),
+                            next_state: Some(chat_state), // Pass through any other state
                         })
                     },
                 }
             },
             Err(err) => {
-                // Return error message
+                // Return error message with default PromptUser state
                 Ok(InvokeOutput {
                     output: OutputKind::Text(format!("Failed to execute command: {}. Error: {}", cmd_str, err)),
+                    next_state: Some(crate::cli::chat::ChatState::PromptUser {
+                        tool_uses: None,
+                        pending_tool_index: None,
+                        skip_printing_tools: false,
+                    }),
                 })
             },
         }

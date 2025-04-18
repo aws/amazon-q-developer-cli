@@ -175,9 +175,7 @@ time. You tried to read {byte_count} bytes. Try executing with fewer lines speci
             );
         }
 
-        Ok(InvokeOutput {
-            output: OutputKind::Text(file_contents),
-        })
+        Ok(InvokeOutput::with_output(OutputKind::Text(file_contents)))
     }
 
     fn start_line(&self) -> i32 {
@@ -280,9 +278,9 @@ impl FsSearch {
             style::ResetColor,
         )?;
 
-        Ok(InvokeOutput {
-            output: OutputKind::Text(serde_json::to_string(&results)?),
-        })
+        Ok(InvokeOutput::with_output(OutputKind::Text(serde_json::to_string(
+            &results,
+        )?)))
     }
 
     fn context_lines(&self) -> usize {
@@ -393,9 +391,7 @@ impl FsDirectory {
             );
         }
 
-        Ok(InvokeOutput {
-            output: OutputKind::Text(result),
-        })
+        Ok(InvokeOutput::with_output(OutputKind::Text(result)))
     }
 
     fn depth(&self) -> usize {

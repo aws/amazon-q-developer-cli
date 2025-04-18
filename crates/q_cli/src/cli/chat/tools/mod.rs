@@ -34,6 +34,7 @@ use tracing::warn;
 use use_aws::UseAws;
 
 use super::parser::ToolUse;
+use crate::cli::chat::ChatState;
 
 pub const MAX_TOOL_RESPONSE_SIZE: usize = 800000;
 
@@ -267,7 +268,36 @@ pub struct InputSchema(pub serde_json::Value);
 /// The output received from invoking a [Tool].
 #[derive(Debug, Default)]
 pub struct InvokeOutput {
+    /// The output content from the tool execution
     pub output: OutputKind,
+    /// Optional next state to transition to, overriding the default flow
+    /// If set, tool_use_execute will return this state instead of proceeding to
+    /// HandleResponseStream
+    pub next_state: Option<ChatState>,
+}
+
+impl InvokeOutput {
+    pub fn new(content: String) -> Self {
+        Self {
+            output: OutputKind::Text(content),
+            next_state: None,
+        }
+    }
+
+    pub fn with_next_state(mut self, next_state: ChatState) -> Self {
+        self.next_state = Some(next_state);
+        self
+    }
+
+    /// Creates a new InvokeOutput with just the output field set
+    /// This is a convenience method for creating an InvokeOutput with default values
+    /// for all other fields
+    pub fn with_output(output: OutputKind) -> Self {
+        Self {
+            output,
+            ..Default::default()
+        }
+    }
 }
 
 #[non_exhaustive]
