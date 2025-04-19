@@ -1010,7 +1010,8 @@ where
                         context_content
                     };
 
-                    let hook_results = cm.run_hooks(&mut self.output).await;
+                    let updates = if self.interactive { Some(&mut self.output) } else { None };
+                    let hook_results = cm.run_hooks(updates).await;
 
                     let (start_hooks, prompt_hooks): (Vec<_>, Vec<_>) = hook_results
                         .iter()

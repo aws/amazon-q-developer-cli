@@ -524,10 +524,10 @@ impl ContextManager {
     /// Run all the currently enabled hooks from both the global and profile contexts.
     /// Skipped hooks (disabled) will not appear in the output.
     /// # Arguments
-    /// * `updates` - output stream to write hook run status to
+    /// * `updates` - output stream to write hook run status to if Some, else do nothing if None
     /// # Returns
     /// A vector containing pairs of a [`Hook`] definition and its execution output
-    pub async fn run_hooks(&mut self, updates: &mut impl Write) -> Vec<(Hook, String)> {
+    pub async fn run_hooks(&mut self, updates: Option<&mut impl Write>) -> Vec<(Hook, String)> {
         let mut hooks: Vec<&Hook> = Vec::new();
 
         // Set internal hook states
@@ -753,6 +753,8 @@ fn validate_profile_name(name: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Stdout;
+
     use super::*;
     use crate::cli::chat::hooks::HookTrigger;
 
@@ -945,11 +947,8 @@ mod tests {
         manager.add_hook("hook1".to_string(), hook1, false).await?;
         manager.add_hook("hook2".to_string(), hook2, false).await?;
 
-        // Create a buffer to capture the output
-        let mut output = Vec::new();
-
         // Run the hooks
-        let results = manager.run_hooks(&mut output).await;
+        let results = manager.run_hooks(None::<&mut Stdout>).await;
         assert_eq!(results.len(), 2); // Should include both hooks
 
         Ok(())
@@ -964,14 +963,14 @@ mod tests {
         manager.add_hook("profile_hook".to_string(), hook1, false).await?;
         manager.add_hook("global_hook".to_string(), hook2, true).await?;
 
-        let results = manager.run_hooks(&mut Vec::new()).await;
+        let results = manager.run_hooks(None::<&mut Stdout>).await;
         assert_eq!(results.len(), 2); // Should include both hooks
 
         // Create and switch to a new profile
         manager.create_profile("test_profile").await?;
         manager.switch_profile("test_profile").await?;
 
-        let results = manager.run_hooks(&mut Vec::new()).await;
+        let results = manager.run_hooks(None::<&mut Stdout>).await;
         assert_eq!(results.len(), 1); // Should include global hook
         assert_eq!(results[0].0.name, "global_hook");
 
