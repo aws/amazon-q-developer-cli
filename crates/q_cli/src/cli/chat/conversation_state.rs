@@ -58,6 +58,14 @@ const MAX_CURRENT_WORKING_DIRECTORY_LEN: usize = 256;
 /// Limit to send the number of messages as part of chat.
 const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 100;
 
+pub struct ExtraContext {
+    // Bonus context to attach to the existing context at the top of the history
+    pub general_context: Option<String>,
+
+    // Bonus context to attach to the next user message
+    pub user_input_context: Option<String>,
+}
+
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone)]
 pub struct ConversationState {
@@ -137,23 +145,18 @@ impl ConversationState {
         }
     }
 
-    pub async fn append_new_user_message(&mut self, input: String, extra_context: Option<String>) {
+    pub async fn append_new_user_message(&mut self, input: String) {
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
         if let Some(next_message) = self.next_message.as_ref() {
             warn!(?next_message, "next_message should not exist");
         }
 
-        let mut input = if input.is_empty() {
+        let input = if input.is_empty() {
             warn!("input must not be empty when adding new messages");
             "Empty prompt".to_string()
         } else {
             input
         };
-
-        // Context from hooks (scripts, commands, tools)
-        if let Some(context) = extra_context {
-            input = format!("{} {}", context, input);
-        }
 
         let msg = UserInputMessage {
             content: input,
@@ -380,14 +383,20 @@ impl ConversationState {
     /// Returns a [FigConversationState] capable of being sent by
     /// [fig_api_client::StreamingClient] while preparing the current conversation state to be sent
     /// in the next message.
-    pub async fn as_sendable_conversation_state(&mut self, extra_context: Option<String>) -> FigConversationState {
+    pub async fn as_sendable_conversation_state(
+        &mut self,
+        extra_context: Option<ExtraContext>,
+    ) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
         self.fix_history();
 
         // The current state we want to send
         let mut curr_state = self.clone();
 
-        if let Some((user, assistant)) = self.context_messages(extra_context).await {
+        let (general_context, user_input_context) =
+            extra_context.map_or((None, None), |c| (c.general_context, c.user_input_context));
+
+        if let Some((user, assistant)) = self.context_messages(general_context).await {
             self.context_message_length = Some(user.content.len());
             curr_state
                 .history
@@ -402,10 +411,14 @@ impl ConversationState {
             ctx.tools.take();
         }
         self.history.push_back(ChatMessage::UserInputMessage(last_message));
+        let mut input_message = curr_state.next_message.expect("no user input message available");
+        if let Some(user_input_context) = user_input_context {
+            input_message.content = format!("{} {}", user_input_context, input_message.content);
+        }
 
         FigConversationState {
             conversation_id: Some(curr_state.conversation_id),
-            user_input_message: curr_state.next_message.expect("no user input message available"),
+            user_input_message: input_message,
             history: Some(curr_state.history.into()),
         }
     }
@@ -745,9 +758,7 @@ mod tests {
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
-        conversation_state
-            .append_new_user_message("start".to_string(), None)
-            .await;
+        conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state(None).await;
             assert_conversation_state_invariants(s, i);
@@ -756,7 +767,7 @@ mod tests {
                 content: i.to_string(),
                 tool_uses: None,
             });
-            conversation_state.append_new_user_message(i.to_string(), None).await;
+            conversation_state.append_new_user_message(i.to_string()).await;
         }
     }
 
@@ -764,9 +775,7 @@ mod tests {
     async fn test_conversation_state_history_handling_with_tool_results() {
         // Build a long conversation history of tool use results.
         let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
-        conversation_state
-            .append_new_user_message("start".to_string(), None)
-            .await;
+        conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state(None).await;
             assert_conversation_state_invariants(s, i);
@@ -788,9 +797,7 @@ mod tests {
 
         // Build a long conversation history of user messages mixed in with tool results.
         let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
-        conversation_state
-            .append_new_user_message("start".to_string(), None)
-            .await;
+        conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state(None).await;
             assert_conversation_state_invariants(s, i);
@@ -815,7 +822,7 @@ mod tests {
                     content: i.to_string(),
                     tool_uses: None,
                 });
-                conversation_state.append_new_user_message(i.to_string(), None).await;
+                conversation_state.append_new_user_message(i.to_string()).await;
             }
         }
     }
@@ -829,9 +836,7 @@ mod tests {
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
-        conversation_state
-            .append_new_user_message("start".to_string(), None)
-            .await;
+        conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state(None).await;
 
@@ -857,7 +862,7 @@ mod tests {
                 content: i.to_string(),
                 tool_uses: None,
             });
-            conversation_state.append_new_user_message(i.to_string(), None).await;
+            conversation_state.append_new_user_message(i.to_string()).await;
         }
     }
 
@@ -870,14 +875,16 @@ mod tests {
         let prompt_context = "prompt context";
 
         // Simulate conversation flow
-        conversation_state
-            .append_new_user_message("start".to_string(), Some(prompt_context.to_string()))
-            .await;
+        conversation_state.append_new_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state
-                .as_sendable_conversation_state(Some(conversation_start_context.to_string()))
+                .as_sendable_conversation_state(Some(ExtraContext {
+                    general_context: Some(conversation_start_context.to_string()),
+                    user_input_context: Some(prompt_context.to_string()),
+                }))
                 .await;
             let hist = s.history.as_ref().unwrap();
+            #[allow(clippy::match_wildcard_for_single_variants)]
             match &hist[0] {
                 ChatMessage::UserInputMessage(user) => {
                     assert!(
@@ -886,7 +893,6 @@ mod tests {
                         user.content
                     );
                 },
-                #[allow(clippy::match_wildcard_for_single_variants)]
                 _ => panic!("Expected user message."),
             }
             assert!(
@@ -900,9 +906,7 @@ mod tests {
                 content: i.to_string(),
                 tool_uses: None,
             });
-            conversation_state
-                .append_new_user_message(i.to_string(), Some(prompt_context.to_string()))
-                .await;
+            conversation_state.append_new_user_message(i.to_string()).await;
         }
     }
 }

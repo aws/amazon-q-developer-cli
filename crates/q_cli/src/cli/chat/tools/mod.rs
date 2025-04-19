@@ -53,28 +53,13 @@ impl Tool {
     /// The display name of a tool
     pub fn display_name(&self) -> &'static str {
         match self {
-            Tool::FsRead(_) => "Read from filesystem",
-            Tool::FsWrite(_) => "Write to filesystem",
-            Tool::ExecuteBash(_) => "Execute shell command",
-            Tool::UseAws(_) => "Use AWS CLI",
-            Tool::GhIssue(_) => "Prepare GitHub issue",
-            Tool::InternalCommand(_) => "Execute Q command",
+            Tool::FsRead(_) => "fs_read",
+            Tool::FsWrite(_) => "fs_write",
+            Tool::ExecuteBash(_) => "execute_bash",
+            Tool::UseAws(_) => "use_aws",
+            Tool::GhIssue(_) => "gh_issue",
+            Tool::InternalCommand(_) => "internal_command",
         }
-    }
-
-    // TODO: This method is currently unused. Consider removing it or implementing its usage
-    // as part of Phase 7.4: Technical Debt Reduction in the implementation plan.
-    #[allow(dead_code)]
-    pub fn display_name_action(&self) -> String {
-        match self {
-            Tool::FsRead(_) => "Reading from filesystem",
-            Tool::FsWrite(_) => "Writing to filesystem",
-            Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
-            Tool::UseAws(_) => "Using AWS CLI",
-            Tool::GhIssue(_) => "Preparing GitHub issue",
-            Tool::InternalCommand(_) => "Executing Q command",
-        }
-        .to_owned()
     }
 
     /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.

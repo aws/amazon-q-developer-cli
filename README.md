@@ -44,8 +44,7 @@
 ## ⚡️ Installation
 
 - **macOS**:
-  - **DMG**: Download from AWS:
-    [aws.amazon.com](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-getting-started-installing.html)
+  - **DMG**: [Download now](https://desktop-release.q.us-east-1.amazonaws.com/latest/Amazon%20Q.dmg)
   - **Homebrew**: `brew install amazon-q`
 - **Linux**:
   - [Ubuntu/Debian](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html#command-line-installing-ubuntu)

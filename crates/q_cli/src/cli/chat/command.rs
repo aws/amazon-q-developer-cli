@@ -266,7 +266,7 @@ in global or local profiles.
 <cyan!>Notes</cyan!>
 • Hooks are executed in parallel
 • 'conversation_start' hooks run on the first user prompt and are attached once to the conversation history sent to Amazon Q
-• 'per_prompt' hooks run on each user prompt and are attached to the prompt
+• 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history
 "#,
             Self::HOOKS_AVAILABLE_COMMANDS
         )

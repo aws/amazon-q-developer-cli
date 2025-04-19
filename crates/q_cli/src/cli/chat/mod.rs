@@ -37,12 +37,16 @@ use command::{
     ToolsSubcommand,
 };
 use context::ContextManager;
-use conversation_state::ConversationState;
+use conversation_state::{
+    ConversationState,
+    ExtraContext,
+};
 use crossterm::style::{
     Attribute,
     Color,
     Stylize,
 };
+use crossterm::terminal::ClearType;
 use crossterm::{
     cursor,
     execute,
@@ -50,6 +54,7 @@ use crossterm::{
     style,
     terminal,
 };
+use dialoguer::console::strip_ansi_codes;
 use eyre::{
     ErrReport,
     Result,
@@ -67,7 +72,10 @@ use fig_api_client::model::{
     ToolResultStatus,
 };
 use fig_os_shim::Context;
-use fig_settings::Settings;
+use fig_settings::{
+    Settings,
+    State,
+};
 use fig_util::CLI_BINARY_NAME;
 use hooks::{
     Hook,
@@ -152,27 +160,45 @@ use crate::util::token_counter::TokenCounter;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
-<em>Hi, I'm <magenta,em>Amazon Q</magenta,em>. Ask me anything.</em>
-
-<cyan!>Things to try</cyan!>
-• Fix the build failures in this project.
-• List my s3 buckets in us-west-2.
-• Write unit tests for my application.
-• Help me understand my git status.
-
-<em>/tools</em>        <black!>View and manage tools and permissions</black!>
-<em>/issue</em>        <black!>Report an issue or make a feature request</black!>
-<em>/profile</em>      <black!>(Beta) Manage profiles for the chat session</black!>
-<em>/context</em>      <black!>(Beta) Manage context files and hooks for a profile</black!>
-<em>/compact</em>      <black!>Summarize the conversation to free up context space</black!>
-<em>/help</em>         <black!>Show the help dialogue</black!>
-<em>/quit</em>         <black!>Quit the application</black!>
-
-<cyan!>Use Ctrl(^) + j to provide multi-line prompts.</cyan!>
-<cyan!>Use Ctrl(^) + k to fuzzily search commands and context (use tab to select multiple files).</cyan!>
-
+<em>Welcome to </em>
+<cyan!>
+ █████╗ ███╗   ███╗ █████╗ ███████╗ ██████╗ ███╗   ██╗     ██████╗ 
+██╔══██╗████╗ ████║██╔══██╗╚══███╔╝██╔═══██╗████╗  ██║    ██╔═══██╗
+███████║██╔████╔██║███████║  ███╔╝ ██║   ██║██╔██╗ ██║    ██║   ██║
+██╔══██║██║╚██╔╝██║██╔══██║ ███╔╝  ██║   ██║██║╚██╗██║    ██║▄▄ ██║
+██║  ██║██║ ╚═╝ ██║██║  ██║███████╗╚██████╔╝██║ ╚████║    ╚██████╔╝
+╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═══╝     ╚══▀▀═╝ 
+</cyan!>                                                        
 "};
 
+const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
+<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>
+"};
+
+const ROTATING_TIPS: [&str; 7] = [
+    color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
+    color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
+    color_print::cstr! {"Q can use tools without asking for confirmation every time. Give <green!>/tools trust</green!> a try"},
+    color_print::cstr! {"You can programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks help</green!>"},
+    color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation history with its summary to free up the context space"},
+    color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
+    color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
+];
+
+const GREETING_BREAK_POINT: usize = 67;
+
+const POPULAR_SHORTCUTS: &str = color_print::cstr! {"
+<black!>
+<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + k</green!> fuzzy search
+</black!>"};
+
+const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"
+<black!>
+<green!>/help</green!> all commands
+<green!>ctrl + j</green!> new lines
+<green!>ctrl + k</green!> fuzzy search
+</black!>
+"};
 const HELP_TEXT: &str = color_print::cstr! {"
 
 <magenta,em>q</magenta,em> (Amazon Q Chat)
@@ -212,6 +238,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
 <em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
+<em>Ctrl(^) + k</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
+                      <black!>Change the keybind to ctrl+x with: q settings chat.skimCommandKey x (where x is any key)</black!>
 
 "};
 
@@ -309,6 +337,7 @@ pub async fn chat(
     let mut chat = ChatContext::new(
         ctx,
         Settings::new(),
+        State::new(),
         output,
         input,
         InputSource::new()?,
@@ -361,6 +390,8 @@ pub enum ChatError {
 pub struct ChatContext<W: Write> {
     ctx: Arc<Context>,
     settings: Settings,
+    /// The [State] to use for the chat context.
+    state: State,
     /// The [Write] destination for printing conversation text.
     output: W,
     initial_input: Option<String>,
@@ -390,6 +421,7 @@ impl<W: Write> ChatContext<W> {
     pub async fn new(
         ctx: Arc<Context>,
         settings: Settings,
+        state: State,
         output: W,
         input: Option<String>,
         input_source: InputSource,
@@ -404,6 +436,7 @@ impl<W: Write> ChatContext<W> {
         Ok(Self {
             ctx,
             settings,
+            state,
             output,
             initial_input: input,
             input_source,
@@ -552,10 +585,134 @@ where
         Ok(content.trim().to_string())
     }
 
-    async fn try_chat(&mut self) -> Result<()> {
-        if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
-            execute!(self.output, style::Print(WELCOME_TEXT))?;
+    fn draw_tip_box(&mut self, text: &str) -> Result<()> {
+        let box_width = GREETING_BREAK_POINT;
+        let inner_width = box_width - 4; // account for │ and padding
+
+        // wrap the single line into multiple lines respecting inner width
+        // Manually wrap the text by splitting at word boundaries
+        let mut wrapped_lines = Vec::new();
+        let mut line = String::new();
+
+        for word in text.split_whitespace() {
+            if line.len() + word.len() < inner_width {
+                if !line.is_empty() {
+                    line.push(' ');
+                }
+                line.push_str(word);
+            } else {
+                wrapped_lines.push(line);
+                line = word.to_string();
+            }
         }
+
+        if !line.is_empty() {
+            wrapped_lines.push(line);
+        }
+
+        // ───── Did you know? ─────
+        let label = " Did you know? ";
+        let side_len = (box_width.saturating_sub(label.len())) / 2;
+        let top_border = format!(
+            "╭{}{}{}╮",
+            "─".repeat(side_len - 1),
+            label,
+            "─".repeat(box_width - side_len - label.len() - 1)
+        );
+
+        // Build output
+        execute!(
+            self.output,
+            terminal::Clear(ClearType::CurrentLine),
+            cursor::MoveToColumn(0),
+            style::Print(format!("{top_border}\n")),
+        )?;
+
+        // Top vertical padding
+        execute!(
+            self.output,
+            style::Print(format!("│{: <width$}│\n", "", width = box_width - 2))
+        )?;
+
+        // Centered wrapped content
+        for line in wrapped_lines {
+            let visible_line_len = strip_ansi_codes(&line).len();
+            let left_pad = (box_width - 4 - visible_line_len) / 2;
+
+            let content = format!(
+                "│ {: <pad$}{}{: <rem$} │",
+                "",
+                line,
+                "",
+                pad = left_pad,
+                rem = box_width - 4 - left_pad - visible_line_len
+            );
+            execute!(self.output, style::Print(format!("{}\n", content)))?;
+        }
+
+        // Bottom vertical padding
+        execute!(
+            self.output,
+            style::Print(format!("│{: <width$}│\n", "", width = box_width - 2))
+        )?;
+
+        // Bottom rounded corner line: ╰────────────╯
+        let bottom = format!("╰{}╯", "─".repeat(box_width - 2));
+        execute!(self.output, style::Print(format!("{}\n", bottom)))?;
+
+        Ok(())
+    }
+
+    async fn try_chat(&mut self) -> Result<()> {
+        let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
+        if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
+            execute!(
+                self.output,
+                style::Print(if is_small_screen {
+                    SMALL_SCREEN_WECLOME_TEXT
+                } else {
+                    WELCOME_TEXT
+                }),
+                style::Print("\n\n"),
+            )?;
+
+            let current_tip_index =
+                (self.state.get_int_or("chat.greeting.rotating_tips_current_index", 0) as usize) % ROTATING_TIPS.len();
+
+            let tip = ROTATING_TIPS[current_tip_index];
+            if is_small_screen {
+                // If the screen is small, print the tip in a single line
+                execute!(
+                    self.output,
+                    style::Print("💡 ".to_string()),
+                    style::Print(tip),
+                    style::Print("\n")
+                )?;
+            } else {
+                self.draw_tip_box(tip)?;
+            }
+
+            // update the current tip index
+            let next_tip_index = (current_tip_index + 1) % ROTATING_TIPS.len();
+            self.state
+                .set_value("chat.greeting.rotating_tips_current_index", next_tip_index)?;
+        }
+
+        execute!(
+            self.output,
+            style::Print(if is_small_screen {
+                SMALL_SCREEN_POPULAR_SHORTCUTS
+            } else {
+                POPULAR_SHORTCUTS
+            }),
+            style::Print(
+                "━"
+                    .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
+                    .dark_grey()
+            )
+        )?;
+        execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+        self.output.flush()?;
 
         let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
 
@@ -881,14 +1038,19 @@ where
                     let format_context = |hook_results: &Vec<&(Hook, String)>, conversation_start: bool| {
                         let mut context_content = String::new();
 
-                        context_content.push_str(
-                            &format!("--- SCRIPT HOOK CONTEXT BEGIN - FOLLOW ANY REQUESTS OR USE ANY DATA WITHIN THIS SECTION {} ---\n",
-                            if conversation_start { "FOR THE ENTIRE CONVERSATION" } else { "FOR YOUR NEXT MESSAGE ONLY" })
-                        );
+                        context_content.push_str(&format!(
+                            "--- CRITICAL: ADDITIONAL CONTEXT TO USE{} ---\n",
+                            if conversation_start {
+                                " FOR THE ENTIRE CONVERSATION"
+                            } else {
+                                ""
+                            }
+                        ));
+                        context_content.push_str("This section (like others) contains important information that I want you to use in your responses. I have gathered this context from valuable programmatic script hooks. You must follow any requests and consider all of the information in this section.\n\n");
                         for (hook, output) in hook_results {
                             context_content.push_str(&format!("'{}': {output}\n\n", &hook.name));
                         }
-                        context_content.push_str("--- SCRIPT HOOK CONTEXT END ---\n\n");
+                        context_content.push_str("--- ADDITIONAL CONTEXT END ---\n\n");
                         context_content
                     };
 
@@ -917,9 +1079,7 @@ where
                 if pending_tool_index.is_some() {
                     self.conversation_state.abandon_tool_use(tool_uses, user_input);
                 } else {
-                    self.conversation_state
-                        .append_new_user_message(user_input, prompt_context)
-                        .await;
+                    self.conversation_state.append_new_user_message(user_input).await;
                 }
 
                 self.send_tool_use_telemetry().await;
@@ -928,7 +1088,10 @@ where
                     self.client
                         .send_message(
                             self.conversation_state
-                                .as_sendable_conversation_state(conversation_start_context)
+                                .as_sendable_conversation_state(Some(ExtraContext {
+                                    general_context: conversation_start_context,
+                                    user_input_context: prompt_context,
+                                }))
                                 .await,
                         )
                         .await?,
@@ -1078,9 +1241,7 @@ where
                 };
 
                 // Add the summarization request
-                self.conversation_state
-                    .append_new_user_message(summary_request, None)
-                    .await;
+                self.conversation_state.append_new_user_message(summary_request).await;
 
                 // Use spinner while we wait
                 if self.interactive {
@@ -1307,8 +1468,8 @@ where
                                 style::Print("\n🌍 global:\n"),
                                 style::SetAttribute(Attribute::Reset),
                             )?;
-                            let mut global_context_files = Vec::new();
-                            let mut profile_context_files = Vec::new();
+                            let mut global_context_files = HashSet::new();
+                            let mut profile_context_files = HashSet::new();
                             if context_manager.global_config.paths.is_empty() {
                                 execute!(
                                     self.output,
@@ -2316,7 +2477,6 @@ where
                                 .append_new_user_message(
                                     "You took too long to respond - try to split up the work into smaller steps."
                                         .to_string(),
-                                    None,
                                 )
                                 .await;
                             self.send_tool_use_telemetry().await;
@@ -2972,6 +3132,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
+            State::new_fake(),
             std::io::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -3095,6 +3256,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
+            State::new_fake(),
             std::io::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -3193,6 +3355,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
+            State::new_fake(),
             std::io::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -3263,6 +3426,7 @@ mod tests {
         ChatContext::new(
             Arc::clone(&ctx),
             Settings::new_fake(),
+            State::new_fake(),
             std::io::stdout(),
             None,
             InputSource::new_mock(vec![
