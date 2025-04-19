@@ -17,7 +17,7 @@ pub fn app_name() -> AppName {
 }
 
 pub fn behavior_version() -> BehaviorVersion {
-    BehaviorVersion::v2024_03_28()
+    BehaviorVersion::v2025_01_17()
 }
 
 #[cfg(test)]
