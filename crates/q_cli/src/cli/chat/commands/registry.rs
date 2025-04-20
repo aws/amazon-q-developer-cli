@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use eyre::Result;
-use fig_os_shim::Context;
 
 use crate::cli::chat::commands::{
     ClearCommand,
@@ -14,6 +13,7 @@ use crate::cli::chat::commands::{
     QuitCommand,
 };
 use crate::cli::chat::{
+    ChatContext,
     ChatState,
     QueuedTool,
 };
@@ -115,7 +115,7 @@ impl CommandRegistry {
     pub async fn parse_and_execute(
         &self,
         input: &str,
-        ctx: &Context,
+        chat_context: &mut ChatContext<impl std::io::Write>,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
     ) -> Result<ChatState> {
@@ -123,7 +123,7 @@ impl CommandRegistry {
 
         if let Some(handler) = self.get(name) {
             let parsed_args = handler.parse_args(args)?;
-            handler.execute(parsed_args, ctx, tool_uses, pending_tool_index).await
+            handler.execute(parsed_args, chat_context, tool_uses, pending_tool_index).await
         } else {
             // If not a registered command, treat as a question to the AI
             Ok(ChatState::HandleInput {
@@ -159,6 +159,7 @@ impl CommandRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fig_os_shim::Context;
 
     #[test]
     fn test_command_registry_register_and_get() {
@@ -186,7 +187,7 @@ mod tests {
             fn execute<'a>(
                 &'a self,
                 _args: Vec<&'a str>,
-                _ctx: &'a Context,
+                _chat_context: &'a mut ChatContext<impl std::io::Write>,
                 _tool_uses: Option<Vec<QueuedTool>>,
                 _pending_tool_index: Option<usize>,
             ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ChatState>> + Send + 'a>> {

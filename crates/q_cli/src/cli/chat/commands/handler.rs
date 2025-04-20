@@ -5,6 +5,7 @@ use eyre::Result;
 use fig_os_shim::Context;
 
 use crate::cli::chat::{
+    ChatContext,
     ChatState,
     QueuedTool,
 };
@@ -40,7 +41,7 @@ pub trait CommandHandler: Send + Sync {
     fn execute<'a>(
         &'a self,
         args: Vec<&'a str>,
-        ctx: &'a Context,
+        chat_context: &'a mut ChatContext<impl std::io::Write>,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
     ) -> Pin<Box<dyn Future<Output = Result<ChatState>> + Send + 'a>>;

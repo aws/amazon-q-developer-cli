@@ -12,7 +12,6 @@ use fig_api_client::model::{
     ToolResultContentBlock,
     ToolResultStatus,
 };
-use fig_os_shim::Context;
 use serde::{
     Deserialize,
     Serialize,
@@ -24,6 +23,7 @@ use crate::cli::chat::tools::{
     InvokeOutput,
     OutputKind,
 };
+use crate::cli::chat::ChatContext;
 
 /// Response from executing a Q command
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,7 +62,7 @@ impl InternalCommand {
         }
     }
 
-    pub fn validate(&self, _ctx: &Context) -> Result<(), ToolResult> {
+    pub fn validate(&self, chat_context: &mut ChatContext<impl Write>) -> Result<(), ToolResult> {
         // Validate that the command is one of the known commands
         let cmd = self.command.trim_start_matches('/');
 
@@ -87,7 +87,7 @@ impl InternalCommand {
         }
     }
 
-    pub fn requires_acceptance(&self, _ctx: &Context) -> bool {
+    pub fn requires_acceptance(&self, chat_context: &mut ChatContext<impl Write>) -> bool {
         // Check if the command is one that should be trusted without confirmation
         let cmd = self.command.trim_start_matches('/');
 
@@ -167,7 +167,7 @@ impl InternalCommand {
         Ok(())
     }
 
-    pub async fn invoke(&self, context: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, chat_context: &mut ChatContext<impl Write>, updates: &mut impl Write) -> Result<InvokeOutput> {
         // Build the command string using the helper method
         let cmd_str = self.format_command_string();
 
@@ -178,7 +178,7 @@ impl InternalCommand {
         let registry = CommandRegistry::global();
 
         // Execute the command using the registry
-        let result = registry.parse_and_execute(&cmd_str, context, None, None);
+        let result = registry.parse_and_execute(&cmd_str, chat_context, None, None);
 
         match result.await {
             Ok(chat_state) => {
