@@ -652,7 +652,7 @@ However, during implementation, we encountered significant challenges:
 
 ### Revised Approach: Option 8 - ChatContext Adapter/Wrapper
 
-Given these challenges, we're proposing a new approach that minimizes changes to existing code while still providing access to `ChatContext`:
+Given these challenges, we proposed a new approach that minimizes changes to existing code while still providing access to `ChatContext`:
 
 **Approach:**
 - Create an adapter/wrapper struct that provides access to both `Context` and `ChatContext`
@@ -701,12 +701,34 @@ pub async fn invoke(&self, context: &Context, chat_context: &mut ChatContext<imp
 - Adds a new abstraction layer
 - Requires passing both `Context` and `ChatContext` to the `InternalCommand` tool
 
-#### Implementation Plan:
+### Implementation Challenges with Option 8 - CommandContextAdapter
 
-1. Create the `CommandContextAdapter` struct
-2. Update the `InternalCommand` tool to use this adapter
-3. Implement helper methods on the adapter as needed
-4. Update the tool invocation flow to pass both contexts to the tool
+When implementing the CommandContextAdapter approach, we encountered additional challenges:
+
+1. **Type Mismatch Issues**: The `ChatContext` struct has been changed to use a lifetime parameter (`'a`) instead of a generic parameter (`W: Write`), causing type mismatches throughout the codebase.
+
+2. **Structural Changes**: The adapter pattern requires changes to the `Tool::invoke` method signature, which has ripple effects throughout the codebase.
+
+3. **Command Handler Incompatibility**: The command handlers expect a different parameter type than what we're providing, leading to incompatible types.
+
+4. **HashSet Implementation Issues**: There are numerous errors related to the `HashSet` implementation for context files, indicating deeper issues with the data structures.
+
+### Revised Strategy: Targeted Approach
+
+Given the challenges with both approaches, we need to reconsider our strategy. Instead of making broad architectural changes, we should focus on a more targeted solution:
+
+1. **Minimal Changes**: Make the minimal necessary changes to enable the `internal_command` tool to work with the existing architecture.
+
+2. **Phased Refactoring**: Plan a phased approach to gradually refactor the codebase to support a cleaner architecture.
+
+3. **Team Consultation**: Discuss the challenges with the broader team to get input on the best approach.
+
+#### Implementation Plan for Targeted Approach:
+
+1. Keep the existing `CommandHandler` trait and `ChatContext` structure unchanged
+2. Modify the `InternalCommand` tool to work with the current architecture
+3. Add helper methods to extract the necessary context information without changing core interfaces
+4. Document the technical debt and plan for future refactoring
 
 ## Current and Next Steps
 
