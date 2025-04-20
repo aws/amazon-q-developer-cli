@@ -732,30 +732,39 @@ Given the challenges with both approaches, we need to reconsider our strategy. I
 
 ## Current and Next Steps
 
-### Current Step: Begin Phase 6.3: Migrate Complex Commands with Existing Handlers
+### Current Step: Revise Implementation Strategy
 
-1. **Start with the `context` command and its subcommands**:
-   - Migrate each subcommand individually
-   - Ensure proper argument parsing
-   - Implement whitespace handling for file paths using shlex
-   - Verify file operations work correctly
-   - Run the following commands before committing:
-     ```
-     cargo build -p q_cli
-     cargo +nightly fmt
-     cargo clippy -p q_cli
-     cargo test -p q_cli
-     ```
-   - Commit changes with a descriptive message following Conventional Commits format
-   - Run `/compact` with show summary option after the commit (or prompt user to do so manually)
-   - Update the implementation plan to mark this task as completed
+Based on the challenges encountered with both the trait object approach and the adapter pattern, we need to revise our implementation strategy:
+
+1. **Document the challenges and technical constraints**:
+   - The `ChatContext` struct uses a lifetime parameter (`'a`) instead of a generic parameter (`W: Write`)
+   - Command handlers expect a `Context` parameter, not a `ChatContext` parameter
+   - Changing core interfaces has widespread ripple effects throughout the codebase
+   - HashSet implementation for context files has type compatibility issues
+
+2. **Propose a targeted approach**:
+   - Keep existing interfaces unchanged where possible
+   - Focus on making the `internal_command` tool work with the current architecture
+   - Add helper methods or utility functions to bridge the gap between interfaces
+   - Document technical debt for future refactoring
+
+3. **Consult with the team**:
+   - Share findings about the architectural challenges
+   - Get input on the best approach for moving forward
+   - Determine if a larger refactoring effort is warranted
 
 ### Next Steps:
 
-1. **Continue Phase 6.3: Migrate Complex Commands with Existing Handlers**
-   - After `context` command, move on to the `profile` command and its subcommands
-   - Ensure profile management works correctly
-   - Verify error handling
+1. **Implement a minimal solution for the `internal_command` tool**:
+   - Update the tool to work with the existing architecture
+   - Add helper methods to extract necessary context information
+   - Ensure proper command execution without changing core interfaces
+
+2. **Continue Phase 6.3: Migrate Complex Commands with Existing Handlers**
+   - After implementing the minimal solution, move on to the `context` command and its subcommands
+   - Ensure proper argument parsing
+   - Implement whitespace handling for file paths using shlex
+   - Verify file operations work correctly
    - Follow the same pre-commit and post-commit process
 
 ## Success Metrics
