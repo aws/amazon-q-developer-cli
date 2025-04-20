@@ -484,6 +484,7 @@ impl CommandRegistry {
 **Cons:**
 - Requires refactoring the command execution chain
 - May introduce breaking changes to existing code
+- **Critical Issue**: Makes the trait non-object-safe due to generic parameters in `ChatContext<W>`, breaking the command registry
 
 ### Option 2: Interior Mutability with Arc<Mutex<ChatContext>>
 
@@ -515,6 +516,7 @@ pub trait CommandHandler {
 - Risk of deadlocks if not managed carefully
 - More complex error handling around lock acquisition
 - Performance overhead from locking
+- Still has object safety issues with generic parameters
 
 ### Option 3: Command Result with Mutation Instructions
 
@@ -556,6 +558,7 @@ pub trait CommandHandler {
 **Cons:**
 - More verbose for commands that need to make multiple changes
 - Requires defining all possible mutations upfront
+- Complex to implement for all possible mutation types
 
 ### Option 4: Callback-Based Approach
 
@@ -594,21 +597,59 @@ pub async fn execute_command(
 - Error handling is more challenging
 - May lead to callback hell
 
-### Selected Approach: Option 1 - Direct Mutable Reference to ChatContext
+### Option 5: Use a Trait Object for Write
 
-We've selected Option 1 (Direct Mutable Reference to ChatContext) for these reasons:
+**Approach:**
+- Modify `ChatContext` to use a trait object (`dyn std::io::Write`) instead of a generic parameter
+- Update the `CommandHandler` trait to accept this modified `ChatContext`
 
-1. It's the simplest approach with minimal abstraction overhead
+**Implementation:**
+```rust
+// In chat/mod.rs
+pub struct ChatContext<'a> {
+    // Other fields...
+    output: &'a mut dyn std::io::Write,
+}
+
+// In commands/handler.rs
+pub trait CommandHandler {
+    fn execute<'a>(
+        &'a self,
+        args: Vec<&'a str>,
+        chat_context: &'a mut ChatContext<'a>,
+        tool_uses: Option<Vec<QueuedTool>>,
+        pending_tool_index: Option<usize>,
+    ) -> Pin<Box<dyn Future<Output = Result<ChatState>> + Send + 'a>>;
+}
+```
+
+**Pros:**
+- Preserves object safety of the trait
+- Still allows direct access to `ChatContext`
+- Minimal changes to existing code structure
+- Follows Rust's ownership rules clearly
+
+**Cons:**
+- Small runtime cost for dynamic dispatch (negligible in this context)
+- Requires updating `ChatContext` to use trait objects
+
+### Selected Approach: Option 5 - Use a Trait Object for Write
+
+We've selected Option 5 (Use a Trait Object for Write) for these reasons:
+
+1. It preserves object safety of the `CommandHandler` trait, which is critical for the command registry
 2. It provides direct access to both `ChatContext` and `Context` (via `chat_context.context`)
 3. It follows Rust's ownership rules clearly
-4. It's a straightforward refactoring that can be implemented incrementally
+4. It requires minimal changes to the existing code structure
+5. The small runtime cost of dynamic dispatch is negligible in this context
 
 #### Implementation Plan:
 
-1. Update the `CommandHandler` trait to accept a mutable reference to `ChatContext`
-2. Modify the `CommandRegistry::parse_and_execute` method to accept a mutable reference to `ChatContext`
-3. Update the `InternalCommand` tool to pass the mutable `ChatContext`
-4. Migrate commands one by one to use the new signature
+1. Modify the `ChatContext` struct to use a trait object (`dyn std::io::Write`) instead of a generic parameter
+2. Update the `CommandHandler` trait to accept this modified `ChatContext`
+3. Update the `CommandRegistry::parse_and_execute` method to use the modified `ChatContext`
+4. Update the `InternalCommand` tool to use the modified `ChatContext`
+5. Migrate commands one by one to use the new signature
 
 ## Current and Next Steps
 
