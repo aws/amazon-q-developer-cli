@@ -633,9 +633,9 @@ pub trait CommandHandler {
 - Small runtime cost for dynamic dispatch (negligible in this context)
 - Requires updating `ChatContext` to use trait objects
 
-### Selected Approach: Option 5 - Use a Trait Object for Write
+### Implementation Challenges with Option 5 - Use a Trait Object for Write
 
-We've selected Option 5 (Use a Trait Object for Write) for these reasons:
+We initially selected Option 5 (Use a Trait Object for Write) for these reasons:
 
 1. It preserves object safety of the `CommandHandler` trait, which is critical for the command registry
 2. It provides direct access to both `ChatContext` and `Context` (via `chat_context.context`)
@@ -643,13 +643,70 @@ We've selected Option 5 (Use a Trait Object for Write) for these reasons:
 4. It requires minimal changes to the existing code structure
 5. The small runtime cost of dynamic dispatch is negligible in this context
 
+However, during implementation, we encountered significant challenges:
+
+1. **Lifetime Issues**: Complex lifetime relationships between `ChatContext`, its contained `Write` trait object, and the command handlers
+2. **Widespread Type Changes**: Changing the core `ChatContext` structure affects numerous components throughout the codebase
+3. **Existing Command Implementations**: All command implementations would need to be updated to use the new signature
+4. **Object Safety Concerns**: Despite our efforts, we still encountered object safety issues with trait objects
+
+### Revised Approach: Option 8 - ChatContext Adapter/Wrapper
+
+Given these challenges, we're proposing a new approach that minimizes changes to existing code while still providing access to `ChatContext`:
+
+**Approach:**
+- Create an adapter/wrapper struct that provides access to both `Context` and `ChatContext`
+- Keep the existing `CommandHandler` trait unchanged
+- Update the `InternalCommand` tool to use this adapter
+
+**Implementation:**
+```rust
+// New adapter struct
+pub struct CommandContextAdapter<'a, W: Write> {
+    pub context: &'a Context,
+    pub chat_context: &'a mut ChatContext<W>,
+}
+
+impl<'a, W: Write> CommandContextAdapter<'a, W> {
+    pub fn new(context: &'a Context, chat_context: &'a mut ChatContext<W>) -> Self {
+        Self { context, chat_context }
+    }
+    
+    // Helper methods to access both contexts
+    pub fn context(&self) -> &Context {
+        self.context
+    }
+    
+    pub fn chat_context(&mut self) -> &mut ChatContext<W> {
+        self.chat_context
+    }
+}
+
+// In InternalCommand tool
+pub async fn invoke(&self, context: &Context, chat_context: &mut ChatContext<impl Write>, updates: &mut impl Write) -> Result<InvokeOutput> {
+    let mut adapter = CommandContextAdapter::new(context, chat_context);
+    // Use adapter to access both contexts
+    // ...
+}
+```
+
+**Pros:**
+- Minimal changes to existing code structure
+- No need to modify the `CommandHandler` trait
+- Preserves all existing command implementations
+- No object safety issues
+- Clear separation of concerns
+
+**Cons:**
+- Adds a new abstraction layer
+- Requires passing both `Context` and `ChatContext` to the `InternalCommand` tool
+
 #### Implementation Plan:
 
-1. Modify the `ChatContext` struct to use a trait object (`dyn std::io::Write`) instead of a generic parameter
-2. Update the `CommandHandler` trait to accept this modified `ChatContext`
-3. Update the `CommandRegistry::parse_and_execute` method to use the modified `ChatContext`
-4. Update the `InternalCommand` tool to use the modified `ChatContext`
-5. Migrate commands one by one to use the new signature
+1. Create the `CommandContextAdapter` struct
+2. Update the `InternalCommand` tool to use this adapter
+3. Implement helper methods on the adapter as needed
+4. Update the tool invocation flow to pass both contexts to the tool
 
 ## Current and Next Steps
 
