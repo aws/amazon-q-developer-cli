@@ -442,6 +442,174 @@ impl TestContext {
   - **7.4**: Week 12
   - **7.5**: Week 12
 
+## ChatContext Access Options for Command Handlers
+
+A key challenge in implementing complex commands like `compact`, `profile`, and `context` is providing mutable access to the `ChatContext` for commands called via `InternalCommand`. The following options were considered:
+
+### Option 1: Direct Mutable Reference to ChatContext
+
+**Approach:**
+- Modify the `CommandHandler` trait to accept a mutable reference to `ChatContext` directly
+- Update the command execution chain to pass this mutable reference
+
+**Implementation:**
+```rust
+// In commands/handler.rs
+pub trait CommandHandler {
+    // Update to take mutable reference to ChatContext
+    async fn execute(&self, args: Vec<String>, chat_context: &mut ChatContext) -> Result<ChatState>;
+    // ...
+}
+
+// In commands/registry.rs
+impl CommandRegistry {
+    pub async fn parse_and_execute(
+        &self,
+        command: &str,
+        chat_context: &mut ChatContext,
+        // ...
+    ) -> Result<ChatState> {
+        // Access context via chat_context.context
+        let context = &chat_context.context;
+        // ...
+    }
+}
+```
+
+**Pros:**
+- Simplest approach - direct and explicit
+- No need for additional wrapper types
+- Commands have access to both ChatContext and Context
+
+**Cons:**
+- Requires refactoring the command execution chain
+- May introduce breaking changes to existing code
+
+### Option 2: Interior Mutability with Arc<Mutex<ChatContext>>
+
+**Approach:**
+- Wrap `ChatContext` in an `Arc<Mutex<>>` to allow shared mutability
+- Pass this wrapped context through the command execution chain
+
+**Implementation:**
+```rust
+// In chat/mod.rs
+pub struct Chat {
+    chat_context: Arc<Mutex<ChatContext>>,
+    // ...
+}
+
+// In commands/handler.rs
+pub trait CommandHandler {
+    async fn execute(&self, args: Vec<String>, chat_context: Arc<Mutex<ChatContext>>) -> Result<ChatState>;
+    // ...
+}
+```
+
+**Pros:**
+- Minimal changes to function signatures
+- Allows shared access to mutable state
+- Thread-safe approach
+
+**Cons:**
+- Risk of deadlocks if not managed carefully
+- More complex error handling around lock acquisition
+- Performance overhead from locking
+
+### Option 3: Command Result with Mutation Instructions
+
+**Approach:**
+- Commands return a `CommandResult` that includes both the `ChatState` and a set of mutation instructions
+- The chat loop applies these mutations to the `ChatContext`
+
+**Implementation:**
+```rust
+// Define mutation instructions
+pub enum ChatContextMutation {
+    AddMessage(Message),
+    SetProfile(Profile),
+    AddContext(ContextFile),
+    RemoveContext(usize),
+    ClearContext,
+    // ...
+}
+
+// Command result with mutations
+pub struct CommandResult {
+    pub state: ChatState,
+    pub mutations: Vec<ChatContextMutation>,
+}
+
+// Updated CommandHandler trait
+pub trait CommandHandler {
+    // Pass immutable reference to ChatContext for read access
+    async fn execute(&self, args: Vec<String>, chat_context: &ChatContext) -> Result<CommandResult>;
+    // ...
+}
+```
+
+**Pros:**
+- Clean separation of concerns
+- Commands don't need direct mutable access
+- Explicit about what changes are being made
+
+**Cons:**
+- More verbose for commands that need to make multiple changes
+- Requires defining all possible mutations upfront
+
+### Option 4: Callback-Based Approach
+
+**Approach:**
+- Define a set of callback functions that modify the `ChatContext`
+- Pass these callbacks to the command handlers
+
+**Implementation:**
+```rust
+// Define a callback type that takes mutable ChatContext
+type ChatContextCallback = Box<dyn FnOnce(&mut ChatContext) -> Result<()> + Send>;
+
+// In the command execution flow
+pub async fn execute_command(
+    command: &str, 
+    chat_context: &ChatContext,
+    mutation_callback: ChatContextCallback
+) -> Result<ChatState> {
+    // Execute command with read-only access to chat_context
+    let state = registry.parse_and_execute(command, chat_context).await?;
+    
+    // Apply mutations if needed
+    mutation_callback(chat_context)?;
+    
+    Ok(state)
+}
+```
+
+**Pros:**
+- Flexible and extensible
+- Avoids direct mutable references
+- Can be implemented incrementally
+
+**Cons:**
+- Complex to implement and use
+- Error handling is more challenging
+- May lead to callback hell
+
+### Selected Approach: Option 1 - Direct Mutable Reference to ChatContext
+
+We've selected Option 1 (Direct Mutable Reference to ChatContext) for these reasons:
+
+1. It's the simplest approach with minimal abstraction overhead
+2. It provides direct access to both `ChatContext` and `Context` (via `chat_context.context`)
+3. It follows Rust's ownership rules clearly
+4. It's a straightforward refactoring that can be implemented incrementally
+
+#### Implementation Plan:
+
+1. Update the `CommandHandler` trait to accept a mutable reference to `ChatContext`
+2. Modify the `CommandRegistry::parse_and_execute` method to accept a mutable reference to `ChatContext`
+3. Update the `InternalCommand` tool to pass the mutable `ChatContext`
+4. Migrate commands one by one to use the new signature
+
 ## Current and Next Steps
 
 ### Current Step: Begin Phase 6.3: Migrate Complex Commands with Existing Handlers
