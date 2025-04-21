@@ -2889,7 +2889,7 @@ where
             .tool
             .queue_description(&self.ctx, &mut self.output)
             .await
-            .map_err(|e| ChatError::Custom(format!("failed to print tool: {}", e).into()))?;
+            .map_err(|e| ChatError::Custom(format!("failed to print tool, `{}`: {}", tool_use.name, e).into()))?;
 
         Ok(())
     }
