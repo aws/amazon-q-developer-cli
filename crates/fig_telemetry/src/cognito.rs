@@ -28,7 +28,7 @@ pub(crate) async fn get_cognito_credentials_send(
     telemetry_stage: &TelemetryStage,
 ) -> Result<Credentials, CredentialsError> {
     let conf = aws_sdk_cognitoidentity::Config::builder()
-        .behavior_version(BehaviorVersion::v2024_03_28())
+        .behavior_version(BehaviorVersion::v2025_01_17())
         .region(telemetry_stage.region.clone())
         .app_name(app_name())
         .build();
