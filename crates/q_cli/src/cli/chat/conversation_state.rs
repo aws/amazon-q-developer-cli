@@ -298,9 +298,9 @@ impl ConversationState {
         if let Some(cm) = self.context_manager.as_mut() {
             let mut null_writer = SharedWriter::null();
             let updates = if quiet {
-                &mut null_writer
+                None
             } else {
-                self.updates.as_mut().unwrap_or(&mut null_writer)
+                Some(self.updates.as_mut().unwrap_or(&mut null_writer))
             };
 
             let hook_results = cm.run_hooks(updates).await;
