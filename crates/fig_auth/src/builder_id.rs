@@ -537,14 +537,68 @@ pub async fn poll_create_token(
     }
 }
 
+/// Write credentials to ~/.aws/amazonq/creds.json
+pub fn write_credentials_to_file(token: &BuilderIdToken) -> Result<()> {
+    use std::fs;
+    use std::path::PathBuf;
+
+    // Create credentials JSON
+    let creds = serde_json::json!({
+        "access_token": token.access_token.0.clone(),
+        "expires_at": token.expires_at.to_string(),
+        "refresh_token": token.refresh_token.as_ref().map(|t| t.0.clone()),
+        "region": token.region.clone(),
+        "start_url": token.start_url.clone(),
+        "token_type": match token.token_type() {
+            TokenType::BuilderId => "BuilderId",
+            TokenType::IamIdentityCenter => "IamIdentityCenter",
+        }
+    });
+
+    // Ensure ~/.aws/amazonq directory exists
+    let mut path = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "~".to_string()));
+    path.push(".aws");
+    path.push("amazonq");
+
+    // Create directory if it doesn't exist
+    if !path.exists() {
+        fs::create_dir_all(&path)?;
+    }
+
+    // Write to creds.json
+    path.push("creds.json");
+    fs::write(&path, serde_json::to_string_pretty(&creds)?)?;
+
+    debug!("Wrote credentials to {}", path.display());
+    Ok(())
+}
+
 pub async fn builder_id_token() -> Result<Option<BuilderIdToken>> {
     let secret_store = SecretStore::new().await?;
-    BuilderIdToken::load(&secret_store, false).await
+    let token = BuilderIdToken::load(&secret_store, false).await?;
+
+    // Write credentials to file if token exists
+    if let Some(ref token) = token {
+        if let Err(err) = write_credentials_to_file(token) {
+            error!(?err, "Failed to write credentials to file");
+        }
+    }
+
+    Ok(token)
 }
 
 pub async fn refresh_token() -> Result<Option<BuilderIdToken>> {
     let secret_store = SecretStore::new().await?;
-    BuilderIdToken::load(&secret_store, true).await
+    let token = BuilderIdToken::load(&secret_store, true).await?;
+
+    // Write credentials to file if token exists
+    if let Some(ref token) = token {
+        if let Err(err) = write_credentials_to_file(token) {
+            error!(?err, "Failed to write credentials to file");
+        }
+    }
+
+    Ok(token)
 }
 
 pub async fn is_amzn_user() -> Result<bool> {
