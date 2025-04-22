@@ -92,6 +92,50 @@ impl UserMessage {
         }
     }
 
+    /// Converts this message into a [UserInputMessage] to be stored in the history of
+    /// [fig_api_client::model::ConversationState].
+    pub fn into_history_entry(self) -> UserInputMessage {
+        UserInputMessage {
+            content: self.prompt().unwrap_or_default().to_string(),
+            user_input_message_context: Some(UserInputMessageContext {
+                shell_state: self.env_context.shell_state,
+                env_state: self.env_context.env_state,
+                tool_results: match self.content {
+                    UserMessageContent::CancelledToolUses { tool_use_results, .. }
+                    | UserMessageContent::ToolUseResults { tool_use_results } => {
+                        Some(tool_use_results.into_iter().map(Into::into).collect())
+                    },
+                    UserMessageContent::Prompt { .. } => None,
+                },
+                tools: None,
+                ..Default::default()
+            }),
+            user_intent: None,
+        }
+    }
+
+    /// Converts this message into a [UserInputMessage] to be sent as
+    /// [FigConversationState::user_input_message].
+    pub fn into_user_input_message(self) -> UserInputMessage {
+        UserInputMessage {
+            content: format!("{} {}", self.additional_context, self.prompt().unwrap_or_default()),
+            user_input_message_context: Some(UserInputMessageContext {
+                shell_state: self.env_context.shell_state,
+                env_state: self.env_context.env_state,
+                tool_results: match self.content {
+                    UserMessageContent::CancelledToolUses { tool_use_results, .. }
+                    | UserMessageContent::ToolUseResults { tool_use_results } => {
+                        Some(tool_use_results.into_iter().map(Into::into).collect())
+                    },
+                    UserMessageContent::Prompt { .. } => None,
+                },
+                tools: None,
+                ..Default::default()
+            }),
+            user_intent: None,
+        }
+    }
+
     pub fn has_tool_use_results(&self) -> bool {
         match self.content() {
             UserMessageContent::CancelledToolUses { .. } | UserMessageContent::ToolUseResults { .. } => true,
@@ -120,28 +164,6 @@ impl UserMessage {
             UserMessageContent::Prompt { prompt } => Some(prompt.as_str()),
             UserMessageContent::CancelledToolUses { prompt, .. } => prompt.as_ref().map(|s| s.as_str()),
             UserMessageContent::ToolUseResults { .. } => None,
-        }
-    }
-}
-
-impl From<UserMessage> for UserInputMessage {
-    fn from(value: UserMessage) -> Self {
-        Self {
-            content: format!("{} {}", value.additional_context, value.prompt().unwrap_or_default()),
-            user_input_message_context: Some(UserInputMessageContext {
-                shell_state: value.env_context.shell_state,
-                env_state: value.env_context.env_state,
-                tool_results: match value.content {
-                    UserMessageContent::CancelledToolUses { tool_use_results, .. }
-                    | UserMessageContent::ToolUseResults { tool_use_results } => {
-                        Some(tool_use_results.into_iter().map(Into::into).collect())
-                    },
-                    UserMessageContent::Prompt { .. } => None,
-                },
-                tools: None,
-                ..Default::default()
-            }),
-            user_intent: None,
         }
     }
 }

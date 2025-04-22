@@ -172,15 +172,9 @@ impl ConversationState {
     }
 
     /// Sets the response message according to the currently set [Self::next_message].
-    // pub fn push_assistant_message(&mut self, message: AssistantResponseMessage) {
     pub fn push_assistant_message(&mut self, message: AssistantMessage) {
         debug_assert!(self.next_message.is_some(), "next_message should exist");
         let next_user_message = self.next_message.take().expect("next user message should exist");
-
-        // // Don't include the tool spec in all user messages in the history.
-        // if let Some(ctx) = next_user_message.user_input_message_context.as_mut() {
-        //     ctx.tools.take();
-        // }
 
         self.append_assistant_transcript(&message);
         self.history.push_back((next_user_message, message));
@@ -276,13 +270,16 @@ impl ConversationState {
     }
 
     /// Returns a [FigConversationState] capable of being sent by [fig_api_client::StreamingClient].
-    pub async fn as_sendable_conversation_state(&mut self) -> FigConversationState {
+    ///
+    /// Params:
+    /// - `run_hooks` - whether hooks should be executed and included as context
+    pub async fn as_sendable_conversation_state(&mut self, run_hooks: bool) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
         self.enforce_conversation_invariants();
         self.history.drain(self.valid_history_range.1..);
         self.history.drain(..self.valid_history_range.0);
 
-        self.backend_conversation_state(false)
+        self.backend_conversation_state(run_hooks, false)
             .await
             .into_fig_conversation_state()
             .expect("unable to construct conversation state")
@@ -290,12 +287,12 @@ impl ConversationState {
 
     /// Returns a conversation state representation which reflects the exact conversation to send
     /// back to the model.
-    pub async fn backend_conversation_state(&mut self, quiet: bool) -> BackendConversationState<'_> {
+    pub async fn backend_conversation_state(&mut self, run_hooks: bool, quiet: bool) -> BackendConversationState<'_> {
         self.enforce_conversation_invariants();
 
         // Run hooks and add to conversation start and next user message.
         let mut conversation_start_context = None;
-        if let Some(cm) = self.context_manager.as_mut() {
+        if let (true, Some(cm)) = (run_hooks, self.context_manager.as_mut()) {
             let mut null_writer = SharedWriter::null();
             let updates = if quiet {
                 None
@@ -371,7 +368,7 @@ impl ConversationState {
             },
         };
 
-        let conv_state = self.backend_conversation_state(true).await;
+        let conv_state = self.backend_conversation_state(false, true).await;
 
         // Include everything but the last message in the history.
         let history_len = conv_state.history.len();
@@ -505,7 +502,7 @@ impl ConversationState {
 
     /// Calculate the total character count in the conversation
     pub async fn calculate_char_count(&mut self) -> CharCount {
-        self.backend_conversation_state(true).await.char_count()
+        self.backend_conversation_state(false, true).await.char_count()
     }
 
     /// Get the current token warning level
@@ -625,7 +622,7 @@ impl
         let mut user_input_message: UserInputMessage = self
             .next_user_message
             .cloned()
-            .map(Into::into)
+            .map(UserMessage::into_user_input_message)
             .ok_or(eyre::eyre!("next user message is not set"))?;
         if let Some(ctx) = user_input_message.user_input_message_context.as_mut() {
             ctx.tools = Some(self.tools.to_vec());
@@ -638,7 +635,7 @@ impl
         })
     }
 
-    pub fn get_utilization(&self) -> ConversationSize {
+    pub fn calculate_conversation_size(&self) -> ConversationSize {
         let mut user_chars = 0;
         let mut assistant_chars = 0;
         let mut context_chars = 0;
@@ -684,7 +681,7 @@ where
     T: Iterator<Item = &'a (UserMessage, AssistantMessage)>,
 {
     history.fold(Vec::new(), |mut acc, (user, assistant)| {
-        acc.push(ChatMessage::UserInputMessage(user.clone().into()));
+        acc.push(ChatMessage::UserInputMessage(user.clone().into_history_entry()));
         acc.push(ChatMessage::AssistantResponseMessage(assistant.clone().into()));
         acc
     })
@@ -839,7 +836,7 @@ mod tests {
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state().await;
+            let s = conversation_state.as_sendable_conversation_state(true).await;
             assert_conversation_state_invariants(s, i);
             conversation_state.push_assistant_message(AssistantMessage::new_response(None, i.to_string()));
             conversation_state.set_next_user_message(i.to_string()).await;
@@ -853,7 +850,7 @@ mod tests {
             ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
         conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state().await;
+            let s = conversation_state.as_sendable_conversation_state(true).await;
             assert_conversation_state_invariants(s, i);
 
             conversation_state.push_assistant_message(AssistantMessage::new_tool_use(None, i.to_string(), vec![
@@ -875,7 +872,7 @@ mod tests {
             ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
         conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state().await;
+            let s = conversation_state.as_sendable_conversation_state(true).await;
             assert_conversation_state_invariants(s, i);
             if i % 3 == 0 {
                 conversation_state.push_assistant_message(AssistantMessage::new_tool_use(None, i.to_string(), vec![
@@ -908,7 +905,7 @@ mod tests {
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state().await;
+            let s = conversation_state.as_sendable_conversation_state(true).await;
 
             // Ensure that the first two messages are the fake context messages.
             let hist = s.history.as_ref().unwrap();
@@ -965,7 +962,7 @@ mod tests {
         // Simulate conversation flow
         conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=5 {
-            let s = conversation_state.as_sendable_conversation_state().await;
+            let s = conversation_state.as_sendable_conversation_state(true).await;
             let hist = s.history.as_ref().unwrap();
             #[allow(clippy::match_wildcard_for_single_variants)]
             match &hist[0] {

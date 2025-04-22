@@ -877,7 +877,7 @@ impl ChatContext {
                                     tool_uses,
                                     "The user interrupted the tool execution.".to_string(),
                                 );
-                                let _ = self.conversation_state.as_sendable_conversation_state().await;
+                                let _ = self.conversation_state.as_sendable_conversation_state(false).await;
                                 self.conversation_state
                                     .push_assistant_message(AssistantMessage::new_response(
                                         None,
@@ -893,7 +893,7 @@ impl ChatContext {
                         fig_api_client::Error::ContextWindowOverflow => {
                             let history_too_small = self
                                 .conversation_state
-                                .backend_conversation_state(true)
+                                .backend_conversation_state(false, true)
                                 .await
                                 .history
                                 .len()
@@ -1106,7 +1106,7 @@ impl ChatContext {
         if self.conversation_state.next_user_message().is_some() {
             Ok(ChatState::HandleResponseStream(
                 self.client
-                    .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                    .send_message(self.conversation_state.as_sendable_conversation_state(false).await)
                     .await?,
             ))
         } else {
@@ -1237,7 +1237,7 @@ impl ChatContext {
                     self.conversation_state.set_next_user_message(user_input).await;
                 }
 
-                let conv_state = self.conversation_state.as_sendable_conversation_state().await;
+                let conv_state = self.conversation_state.as_sendable_conversation_state(true).await;
 
                 if self.interactive {
                     queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
@@ -2224,8 +2224,8 @@ impl ChatContext {
                 }
             },
             Command::Usage => {
-                let state = self.conversation_state.backend_conversation_state(true).await;
-                let data = state.get_utilization();
+                let state = self.conversation_state.backend_conversation_state(true, true).await;
+                let data = state.calculate_conversation_size();
 
                 let context_token_count: TokenCount = data.context_messages.into();
                 let assistant_token_count: TokenCount = data.assistant_messages.into();
@@ -2472,7 +2472,7 @@ impl ChatContext {
         self.send_tool_use_telemetry().await;
         return Ok(ChatState::HandleResponseStream(
             self.client
-                .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                .send_message(self.conversation_state.as_sendable_conversation_state(false).await)
                 .await?,
         ));
     }
@@ -2560,7 +2560,7 @@ impl ChatContext {
                             self.send_tool_use_telemetry().await;
                             return Ok(ChatState::HandleResponseStream(
                                 self.client
-                                    .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                                    .send_message(self.conversation_state.as_sendable_conversation_state(false).await)
                                     .await?,
                             ));
                         },
@@ -2593,7 +2593,7 @@ impl ChatContext {
                             self.send_tool_use_telemetry().await;
                             return Ok(ChatState::HandleResponseStream(
                                 self.client
-                                    .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                                    .send_message(self.conversation_state.as_sendable_conversation_state(false).await)
                                     .await?,
                             ));
                         },
@@ -2788,7 +2788,7 @@ impl ChatContext {
 
             let response = self
                 .client
-                .send_message(self.conversation_state.as_sendable_conversation_state().await)
+                .send_message(self.conversation_state.as_sendable_conversation_state(false).await)
                 .await?;
             return Ok(ChatState::HandleResponseStream(response));
         }

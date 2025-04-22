@@ -105,7 +105,7 @@ pub trait CharCounter {
 
 impl CharCounter for BackendConversationState<'_> {
     fn char_count(&self) -> CharCount {
-        self.get_utilization().char_count()
+        self.calculate_conversation_size().char_count()
     }
 }
 
