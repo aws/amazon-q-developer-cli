@@ -20,14 +20,12 @@ use tracing::error;
 
 use super::consts::MAX_CURRENT_WORKING_DIRECTORY_LEN;
 use super::tools::{
+    InvokeOutput,
     OutputKind,
     document_to_serde_value,
-};
-use super::util::truncate_safe;
-use crate::cli::chat::tools::{
-    InvokeOutput,
     serde_value_to_document,
 };
+use super::util::truncate_safe;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserMessage {

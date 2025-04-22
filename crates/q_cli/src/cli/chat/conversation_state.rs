@@ -52,8 +52,8 @@ use super::tools::{
     QueuedTool,
     ToolSpec,
 };
-use crate::cli::chat::hooks::HookTrigger;
-use crate::cli::chat::tools::{
+use super::hooks::HookTrigger;
+use super::tools::{
     InputSchema,
     serde_value_to_document,
 };

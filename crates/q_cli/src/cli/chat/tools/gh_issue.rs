@@ -21,7 +21,7 @@ use super::{
     InvokeOutput,
     ToolPermission,
 };
-use crate::cli::chat::context::ContextManager;
+use super::super::context::ContextManager;
 use crate::cli::issue::IssueCreator;
 
 #[derive(Debug, Clone, Deserialize)]

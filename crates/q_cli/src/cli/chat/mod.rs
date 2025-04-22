@@ -119,6 +119,10 @@ that may eventually reach memory constraints.
     )
 }
 use input_source::InputSource;
+use parse::{
+    ParseState,
+    interpret_markdown,
+};
 use parser::{
     RecvErrorKind,
     ResponseParser,
@@ -151,17 +155,14 @@ use tracing::{
     trace,
     warn,
 };
-use util::animate_output;
+use util::{
+    animate_output,
+    play_notification_bell,
+    region_check,
+};
 use uuid::Uuid;
 use winnow::Partial;
 use winnow::stream::Offset;
-
-use crate::cli::chat::parse::{
-    ParseState,
-    interpret_markdown,
-};
-use crate::util::region_check;
-use crate::util::spinner::play_notification_bell;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 
