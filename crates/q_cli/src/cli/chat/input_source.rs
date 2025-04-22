@@ -7,9 +7,9 @@ use rustyline::{
     KeyEvent,
 };
 
-use super::skim_integration::SkimCommandSelector;
 use super::context::ContextManager;
 use super::prompt::rl;
+use super::skim_integration::SkimCommandSelector;
 
 #[derive(Debug)]
 pub struct InputSource(inner::Inner);

@@ -758,8 +758,8 @@ fn validate_profile_name(name: &str) -> Result<()> {
 mod tests {
     use std::io::Stdout;
 
-    use super::*;
     use super::super::hooks::HookTrigger;
+    use super::*;
 
     // Helper function to create a test ContextManager with Context
     pub async fn create_test_context_manager() -> Result<ContextManager> {
