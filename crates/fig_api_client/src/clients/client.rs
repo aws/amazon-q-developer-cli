@@ -37,6 +37,7 @@ use crate::model::{
     RecommendationsInput,
     RecommendationsOutput,
 };
+use crate::profile::Profile;
 use crate::{
     Customization,
     Endpoint,
@@ -205,6 +206,31 @@ impl Client {
             },
             inner::Inner::Consolas(_) => Err(Error::UnsupportedConsolas("send_telemetry_event")),
             inner::Inner::Mock => Ok(()),
+        }
+    }
+
+    pub async fn list_available_profiles(&self) -> Result<Vec<Profile>, Error> {
+        match &self.0 {
+            inner::Inner::Codewhisperer(client) => {
+                let mut profiles = vec![];
+                while let Some(profiles_output) = client.list_available_profiles().into_paginator().send().next().await
+                {
+                    profiles.extend(profiles_output?.profiles().iter().cloned().map(Profile::from));
+                }
+
+                Ok(profiles)
+            },
+            inner::Inner::Consolas(_) => Err(Error::UnsupportedConsolas("list_available_profiles")),
+            inner::Inner::Mock => Ok(vec![
+                Profile {
+                    arn: "my:arn:1".to_owned(),
+                    profile_name: "MyProfile".to_owned(),
+                },
+                Profile {
+                    arn: "my:arn:2".to_owned(),
+                    profile_name: "MyOtherProfile".to_owned(),
+                },
+            ]),
         }
     }
 }

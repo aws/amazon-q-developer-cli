@@ -5,7 +5,6 @@ pub use ::aws_smithy_runtime_api::client::endpoint::{
 };
 pub use ::aws_smithy_types::endpoint::Endpoint;
 
-///
 #[cfg(test)]
 mod test {}
 

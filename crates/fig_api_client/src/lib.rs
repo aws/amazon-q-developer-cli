@@ -6,6 +6,7 @@ mod endpoints;
 pub mod error;
 pub(crate) mod interceptor;
 pub mod model;
+pub mod profile;
 
 pub use clients::{
     Client,
@@ -14,3 +15,4 @@ pub use clients::{
 pub use customization::Customization;
 pub use endpoints::Endpoint;
 pub use error::Error;
+pub use profile::list_available_profiles;

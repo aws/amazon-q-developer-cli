@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn test_hardcoded_commands_in_commands_array() {
         // Get the set of available commands from prompt.rs
-        let available_commands: HashSet<String> = get_available_commands().iter().map(|cmd| cmd.clone()).collect();
+        let available_commands: HashSet<String> = get_available_commands().iter().cloned().collect();
 
         // List of hardcoded commands used in select_command
         let hardcoded_commands = vec![

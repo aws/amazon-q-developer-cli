@@ -44,6 +44,8 @@ message ClientOriginatedMessage {
     AuthFinishPkceAuthorizationRequest auth_finish_pkce_authorization_request = 150;
     AuthCancelPkceAuthorizationRequest auth_cancel_pkce_authorization_request = 151;
     GetPlatformInfoRequest get_platform_info_request = 152;
+    ListAvailableProfilesRequest list_available_profiles_request = 155;
+    SetProfileRequest set_profile_request = 156;
   }
 
   reserved 115;
@@ -75,6 +77,7 @@ message ServerOriginatedMessage {
     AuthFinishPkceAuthorizationResponse auth_finish_pkce_authorization_response = 123;
     AuthCancelPkceAuthorizationResponse auth_cancel_pkce_authorization_response = 124;
     GetPlatformInfoResponse get_platform_info_response = 125;
+    ListAvailableProfilesResponse list_available_profiles_response = 155;
 
     Notification notification = 1000;
   }
@@ -376,6 +379,21 @@ message GetPlatformInfoResponse {
   optional DesktopEnvironment desktop_environment = 2;
   optional DisplayServerProtocol display_server_protocol = 3;
   optional AppBundleType app_bundle_type = 4;
+}
+
+message Profile {
+  string arn = 1;
+  string profileName = 2;
+}
+
+message ListAvailableProfilesRequest {}
+
+message ListAvailableProfilesResponse {
+  repeated Profile profiles = 1;
+}
+
+message SetProfileRequest {
+  Profile profile = 1;
 }
 
 /// User
