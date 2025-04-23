@@ -2575,10 +2575,19 @@ impl ChatContext {
                                 tool_use_id, name, "The response stream ended before the entire tool use was received"
                             );
                             if self.interactive {
-                                execute!(self.output, cursor::Hide)?;
+                                drop(self.spinner.take());
+                                queue!(
+                                    self.output,
+                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                    cursor::MoveToColumn(0),
+                                    style::SetForegroundColor(Color::Yellow),
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::Print("Warning: received an unexpected error from the model\n\n"),
+                                    style::SetAttribute(Attribute::Reset),
+                                )?;
                                 self.spinner = Some(Spinner::new(
                                     Spinners::Dots,
-                                    "The generated tool use was too large, trying to divide up the work...".to_string(),
+                                    "Trying to divide up the work...".to_string(),
                                 ));
                             }
 
