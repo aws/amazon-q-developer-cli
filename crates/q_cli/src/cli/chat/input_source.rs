@@ -7,9 +7,9 @@ use rustyline::{
     KeyEvent,
 };
 
+use super::context::ContextManager;
+use super::prompt::rl;
 use super::skim_integration::SkimCommandSelector;
-use crate::cli::chat::context::ContextManager;
-use crate::cli::chat::prompt::rl;
 
 #[derive(Debug)]
 pub struct InputSource(inner::Inner);
@@ -18,7 +18,7 @@ mod inner {
     use rustyline::Editor;
     use rustyline::history::FileHistory;
 
-    use crate::cli::chat::prompt::ChatHelper;
+    use super::super::prompt::ChatHelper;
 
     #[derive(Debug)]
     pub enum Inner {
