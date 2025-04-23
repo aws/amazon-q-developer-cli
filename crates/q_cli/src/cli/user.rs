@@ -12,6 +12,8 @@ use clap::{
     Subcommand,
 };
 use crossterm::style::Stylize;
+use dialoguer::Select;
+use dialoguer::theme::ColorfulTheme;
 use eyre::{
     Result,
     bail,
@@ -58,6 +60,8 @@ pub enum RootUserSubcommand {
         #[arg(long, short, value_enum, default_value_t)]
         format: OutputFormat,
     },
+    /// Show the profile associated with this idc user
+    Profile,
 }
 
 #[derive(Args, Debug, PartialEq, Eq, Clone)]
@@ -160,6 +164,10 @@ impl RootUserSubcommand {
                         Ok(ExitCode::FAILURE)
                     },
                 }
+            },
+            Self::Profile => {
+                select_profile_interactive().await?;
+                Ok(ExitCode::SUCCESS)
             },
         }
     }
@@ -315,4 +323,73 @@ async fn try_device_authorization(
         };
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AvailableProfile {
+    arn: String,        // profile_arn
+    name: String,       // profile_name
+    account_id: String, // account_id
+}
+
+async fn select_profile_interactive() -> Result<()> {
+    let profiles = vec![
+        AvailableProfile {
+            arn: "arn:aws:codewhisperer:us-east-1:533267331080:profile/4QUUCPY3E3XX".to_string(),
+            name: "DataPlaneCanaryTest".to_string(),
+            account_id: "533267331080".to_string(),
+        },
+        AvailableProfile {
+            arn: "arn:aws:codewhisperer:us-west-2:533267331081:profile/ABCD1234EFGH".to_string(),
+            name: "WestRegionProfile".to_string(),
+            account_id: "533267331081".to_string(),
+        },
+        AvailableProfile {
+            arn: "arn:aws:codewhisperer:eu-central-1:533267331082:profile/IJKL5678MNOP".to_string(),
+            name: "EuropeProfile".to_string(),
+            account_id: "533267331082".to_string(),
+        },
+        AvailableProfile {
+            arn: "arn:aws:codewhisperer:ap-northeast-1:533267331083:profile/QRST9012UVWX".to_string(),
+            name: "TokyoRegionProfile".to_string(),
+            account_id: "533267331083".to_string(),
+        },
+    ];
+    if profiles.is_empty() {
+        bail!("Attempted to fetch profiles while there does not exist");
+    }
+
+    // mock fetching active profile
+    let active_profile = Some(AvailableProfile {
+        arn: "arn:aws:codewhisperer:eu-central-1:533267331082:profile/IJKL5678MNOP".to_string(),
+        name: "EuropeProfile".to_string(),
+        account_id: "533267331082".to_string(),
+    });
+    let items: Vec<String> = profiles.iter().map(display_profile).collect();
+
+    let default_idx = active_profile
+        .as_ref()
+        .and_then(|active| profiles.iter().position(|p| p == active))
+        .unwrap_or(0);
+
+    let selected = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select an IAM Identity Center profile")
+        .items(&items)
+        .default(default_idx)
+        .interact_opt()?;
+
+    match selected {
+        Some(i) => {
+            let chosen = &profiles[i];
+            println!("Switched to profile: {}", chosen.name.as_str().green());
+            // todo: fig_auth::set_active_profile(&chosen.arn).await?;
+        },
+        None => println!("No profile selected."),
+    }
+    Ok(())
+}
+
+// show profile_name and account_id to users
+fn display_profile(p: &AvailableProfile) -> String {
+    format!("{} ({})", p.name, p.account_id)
 }

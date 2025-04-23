@@ -224,6 +224,7 @@ impl CliRootCommands {
             CliRootCommands::RootUser(RootUserSubcommand::Login(_)) => "login",
             CliRootCommands::RootUser(RootUserSubcommand::Logout) => "logout",
             CliRootCommands::RootUser(RootUserSubcommand::Whoami { .. }) => "whoami",
+            CliRootCommands::RootUser(RootUserSubcommand::Profile) => "profile",
             CliRootCommands::User(_) => "user",
             CliRootCommands::Doctor(_) => "doctor",
             CliRootCommands::Completion(_) => "completion",
