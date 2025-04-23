@@ -193,10 +193,9 @@ impl ResponseParser {
                 }
             }
         }
-
         let args = match serde_json::from_str(&tool_string) {
             Ok(args) => args,
-            Err(err) if !tool_string.is_empty() => {
+            Err(err) => {
                 // If the stream ended before we saw the final tool use event (and thus failed
                 // deserializing the tool use), this is most likely due to the backend dropping the
                 // connection. The tool was too large!
@@ -238,8 +237,6 @@ impl ResponseParser {
                     return Err(self.error(err));
                 }
             },
-            // if the tool just does not need any input
-            _ => serde_json::json!({}),
         };
         Ok(AssistantToolUse { id, name, args })
     }
