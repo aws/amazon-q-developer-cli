@@ -573,9 +573,9 @@ pub fn write_credentials_to_file(token: &BuilderIdToken) -> Result<()> {
     Ok(())
 }
 
-pub async fn builder_id_token() -> Result<Option<BuilderIdToken>> {
-    let secret_store = SecretStore::new().await?;
-    let token = BuilderIdToken::load(&secret_store, false).await?;
+/// Internal function that takes a SecretStore to allow for testing
+pub(crate) async fn builder_id_token_with_store(secret_store: &SecretStore) -> Result<Option<BuilderIdToken>> {
+    let token = BuilderIdToken::load(secret_store, false).await?;
 
     // Write credentials to file if token exists
     if let Some(ref token) = token {
@@ -585,6 +585,11 @@ pub async fn builder_id_token() -> Result<Option<BuilderIdToken>> {
     }
 
     Ok(token)
+}
+
+pub async fn builder_id_token() -> Result<Option<BuilderIdToken>> {
+    let secret_store = SecretStore::new().await?;
+    builder_id_token_with_store(&secret_store).await
 }
 
 pub async fn refresh_token() -> Result<Option<BuilderIdToken>> {
@@ -867,7 +872,6 @@ mod tests {
     fn test_write_credentials() {
         test_write_credentials_builder_id();
         test_write_credentials_identity_center();
-        test_refresh_writes_credentials();
     }
 
     fn test_write_credentials_builder_id() {
@@ -896,26 +900,35 @@ mod tests {
         cleanup_test_file();
     }
 
-    // Test that simulates a token refresh and verifies credentials are written
-    fn test_refresh_writes_credentials() {
+    #[tokio::test]
+    async fn test_builder_id_token_with_store() {
         cleanup_test_file();
 
-        // Mock the refresh token process
+        // Test with BuilderId token
         let token = create_test_token(TokenType::BuilderId);
+        let mock_secret_store = create_mock_secret_store(&token).await;
 
-        // Simulate the refresh_token function's behavior of writing credentials
-        let result = write_credentials_to_file(&token);
+        let result = builder_id_token_with_store(&mock_secret_store).await;
         assert!(result.is_ok());
-        assert!(verify_credentials_file(&token));
+        let retrieved_token = result.unwrap();
+        assert!(retrieved_token.is_some());
+        assert_eq!(retrieved_token.unwrap().access_token.0, token.access_token.0);
 
-        cleanup_test_file(); // Clean up between tests
-
-        // Now do the same for Identity Center token
-        let token = create_test_token(TokenType::IamIdentityCenter);
-        let result = write_credentials_to_file(&token);
-        assert!(result.is_ok());
+        // Verify the credentials file was written correctly
         assert!(verify_credentials_file(&token));
 
         cleanup_test_file();
+    }
+
+    // Helper function to create a mock SecretStore that returns our test token
+    async fn create_mock_secret_store(token: &BuilderIdToken) -> SecretStore {
+        // Create a real SecretStore for testing
+        let secret_store = SecretStore::new().await.unwrap();
+
+        // Store our test token in the secret store
+        let token_json = serde_json::to_string(&Some(token)).unwrap();
+        secret_store.set(BuilderIdToken::SECRET_KEY, &token_json).await.unwrap();
+
+        secret_store
     }
 }
