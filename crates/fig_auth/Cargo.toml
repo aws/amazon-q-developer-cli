@@ -21,6 +21,7 @@ aws-types.workspace = true
 base64.workspace = true
 bytes.workspace = true
 fig_aws_common.workspace = true
+fig_os_shim.workspace = true
 fig_settings.workspace = true
 fig_telemetry_core.workspace = true
 fig_util.workspace = true

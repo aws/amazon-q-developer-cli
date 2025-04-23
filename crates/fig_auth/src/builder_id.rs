@@ -34,6 +34,7 @@ use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_types::region::Region;
 use aws_types::request_id::RequestId;
 use fig_aws_common::app_name;
+use fig_os_shim::Env;
 use fig_telemetry_core::{Event, EventType, TelemetryResult};
 use time::OffsetDateTime;
 use tracing::{debug, error, warn};
@@ -532,8 +533,12 @@ pub async fn write_credentials_to_file(token: &BuilderIdToken) -> Result<()> {
         }
     });
 
-    // Ensure ~/.aws/amazonq directory exists
-    let mut path = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "~".to_string()));
+    // Create environment instance
+    let env = Env::new();
+    let home_dir = env.home().ok_or_else(|| Error::Other("Could not determine home directory".into()))?;
+    
+    // Build path to credentials file
+    let mut path = PathBuf::from(home_dir);
     path.push(".aws");
     path.push("amazonq");
 

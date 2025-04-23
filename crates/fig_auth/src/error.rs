@@ -47,6 +47,8 @@ pub enum Error {
     OAuthMissingCode,
     #[error("OAuth error: {0}")]
     OAuthCustomError(String),
+    #[error("{0}")]
+    Other(String),
 }
 
 impl Error {
