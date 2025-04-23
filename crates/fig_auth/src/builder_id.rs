@@ -23,48 +23,25 @@
 
 use aws_sdk_ssooidc::client::Client;
 use aws_sdk_ssooidc::config::retry::RetryConfig;
-use aws_sdk_ssooidc::config::{
-    BehaviorVersion,
-    ConfigBag,
-    RuntimeComponents,
-    SharedAsyncSleep,
-};
+use aws_sdk_ssooidc::config::{BehaviorVersion, ConfigBag, RuntimeComponents, SharedAsyncSleep};
 use aws_sdk_ssooidc::error::SdkError;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenOutput;
 use aws_sdk_ssooidc::operation::register_client::RegisterClientOutput;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use aws_smithy_runtime_api::client::identity::http::Token;
-use aws_smithy_runtime_api::client::identity::{
-    Identity,
-    IdentityFuture,
-    ResolveIdentity,
-};
+use aws_smithy_runtime_api::client::identity::{Identity, IdentityFuture, ResolveIdentity};
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_types::region::Region;
 use aws_types::request_id::RequestId;
 use fig_aws_common::app_name;
-use fig_telemetry_core::{
-    Event,
-    EventType,
-    TelemetryResult,
-};
+use fig_telemetry_core::{Event, EventType, TelemetryResult};
 use time::OffsetDateTime;
-use tracing::{
-    debug,
-    error,
-    warn,
-};
+use tracing::{debug, error, warn};
 
 use crate::consts::*;
 use crate::scope::is_scopes;
-use crate::secret_store::{
-    Secret,
-    SecretStore,
-};
-use crate::{
-    Error,
-    Result,
-};
+use crate::secret_store::{Secret, SecretStore};
+use crate::{Error, Result};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
@@ -538,7 +515,7 @@ pub async fn poll_create_token(
 }
 
 /// Write credentials to ~/.aws/amazonq/creds.json
-pub fn write_credentials_to_file(token: &BuilderIdToken) -> Result<()> {
+pub async fn write_credentials_to_file(token: &BuilderIdToken) -> Result<()> {
     use std::fs;
     use std::path::PathBuf;
 
@@ -579,7 +556,7 @@ pub(crate) async fn builder_id_token_with_store(secret_store: &SecretStore) -> R
 
     // Write credentials to file if token exists
     if let Some(ref token) = token {
-        if let Err(err) = write_credentials_to_file(token) {
+        if let Err(err) = write_credentials_to_file(token).await {
             error!(?err, "Failed to write credentials to file");
         }
     }
@@ -598,7 +575,7 @@ pub async fn refresh_token() -> Result<Option<BuilderIdToken>> {
 
     // Write credentials to file if token exists
     if let Some(ref token) = token {
-        if let Err(err) = write_credentials_to_file(token) {
+        if let Err(err) = write_credentials_to_file(token).await {
             error!(?err, "Failed to write credentials to file");
         }
     }
@@ -656,10 +633,7 @@ impl ResolveIdentity for BearerResolver {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::{
-        env,
-        fs,
-    };
+    use std::{env, fs};
 
     use time::OffsetDateTime;
 
@@ -868,32 +842,32 @@ mod tests {
         access_token_match && refresh_token_match && region_match && start_url_match && token_type_match
     }
 
-    #[test]
-    fn test_write_credentials() {
-        test_write_credentials_builder_id();
-        test_write_credentials_identity_center();
+    #[tokio::test]
+    async fn test_write_credentials() {
+        test_write_credentials_builder_id().await;
+        test_write_credentials_identity_center().await;
     }
 
-    fn test_write_credentials_builder_id() {
+    async fn test_write_credentials_builder_id() {
         cleanup_test_file();
 
         let token = create_test_token(TokenType::BuilderId);
         assert_eq!(token.token_type(), TokenType::BuilderId);
 
-        let result = write_credentials_to_file(&token);
+        let result = write_credentials_to_file(&token).await;
         assert!(result.is_ok());
         assert!(verify_credentials_file(&token));
 
         cleanup_test_file();
     }
 
-    fn test_write_credentials_identity_center() {
+    async fn test_write_credentials_identity_center() {
         cleanup_test_file();
 
         let token = create_test_token(TokenType::IamIdentityCenter);
         assert_eq!(token.token_type(), TokenType::IamIdentityCenter);
 
-        let result = write_credentials_to_file(&token);
+        let result = write_credentials_to_file(&token).await;
         assert!(result.is_ok());
         assert!(verify_credentials_file(&token));
 
