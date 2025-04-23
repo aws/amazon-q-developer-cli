@@ -831,7 +831,7 @@ mod tests {
 
         let content = match fs::read_to_string(&path) {
             Ok(content) => content,
-            Err(e) => {
+            Err(_) => {
                 return false;
             },
         };
