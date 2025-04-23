@@ -8,6 +8,10 @@
         "command": {
           "type": "string",
           "description": "Bash command to execute"
+        },
+        "summary": {
+          "type": "string",
+          "description": "A brief explanation of what the command does"
         }
       },
       "required": [
