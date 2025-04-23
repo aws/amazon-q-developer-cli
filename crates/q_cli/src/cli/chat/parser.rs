@@ -1,4 +1,7 @@
-use std::time::Instant;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use eyre::Result;
 use fig_api_client::clients::SendMessageOutput;
@@ -66,6 +69,7 @@ pub enum RecvErrorKind {
         tool_use_id: String,
         name: String,
         message: Box<AssistantMessage>,
+        time_elapsed: Duration,
     },
 }
 
@@ -198,11 +202,11 @@ impl ResponseParser {
                 // likely bedrock responding with a stop event for some reason without actually
                 // including the tool contents. Essentially, the tool was too large.
                 // Timeouts have been seen as short as ~1 minute, so setting the time to 30.
-                let elapsed = start.elapsed();
-                if self.peek().await?.is_none() && elapsed > std::time::Duration::from_secs(30) {
+                let time_elapsed = start.elapsed();
+                if self.peek().await?.is_none() && time_elapsed > Duration::from_secs(30) {
                     error!(
                         "Received an unexpected end of stream after spending ~{}s receiving tool events",
-                        elapsed.as_secs_f64()
+                        time_elapsed.as_secs_f64()
                     );
                     self.tool_uses.push(AssistantToolUse {
                         id: id.clone(),
@@ -228,6 +232,7 @@ impl ResponseParser {
                         tool_use_id: id,
                         name,
                         message,
+                        time_elapsed,
                     }));
                 } else {
                     return Err(self.error(err));

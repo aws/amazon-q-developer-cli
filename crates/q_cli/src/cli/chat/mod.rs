@@ -2569,6 +2569,7 @@ impl ChatContext {
                             tool_use_id,
                             name,
                             message,
+                            time_elapsed,
                         } => {
                             error!(
                                 recv_error.request_id,
@@ -2582,7 +2583,10 @@ impl ChatContext {
                                     cursor::MoveToColumn(0),
                                     style::SetForegroundColor(Color::Yellow),
                                     style::SetAttribute(Attribute::Bold),
-                                    style::Print("Warning: received an unexpected error from the model\n\n"),
+                                    style::Print(format!(
+                                        "Warning: received an unexpected error from the model after {:.2}s\n\n",
+                                        time_elapsed.as_secs_f64()
+                                    )),
                                     style::SetAttribute(Attribute::Reset),
                                 )?;
                                 self.spinner = Some(Spinner::new(
