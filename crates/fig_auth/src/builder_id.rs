@@ -769,4 +769,122 @@ mod tests {
         let token = refresh_token().await.unwrap().unwrap();
         println!("{:?}", token);
     }
+
+    #[cfg(test)]
+    mod write_credentials_tests {
+        use super::*;
+        use std::fs;
+        use std::path::PathBuf;
+        use std::env;
+        use time::OffsetDateTime;
+
+        fn cleanup_test_file() {
+            let mut path = PathBuf::from(env::var("HOME").unwrap_or_else(|_| "~".to_string()));
+            path.push(".aws");
+            path.push("amazonq");
+            path.push("creds.json");
+            let _ = fs::remove_file(&path);
+        }
+
+        fn create_test_token(token_type: TokenType) -> BuilderIdToken {
+            let mut token = BuilderIdToken {
+                access_token: Secret("test_access_token".to_string()),
+                expires_at: OffsetDateTime::now_utc() + time::Duration::minutes(60),
+                refresh_token: Some(Secret("test_refresh_token".to_string())),
+                region: Some(OIDC_BUILDER_ID_REGION.to_string()),
+                start_url: None,
+                oauth_flow: OAuthFlow::DeviceCode,
+                scopes: Some(SCOPES.iter().map(|s| (*s).to_owned()).collect()),
+            };
+
+            // Set the appropriate start_url based on token type
+            match token_type {
+                TokenType::BuilderId => {
+                    token.start_url = Some(START_URL.to_string());
+                },
+                TokenType::IamIdentityCenter => {
+                    token.start_url = Some("https://example.awsapps.com/start".to_string());
+                },
+            }
+
+            token
+        }
+
+        fn verify_credentials_file(token: &BuilderIdToken) -> bool {
+            let mut path = PathBuf::from(env::var("HOME").unwrap_or_else(|_| "~".to_string()));
+            path.push(".aws");
+            path.push("amazonq");
+            path.push("creds.json");
+
+            if !path.exists() {
+                return false;
+            }
+
+            let content = match fs::read_to_string(&path) {
+                Ok(content) => content,
+                Err(_) => return false,
+            };
+
+            let json: serde_json::Value = match serde_json::from_str(&content) {
+                Ok(json) => json,
+                Err(_) => return false,
+            };
+
+            // Verify the token values
+            json["access_token"] == token.access_token.0 &&
+            json["refresh_token"] == token.refresh_token.as_ref().map(|t| t.0.clone()) &&
+            json["region"] == token.region &&
+            json["start_url"] == token.start_url
+        }
+
+        #[test]
+        fn test_write_credentials_builder_id() {
+            cleanup_test_file();
+            
+            let token = create_test_token(TokenType::BuilderId);
+            assert_eq!(token.token_type(), TokenType::BuilderId);
+            
+            let result = write_credentials_to_file(&token);
+            assert!(result.is_ok());
+            assert!(verify_credentials_file(&token));
+            
+            cleanup_test_file();
+        }
+
+        #[test]
+        fn test_write_credentials_identity_center() {
+            cleanup_test_file();
+            
+            let token = create_test_token(TokenType::IamIdentityCenter);
+            assert_eq!(token.token_type(), TokenType::IamIdentityCenter);
+            
+            let result = write_credentials_to_file(&token);
+            assert!(result.is_ok());
+            assert!(verify_credentials_file(&token));
+            
+            cleanup_test_file();
+        }
+
+        // Test that simulates a token refresh and verifies credentials are written
+        #[test]
+        fn test_refresh_writes_credentials() {
+            cleanup_test_file();
+            
+            // Mock the refresh token process
+            let token = create_test_token(TokenType::BuilderId);
+            
+            // Simulate the refresh_token function's behavior of writing credentials
+            let result = write_credentials_to_file(&token);
+            assert!(result.is_ok());
+            assert!(verify_credentials_file(&token));
+            
+            // Now do the same for Identity Center token
+            let token = create_test_token(TokenType::IamIdentityCenter);
+            let result = write_credentials_to_file(&token);
+            assert!(result.is_ok());
+            assert!(verify_credentials_file(&token));
+            
+            cleanup_test_file();
+        }
+    }
 }
