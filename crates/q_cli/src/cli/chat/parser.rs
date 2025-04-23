@@ -197,11 +197,9 @@ impl ResponseParser {
                 // If we failed deserializing after waiting for a long time, then this is most
                 // likely bedrock responding with a stop event for some reason without actually
                 // including the tool contents. Essentially, the tool was too large.
-                //
-                // Setting the timeout at 90 secs since it usually happens over 2 mins, but
-                // providing some buffer.
+                // Timeouts have been seen as short as ~1 minute, so setting the time to 30.
                 let elapsed = start.elapsed();
-                if self.peek().await?.is_none() && elapsed > std::time::Duration::from_secs(90) {
+                if self.peek().await?.is_none() && elapsed > std::time::Duration::from_secs(30) {
                     error!(
                         "Received an unexpected end of stream after spending ~{}s receiving tool events",
                         elapsed.as_secs_f64()
