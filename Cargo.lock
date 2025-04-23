@@ -2664,6 +2664,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "fig_aws_common",
+ "fig_os_shim",
  "fig_settings",
  "fig_telemetry_core",
  "fig_util",
