@@ -18,6 +18,7 @@ use fig_api_client::model::{
     UserInputMessageContext,
 };
 use fig_os_shim::Context;
+use mcp_client::Prompt;
 use rand::distr::{
     Alphanumeric,
     SampleString,
@@ -54,6 +55,7 @@ use super::token_counter::{
 use super::tools::{
     InputSchema,
     QueuedTool,
+    ToolOrigin,
     ToolSpec,
     serde_value_to_document,
 };
@@ -73,7 +75,7 @@ pub struct ConversationState {
     /// e.g user messages prefixed with '> '. Should also be used to store errors posted in the
     /// chat.
     pub transcript: VecDeque<String>,
-    pub tools: Vec<Tool>,
+    pub tools: HashMap<ToolOrigin, Vec<Tool>>,
     /// Context manager for handling sticky context files
     pub context_manager: Option<ContextManager>,
     /// Cached value representing the length of the user context message.
@@ -118,14 +120,17 @@ impl ConversationState {
             transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
             tools: tool_config
                 .into_values()
-                .map(|v| {
-                    Tool::ToolSpecification(ToolSpecification {
+                .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+                    let tool = Tool::ToolSpecification(ToolSpecification {
                         name: v.name,
                         description: v.description,
                         input_schema: v.input_schema.into(),
-                    })
-                })
-                .collect(),
+                    });
+                    acc.entry(v.tool_origin)
+                        .and_modify(|tools| tools.push(tool.clone()))
+                        .or_insert(vec![tool]);
+                    acc
+                }),
             context_manager,
             context_message_length: None,
             latest_summary: None,
@@ -144,6 +149,35 @@ impl ConversationState {
         if !preserve_summary {
             self.latest_summary = None;
         }
+    }
+
+    /// Appends a collection prompts into history and returns the last message in the collection.
+    /// It asserts that the collection ends with a prompt that assumes the role of user.
+    pub fn append_prompts(&mut self, mut prompts: VecDeque<Prompt>) -> Option<String> {
+        debug_assert!(self.next_message.is_none(), "next_message should not exist");
+        debug_assert!(prompts.back().is_some_and(|p| p.role == mcp_client::Role::User));
+        let last_msg = prompts.pop_back()?;
+        let (mut candidate_user, mut candidate_asst) = (None::<UserMessage>, None::<AssistantMessage>);
+        while let Some(prompt) = prompts.pop_front() {
+            let Prompt { role, content } = prompt;
+            match role {
+                mcp_client::Role::User => {
+                    let user_msg = UserMessage::new_prompt(content.to_string());
+                    candidate_user.replace(user_msg);
+                },
+                mcp_client::Role::Assistant => {
+                    let assistant_msg = AssistantMessage::new_response(None, content.into());
+                    candidate_asst.replace(assistant_msg);
+                },
+            }
+            if candidate_asst.is_some() && candidate_user.is_some() {
+                let asst = candidate_asst.take().unwrap();
+                let user = candidate_user.take().unwrap();
+                self.append_assistant_transcript(&asst);
+                self.history.push_back((user, asst));
+            }
+        }
+        Some(last_msg.content.to_string())
     }
 
     pub fn next_user_message(&self) -> Option<&UserMessage> {
@@ -578,7 +612,7 @@ impl ConversationState {
                     tools: if self.tools.is_empty() {
                         None
                     } else {
-                        Some(self.tools.clone())
+                        Some(self.tools.values().flatten().cloned().collect::<Vec<_>>())
                     },
                     ..Default::default()
                 };
@@ -607,7 +641,7 @@ pub struct BackendConversationStateImpl<'a, T, U> {
     pub next_user_message: Option<&'a UserMessage>,
     pub history: T,
     pub context_messages: U,
-    pub tools: &'a [Tool],
+    pub tools: &'a HashMap<ToolOrigin, Vec<Tool>>,
 }
 
 impl
@@ -625,7 +659,7 @@ impl
             .map(UserMessage::into_user_input_message)
             .ok_or(eyre::eyre!("next user message is not set"))?;
         if let Some(ctx) = user_input_message.user_input_message_context.as_mut() {
-            ctx.tools = Some(self.tools.to_vec());
+            ctx.tools = Some(self.tools.values().flatten().cloned().collect::<Vec<_>>());
         }
 
         Ok(FigConversationState {
@@ -735,9 +769,9 @@ mod tests {
         AMAZONQ_FILENAME,
         profile_context_path,
     };
-    use super::super::load_tools;
     use super::super::message::AssistantToolUse;
     use super::*;
+    use crate::cli::chat::tool_manager::ToolManager;
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
@@ -829,8 +863,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
-        let mut conversation_state =
-            ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
+        let mut tool_manager = ToolManager::default();
+        let mut conversation_state = ConversationState::new(
+            Context::new_fake(),
+            tool_manager.load_tools().await.unwrap(),
+            None,
+            None,
+        )
+        .await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
@@ -846,8 +886,14 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
         // Build a long conversation history of tool use results.
-        let mut conversation_state =
-            ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
+        let mut tool_manager = ToolManager::default();
+        let mut conversation_state = ConversationState::new(
+            Context::new_fake(),
+            tool_manager.load_tools().await.unwrap(),
+            None,
+            None,
+        )
+        .await;
         conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state(true).await;
@@ -868,8 +914,13 @@ mod tests {
         }
 
         // Build a long conversation history of user messages mixed in with tool results.
-        let mut conversation_state =
-            ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
+        let mut conversation_state = ConversationState::new(
+            Context::new_fake(),
+            tool_manager.load_tools().await.unwrap(),
+            None,
+            None,
+        )
+        .await;
         conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation_state.as_sendable_conversation_state(true).await;
@@ -899,7 +950,9 @@ mod tests {
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         ctx.fs().write(AMAZONQ_FILENAME, "test context").await.unwrap();
 
-        let mut conversation_state = ConversationState::new(ctx, load_tools().unwrap(), None, None).await;
+        let mut tool_manager = ToolManager::default();
+        let mut conversation_state =
+            ConversationState::new(ctx, tool_manager.load_tools().await.unwrap(), None, None).await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
@@ -933,6 +986,7 @@ mod tests {
     async fn test_conversation_state_additional_context() {
         tracing_subscriber::fmt::try_init().ok();
 
+        let mut tool_manager = ToolManager::default();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let conversation_start_context = "conversation start context";
         let prompt_context = "prompt context";
@@ -956,8 +1010,13 @@ mod tests {
             .write(&config_path, serde_json::to_string(&config).unwrap())
             .await
             .unwrap();
-        let mut conversation_state =
-            ConversationState::new(ctx, load_tools().unwrap(), None, Some(SharedWriter::stdout())).await;
+        let mut conversation_state = ConversationState::new(
+            ctx,
+            tool_manager.load_tools().await.unwrap(),
+            None,
+            Some(SharedWriter::stdout()),
+        )
+        .await;
 
         // Simulate conversation flow
         conversation_state.set_next_user_message("start".to_string()).await;
