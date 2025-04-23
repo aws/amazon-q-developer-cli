@@ -831,7 +831,7 @@ mod tests {
         let json: serde_json::Value = match serde_json::from_str(&content) {
             Ok(json) => json,
             Err(e) => {
-                println!(?e, "Failed to parse JSON");
+                println!("Failed to parse JSON: {:?}", e);
                 return false;
             },
         };
@@ -865,7 +865,6 @@ mod tests {
 
     #[test]
     fn test_write_credentials() {
-        // putting these in a single test so that there is no concurrency.
         test_write_credentials_builder_id();
         test_write_credentials_identity_center();
         test_refresh_writes_credentials();
