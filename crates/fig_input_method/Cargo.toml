@@ -18,7 +18,7 @@ invisible_in_system_ui = true
 input_method_type = "palette"
 
 [build-dependencies]
-plist = "1.4.0"
+plist = "1.7.1"
 serde.workspace = true
 toml.workspace = true
 apple-bundle = "0.1.4"

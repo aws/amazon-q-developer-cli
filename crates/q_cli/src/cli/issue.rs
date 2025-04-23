@@ -32,6 +32,8 @@ pub struct IssueCreator {
 
 impl IssueCreator {
     pub async fn create_url(&self) -> Result<url::Url> {
+        println!("Heading over to GitHub...");
+
         let warning = |text: &String| {
             format!("<This will be visible to anyone. Do not include personal or sensitive information>\n\n{text}")
         };
@@ -78,7 +80,6 @@ impl IssueCreator {
             params.iter(),
         )?;
 
-        println!("Heading over to GitHub...");
         if is_remote() || fig_util::open_url_async(url.as_str()).await.is_err() {
             println!("Issue Url: {}", url.as_str().underlined());
         }

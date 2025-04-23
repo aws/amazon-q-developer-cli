@@ -19,7 +19,7 @@ amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true
 anstream.workspace = true
 appkit-nsworkspace-bindings.workspace = true
-arboard = { version = "3.1.1", default-features = false }
+arboard = { version = "3.5.0", default-features = false }
 async-trait.workspace = true
 aws-smithy-types = "1.2.10"
 aws-types.workspace = true
@@ -35,8 +35,8 @@ clap_complete_fig = "4.4.0"
 color-eyre = "0.6.2"
 color-print = "0.3.5"
 convert_case.workspace = true
-crossterm = { version = "0.28.1", features = ["event-stream"] }
-ctrlc = "3.2.5"
+crossterm = { version = "0.28.1", features = ["event-stream", "events"] }
+ctrlc = "3.4.6"
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 eyre = "0.6.8"
 fig_api_client.workspace = true
@@ -64,7 +64,8 @@ owo-colors = "4.2.0"
 parking_lot.workspace = true
 rand.workspace = true
 regex.workspace = true
-rustyline = { version = "15.0.0", features = ["derive"] }
+rustyline = { version = "15.0.0", features = ["derive", "custom-bindings"] }
+skim = "0.16.1"
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true

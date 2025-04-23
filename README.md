@@ -45,8 +45,7 @@
 ## ⚡️ Installation
 
 - **macOS**:
-  - **DMG**: Download from AWS:
-    [aws.amazon.com](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-getting-started-installing.html)
+  - **DMG**: [Download now](https://desktop-release.q.us-east-1.amazonaws.com/latest/Amazon%20Q.dmg)
   - **Homebrew**: `brew install amazon-q`
 - **Linux**:
   - [Ubuntu/Debian](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html#command-line-installing-ubuntu)
@@ -55,7 +54,7 @@
 - **Windows**:
   - Follow the discussions for
     [Windows](https://github.com/aws/q-command-line-discussions/discussions/15)
-  - Or [use it on Window with WSL](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html#command-line-installing-windows)
+  - Or [use it on Windows with WSL](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html#command-line-installing-windows)
 - **Remote machines**
   - [Autocomplete in SSH](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-autocomplete-ssh.html)
 

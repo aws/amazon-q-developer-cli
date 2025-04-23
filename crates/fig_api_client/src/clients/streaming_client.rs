@@ -70,6 +70,7 @@ impl StreamingClient {
         let conf_builder: amzn_codewhisperer_streaming_client::config::Builder =
             (&bearer_sdk_config(endpoint).await).into();
         let conf = conf_builder
+            .http_client(fig_aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new())
             .interceptor(UserAgentOverrideInterceptor::new())
             .bearer_token_resolver(BearerResolver)
@@ -85,6 +86,7 @@ impl StreamingClient {
         let conf_builder: amzn_qdeveloper_streaming_client::config::Builder =
             (&sigv4_sdk_config(endpoint).await?).into();
         let conf = conf_builder
+            .http_client(fig_aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new())
             .interceptor(UserAgentOverrideInterceptor::new())
             .app_name(app_name())
@@ -96,7 +98,7 @@ impl StreamingClient {
     }
 
     pub async fn send_message(&self, conversation_state: ConversationState) -> Result<SendMessageOutput, Error> {
-        debug!("Sending conversation: {:?}", conversation_state);
+        debug!("Sending conversation: {:#?}", conversation_state);
         let ConversationState {
             conversation_id,
             user_input_message,
@@ -130,8 +132,15 @@ impl StreamingClient {
                     Ok(resp) => Ok(SendMessageOutput::Codewhisperer(resp)),
                     Err(e) => {
                         let is_quota_breach = e.raw_response().is_some_and(|resp| resp.status().as_u16() == 429);
+                        let is_context_window_overflow = e.as_service_error().is_some_and(|err| {
+                            matches!(err, err if err.meta().code() == Some("ValidationException")
+                                && err.meta().message() == Some("Input is too long."))
+                        });
+
                         if is_quota_breach {
                             Err(Error::QuotaBreach("quota has reached its limit"))
+                        } else if is_context_window_overflow {
+                            Err(Error::ContextWindowOverflow)
                         } else {
                             Err(e.into())
                         }

@@ -44,7 +44,7 @@ macos-utils = { path = "../macos-utils" }
 fig_telemetry.workspace = true
 accessibility-sys = { path = "../macos-utils/accessibility-master/accessibility-sys", version = "0.1.3" }
 core-foundation = "0.10.0"
-plist = "1.4.0"
+plist = "1.7.1"
 objc.workspace = true
 
 [dev-dependencies]
