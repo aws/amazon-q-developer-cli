@@ -34,7 +34,10 @@ use super::consts::{
     MAX_CONVERSATION_STATE_HISTORY_LEN,
 };
 use super::context::ContextManager;
-use super::hooks::Hook;
+use super::hooks::{
+    Hook,
+    HookTrigger,
+};
 use super::message::{
     AssistantMessage,
     ToolUseResult,
@@ -49,12 +52,9 @@ use super::token_counter::{
     CharCounter,
 };
 use super::tools::{
+    InputSchema,
     QueuedTool,
     ToolSpec,
-};
-use crate::cli::chat::hooks::HookTrigger;
-use crate::cli::chat::tools::{
-    InputSchema,
     serde_value_to_document,
 };
 /// Tracks state related to an ongoing conversation.

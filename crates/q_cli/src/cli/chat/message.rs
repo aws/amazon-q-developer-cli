@@ -20,14 +20,12 @@ use tracing::error;
 
 use super::consts::MAX_CURRENT_WORKING_DIRECTORY_LEN;
 use super::tools::{
+    InvokeOutput,
     OutputKind,
     document_to_serde_value,
-};
-use super::util::truncate_safe;
-use crate::cli::chat::tools::{
-    InvokeOutput,
     serde_value_to_document,
 };
+use super::util::truncate_safe;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserMessage {
@@ -118,7 +116,9 @@ impl UserMessage {
     /// [FigConversationState::user_input_message].
     pub fn into_user_input_message(self) -> UserInputMessage {
         UserInputMessage {
-            content: format!("{} {}", self.additional_context, self.prompt().unwrap_or_default()),
+            content: format!("{} {}", self.additional_context, self.prompt().unwrap_or_default())
+                .trim()
+                .to_string(),
             user_input_message_context: Some(UserInputMessageContext {
                 shell_state: self.env_context.shell_state,
                 env_state: self.env_context.env_state,

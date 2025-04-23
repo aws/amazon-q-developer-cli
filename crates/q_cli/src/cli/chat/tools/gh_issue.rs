@@ -17,11 +17,11 @@ use eyre::{
 use fig_os_shim::Context;
 use serde::Deserialize;
 
+use super::super::context::ContextManager;
 use super::{
     InvokeOutput,
     ToolPermission,
 };
-use crate::cli::chat::context::ContextManager;
 use crate::cli::issue::IssueCreator;
 
 #[derive(Debug, Clone, Deserialize)]
