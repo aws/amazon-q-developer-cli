@@ -2584,11 +2584,17 @@ impl ChatContext {
                                     style::SetForegroundColor(Color::Yellow),
                                     style::SetAttribute(Attribute::Bold),
                                     style::Print(format!(
-                                        "Warning: received an unexpected error from the model after {:.2}s\n\n",
+                                        "Warning: received an unexpected error from the model after {:.2}s",
                                         time_elapsed.as_secs_f64()
                                     )),
-                                    style::SetAttribute(Attribute::Reset),
                                 )?;
+                                if let Some(request_id) = recv_error.request_id {
+                                    queue!(
+                                        self.output,
+                                        style::Print(format!("\n         request_id: {}", request_id))
+                                    )?;
+                                }
+                                execute!(self.output, style::Print("\n\n"), style::SetAttribute(Attribute::Reset))?;
                                 self.spinner = Some(Spinner::new(
                                     Spinners::Dots,
                                     "Trying to divide up the work...".to_string(),
