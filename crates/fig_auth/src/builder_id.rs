@@ -565,12 +565,12 @@ pub async fn write_credentials_to_file(token: &BuilderIdToken) -> Result<()> {
 
 pub async fn builder_id_token() -> Result<Option<BuilderIdToken>> {
     let secret_store = SecretStore::new().await?;
-    Ok(BuilderIdToken::load(&secret_store, false).await?)
+    BuilderIdToken::load(&secret_store, false).await
 }
 
 pub async fn refresh_token() -> Result<Option<BuilderIdToken>> {
     let secret_store = SecretStore::new().await?;
-    Ok(BuilderIdToken::load(&secret_store, true).await?)
+    BuilderIdToken::load(&secret_store, true).await
 }
 
 pub async fn is_amzn_user() -> Result<bool> {

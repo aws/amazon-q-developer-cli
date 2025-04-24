@@ -249,9 +249,9 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                         fig_telemetry::send_user_logged_in().await;
 
                         // Write credentials to file after successful login
-                        if let Ok(Some(_)) = fig_auth::builder_id_token().await {
-                            // Token is already written to file in builder_id_token()
-                            debug!("Credentials written to ~/.aws/amazonq/creds.json");
+                        match fig_auth::builder_id_token().await {
+                            Ok(Some(_)) => debug!("Credentials written to creds.json"),
+                            _ => error!("failed to write credentials to creds.json"),
                         }
 
                         spinner.stop_with_message("Logged in successfully".into());
@@ -318,9 +318,9 @@ async fn try_device_authorization(
                 spinner.stop_with_message("Logged in successfully".into());
 
                 // Write credentials to file after successful device authorization
-                if let Ok(Some(_)) = fig_auth::builder_id_token().await {
-                    // Token is already written to file in builder_id_token()
-                    debug!("Credentials written to ~/.aws/amazonq/creds.json");
+                match fig_auth::builder_id_token().await {
+                    Ok(Some(_)) => debug!("Credentials written to creds.json"),
+                    _ => error!("failed to write credentials to creds.json"),
                 }
                 break;
             },
