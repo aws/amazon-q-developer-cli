@@ -110,7 +110,7 @@ mod tests {
         let _ = Endpoint::load_codewhisperer();
         let _ = Endpoint::load_q();
 
-        let prod = &Endpoint::CODEWHISPERER_ENDPOINTS[0];
+        let prod = &Endpoint::DEFAULT_ENDPOINT;
         Url::parse(prod.url()).unwrap();
         assert_eq!(prod.region(), &PROD_CODEWHISPERER_ENDPOINT_REGION);
 
