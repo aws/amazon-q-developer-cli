@@ -27,16 +27,12 @@ use super::context::ContextManager;
 
 pub struct SkimCommandSelector {
     context_manager: Arc<ContextManager>,
-    tool_names: Vec<String>,
 }
 
 impl SkimCommandSelector {
     /// This allows the ConditionalEventHandler handle function to be bound to a KeyEvent.
-    pub fn new(context_manager: Arc<ContextManager>, tool_names: Vec<String>) -> Self {
-        Self {
-            context_manager,
-            tool_names,
-        }
+    pub fn new(context_manager: Arc<ContextManager>) -> Self {
+        Self { context_manager }
     }
 }
 
@@ -49,7 +45,7 @@ impl ConditionalEventHandler for SkimCommandSelector {
         _ctx: &EventContext<'_>,
     ) -> Option<Cmd> {
         // Launch skim command selector with the context manager if available
-        match select_command(self.context_manager.as_ref(), &self.tool_names) {
+        match select_command(self.context_manager.as_ref()) {
             Ok(Some(command)) => Some(Cmd::Insert(1, command)),
             _ => {
                 // If cancelled or error, do nothing
@@ -57,6 +53,13 @@ impl ConditionalEventHandler for SkimCommandSelector {
             },
         }
     }
+}
+
+/// Load tool names from the tool_index.json file
+fn load_tool_names() -> Result<Vec<String>> {
+    let tool_specs = super::load_tools()?;
+    let tool_names: Vec<String> = tool_specs.values().map(|spec| spec.name.clone()).collect();
+    Ok(tool_names)
 }
 
 pub fn get_available_commands() -> Vec<String> {
@@ -212,7 +215,7 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
 }
 
 /// Launch the command selector and handle the selected command
-pub fn select_command(context_manager: &ContextManager, tools: &[String]) -> Result<Option<String>> {
+pub fn select_command(context_manager: &ContextManager) -> Result<Option<String>> {
     let commands = get_available_commands();
 
     match launch_skim_selector(&commands, "Select command: ", false)? {
@@ -254,6 +257,10 @@ pub fn select_command(context_manager: &ContextManager, tools: &[String]) -> Res
                     }
                 },
                 Some(CommandType::Tools(_)) => {
+                    // For tools trust/untrust, we need to select a tool
+                    // Load tool names from the tool_index.json file
+                    let tools = load_tool_names()?;
+
                     let options = create_skim_options("Select tool: ", false)?;
                     let item_reader = SkimItemReader::default();
                     let items = item_reader.of_bufread(Cursor::new(tools.join("\n")));

@@ -1,4 +1,7 @@
-use std::time::Instant;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use eyre::Result;
 use fig_api_client::clients::SendMessageOutput;
@@ -66,6 +69,7 @@ pub enum RecvErrorKind {
         tool_use_id: String,
         name: String,
         message: Box<AssistantMessage>,
+        time_elapsed: Duration,
     },
 }
 
@@ -180,7 +184,6 @@ impl ResponseParser {
     /// The arguments are the fields from the first [ChatResponseStream::ToolUseEvent] consumed.
     async fn parse_tool_use(&mut self, id: String, name: String) -> Result<AssistantToolUse, RecvError> {
         let mut tool_string = String::new();
-        let mut stop_seen = false;
         let start = Instant::now();
         while let Some(ChatResponseStream::ToolUseEvent { .. }) = self.peek().await? {
             if let Some(ChatResponseStream::ToolUseEvent { input, stop, .. }) = self.next().await? {
@@ -188,22 +191,22 @@ impl ResponseParser {
                     tool_string.push_str(&i);
                 }
                 if let Some(true) = stop {
-                    stop_seen = true;
                     break;
                 }
             }
         }
-
         let args = match serde_json::from_str(&tool_string) {
             Ok(args) => args,
-            Err(err) if !tool_string.is_empty() => {
-                // If the stream ended before we saw the final tool use event (and thus failed
-                // deserializing the tool use), this is most likely due to the backend dropping the
-                // connection. The tool was too large!
-                if self.peek().await?.is_none() && !stop_seen {
+            Err(err) => {
+                // If we failed deserializing after waiting for a long time, then this is most
+                // likely bedrock responding with a stop event for some reason without actually
+                // including the tool contents. Essentially, the tool was too large.
+                // Timeouts have been seen as short as ~1 minute, so setting the time to 30.
+                let time_elapsed = start.elapsed();
+                if self.peek().await?.is_none() && time_elapsed > Duration::from_secs(30) {
                     error!(
                         "Received an unexpected end of stream after spending ~{}s receiving tool events",
-                        Instant::now().duration_since(start).as_secs_f64()
+                        time_elapsed.as_secs_f64()
                     );
                     self.tool_uses.push(AssistantToolUse {
                         id: id.clone(),
@@ -212,18 +215,14 @@ impl ResponseParser {
                             [(
                                 "key".to_string(),
                                 serde_json::Value::String(
-                                    "fake tool use args - actual tool use was too large to include".to_string(),
+                                    "WARNING: the actual tool use arguments were too complicated to be generated"
+                                        .to_string(),
                                 ),
                             )]
                             .into_iter()
                             .collect(),
                         ),
                     });
-                    // let message = Box::new(AssistantMessage {
-                    //     message_id: Some(self.message_id.clone()),
-                    //     content: std::mem::take(&mut self.assistant_text),
-                    //     tool_uses: Some(self.tool_uses.clone().into_iter().map(Into::into).collect()),
-                    // });
                     let message = Box::new(AssistantMessage::new_tool_use(
                         Some(self.message_id.clone()),
                         std::mem::take(&mut self.assistant_text),
@@ -233,13 +232,12 @@ impl ResponseParser {
                         tool_use_id: id,
                         name,
                         message,
+                        time_elapsed,
                     }));
                 } else {
                     return Err(self.error(err));
                 }
             },
-            // if the tool just does not need any input
-            _ => serde_json::json!({}),
         };
         Ok(AssistantToolUse { id, name, args })
     }
