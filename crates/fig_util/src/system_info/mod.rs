@@ -1,4 +1,6 @@
 pub mod linux;
+#[cfg(target_os = "windows")]
+pub mod windows;
 
 use std::borrow::Cow;
 use std::sync::OnceLock;

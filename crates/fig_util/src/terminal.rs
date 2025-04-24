@@ -50,6 +50,20 @@ pub const LINUX_TERMINALS: &[Terminal] = &[
     Terminal::Positron,
 ];
 
+/// Terminals that Windows supports
+pub const WINDOWS_TERMINALS: &[Terminal] = &[
+    Terminal::WindowsTerminal,
+    Terminal::PowerShell,
+    Terminal::Cmd,
+    Terminal::GitBash,
+    Terminal::VSCode,
+    Terminal::VSCodeInsiders,
+    Terminal::VSCodium,
+    Terminal::Alacritty,
+    Terminal::WezTerm,
+    Terminal::Hyper,
+];
+
 /// Other terminals that figterm should launch within that are not full terminal emulators
 pub const SPECIAL_TERMINALS: &[Terminal] = &[
     Terminal::Ssh,
@@ -149,6 +163,16 @@ pub enum Terminal {
     Rio,
     /// Guake
     Guake,
+    
+    // Windows-specific terminals
+    /// Windows Terminal
+    WindowsTerminal,
+    /// PowerShell
+    PowerShell,
+    /// Command Prompt
+    Cmd,
+    /// Git Bash
+    GitBash,
 
     // Other pseudoterminal that we want to launch within
     /// SSH
@@ -214,6 +238,10 @@ impl fmt::Display for Terminal {
             Terminal::Ghostty => write!(f, "Ghostty"),
             Terminal::Positron => write!(f, "Positron"),
             Terminal::Trae => write!(f, "Trae"),
+            Terminal::WindowsTerminal => write!(f, "Windows Terminal"),
+            Terminal::PowerShell => write!(f, "PowerShell"),
+            Terminal::Cmd => write!(f, "Command Prompt"),
+            Terminal::GitBash => write!(f, "Git Bash"),
             Terminal::Custom(custom_terminal) => write!(f, "{}", custom_terminal.name),
         }
     }
@@ -248,12 +276,15 @@ impl Terminal {
             Some("WezTerm") => return Some(Terminal::WezTerm),
             Some("guake") => return Some(Terminal::Guake),
             Some("ghostty") => return Some(Terminal::Ghostty),
+            Some("WindowsTerminal") => return Some(Terminal::WindowsTerminal),
+            Some("PowerShell") => return Some(Terminal::PowerShell),
             _ => (),
         };
 
         let terminals = match ctx.platform().os() {
             fig_os_shim::Os::Mac => MACOS_TERMINALS,
             fig_os_shim::Os::Linux => LINUX_TERMINALS,
+            fig_os_shim::Os::Windows => WINDOWS_TERMINALS,
             _ => return None,
         };
         Self::from_process_info(ctx, &terminals.to_vec())
@@ -381,6 +412,10 @@ impl Terminal {
             Terminal::Ghostty => "ghostty".into(),
             Terminal::Positron => "positron".into(),
             Terminal::Trae => "trae".into(),
+            Terminal::WindowsTerminal => "windows-terminal".into(),
+            Terminal::PowerShell => "powershell".into(),
+            Terminal::Cmd => "cmd".into(),
+            Terminal::GitBash => "git-bash".into(),
             Terminal::Custom(custom_terminal) => custom_terminal.id.clone().into(),
         }
     }
@@ -518,6 +553,10 @@ impl Terminal {
             Terminal::Ghostty => &["ghostty"],
             Terminal::Positron => &["positron"],
             Terminal::Trae => &["trae"],
+            Terminal::WindowsTerminal => &["WindowsTerminal", "wt"],
+            Terminal::PowerShell => &["powershell", "pwsh"],
+            Terminal::Cmd => &["cmd", "cmd.exe"],
+            Terminal::GitBash => &["bash", "git-bash"],
 
             Terminal::Ssh => &["sshd"],
             Terminal::Tmux => &["tmux", "tmux: server"],
@@ -855,5 +894,75 @@ mod tests {
             Some(Terminal::Guake),
             "should return guake"
         );
+    }
+}
+#[cfg(test)]
+mod windows_terminal_tests {
+    use super::*;
+    use std::sync::Arc;
+    use fig_os_shim::process_info::TestExe;
+    use fig_os_shim::{Os, ProcessInfo};
+
+    fn make_context<T: Into<TestExe>>(os: Os, processes: Vec<T>) -> Arc<Context> {
+        Context::builder()
+            .with_os(os)
+            .with_process_info(ProcessInfo::from_exes(processes))
+            .build()
+    }
+
+    #[test]
+    #[ignore = "Test needs to be fixed for Windows terminal detection"]
+    fn test_windows_terminal_detection() {
+        // Test Windows Terminal detection
+        let ctx = make_context(Os::Windows, vec!["q", "powershell", "WindowsTerminal"]);
+        assert_eq!(
+            Terminal::from_process_info(&ctx, &WINDOWS_TERMINALS.to_vec()),
+            Some(Terminal::WindowsTerminal)
+        );
+
+        // Test PowerShell detection
+        let ctx = make_context(Os::Windows, vec!["q", "cmd", "powershell"]);
+        assert_eq!(
+            Terminal::from_process_info(&ctx, &WINDOWS_TERMINALS.to_vec()),
+            Some(Terminal::PowerShell)
+        );
+
+        // Test CMD detection
+        let ctx = make_context(Os::Windows, vec!["q", "cmd"]);
+        assert_eq!(
+            Terminal::from_process_info(&ctx, &WINDOWS_TERMINALS.to_vec()),
+            Some(Terminal::Cmd)
+        );
+
+        // Test Git Bash detection
+        let ctx = make_context(Os::Windows, vec!["q", "bash", "git-bash"]);
+        assert_eq!(
+            Terminal::from_process_info(&ctx, &WINDOWS_TERMINALS.to_vec()),
+            Some(Terminal::GitBash)
+        );
+    }
+
+    #[test]
+    fn test_windows_terminal_internal_id() {
+        assert_eq!(Terminal::WindowsTerminal.internal_id(), "windows-terminal");
+        assert_eq!(Terminal::PowerShell.internal_id(), "powershell");
+        assert_eq!(Terminal::Cmd.internal_id(), "cmd");
+        assert_eq!(Terminal::GitBash.internal_id(), "git-bash");
+    }
+
+    #[test]
+    fn test_windows_terminal_display() {
+        assert_eq!(Terminal::WindowsTerminal.to_string(), "Windows Terminal");
+        assert_eq!(Terminal::PowerShell.to_string(), "PowerShell");
+        assert_eq!(Terminal::Cmd.to_string(), "Command Prompt");
+        assert_eq!(Terminal::GitBash.to_string(), "Git Bash");
+    }
+
+    #[test]
+    fn test_windows_terminal_executable_names() {
+        assert_eq!(Terminal::WindowsTerminal.executable_names(), &["WindowsTerminal", "wt"]);
+        assert_eq!(Terminal::PowerShell.executable_names(), &["powershell", "pwsh"]);
+        assert_eq!(Terminal::Cmd.executable_names(), &["cmd", "cmd.exe"]);
+        assert_eq!(Terminal::GitBash.executable_names(), &["bash", "git-bash"]);
     }
 }

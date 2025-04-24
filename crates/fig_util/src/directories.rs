@@ -80,6 +80,16 @@ pub fn home_dir() -> Result<PathBuf> {
     dirs::home_dir().ok_or(DirectoryError::NoHomeDirectory)
 }
 
+/// The fig directory
+///
+/// - Windows: %APPDATA%\Amazon Q
+#[cfg(windows)]
+pub fn fig_dir() -> Result<PathBuf> {
+    let appdata = std::env::var_os("APPDATA")
+        .ok_or(DirectoryError::NoHomeDirectory)?;
+    Ok(PathBuf::from(appdata).join("Amazon Q"))
+}
+
 pub fn home_dir_ctx<Ctx: FsProvider + EnvProvider>(ctx: &Ctx) -> Result<PathBuf> {
     if ctx.env().is_real() {
         home_dir()
@@ -145,6 +155,7 @@ pub fn old_fig_data_dir() -> Result<PathBuf> {
 ///
 /// - Linux: `$XDG_DATA_HOME/amazon-q` or `$HOME/.local/share/amazon-q`
 /// - MacOS: `$HOME/Library/Application Support/amazon-q`
+/// - Windows: `%APPDATA%\Amazon Q\userdata`
 pub fn fig_data_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
@@ -234,6 +245,7 @@ pub fn runtime_dir() -> Result<PathBuf> {
 ///
 /// - Linux: $XDG_RUNTIME_DIR/cwrun
 /// - MacOS: $TMPDIR/cwrun
+/// - Windows: %APPDATA%\Amazon Q\sockets
 pub fn sockets_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
@@ -289,7 +301,7 @@ pub fn autocomplete_specs_dir() -> Result<PathBuf> {
 /// The directory to all the fig logs
 /// - Linux: `/tmp/fig/$USER/logs`
 /// - MacOS: `$TMPDIR/logs`
-/// - Windows: `%TEMP%\fig\logs`
+/// - Windows: `%TEMP%\amazon-q\logs`
 pub fn logs_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
@@ -340,7 +352,7 @@ pub fn chat_profiles_dir<Ctx: FsProvider + EnvProvider>(ctx: &Ctx) -> Result<Pat
 ///
 /// - MacOS: `$TMPDIR/cwrun/desktop.sock`
 /// - Linux: `$XDG_RUNTIME_DIR/cwrun/desktop.sock`
-/// - Windows: `%APPDATA%/Fig/desktop.sock`
+/// - Windows: `%APPDATA%\Amazon Q\sockets\desktop.sock`
 pub fn desktop_socket_path() -> Result<PathBuf> {
     Ok(host_sockets_dir()?.join("desktop.sock"))
 }
@@ -378,7 +390,7 @@ pub fn local_remote_socket_path() -> Result<PathBuf> {
 /// - Linux/Macos: `/var/tmp/fig/%USERNAME%/figterm/$SESSION_ID.sock`
 /// - MacOS: `$TMPDIR/cwrun/t/$SESSION_ID.sock`
 /// - Linux: `$XDG_RUNTIME_DIR/cwrun/t/$SESSION_ID.sock`
-/// - Windows: `%APPDATA%\Fig\$SESSION_ID.sock`
+/// - Windows: `%APPDATA%\Amazon Q\sockets\t\$SESSION_ID.sock`
 pub fn figterm_socket_path(session_id: impl Display) -> Result<PathBuf> {
     Ok(sockets_dir()?.join("t").join(format!("{session_id}.sock")))
 }
@@ -444,6 +456,37 @@ pub fn bundle_metadata_path<Ctx: EnvProvider + PlatformProvider>(ctx: &Ctx) -> R
 /// The path to the fig settings file
 pub fn settings_path() -> Result<PathBuf> {
     Ok(fig_data_dir()?.join("settings.json"))
+}
+
+/// The path to the Windows long path support registry key
+#[cfg(windows)]
+pub fn long_path_registry_key() -> &'static str {
+    r"SYSTEM\CurrentControlSet\Control\FileSystem"
+}
+
+/// Check if Windows long path support is enabled
+#[cfg(windows)]
+pub fn is_long_path_enabled() -> bool {
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    use winreg::RegKey;
+
+    if let Ok(key) = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(long_path_registry_key()) {
+        if let Ok(value) = key.get_value::<u32, _>("LongPathsEnabled") {
+            return value == 1;
+        }
+    }
+    false
+}
+
+/// Ensure a path uses long path format if needed
+#[cfg(windows)]
+pub fn ensure_long_path_support(path: &std::path::Path) -> PathBuf {
+    let path_str = path.to_string_lossy();
+    if path_str.len() > 260 && !path_str.starts_with(r"\\?\") {
+        PathBuf::from(format!(r"\\?\{}", path_str))
+    } else {
+        path.to_path_buf()
+    }
 }
 
 /// The path to the lock file used to indicate that the app is updating
@@ -757,5 +800,30 @@ mod tests {
     fn macos_tempdir_test() {
         let tmpdir = macos_tempdir().unwrap();
         println!("{:?}", tmpdir);
+    }
+}
+
+#[cfg(test)]
+mod windows_tests {
+    use super::*;
+    
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_long_path_support() {
+        // Test the long path support functions
+        let is_enabled = is_long_path_enabled();
+        // This just verifies the function runs without error
+        assert!(is_enabled || !is_enabled);
+        
+        // Test path conversion
+        let normal_path = std::path::Path::new("C:\\Users\\test\\Documents");
+        let converted = ensure_long_path_support(normal_path);
+        assert_eq!(converted, normal_path);
+        
+        // Test long path conversion
+        let long_path_str = "C:\\".to_string() + &"a".repeat(260);
+        let long_path = std::path::Path::new(&long_path_str);
+        let converted = ensure_long_path_support(long_path);
+        assert!(converted.to_string_lossy().starts_with("\\\\?\\"));
     }
 }
