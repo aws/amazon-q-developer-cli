@@ -548,13 +548,11 @@ pub async fn poll_create_token(
 
 /// Write credentials to ~/.aws/amazonq/creds.json
 pub async fn write_credentials_to_file(token: &BuilderIdToken) -> Result<()> {
-    // Create credentials JSON
     let creds = serde_json::json!({
        "access_token": token.access_token.0.clone(),
        "region": token.region.clone(),
     });
 
-    // Create environment instance
     let path = credential_file_path()?;
     std::fs::write(&path, serde_json::to_string_pretty(&creds)?)?;
 
