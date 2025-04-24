@@ -18,11 +18,11 @@ use fig_os_shim::Context;
 use serde::Deserialize;
 
 use super::super::context::ContextManager;
+use super::super::util::issue::IssueCreator;
 use super::{
     InvokeOutput,
     ToolPermission,
 };
-use crate::cli::issue::IssueCreator;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhIssue {

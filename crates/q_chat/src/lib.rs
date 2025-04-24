@@ -1,3 +1,4 @@
+pub mod cli;
 mod command;
 mod consts;
 mod context;
@@ -12,7 +13,7 @@ mod shared_writer;
 mod skim_integration;
 mod token_counter;
 mod tools;
-mod util;
+pub mod util;
 
 use std::borrow::Cow;
 use std::collections::{
@@ -58,7 +59,6 @@ use crossterm::{
     style,
     terminal,
 };
-use dialoguer::console::strip_ansi_codes;
 use eyre::{
     ErrReport,
     Result,
@@ -252,6 +252,24 @@ const HELP_TEXT: &str = color_print::cstr! {"
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
 const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
 \nAgents can sometimes do unexpected things so understand the risks.</green!>"};
+
+pub async fn launch_chat(args: cli::Chat) -> Result<ExitCode> {
+    let trust_tools = args.trust_tools.map(|mut tools| {
+        if tools.len() == 1 && tools[0].is_empty() {
+            tools.pop();
+        }
+        tools
+    });
+    chat(
+        args.input,
+        args.no_interactive,
+        args.accept_all,
+        args.profile,
+        args.trust_all_tools,
+        trust_tools,
+    )
+    .await
+}
 
 pub async fn chat(
     input: Option<String>,
@@ -637,7 +655,7 @@ impl ChatContext {
 
         // Centered wrapped content
         for line in wrapped_lines {
-            let visible_line_len = strip_ansi_codes(&line).len();
+            let visible_line_len = strip_ansi_escapes::strip(&line).len();
             let left_pad = (box_width - 4 - visible_line_len) / 2;
 
             let content = format!(

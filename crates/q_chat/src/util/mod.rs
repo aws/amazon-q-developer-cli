@@ -1,3 +1,5 @@
+pub mod issue;
+
 use std::io::Write;
 use std::time::Duration;
 

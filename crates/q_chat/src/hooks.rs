@@ -126,7 +126,7 @@ pub struct CachedHook {
 }
 
 /// Maps a hook name to a [`CachedHook`]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HookExecutor {
     pub global_cache: HashMap<String, CachedHook>,
     pub profile_cache: HashMap<String, CachedHook>,
