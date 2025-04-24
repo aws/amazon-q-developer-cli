@@ -1,8 +1,7 @@
 use amzn_codewhisperer_client::operation::generate_completions::GenerateCompletionsError;
 use amzn_codewhisperer_client::operation::list_available_customizations::ListAvailableCustomizationsError;
-use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError;
-// use amzn_codewhisperer_streaming_client::operation::send_message::SendMessageError as
-// CodewhispererSendMessageError;
+use amzn_codewhisperer_client::operation::list_available_profiles::ListAvailableProfilesError;
+pub use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError;
 use amzn_codewhisperer_streaming_client::types::error::ChatResponseStreamError as CodewhispererChatResponseStreamError;
 use amzn_consolas_client::operation::generate_recommendations::GenerateRecommendationsError;
 use amzn_consolas_client::operation::list_customizations::ListCustomizationsError;
@@ -10,7 +9,7 @@ use amzn_qdeveloper_streaming_client::operation::send_message::SendMessageError 
 use amzn_qdeveloper_streaming_client::types::error::ChatResponseStreamError as QDeveloperChatResponseStreamError;
 use aws_credential_types::provider::error::CredentialsError;
 use aws_smithy_runtime_api::client::orchestrator::HttpResponse;
-use aws_smithy_runtime_api::client::result::SdkError;
+pub use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::event_stream::RawMessage;
 use fig_aws_common::SdkErrorDisplay;
 use thiserror::Error;
@@ -48,11 +47,22 @@ pub enum Error {
     #[error("quota has reached its limit")]
     QuotaBreach(&'static str),
 
+    /// Returned from the backend when the user input is too large to fit within the model context
+    /// window.
+    ///
+    /// Note that we currently do not receive token usage information regarding how large the
+    /// context window is.
+    #[error("the context window has overflowed")]
+    ContextWindowOverflow,
+
     #[error(transparent)]
     SmithyBuild(#[from] aws_smithy_types::error::operation::BuildError),
 
     #[error("unsupported action by consolas: {0}")]
     UnsupportedConsolas(&'static str),
+
+    #[error(transparent)]
+    ListAvailableProfilesError(#[from] SdkError<ListAvailableProfilesError, HttpResponse>),
 }
 
 impl Error {
@@ -67,10 +77,12 @@ impl Error {
                 e.as_service_error().is_some_and(|e| e.is_throttling_error())
             },
             Error::QDeveloperSendMessage(e) => e.as_service_error().is_some_and(|e| e.is_throttling_error()),
+            Error::ListAvailableProfilesError(e) => e.as_service_error().is_some_and(|e| e.is_throttling_error()),
             Error::CodewhispererChatResponseStream(_)
             | Error::QDeveloperChatResponseStream(_)
             | Error::SmithyBuild(_)
             | Error::UnsupportedConsolas(_)
+            | Error::ContextWindowOverflow
             | Error::QuotaBreach(_) => false,
         }
     }
@@ -84,6 +96,8 @@ impl Error {
             Error::ListAvailableServices(e) => e.as_service_error().is_some(),
             Error::CodewhispererGenerateAssistantResponse(e) => e.as_service_error().is_some(),
             Error::QDeveloperSendMessage(e) => e.as_service_error().is_some(),
+            Error::ContextWindowOverflow => true,
+            Error::ListAvailableProfilesError(e) => e.as_service_error().is_some(),
             Error::CodewhispererChatResponseStream(_)
             | Error::QDeveloperChatResponseStream(_)
             | Error::SmithyBuild(_)

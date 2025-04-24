@@ -21,12 +21,12 @@ use tokio::io::AsyncBufReadExt;
 use tokio::select;
 use tracing::error;
 
+use super::super::util::truncate_safe;
 use super::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
 };
-use crate::cli::chat::truncate_safe;
 
 const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 

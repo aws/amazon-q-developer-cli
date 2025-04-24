@@ -18,11 +18,7 @@ use aws_smithy_types::{
 use crossterm::style::Stylize;
 use execute_bash::ExecuteBash;
 use eyre::Result;
-use fig_api_client::model::{
-    ToolResult,
-    ToolResultContentBlock,
-    ToolResultStatus,
-};
+use fig_api_client::model::ToolResultStatus;
 use fig_os_shim::Context;
 use fs_read::FsRead;
 use fs_write::FsWrite;
@@ -30,9 +26,12 @@ use gh_issue::GhIssue;
 use serde::Deserialize;
 use use_aws::UseAws;
 
-use super::parser::ToolUse;
-
-pub const MAX_TOOL_RESPONSE_SIZE: usize = 800000;
+use super::consts::MAX_TOOL_RESPONSE_SIZE;
+use super::message::{
+    AssistantToolUse,
+    ToolUseResult,
+    ToolUseResultBlock,
+};
 
 /// Represents an executable tool use.
 #[derive(Debug, Clone)]
@@ -101,13 +100,13 @@ impl Tool {
     }
 }
 
-impl TryFrom<ToolUse> for Tool {
-    type Error = ToolResult;
+impl TryFrom<AssistantToolUse> for Tool {
+    type Error = ToolUseResult;
 
-    fn try_from(value: ToolUse) -> std::result::Result<Self, Self::Error> {
-        let map_err = |parse_error| ToolResult {
+    fn try_from(value: AssistantToolUse) -> std::result::Result<Self, Self::Error> {
+        let map_err = |parse_error| ToolUseResult {
             tool_use_id: value.id.clone(),
-            content: vec![ToolResultContentBlock::Text(format!(
+            content: vec![ToolUseResultBlock::Text(format!(
                 "Failed to validate tool parameters: {parse_error}. The model has either suggested tool parameters which are incompatible with the existing tools, or has suggested one or more tool that does not exist in the list of known tools."
             ))],
             status: ToolResultStatus::Error,
@@ -120,9 +119,9 @@ impl TryFrom<ToolUse> for Tool {
             "use_aws" => Self::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Self::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
             unknown => {
-                return Err(ToolResult {
+                return Err(ToolUseResult {
                     tool_use_id: value.id,
-                    content: vec![ToolResultContentBlock::Text(format!(
+                    content: vec![ToolUseResultBlock::Text(format!(
                         "The tool, \"{unknown}\" is not supported by the client"
                     ))],
                     status: ToolResultStatus::Error,
@@ -270,6 +269,33 @@ pub fn serde_value_to_document(value: serde_json::Value) -> Document {
                 .map(|(k, v)| (k, serde_value_to_document(v)))
                 .collect::<_>(),
         ),
+    }
+}
+
+pub fn document_to_serde_value(value: Document) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Document::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, document_to_serde_value(v)))
+                .collect::<_>(),
+        ),
+        Document::Array(vec) => Value::Array(vec.clone().into_iter().map(document_to_serde_value).collect::<_>()),
+        Document::Number(number) => {
+            if let Ok(v) = TryInto::<u64>::try_into(number) {
+                Value::Number(v.into())
+            } else if let Ok(v) = TryInto::<i64>::try_into(number) {
+                Value::Number(v.into())
+            } else {
+                Value::Number(
+                    serde_json::Number::from_f64(number.to_f64_lossy())
+                        .unwrap_or(serde_json::Number::from_f64(0.0).expect("converting from 0.0 will not fail")),
+                )
+            }
+        },
+        Document::String(s) => serde_json::Value::String(s),
+        Document::Bool(b) => serde_json::Value::Bool(b),
+        Document::Null => serde_json::Value::Null,
     }
 }
 

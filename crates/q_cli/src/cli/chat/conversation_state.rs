@@ -2,26 +2,22 @@ use std::collections::{
     HashMap,
     VecDeque,
 };
-use std::env;
 use std::sync::Arc;
 
-use aws_smithy_types::Document;
 use fig_api_client::model::{
     AssistantResponseMessage,
     ChatMessage,
     ConversationState as FigConversationState,
-    EnvState,
-    ShellState,
     Tool,
     ToolInputSchema,
     ToolResult,
     ToolResultContentBlock,
     ToolSpecification,
+    ToolUse,
     UserInputMessage,
     UserInputMessageContext,
 };
 use fig_os_shim::Context;
-use fig_util::Shell;
 use rand::distr::{
     Alphanumeric,
     SampleString,
@@ -33,39 +29,34 @@ use tracing::{
     warn,
 };
 
-use super::context::ContextManager;
-use super::summarization_state::{
+use super::consts::{
     MAX_CHARS,
-    TokenWarningLevel,
+    MAX_CONVERSATION_STATE_HISTORY_LEN,
+};
+use super::context::ContextManager;
+use super::hooks::{
+    Hook,
+    HookTrigger,
+};
+use super::message::{
+    AssistantMessage,
+    ToolUseResult,
+    ToolUseResultBlock,
+    UserMessage,
+    UserMessageContent,
+    build_env_state,
+};
+use super::shared_writer::SharedWriter;
+use super::token_counter::{
+    CharCount,
+    CharCounter,
 };
 use super::tools::{
+    InputSchema,
     QueuedTool,
     ToolSpec,
-};
-use super::truncate_safe;
-use crate::cli::chat::tools::{
-    InputSchema,
-    InvokeOutput,
     serde_value_to_document,
 };
-
-// Max constants for length of strings and lists, use these to truncate elements
-// to ensure the API request is valid
-
-// These limits are the internal undocumented values from the service for each item
-const MAX_CURRENT_WORKING_DIRECTORY_LEN: usize = 256;
-
-/// Limit to send the number of messages as part of chat.
-const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 100;
-
-pub struct ExtraContext {
-    // Bonus context to attach to the existing context at the top of the history
-    pub general_context: Option<String>,
-
-    // Bonus context to attach to the next user message
-    pub user_input_context: Option<String>,
-}
-
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone)]
 pub struct ConversationState {
@@ -73,8 +64,10 @@ pub struct ConversationState {
     conversation_id: String,
     /// The next user message to be sent as part of the conversation. Required to be [Some] before
     /// calling [Self::as_sendable_conversation_state].
-    pub next_message: Option<UserInputMessage>,
-    history: VecDeque<ChatMessage>,
+    next_message: Option<UserMessage>,
+    history: VecDeque<(UserMessage, AssistantMessage)>,
+    /// The range in the history sendable to the backend (start inclusive, end exclusive).
+    valid_history_range: (usize, usize),
     /// Similar to history in that stores user and assistant responses, except that it is not used
     /// in message requests. Instead, the responses are expected to be in human-readable format,
     /// e.g user messages prefixed with '> '. Should also be used to store errors posted in the
@@ -86,11 +79,17 @@ pub struct ConversationState {
     /// Cached value representing the length of the user context message.
     context_message_length: Option<usize>,
     /// Stores the latest conversation summary created by /compact
-    pub latest_summary: Option<String>,
+    latest_summary: Option<String>,
+    updates: Option<SharedWriter>,
 }
 
 impl ConversationState {
-    pub async fn new(ctx: Arc<Context>, tool_config: HashMap<String, ToolSpec>, profile: Option<String>) -> Self {
+    pub async fn new(
+        ctx: Arc<Context>,
+        tool_config: HashMap<String, ToolSpec>,
+        profile: Option<String>,
+        updates: Option<SharedWriter>,
+    ) -> Self {
         let conversation_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
         info!(?conversation_id, "Generated new conversation id");
 
@@ -115,6 +114,7 @@ impl ConversationState {
             conversation_id,
             next_message: None,
             history: VecDeque::new(),
+            valid_history_range: Default::default(),
             transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
             tools: tool_config
                 .into_values()
@@ -129,10 +129,11 @@ impl ConversationState {
             context_manager,
             context_message_length: None,
             latest_summary: None,
+            updates,
         }
     }
 
-    pub fn history(&self) -> &VecDeque<ChatMessage> {
+    pub fn history(&self) -> &VecDeque<(UserMessage, AssistantMessage)> {
         &self.history
     }
 
@@ -145,7 +146,15 @@ impl ConversationState {
         }
     }
 
-    pub async fn append_new_user_message(&mut self, input: String) {
+    pub fn next_user_message(&self) -> Option<&UserMessage> {
+        self.next_message.as_ref()
+    }
+
+    pub fn reset_next_user_message(&mut self) {
+        self.next_message = None;
+    }
+
+    pub async fn set_next_user_message(&mut self, input: String) {
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
         if let Some(next_message) = self.next_message.as_ref() {
             warn!(?next_message, "next_message should not exist");
@@ -158,34 +167,17 @@ impl ConversationState {
             input
         };
 
-        let msg = UserInputMessage {
-            content: input,
-            user_input_message_context: Some(UserInputMessageContext {
-                shell_state: Some(build_shell_state()),
-                env_state: Some(build_env_state()),
-                tool_results: None,
-                tools: if self.tools.is_empty() {
-                    None
-                } else {
-                    Some(self.tools.clone())
-                },
-                ..Default::default()
-            }),
-            user_intent: None,
-        };
+        let msg = UserMessage::new_prompt(input);
         self.next_message = Some(msg);
     }
 
-    /// This should be called sometime after [Self::as_sendable_conversation_state], and before the
-    /// next user message is set.
-    pub fn push_assistant_message(&mut self, message: AssistantResponseMessage) {
-        debug_assert!(self.next_message.is_none(), "next_message should not exist");
-        if let Some(next_message) = self.next_message.as_ref() {
-            warn!(?next_message, "next_message should not exist");
-        }
+    /// Sets the response message according to the currently set [Self::next_message].
+    pub fn push_assistant_message(&mut self, message: AssistantMessage) {
+        debug_assert!(self.next_message.is_some(), "next_message should exist");
+        let next_user_message = self.next_message.take().expect("next user message should exist");
 
         self.append_assistant_transcript(&message);
-        self.history.push_back(ChatMessage::AssistantResponseMessage(message));
+        self.history.push_back((next_user_message, message));
     }
 
     /// Returns the conversation id.
@@ -193,19 +185,11 @@ impl ConversationState {
         self.conversation_id.as_ref()
     }
 
-    /// Returns the conversation history.
-    pub fn get_chat_history(&self) -> Vec<ChatMessage> {
-        self.history.iter().cloned().collect()
-    }
-
     /// Returns the message id associated with the last assistant message, if present.
     ///
     /// This is equivalent to `utterance_id` in the Q API.
     pub fn message_id(&self) -> Option<&str> {
-        self.history.iter().last().and_then(|m| match &m {
-            ChatMessage::AssistantResponseMessage(m) => m.message_id.as_deref(),
-            ChatMessage::UserInputMessage(_) => None,
-        })
+        self.history.back().and_then(|(_, msg)| msg.message_id())
     }
 
     /// Updates the history so that, when non-empty, the following invariants are in place:
@@ -213,213 +197,233 @@ impl ConversationState {
     ///    dropped.
     /// 2. The first message is from the user, and does not contain tool results. Oldest messages
     ///    are dropped.
-    /// 3. The last message is from the assistant. The last message is dropped if it is from the
-    ///    user.
-    /// 4. If the last message is from the assistant and it contains tool uses, and a next user
-    ///    message is set without tool results, then the user message will have cancelled tool
-    ///    results.
-    pub fn fix_history(&mut self) {
+    /// 3. If the last message from the assistant contains tool results, and a next user message is
+    ///    set without tool results, then the user message will have "cancelled" tool results.
+    pub fn enforce_conversation_invariants(&mut self) {
+        // First set the valid range as the entire history - this will be truncated as necessary
+        // later below.
+        self.valid_history_range = (0, self.history.len());
+
         // Trim the conversation history by finding the second oldest message from the user without
         // tool results - this will be the new oldest message in the history.
         //
-        // Note that we reserve 2 slots for [ConversationState::context_messages].
-        if self.history.len() > MAX_CONVERSATION_STATE_HISTORY_LEN - 2 {
+        // Note that we reserve extra slots for [ConversationState::context_messages].
+        if (self.history.len() * 2) > MAX_CONVERSATION_STATE_HISTORY_LEN - 6 {
             match self
                 .history
                 .iter()
                 .enumerate()
-                // Skip the first message which should be from the user.
                 .skip(1)
-                .find(|(_, m)| -> bool {
-                    match m {
-                        ChatMessage::UserInputMessage(m) => {
-                            matches!(
-                                m.user_input_message_context.as_ref(),
-                                Some(ctx) if ctx.tool_results.as_ref().is_none_or(|v| v.is_empty())
-                            ) && !m.content.is_empty()
-                        },
-                        ChatMessage::AssistantResponseMessage(_) => false,
-                    }
-                })
+                .find(|(_, (m, _))| -> bool { !m.has_tool_use_results() })
                 .map(|v| v.0)
             {
                 Some(i) => {
-                    debug!("removing the first {i} elements in the history");
-                    self.history.drain(..i);
+                    debug!("removing the first {i} user/assistant response pairs in the history");
+                    self.valid_history_range.0 = i;
                 },
                 None => {
                     debug!("no valid starting user message found in the history, clearing");
-                    self.history.clear();
+                    self.valid_history_range = (0, 0);
                     // Edge case: if the next message contains tool results, then we have to just
                     // abandon them.
-                    match &mut self.next_message {
-                        Some(UserInputMessage {
-                            ref mut content,
-                            user_input_message_context: Some(ctx),
-                            ..
-                        }) if ctx.tool_results.as_ref().is_some_and(|r| !r.is_empty()) => {
-                            *content = "The conversation history has overflowed, clearing state".to_string();
-                            ctx.tool_results.take();
-                        },
-                        _ => {},
+                    if self.next_message.as_ref().is_some_and(|m| m.has_tool_use_results()) {
+                        debug!("abandoning tool results");
+                        self.next_message = Some(UserMessage::new_prompt(
+                            "The conversation history has overflowed, clearing state".to_string(),
+                        ));
                     }
                 },
             }
         }
 
-        if let Some(ChatMessage::UserInputMessage(msg)) = self.history.iter().last() {
-            debug!(?msg, "last message in history is from the user, dropping");
-            self.history.pop_back();
-        }
-
-        // If the last message from the assistant contains tool uses, we need to ensure that the
-        // next user message contains tool results.
-        match (self.history.iter().last(), &mut self.next_message) {
-            (
-                Some(ChatMessage::AssistantResponseMessage(AssistantResponseMessage {
-                    tool_uses: Some(tool_uses),
-                    ..
-                })),
-                Some(msg),
-            ) if !tool_uses.is_empty() => match msg.user_input_message_context.as_mut() {
-                Some(ctx) => {
-                    if ctx.tool_results.as_ref().is_none_or(|r| r.is_empty()) {
-                        ctx.tool_results = Some(
-                            tool_uses
-                                .iter()
-                                .map(|tool_use| ToolResult {
-                                    tool_use_id: tool_use.tool_use_id.clone(),
-                                    content: vec![ToolResultContentBlock::Text(
-                                        "Tool use was cancelled by the user".to_string(),
-                                    )],
-                                    status: fig_api_client::model::ToolResultStatus::Error,
-                                })
-                                .collect::<Vec<_>>(),
-                        );
-                    }
-                },
-                None => {
-                    let tool_results = tool_uses
-                        .iter()
-                        .map(|tool_use| ToolResult {
-                            tool_use_id: tool_use.tool_use_id.clone(),
-                            content: vec![ToolResultContentBlock::Text(
-                                "Tool use was cancelled by the user".to_string(),
-                            )],
-                            status: fig_api_client::model::ToolResultStatus::Error,
-                        })
-                        .collect::<Vec<_>>();
-                    let user_input_message_context = UserInputMessageContext {
-                        shell_state: None,
-                        env_state: Some(build_env_state()),
-                        tool_results: Some(tool_results),
-                        tools: if self.tools.is_empty() {
-                            None
-                        } else {
-                            Some(self.tools.clone())
-                        },
-                        ..Default::default()
-                    };
-                    msg.user_input_message_context = Some(user_input_message_context);
-                },
-            },
-            _ => {},
+        // If the last message from the assistant contains tool uses AND next_message is set, we need to
+        // ensure that next_message contains tool results.
+        if let (Some((_, AssistantMessage::ToolUse { tool_uses, .. })), Some(user_msg)) = (
+            self.history
+                .range(self.valid_history_range.0..self.valid_history_range.1)
+                .last(),
+            &mut self.next_message,
+        ) {
+            if !user_msg.has_tool_use_results() {
+                debug!(
+                    "last assistant message contains tool uses, but next message is set and does not contain tool results. setting tool results as cancelled"
+                );
+                *user_msg = UserMessage::new_cancelled_tool_uses(
+                    user_msg.prompt().map(|p| p.to_string()),
+                    tool_uses.iter().map(|t| t.id.as_str()),
+                );
+            }
         }
     }
 
-    pub fn add_tool_results(&mut self, tool_results: Vec<ToolResult>) {
+    pub fn add_tool_results(&mut self, tool_results: Vec<ToolUseResult>) {
         debug_assert!(self.next_message.is_none());
-        let user_input_message_context = UserInputMessageContext {
-            shell_state: None,
-            env_state: Some(build_env_state()),
-            tool_results: Some(tool_results),
-            tools: if self.tools.is_empty() {
-                None
-            } else {
-                Some(self.tools.clone())
-            },
-            ..Default::default()
-        };
-        let msg = UserInputMessage {
-            content: String::new(),
-            user_input_message_context: Some(user_input_message_context),
-            user_intent: None,
-        };
-        self.next_message = Some(msg);
+        self.next_message = Some(UserMessage::new_tool_use_results(tool_results));
     }
 
     /// Sets the next user message with "cancelled" tool results.
     pub fn abandon_tool_use(&mut self, tools_to_be_abandoned: Vec<QueuedTool>, deny_input: String) {
-        debug_assert!(self.next_message.is_none());
-        let tool_results = tools_to_be_abandoned
-            .into_iter()
-            .map(|tool| ToolResult {
-                tool_use_id: tool.id,
-                content: vec![ToolResultContentBlock::Text(
-                    "Tool use was cancelled by the user".to_string(),
-                )],
-                status: fig_api_client::model::ToolResultStatus::Error,
-            })
-            .collect::<Vec<_>>();
-        let user_input_message_context = UserInputMessageContext {
-            shell_state: None,
-            env_state: Some(build_env_state()),
-            tool_results: Some(tool_results),
-            tools: if self.tools.is_empty() {
-                None
-            } else {
-                Some(self.tools.clone())
-            },
-            ..Default::default()
-        };
-        let msg = UserInputMessage {
-            content: deny_input,
-            user_input_message_context: Some(user_input_message_context),
-            user_intent: None,
-        };
-        self.next_message = Some(msg);
+        self.next_message = Some(UserMessage::new_cancelled_tool_uses(
+            Some(deny_input),
+            tools_to_be_abandoned.iter().map(|t| t.id.as_str()),
+        ));
     }
 
-    /// Returns a [FigConversationState] capable of being sent by
-    /// [fig_api_client::StreamingClient] while preparing the current conversation state to be sent
-    /// in the next message.
-    pub async fn as_sendable_conversation_state(
-        &mut self,
-        extra_context: Option<ExtraContext>,
-    ) -> FigConversationState {
+    /// Returns a [FigConversationState] capable of being sent by [fig_api_client::StreamingClient].
+    ///
+    /// Params:
+    /// - `run_hooks` - whether hooks should be executed and included as context
+    pub async fn as_sendable_conversation_state(&mut self, run_hooks: bool) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
-        self.fix_history();
+        self.enforce_conversation_invariants();
+        self.history.drain(self.valid_history_range.1..);
+        self.history.drain(..self.valid_history_range.0);
 
-        // The current state we want to send
-        let mut curr_state = self.clone();
+        self.backend_conversation_state(run_hooks, false)
+            .await
+            .into_fig_conversation_state()
+            .expect("unable to construct conversation state")
+    }
 
-        let (general_context, user_input_context) =
-            extra_context.map_or((None, None), |c| (c.general_context, c.user_input_context));
+    /// Returns a conversation state representation which reflects the exact conversation to send
+    /// back to the model.
+    pub async fn backend_conversation_state(&mut self, run_hooks: bool, quiet: bool) -> BackendConversationState<'_> {
+        self.enforce_conversation_invariants();
 
-        if let Some((user, assistant)) = self.context_messages(general_context).await {
-            self.context_message_length = Some(user.content.len());
-            curr_state
+        // Run hooks and add to conversation start and next user message.
+        let mut conversation_start_context = None;
+        if let (true, Some(cm)) = (run_hooks, self.context_manager.as_mut()) {
+            let mut null_writer = SharedWriter::null();
+            let updates = if quiet {
+                None
+            } else {
+                Some(self.updates.as_mut().unwrap_or(&mut null_writer))
+            };
+
+            let hook_results = cm.run_hooks(updates).await;
+            conversation_start_context = Some(format_hook_context(hook_results.iter(), HookTrigger::ConversationStart));
+
+            // add per prompt content to next_user_message if available
+            if let Some(next_message) = self.next_message.as_mut() {
+                next_message.additional_context = format_hook_context(hook_results.iter(), HookTrigger::PerPrompt);
+            }
+        }
+
+        let context_messages = self.context_messages(conversation_start_context).await;
+
+        BackendConversationState {
+            conversation_id: self.conversation_id.as_str(),
+            next_user_message: self.next_message.as_ref(),
+            history: self
                 .history
-                .push_front(ChatMessage::AssistantResponseMessage(assistant));
-            curr_state.history.push_front(ChatMessage::UserInputMessage(user));
+                .range(self.valid_history_range.0..self.valid_history_range.1),
+            context_messages,
+            tools: &self.tools,
         }
+    }
 
-        // Updating `self` so that the current next_message is moved to history.
-        let mut last_message = self.next_message.take().unwrap();
-        if let Some(ctx) = &mut last_message.user_input_message_context {
-            // Don't include the tool spec in all user messages in the history.
-            ctx.tools.take();
-        }
-        self.history.push_back(ChatMessage::UserInputMessage(last_message));
-        let mut input_message = curr_state.next_message.expect("no user input message available");
-        if let Some(user_input_context) = user_input_context {
-            input_message.content = format!("{} {}", user_input_context, input_message.content);
+    /// Returns a [FigConversationState] capable of replacing the history of the current
+    /// conversation with a summary generated by the model.
+    pub async fn create_summary_request(&mut self, custom_prompt: Option<impl AsRef<str>>) -> FigConversationState {
+        let summary_content = match custom_prompt {
+            Some(custom_prompt) => {
+                // Make the custom instructions much more prominent and directive
+                format!(
+                    "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
+                            FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
+                            IMPORTANT CUSTOM INSTRUCTION: {}\n\n\
+                            Your task is to create a structured summary document containing:\n\
+                            1) A bullet-point list of key topics/questions covered\n\
+                            2) Bullet points for all significant tools executed and their results\n\
+                            3) Bullet points for any code or technical information shared\n\
+                            4) A section of key insights gained\n\n\
+                            FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
+                            ## CONVERSATION SUMMARY\n\
+                            * Topic 1: Key information\n\
+                            * Topic 2: Key information\n\n\
+                            ## TOOLS EXECUTED\n\
+                            * Tool X: Result Y\n\n\
+                            Remember this is a DOCUMENT not a chat response. The custom instruction above modifies what to prioritize.\n\
+                            FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).",
+                    custom_prompt.as_ref()
+                )
+            },
+            None => {
+                // Default prompt
+                "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
+                        FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
+                        Your task is to create a structured summary document containing:\n\
+                        1) A bullet-point list of key topics/questions covered\n\
+                        2) Bullet points for all significant tools executed and their results\n\
+                        3) Bullet points for any code or technical information shared\n\
+                        4) A section of key insights gained\n\n\
+                        FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
+                        ## CONVERSATION SUMMARY\n\
+                        * Topic 1: Key information\n\
+                        * Topic 2: Key information\n\n\
+                        ## TOOLS EXECUTED\n\
+                        * Tool X: Result Y\n\n\
+                        Remember this is a DOCUMENT not a chat response.\n\
+                        FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
+            },
+        };
+
+        let conv_state = self.backend_conversation_state(false, true).await;
+
+        // Include everything but the last message in the history.
+        let history_len = conv_state.history.len();
+        let history = if history_len < 2 {
+            vec![]
+        } else {
+            flatten_history(conv_state.history.take(history_len.saturating_sub(1)))
+        };
+
+        let mut summary_message = UserInputMessage {
+            content: summary_content,
+            user_input_message_context: None,
+            user_intent: None,
+        };
+
+        // If the last message contains tool uses, then add cancelled tool results to the summary
+        // message.
+        if let Some(ChatMessage::AssistantResponseMessage(AssistantResponseMessage {
+            tool_uses: Some(tool_uses),
+            ..
+        })) = history.last()
+        {
+            self.set_cancelled_tool_results(&mut summary_message, tool_uses);
         }
 
         FigConversationState {
-            conversation_id: Some(curr_state.conversation_id),
-            user_input_message: input_message,
-            history: Some(curr_state.history.into()),
+            conversation_id: Some(self.conversation_id.clone()),
+            user_input_message: summary_message,
+            history: Some(history),
+        }
+    }
+
+    pub fn replace_history_with_summary(&mut self, summary: String) {
+        self.history.drain(..(self.history.len().saturating_sub(1)));
+        self.latest_summary = Some(summary);
+        // If the last message contains tool results, then we add the results to the content field
+        // instead. This is required to avoid validation errors.
+        // TODO: this can break since the max user content size is less than the max tool response
+        // size! Alternative could be to set the last tool use as part of the context messages.
+        if let Some((user, _)) = self.history.back_mut() {
+            if let Some(tool_results) = user.tool_use_results() {
+                let tool_content: Vec<String> = tool_results
+                    .iter()
+                    .flat_map(|tr| {
+                        tr.content.iter().map(|c| match c {
+                            ToolUseResultBlock::Json(document) => serde_json::to_string(&document)
+                                .map_err(|err| error!(?err, "failed to serialize tool result"))
+                                .unwrap_or_default(),
+                            ToolUseResultBlock::Text(s) => s.clone(),
+                        })
+                    })
+                    .collect::<_>();
+                let tool_content = tool_content.join(" ");
+                user.content = UserMessageContent::Prompt { prompt: tool_content };
+            }
         }
     }
 
@@ -431,12 +435,18 @@ impl ConversationState {
         }
     }
 
-    /// Returns a pair of user and assistant messages to include as context in the message history
+    /// Returns pairs of user and assistant messages to include as context in the message history
     /// including both summaries and context files if available.
-    pub async fn context_messages(
+    ///
+    /// TODO:
+    /// - Either add support for multiple context messages if the context is too large to fit inside
+    ///   a single user message, or handle this case more gracefully. For now, always return 2
+    ///   messages.
+    /// - Cache this return for some period of time.
+    async fn context_messages(
         &mut self,
-        extra_context: Option<String>,
-    ) -> Option<(UserInputMessage, AssistantResponseMessage)> {
+        conversation_start_context: Option<String>,
+    ) -> Option<Vec<(UserMessage, AssistantMessage)>> {
         let mut context_content = String::new();
 
         // Add summary if available - emphasize its importance more strongly
@@ -466,25 +476,20 @@ impl ConversationState {
                 },
             }
         }
-        if let Some(extra_context) = extra_context {
-            context_content.push_str(&extra_context);
+
+        if let Some(context) = conversation_start_context {
+            context_content.push_str(&context);
         }
 
         if !context_content.is_empty() {
-            let user_msg = UserInputMessage {
-                content: format!(
-                    "Here is critical information you MUST consider when answering questions:\n\n{}",
-                    context_content
-                ),
-                user_input_message_context: None,
-                user_intent: None,
-            };
-            let assistant_msg = AssistantResponseMessage {
-                message_id: None,
-                content: "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into(),
-                tool_uses: None,
-            };
-            Some((user_msg, assistant_msg))
+            let user_msg_prompt = format!(
+                "Here is critical information you MUST consider when answering questions:\n\n{}",
+                context_content
+            );
+            self.context_message_length = Some(user_msg_prompt.len());
+            let user_msg = UserMessage::new_prompt(user_msg_prompt);
+            let assistant_msg = AssistantMessage::new_response(None, "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into());
+            Some(vec![(user_msg, assistant_msg)])
         } else {
             None
         }
@@ -496,56 +501,15 @@ impl ConversationState {
     }
 
     /// Calculate the total character count in the conversation
-    pub fn calculate_char_count(&self) -> usize {
-        let mut total_chars = 0;
-        for message in &self.history {
-            match message {
-                ChatMessage::UserInputMessage(msg) => {
-                    total_chars += msg.content.len();
-                    if let Some(ctx) = &msg.user_input_message_context {
-                        // Add tool result characters if any
-                        if let Some(results) = &ctx.tool_results {
-                            for result in results {
-                                for content in &result.content {
-                                    match content {
-                                        ToolResultContentBlock::Text(text) => {
-                                            total_chars += text.len();
-                                        },
-                                        ToolResultContentBlock::Json(doc) => {
-                                            total_chars += calculate_document_char_count(doc);
-                                        },
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                ChatMessage::AssistantResponseMessage(msg) => {
-                    total_chars += msg.content.len();
-                    if let Some(tool_uses) = &msg.tool_uses {
-                        total_chars += tool_uses
-                            .iter()
-                            .map(|v| calculate_document_char_count(&v.input))
-                            .reduce(|acc, e| acc + e)
-                            .unwrap_or_default();
-                    }
-                },
-            }
-        }
-
-        // Add summary if it exists (it's also in the context sent to the model)
-        if let Some(summary) = &self.latest_summary {
-            total_chars += summary.len();
-        }
-
-        total_chars
+    pub async fn calculate_char_count(&mut self) -> CharCount {
+        self.backend_conversation_state(false, true).await.char_count()
     }
 
     /// Get the current token warning level
-    pub fn get_token_warning_level(&self) -> TokenWarningLevel {
-        let total_chars = self.calculate_char_count();
+    pub async fn get_token_warning_level(&mut self) -> TokenWarningLevel {
+        let total_chars = self.calculate_char_count().await;
 
-        if total_chars >= MAX_CHARS {
+        if *total_chars >= MAX_CHARS {
             TokenWarningLevel::Critical
         } else {
             TokenWarningLevel::None
@@ -556,11 +520,11 @@ impl ConversationState {
         self.append_transcript(format!("> {}", message.replace("\n", "> \n")));
     }
 
-    pub fn append_assistant_transcript(&mut self, message: &AssistantResponseMessage) {
-        let tool_uses = message.tool_uses.as_deref().map_or("none".to_string(), |tools| {
+    pub fn append_assistant_transcript(&mut self, message: &AssistantMessage) {
+        let tool_uses = message.tool_uses().map_or("none".to_string(), |tools| {
             tools.iter().map(|tool| tool.name.clone()).collect::<Vec<_>>().join(",")
         });
-        self.append_transcript(format!("{}\n[Tool uses: {tool_uses}]", message.content.clone()));
+        self.append_transcript(format!("{}\n[Tool uses: {tool_uses}]", message.content()));
     }
 
     pub fn append_transcript(&mut self, message: String) {
@@ -569,15 +533,167 @@ impl ConversationState {
         }
         self.transcript.push_back(message);
     }
-}
 
-impl From<InvokeOutput> for ToolResultContentBlock {
-    fn from(value: InvokeOutput) -> Self {
-        match value.output {
-            crate::cli::chat::tools::OutputKind::Text(text) => Self::Text(text),
-            crate::cli::chat::tools::OutputKind::Json(value) => Self::Json(serde_value_to_document(value)),
+    /// Mutates `msg` so that it will contain an appropriate [UserInputMessageContext] that
+    /// contains "cancelled" tool results for `tool_uses`.
+    fn set_cancelled_tool_results(&self, msg: &mut UserInputMessage, tool_uses: &[ToolUse]) {
+        match msg.user_input_message_context.as_mut() {
+            Some(ctx) => {
+                if ctx.tool_results.as_ref().is_none_or(|r| r.is_empty()) {
+                    debug!(
+                        "last assistant message contains tool uses, but next message is set and does not contain tool results. setting tool results as cancelled"
+                    );
+                    ctx.tool_results = Some(
+                        tool_uses
+                            .iter()
+                            .map(|tool_use| ToolResult {
+                                tool_use_id: tool_use.tool_use_id.clone(),
+                                content: vec![ToolResultContentBlock::Text(
+                                    "Tool use was cancelled by the user".to_string(),
+                                )],
+                                status: fig_api_client::model::ToolResultStatus::Error,
+                            })
+                            .collect::<Vec<_>>(),
+                    );
+                }
+            },
+            None => {
+                debug!(
+                    "last assistant message contains tool uses, but next message is set and does not contain tool results. setting tool results as cancelled"
+                );
+                let tool_results = tool_uses
+                    .iter()
+                    .map(|tool_use| ToolResult {
+                        tool_use_id: tool_use.tool_use_id.clone(),
+                        content: vec![ToolResultContentBlock::Text(
+                            "Tool use was cancelled by the user".to_string(),
+                        )],
+                        status: fig_api_client::model::ToolResultStatus::Error,
+                    })
+                    .collect::<Vec<_>>();
+                let user_input_message_context = UserInputMessageContext {
+                    shell_state: None,
+                    env_state: Some(build_env_state()),
+                    tool_results: Some(tool_results),
+                    tools: if self.tools.is_empty() {
+                        None
+                    } else {
+                        Some(self.tools.clone())
+                    },
+                    ..Default::default()
+                };
+                msg.user_input_message_context = Some(user_input_message_context);
+            },
         }
     }
+}
+
+/// Represents a conversation state that can be converted into a [FigConversationState] (the type
+/// used by the API client). Represents borrowed data, and reflects an exact [FigConversationState]
+/// that can be generated from [ConversationState] at any point in time.
+///
+/// This is intended to provide us ways to accurately assess the exact state that is sent to the
+/// model without having to needlessly clone and mutate [ConversationState] in strange ways.
+pub type BackendConversationState<'a> = BackendConversationStateImpl<
+    'a,
+    std::collections::vec_deque::Iter<'a, (UserMessage, AssistantMessage)>,
+    Option<Vec<(UserMessage, AssistantMessage)>>,
+>;
+
+/// See [BackendConversationState]
+#[derive(Debug, Clone)]
+pub struct BackendConversationStateImpl<'a, T, U> {
+    pub conversation_id: &'a str,
+    pub next_user_message: Option<&'a UserMessage>,
+    pub history: T,
+    pub context_messages: U,
+    pub tools: &'a [Tool],
+}
+
+impl
+    BackendConversationStateImpl<
+        '_,
+        std::collections::vec_deque::Iter<'_, (UserMessage, AssistantMessage)>,
+        Option<Vec<(UserMessage, AssistantMessage)>>,
+    >
+{
+    fn into_fig_conversation_state(self) -> eyre::Result<FigConversationState> {
+        let history = flatten_history(self.context_messages.unwrap_or_default().iter().chain(self.history));
+        let mut user_input_message: UserInputMessage = self
+            .next_user_message
+            .cloned()
+            .map(UserMessage::into_user_input_message)
+            .ok_or(eyre::eyre!("next user message is not set"))?;
+        if let Some(ctx) = user_input_message.user_input_message_context.as_mut() {
+            ctx.tools = Some(self.tools.to_vec());
+        }
+
+        Ok(FigConversationState {
+            conversation_id: Some(self.conversation_id.to_string()),
+            user_input_message,
+            history: Some(history),
+        })
+    }
+
+    pub fn calculate_conversation_size(&self) -> ConversationSize {
+        let mut user_chars = 0;
+        let mut assistant_chars = 0;
+        let mut context_chars = 0;
+
+        // Count the chars used by the messages in the history.
+        // this clone is cheap
+        let history = self.history.clone();
+        for (user, assistant) in history {
+            user_chars += *user.char_count();
+            assistant_chars += *assistant.char_count();
+        }
+
+        // Add any chars from context messages, if available.
+        context_chars += self
+            .context_messages
+            .as_ref()
+            .map(|v| {
+                v.iter().fold(0, |acc, (user, assistant)| {
+                    acc + *user.char_count() + *assistant.char_count()
+                })
+            })
+            .unwrap_or_default();
+
+        ConversationSize {
+            context_messages: context_chars.into(),
+            user_messages: user_chars.into(),
+            assistant_messages: assistant_chars.into(),
+        }
+    }
+}
+
+/// Reflects a detailed accounting of the context window utilization for a given conversation.
+#[derive(Debug, Clone, Copy)]
+pub struct ConversationSize {
+    pub context_messages: CharCount,
+    pub user_messages: CharCount,
+    pub assistant_messages: CharCount,
+}
+
+/// Converts a list of user/assistant message pairs into a flattened list of ChatMessage.
+fn flatten_history<'a, T>(history: T) -> Vec<ChatMessage>
+where
+    T: Iterator<Item = &'a (UserMessage, AssistantMessage)>,
+{
+    history.fold(Vec::new(), |mut acc, (user, assistant)| {
+        acc.push(ChatMessage::UserInputMessage(user.clone().into_history_entry()));
+        acc.push(ChatMessage::AssistantResponseMessage(assistant.clone().into()));
+        acc
+    })
+}
+
+/// Character count warning levels for conversation size
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenWarningLevel {
+    /// No warning, conversation is within normal limits
+    None,
+    /// Critical level - at single warning threshold (600K characters)
+    Critical,
 }
 
 impl From<InputSchema> for ToolInputSchema {
@@ -588,145 +704,58 @@ impl From<InputSchema> for ToolInputSchema {
     }
 }
 
-fn build_env_state() -> EnvState {
-    let mut env_state = EnvState {
-        operating_system: Some(env::consts::OS.into()),
-        ..Default::default()
-    };
+fn format_hook_context<'a>(hook_results: impl IntoIterator<Item = &'a (Hook, String)>, trigger: HookTrigger) -> String {
+    let mut context_content = String::new();
 
-    match env::current_dir() {
-        Ok(current_dir) => {
-            env_state.current_working_directory =
-                Some(truncate_safe(&current_dir.to_string_lossy(), MAX_CURRENT_WORKING_DIRECTORY_LEN).into());
-        },
-        Err(err) => {
-            error!(?err, "Attempted to fetch the CWD but it did not exist.");
-        },
+    context_content.push_str(&format!(
+        "--- CRITICAL: ADDITIONAL CONTEXT TO USE{} ---\n",
+        if trigger == HookTrigger::ConversationStart {
+            " FOR THE ENTIRE CONVERSATION"
+        } else {
+            ""
+        }
+    ));
+    context_content.push_str("This section (like others) contains important information that I want you to use in your responses. I have gathered this context from valuable programmatic script hooks. You must follow any requests and consider all of the information in this section.\n\n");
+
+    for (hook, output) in hook_results.into_iter().filter(|(h, _)| h.trigger == trigger) {
+        context_content.push_str(&format!("'{}': {output}\n\n", &hook.name));
     }
-
-    env_state
-}
-
-fn build_shell_state() -> ShellState {
-    // Try to grab the shell from the parent process via the `Shell::current_shell`,
-    // then try the `SHELL` env, finally just report bash
-    let shell_name = Shell::current_shell()
-        .or_else(|| {
-            let shell_name = env::var("SHELL").ok()?;
-            Shell::try_find_shell(shell_name)
-        })
-        .unwrap_or(Shell::Bash)
-        .to_string();
-
-    ShellState {
-        shell_name,
-        shell_history: None,
-    }
-}
-
-fn calculate_document_char_count(document: &Document) -> usize {
-    match document {
-        Document::Object(hash_map) => hash_map
-            .values()
-            .fold(0, |acc, e| acc + calculate_document_char_count(e)),
-        Document::Array(vec) => vec.iter().fold(0, |acc, e| acc + calculate_document_char_count(e)),
-        Document::Number(_) => 1,
-        Document::String(s) => s.len(),
-        Document::Bool(_) => 1,
-        Document::Null => 1,
-    }
+    context_content.push_str("--- ADDITIONAL CONTEXT END ---\n\n");
+    context_content
 }
 
 #[cfg(test)]
 mod tests {
-    use aws_smithy_types::Number;
     use fig_api_client::model::{
         AssistantResponseMessage,
         ToolResultStatus,
-        ToolUse,
     };
 
+    use super::super::context::{
+        AMAZONQ_FILENAME,
+        profile_context_path,
+    };
+    use super::super::load_tools;
+    use super::super::message::AssistantToolUse;
     use super::*;
-    use crate::cli::chat::context::AMAZONQ_FILENAME;
-    use crate::cli::chat::load_tools;
 
-    #[test]
-    fn test_truncate_safe() {
-        assert_eq!(truncate_safe("Hello World", 5), "Hello");
-        assert_eq!(truncate_safe("Hello ", 5), "Hello");
-        assert_eq!(truncate_safe("Hello World", 11), "Hello World");
-        assert_eq!(truncate_safe("Hello World", 15), "Hello World");
-    }
-
-    #[test]
-    fn test_env_state() {
-        let env_state = build_env_state();
-        assert!(env_state.current_working_directory.is_some());
-        assert!(env_state.operating_system.as_ref().is_some_and(|os| !os.is_empty()));
-        println!("{env_state:?}");
-    }
-
-    #[test]
-    fn test_calculate_document_char_count() {
-        // Test simple types
-        assert_eq!(calculate_document_char_count(&Document::String("hello".to_string())), 5);
-        assert_eq!(calculate_document_char_count(&Document::Number(Number::PosInt(123))), 1);
-        assert_eq!(calculate_document_char_count(&Document::Bool(true)), 1);
-        assert_eq!(calculate_document_char_count(&Document::Null), 1);
-
-        // Test array
-        let array = Document::Array(vec![
-            Document::String("test".to_string()),
-            Document::Number(Number::PosInt(42)),
-            Document::Bool(false),
-        ]);
-        assert_eq!(calculate_document_char_count(&array), 6); // "test" (4) + Number (1) + Bool (1)
-
-        // Test object
-        let mut obj = HashMap::new();
-        obj.insert("key1".to_string(), Document::String("value1".to_string()));
-        obj.insert("key2".to_string(), Document::Number(Number::PosInt(99)));
-        let object = Document::Object(obj);
-        assert_eq!(calculate_document_char_count(&object), 7); // "value1" (6) + Number (1)
-
-        // Test nested structure
-        let mut nested_obj = HashMap::new();
-        let mut inner_obj = HashMap::new();
-        inner_obj.insert("inner_key".to_string(), Document::String("inner_value".to_string()));
-        nested_obj.insert("outer_key".to_string(), Document::Object(inner_obj));
-        nested_obj.insert(
-            "array_key".to_string(),
-            Document::Array(vec![
-                Document::String("item1".to_string()),
-                Document::String("item2".to_string()),
-            ]),
-        );
-
-        let complex = Document::Object(nested_obj);
-        assert_eq!(calculate_document_char_count(&complex), 21); // "inner_value" (11) + "item1" (5) + "item2" (5)
-
-        // Test empty structures
-        assert_eq!(calculate_document_char_count(&Document::Array(vec![])), 0);
-        assert_eq!(calculate_document_char_count(&Document::Object(HashMap::new())), 0);
-    }
-
-    fn assert_conversation_state_invariants(state: FigConversationState, i: usize) {
+    fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
             assert!(
                 matches!(msg, ChatMessage::UserInputMessage(_)),
-                "{i}: First message in the history must be from the user, instead found: {:?}",
+                "{assertion_iteration}: First message in the history must be from the user, instead found: {:?}",
                 msg
             );
         }
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.last()) {
             assert!(
                 matches!(msg, ChatMessage::AssistantResponseMessage(_)),
-                "{i}: Last message in the history must be from the assistant, instead found: {:?}",
+                "{assertion_iteration}: Last message in the history must be from the assistant, instead found: {:?}",
                 msg
             );
             // If the last message from the assistant contains tool uses, then the next user
             // message must contain tool results.
-            match (state.user_input_message.user_input_message_context, msg) {
+            match (state.user_input_message.user_input_message_context.as_ref(), msg) {
                 (
                     Some(ctx),
                     ChatMessage::AssistantResponseMessage(AssistantResponseMessage {
@@ -735,11 +764,47 @@ mod tests {
                     }),
                 ) if !tool_uses.is_empty() => {
                     assert!(
-                        ctx.tool_results.is_some_and(|r| !r.is_empty()),
+                        ctx.tool_results.as_ref().is_some_and(|r| !r.is_empty()),
                         "The user input message must contain tool results when the last assistant message contains tool uses"
                     );
                 },
                 _ => {},
+            }
+        }
+
+        if let Some(history) = state.history.as_ref() {
+            for (i, msg) in history.iter().enumerate() {
+                // User message checks.
+                if let ChatMessage::UserInputMessage(user) = msg {
+                    assert!(
+                        user.user_input_message_context
+                            .as_ref()
+                            .is_none_or(|ctx| ctx.tools.is_none()),
+                        "the tool specification should be empty for all user messages in the history"
+                    );
+
+                    // Check that messages with tool results are immediately preceded by an
+                    // assistant message with tool uses.
+                    if user
+                        .user_input_message_context
+                        .as_ref()
+                        .is_some_and(|ctx| ctx.tool_results.as_ref().is_some_and(|r| !r.is_empty()))
+                    {
+                        match history.get(i.checked_sub(1).unwrap_or_else(|| {
+                            panic!(
+                                "{assertion_iteration}: first message in the history should not contain tool results"
+                            )
+                        })) {
+                            Some(ChatMessage::AssistantResponseMessage(assistant)) => {
+                                assert!(assistant.tool_uses.is_some());
+                            },
+                            _ => panic!(
+                                "expected an assistant response message with tool uses at index: {}",
+                                i - 1
+                            ),
+                        }
+                    }
+                }
             }
         }
 
@@ -750,45 +815,52 @@ mod tests {
             MAX_CONVERSATION_STATE_HISTORY_LEN,
             actual_history_len
         );
+
+        let ctx = state
+            .user_input_message
+            .user_input_message_context
+            .as_ref()
+            .expect("user input message context must exist");
+        assert!(
+            ctx.tools.is_some(),
+            "Currently, the tool spec must be included in the next user message"
+        );
     }
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
-        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
+        let mut conversation_state =
+            ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
-        conversation_state.append_new_user_message("start".to_string()).await;
+        conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state(None).await;
+            let s = conversation_state.as_sendable_conversation_state(true).await;
             assert_conversation_state_invariants(s, i);
-            conversation_state.push_assistant_message(AssistantResponseMessage {
-                message_id: None,
-                content: i.to_string(),
-                tool_uses: None,
-            });
-            conversation_state.append_new_user_message(i.to_string()).await;
+            conversation_state.push_assistant_message(AssistantMessage::new_response(None, i.to_string()));
+            conversation_state.set_next_user_message(i.to_string()).await;
         }
     }
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
         // Build a long conversation history of tool use results.
-        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
-        conversation_state.append_new_user_message("start".to_string()).await;
+        let mut conversation_state =
+            ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
+        conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state(None).await;
+            let s = conversation_state.as_sendable_conversation_state(true).await;
             assert_conversation_state_invariants(s, i);
-            conversation_state.push_assistant_message(AssistantResponseMessage {
-                message_id: None,
-                content: i.to_string(),
-                tool_uses: Some(vec![ToolUse {
-                    tool_use_id: "tool_id".to_string(),
+
+            conversation_state.push_assistant_message(AssistantMessage::new_tool_use(None, i.to_string(), vec![
+                AssistantToolUse {
+                    id: "tool_id".to_string(),
                     name: "tool name".to_string(),
-                    input: aws_smithy_types::Document::Null,
-                }]),
-            });
-            conversation_state.add_tool_results(vec![ToolResult {
+                    args: serde_json::Value::Null,
+                },
+            ]));
+            conversation_state.add_tool_results(vec![ToolUseResult {
                 tool_use_id: "tool_id".to_string(),
                 content: vec![],
                 status: ToolResultStatus::Success,
@@ -796,33 +868,28 @@ mod tests {
         }
 
         // Build a long conversation history of user messages mixed in with tool results.
-        let mut conversation_state = ConversationState::new(Context::new_fake(), load_tools().unwrap(), None).await;
-        conversation_state.append_new_user_message("start".to_string()).await;
+        let mut conversation_state =
+            ConversationState::new(Context::new_fake(), load_tools().unwrap(), None, None).await;
+        conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state(None).await;
+            let s = conversation_state.as_sendable_conversation_state(true).await;
             assert_conversation_state_invariants(s, i);
             if i % 3 == 0 {
-                conversation_state.push_assistant_message(AssistantResponseMessage {
-                    message_id: None,
-                    content: i.to_string(),
-                    tool_uses: Some(vec![ToolUse {
-                        tool_use_id: "tool_id".to_string(),
+                conversation_state.push_assistant_message(AssistantMessage::new_tool_use(None, i.to_string(), vec![
+                    AssistantToolUse {
+                        id: "tool_id".to_string(),
                         name: "tool name".to_string(),
-                        input: aws_smithy_types::Document::Null,
-                    }]),
-                });
-                conversation_state.add_tool_results(vec![ToolResult {
+                        args: serde_json::Value::Null,
+                    },
+                ]));
+                conversation_state.add_tool_results(vec![ToolUseResult {
                     tool_use_id: "tool_id".to_string(),
                     content: vec![],
                     status: ToolResultStatus::Success,
                 }]);
             } else {
-                conversation_state.push_assistant_message(AssistantResponseMessage {
-                    message_id: None,
-                    content: i.to_string(),
-                    tool_uses: None,
-                });
-                conversation_state.append_new_user_message(i.to_string()).await;
+                conversation_state.push_assistant_message(AssistantMessage::new_response(None, i.to_string()));
+                conversation_state.set_next_user_message(i.to_string()).await;
             }
         }
     }
@@ -832,13 +899,13 @@ mod tests {
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         ctx.fs().write(AMAZONQ_FILENAME, "test context").await.unwrap();
 
-        let mut conversation_state = ConversationState::new(ctx, load_tools().unwrap(), None).await;
+        let mut conversation_state = ConversationState::new(ctx, load_tools().unwrap(), None, None).await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
-        conversation_state.append_new_user_message("start".to_string()).await;
+        conversation_state.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state.as_sendable_conversation_state(None).await;
+            let s = conversation_state.as_sendable_conversation_state(true).await;
 
             // Ensure that the first two messages are the fake context messages.
             let hist = s.history.as_ref().unwrap();
@@ -857,32 +924,45 @@ mod tests {
 
             assert_conversation_state_invariants(s, i);
 
-            conversation_state.push_assistant_message(AssistantResponseMessage {
-                message_id: None,
-                content: i.to_string(),
-                tool_uses: None,
-            });
-            conversation_state.append_new_user_message(i.to_string()).await;
+            conversation_state.push_assistant_message(AssistantMessage::new_response(None, i.to_string()));
+            conversation_state.set_next_user_message(i.to_string()).await;
         }
     }
 
     #[tokio::test]
     async fn test_conversation_state_additional_context() {
-        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
-        let mut conversation_state = ConversationState::new(ctx, load_tools().unwrap(), None).await;
+        tracing_subscriber::fmt::try_init().ok();
 
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let conversation_start_context = "conversation start context";
         let prompt_context = "prompt context";
+        let config = serde_json::json!({
+            "hooks": {
+                "test_per_prompt": {
+                    "trigger": "per_prompt",
+                    "type": "inline",
+                    "command": format!("echo {}", prompt_context)
+                },
+                "test_conversation_start": {
+                    "trigger": "conversation_start",
+                    "type": "inline",
+                    "command": format!("echo {}", conversation_start_context)
+                }
+            }
+        });
+        let config_path = profile_context_path(&ctx, "default").unwrap();
+        ctx.fs().create_dir_all(config_path.parent().unwrap()).await.unwrap();
+        ctx.fs()
+            .write(&config_path, serde_json::to_string(&config).unwrap())
+            .await
+            .unwrap();
+        let mut conversation_state =
+            ConversationState::new(ctx, load_tools().unwrap(), None, Some(SharedWriter::stdout())).await;
 
         // Simulate conversation flow
-        conversation_state.append_new_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
-            let s = conversation_state
-                .as_sendable_conversation_state(Some(ExtraContext {
-                    general_context: Some(conversation_start_context.to_string()),
-                    user_input_context: Some(prompt_context.to_string()),
-                }))
-                .await;
+        conversation_state.set_next_user_message("start".to_string()).await;
+        for i in 0..=5 {
+            let s = conversation_state.as_sendable_conversation_state(true).await;
             let hist = s.history.as_ref().unwrap();
             #[allow(clippy::match_wildcard_for_single_variants)]
             match &hist[0] {
@@ -901,12 +981,8 @@ mod tests {
                 s.user_input_message.content
             );
 
-            conversation_state.push_assistant_message(AssistantResponseMessage {
-                message_id: None,
-                content: i.to_string(),
-                tool_uses: None,
-            });
-            conversation_state.append_new_user_message(i.to_string()).await;
+            conversation_state.push_assistant_message(AssistantMessage::new_response(None, i.to_string()));
+            conversation_state.set_next_user_message(i.to_string()).await;
         }
     }
 }

@@ -12,6 +12,58 @@
     },
     {
       "type": "release",
+      "date": "2025-04-22",
+      "version": "1.8.0",
+      "title": "Version 1.8.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Fuzzy search for slash commands in `q chat` with `Ctrl + k` - [#1181](https://github.com/aws/amazon-q-developer-cli/pull/1181)"
+        },
+        {
+          "type": "added",
+          "description": "A new capability for dynamically adding context to messages in `q chat` with \"context hooks\" - [#1218](https://github.com/aws/amazon-q-developer-cli/pull/1218)"
+        },
+        {
+          "type": "added",
+          "description": "A new command `/usage` in `q chat` to display an estimate of the context window usage - [#1177](https://github.com/aws/amazon-q-developer-cli/pull/1177)"
+        },
+        {
+          "type": "added",
+          "description": "A new greeting UI with rotating tips in `q chat` - [#1262](https://github.com/aws/amazon-q-developer-cli/pull/1262)"
+        },
+        {
+          "type": "added",
+          "description": "An extra confirmation prompt before clearing the history in `q chat` with `/clear` - [#1180](https://github.com/aws/amazon-q-developer-cli/pull/1180)"
+        },
+        {
+          "type": "added",
+          "description": "Support for using a system proxy with the `HTTP_PROXY` environment variable - [#1199](https://github.com/aws/amazon-q-developer-cli/pull/1199)"
+        },
+        {
+          "type": "added",
+          "description": "The ability to reset a single tool's permissions in `q chat` with `/tools reset` - [#1102](https://github.com/aws/amazon-q-developer-cli/pull/1102)"
+        },
+        {
+          "type": "added",
+          "description": "Various UI improvements in `q chat`"
+        },
+        {
+          "type": "fixed",
+          "description": "Arguments for `EDITOR` not being correctly parsed by the `/editor` command in `q chat` - [#1209](https://github.com/aws/amazon-q-developer-cli/pull/1209)"
+        },
+        {
+          "type": "fixed",
+          "description": "The `/compact` command failing to compact history after the context window has been filled in `q chat` - [#1275](https://github.com/aws/amazon-q-developer-cli/pull/1275)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-04-10",
       "version": "1.7.3",
       "title": "Version 1.7.3",
