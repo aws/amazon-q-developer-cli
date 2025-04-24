@@ -760,7 +760,7 @@ mod tests {
 
             println!("Credentials were successfully written to {}", creds_path.display());
         } else {
-            println!("No token was loaded, skipping credentials file verification");
+            panic!("No token was loaded, failing test!");
         }
     }
 
