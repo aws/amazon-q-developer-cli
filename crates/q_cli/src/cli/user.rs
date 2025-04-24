@@ -20,6 +20,8 @@ use eyre::{
     Result,
     bail,
 };
+use fig_api_client::list_available_profiles;
+use fig_api_client::profile::Profile;
 use fig_auth::builder_id::{
     PollCreateToken,
     TokenType,
@@ -38,7 +40,10 @@ use fig_util::{
     PRODUCT_NAME,
 };
 use serde_json::json;
-use tracing::error;
+use tracing::{
+    error,
+    info,
+};
 
 use super::OutputFormat;
 use crate::util::spinner::{
@@ -180,7 +185,21 @@ impl RootUserSubcommand {
                 }
             },
             Self::Profile => {
-                select_profile_interactive().await?;
+                if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
+                    bail!(
+                        "You are not logged in, please log in with {}",
+                        format!("{CLI_BINARY_NAME} login",).bold()
+                    );
+                }
+
+                if let Ok(Some(token)) = fig_auth::builder_id_token().await {
+                    if matches!(token.token_type(), TokenType::BuilderId) {
+                        bail!("This command is only available for Pro users");
+                    }
+                }
+
+                select_profile_interactive(true).await?;
+
                 Ok(ExitCode::SUCCESS)
             },
         }
@@ -266,7 +285,7 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                         ]);
                         registration.finish(&client, Some(&secret_store)).await?;
                         fig_telemetry::send_user_logged_in().await;
-                        spinner.stop_with_message("Logged in successfully".into());
+                        spinner.stop_with_message("Device authorized".into());
                     },
                     // If we are unable to open the link with the browser, then fallback to
                     // the device code flow.
@@ -282,8 +301,14 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
     };
 
     if let Err(err) = login_command().await {
-        error!(%err, "Failed to send login command");
+        error!(%err, "Failed to send login command.");
     }
+
+    if login_method == AuthMethod::IdentityCenter {
+        select_profile_interactive(false).await?;
+    }
+
+    eprintln!("Logged in successfully");
 
     Ok(())
 }
@@ -327,7 +352,7 @@ async fn try_device_authorization(
             PollCreateToken::Pending => {},
             PollCreateToken::Complete(_) => {
                 fig_telemetry::send_user_logged_in().await;
-                spinner.stop_with_message("Logged in successfully".into());
+                spinner.stop_with_message("Device authorized".into());
                 break;
             },
             PollCreateToken::Error(err) => {
@@ -339,23 +364,23 @@ async fn try_device_authorization(
     Ok(())
 }
 
-async fn select_profile_interactive() -> Result<()> {
-    if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
-        bail!(
-            "You are not logged in, please log in with {}",
-            format!("{CLI_BINARY_NAME} login",).bold()
-        );
-    }
-
-    let profiles = fig_api_client::profile::list_available_profiles().await;
+async fn select_profile_interactive(whoami: bool) -> Result<()> {
+    let profiles = list_available_profiles().await;
     if profiles.is_empty() {
-        bail!("You have no profiles");
+        info!("Available profiles was empty");
+        return Ok(());
     }
 
-    let active_profile: Option<fig_api_client::profile::Profile> =
-        fig_settings::state::get("api.codewhisperer.profile")?;
+    if whoami && profiles.len() == 1 {
+        return Ok(fig_settings::state::set_value(
+            "api.codewhisperer.profile",
+            serde_json::to_value(&profiles[0])?,
+        )?);
+    }
 
     let mut items: Vec<String> = profiles.iter().map(|p| p.profile_name.clone()).collect();
+
+    let active_profile: Option<Profile> = fig_settings::state::get("api.codewhisperer.profile")?;
 
     if let Some(default_idx) = active_profile
         .as_ref()
@@ -375,11 +400,11 @@ async fn select_profile_interactive() -> Result<()> {
     match selected {
         Some(i) => {
             let chosen = &profiles[i];
-            let profile_value = serde_json::to_value(chosen)?;
-            eprintln!("Switched to profile: {}\n", chosen.profile_name.as_str().green());
-            fig_settings::state::set_value("api.codewhisperer.profile", profile_value)?;
+            let profile = serde_json::to_value(chosen)?;
+            eprintln!("Set profile: {}\n", chosen.profile_name.as_str().green());
+            fig_settings::state::set_value("api.codewhisperer.profile", profile)?;
         },
-        None => eprintln!("No profile selected.\n"),
+        None => bail!("No profile selected.\n"),
     }
 
     Ok(())

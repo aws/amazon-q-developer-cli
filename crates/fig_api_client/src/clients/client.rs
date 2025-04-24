@@ -62,7 +62,10 @@ mod inner {
 }
 
 #[derive(Clone, Debug)]
-pub struct Client(inner::Inner);
+pub struct Client {
+    inner: inner::Inner,
+    profile_arn: Option<String>,
+}
 
 impl Client {
     pub async fn new() -> Result<Client, Error> {
@@ -76,7 +79,10 @@ impl Client {
     }
 
     pub fn mock() -> Self {
-        Self(inner::Inner::Mock)
+        Self {
+            inner: inner::Inner::Mock,
+            profile_arn: None,
+        }
     }
 
     pub async fn new_codewhisperer_client(endpoint: &Endpoint) -> Self {
@@ -89,7 +95,25 @@ impl Client {
             .app_name(app_name())
             .endpoint_url(endpoint.url())
             .build();
-        Self(inner::Inner::Codewhisperer(CodewhispererClient::from_conf(conf)))
+
+        let inner = inner::Inner::Codewhisperer(CodewhispererClient::from_conf(conf));
+
+        let profile_arn = match fig_settings::state::get_value("api.codewhisperer.profile") {
+            Ok(Some(profile)) => match profile.get("arn") {
+                Some(arn) => Some(arn.to_string()),
+                None => {
+                    error!("Stored profile does not contain an arn");
+                    None
+                },
+            },
+            Ok(None) => None,
+            Err(err) => {
+                error!("Failed to retrieve profile: {}", err);
+                None
+            },
+        };
+
+        Self { inner, profile_arn }
     }
 
     pub async fn new_consolas_client(endpoint: &Endpoint) -> Result<Self, Error> {
@@ -101,7 +125,10 @@ impl Client {
             .app_name(app_name())
             .endpoint_url(endpoint.url())
             .build();
-        Ok(Self(inner::Inner::Consolas(ConsolasClient::from_conf(conf))))
+        Ok(Self {
+            inner: inner::Inner::Consolas(ConsolasClient::from_conf(conf)),
+            profile_arn: None,
+        })
     }
 
     pub async fn generate_recommendations(
@@ -134,7 +161,7 @@ impl Client {
         input.file_context.left_file_content = left_content;
         input.file_context.right_file_content = right_content;
 
-        match &self.0 {
+        match &self.inner {
             inner::Inner::Codewhisperer(client) => Ok(codewhisperer_generate_recommendation(client, input).await?),
             inner::Inner::Consolas(client) => Ok(consolas_generate_recommendation(client, input).await?),
             inner::Inner::Mock => Ok(RecommendationsOutput {
@@ -152,7 +179,7 @@ impl Client {
     pub async fn list_customizations(&self) -> Result<Vec<Customization>, Error> {
         let mut customizations = Vec::new();
 
-        match &self.0 {
+        match &self.inner {
             inner::Inner::Codewhisperer(client) => {
                 let mut paginator = client.list_available_customizations().into_paginator().send();
                 while let Some(res) = paginator.next().await {
@@ -193,7 +220,7 @@ impl Client {
         user_context: UserContext,
         opt_out: OptOutPreference,
     ) -> Result<(), Error> {
-        match &self.0 {
+        match &self.inner {
             inner::Inner::Codewhisperer(client) => {
                 let _ = client
                     .send_telemetry_event()
@@ -210,7 +237,7 @@ impl Client {
     }
 
     pub async fn list_available_profiles(&self) -> Result<Vec<Profile>, Error> {
-        match &self.0 {
+        match &self.inner {
             inner::Inner::Codewhisperer(client) => {
                 let mut profiles = vec![];
                 let mut client = client.list_available_profiles().into_paginator().send();
