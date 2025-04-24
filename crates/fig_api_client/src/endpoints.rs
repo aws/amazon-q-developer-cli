@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use aws_config::Region;
 use serde_json::Value;
+use tracing::error;
 
 use crate::consts::{
     PROD_CODEWHISPERER_ENDPOINT_REGION,
@@ -40,12 +41,24 @@ impl Endpoint {
                     o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
                     o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
                 )
-            } else if let Ok(Some(Value::Object(o))) = fig_settings::state::get_value("api.codewhisperer.service") {
+            } else if let Ok(Some(Value::Object(o))) = fig_settings::state::get_value("api.codewhisperer.profile") {
                 // The following branch is evaluated in the case of user profile being set.
-                (
-                    o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
-                    o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
-                )
+                match o.get("arn").and_then(|v| v.as_str()).map(|v| v.to_owned()) {
+                    Some(arn) => {
+                        let region = arn.split(':').nth(3).unwrap_or_default().to_owned();
+                        match Self::CODEWHISPERER_ENDPOINTS
+                            .iter()
+                            .find(|e| e.region().as_ref() == region)
+                        {
+                            Some(endpoint) => (Some(endpoint.url().to_owned()), Some(region)),
+                            None => {
+                                error!("Failed to find endpoint for region: {region}");
+                                (None, None)
+                            },
+                        }
+                    },
+                    None => (None, None),
+                }
             } else {
                 (None, None)
             };

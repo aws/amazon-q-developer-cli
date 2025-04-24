@@ -27,7 +27,7 @@ pub async fn list_available_profiles() -> Vec<Profile> {
         let client = Client::new_codewhisperer_client(&endpoint).await;
         match client.list_available_profiles().await {
             Ok(mut p) => profiles.append(&mut p),
-            Err(e) => tracing::warn!("Failed to list profiles from endpoint {:?}: {:?}", endpoint, e),
+            Err(e) => tracing::error!("Failed to list profiles from endpoint {:?}: {:?}", endpoint, e),
         }
     }
 

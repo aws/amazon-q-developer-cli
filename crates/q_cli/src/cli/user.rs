@@ -6,14 +6,13 @@ use std::process::{
 };
 use std::time::Duration;
 
-use anstream::println;
+use anstream::{eprintln, println};
 use clap::{
     Args,
     Subcommand,
 };
 use crossterm::style::Stylize;
 use dialoguer::Select;
-use dialoguer::theme::ColorfulTheme;
 use eyre::{
     Result,
     bail,
@@ -325,71 +324,56 @@ async fn try_device_authorization(
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AvailableProfile {
-    arn: String,        // profile_arn
-    name: String,       // profile_name
-    account_id: String, // account_id
-}
-
 async fn select_profile_interactive() -> Result<()> {
-    let profiles = vec![
-        AvailableProfile {
-            arn: "arn:aws:codewhisperer:us-east-1:533267331080:profile/4QUUCPY3E3XX".to_string(),
-            name: "DataPlaneCanaryTest".to_string(),
-            account_id: "533267331080".to_string(),
-        },
-        AvailableProfile {
-            arn: "arn:aws:codewhisperer:us-west-2:533267331081:profile/ABCD1234EFGH".to_string(),
-            name: "WestRegionProfile".to_string(),
-            account_id: "533267331081".to_string(),
-        },
-        AvailableProfile {
-            arn: "arn:aws:codewhisperer:eu-central-1:533267331082:profile/IJKL5678MNOP".to_string(),
-            name: "EuropeProfile".to_string(),
-            account_id: "533267331082".to_string(),
-        },
-        AvailableProfile {
-            arn: "arn:aws:codewhisperer:ap-northeast-1:533267331083:profile/QRST9012UVWX".to_string(),
-            name: "TokyoRegionProfile".to_string(),
-            account_id: "533267331083".to_string(),
-        },
-    ];
-    if profiles.is_empty() {
-        bail!("Attempted to fetch profiles while there does not exist");
+    if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
+        bail!(
+            "You are not logged in, please log in with {}",
+            format!("{CLI_BINARY_NAME} login",).bold()
+        );
     }
 
-    // mock fetching active profile
-    let active_profile = Some(AvailableProfile {
-        arn: "arn:aws:codewhisperer:eu-central-1:533267331082:profile/IJKL5678MNOP".to_string(),
-        name: "EuropeProfile".to_string(),
-        account_id: "533267331082".to_string(),
-    });
-    let items: Vec<String> = profiles.iter().map(display_profile).collect();
+    let profiles = fig_api_client::profile::list_available_profiles().await;
+    if profiles.is_empty() {
+        bail!("You have no profiles");
+    }
 
-    let default_idx = active_profile
+    let active_profile: Option<fig_api_client::profile::Profile> =
+        fig_settings::state::get("api.codewhisperer.profile")?;
+
+    let mut items: Vec<String> = profiles.iter().map(|p| p.profile_name.clone()).collect();
+
+    if let Some(default_idx) = active_profile
         .as_ref()
-        .and_then(|active| profiles.iter().position(|p| p == active))
-        .unwrap_or(0);
+        .and_then(|active| profiles.iter().position(|p| p.arn == active.arn)) {
+            items[default_idx] = format!("{} (active)", items[default_idx].as_str());
+        }
+    
+    eprintln!();
 
-    let selected = Select::with_theme(&ColorfulTheme::default())
+    let selected = Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt("Select an IAM Identity Center profile")
         .items(&items)
-        .default(default_idx)
+        .default(0)
         .interact_opt()?;
 
     match selected {
         Some(i) => {
             let chosen = &profiles[i];
-            println!("Switched to profile: {}", chosen.name.as_str().green());
-            // todo: fig_auth::set_active_profile(&chosen.arn).await?;
+            let profile_value = serde_json::to_value(chosen)?;
+            eprintln!("Switched to profile: {}\n", chosen.profile_name.as_str().green());
+            fig_settings::state::set_value("api.codewhisperer.profile", profile_value)?;
         },
-        None => println!("No profile selected."),
+        None => eprintln!("No profile selected.\n"),
     }
+
     Ok(())
 }
 
-// show profile_name and account_id to users
-fn display_profile(p: &AvailableProfile) -> String {
-    format!("{} ({})", p.name, p.account_id)
+mod tests {
+    #[test]
+    #[ignore]
+    fn unset_profile() {
+        fig_settings::state::remove_value("api.codewhisperer.profile").unwrap();
+    
+    }
 }

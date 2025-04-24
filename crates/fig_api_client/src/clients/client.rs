@@ -213,7 +213,8 @@ impl Client {
         match &self.0 {
             inner::Inner::Codewhisperer(client) => {
                 let mut profiles = vec![];
-                while let Some(profiles_output) = client.list_available_profiles().into_paginator().send().next().await
+                let mut client = client.list_available_profiles().into_paginator().send();
+                while let Some(profiles_output) = client.next().await
                 {
                     profiles.extend(profiles_output?.profiles().iter().cloned().map(Profile::from));
                 }
