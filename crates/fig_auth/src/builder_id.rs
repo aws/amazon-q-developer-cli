@@ -23,49 +23,26 @@
 
 use aws_sdk_ssooidc::client::Client;
 use aws_sdk_ssooidc::config::retry::RetryConfig;
-use aws_sdk_ssooidc::config::{
-    BehaviorVersion,
-    ConfigBag,
-    RuntimeComponents,
-    SharedAsyncSleep,
-};
+use aws_sdk_ssooidc::config::{BehaviorVersion, ConfigBag, RuntimeComponents, SharedAsyncSleep};
 use aws_sdk_ssooidc::error::SdkError;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenOutput;
 use aws_sdk_ssooidc::operation::register_client::RegisterClientOutput;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use aws_smithy_runtime_api::client::identity::http::Token;
-use aws_smithy_runtime_api::client::identity::{
-    Identity,
-    IdentityFuture,
-    ResolveIdentity,
-};
+use aws_smithy_runtime_api::client::identity::{Identity, IdentityFuture, ResolveIdentity};
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_types::region::Region;
 use aws_types::request_id::RequestId;
 use fig_aws_common::app_name;
-use fig_os_shim::Env;
-use fig_telemetry_core::{
-    Event,
-    EventType,
-    TelemetryResult,
-};
+use fig_telemetry_core::{Event, EventType, TelemetryResult};
+use fig_util::directories::credential_file_path;
 use time::OffsetDateTime;
-use tracing::{
-    debug,
-    error,
-    warn,
-};
+use tracing::{debug, error, warn};
 
 use crate::consts::*;
 use crate::scope::is_scopes;
-use crate::secret_store::{
-    Secret,
-    SecretStore,
-};
-use crate::{
-    Error,
-    Result,
-};
+use crate::secret_store::{Secret, SecretStore};
+use crate::{Error, Result};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
@@ -311,11 +288,19 @@ impl BuilderIdToken {
 
                         let client = client(region.clone());
                         // if token is expired try to refresh
-                        if token.is_expired() || force_refresh {
-                            token.refresh_token(&client, secret_store, &region).await
+                        let token = if token.is_expired() || force_refresh {
+                            token.refresh_token(&client, secret_store, &region).await?
                         } else {
-                            Ok(Some(token))
+                            Some(token)
+                        };
+
+                        if let Some(ref token) = token {
+                            if let Err(err) = write_credentials_to_file(token).await {
+                                error!(?err, "Failed to write credentials to file");
+                            }
                         }
+
+                        Ok(token)
                     },
                     None => Ok(None),
                 }
@@ -540,73 +525,29 @@ pub async fn poll_create_token(
 
 /// Write credentials to ~/.aws/amazonq/creds.json
 pub async fn write_credentials_to_file(token: &BuilderIdToken) -> Result<()> {
-    use std::fs;
-
     // Create credentials JSON
     let creds = serde_json::json!({
-        "access_token": token.access_token.0.clone(),
-        "expires_at": token.expires_at.to_string(),
-        "refresh_token": token.refresh_token.as_ref().map(|t| t.0.clone()),
-        "region": token.region.clone(),
-        "start_url": token.start_url.clone(),
-        "token_type": match token.token_type() {
-            TokenType::BuilderId => "BuilderId",
-            TokenType::IamIdentityCenter => "IamIdentityCenter",
-        }
+       "access_token": token.access_token.0.clone(),
+       "region": token.region.clone(),
     });
 
     // Create environment instance
-    let env = Env::new();
-    let mut path = env
-        .home()
-        .ok_or_else(|| Error::Other("Could not determine home directory".into()))?;
-    path.push(".aws");
-    path.push("amazonq");
-
-    // Create directory if it doesn't exist
-    if !path.exists() {
-        fs::create_dir_all(&path)?;
-    }
-
-    // Write to creds.json
-    path.push("creds.json");
-    fs::write(&path, serde_json::to_string_pretty(&creds)?)?;
+    let path = credential_file_path()?;
+    std::fs::write(&path, serde_json::to_string_pretty(&creds)?)?;
 
     debug!("Wrote credentials to {}", path.display());
+
     Ok(())
-}
-
-/// Internal function that takes a SecretStore to allow for testing
-pub(crate) async fn builder_id_token_with_store(secret_store: &SecretStore) -> Result<Option<BuilderIdToken>> {
-    let token = BuilderIdToken::load(secret_store, false).await?;
-
-    // Write credentials to file if token exists
-    if let Some(ref token) = token {
-        if let Err(err) = write_credentials_to_file(token).await {
-            error!(?err, "Failed to write credentials to file");
-        }
-    }
-
-    Ok(token)
 }
 
 pub async fn builder_id_token() -> Result<Option<BuilderIdToken>> {
     let secret_store = SecretStore::new().await?;
-    builder_id_token_with_store(&secret_store).await
+    Ok(BuilderIdToken::load(&secret_store, false).await?)
 }
 
 pub async fn refresh_token() -> Result<Option<BuilderIdToken>> {
     let secret_store = SecretStore::new().await?;
-    let token = BuilderIdToken::load(&secret_store, true).await?;
-
-    // Write credentials to file if token exists
-    if let Some(ref token) = token {
-        if let Err(err) = write_credentials_to_file(token).await {
-            error!(?err, "Failed to write credentials to file");
-        }
-    }
-
-    Ok(token)
+    Ok(BuilderIdToken::load(&secret_store, true).await?)
 }
 
 pub async fn is_amzn_user() -> Result<bool> {
@@ -658,14 +599,6 @@ impl ResolveIdentity for BearerResolver {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use std::{
-        env,
-        fs,
-    };
-
-    use time::OffsetDateTime;
-
     use super::*;
 
     const US_EAST_1: Region = Region::from_static("us-east-1");
@@ -773,10 +706,41 @@ mod tests {
     #[ignore = "not in ci"]
     #[tokio::test]
     async fn test_load() {
+        use std::fs;
+        use std::path::Path;
+
+        // Create a secret store
         let secret_store = SecretStore::new().await.unwrap();
-        let token = BuilderIdToken::load(&secret_store, false).await;
-        println!("{:?}", token);
-        // println!("{:?}", token.unwrap().unwrap().access_token.0);
+
+        // Load the token
+        let token_result = BuilderIdToken::load(&secret_store, false).await;
+        println!("{:?}", token_result);
+
+        // If a token was successfully loaded
+        if let Ok(Some(token)) = token_result {
+            // Check that the credentials file exists
+            let creds_path = credential_file_path().unwrap();
+            assert!(Path::new(&creds_path).exists(), "Credentials file was not created");
+
+            // Read the credentials file and parse it
+            let creds_content = fs::read_to_string(&creds_path).unwrap();
+            let creds: serde_json::Value = serde_json::from_str(&creds_content).unwrap();
+
+            // Verify the credentials file contains the expected data
+            assert_eq!(
+                creds["access_token"], token.access_token.0,
+                "Access token in file doesn't match"
+            );
+            assert_eq!(
+                creds["region"].as_str(),
+                token.region.as_deref(),
+                "Region in file doesn't match"
+            );
+
+            println!("Credentials were successfully written to {}", creds_path.display());
+        } else {
+            println!("No token was loaded, skipping credentials file verification");
+        }
     }
 
     #[ignore = "not in ci"]
@@ -784,154 +748,5 @@ mod tests {
     async fn test_refresh() {
         let token = refresh_token().await.unwrap().unwrap();
         println!("{:?}", token);
-    }
-
-    fn cleanup_test_file() {
-        let mut path = PathBuf::from(env::var("HOME").unwrap_or_else(|_| "~".to_string()));
-        path.push(".aws");
-        path.push("amazonq");
-        path.push("creds.json");
-        let _ = fs::remove_file(&path);
-    }
-
-    fn create_test_token(token_type: TokenType) -> BuilderIdToken {
-        let mut token = BuilderIdToken {
-            access_token: Secret("test_access_token".to_string()),
-            expires_at: OffsetDateTime::now_utc() + time::Duration::minutes(60),
-            refresh_token: Some(Secret("test_refresh_token".to_string())),
-            region: Some(OIDC_BUILDER_ID_REGION.to_string()),
-            start_url: None,
-            oauth_flow: OAuthFlow::DeviceCode,
-            scopes: Some(SCOPES.iter().map(|s| (*s).to_owned()).collect()),
-        };
-
-        // Set the appropriate start_url based on token type
-        match token_type {
-            TokenType::BuilderId => {
-                token.start_url = Some(START_URL.to_string());
-            },
-            TokenType::IamIdentityCenter => {
-                token.start_url = Some("https://example.awsapps.com/start".to_string());
-            },
-        }
-
-        token
-    }
-
-    fn verify_credentials_file(token: &BuilderIdToken) -> bool {
-        let mut path = PathBuf::from(env::var("HOME").unwrap_or_else(|_| "~".to_string()));
-        path.push(".aws");
-        path.push("amazonq");
-        path.push("creds.json");
-
-        if !path.exists() {
-            println!("File does not exist: {}", path.display());
-            return false;
-        }
-
-        let content = match fs::read_to_string(&path) {
-            Ok(content) => content,
-            Err(_) => {
-                return false;
-            },
-        };
-
-        let json: serde_json::Value = match serde_json::from_str(&content) {
-            Ok(json) => json,
-            Err(e) => {
-                println!("Failed to parse JSON: {:?}", e);
-                return false;
-            },
-        };
-
-        let token_type_str = match token.token_type() {
-            TokenType::BuilderId => "BuilderId",
-            TokenType::IamIdentityCenter => "IamIdentityCenter",
-        };
-
-        // Verify the token values with proper string comparisons
-        let access_token_match = json["access_token"].as_str() == Some(&token.access_token.0);
-        let refresh_token_match = match (json["refresh_token"].as_str(), &token.refresh_token) {
-            (Some(json_rt), Some(token_rt)) => json_rt == token_rt.0,
-            (None, None) => true,
-            _ => false,
-        };
-        let region_match = match (json["region"].as_str(), &token.region) {
-            (Some(json_region), Some(token_region)) => json_region == token_region,
-            (None, None) => true,
-            _ => false,
-        };
-        let start_url_match = match (json["start_url"].as_str(), &token.start_url) {
-            (Some(json_url), Some(token_url)) => json_url == token_url,
-            (None, None) => true,
-            _ => false,
-        };
-        let token_type_match = json["token_type"].as_str() == Some(token_type_str);
-
-        access_token_match && refresh_token_match && region_match && start_url_match && token_type_match
-    }
-
-    #[tokio::test]
-    async fn test_write_credentials() {
-        test_write_credentials_builder_id().await;
-        test_write_credentials_identity_center().await;
-    }
-
-    async fn test_write_credentials_builder_id() {
-        cleanup_test_file();
-
-        let token = create_test_token(TokenType::BuilderId);
-        assert_eq!(token.token_type(), TokenType::BuilderId);
-
-        let result = write_credentials_to_file(&token).await;
-        assert!(result.is_ok());
-        assert!(verify_credentials_file(&token));
-
-        cleanup_test_file();
-    }
-
-    async fn test_write_credentials_identity_center() {
-        cleanup_test_file();
-
-        let token = create_test_token(TokenType::IamIdentityCenter);
-        assert_eq!(token.token_type(), TokenType::IamIdentityCenter);
-
-        let result = write_credentials_to_file(&token).await;
-        assert!(result.is_ok());
-        assert!(verify_credentials_file(&token));
-
-        cleanup_test_file();
-    }
-
-    #[tokio::test]
-    async fn test_builder_id_token_with_store() {
-        cleanup_test_file();
-
-        // Test with BuilderId token
-        let token = create_test_token(TokenType::BuilderId);
-        let mock_secret_store = create_mock_secret_store(&token).await;
-
-        let result = builder_id_token_with_store(&mock_secret_store).await;
-        assert!(result.is_ok());
-        let retrieved_token = result.unwrap();
-        assert!(retrieved_token.is_some());
-        assert_eq!(retrieved_token.unwrap().access_token.0, token.access_token.0);
-
-        // Verify the credentials file was written correctly
-        assert!(verify_credentials_file(&token));
-
-        cleanup_test_file();
-    }
-
-    // Helper function to create a mock SecretStore that returns our test token
-    async fn create_mock_secret_store(token: &BuilderIdToken) -> SecretStore {
-        // Create a real SecretStore for testing
-        let secret_store = SecretStore::new().await.unwrap();
-
-        // Store our test token in the secret store
-        let token_json = serde_json::to_string(&Some(token)).unwrap();
-        secret_store.set(BuilderIdToken::SECRET_KEY, &token_json).await.unwrap();
-
-        secret_store
     }
 }

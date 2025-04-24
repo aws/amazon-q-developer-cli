@@ -331,6 +331,11 @@ pub fn chat_global_context_path<Ctx: FsProvider + EnvProvider>(ctx: &Ctx) -> Res
         .join("global_context.json"))
 }
 
+pub fn credential_file_path() -> Result<PathBuf> {
+    let path = fig_os_shim::Env::new().home().ok_or(DirectoryError::NoHomeDirectory)?;
+    Ok(path.join(".aws").join("amazonq").join("creds.json"))
+}
+
 /// The directory to the directory containing config for the `/context` feature in `q chat`.
 pub fn chat_profiles_dir<Ctx: FsProvider + EnvProvider>(ctx: &Ctx) -> Result<PathBuf> {
     Ok(home_dir_ctx(ctx)?.join(".aws").join("amazonq").join("profiles"))
