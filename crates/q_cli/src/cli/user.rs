@@ -6,7 +6,10 @@ use std::process::{
 };
 use std::time::Duration;
 
-use anstream::{eprintln, println};
+use anstream::{
+    eprintln,
+    println,
+};
 use clap::{
     Args,
     Subcommand,
@@ -156,6 +159,18 @@ impl RootUserSubcommand {
                                 })
                             },
                         );
+
+                        if matches!(token.token_type(), TokenType::IamIdentityCenter) {
+                            if let Ok(Some(profile)) = fig_settings::state::get::<fig_api_client::profile::Profile>(
+                                "api.codewhisperer.profile",
+                            ) {
+                                color_print::cprintln!(
+                                    "\n<em>Profile:</em>\n{}\n{}\n",
+                                    profile.profile_name,
+                                    profile.arn
+                                );
+                            }
+                        }
                         Ok(ExitCode::SUCCESS)
                     },
                     _ => {
@@ -344,10 +359,11 @@ async fn select_profile_interactive() -> Result<()> {
 
     if let Some(default_idx) = active_profile
         .as_ref()
-        .and_then(|active| profiles.iter().position(|p| p.arn == active.arn)) {
-            items[default_idx] = format!("{} (active)", items[default_idx].as_str());
-        }
-    
+        .and_then(|active| profiles.iter().position(|p| p.arn == active.arn))
+    {
+        items[default_idx] = format!("{} (active)", items[default_idx].as_str());
+    }
+
     eprintln!();
 
     let selected = Select::with_theme(&crate::util::dialoguer_theme())
@@ -374,6 +390,5 @@ mod tests {
     #[ignore]
     fn unset_profile() {
         fig_settings::state::remove_value("api.codewhisperer.profile").unwrap();
-    
     }
 }
