@@ -1,14 +1,14 @@
+pub mod consts;
 pub mod directories;
+#[cfg(target_os = "macos")]
+pub mod launchd_plist;
 pub mod manifest;
 mod open;
 pub mod process_info;
-mod shell;
+pub mod pty;
+pub mod shell;
 pub mod system_info;
 pub mod terminal;
-
-pub mod consts;
-#[cfg(target_os = "macos")]
-pub mod launchd_plist;
 
 use std::cmp::Ordering;
 use std::path::{

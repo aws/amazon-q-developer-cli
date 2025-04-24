@@ -35,6 +35,7 @@ use fig_proto::remote::{
     hostbound,
 };
 use fig_util::env_var::PROCESS_LAUNCHED_BY_Q;
+use fig_util::pty::AsyncMasterPty;
 use flume::Sender;
 use tokio::process::Command;
 use tracing::{
@@ -47,7 +48,6 @@ use tracing::{
 use crate::event_handler::EventHandler;
 use crate::history::HistorySender;
 use crate::interceptor::KeyInterceptor;
-use crate::pty::AsyncMasterPty;
 use crate::{
     EXPECTED_BUFFER,
     INSERT_ON_NEW_CMD,

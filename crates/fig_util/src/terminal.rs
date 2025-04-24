@@ -2,12 +2,17 @@ use std::borrow::Cow;
 use std::fmt;
 use std::sync::OnceLock;
 
+use crossterm::event::{
+    KeyCode,
+    KeyEvent,
+    KeyModifiers,
+};
 use fig_os_shim::Context;
+use portable_pty::PtySize;
 use serde::{
     Deserialize,
     Serialize,
 };
-
 /// Terminals that macOS supports
 pub const MACOS_TERMINALS: &[Terminal] = &[
     Terminal::Alacritty,
@@ -790,6 +795,58 @@ impl IntelliJVariant {
             "PC" => IntelliJVariant::PyCharmCE,
             _ => return None,
         })
+    }
+}
+
+pub fn get_terminal_size() -> PtySize {
+    match crossterm::terminal::size() {
+        Ok((cols, rows)) => PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        },
+        Err(_) => {
+            // Fall back to default size
+            PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            }
+        },
+    }
+}
+
+pub fn key_event_to_bytes(key: KeyEvent) -> Vec<u8> {
+    match key.code {
+        KeyCode::Char(c) => {
+            // Handle Ctrl+key combinations
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                // Convert to control character (ASCII control chars are 1-26)
+                if c.is_ascii_lowercase() {
+                    return vec![(c as u8) - b'a' + 1];
+                } else if c.is_ascii_uppercase() {
+                    return vec![(c as u8) - b'A' + 1];
+                }
+            }
+            // Regular character
+            c.to_string().into_bytes()
+        },
+        KeyCode::Enter => vec![b'\r'],
+        KeyCode::Backspace => vec![b'\x7f'],
+        KeyCode::Esc => vec![b'\x1b'],
+        KeyCode::Tab => vec![b'\t'],
+        KeyCode::Up => vec![b'\x1b', b'[', b'A'],
+        KeyCode::Down => vec![b'\x1b', b'[', b'B'],
+        KeyCode::Right => vec![b'\x1b', b'[', b'C'],
+        KeyCode::Left => vec![b'\x1b', b'[', b'D'],
+        KeyCode::Home => vec![b'\x1b', b'[', b'H'],
+        KeyCode::End => vec![b'\x1b', b'[', b'F'],
+        KeyCode::Delete => vec![b'\x1b', b'[', b'3', b'~'],
+        KeyCode::PageUp => vec![b'\x1b', b'[', b'5', b'~'],
+        KeyCode::PageDown => vec![b'\x1b', b'[', b'6', b'~'],
+        _ => vec![], // Ignore other keys for now
     }
 }
 

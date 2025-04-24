@@ -62,6 +62,7 @@ indoc.workspace = true
 mimalloc.workspace = true
 owo-colors = "4.2.0"
 parking_lot.workspace = true
+portable-pty.workspace = true
 rand.workspace = true
 regex.workspace = true
 rustyline = { version = "15.0.0", features = ["derive", "custom-bindings"] }

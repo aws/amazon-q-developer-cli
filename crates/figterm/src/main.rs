@@ -9,7 +9,6 @@ pub mod interceptor;
 pub mod ipc;
 pub mod logger;
 mod message;
-pub mod pty;
 pub mod term;
 pub mod update;
 
@@ -79,6 +78,15 @@ use fig_util::process_info::{
     Pid,
     PidExt,
 };
+#[cfg(unix)]
+use fig_util::pty::unix::open_pty;
+#[cfg(windows)]
+use fig_util::pty::win::open_pty;
+use fig_util::pty::{
+    AsyncMasterPty,
+    AsyncMasterPtyExt,
+    CommandBuilder,
+};
 use fig_util::{
     PRODUCT_NAME,
     PTY_BINARY_NAME,
@@ -125,14 +133,6 @@ use crate::ipc::{
 use crate::message::{
     process_figterm_message,
     process_remote_message,
-};
-#[cfg(unix)]
-use crate::pty::unix::open_pty;
-#[cfg(windows)]
-use crate::pty::win::open_pty;
-use crate::pty::{
-    AsyncMasterPtyExt,
-    CommandBuilder,
 };
 use crate::term::{
     SystemTerminal,
@@ -239,7 +239,7 @@ async fn _should_install_remote_ssh_integration(
     remote_receiver: Receiver<fig_proto::remote::Clientbound>,
     remote_sender: Sender<Hostbound>,
     term: &Term<EventHandler>,
-    pty_master: &mut Box<dyn crate::pty::AsyncMasterPty + Send + Sync>,
+    pty_master: &mut Box<dyn AsyncMasterPty + Send + Sync>,
     key_interceptor: &mut KeyInterceptor,
 ) -> Option<bool> {
     use fig_proto::remote::clientbound;

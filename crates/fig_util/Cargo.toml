@@ -14,15 +14,24 @@ workspace = true
 default = []
 
 [dependencies]
+anyhow.workspace = true
+shlex.workspace = true
+async-trait.workspace = true
 camino.workspace = true
 cfg-if.workspace = true
 clap.workspace = true
+crossterm.workspace = true
 dirs.workspace = true
 fig_os_shim.workspace = true
 hex.workspace = true
 indoc.workspace = true
 libc.workspace = true
 paste = "1.0.11"
+portable-pty.workspace = true
+termios = "0.3"
+nix = "0.26"
+filedescriptor = "0.8.3"
+console = "0.15.11"
 rand.workspace = true
 regex.workspace = true
 serde.workspace = true

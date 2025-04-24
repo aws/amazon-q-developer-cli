@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::io::Write;
-use std::process::Stdio;
 use std::time::{
     Duration,
     Instant,
 };
 
-use bstr::ByteSlice;
 use crossterm::style::{
     Color,
     Stylize,
@@ -35,7 +33,7 @@ use spinners::{
     Spinners,
 };
 
-use super::util::truncate_safe;
+use super::tools::execute_bash::ExecuteBash;
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_MAX_OUTPUT_SIZE: usize = 1024 * 10;
@@ -294,34 +292,20 @@ impl HookExecutor {
 
     async fn execute_inline_hook(&self, hook: &Hook) -> Result<String> {
         let command = hook.command.as_ref().ok_or_else(|| eyre!("no command specified"))?;
+        let execute_bash = ExecuteBash {
+            command: command.clone(),
+        };
 
-        let command_future = tokio::process::Command::new("bash")
-            .arg("-c")
-            .arg(command)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
+        let command_future = execute_bash.execute_pty_without_input(hook.max_output_size, false);
         let timeout = Duration::from_millis(hook.timeout_ms);
 
         // Run with timeout
         match tokio::time::timeout(timeout, command_future).await {
             Ok(result) => {
                 let result = result?;
-                if result.status.success() {
-                    let stdout = result.stdout.to_str_lossy();
-                    let stdout = format!(
-                        "{}{}",
-                        truncate_safe(&stdout, hook.max_output_size),
-                        if stdout.len() > hook.max_output_size {
-                            " ... truncated"
-                        } else {
-                            ""
-                        }
-                    );
-                    Ok(stdout)
-                } else {
-                    Err(eyre!("command returned non-zero exit code: {}", result.status))
+                match result.exit_status {
+                    0 => Ok(result.stdout),
+                    code => Err(eyre!("command returned non-zero exit code: {}", code)),
                 }
             },
             Err(_) => Err(eyre!("command timed out after {} ms", timeout.as_millis())),
