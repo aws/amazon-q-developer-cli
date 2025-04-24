@@ -23,26 +23,49 @@
 
 use aws_sdk_ssooidc::client::Client;
 use aws_sdk_ssooidc::config::retry::RetryConfig;
-use aws_sdk_ssooidc::config::{BehaviorVersion, ConfigBag, RuntimeComponents, SharedAsyncSleep};
+use aws_sdk_ssooidc::config::{
+    BehaviorVersion,
+    ConfigBag,
+    RuntimeComponents,
+    SharedAsyncSleep,
+};
 use aws_sdk_ssooidc::error::SdkError;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenOutput;
 use aws_sdk_ssooidc::operation::register_client::RegisterClientOutput;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use aws_smithy_runtime_api::client::identity::http::Token;
-use aws_smithy_runtime_api::client::identity::{Identity, IdentityFuture, ResolveIdentity};
+use aws_smithy_runtime_api::client::identity::{
+    Identity,
+    IdentityFuture,
+    ResolveIdentity,
+};
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_types::region::Region;
 use aws_types::request_id::RequestId;
 use fig_aws_common::app_name;
-use fig_telemetry_core::{Event, EventType, TelemetryResult};
+use fig_telemetry_core::{
+    Event,
+    EventType,
+    TelemetryResult,
+};
 use fig_util::directories::credential_file_path;
 use time::OffsetDateTime;
-use tracing::{debug, error, warn};
+use tracing::{
+    debug,
+    error,
+    warn,
+};
 
 use crate::consts::*;
 use crate::scope::is_scopes;
-use crate::secret_store::{Secret, SecretStore};
-use crate::{Error, Result};
+use crate::secret_store::{
+    Secret,
+    SecretStore,
+};
+use crate::{
+    Error,
+    Result,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
