@@ -3,8 +3,8 @@ pub mod execute_bash;
 pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
+pub mod think;
 pub mod use_aws;
-
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{
@@ -28,6 +28,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use think::Think;
 use use_aws::UseAws;
 
 use super::consts::MAX_TOOL_RESPONSE_SIZE;
@@ -41,6 +42,7 @@ pub enum Tool {
     UseAws(UseAws),
     Custom(CustomTool),
     GhIssue(GhIssue),
+    Think(Think),
 }
 
 impl Tool {
@@ -53,6 +55,7 @@ impl Tool {
             Tool::UseAws(_) => "use_aws",
             Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => "gh_issue",
+            Tool::Think(_) => "model_think_tool",
         }
         .to_owned()
     }
@@ -66,6 +69,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
             Tool::Custom(_) => true,
             Tool::GhIssue(_) => false,
+            Tool::Think(_) => false,
         }
     }
 
@@ -78,6 +82,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(context, updates).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
+            Tool::Think(think) => think.invoke(updates).await,
         }
     }
 
@@ -90,6 +95,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
             Tool::Custom(custom_tool) => custom_tool.queue_description(updates),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
+            Tool::Think(think) => Think::queue_description(think, updates),
         }
     }
 
@@ -102,6 +108,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
             Tool::Custom(custom_tool) => custom_tool.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
+            Tool::Think(think) => think.validate(ctx).await,
         }
     }
 }

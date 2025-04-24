@@ -3463,6 +3463,18 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
     StreamingClient::mock(mock)
 }
 
+/// Returns all tools supported by Q chat.
+pub fn load_tools() -> Result<HashMap<String, ToolSpec>> {
+    let mut tools: HashMap<String, ToolSpec> = serde_json::from_str(include_str!("tools/tool_index.json"))?;
+
+    // Only include the think tool if the feature is enabled
+    if !tools::think::Think::should_include_in_tools() {
+        tools.remove("think");
+    }
+
+    Ok(tools)
+}
+
 #[cfg(test)]
 mod tests {
     use bstr::ByteSlice;
@@ -3724,7 +3736,6 @@ mod tests {
                 "Done",
             ],
         ]));
-
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
             .expect("Tools failed to load");
