@@ -13,7 +13,7 @@
     "@amzn/tsconfig": "workspace:^",
     "@amzn/types": "workspace:^",
     "@aws/amazon-q-developer-cli-api-bindings": "workspace:^",
-    "@types/node": "^22.14.0",
+    "@types/node": "^22.15.2",
     "typescript": "^5.8.3",
     "vitest": "^3.0.8"
   }
