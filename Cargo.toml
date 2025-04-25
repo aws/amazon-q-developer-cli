@@ -26,7 +26,6 @@ license = "MIT OR Apache-2.0"
 amzn-codewhisperer-client = { path = "crates/amzn-codewhisperer-client" }
 amzn-codewhisperer-streaming-client = { path = "crates/amzn-codewhisperer-streaming-client" }
 amzn-consolas-client = { path = "crates/amzn-consolas-client" }
-amzn-qdeveloper-client = { path = "crates/amzn-qdeveloper-client" }
 amzn-qdeveloper-streaming-client = { path = "crates/amzn-qdeveloper-streaming-client" }
 anstream = "0.6.13"
 anyhow = "1.0.98"

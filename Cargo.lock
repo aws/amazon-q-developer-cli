@@ -149,25 +149,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "amzn-qdeveloper-client"
-version = "0.1.6236"
-dependencies = [
- "aws-credential-types",
- "aws-runtime",
- "aws-smithy-async",
- "aws-smithy-http",
- "aws-smithy-json 0.60.7",
- "aws-smithy-runtime",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-types",
- "bytes",
- "fastrand",
- "http 0.2.12",
- "tracing",
-]
-
-[[package]]
 name = "amzn-qdeveloper-streaming-client"
 version = "0.1.6236"
 dependencies = [
@@ -2621,7 +2602,6 @@ dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
  "amzn-consolas-client",
- "amzn-qdeveloper-client",
  "amzn-qdeveloper-streaming-client",
  "aws-config",
  "aws-credential-types",
