@@ -1015,7 +1015,37 @@ impl ChatContext {
             execute!(self.output, cursor::Hide, style::Print("\n"))?;
             self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
         }
-        let response = self.client.send_message(summary_state).await?;
+        let response = self.client.send_message(summary_state).await;
+
+        // TODO(brandonskiser): This is a temporary hotfix for failing compaction. We should instead
+        // retry except with less context included.
+        let response = match response {
+            Ok(res) => res,
+            Err(e) => match e {
+                fig_api_client::Error::ContextWindowOverflow => {
+                    self.conversation_state.clear(true);
+                    if self.interactive {
+                        self.spinner.take();
+                        execute!(
+                            self.output,
+                            terminal::Clear(terminal::ClearType::CurrentLine),
+                            cursor::MoveToColumn(0),
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print(
+                                "The context window usage has overflowed. Clearing the conversation history.\n\n"
+                            ),
+                            style::SetAttribute(Attribute::Reset)
+                        )?;
+                    }
+                    return Ok(ChatState::PromptUser {
+                        tool_uses,
+                        pending_tool_index,
+                        skip_printing_tools: true,
+                    });
+                },
+                e => return Err(e.into()),
+            },
+        };
 
         let summary = {
             let mut parser = ResponseParser::new(response);
