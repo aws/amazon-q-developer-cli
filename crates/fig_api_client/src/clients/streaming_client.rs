@@ -12,6 +12,7 @@ use fig_aws_common::{
     app_name,
 };
 use tracing::debug;
+use tracing::error;
 
 use super::shared::{
     bearer_sdk_config,
@@ -48,7 +49,10 @@ mod inner {
 }
 
 #[derive(Clone, Debug)]
-pub struct StreamingClient(inner::Inner);
+pub struct StreamingClient{
+    inner: inner::Inner,
+    profile_arn: Option<String>,
+}
 
 impl StreamingClient {
     pub async fn new() -> Result<Self, Error> {
@@ -63,7 +67,10 @@ impl StreamingClient {
     }
 
     pub fn mock(events: Vec<Vec<ChatResponseStream>>) -> Self {
-        Self(inner::Inner::Mock(Arc::new(Mutex::new(events.into_iter()))))
+        Self {
+            inner: inner::Inner::Mock(Arc::new(Mutex::new(events.into_iter()))),
+            profile_arn: None,
+        }    
     }
 
     pub async fn new_codewhisperer_client(endpoint: &Endpoint) -> Self {
@@ -78,8 +85,24 @@ impl StreamingClient {
             .endpoint_url(endpoint.url())
             .stalled_stream_protection(stalled_stream_protection_config())
             .build();
-        let client = CodewhispererStreamingClient::from_conf(conf);
-        Self(inner::Inner::Codewhisperer(client))
+        let inner = inner::Inner::Codewhisperer(CodewhispererStreamingClient::from_conf(conf));
+
+        let profile_arn = match fig_settings::state::get_value("api.codewhisperer.profile") {
+            Ok(Some(profile)) => match profile.get("arn") {
+                Some(arn) => Some(arn.to_string()),
+                None => {
+                    error!("Stored profile does not contain an arn");
+                    None
+                },
+            },
+            Ok(None) => None,
+            Err(err) => {
+                error!("Failed to retrieve profile: {}", err);
+                None
+            },
+        };
+
+        Self { inner, profile_arn }
     }
 
     pub async fn new_qdeveloper_client(endpoint: &Endpoint) -> Result<Self, Error> {
@@ -94,7 +117,10 @@ impl StreamingClient {
             .stalled_stream_protection(stalled_stream_protection_config())
             .build();
         let client = QDeveloperStreamingClient::from_conf(conf);
-        Ok(Self(inner::Inner::QDeveloper(client)))
+        Ok(Self{
+            inner: inner::Inner::QDeveloper(client),
+            profile_arn: None,
+        })
     }
 
     pub async fn send_message(&self, conversation_state: ConversationState) -> Result<SendMessageOutput, Error> {
@@ -105,7 +131,7 @@ impl StreamingClient {
             history,
         } = conversation_state;
 
-        match &self.0 {
+        match &self.inner {
             inner::Inner::Codewhisperer(client) => {
                 let conversation_state = amzn_codewhisperer_streaming_client::types::ConversationState::builder()
                     .set_conversation_id(conversation_id)
@@ -125,6 +151,7 @@ impl StreamingClient {
                 let response = client
                     .generate_assistant_response()
                     .conversation_state(conversation_state)
+                    .set_profile_arn(self.profile_arn.clone())
                     .send()
                     .await;
 

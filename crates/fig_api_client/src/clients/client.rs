@@ -162,7 +162,7 @@ impl Client {
         input.file_context.right_file_content = right_content;
 
         match &self.inner {
-            inner::Inner::Codewhisperer(client) => Ok(codewhisperer_generate_recommendation(client, input).await?),
+            inner::Inner::Codewhisperer(client) => Ok(codewhisperer_generate_recommendation(client, input, self.profile_arn.clone()).await?),
             inner::Inner::Consolas(client) => Ok(consolas_generate_recommendation(client, input).await?),
             inner::Inner::Mock => Ok(RecommendationsOutput {
                 recommendations: vec![Recommendation {
@@ -181,7 +181,7 @@ impl Client {
 
         match &self.inner {
             inner::Inner::Codewhisperer(client) => {
-                let mut paginator = client.list_available_customizations().into_paginator().send();
+                let mut paginator = client.list_available_customizations().set_profile_arn(self.profile_arn.clone()).into_paginator().send();
                 while let Some(res) = paginator.next().await {
                     let output = res?;
                     customizations.extend(output.customizations.into_iter().map(Into::into));
@@ -227,6 +227,7 @@ impl Client {
                     .telemetry_event(telemetry_event)
                     .user_context(user_context)
                     .opt_out_preference(opt_out)
+                    .set_profile_arn(self.profile_arn.clone())
                     .send()
                     .await;
                 Ok(())
@@ -265,6 +266,7 @@ impl Client {
 async fn codewhisperer_generate_recommendation_inner(
     client: &CodewhispererClient,
     input: RecommendationsInput,
+    profile_arn: Option<String>,          
 ) -> Result<RecommendationsOutput, SdkError<GenerateCompletionsError, HttpResponse>> {
     let session_id_lock = Arc::new(Mutex::new(None));
 
@@ -293,6 +295,7 @@ async fn codewhisperer_generate_recommendation_inner(
         .max_results(input.max_results)
         .set_next_token(input.next_token)
         .set_customization_arn(customization_arn)
+        .set_profile_arn(profile_arn.clone())
         .customize()
         .interceptor(SessionIdInterceptor::new(session_id_lock.clone()))
         .send()
@@ -321,8 +324,9 @@ async fn codewhisperer_generate_recommendation_inner(
 async fn codewhisperer_generate_recommendation(
     client: &CodewhispererClient,
     input: RecommendationsInput,
+    profile_arn: Option<String>,        
 ) -> Result<RecommendationsOutput, SdkError<GenerateCompletionsError, HttpResponse>> {
-    let res = codewhisperer_generate_recommendation_inner(client, input.clone()).await;
+    let res = codewhisperer_generate_recommendation_inner(client, input.clone(), profile_arn.clone()).await;
 
     let output = match res {
         Ok(output) => output,
@@ -339,7 +343,7 @@ async fn codewhisperer_generate_recommendation(
             if let Err(err) = Customization::delete_selected(&State::new()) {
                 error!(%err, "Failed to delete selected customization");
             }
-            codewhisperer_generate_recommendation_inner(client, input).await?
+            codewhisperer_generate_recommendation_inner(client, input, profile_arn.clone()).await?
         },
         Err(err) => return Err(err),
     };
