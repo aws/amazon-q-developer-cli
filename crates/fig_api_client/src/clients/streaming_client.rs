@@ -11,8 +11,10 @@ use fig_aws_common::{
     UserAgentOverrideInterceptor,
     app_name,
 };
-use tracing::debug;
-use tracing::error;
+use tracing::{
+    debug,
+    error,
+};
 
 use super::shared::{
     bearer_sdk_config,
@@ -49,7 +51,7 @@ mod inner {
 }
 
 #[derive(Clone, Debug)]
-pub struct StreamingClient{
+pub struct StreamingClient {
     inner: inner::Inner,
     profile_arn: Option<String>,
 }
@@ -70,7 +72,7 @@ impl StreamingClient {
         Self {
             inner: inner::Inner::Mock(Arc::new(Mutex::new(events.into_iter()))),
             profile_arn: None,
-        }    
+        }
     }
 
     pub async fn new_codewhisperer_client(endpoint: &Endpoint) -> Self {
@@ -117,7 +119,7 @@ impl StreamingClient {
             .stalled_stream_protection(stalled_stream_protection_config())
             .build();
         let client = QDeveloperStreamingClient::from_conf(conf);
-        Ok(Self{
+        Ok(Self {
             inner: inner::Inner::QDeveloper(client),
             profile_arn: None,
         })

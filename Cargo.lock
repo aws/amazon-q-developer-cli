@@ -6840,6 +6840,7 @@ dependencies = [
  "fig_request",
  "fig_settings",
  "fig_telemetry",
+ "fig_telemetry_core",
  "fig_util",
  "flume",
  "futures",

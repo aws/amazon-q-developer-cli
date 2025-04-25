@@ -34,6 +34,10 @@ use fig_ipc::local::{
     login_command,
     logout_command,
 };
+use fig_telemetry_core::{
+    QProfileSwitchIntent,
+    TelemetryResult,
+};
 use fig_util::system_info::is_remote;
 use fig_util::{
     CLI_BINARY_NAME,
@@ -391,11 +395,15 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
 
     eprintln!();
 
+    eprint!("222222");
     let selected = Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt("Select an IAM Identity Center profile")
         .items(&items)
         .default(0)
         .interact_opt()?;
+
+    let sso_region = fig_settings::state::get_string("auth.idc.region").ok().flatten();
+    let total_profiles = profiles.len() as i64;
 
     match selected {
         Some(i) => {
@@ -403,9 +411,32 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
             let profile = serde_json::to_value(chosen)?;
             eprintln!("Set profile: {}\n", chosen.profile_name.as_str().green());
             fig_settings::state::set_value("api.codewhisperer.profile", profile)?;
+
+            // send send_did_select_profile telemetry
+            let profile_region = chosen.arn.split(':').nth(3).unwrap_or("not-set");
+            fig_telemetry::send_did_select_profile(
+                QProfileSwitchIntent::User,
+                profile_region.to_string(),
+                TelemetryResult::Succeeded,
+                sso_region,
+                Some(total_profiles),
+            )
+            .await;
         },
-        None => bail!("No profile selected.\n"),
+        None => {
+            fig_telemetry::send_did_select_profile(
+                QProfileSwitchIntent::User,
+                "not-set".to_string(),
+                TelemetryResult::Cancelled,
+                sso_region,
+                Some(total_profiles),
+            )
+            .await;
+            bail!("No profile selected.\n");
+        },
     }
+
+    eprint!("333333");
 
     Ok(())
 }
