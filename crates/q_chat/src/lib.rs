@@ -40,7 +40,10 @@ use command::{
     Command,
     ToolsSubcommand,
 };
-use consts::CONTEXT_WINDOW_SIZE;
+use consts::{
+    CONTEXT_WINDOW_SIZE,
+    QCHAT_PROCESS_ID,
+};
 use context::ContextManager;
 use conversation_state::{
     ConversationState,
@@ -332,6 +335,11 @@ pub async fn chat(
             },
         }
     }
+
+    let process_info = ctx.process_info();
+    let current_pid = process_info.current_pid().to_string();
+
+    unsafe { ctx.env().set_var(QCHAT_PROCESS_ID, current_pid) };
 
     let tool_config = load_tools()?;
     let mut tool_permissions = ToolPermissions::new(tool_config.len());

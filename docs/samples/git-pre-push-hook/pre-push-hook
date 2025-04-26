@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Git hook is a sample, designed to show how you can prevent pushing 
+# when QCHAT_PROCESS_ID is set
+# This prevents accidental pushes while using Amazon Q chat
+
+if [ -n "$QCHAT_PROCESS_ID" ]; then
+  echo "ERROR: Git push blocked while Amazon Q chat is active (QCHAT_PROCESS_ID=$QCHAT_PROCESS_ID)"
+  echo "Please exit Amazon Q chat with '/quit' before pushing changes."
+  exit 1
+fi
+
+# Continue with push if QCHAT_PROCESS_ID is not set
+exit 0
