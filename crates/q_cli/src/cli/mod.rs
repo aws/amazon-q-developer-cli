@@ -176,7 +176,11 @@ pub enum CliRootCommands {
     Telemetry(telemetry::TelemetrySubcommand),
     /// Version
     #[command(hide = true)]
-    Version,
+    Version {
+        /// Show the changelog (use --changelog=all for all versions, or --changelog=x.x.x for a specific version)
+        #[arg(long, num_args = 0..=1, default_missing_value = "")]
+        changelog: Option<String>,
+    },
     /// Open the dashboard
     Dashboard,
     /// AI assistant in your terminal
@@ -213,7 +217,7 @@ impl CliRootCommands {
             CliRootCommands::Integrations(_) => "integrations",
             CliRootCommands::Translate(_) => "translate",
             CliRootCommands::Telemetry(_) => "telemetry",
-            CliRootCommands::Version => "version",
+            CliRootCommands::Version { .. } => "version",
             CliRootCommands::Dashboard => "dashboard",
             CliRootCommands::Chat { .. } => "chat",
             CliRootCommands::Inline(_) => "inline",
@@ -323,7 +327,7 @@ impl Cli {
                 CliRootCommands::Integrations(subcommand) => subcommand.execute().await,
                 CliRootCommands::Translate(args) => args.execute().await,
                 CliRootCommands::Telemetry(subcommand) => subcommand.execute().await,
-                CliRootCommands::Version => Self::print_version(),
+                CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
                 CliRootCommands::Chat(args) => q_chat::launch_chat(args).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
@@ -360,11 +364,149 @@ impl Cli {
         Ok(ExitCode::SUCCESS)
     }
 
-    #[allow(clippy::unused_self)]
-    fn print_version() -> Result<ExitCode> {
-        let _ = writeln!(stdout(), "{}", Self::command().render_version());
-        Ok(ExitCode::SUCCESS)
+    fn read_changelog() -> Result<serde_json::Value> {
+        let feed_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("feed.json");
+        let feed_content = std::fs::read_to_string(feed_path)?;
+        let feed = serde_json::from_str(&feed_content)?;
+        Ok(feed)
     }
+
+    fn get_version_changelog(version: &str) -> Result<Option<serde_json::Value>> {
+        let feed = Self::read_changelog()?;
+        
+        if let Some(entries) = feed.get("entries").and_then(|e| e.as_array()) {
+            for entry in entries {
+                if entry.get("type").and_then(|t| t.as_str()) == Some("release") &&
+                   entry.get("version").and_then(|v| v.as_str()) == Some(version) &&
+                   entry.get("hidden").and_then(|h| h.as_bool()) != Some(true) {
+                    return Ok(Some(entry.clone()));
+                }
+            }
+        }
+        
+        Ok(None)
+    }
+
+    fn get_all_changelogs() -> Result<Vec<serde_json::Value>> {
+        let feed = Self::read_changelog()?;
+        let mut changelogs = Vec::new();
+        
+        if let Some(entries) = feed.get("entries").and_then(|e| e.as_array()) {
+            for entry in entries {
+                if entry.get("type").and_then(|t| t.as_str()) == Some("release") &&
+                   entry.get("hidden").and_then(|h| h.as_bool()) != Some(true) {
+                    changelogs.push(entry.clone());
+                }
+            }
+        }
+        
+        Ok(changelogs)
+    }
+
+    fn print_changelog_entry(entry: &serde_json::Value) -> Result<()> {
+        let version = entry.get("version").and_then(|v| v.as_str()).unwrap_or("Unknown");
+        let date = entry.get("date").and_then(|d| d.as_str()).unwrap_or("Unknown date");
+        
+        println!("Version {} ({})", version, date);
+        
+        if let Some(changes) = entry.get("changes").and_then(|c| c.as_array()) {
+            if changes.is_empty() {
+                println!("  No changes recorded for this version.");
+            } else {
+                for change in changes {
+                    let change_type = change.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    let description = change.get("description").and_then(|d| d.as_str()).unwrap_or("");
+                    
+                    let type_label = match change_type {
+                        "added" => "Added",
+                        "fixed" => "Fixed",
+                        "changed" => "Changed",
+                        _ => change_type,
+                    };
+                    
+                    println!("  - {}: {}", type_label, description);
+                }
+            }
+        }
+        
+        println!();
+        Ok(())
+    }
+
+    #[allow(clippy::unused_self)]
+    fn print_version(changelog: Option<String>) -> Result<ExitCode> {
+        // If no changelog is requested, display normal version information
+        if changelog.is_none() {
+            let _ = writeln!(stdout(), "{}", Self::command().render_version());
+            return Ok(ExitCode::SUCCESS);
+        }
+        
+        let changelog_value = changelog.unwrap_or_default();
+        
+        // Display changelog for all versions
+        if changelog_value == "all" {
+            match Self::get_all_changelogs() {
+                Ok(entries) => {
+                    if entries.is_empty() {
+                        println!("No changelog information available.");
+                    } else {
+                        println!("Changelog for all versions:");
+                        for entry in entries {
+                            Self::print_changelog_entry(&entry)?;
+                        }
+                    }
+                },
+                Err(err) => {
+                    eprintln!("Error retrieving changelog: {}", err);
+                    return Ok(ExitCode::FAILURE);
+                }
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
+        
+        // Display changelog for a specific version (--changelog=x.x.x)
+        if !changelog_value.is_empty() {
+            match Self::get_version_changelog(&changelog_value) {
+                Ok(Some(entry)) => {
+                    println!("Changelog for version {}:", changelog_value);
+                    Self::print_changelog_entry(&entry)?;
+                    return Ok(ExitCode::SUCCESS);
+                },
+                Ok(None) => {
+                    println!("No changelog information available for version {}.", changelog_value);
+                    return Ok(ExitCode::SUCCESS);
+                },
+                Err(err) => {
+                    eprintln!("Error retrieving changelog: {}", err);
+                    return Ok(ExitCode::FAILURE);
+                }
+            }
+        }
+        
+        // Display changelog for the current version (--changelog only)
+        let current_version = env!("CARGO_PKG_VERSION");
+        match Self::get_version_changelog(current_version) {
+            Ok(Some(entry)) => {
+                println!("Changelog for version {}:", current_version);
+                Self::print_changelog_entry(&entry)?;
+            },
+            Ok(None) => {
+                println!("No changelog information available for version {}.", current_version);
+            },
+            Err(err) => {
+                eprintln!("Error retrieving changelog: {}", err);
+                return Ok(ExitCode::FAILURE);
+            }
+        }
+        
+        Ok(ExitCode::SUCCESS)
+    }    
+    
 }
 
 async fn launch_dashboard(help_fallback: bool) -> Result<ExitCode> {
@@ -571,6 +713,36 @@ mod test {
                 all: true,
                 strict: true,
             })
+        );
+    }
+
+    #[test]
+    fn test_version_changelog() {
+        assert_parse!(
+            ["version", "--changelog"],
+            CliRootCommands::Version {
+                changelog: Some("".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_version_changelog_all() {
+        assert_parse!(
+            ["version", "--changelog=all"],
+            CliRootCommands::Version {
+                changelog: Some("all".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_version_changelog_specific() {
+        assert_parse!(
+            ["version", "--changelog=1.8.0"],
+            CliRootCommands::Version {
+                changelog: Some("1.8.0".to_string()),
+            }
         );
     }
 
