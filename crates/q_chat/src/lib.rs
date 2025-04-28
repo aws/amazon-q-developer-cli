@@ -14,6 +14,8 @@ mod skim_integration;
 mod token_counter;
 mod tools;
 pub mod util;
+mod logger;
+mod log_command;
 
 use std::borrow::Cow;
 use std::collections::{
@@ -88,6 +90,8 @@ use message::{
     ToolUseResultBlock,
 };
 use shared_writer::SharedWriter;
+use logger::LogManager;
+use log_command::LogCommandHandler;
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -240,6 +244,11 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
   <em>hooks</em>       <black!>View and manage context hooks</black!>
 <em>/usage</em>      <black!>Show current session's context window usage</black!>
+<em>/log</em>          <black!>View and manage interaction logs</black!>
+  <em>enable</em>      <black!>Enable logging for the current session</black!>
+  <em>disable</em>      <black!>Disable logging for the current session</black!>  
+  <em>show</em>        <black!>Show recent log entries [--all] [--desc] [--tail=N] [--head=N]</black!>
+  <em>delete</em>      <black!>Delete all logs for the current session</black!>
 
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
@@ -267,6 +276,7 @@ pub async fn launch_chat(args: cli::Chat) -> Result<ExitCode> {
         args.profile,
         args.trust_all_tools,
         trust_tools,
+        args.enable_logging,
     )
     .await
 }
@@ -278,6 +288,7 @@ pub async fn chat(
     profile: Option<String>,
     trust_all_tools: bool,
     trust_tools: Option<Vec<String>>,
+    enable_logging: bool,
 ) -> Result<ExitCode> {
     if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
         bail!(
@@ -289,6 +300,28 @@ pub async fn chat(
     region_check("chat")?;
 
     let ctx = Context::new();
+
+    // Initialize logging if enabled
+    let log_manager = if enable_logging {
+        match LogManager::new(Arc::clone(&ctx), enable_logging).await {
+            Ok(mut manager) => {
+                debug!("Logging enabled. Log file: {:?}", manager.log_file_path);
+                // Initialize logging explicitly
+                if let Err(e) = manager.initialize_logging(enable_logging).await {
+                    eprintln!("Warning: Failed to initialize logging: {}", e);
+                    None
+                } else {
+                    Some(Arc::new(manager))
+                }
+            },
+            Err(e) => {
+                eprintln!("Warning: Failed to initialize logging: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     let stdin = std::io::stdin();
     // no_interactive flag or part of a pipe
@@ -376,6 +409,11 @@ pub async fn chat(
     )
     .await?;
 
+    // Set the log manager if logging is enabled
+    if let Some(log_manager) = log_manager {
+        chat.set_log_manager(log_manager);
+    }
+
     let result = chat.try_chat().await.map(|_| ExitCode::SUCCESS);
     drop(chat); // Explicit drop for clarity
 
@@ -438,6 +476,8 @@ pub struct ChatContext {
     tool_use_status: ToolUseStatus,
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
+    /// The log manager for recording interactions.
+    log_manager: Option<Arc<LogManager>>,
 }
 
 impl ChatContext {
@@ -474,7 +514,12 @@ impl ChatContext {
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
             failed_request_ids: Vec::new(),
+            log_manager: None,
         })
+    }
+    /// Set the log manager for this chat context
+    pub fn set_log_manager(&mut self, log_manager: Arc<LogManager>) {
+        self.log_manager = Some(log_manager);
     }
 }
 
@@ -2393,6 +2438,67 @@ impl ChatContext {
                     skip_printing_tools: true,
                 }
             },
+            Command::Log { subcommand } => {
+                // Special case for /log enable - create log manager if it doesn't exist
+                if subcommand.len() == 1 && subcommand[0] == "enable" {
+                    if self.log_manager.is_none() {
+                        // Create a new log manager
+                        match LogManager::new(Arc::clone(&self.ctx), true).await {
+                            Ok(manager) => {
+                                self.log_manager = Some(Arc::new(manager));
+                            },
+                            Err(e) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nError initializing logging: {}\n\n", e)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                                return Ok(ChatState::PromptUser {
+                                    tool_uses: Some(tool_uses),
+                                    pending_tool_index,
+                                    skip_printing_tools: true,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if let Some(log_manager) = &self.log_manager {
+                    let handler = LogCommandHandler::new(Arc::clone(log_manager));
+                    match handler.handle_command(&subcommand.iter().map(|s| s.as_str()).collect::<Vec<&str>>()).await {
+                        Ok(output) => {
+                            execute!(
+                                self.output,
+                                style::Print("\n"),
+                                style::Print(output),
+                                style::Print("\n")
+                            )?;
+                        },
+                        Err(e) => {
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!("\nError: {}\n\n", e)),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+                        }
+                    }
+                } else {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print("\nLogging is not enabled. Use 'q --enable-logging' to enable logging.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                }
+
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    pending_tool_index,
+                    skip_printing_tools: true,
+                }
+            }
         })
     }
 
@@ -2529,6 +2635,7 @@ impl ChatContext {
     async fn handle_response(&mut self, response: SendMessageOutput) -> Result<ChatState, ChatError> {
         let request_id = response.request_id().map(|s| s.to_string());
         let mut buf = String::new();
+        let mut tool_name_used: Option<String> = None;
         let mut offset = 0;
         let mut ended = false;
         let mut parser = ResponseParser::new(response);
@@ -2547,6 +2654,9 @@ impl ChatContext {
                             // printed while we are receiving tool use events.
                             buf.push('\n');
                             tool_name_being_recvd = Some(name);
+                            // Setting tool_name_used here as a clone of tool_name_being_recvd
+                            // since tool_name_being_recvd gets reset later
+                            tool_name_used = tool_name_being_recvd.clone();
                         },
                         parser::ResponseEvent::AssistantText(text) => {
                             buf.push_str(&text);
@@ -2728,6 +2838,100 @@ impl ChatContext {
                         self.conversation_state.context_message_length(),
                     )
                     .await;
+                }
+
+                // Update log entry with response information if logging is enabled
+                if let Some(log_manager) = &self.log_manager {
+                    if let Some((user_msg, assistant_msg)) = self.conversation_state.history().into_iter().last() {
+                        // Get context files used
+                        let context_files = if let Some(context_manager) = &self.conversation_state.context_manager {
+                            let mut files = Vec::new();
+                            if let Ok(global_files) = context_manager.get_context_files(true).await {
+                                files.extend(global_files.into_iter().map(|(k, _)| k));
+                            }
+                            if let Ok(profile_files) = context_manager.get_context_files(false).await {
+                                files.extend(profile_files.into_iter().map(|(k, _)| k));
+                            }
+                            files
+                        } else {
+                            Vec::new()
+                        };
+
+                        // Calculate response time (approximate since we don't have exact timing)
+                        let response_time = match parser.elapsed_time() {
+                            Some(duration) => duration.as_secs_f64(),
+                            None => 0.0,
+                        };
+
+                        // Log the completed interaction with response
+                        let prompt_summary = if let Some(tool_results) = user_msg.tool_use_results() {
+                            // We have direct access to the tool results
+                            let mut summaries = Vec::new();
+
+                            for tool_result in tool_results {
+                                // Get the status
+                                let status = match tool_result.status {
+                                    ToolResultStatus::Success => "Success",
+                                    ToolResultStatus::Error => "Error"
+                                };
+
+                                // Create a summary for this tool result
+                                let content_preview = if !tool_result.content.is_empty() {
+                                    // Get the first content block
+                                    match &tool_result.content[0] {
+                                        ToolUseResultBlock::Text(text) => {
+                                            // Get a brief preview of the text content
+                                            if text.len() > 100 {
+                                                format!("{}...", &text[0..100])
+                                            } else {
+                                                text.clone()
+                                            }
+                                        },
+                                        // Add other content types as needed
+                                        _ => "Other content".to_string(),
+                                    }
+                                } else {
+                                    "No content".to_string()
+                                };
+
+                                // Map the tool name to a more descriptive label
+                                let tool_description = match &tool_name_used {
+                                    Some(name) => match name.as_str() {
+                                        "fs_read" => "Reading from filesystem",
+                                        "fs_write" => "Writing to filesystem",
+                                        "execute_bash" => "Executing a bash command",
+                                        "use_aws" => "Make an AWS CLI api call",
+                                        "report_issue" => "Reporting an issue",
+                                        _ => name, // Use the original name if no mapping exists
+                                    },
+                                    None => "Generic Q execution", // Handle the None case
+                                };
+
+                                summaries.push(format!("[{:?}] - {:?} ({:?})",
+                                                       tool_description, content_preview, status
+                                ));
+                            }
+
+                            // Join all summaries with a separator
+                            if summaries.is_empty() {
+                                "Tool Use Results (empty)".to_string()
+                            } else {
+                                summaries.join("; ")
+                            }
+                        } else {
+                            // Regular message, use the original content
+                            format!("{:?}", user_msg.content)
+                        };
+
+                        if let Err(e) = log_manager.log_interaction(
+                            format!("{:?}", prompt_summary),
+                            assistant_msg.content().to_string(),
+                            response_time,
+                            context_files,
+                        ).await {
+                            debug!("Failed to update log entry with response: {}", e);
+                        }
+                    }
                 }
 
                 if self.interactive && self.settings.get_bool_or("chat.enableNotifications", false) {

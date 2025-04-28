@@ -250,6 +250,9 @@ pub struct Cli {
     /// Print help for all subcommands
     #[arg(long)]
     help_all: bool,
+    /// Enable logging of prompts and responses
+    #[arg(long)]
+    pub enable_logging: bool,
 }
 
 impl Cli {
@@ -429,18 +432,21 @@ mod test {
             subcommand: None,
             verbose: 1,
             help_all: false,
+            enable_logging: false,
         });
 
         assert_eq!(Cli::parse_from([CLI_BINARY_NAME, "-vvv"]), Cli {
             subcommand: None,
             verbose: 3,
             help_all: false,
+            enable_logging: false,
         });
 
         assert_eq!(Cli::parse_from([CLI_BINARY_NAME, "--help-all"]), Cli {
             subcommand: None,
             verbose: 0,
             help_all: true,
+            enable_logging: false,
         });
 
         assert_eq!(Cli::parse_from([CLI_BINARY_NAME, "chat", "-vv"]), Cli {
@@ -451,9 +457,11 @@ mod test {
                 profile: None,
                 trust_all_tools: false,
                 trust_tools: None,
+                enable_logging: false,
             })),
             verbose: 2,
             help_all: false,
+            enable_logging: false,
         });
     }
 
@@ -585,6 +593,7 @@ mod test {
                 profile: Some("my-profile".to_string()),
                 trust_all_tools: false,
                 trust_tools: None,
+                enable_logging: false,
             })
         );
     }
@@ -600,6 +609,7 @@ mod test {
                 profile: Some("my-profile".to_string()),
                 trust_all_tools: false,
                 trust_tools: None,
+                enable_logging: false,
             })
         );
     }
@@ -615,6 +625,7 @@ mod test {
                 profile: Some("my-profile".to_string()),
                 trust_all_tools: false,
                 trust_tools: None,
+                enable_logging: false,
             })
         );
     }
@@ -630,6 +641,7 @@ mod test {
                 profile: None,
                 trust_all_tools: false,
                 trust_tools: None,
+                enable_logging: false,
             })
         );
     }
@@ -645,6 +657,7 @@ mod test {
                 profile: None,
                 trust_all_tools: true,
                 trust_tools: None,
+                enable_logging: false,
             })
         );
     }
@@ -660,6 +673,7 @@ mod test {
                 profile: None,
                 trust_all_tools: false,
                 trust_tools: Some(vec!["".to_string()]),
+                enable_logging: false,
             })
         );
     }
@@ -675,6 +689,7 @@ mod test {
                 profile: None,
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
+                enable_logging: false,
             })
         );
     }

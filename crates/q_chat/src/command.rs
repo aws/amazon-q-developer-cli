@@ -44,6 +44,9 @@ pub enum Command {
         subcommand: Option<ToolsSubcommand>,
     },
     Usage,
+    Log {
+        subcommand: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -705,6 +708,16 @@ impl Command {
                     }
                 },
                 "usage" => Self::Usage,
+                "log" => {
+                    // Extract all arguments after "log" as a vector
+                    let subcommand = if parts.len() > 1 {
+                        parts[1..].iter().map(|s| s.to_string()).collect()
+                    } else {
+                        Vec::new()
+                    };
+
+                    Self::Log { subcommand }
+                },
                 unknown_command => {
                     // If the command starts with a slash but isn't recognized,
                     // return an error instead of treating it as a prompt
@@ -975,4 +988,11 @@ mod tests {
             assert_eq!(result.unwrap_err(), expected_message);
         }
     }
+}
+
+/// Command to view and manage logs
+#[derive(Debug, PartialEq)]
+pub struct LogCommand {
+    /// Subcommand arguments
+    pub subcommand: Vec<String>,
 }
