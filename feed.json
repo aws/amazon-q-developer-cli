@@ -12,6 +12,30 @@
     },
     {
       "type": "release",
+      "date": "2025-04-28",
+      "version": "1.9.0",
+      "title": "Version 1.9.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Model Context Protocol (MCP) support in `q chat` - [#1365](https://github.com/aws/amazon-q-developer-cli/pull/1365)"
+        },
+        {
+          "type": "added",
+          "description": "Fuzzy finding support for selecting profiles in `q chat` - [#1388](https://github.com/aws/amazon-q-developer-cli/pull/1388)"
+        },
+        {
+          "type": "changed",
+          "description": "`/compact` to display the summary by default in `q chat` - [#1313](https://github.com/aws/amazon-q-developer-cli/pull/1313)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-04-25",
       "version": "1.8.1",
       "title": "Version 1.8.1",
