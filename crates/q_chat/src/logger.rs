@@ -614,8 +614,8 @@ mod tests {
 /// Generate a compact summary of a response.
 ///
 /// This function creates a meaningful summary of the response by:
-/// 1. For short responses (< 100 characters), using the full response
-/// 2. For longer responses, extracting the first 1-2 sentences (up to 100 characters)
+/// 1. For short responses (< 500 characters), using the full response
+/// 2. For longer responses, extracting the first 1-2 sentences (up to 500 characters)
 /// 3. Adding ellipsis (...) if truncated
 ///
 /// # Arguments
@@ -625,7 +625,7 @@ mod tests {
 /// A compact summary of the response
 fn generate_response_summary(response: &str) -> String {
     // For short responses, return the full text
-    if response.len() <= 100 {
+    if response.len() <= 500 {
         return response.to_string();
     }
     
@@ -659,7 +659,7 @@ fn generate_response_summary(response: &str) -> String {
         char_count += trimmed.len() + 1; // +1 for the terminator
         
         // Stop if we have enough sentences or characters
-        if (sentence_count >= 2 || char_count >= 100) && !summary.is_empty() {
+        if (sentence_count >= 2 || char_count >= 500) && !summary.is_empty() {
             break;
         }
     }
@@ -667,16 +667,16 @@ fn generate_response_summary(response: &str) -> String {
     // If we couldn't extract sentences properly, fall back to character-based truncation
     if summary.is_empty() || summary.len() < 10 {
         let end = response.char_indices()
-            .take(100)
+            .take(500)
             .last()
             .map(|(i, _)| i + 1)
             .unwrap_or(response.len());
         
         summary = format!("{}...", &response[..end]);
-    } else if summary.len() > 100 {
+    } else if summary.len() > 500 {
         // If the summary is still too long, truncate it
         let end = summary.char_indices()
-            .take(97)
+            .take(497)
             .last()
             .map(|(i, _)| i + 1)
             .unwrap_or(summary.len());
