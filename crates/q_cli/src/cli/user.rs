@@ -198,7 +198,7 @@ impl RootUserSubcommand {
                     }
                 }
 
-                select_profile_interactive(true).await?;
+                select_profile_interactive(false).await?;
 
                 Ok(ExitCode::SUCCESS)
             },
@@ -305,7 +305,7 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
     }
 
     if login_method == AuthMethod::IdentityCenter {
-        select_profile_interactive(false).await?;
+        select_profile_interactive(true).await?;
     }
 
     eprintln!("Logged in successfully");
