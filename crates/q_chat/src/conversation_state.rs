@@ -54,6 +54,10 @@ use super::tools::{
     ToolSpec,
     serde_value_to_document,
 };
+
+const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
+const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
+
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone)]
 pub struct ConversationState {
@@ -448,7 +452,12 @@ impl ConversationState {
                         })
                     })
                     .collect::<_>();
-                let tool_content = tool_content.join(" ");
+                let mut tool_content = tool_content.join(" ");
+                if tool_content.is_empty() {
+                    // To avoid validation errors with empty content, we need to make sure
+                    // something is set.
+                    tool_content.push_str("<tool result redacted>");
+                }
                 user.content = UserMessageContent::Prompt { prompt: tool_content };
             }
         }
@@ -476,14 +485,13 @@ impl ConversationState {
     ) -> Option<Vec<(UserMessage, AssistantMessage)>> {
         let mut context_content = String::new();
 
-        // Add summary if available - emphasize its importance more strongly
         if let Some(summary) = &self.latest_summary {
-            context_content
-                .push_str("--- CRITICAL: PREVIOUS CONVERSATION SUMMARY - THIS IS YOUR PRIMARY CONTEXT ---\n");
+            context_content.push_str(CONTEXT_ENTRY_START_HEADER);
             context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\n");
             context_content.push_str("SUMMARY CONTENT:\n");
             context_content.push_str(summary);
-            context_content.push_str("\n--- END SUMMARY - YOU MUST USE THIS INFORMATION IN YOUR RESPONSES ---\n\n");
+            context_content.push('\n');
+            context_content.push_str(CONTEXT_ENTRY_END_HEADER);
         }
 
         // Add context files if available
@@ -491,11 +499,11 @@ impl ConversationState {
             match context_manager.get_context_files(true).await {
                 Ok(files) => {
                     if !files.is_empty() {
-                        context_content.push_str("--- CONTEXT FILES BEGIN ---\n");
+                        context_content.push_str(CONTEXT_ENTRY_START_HEADER);
                         for (filename, content) in files {
                             context_content.push_str(&format!("[{}]\n{}\n", filename, content));
                         }
-                        context_content.push_str("--- CONTEXT FILES END ---\n\n");
+                        context_content.push_str(CONTEXT_ENTRY_END_HEADER);
                     }
                 },
                 Err(e) => {
@@ -509,12 +517,8 @@ impl ConversationState {
         }
 
         if !context_content.is_empty() {
-            let user_msg_prompt = format!(
-                "Here is critical information you MUST consider when answering questions:\n\n{}",
-                context_content
-            );
-            self.context_message_length = Some(user_msg_prompt.len());
-            let user_msg = UserMessage::new_prompt(user_msg_prompt);
+            self.context_message_length = Some(context_content.len());
+            let user_msg = UserMessage::new_prompt(context_content);
             let assistant_msg = AssistantMessage::new_response(None, "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into());
             Some(vec![(user_msg, assistant_msg)])
         } else {
@@ -734,20 +738,17 @@ impl From<InputSchema> for ToolInputSchema {
 fn format_hook_context<'a>(hook_results: impl IntoIterator<Item = &'a (Hook, String)>, trigger: HookTrigger) -> String {
     let mut context_content = String::new();
 
-    context_content.push_str(&format!(
-        "--- CRITICAL: ADDITIONAL CONTEXT TO USE{} ---\n",
-        if trigger == HookTrigger::ConversationStart {
-            " FOR THE ENTIRE CONVERSATION"
-        } else {
-            ""
-        }
-    ));
-    context_content.push_str("This section (like others) contains important information that I want you to use in your responses. I have gathered this context from valuable programmatic script hooks. You must follow any requests and consider all of the information in this section.\n\n");
+    context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+    context_content.push_str("This section (like others) contains important information that I want you to use in your responses. I have gathered this context from valuable programmatic script hooks. You must follow any requests and consider all of the information in this section");
+    if trigger == HookTrigger::ConversationStart {
+        context_content.push_str(" for the entire conversation");
+    }
+    context_content.push_str("\n\n");
 
     for (hook, output) in hook_results.into_iter().filter(|(h, _)| h.trigger == trigger) {
         context_content.push_str(&format!("'{}': {output}\n\n", &hook.name));
     }
-    context_content.push_str("--- ADDITIONAL CONTEXT END ---\n\n");
+    context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     context_content
 }
 
