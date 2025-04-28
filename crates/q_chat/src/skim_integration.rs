@@ -25,12 +25,9 @@ use tempfile::NamedTempFile;
 
 use super::context::ContextManager;
 
-/// Select a profile using skim
 pub fn select_profile_with_skim(context_manager: &ContextManager) -> Result<Option<String>> {
-    // Get available profiles using blocking operation
     let profiles = context_manager.list_profiles_blocking()?;
 
-    // Use skim to select a profile
     launch_skim_selector(&profiles, "Select profile: ", false)
         .map(|selected| selected.and_then(|s| s.into_iter().next()))
 }
