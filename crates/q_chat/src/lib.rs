@@ -214,14 +214,14 @@ const GREETING_BREAK_POINT: usize = 67;
 
 const POPULAR_SHORTCUTS: &str = color_print::cstr! {"
 <black!>
-<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + k</green!> fuzzy search
+<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search
 </black!>"};
 
 const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"
 <black!>
 <green!>/help</green!> all commands
 <green!>ctrl + j</green!> new lines
-<green!>ctrl + k</green!> fuzzy search
+<green!>ctrl + s</green!> fuzzy search
 </black!>
 "};
 const HELP_TEXT: &str = color_print::cstr! {"
@@ -269,7 +269,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
 <em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
-<em>Ctrl(^) + k</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
+<em>Ctrl(^) + s</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
                       <black!>Change the keybind to ctrl+x with: q settings chat.skimCommandKey x (where x is any key)</black!>
 
 "};
