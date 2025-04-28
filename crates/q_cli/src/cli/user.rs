@@ -34,6 +34,10 @@ use fig_ipc::local::{
     login_command,
     logout_command,
 };
+use fig_telemetry_core::{
+    QProfileSwitchIntent,
+    TelemetryResult,
+};
 use fig_util::system_info::is_remote;
 use fig_util::{
     CLI_BINARY_NAME,
@@ -371,7 +375,19 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
         return Ok(());
     }
 
+    let sso_region: Option<String> = fig_settings::state::get_string("auth.idc.region").ok().flatten();
+    let total_profiles = profiles.len() as i64;
+
     if whoami && profiles.len() == 1 {
+        if let Some(profile_region) = profiles[0].arn.split(':').nth(3) {
+            fig_telemetry::send_profile_state(
+                QProfileSwitchIntent::Update,
+                profile_region.to_string(),
+                TelemetryResult::Succeeded,
+                sso_region,
+            )
+            .await;
+        }
         return Ok(fig_settings::state::set_value(
             "api.codewhisperer.profile",
             serde_json::to_value(&profiles[0])?,
@@ -379,7 +395,6 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
     }
 
     let mut items: Vec<String> = profiles.iter().map(|p| p.profile_name.clone()).collect();
-
     let active_profile: Option<Profile> = fig_settings::state::get("api.codewhisperer.profile")?;
 
     if let Some(default_idx) = active_profile
@@ -395,9 +410,6 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
         .default(0)
         .interact_opt()?;
 
-    let sso_region = fig_settings::state::get_string("auth.idc.region").ok().flatten();
-    let total_profiles = profiles.len() as i64;
-
     match selected {
         Some(i) => {
             let chosen = &profiles[i];
@@ -407,11 +419,30 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
             fig_settings::state::remove_value("api.selectedCustomization")?;
 
             if let Some(profile_region) = chosen.arn.split(':').nth(3) {
-                fig_telemetry::send_did_select_profile(profile_region.to_string(), sso_region, Some(total_profiles))
-                    .await;
+                let intent = if whoami {
+                    QProfileSwitchIntent::Auth
+                } else {
+                    QProfileSwitchIntent::User
+                };
+                fig_telemetry::send_did_select_profile(
+                    intent,
+                    profile_region.to_string(),
+                    TelemetryResult::Succeeded,
+                    sso_region,
+                    Some(total_profiles),
+                )
+                .await;
             }
         },
         None => {
+            fig_telemetry::send_did_select_profile(
+                QProfileSwitchIntent::User,
+                "not-set".to_string(),
+                TelemetryResult::Cancelled,
+                sso_region,
+                Some(total_profiles),
+            )
+            .await;
             bail!("No profile selected.\n");
         },
     }

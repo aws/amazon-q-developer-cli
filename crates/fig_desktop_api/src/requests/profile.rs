@@ -4,6 +4,10 @@ use fig_proto::fig::{
     ListAvailableProfilesResponse,
     SetProfileRequest,
 };
+use fig_telemetry_core::{
+    QProfileSwitchIntent,
+    TelemetryResult,
+};
 
 use super::{
     RequestResult,
@@ -13,6 +17,14 @@ use super::{
 
 pub async fn set_profile(request: SetProfileRequest) -> RequestResult {
     let Some(profile) = request.profile else {
+        fig_telemetry::send_did_select_profile(
+            QProfileSwitchIntent::Auth,
+            "not-set".to_string(),
+            TelemetryResult::Failed,
+            fig_settings::state::get_string("auth.idc.region").ok().flatten(),
+            None,
+        )
+        .await;
         return RequestResult::error("Profile was not provided.");
     };
 
@@ -34,7 +46,9 @@ pub async fn set_profile(request: SetProfileRequest) -> RequestResult {
 
     if let Some(profile_region) = profile.arn.split(':').nth(3) {
         fig_telemetry::send_did_select_profile(
+            QProfileSwitchIntent::Auth,
             profile_region.to_string(),
+            TelemetryResult::Succeeded,
             fig_settings::state::get_string("auth.idc.region").ok().flatten(),
             None,
         )

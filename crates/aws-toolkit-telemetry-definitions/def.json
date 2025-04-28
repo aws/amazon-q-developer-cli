@@ -365,6 +365,18 @@
         { "type": "profileCount", "required": false }
       ],
       "passive": true
-    }
+    },
+    {
+      "name": "amazonq_profileState",
+      "description": "Indicates a change in the user's Q Profile state",
+      "metadata": [
+          { "type": "source" },
+          { "type": "amazonQProfileRegion" },
+          { "type": "result" },
+          { "type": "ssoRegion", "required": false },
+          { "type": "credentialStartUrl", "required": false }
+      ],
+      "passive": true
+  }
   ]
 }

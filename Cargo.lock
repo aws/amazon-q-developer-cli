@@ -2790,6 +2790,7 @@ dependencies = [
  "fig_proto",
  "fig_settings",
  "fig_telemetry",
+ "fig_telemetry_core",
  "fig_util",
  "fnv",
  "macos-utils",
