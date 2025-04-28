@@ -442,7 +442,7 @@ impl Command {
                 "help" => Self::Help,
                 "compact" => {
                     let mut prompt = None;
-                    let mut show_summary = false;
+                    let show_summary = true;
                     let mut help = false;
 
                     // Check if "help" is the first subcommand
@@ -451,23 +451,7 @@ impl Command {
                     } else {
                         let mut remaining_parts = Vec::new();
 
-                        // Parse the parts to handle both prompt and flags
-                        for part in &parts[1..] {
-                            if *part == "--summary" {
-                                show_summary = true;
-                            } else {
-                                remaining_parts.push(*part);
-                            }
-                        }
-
-                        // Check if the last word is "--summary" (which would have been captured as part of the prompt)
-                        if !remaining_parts.is_empty() {
-                            let last_idx = remaining_parts.len() - 1;
-                            if remaining_parts[last_idx] == "--summary" {
-                                remaining_parts.pop();
-                                show_summary = true;
-                            }
-                        }
+                        remaining_parts.extend_from_slice(&parts[1..]);
 
                         // If we have remaining parts after parsing flags, join them as the prompt
                         if !remaining_parts.is_empty() {
@@ -904,18 +888,9 @@ mod tests {
             };
         }
         let tests = &[
-            ("/compact", compact!(None, false)),
-            ("/compact --summary", compact!(None, true)),
+            ("/compact", compact!(None, true)),
             (
                 "/compact custom prompt",
-                compact!(Some("custom prompt".to_string()), false),
-            ),
-            (
-                "/compact --summary custom prompt",
-                compact!(Some("custom prompt".to_string()), true),
-            ),
-            (
-                "/compact custom prompt --summary",
                 compact!(Some("custom prompt".to_string()), true),
             ),
             ("/profile list", profile!(ProfileSubcommand::List)),

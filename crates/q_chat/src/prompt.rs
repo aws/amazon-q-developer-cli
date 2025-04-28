@@ -66,7 +66,6 @@ pub const COMMANDS: &[&str] = &[
     "/context clear --global",
     "/compact",
     "/compact help",
-    "/compact --summary",
     "/usage",
 ];
 

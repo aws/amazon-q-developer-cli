@@ -109,7 +109,6 @@ that may eventually reach memory constraints.
 <cyan!>Usage</cyan!>
   <em>/compact</em>                   <black!>Summarize the conversation and clear history</black!>
   <em>/compact [prompt]</em>          <black!>Provide custom guidance for summarization</black!>
-  <em>/compact --summary</em>         <black!>Show the summary after compacting</black!>
 
 <cyan!>When to use</cyan!>
 • When you see the memory constraint warning message
@@ -237,7 +236,6 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/compact</em>      <black!>Summarize the conversation to free up context space</black!>
   <em>help</em>        <black!>Show help for the compact command</black!>
   <em>[prompt]</em>    <black!>Optional custom prompt to guide summarization</black!>
-  <em>--summary</em>   <black!>Display the summary after compacting</black!>
 <em>/tools</em>        <black!>View and manage tools and permissions</black!>
   <em>help</em>        <black!>Show an explanation for the trust command</black!>
   <em>trust</em>       <black!>Trust a specific tool or tools for the session</black!>
@@ -1158,15 +1156,6 @@ impl ChatContext {
                     style::Print(format!("• Custom prompt applied: {}\n", custom_prompt))
                 )?;
             }
-            execute!(
-                output,
-                style::Print(
-                    "• The assistant has access to all previous tool executions, code analysis, and discussion details\n"
-                ),
-                style::Print("• The assistant will reference specific information from the summary when relevant\n"),
-                style::Print("• Use '/compact --summary' to view summaries when compacting\n\n"),
-                style::SetForegroundColor(Color::Reset)
-            )?;
             animate_output(&mut self.output, &output)?;
 
             // Display the summary if the show_summary flag is set
@@ -1193,7 +1182,7 @@ impl ChatContext {
                     style::Print(&summary),
                     style::Print("\n\n"),
                     style::SetForegroundColor(Color::Cyan),
-                    style::Print("This summary is stored in memory and available to the assistant.\n"),
+                    style::Print("The conversation history has been replaced with this summary.\n"),
                     style::Print("It contains all important details from previous interactions.\n"),
                 )?;
                 animate_output(&mut self.output, &output)?;
