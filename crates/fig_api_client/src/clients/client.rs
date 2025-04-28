@@ -249,7 +249,6 @@ impl Client {
                 let mut profiles = vec![];
                 let mut client = client.list_available_profiles().into_paginator().send();
                 while let Some(profiles_output) = client.next().await {
-                    println!("profiles_output: {:?}", profiles_output);
                     profiles.extend(profiles_output?.profiles().iter().cloned().map(Profile::from));
                 }
 

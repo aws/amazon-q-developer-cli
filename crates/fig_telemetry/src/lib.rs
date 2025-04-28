@@ -707,34 +707,16 @@ async fn shell() -> (Option<Shell>, Option<String>) {
 }
 
 pub async fn send_did_select_profile(
-    source: QProfileSwitchIntent,
     amazonq_profile_region: String,
-    result: TelemetryResult,
     sso_region: Option<String>,
     profile_count: Option<i64>,
 ) {
     let event = AppTelemetryEvent::new(EventType::DidSelectProfile {
-        source,
+        source: QProfileSwitchIntent::User,
         amazonq_profile_region,
-        result,
+        result: TelemetryResult::Succeeded,
         sso_region,
         profile_count,
-    })
-    .await;
-    dispatch_or_send_event(event).await;
-}
-
-pub async fn send_profile_state(
-    source: QProfileSwitchIntent,
-    amazonq_profile_region: String,
-    result: TelemetryResult,
-    sso_region: Option<String>,
-) {
-    let event = AppTelemetryEvent::new(EventType::ProfileState {
-        source,
-        amazonq_profile_region,
-        result,
-        sso_region,
     })
     .await;
     dispatch_or_send_event(event).await;

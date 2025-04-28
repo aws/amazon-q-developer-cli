@@ -349,7 +349,7 @@
         { "type": "codewhispererterminal_toolUseId" },
         { "type": "codewhispererterminal_toolName" },
         { "type": "codewhispererterminal_isToolUseAccepted" },
-        { "type": "codewhispererterminal_isToolValid"},
+        { "type": "codewhispererterminal_isToolValid" },
         { "type": "codewhispererterminal_toolUseIsSuccess", "required": false }
       ]
     },
@@ -357,26 +357,14 @@
       "name": "amazonq_didSelectProfile",
       "description": "Emitted after the user's Q Profile has been set, whether the user was prompted with a dialog, or a profile was automatically assigned after signing in.",
       "metadata": [
-          { "type": "source" },
-          { "type": "amazonQProfileRegion" },
-          { "type": "result" },
-          { "type": "ssoRegion", "required": false },
-          { "type": "credentialStartUrl", "required": false },
-          { "type": "profileCount", "required": false }
+        { "type": "source" },
+        { "type": "amazonQProfileRegion" },
+        { "type": "result" },
+        { "type": "ssoRegion", "required": false },
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "profileCount", "required": false }
       ],
       "passive": true
-  },
-  {
-      "name": "amazonq_profileState",
-      "description": "Indicates a change in the user's Q Profile state",
-      "metadata": [
-          { "type": "source" },
-          { "type": "amazonQProfileRegion" },
-          { "type": "result" },
-          { "type": "ssoRegion", "required": false },
-          { "type": "credentialStartUrl", "required": false }
-      ],
-      "passive": true
-  }
+    }
   ]
 }

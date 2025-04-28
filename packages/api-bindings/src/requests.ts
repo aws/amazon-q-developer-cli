@@ -79,6 +79,8 @@ import {
   RunProcessRequest,
   RunProcessRequestSchema,
   RunProcessResponse,
+  SetProfileRequest,
+  SetProfileRequestSchema,
   TelemetryPageRequest,
   TelemetryPageRequestSchema,
   TelemetryTrackRequest,
@@ -1167,6 +1169,35 @@ export async function sendDragWindowRequest(
             reject(
               Error(
                 `Invalid response '${response?.case}' for 'DragWindowRequest'`,
+              ),
+            );
+        }
+      },
+    );
+  });
+}
+
+export async function sendSetProfileRequest(
+  request: Omit<SetProfileRequest, "$typeName" | "$unknown">,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    sendMessage(
+      {
+        case: "setProfileRequest",
+        value: create(SetProfileRequestSchema, request),
+      },
+      (response) => {
+        switch (response?.case) {
+          case "success":
+            resolve();
+            break;
+          case "error":
+            reject(Error(response.value));
+            break;
+          default:
+            reject(
+              Error(
+                `Invalid response '${response?.case}' for 'SetProfileRequest'`,
               ),
             );
         }

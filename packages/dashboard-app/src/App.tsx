@@ -166,11 +166,6 @@ const useNavData = () => {
       name: "Getting started",
       link: "/",
     },
-    // {
-    //   type: "link",
-    //   name: "Getting started",
-    //   link: "/onboarding",
-    // },
     {
       type: "link",
       name: "What's new?",

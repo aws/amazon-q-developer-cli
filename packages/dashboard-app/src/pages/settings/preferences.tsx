@@ -47,7 +47,7 @@ export default function Page() {
   const onProfileChange = (profile: Profile | undefined) => {
     setProfile(profile);
     if (profile) {
-      State.set("api.codewhisperer.profile", profile);
+      Profile.setProfile(profile.profileName, profile.arn);
     }
   };
 

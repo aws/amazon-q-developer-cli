@@ -10,7 +10,6 @@ use aws_toolkit_telemetry_definitions::IntoMetricDatum;
 use aws_toolkit_telemetry_definitions::metrics::{
     AmazonqDidSelectProfile,
     AmazonqEndChat,
-    AmazonqProfileState,
     AmazonqStartChat,
     CodewhispererterminalAddChatMessage,
     CodewhispererterminalCliSubcommandExecuted,
@@ -354,23 +353,6 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
-            EventType::ProfileState {
-                source,
-                amazonq_profile_region,
-                result,
-                sso_region,
-            } => Some(
-                AmazonqProfileState {
-                    create_time: self.created_time,
-                    value: None,
-                    source: Some(source.to_string().into()),
-                    amazon_q_profile_region: Some(amazonq_profile_region.into()),
-                    result: Some(result.to_string().into()),
-                    sso_region: sso_region.map(Into::into),
-                    credential_start_url: self.credential_start_url.map(Into::into),
-                }
-                .into_metric_datum(),
-            ),
         }
     }
 }
@@ -463,12 +445,6 @@ pub enum EventType {
         result: TelemetryResult,
         sso_region: Option<String>,
         profile_count: Option<i64>,
-    },
-    ProfileState {
-        source: QProfileSwitchIntent,
-        amazonq_profile_region: String,
-        result: TelemetryResult,
-        sso_region: Option<String>,
     },
 }
 
