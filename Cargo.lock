@@ -66,7 +66,7 @@ dependencies = [
 
 [[package]]
 name = "alacritty_terminal"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "bitflags 2.9.0",
  "camino",
@@ -264,7 +264,7 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "appkit-nsworkspace-bindings"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "bindgen 0.71.1",
  "objc",
@@ -2071,7 +2071,7 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "dbus"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "async_zip",
  "fig_os_shim",
@@ -2584,7 +2584,7 @@ dependencies = [
 
 [[package]]
 name = "fig-api-mock"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "async-trait",
  "clap",
@@ -2597,7 +2597,7 @@ dependencies = [
 
 [[package]]
 name = "fig_api_client"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -2632,7 +2632,7 @@ dependencies = [
 
 [[package]]
 name = "fig_auth"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "async-trait",
  "aws-credential-types",
@@ -2666,7 +2666,7 @@ dependencies = [
 
 [[package]]
 name = "fig_aws_common"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "aws-runtime",
  "aws-smithy-runtime",
@@ -2680,7 +2680,7 @@ dependencies = [
 
 [[package]]
 name = "fig_desktop"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "accessibility-sys",
  "anyhow",
@@ -2772,7 +2772,7 @@ dependencies = [
 
 [[package]]
 name = "fig_desktop_api"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "anstream",
  "async-trait",
@@ -2808,7 +2808,7 @@ dependencies = [
 
 [[package]]
 name = "fig_diagnostic"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "cfg-if",
  "clap",
@@ -2828,7 +2828,7 @@ dependencies = [
 
 [[package]]
 name = "fig_input_method"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "apple-bundle",
  "fig_ipc",
@@ -2849,7 +2849,7 @@ dependencies = [
 
 [[package]]
 name = "fig_install"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "bitflags 2.9.0",
  "bytes",
@@ -2888,7 +2888,7 @@ dependencies = [
 
 [[package]]
 name = "fig_integrations"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "accessibility-sys",
  "async-trait",
@@ -2921,7 +2921,7 @@ dependencies = [
 
 [[package]]
 name = "fig_ipc"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2944,7 +2944,7 @@ dependencies = [
 
 [[package]]
 name = "fig_log"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "fig_util",
  "parking_lot",
@@ -2957,7 +2957,7 @@ dependencies = [
 
 [[package]]
 name = "fig_os_shim"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "cfg-if",
  "dirs",
@@ -2970,7 +2970,7 @@ dependencies = [
 
 [[package]]
 name = "fig_proto"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "arbitrary",
  "bytes",
@@ -2993,7 +2993,7 @@ dependencies = [
 
 [[package]]
 name = "fig_remote_ipc"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3011,7 +3011,7 @@ dependencies = [
 
 [[package]]
 name = "fig_request"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -3036,7 +3036,7 @@ dependencies = [
 
 [[package]]
 name = "fig_settings"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "fd-lock",
  "fig_test",
@@ -3057,7 +3057,7 @@ dependencies = [
 
 [[package]]
 name = "fig_telemetry"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-toolkit-telemetry",
@@ -3091,7 +3091,7 @@ dependencies = [
 
 [[package]]
 name = "fig_telemetry_core"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-toolkit-telemetry",
@@ -3105,7 +3105,7 @@ dependencies = [
 
 [[package]]
 name = "fig_test"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "fig_test_macro",
  "tokio",
@@ -3113,7 +3113,7 @@ dependencies = [
 
 [[package]]
 name = "fig_test_macro"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "quote",
  "syn 2.0.100",
@@ -3121,7 +3121,7 @@ dependencies = [
 
 [[package]]
 name = "fig_test_utils"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "bytes",
  "fig_os_shim",
@@ -3139,7 +3139,7 @@ dependencies = [
 
 [[package]]
 name = "fig_util"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "appkit-nsworkspace-bindings",
  "bstr",
@@ -3179,7 +3179,7 @@ dependencies = [
 
 [[package]]
 name = "figterm"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -3242,7 +3242,7 @@ dependencies = [
 
 [[package]]
 name = "figterm2"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4952,7 +4952,7 @@ dependencies = [
 
 [[package]]
 name = "macos-utils"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "accessibility",
  "accessibility-sys",
@@ -6777,8 +6777,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "q_chat"
+version = "1.8.1"
+dependencies = [
+ "anstream",
+ "aws-smithy-types",
+ "bstr",
+ "clap",
+ "color-print",
+ "convert_case 0.8.0",
+ "crossterm",
+ "eyre",
+ "fig_api_client",
+ "fig_auth",
+ "fig_diagnostic",
+ "fig_os_shim",
+ "fig_settings",
+ "fig_telemetry",
+ "fig_util",
+ "futures",
+ "glob",
+ "rand 0.9.0",
+ "regex",
+ "rustyline",
+ "serde",
+ "serde_json",
+ "shell-color",
+ "shlex",
+ "similar",
+ "skim",
+ "spinners",
+ "strip-ansi-escapes",
+ "syntect",
+ "tempfile",
+ "thiserror 2.0.12",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-width 0.2.0",
+ "url",
+ "uuid",
+ "winnow 0.6.22",
+]
+
+[[package]]
 name = "q_cli"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -6787,13 +6832,9 @@ dependencies = [
  "arboard",
  "assert_cmd",
  "async-trait",
- "aws-smithy-types",
- "aws-types",
  "base64 0.22.1",
  "bitflags 2.9.0",
- "bstr",
  "bytes",
- "camino",
  "cfg-if",
  "clap",
  "clap_complete",
@@ -6839,18 +6880,13 @@ dependencies = [
  "parking_lot",
  "paste",
  "predicates",
+ "q_chat",
  "rand 0.9.0",
  "regex",
- "rustyline",
  "semver",
  "serde",
  "serde_json",
- "shell-color",
- "shlex",
- "similar",
- "skim",
  "spinners",
- "syntect",
  "sysinfo 0.32.1",
  "tempfile",
  "thiserror 2.0.12",
@@ -6868,7 +6904,6 @@ dependencies = [
  "whoami",
  "winapi",
  "windows 0.58.0",
- "winnow 0.6.22",
 ]
 
 [[package]]
@@ -7959,7 +7994,7 @@ dependencies = [
 
 [[package]]
 name = "shell-color"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
  "bitflags 2.9.0",
  "fig_test",
@@ -8196,11 +8231,11 @@ dependencies = [
 
 [[package]]
 name = "strip-ansi-escapes"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55ff8ef943b384c414f54aefa961dd2bd853add74ec75e7ac74cf91dba62bcfa"
+checksum = "2a8f8038e7e7969abb3f1b7c2a811225e9296da208539e0f79c5251d6cac0025"
 dependencies = [
- "vte 0.11.1",
+ "vte 0.14.1",
 ]
 
 [[package]]
@@ -8828,9 +8863,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.14"
+version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b9590b93e6fcc1739458317cccd391ad3955e2bde8913edf6f95f9e65a8f034"
+checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
 dependencies = [
  "bytes",
  "futures-core",
@@ -9327,12 +9362,11 @@ dependencies = [
 
 [[package]]
 name = "vte"
-version = "0.11.1"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5022b5fbf9407086c180e9557be968742d839e68346af7792b8592489732197"
+checksum = "231fdcd7ef3037e8330d8e17e61011a2c244126acc0a982f4040ac3f9f0bc077"
 dependencies = [
- "utf8parse",
- "vte_generate_state_changes",
+ "memchr",
 ]
 
 [[package]]
@@ -9343,16 +9377,6 @@ checksum = "a5924018406ce0063cd67f8e008104968b74b563ee1b85dde3ed1f7cb87d3dbd"
 dependencies = [
  "arrayvec",
  "memchr",
-]
-
-[[package]]
-name = "vte_generate_state_changes"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e369bee1b05d510a7b4ed645f5faa90619e05437111783ea5848f28d97d3c2e"
-dependencies = [
- "proc-macro2",
- "quote",
 ]
 
 [[package]]

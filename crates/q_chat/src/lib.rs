@@ -1,3 +1,4 @@
+pub mod cli;
 mod command;
 mod consts;
 mod context;
@@ -12,7 +13,7 @@ mod shared_writer;
 mod skim_integration;
 mod token_counter;
 mod tools;
-mod util;
+pub mod util;
 
 use std::borrow::Cow;
 use std::collections::{
@@ -58,7 +59,6 @@ use crossterm::{
     style,
     terminal,
 };
-use dialoguer::console::strip_ansi_codes;
 use eyre::{
     ErrReport,
     Result,
@@ -252,6 +252,24 @@ const HELP_TEXT: &str = color_print::cstr! {"
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
 const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
 \nAgents can sometimes do unexpected things so understand the risks.</green!>"};
+
+pub async fn launch_chat(args: cli::Chat) -> Result<ExitCode> {
+    let trust_tools = args.trust_tools.map(|mut tools| {
+        if tools.len() == 1 && tools[0].is_empty() {
+            tools.pop();
+        }
+        tools
+    });
+    chat(
+        args.input,
+        args.no_interactive,
+        args.accept_all,
+        args.profile,
+        args.trust_all_tools,
+        trust_tools,
+    )
+    .await
+}
 
 pub async fn chat(
     input: Option<String>,
@@ -637,7 +655,7 @@ impl ChatContext {
 
         // Centered wrapped content
         for line in wrapped_lines {
-            let visible_line_len = strip_ansi_codes(&line).len();
+            let visible_line_len = strip_ansi_escapes::strip(&line).len();
             let left_pad = (box_width - 4 - visible_line_len) / 2;
 
             let content = format!(
@@ -997,7 +1015,37 @@ impl ChatContext {
             execute!(self.output, cursor::Hide, style::Print("\n"))?;
             self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
         }
-        let response = self.client.send_message(summary_state).await?;
+        let response = self.client.send_message(summary_state).await;
+
+        // TODO(brandonskiser): This is a temporary hotfix for failing compaction. We should instead
+        // retry except with less context included.
+        let response = match response {
+            Ok(res) => res,
+            Err(e) => match e {
+                fig_api_client::Error::ContextWindowOverflow => {
+                    self.conversation_state.clear(true);
+                    if self.interactive {
+                        self.spinner.take();
+                        execute!(
+                            self.output,
+                            terminal::Clear(terminal::ClearType::CurrentLine),
+                            cursor::MoveToColumn(0),
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print(
+                                "The context window usage has overflowed. Clearing the conversation history.\n\n"
+                            ),
+                            style::SetAttribute(Attribute::Reset)
+                        )?;
+                    }
+                    return Ok(ChatState::PromptUser {
+                        tool_uses,
+                        pending_tool_index,
+                        skip_printing_tools: true,
+                    });
+                },
+                e => return Err(e.into()),
+            },
+        };
 
         let summary = {
             let mut parser = ResponseParser::new(response);
@@ -2584,11 +2632,17 @@ impl ChatContext {
                                     style::SetForegroundColor(Color::Yellow),
                                     style::SetAttribute(Attribute::Bold),
                                     style::Print(format!(
-                                        "Warning: received an unexpected error from the model after {:.2}s\n\n",
+                                        "Warning: received an unexpected error from the model after {:.2}s",
                                         time_elapsed.as_secs_f64()
                                     )),
-                                    style::SetAttribute(Attribute::Reset),
                                 )?;
+                                if let Some(request_id) = recv_error.request_id {
+                                    queue!(
+                                        self.output,
+                                        style::Print(format!("\n         request_id: {}", request_id))
+                                    )?;
+                                }
+                                execute!(self.output, style::Print("\n\n"), style::SetAttribute(Attribute::Reset))?;
                                 self.spinner = Some(Spinner::new(
                                     Spinners::Dots,
                                     "Trying to divide up the work...".to_string(),
@@ -2857,7 +2911,7 @@ impl ChatContext {
             .tool
             .queue_description(&self.ctx, &mut self.output)
             .await
-            .map_err(|e| ChatError::Custom(format!("failed to print tool: {}", e).into()))?;
+            .map_err(|e| ChatError::Custom(format!("failed to print tool, `{}`: {}", tool_use.name, e).into()))?;
 
         Ok(())
     }

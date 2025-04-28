@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2025-04-25",
+      "version": "1.8.1",
+      "title": "Version 1.8.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "An issue with `/compact` failing in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-04-22",
       "version": "1.8.0",
       "title": "Version 1.8.0",
