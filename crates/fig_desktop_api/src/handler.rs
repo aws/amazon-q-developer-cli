@@ -190,7 +190,6 @@ where
                 PositionWindowRequest,
                 ReadFileRequest,
                 RunProcessRequest,
-                SetProfileRequest,
                 TelemetryPageRequest,
                 TelemetryTrackRequest,
                 UpdateApplicationPropertiesRequest,
@@ -268,7 +267,6 @@ where
                 GetPlatformInfoRequest(request) => platform::get_platform_info(request, &ctx).await,
                 UserLogoutRequest(request) => event_handler.user_logout(request!(request)).await,
                 ListAvailableProfilesRequest(request) => profile::list_available_profiles(request).await,
-                SetProfileRequest(request) => profile::set_profile(request),
             }
         },
         None => {

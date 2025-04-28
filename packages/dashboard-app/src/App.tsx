@@ -1,5 +1,4 @@
 import { Routes, Route, Outlet, useNavigate } from "react-router-dom";
-import Account from "./pages/settings/account";
 import Help from "./pages/help";
 import SidebarLink from "./components/sidebar/link";
 import Autocomplete from "./pages/terminal/autocomplete";
@@ -140,7 +139,6 @@ function Router() {
           <Route path="translate" element={<Translate />} />
           <Route path="chat" element={<Chat />} />
           <Route path="inline" element={<Inline />} />
-          <Route path="account" element={<Account />} />
           <Route path="keybindings" element={<Keybindings />} />
           {platformInfo && platformInfo.os === Platform.Os.MACOS && (
             <Route path="integrations" element={<Integrations />} />
@@ -211,11 +209,6 @@ const useNavData = () => {
       type: "header",
       name: "Settings",
     },
-    // {
-    //   type: "link",
-    //   name: "Account",
-    //   link: "/account",
-    // },
     {
       type: "link",
       name: "Keybindings",

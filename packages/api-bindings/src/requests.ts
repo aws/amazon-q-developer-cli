@@ -58,6 +58,9 @@ import {
   InstallRequest,
   InstallRequestSchema,
   InstallResponse,
+  ListAvailableProfilesRequest,
+  ListAvailableProfilesRequestSchema,
+  ListAvailableProfilesResponse,
   NotificationRequest,
   NotificationRequestSchema,
   OnboardingRequest,
@@ -642,6 +645,35 @@ export async function sendGetPlatformInfoRequest(
             reject(
               Error(
                 `Invalid response '${response?.case}' for 'GetPlatformInfoRequest'`,
+              ),
+            );
+        }
+      },
+    );
+  });
+}
+
+export async function sendListAvailableProfilesRequest(
+  request: Omit<ListAvailableProfilesRequest, "$typeName" | "$unknown">,
+): Promise<ListAvailableProfilesResponse> {
+  return new Promise((resolve, reject) => {
+    sendMessage(
+      {
+        case: "listAvailableProfilesRequest",
+        value: create(ListAvailableProfilesRequestSchema, request),
+      },
+      (response) => {
+        switch (response?.case) {
+          case "listAvailableProfilesResponse":
+            resolve(response.value);
+            break;
+          case "error":
+            reject(Error(response.value));
+            break;
+          default:
+            reject(
+              Error(
+                `Invalid response '${response?.case}' for 'ListAvailableProfilesRequest'`,
               ),
             );
         }

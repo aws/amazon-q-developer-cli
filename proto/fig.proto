@@ -45,7 +45,6 @@ message ClientOriginatedMessage {
     AuthCancelPkceAuthorizationRequest auth_cancel_pkce_authorization_request = 151;
     GetPlatformInfoRequest get_platform_info_request = 152;
     ListAvailableProfilesRequest list_available_profiles_request = 155;
-    SetProfileRequest set_profile_request = 156;
   }
 
   reserved 115;
@@ -390,10 +389,6 @@ message ListAvailableProfilesRequest {}
 
 message ListAvailableProfilesResponse {
   repeated Profile profiles = 1;
-}
-
-message SetProfileRequest {
-  Profile profile = 1;
 }
 
 /// User
