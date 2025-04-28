@@ -22,4 +22,7 @@ pub struct Chat {
     /// '--trust-tools=fs_read,fs_write', trust no tools: '--trust-tools='
     #[arg(long, value_delimiter = ',', value_name = "TOOL_NAMES")]
     pub trust_tools: Option<Vec<String>>,
+    /// Enable logging of prompts and responses
+    #[arg(long)]
+    pub enable_logging: bool,
 }

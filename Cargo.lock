@@ -6803,6 +6803,7 @@ dependencies = [
  "anstream",
  "aws-smithy-types",
  "bstr",
+ "chrono",
  "clap",
  "color-print",
  "convert_case 0.8.0",

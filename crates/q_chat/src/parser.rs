@@ -94,6 +94,8 @@ pub struct ResponseParser {
     /// Whether or not we are currently receiving tool use delta events. Tuple of
     /// `Some((tool_use_id, name))` if true, [None] otherwise.
     parsing_tool_use: Option<(String, String)>,
+    /// The time when the parser was created
+    start_time: Option<Instant>,
 }
 
 impl ResponseParser {
@@ -107,7 +109,13 @@ impl ResponseParser {
             assistant_text: String::new(),
             tool_uses: Vec::new(),
             parsing_tool_use: None,
+            start_time: Some(Instant::now()),
         }
+    }
+
+    /// Returns the elapsed time since the parser was created
+    pub fn elapsed_time(&self) -> Option<std::time::Duration> {
+        self.start_time.map(|start| std::time::Instant::now().duration_since(start))
     }
 
     /// Consumes the associated [ConverseStreamResponse] until a valid [ResponseEvent] is parsed.
