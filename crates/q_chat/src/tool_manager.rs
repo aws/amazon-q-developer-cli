@@ -484,6 +484,11 @@ pub struct ToolManager {
     /// This is used to handle tool name transformations that may occur during initialization
     /// to ensure tool names comply with naming requirements.
     pub tn_map: HashMap<String, String>,
+
+    /// A cache of tool's input schema for all of the available tools.
+    /// This is mainly used to show the user what the tools look like from the perspective of the
+    /// model.
+    pub schema: HashMap<String, ToolSpec>,
 }
 
 impl ToolManager {
@@ -647,6 +652,7 @@ impl ToolManager {
                 self.tn_map.insert(tool_name.clone(), tool_name.clone());
             }
         }
+        self.schema = tool_specs.clone();
         Ok(tool_specs)
     }
 

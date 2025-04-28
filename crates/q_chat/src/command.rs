@@ -282,6 +282,7 @@ in global or local profiles.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolsSubcommand {
+    Schema,
     Trust { tool_names: HashSet<String> },
     Untrust { tool_names: HashSet<String> },
     TrustAll,
@@ -293,6 +294,7 @@ pub enum ToolsSubcommand {
 impl ToolsSubcommand {
     const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available subcommands</cyan!>
   <em>help</em>                           <black!>Show an explanation for the tools command</black!>
+  <em>schema</em>                         <black!>Show the input schema for all available tools</black!>
   <em>trust <<tools...>></em>               <black!>Trust a specific tool or tools for the session</black!>
   <em>untrust <<tools...>></em>             <black!>Revert a tool or tools to per-request confirmation</black!>
   <em>trustall</em>                       <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
@@ -719,6 +721,9 @@ impl Command {
                     }
 
                     match parts[1].to_lowercase().as_str() {
+                        "schema" => Self::Tools {
+                            subcommand: Some(ToolsSubcommand::Schema),
+                        },
                         "trust" => {
                             let mut tool_names = HashSet::new();
                             for part in &parts[2..] {

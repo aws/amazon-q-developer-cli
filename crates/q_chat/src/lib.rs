@@ -2157,6 +2157,12 @@ impl ChatContext {
                     .collect();
 
                 match subcommand {
+                    Some(ToolsSubcommand::Schema) => {
+                        let schema_json = serde_json::to_string_pretty(&self.tool_manager.schema).map_err(|e| {
+                            ChatError::Custom(format!("Error converting tool schema to string: {e}").into())
+                        })?;
+                        queue!(self.output, style::Print(schema_json), style::Print("\n"))?;
+                    },
                     Some(ToolsSubcommand::Trust { tool_names }) => {
                         let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) = tool_names
                             .into_iter()

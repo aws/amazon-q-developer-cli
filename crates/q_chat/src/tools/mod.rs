@@ -24,7 +24,10 @@ use fig_os_shim::Context;
 use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
-use serde::Deserialize;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use use_aws::UseAws;
 
 use super::consts::MAX_TOOL_RESPONSE_SIZE;
@@ -181,13 +184,13 @@ impl ToolPermissions {
 
 /// A tool specification to be sent to the model as part of a conversation. Maps to
 /// [BedrockToolSpecification].
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolSpec {
     pub name: String,
     pub description: String,
     #[serde(alias = "inputSchema")]
     pub input_schema: InputSchema,
-    #[serde(default = "tool_origin")]
+    #[serde(skip_serializing, default = "tool_origin")]
     pub tool_origin: ToolOrigin,
 }
 
@@ -219,7 +222,7 @@ pub struct QueuedTool {
 }
 
 /// The schema specification describing a tool's fields.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputSchema(pub serde_json::Value);
 
 /// The output received from invoking a [Tool].
