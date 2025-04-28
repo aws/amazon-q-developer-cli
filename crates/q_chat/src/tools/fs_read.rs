@@ -127,9 +127,8 @@ impl FsLine {
         }
     }
 
-    pub async fn invoke(&self, ctx: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, ctx: &Context, _updates: &mut impl Write) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(ctx, &self.path);
-        let relative_path = format_path(ctx.env().current_dir()?, &path);
         debug!(?path, "Reading");
         let file = ctx.fs().read_to_string(&path).await?;
         let line_count = file.lines().count();
@@ -157,15 +156,6 @@ impl FsLine {
             .take(end - start + 1)
             .collect::<Vec<_>>()
             .join("\n");
-
-        queue!(
-            updates,
-            style::Print("Reading: "),
-            style::SetForegroundColor(Color::Green),
-            style::Print(relative_path),
-            style::ResetColor,
-            style::Print("\n"),
-        )?;
 
         let byte_count = file_contents.len();
         if byte_count > MAX_TOOL_RESPONSE_SIZE {
