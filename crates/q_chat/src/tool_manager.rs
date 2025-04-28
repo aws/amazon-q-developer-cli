@@ -272,8 +272,7 @@ impl ToolManagerBuilder {
                                 cursor::MoveUp(1),
                                 terminal::Clear(terminal::ClearType::CurrentLine),
                             )?;
-                            let fail_load_msg = eyre::eyre!(msg.to_string());
-                            queue_failure_message(&name, &fail_load_msg, &mut stdout_lock)?;
+                            queue_failure_message(&name, &msg, &mut stdout_lock)?;
                             let total = loading_servers.len();
                             queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
                         },
@@ -952,8 +951,10 @@ fn queue_failure_message(name: &str, fail_load_msg: &eyre::Report, output: &mut 
         style::SetForegroundColor(style::Color::Blue),
         style::Print(name),
         style::ResetColor,
-        style::Print(" has failed to load:\n"),
+        style::Print(" has failed to load:\n- "),
         style::Print(fail_load_msg),
+        style::Print("\n"),
+        style::Print("- run with Q_LOG_LEVEL=trace and see $TMPDIR/qlog for detail\n"),
         style::ResetColor,
     )?)
 }

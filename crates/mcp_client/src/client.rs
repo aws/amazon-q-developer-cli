@@ -19,6 +19,7 @@ use serde::{
 };
 use thiserror::Error;
 use tokio::time;
+use tokio::time::error::Elapsed;
 
 use crate::transport::base_protocol::{
     JsonRpcMessage,
@@ -88,8 +89,12 @@ pub enum ClientError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Serialization(#[from] serde_json::Error),
-    #[error(transparent)]
-    RuntimeError(#[from] tokio::time::error::Elapsed),
+    #[error("Operation timed out: {context}")]
+    RuntimeError {
+        #[source]
+        source: tokio::time::error::Elapsed,
+        context: String,
+    },
     #[error("Unexpected msg type encountered")]
     UnexpectedMsgType,
     #[error("{0}")]
@@ -102,6 +107,12 @@ pub enum ClientError {
     ProcessKillError(String),
     #[error("{0}")]
     PoisonError(String),
+}
+
+impl From<(tokio::time::error::Elapsed, String)> for ClientError {
+    fn from((error, context): (tokio::time::error::Elapsed, String)) -> Self {
+        ClientError::RuntimeError { source: error, context }
+    }
 }
 
 #[derive(Debug)]
@@ -348,6 +359,8 @@ where
         method: &str,
         params: Option<serde_json::Value>,
     ) -> Result<JsonRpcResponse, ClientError> {
+        let send_map_err = |e: Elapsed| (e, method.to_string());
+        let recv_map_err = |e: Elapsed| (e, format!("recv for {method}"));
         let mut id = self.get_id();
         let request = JsonRpcRequest {
             jsonrpc: JsonRpcVersion::default(),
@@ -357,7 +370,9 @@ where
         };
         tracing::trace!(target: "mcp", "To {}:\n{:#?}", self.server_name, request);
         let msg = JsonRpcMessage::Request(request);
-        time::timeout(Duration::from_millis(self.timeout), self.transport.send(&msg)).await??;
+        time::timeout(Duration::from_millis(self.timeout), self.transport.send(&msg))
+            .await
+            .map_err(send_map_err)??;
         let mut listener = self.transport.get_listener();
         let mut resp = time::timeout(Duration::from_millis(self.timeout), async {
             // we want to ignore all other messages sent by the server at this point and let the
@@ -370,7 +385,8 @@ where
                 }
             }
         })
-        .await??;
+        .await
+        .map_err(recv_map_err)??;
         // Pagination support: https://spec.modelcontextprotocol.io/specification/2024-11-05/server/utilities/pagination/#pagination-model
         let mut next_cursor = resp.result.as_ref().and_then(|v| v.get("nextCursor"));
         if next_cursor.is_some() {
@@ -424,7 +440,9 @@ where
                         })),
                     };
                     let msg = JsonRpcMessage::Request(next_request);
-                    time::timeout(Duration::from_millis(self.timeout), self.transport.send(&msg)).await??;
+                    time::timeout(Duration::from_millis(self.timeout), self.transport.send(&msg))
+                        .await
+                        .map_err(send_map_err)??;
                     let resp = time::timeout(Duration::from_millis(self.timeout), async {
                         // we want to ignore all other messages sent by the server at this point and let the
                         // background loop handle them
@@ -436,7 +454,8 @@ where
                             }
                         }
                     })
-                    .await??;
+                    .await
+                    .map_err(recv_map_err)??;
                     current_resp = resp;
                     next_cursor = current_resp.result.as_ref().and_then(|v| v.get("nextCursor"));
                 }
@@ -454,13 +473,18 @@ where
     /// Sends a notification to the server associated.
     /// Notifications are requests that expect no responses.
     pub async fn notify(&self, method: &str, params: Option<serde_json::Value>) -> Result<(), ClientError> {
+        let send_map_err = |e: Elapsed| (e, method.to_string());
         let notification = JsonRpcNotification {
             jsonrpc: JsonRpcVersion::default(),
             method: format!("notifications/{}", method),
             params,
         };
         let msg = JsonRpcMessage::Notification(notification);
-        Ok(time::timeout(Duration::from_millis(self.timeout), self.transport.send(&msg)).await??)
+        Ok(
+            time::timeout(Duration::from_millis(self.timeout), self.transport.send(&msg))
+                .await
+                .map_err(send_map_err)??,
+        )
     }
 
     pub async fn shutdown(&self) -> Result<(), ClientError> {
