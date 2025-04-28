@@ -48,6 +48,7 @@ use fig_telemetry_core::{
     EventType,
     TelemetryResult,
 };
+use fig_util::directories::credential_file_path;
 use time::OffsetDateTime;
 use tracing::{
     debug,
@@ -310,11 +311,19 @@ impl BuilderIdToken {
 
                         let client = client(region.clone());
                         // if token is expired try to refresh
-                        if token.is_expired() || force_refresh {
-                            token.refresh_token(&client, secret_store, &region).await
+                        let token = if token.is_expired() || force_refresh {
+                            token.refresh_token(&client, secret_store, &region).await?
                         } else {
-                            Ok(Some(token))
+                            Some(token)
+                        };
+
+                        if let Some(ref token) = token {
+                            if let Err(err) = write_credentials_to_file(token).await {
+                                error!(?err, "Failed to write credentials to file");
+                            }
                         }
+
+                        Ok(token)
                     },
                     None => Ok(None),
                 }
@@ -537,6 +546,21 @@ pub async fn poll_create_token(
     }
 }
 
+/// Write credentials to ~/.aws/amazonq/creds.json
+pub async fn write_credentials_to_file(token: &BuilderIdToken) -> Result<()> {
+    let creds = serde_json::json!({
+       "access_token": token.access_token.0.clone(),
+       "region": token.region.clone(),
+    });
+
+    let path = credential_file_path()?;
+    std::fs::write(&path, serde_json::to_string_pretty(&creds)?)?;
+
+    debug!("Wrote credentials to {}", path.display());
+
+    Ok(())
+}
+
 pub async fn builder_id_token() -> Result<Option<BuilderIdToken>> {
     let secret_store = SecretStore::new().await?;
     BuilderIdToken::load(&secret_store, false).await
@@ -703,10 +727,41 @@ mod tests {
     #[ignore = "not in ci"]
     #[tokio::test]
     async fn test_load() {
+        use std::fs;
+        use std::path::Path;
+
+        // Create a secret store
         let secret_store = SecretStore::new().await.unwrap();
-        let token = BuilderIdToken::load(&secret_store, false).await;
-        println!("{:?}", token);
-        // println!("{:?}", token.unwrap().unwrap().access_token.0);
+
+        // Load the token
+        let token_result = BuilderIdToken::load(&secret_store, false).await;
+        println!("{:?}", token_result);
+
+        // If a token was successfully loaded
+        if let Ok(Some(token)) = token_result {
+            // Check that the credentials file exists
+            let creds_path = credential_file_path().unwrap();
+            assert!(Path::new(&creds_path).exists(), "Credentials file was not created");
+
+            // Read the credentials file and parse it
+            let creds_content = fs::read_to_string(&creds_path).unwrap();
+            let creds: serde_json::Value = serde_json::from_str(&creds_content).unwrap();
+
+            // Verify the credentials file contains the expected data
+            assert_eq!(
+                creds["access_token"], token.access_token.0,
+                "Access token in file doesn't match"
+            );
+            assert_eq!(
+                creds["region"].as_str(),
+                token.region.as_deref(),
+                "Region in file doesn't match"
+            );
+
+            println!("Credentials were successfully written to {}", creds_path.display());
+        } else {
+            panic!("No token was loaded, failing test!");
+        }
     }
 
     #[ignore = "not in ci"]

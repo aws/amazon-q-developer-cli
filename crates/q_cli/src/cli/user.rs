@@ -34,7 +34,10 @@ use fig_util::{
     PRODUCT_NAME,
 };
 use serde_json::json;
-use tracing::error;
+use tracing::{
+    debug,
+    error,
+};
 
 use super::OutputFormat;
 use crate::util::spinner::{
@@ -244,6 +247,13 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                         ]);
                         registration.finish(&client, Some(&secret_store)).await?;
                         fig_telemetry::send_user_logged_in().await;
+
+                        // Write credentials to file after successful login
+                        match fig_auth::builder_id_token().await {
+                            Ok(Some(_)) => debug!("Credentials written to creds.json"),
+                            _ => error!("failed to write credentials to creds.json"),
+                        }
+
                         spinner.stop_with_message("Logged in successfully".into());
                     },
                     // If we are unable to open the link with the browser, then fallback to
@@ -306,6 +316,12 @@ async fn try_device_authorization(
             PollCreateToken::Complete(_) => {
                 fig_telemetry::send_user_logged_in().await;
                 spinner.stop_with_message("Logged in successfully".into());
+
+                // Write credentials to file after successful device authorization
+                match fig_auth::builder_id_token().await {
+                    Ok(Some(_)) => debug!("Credentials written to creds.json"),
+                    _ => error!("failed to write credentials to creds.json"),
+                }
                 break;
             },
             PollCreateToken::Error(err) => {
