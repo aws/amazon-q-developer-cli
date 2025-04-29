@@ -11,6 +11,10 @@ use crossterm::{
     style,
 };
 use eyre::Result;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -42,6 +46,9 @@ pub enum Command {
     },
     Tools {
         subcommand: Option<ToolsSubcommand>,
+    },
+    Prompts {
+        subcommand: Option<PromptsSubcommand>,
     },
     Usage,
 }
@@ -275,6 +282,7 @@ in global or local profiles.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolsSubcommand {
+    Schema,
     Trust { tool_names: HashSet<String> },
     Untrust { tool_names: HashSet<String> },
     TrustAll,
@@ -286,6 +294,7 @@ pub enum ToolsSubcommand {
 impl ToolsSubcommand {
     const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available subcommands</cyan!>
   <em>help</em>                           <black!>Show an explanation for the tools command</black!>
+  <em>schema</em>                         <black!>Show the input schema for all available tools</black!>
   <em>trust <<tools...>></em>               <black!>Trust a specific tool or tools for the session</black!>
   <em>untrust <<tools...>></em>             <black!>Revert a tool or tools to per-request confirmation</black!>
   <em>trustall</em>                       <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
@@ -324,6 +333,66 @@ trust so that no confirmation is required. These settings will last only for thi
             Self::AVAILABLE_COMMANDS
         )
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromptsSubcommand {
+    List { search_word: Option<String> },
+    Get { get_command: PromptsGetCommand },
+    Help,
+}
+
+impl PromptsSubcommand {
+    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available subcommands</cyan!>
+  <em>help</em>                                                   <black!>Show an explanation for the prompts command</black!>
+  <em>list [search word]</em>                                     <black!>List available prompts from a tool or show all available prompts</black!>"};
+    const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /prompts [SUBCOMMAND]</cyan!>
+
+<cyan!>Description</cyan!>
+  Show the current set of reusuable prompts from the current fleet of mcp servers."};
+
+    fn usage_msg(header: impl AsRef<str>) -> String {
+        format!(
+            "{}\n\n{}\n\n{}",
+            header.as_ref(),
+            Self::BASE_COMMAND,
+            Self::AVAILABLE_COMMANDS
+        )
+    }
+
+    pub fn help_text() -> String {
+        color_print::cformat!(
+            r#"
+<magenta,em>Prompts</magenta,em>
+
+Prompts are reusable templates that help you quickly access common workflows and tasks. 
+These templates are provided by the mcp servers you have installed and configured.
+
+To actually retrieve a prompt, directly start with the following command (without prepending /prompt get):
+  <em>@<<prompt name>> [arg]</em>                                   <black!>Retrieve prompt specified</black!>
+Or if you prefer the long way:
+  <em>/prompts get <<prompt name>> [arg]</em>                       <black!>Retrieve prompt specified</black!>
+
+{}
+
+{}"#,
+            Self::BASE_COMMAND,
+            Self::AVAILABLE_COMMANDS
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptsGetCommand {
+    pub orig_input: Option<String>,
+    pub params: PromptsGetParam,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptsGetParam {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<Vec<String>>,
 }
 
 impl Command {
@@ -373,7 +442,7 @@ impl Command {
                 "help" => Self::Help,
                 "compact" => {
                     let mut prompt = None;
-                    let mut show_summary = false;
+                    let show_summary = true;
                     let mut help = false;
 
                     // Check if "help" is the first subcommand
@@ -382,23 +451,7 @@ impl Command {
                     } else {
                         let mut remaining_parts = Vec::new();
 
-                        // Parse the parts to handle both prompt and flags
-                        for part in &parts[1..] {
-                            if *part == "--summary" {
-                                show_summary = true;
-                            } else {
-                                remaining_parts.push(*part);
-                            }
-                        }
-
-                        // Check if the last word is "--summary" (which would have been captured as part of the prompt)
-                        if !remaining_parts.is_empty() {
-                            let last_idx = remaining_parts.len() - 1;
-                            if remaining_parts[last_idx] == "--summary" {
-                                remaining_parts.pop();
-                                show_summary = true;
-                            }
-                        }
+                        remaining_parts.extend_from_slice(&parts[1..]);
 
                         // If we have remaining parts after parsing flags, join them as the prompt
                         if !remaining_parts.is_empty() {
@@ -652,6 +705,9 @@ impl Command {
                     }
 
                     match parts[1].to_lowercase().as_str() {
+                        "schema" => Self::Tools {
+                            subcommand: Some(ToolsSubcommand::Schema),
+                        },
                         "trust" => {
                             let mut tool_names = HashSet::new();
                             for part in &parts[2..] {
@@ -704,6 +760,38 @@ impl Command {
                         },
                     }
                 },
+                "prompts" => {
+                    let subcommand = parts.get(1);
+                    match subcommand {
+                        Some(c) if c.to_lowercase() == "list" => Self::Prompts {
+                            subcommand: Some(PromptsSubcommand::List {
+                                search_word: parts.get(2).map(|v| (*v).to_string()),
+                            }),
+                        },
+                        Some(c) if c.to_lowercase() == "help" => Self::Prompts {
+                            subcommand: Some(PromptsSubcommand::Help),
+                        },
+                        Some(c) if c.to_lowercase() == "get" => {
+                            // Need to reconstruct the input because simple splitting of
+                            // white space might not be sufficient
+                            let command = parts[2..].join(" ");
+                            let get_command = parse_input_to_prompts_get_command(command.as_str())?;
+                            let subcommand = Some(PromptsSubcommand::Get { get_command });
+                            Self::Prompts { subcommand }
+                        },
+                        Some(other) => {
+                            return Err(PromptsSubcommand::usage_msg(format!(
+                                "Unknown subcommand '{}'\n",
+                                other
+                            )));
+                        },
+                        None => Self::Prompts {
+                            subcommand: Some(PromptsSubcommand::List {
+                                search_word: parts.get(2).map(|v| (*v).to_string()),
+                            }),
+                        },
+                    }
+                },
                 "usage" => Self::Usage,
                 unknown_command => {
                     // If the command starts with a slash but isn't recognized,
@@ -714,6 +802,12 @@ impl Command {
                     ));
                 },
             });
+        }
+
+        if let Some(command) = input.strip_prefix('@') {
+            let get_command = parse_input_to_prompts_get_command(command)?;
+            let subcommand = Some(PromptsSubcommand::Get { get_command });
+            return Ok(Self::Prompts { subcommand });
         }
 
         if let Some(command) = input.strip_prefix("!") {
@@ -749,6 +843,19 @@ impl Command {
     }
 }
 
+fn parse_input_to_prompts_get_command(command: &str) -> Result<PromptsGetCommand, String> {
+    let input = shell_words::split(command).map_err(|e| format!("Error splitting command for prompts: {:?}", e))?;
+    let mut iter = input.into_iter();
+    let prompt_name = iter.next().ok_or("Prompt name needs to be specified")?;
+    let args = iter.collect::<Vec<_>>();
+    let params = PromptsGetParam {
+        name: prompt_name,
+        arguments: { if args.is_empty() { None } else { Some(args) } },
+    };
+    let orig_input = Some(command.to_string());
+    Ok(PromptsGetCommand { orig_input, params })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -781,18 +888,9 @@ mod tests {
             };
         }
         let tests = &[
-            ("/compact", compact!(None, false)),
-            ("/compact --summary", compact!(None, true)),
+            ("/compact", compact!(None, true)),
             (
                 "/compact custom prompt",
-                compact!(Some("custom prompt".to_string()), false),
-            ),
-            (
-                "/compact --summary custom prompt",
-                compact!(Some("custom prompt".to_string()), true),
-            ),
-            (
-                "/compact custom prompt --summary",
                 compact!(Some("custom prompt".to_string()), true),
             ),
             ("/profile list", profile!(ProfileSubcommand::List)),

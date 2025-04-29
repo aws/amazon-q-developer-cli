@@ -1,6 +1,26 @@
 {
   "types": [
     {
+      "name": "amazonQProfileRegion",
+      "type": "string",
+      "description": "Region of the Q Profile associated with a metric\n- \"n/a\" if metric is not associated with a profile or region.\n- \"not-set\" if metric is associated with a profile, but profile is unknown."
+    },
+    {
+      "name": "ssoRegion",
+      "type": "string",
+      "description": "Region of the current SSO connection. Typically associated with credentialStartUrl\n- \"n/a\" if metric is not associated with a region.\n- \"not-set\" if metric is associated with a region, but region is unknown."
+    },
+    {
+      "name": "profileCount",
+      "type": "int",
+      "description": "The number of profiles that were available to choose from"
+    },
+    {
+      "name": "source",
+      "type": "string",
+      "description": "Identifies the source component where the telemetry event originated."
+    },
+    {
       "name": "amazonqConversationId",
       "type": "string",
       "description": "Uniquely identifies a message with which the user interacts."
@@ -154,6 +174,36 @@
       "name": "codewhispererterminal_contextFileLength",
       "type": "int",
       "description": "The length of the files included as part of context management"
+    },
+    {
+      "name": "codewhispererterminal_mcpServerInitFailureReason",
+      "type": "string",
+      "description": "Reason for which a mcp server has failed to be initialized"
+    },
+    {
+      "name": "codewhispererterminal_toolsPerMcpServer",
+      "type": "int",
+      "description": "The number of tools provided by a mcp server"
+    },
+    {
+      "name": "codewhispererterminal_isCustomTool",
+      "type": "boolean",
+      "description": "Denoting whether or not the tool is a custom tool"
+    },
+    {
+      "name": "codewhispererterminal_customToolInputTokenSize",
+      "type": "int",
+      "description": "Number of tokens used on invoking the custom tool"
+    },
+    {
+      "name": "codewhispererterminal_customToolOutputTokenSize",
+      "type": "int",
+      "description": "Number of tokens received from invoking the custom tool"
+    },
+    {
+      "name": "codewhispererterminal_customToolLatency",
+      "type": "int",
+      "description": "Custom tool call latency in seconds"
     }
   ],
   "metrics": [
@@ -329,9 +379,48 @@
         { "type": "codewhispererterminal_toolUseId" },
         { "type": "codewhispererterminal_toolName" },
         { "type": "codewhispererterminal_isToolUseAccepted" },
-        { "type": "codewhispererterminal_isToolValid"},
-        { "type": "codewhispererterminal_toolUseIsSuccess", "required": false }
+        { "type": "codewhispererterminal_isToolValid" },
+        { "type": "codewhispererterminal_toolUseIsSuccess", "required": false },
+        { "type": "codewhispererterminal_isCustomTool" },
+        { "type": "codewhispererterminal_customToolInputTokenSize", "required": false },
+        { "type": "codewhispererterminal_customToolOutputTokenSize", "required": false },
+        { "type": "codewhispererterminal_customToolLatency", "required": false }
       ]
-    }
+    },
+    {
+      "name": "codewhispererterminal_mcpServerInit",
+      "description": "Emitted once per mcp server on start up" ,
+      "passive": false,
+      "metadata": [
+        { "type": "amazonqConversationId" },
+        { "type": "codewhispererterminal_mcpServerInitFailureReason", "required": false },
+        { "type": "codewhispererterminal_toolsPerMcpServer" }
+      ]
+    },
+    {
+      "name": "amazonq_didSelectProfile",
+      "description": "Emitted after the user's Q Profile has been set, whether the user was prompted with a dialog, or a profile was automatically assigned after signing in.",
+      "metadata": [
+        { "type": "source" },
+        { "type": "amazonQProfileRegion" },
+        { "type": "result" },
+        { "type": "ssoRegion", "required": false },
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "profileCount", "required": false }
+      ],
+      "passive": true
+    },
+    {
+      "name": "amazonq_profileState",
+      "description": "Indicates a change in the user's Q Profile state",
+      "metadata": [
+          { "type": "source" },
+          { "type": "amazonQProfileRegion" },
+          { "type": "result" },
+          { "type": "ssoRegion", "required": false },
+          { "type": "credentialStartUrl", "required": false }
+      ],
+      "passive": true
+  }
   ]
 }

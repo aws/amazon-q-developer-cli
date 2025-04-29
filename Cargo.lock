@@ -66,7 +66,7 @@ dependencies = [
 
 [[package]]
 name = "alacritty_terminal"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "bitflags 2.9.0",
  "camino",
@@ -131,25 +131,6 @@ dependencies = [
 
 [[package]]
 name = "amzn-consolas-client"
-version = "0.1.6236"
-dependencies = [
- "aws-credential-types",
- "aws-runtime",
- "aws-smithy-async",
- "aws-smithy-http",
- "aws-smithy-json 0.60.7",
- "aws-smithy-runtime",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-types",
- "bytes",
- "fastrand",
- "http 0.2.12",
- "tracing",
-]
-
-[[package]]
-name = "amzn-qdeveloper-client"
 version = "0.1.6236"
 dependencies = [
  "aws-credential-types",
@@ -283,7 +264,7 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "appkit-nsworkspace-bindings"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "bindgen 0.71.1",
  "objc",
@@ -2090,7 +2071,7 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "dbus"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "async_zip",
  "fig_os_shim",
@@ -2603,7 +2584,7 @@ dependencies = [
 
 [[package]]
 name = "fig-api-mock"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "async-trait",
  "clap",
@@ -2616,12 +2597,11 @@ dependencies = [
 
 [[package]]
 name = "fig_api_client"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
  "amzn-consolas-client",
- "amzn-qdeveloper-client",
  "amzn-qdeveloper-streaming-client",
  "aws-config",
  "aws-credential-types",
@@ -2652,7 +2632,7 @@ dependencies = [
 
 [[package]]
 name = "fig_auth"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "async-trait",
  "aws-credential-types",
@@ -2686,7 +2666,7 @@ dependencies = [
 
 [[package]]
 name = "fig_aws_common"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "aws-runtime",
  "aws-smithy-runtime",
@@ -2700,7 +2680,7 @@ dependencies = [
 
 [[package]]
 name = "fig_desktop"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "accessibility-sys",
  "anyhow",
@@ -2792,7 +2772,7 @@ dependencies = [
 
 [[package]]
 name = "fig_desktop_api"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "anstream",
  "async-trait",
@@ -2810,6 +2790,7 @@ dependencies = [
  "fig_proto",
  "fig_settings",
  "fig_telemetry",
+ "fig_telemetry_core",
  "fig_util",
  "fnv",
  "macos-utils",
@@ -2828,7 +2809,7 @@ dependencies = [
 
 [[package]]
 name = "fig_diagnostic"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "cfg-if",
  "clap",
@@ -2848,7 +2829,7 @@ dependencies = [
 
 [[package]]
 name = "fig_input_method"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "apple-bundle",
  "fig_ipc",
@@ -2869,7 +2850,7 @@ dependencies = [
 
 [[package]]
 name = "fig_install"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "bitflags 2.9.0",
  "bytes",
@@ -2908,7 +2889,7 @@ dependencies = [
 
 [[package]]
 name = "fig_integrations"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "accessibility-sys",
  "async-trait",
@@ -2941,7 +2922,7 @@ dependencies = [
 
 [[package]]
 name = "fig_ipc"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2964,7 +2945,7 @@ dependencies = [
 
 [[package]]
 name = "fig_log"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "fig_util",
  "parking_lot",
@@ -2977,7 +2958,7 @@ dependencies = [
 
 [[package]]
 name = "fig_os_shim"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "cfg-if",
  "dirs",
@@ -2990,7 +2971,7 @@ dependencies = [
 
 [[package]]
 name = "fig_proto"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "arbitrary",
  "bytes",
@@ -3013,7 +2994,7 @@ dependencies = [
 
 [[package]]
 name = "fig_remote_ipc"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3031,7 +3012,7 @@ dependencies = [
 
 [[package]]
 name = "fig_request"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -3056,7 +3037,7 @@ dependencies = [
 
 [[package]]
 name = "fig_settings"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "fd-lock",
  "fig_test",
@@ -3077,7 +3058,7 @@ dependencies = [
 
 [[package]]
 name = "fig_telemetry"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-toolkit-telemetry",
@@ -3111,7 +3092,7 @@ dependencies = [
 
 [[package]]
 name = "fig_telemetry_core"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-toolkit-telemetry",
@@ -3125,7 +3106,7 @@ dependencies = [
 
 [[package]]
 name = "fig_test"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "fig_test_macro",
  "tokio",
@@ -3133,7 +3114,7 @@ dependencies = [
 
 [[package]]
 name = "fig_test_macro"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "quote",
  "syn 2.0.100",
@@ -3141,7 +3122,7 @@ dependencies = [
 
 [[package]]
 name = "fig_test_utils"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "bytes",
  "fig_os_shim",
@@ -3159,7 +3140,7 @@ dependencies = [
 
 [[package]]
 name = "fig_util"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "appkit-nsworkspace-bindings",
  "bstr",
@@ -3199,7 +3180,7 @@ dependencies = [
 
 [[package]]
 name = "figterm"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -3245,6 +3226,7 @@ dependencies = [
  "serde_json",
  "shared_library",
  "shell-color",
+ "shell-words",
  "shellexpand",
  "shlex",
  "sysinfo 0.32.1",
@@ -3262,7 +3244,7 @@ dependencies = [
 
 [[package]]
 name = "figterm2"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4972,7 +4954,7 @@ dependencies = [
 
 [[package]]
 name = "macos-utils"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "accessibility",
  "accessibility-sys",
@@ -5046,6 +5028,20 @@ checksum = "8ea1f30cedd69f0a2954655f7188c6a834246d2bcf1e315e2ac40c4b24dc9519"
 dependencies = [
  "cfg-if",
  "rayon",
+]
+
+[[package]]
+name = "mcp_client"
+version = "1.9.1"
+dependencies = [
+ "async-trait",
+ "nix 0.29.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -6798,7 +6794,7 @@ dependencies = [
 
 [[package]]
 name = "q_chat"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "anstream",
  "aws-smithy-types",
@@ -6817,12 +6813,15 @@ dependencies = [
  "fig_util",
  "futures",
  "glob",
+ "mcp_client",
  "rand 0.9.0",
  "regex",
  "rustyline",
  "serde",
  "serde_json",
  "shell-color",
+ "shell-words",
+ "shellexpand",
  "shlex",
  "similar",
  "skim",
@@ -6843,7 +6842,7 @@ dependencies = [
 
 [[package]]
 name = "q_cli"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -6881,6 +6880,7 @@ dependencies = [
  "fig_request",
  "fig_settings",
  "fig_telemetry",
+ "fig_telemetry_core",
  "fig_util",
  "flume",
  "futures",
@@ -6890,6 +6890,7 @@ dependencies = [
  "indoc",
  "insta",
  "macos-utils",
+ "mcp_client",
  "mimalloc",
  "nix 0.29.0",
  "objc2 0.5.2",
@@ -8013,7 +8014,7 @@ dependencies = [
 
 [[package]]
 name = "shell-color"
-version = "1.8.1"
+version = "1.9.1"
 dependencies = [
  "bitflags 2.9.0",
  "fig_test",

@@ -25,12 +25,15 @@ fig_telemetry.workspace = true
 fig_util.workspace = true
 futures.workspace = true
 glob.workspace = true
+mcp_client.workspace = true
 rand.workspace = true
 regex.workspace = true
 rustyline = { version = "15.0.0", features = ["derive", "custom-bindings"] }
 serde.workspace = true
 serde_json.workspace = true
 shell-color.workspace = true
+shell-words = "1.1"
+shellexpand.workspace = true
 shlex.workspace = true
 similar.workspace = true
 skim = "0.16.1"

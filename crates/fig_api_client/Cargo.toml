@@ -17,7 +17,6 @@ workspace = true
 amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true
 amzn-consolas-client.workspace = true
-amzn-qdeveloper-client.workspace = true
 amzn-qdeveloper-streaming-client.workspace = true
 aws-config = "1.0.3"
 aws-credential-types = "1.0.3"

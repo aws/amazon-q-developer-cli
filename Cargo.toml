@@ -19,14 +19,13 @@ authors = [
 edition = "2021"
 homepage = "https://aws.amazon.com/q/"
 publish = false
-version = "1.8.1"
+version = "1.9.1"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 amzn-codewhisperer-client = { path = "crates/amzn-codewhisperer-client" }
 amzn-codewhisperer-streaming-client = { path = "crates/amzn-codewhisperer-streaming-client" }
 amzn-consolas-client = { path = "crates/amzn-consolas-client" }
-amzn-qdeveloper-client = { path = "crates/amzn-qdeveloper-client" }
 amzn-qdeveloper-streaming-client = { path = "crates/amzn-qdeveloper-streaming-client" }
 anstream = "0.6.13"
 anyhow = "1.0.98"
@@ -88,6 +87,7 @@ indicatif = "0.17.11"
 indoc = "2.0.6"
 insta = "1.42.2"
 libc = "0.2.171"
+mcp_client = { path = "crates/mcp_client" }
 mimalloc = "0.1.46"
 nix = { version = "0.29.0", features = [
     "feature",
@@ -126,6 +126,7 @@ reqwest = { version = "0.12.14", default-features = false, features = [
 ] }
 ring = "0.17.14"
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
+shellexpand = "3.0.0"
 shell-color = { path = "crates/shell-color" }
 semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive", "rc"] }
