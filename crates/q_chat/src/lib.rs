@@ -2760,6 +2760,7 @@ impl ChatContext {
                 tool_telemetry = tool_telemetry.and_modify(|ev| {
                     ev.custom_tool_call_latency = Some(tool_time.as_secs() as usize);
                     ev.input_token_size = Some(ct.get_input_token_size());
+                    ev.is_custom_tool = true;
                 });
             }
             let tool_time = format!("{}.{}", tool_time.as_secs(), tool_time.subsec_millis());
