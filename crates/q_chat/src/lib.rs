@@ -207,9 +207,7 @@ const ROTATING_TIPS: [&str; 8] = [
     color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation history with its summary to free up the context space"},
     color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
     color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
-    color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>.\
-    \nPlace a mcp config in ~/.aws/amazonq/mcp.json or /your/current/workspace/.amazonq/mcp.json.\
-    \nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/what-is.html"},
+    color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with /help"},
 ];
 
 const GREETING_BREAK_POINT: usize = 67;
