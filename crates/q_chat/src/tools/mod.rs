@@ -1,3 +1,4 @@
+pub mod custom_tool;
 pub mod execute_bash;
 pub mod fs_read;
 pub mod fs_write;
@@ -16,22 +17,20 @@ use aws_smithy_types::{
     Number as SmithyNumber,
 };
 use crossterm::style::Stylize;
+use custom_tool::CustomTool;
 use execute_bash::ExecuteBash;
 use eyre::Result;
-use fig_api_client::model::ToolResultStatus;
 use fig_os_shim::Context;
 use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
-use serde::Deserialize;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use use_aws::UseAws;
 
 use super::consts::MAX_TOOL_RESPONSE_SIZE;
-use super::message::{
-    AssistantToolUse,
-    ToolUseResult,
-    ToolUseResultBlock,
-};
 
 /// Represents an executable tool use.
 #[derive(Debug, Clone)]
@@ -40,19 +39,22 @@ pub enum Tool {
     FsWrite(FsWrite),
     ExecuteBash(ExecuteBash),
     UseAws(UseAws),
+    Custom(CustomTool),
     GhIssue(GhIssue),
 }
 
 impl Tool {
     /// The display name of a tool
-    pub fn display_name(&self) -> &'static str {
+    pub fn display_name(&self) -> String {
         match self {
             Tool::FsRead(_) => "fs_read",
             Tool::FsWrite(_) => "fs_write",
             Tool::ExecuteBash(_) => "execute_bash",
             Tool::UseAws(_) => "use_aws",
+            Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => "gh_issue",
         }
+        .to_owned()
     }
 
     /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.
@@ -62,6 +64,7 @@ impl Tool {
             Tool::FsWrite(_) => true,
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
+            Tool::Custom(_) => true,
             Tool::GhIssue(_) => false,
         }
     }
@@ -73,6 +76,7 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.invoke(context, updates).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
+            Tool::Custom(custom_tool) => custom_tool.invoke(context, updates).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
         }
     }
@@ -84,6 +88,7 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.queue_description(ctx, updates),
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
+            Tool::Custom(custom_tool) => custom_tool.queue_description(updates),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
         }
     }
@@ -95,39 +100,9 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.validate(ctx).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
+            Tool::Custom(custom_tool) => custom_tool.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
         }
-    }
-}
-
-impl TryFrom<AssistantToolUse> for Tool {
-    type Error = ToolUseResult;
-
-    fn try_from(value: AssistantToolUse) -> std::result::Result<Self, Self::Error> {
-        let map_err = |parse_error| ToolUseResult {
-            tool_use_id: value.id.clone(),
-            content: vec![ToolUseResultBlock::Text(format!(
-                "Failed to validate tool parameters: {parse_error}. The model has either suggested tool parameters which are incompatible with the existing tools, or has suggested one or more tool that does not exist in the list of known tools."
-            ))],
-            status: ToolResultStatus::Error,
-        };
-
-        Ok(match value.name.as_str() {
-            "fs_read" => Self::FsRead(serde_json::from_value::<FsRead>(value.args).map_err(map_err)?),
-            "fs_write" => Self::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?),
-            "execute_bash" => Self::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
-            "use_aws" => Self::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
-            "report_issue" => Self::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
-            unknown => {
-                return Err(ToolUseResult {
-                    tool_use_id: value.id,
-                    content: vec![ToolUseResultBlock::Text(format!(
-                        "The tool, \"{unknown}\" is not supported by the client"
-                    ))],
-                    status: ToolResultStatus::Error,
-                });
-            },
-        })
     }
 }
 
@@ -209,11 +184,33 @@ impl ToolPermissions {
 
 /// A tool specification to be sent to the model as part of a conversation. Maps to
 /// [BedrockToolSpecification].
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolSpec {
     pub name: String,
     pub description: String,
+    #[serde(alias = "inputSchema")]
     pub input_schema: InputSchema,
+    #[serde(skip_serializing, default = "tool_origin")]
+    pub tool_origin: ToolOrigin,
+}
+
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
+pub enum ToolOrigin {
+    Native,
+    McpServer(String),
+}
+
+impl std::fmt::Display for ToolOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ToolOrigin::Native => write!(f, "Built-in"),
+            ToolOrigin::McpServer(server) => write!(f, "{} (MCP)", server),
+        }
+    }
+}
+
+fn tool_origin() -> ToolOrigin {
+    ToolOrigin::Native
 }
 
 #[derive(Debug, Clone)]
@@ -225,13 +222,22 @@ pub struct QueuedTool {
 }
 
 /// The schema specification describing a tool's fields.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputSchema(pub serde_json::Value);
 
 /// The output received from invoking a [Tool].
 #[derive(Debug, Default)]
 pub struct InvokeOutput {
     pub output: OutputKind,
+}
+
+impl InvokeOutput {
+    pub fn as_str(&self) -> &str {
+        match &self.output {
+            OutputKind::Text(s) => s.as_str(),
+            OutputKind::Json(j) => j.as_str().unwrap_or_default(),
+        }
+    }
 }
 
 #[non_exhaustive]

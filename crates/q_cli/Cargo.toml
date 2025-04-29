@@ -21,13 +21,9 @@ anstream.workspace = true
 appkit-nsworkspace-bindings.workspace = true
 arboard = { version = "3.5.0", default-features = false }
 async-trait.workspace = true
-aws-smithy-types = "1.2.10"
-aws-types.workspace = true
 base64.workspace = true
 bitflags.workspace = true
-bstr.workspace = true
 bytes.workspace = true
-camino.workspace = true
 cfg-if.workspace = true
 clap.workspace = true
 clap_complete = "4.5.46"
@@ -35,10 +31,10 @@ clap_complete_fig = "4.4.0"
 color-eyre = "0.6.2"
 color-print = "0.3.5"
 convert_case.workspace = true
-crossterm = { version = "0.28.1", features = ["event-stream", "events"] }
+crossterm.workspace = true
 ctrlc = "3.4.6"
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
-eyre = "0.6.8"
+eyre.workspace = true
 fig_api_client.workspace = true
 fig_auth.workspace = true
 fig_diagnostic.workspace = true
@@ -59,19 +55,17 @@ glob.workspace = true
 globset.workspace = true
 indicatif.workspace = true
 indoc.workspace = true
+mcp_client.workspace = true
 mimalloc.workspace = true
 owo-colors = "4.2.0"
 parking_lot.workspace = true
+q_chat.workspace = true
 rand.workspace = true
 regex.workspace = true
-rustyline = { version = "15.0.0", features = ["derive", "custom-bindings"] }
-skim = "0.16.1"
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-shlex.workspace = true
-similar.workspace = true
-spinners = "4.1.0"
+spinners.workspace = true
 sysinfo.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
@@ -87,9 +81,6 @@ uuid.workspace = true
 walkdir.workspace = true
 which.workspace = true
 whoami.workspace = true
-winnow.workspace = true
-shell-color.workspace = true
-syntect = { version = "5.2.0", features = [ "default-syntaxes", "default-themes" ]}
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

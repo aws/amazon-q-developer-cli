@@ -229,6 +229,40 @@ impl ContextManager {
         Ok(profiles)
     }
 
+    /// List all available profiles using blocking operations.
+    ///
+    /// Similar to list_profiles but uses synchronous filesystem operations.
+    ///
+    /// # Returns
+    /// A Result containing a vector of profile names, with "default" always first
+    pub fn list_profiles_blocking(&self) -> Result<Vec<String>> {
+        let mut profiles = Vec::new();
+
+        // Always include default profile
+        profiles.push("default".to_string());
+
+        // Read profile directory and extract profile names
+        let profiles_dir = directories::chat_profiles_dir(&self.ctx)?;
+        if profiles_dir.exists() {
+            for entry in std::fs::read_dir(profiles_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if let (true, Some(name)) = (path.is_dir(), path.file_name()) {
+                    if name != "default" {
+                        profiles.push(name.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+
+        // Sort non-default profiles alphabetically
+        if profiles.len() > 1 {
+            profiles[1..].sort();
+        }
+
+        Ok(profiles)
+    }
+
     /// Clear all paths from the context configuration.
     ///
     /// # Arguments
@@ -758,8 +792,8 @@ fn validate_profile_name(name: &str) -> Result<()> {
 mod tests {
     use std::io::Stdout;
 
+    use super::super::hooks::HookTrigger;
     use super::*;
-    use crate::cli::chat::hooks::HookTrigger;
 
     // Helper function to create a test ContextManager with Context
     pub async fn create_test_context_manager() -> Result<ContextManager> {

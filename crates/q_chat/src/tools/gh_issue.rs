@@ -17,12 +17,13 @@ use eyre::{
 use fig_os_shim::Context;
 use serde::Deserialize;
 
+use super::super::context::ContextManager;
+use super::super::util::issue::IssueCreator;
 use super::{
     InvokeOutput,
     ToolPermission,
 };
-use crate::cli::chat::context::ContextManager;
-use crate::cli::issue::IssueCreator;
+use crate::token_counter::TokenCounter;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhIssue {
@@ -44,8 +45,8 @@ pub struct GhIssueContext {
     pub interactive: bool,
 }
 
-/// Max amount of user chat + assistant recent chat messages to include in the issue.
-const MAX_TRANSCRIPT_LEN: usize = 10;
+/// Max amount of characters to include in the transcript.
+const MAX_TRANSCRIPT_CHAR_LEN: usize = 3_000;
 
 impl GhIssue {
     pub async fn invoke(&self, _updates: impl Write) -> Result<InvokeOutput> {
@@ -89,19 +90,25 @@ impl GhIssue {
 
     fn get_transcript(context: &GhIssueContext) -> String {
         let mut transcript_str = String::from("```\n[chat-transcript]\n");
+        let mut is_truncated = false;
         let transcript: Vec<String> = context.transcript
             .iter()
             .rev() // To take last N items
-            .scan(0, |user_msg_count, line| {
-                if *user_msg_count >= MAX_TRANSCRIPT_LEN {
+            .scan(0, |user_msg_char_count, line| {
+                if *user_msg_char_count >= MAX_TRANSCRIPT_CHAR_LEN {
+                        is_truncated = true;
                     return None;
                 }
-                if line.starts_with('>') {
-                    *user_msg_count += 1;
-                }
+                let remaining_chars = MAX_TRANSCRIPT_CHAR_LEN - *user_msg_char_count;
+                let trimmed_line = if line.len() > remaining_chars {
+                    &line[..remaining_chars]
+                } else {
+                    line
+                };
+                *user_msg_char_count += trimmed_line.len();
 
                 // backticks will mess up the markdown
-                let text = line.replace("```", r"\```");
+                let text = trimmed_line.replace("```", r"\```");
                 Some(text)
             })
             .collect::<Vec<_>>()
@@ -115,6 +122,9 @@ impl GhIssue {
             transcript_str.push_str("No chat history found.");
         }
 
+        if is_truncated {
+            transcript_str.push_str("\n\n(...truncated)");
+        }
         transcript_str.push_str("\n```");
         transcript_str
     }
@@ -171,12 +181,12 @@ impl GhIssue {
                 let total_size: usize = context_files
                     .iter()
                     .map(|(file, content)| {
-                        let size = content.len();
-                        ctx_str.push_str(&format!("{}, {} B\n", file, size));
+                        let size = TokenCounter::count_tokens(content);
+                        ctx_str.push_str(&format!("{}, {} tkns\n", file, size));
                         size
                     })
                     .sum();
-                ctx_str.push_str(&format!("total context size={total_size} B"));
+                ctx_str.push_str(&format!("total context size={total_size} tkns"));
             },
             _ => ctx_str.push_str("files=none"),
         }

@@ -19,7 +19,7 @@ authors = [
 edition = "2021"
 homepage = "https://aws.amazon.com/q/"
 publish = false
-version = "1.7.3"
+version = "1.9.1"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
@@ -50,13 +50,15 @@ clap = { version = "4.5.32", features = [
     "wrap_help",
 ] }
 cocoa = "0.26.0"
+color-print = "0.3.5"
 convert_case = "0.8.0"
 core-foundation = "0.10.0"
 core-foundation-sys = "0.8.7"
 core-graphics = "0.24.0"
-crossterm = "0.28.1"
+crossterm = { version = "0.28.1", features = ["event-stream", "events"] }
 dashmap = "6.0.1"
 dirs = "5.0.0"
+eyre = "0.6.8"
 fig_api_client = { path = "crates/fig_api_client" }
 fig_auth = { path = "crates/fig_auth" }
 fig_aws_common = { path = "crates/fig_aws_common" }
@@ -86,6 +88,7 @@ indicatif = "0.17.11"
 indoc = "2.0.6"
 insta = "1.42.2"
 libc = "0.2.171"
+mcp_client = { path = "crates/mcp_client" }
 mimalloc = "0.1.46"
 nix = { version = "0.29.0", features = [
     "feature",
@@ -104,6 +107,7 @@ objc2-input-method-kit = "0.2.2"
 parking_lot = "0.12.3"
 percent-encoding = "2.2.0"
 portable-pty = "0.8.1"
+q_chat = { path = "crates/q_chat" }
 r2d2 = "0.8.10"
 r2d2_sqlite = "0.25.0"
 rand = "0.9.0"
@@ -123,6 +127,7 @@ reqwest = { version = "0.12.14", default-features = false, features = [
 ] }
 ring = "0.17.14"
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
+shellexpand = "3.0.0"
 shell-color = { path = "crates/shell-color" }
 semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive", "rc"] }
@@ -130,6 +135,7 @@ serde_json = "1.0.140"
 sha2 = "0.10.6"
 shlex = "1.3.0"
 similar = "2.7.0"
+spinners = "4.1.0"
 strum = { version = "0.27.1", features = ["derive"] }
 sysinfo = "0.32.0"
 thiserror = "2.0.12"
@@ -143,7 +149,7 @@ time = { version = "0.3.39", features = [
 ] }
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-tungstenite = "0.26.2"
-tokio-util = { version = "0.7.14", features = ["codec", "compat"] }
+tokio-util = { version = "0.7.15", features = ["codec", "compat"] }
 toml = "0.8.12"
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-subscriber = { version = "0.3.19", features = [

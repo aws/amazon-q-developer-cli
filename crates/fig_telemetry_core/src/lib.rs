@@ -17,6 +17,7 @@ use aws_toolkit_telemetry_definitions::metrics::{
     CodewhispererterminalDoctorCheckFailed,
     CodewhispererterminalFigUserMigrated,
     CodewhispererterminalInlineShellActioned,
+    CodewhispererterminalMcpServerInit,
     CodewhispererterminalMenuBarActioned,
     CodewhispererterminalMigrateOldClientId,
     CodewhispererterminalRefreshCredentials,
@@ -25,11 +26,16 @@ use aws_toolkit_telemetry_definitions::metrics::{
     CodewhispererterminalUserLoggedIn,
 };
 use aws_toolkit_telemetry_definitions::types::{
+    CodewhispererterminalCustomToolInputTokenSize,
+    CodewhispererterminalCustomToolLatency,
+    CodewhispererterminalCustomToolOutputTokenSize,
     CodewhispererterminalInCloudshell,
     CodewhispererterminalIsToolValid,
+    CodewhispererterminalMcpServerInitFailureReason,
     CodewhispererterminalToolName,
     CodewhispererterminalToolUseId,
     CodewhispererterminalToolUseIsSuccess,
+    CodewhispererterminalToolsPerMcpServer,
     CodewhispererterminalUserInputId,
     CodewhispererterminalUtteranceId,
 };
@@ -317,6 +323,10 @@ impl Event {
                 is_accepted,
                 is_valid,
                 is_success,
+                is_custom_tool,
+                input_token_size,
+                output_token_size,
+                custom_tool_call_latency,
             } => Some(
                 CodewhispererterminalToolUseSuggested {
                     create_time: self.created_time,
@@ -330,6 +340,30 @@ impl Event {
                     codewhispererterminal_is_tool_use_accepted: Some(is_accepted.into()),
                     codewhispererterminal_is_tool_valid: is_valid.map(CodewhispererterminalIsToolValid),
                     codewhispererterminal_tool_use_is_success: is_success.map(CodewhispererterminalToolUseIsSuccess),
+                    codewhispererterminal_is_custom_tool: Some(is_custom_tool.into()),
+                    codewhispererterminal_custom_tool_input_token_size: input_token_size
+                        .map(|s| CodewhispererterminalCustomToolInputTokenSize(s as i64)),
+                    codewhispererterminal_custom_tool_output_token_size: output_token_size
+                        .map(|s| CodewhispererterminalCustomToolOutputTokenSize(s as i64)),
+                    codewhispererterminal_custom_tool_latency: custom_tool_call_latency
+                        .map(|l| CodewhispererterminalCustomToolLatency(l as i64)),
+                }
+                .into_metric_datum(),
+            ),
+            EventType::McpServerInit {
+                conversation_id,
+                init_failure_reason,
+                number_of_tools,
+            } => Some(
+                CodewhispererterminalMcpServerInit {
+                    create_time: self.created_time,
+                    value: None,
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_mcp_server_init_failure_reason: init_failure_reason
+                        .map(CodewhispererterminalMcpServerInitFailureReason),
+                    codewhispererterminal_tools_per_mcp_server: Some(CodewhispererterminalToolsPerMcpServer(
+                        number_of_tools as i64,
+                    )),
                 }
                 .into_metric_datum(),
             ),
@@ -418,6 +452,15 @@ pub enum EventType {
         is_accepted: bool,
         is_success: Option<bool>,
         is_valid: Option<bool>,
+        is_custom_tool: bool,
+        input_token_size: Option<usize>,
+        output_token_size: Option<usize>,
+        custom_tool_call_latency: Option<usize>,
+    },
+    McpServerInit {
+        conversation_id: String,
+        init_failure_reason: Option<String>,
+        number_of_tools: usize,
     },
 }
 

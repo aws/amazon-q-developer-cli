@@ -44,7 +44,7 @@ impl ExecuteBash {
             return true;
         };
 
-        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||"];
+        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";"];
         if args
             .iter()
             .any(|arg| DANGEROUS_PATTERNS.iter().any(|p| arg.contains(p)))
