@@ -100,7 +100,13 @@ impl Client {
 
         let profile_arn = match fig_settings::state::get_value("api.codewhisperer.profile") {
             Ok(Some(profile)) => match profile.get("arn") {
-                Some(arn) => Some(arn.to_string()),
+                Some(arn) => match arn.as_str() {
+                    Some(arn) => Some(arn.to_string()),
+                    None => {
+                        error!("Stored arn is not a string. Instead it was: {arn}");
+                        None
+                    },
+                },
                 None => {
                     error!("Stored profile does not contain an arn. Instead it was: {profile}");
                     None

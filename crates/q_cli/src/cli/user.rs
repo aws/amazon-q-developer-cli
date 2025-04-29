@@ -260,17 +260,8 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                         .region
                         .or_else(|| fig_settings::state::get_string("auth.idc.region").ok().flatten());
 
-                    let start_url = if let Some(url) = default_start_url.clone() {
-                        url
-                    } else {
-                        input("Enter Start URL", default_start_url.as_deref())?
-                    };
-
-                    let region = if let Some(reg) = default_region.clone() {
-                        reg
-                    } else {
-                        input("Enter Region", default_region.as_deref())?
-                    };
+                    let start_url = input("Enter Start URL", default_start_url.as_deref())?;
+                    let region = input("Enter Region", default_region.as_deref())?;
 
                     let _ = fig_settings::state::set_value("auth.idc.start-url", start_url.clone());
                     let _ = fig_settings::state::set_value("auth.idc.region", region.clone());
@@ -390,6 +381,10 @@ async fn try_device_authorization(
 }
 
 async fn select_profile_interactive(whoami: bool) -> Result<()> {
+    let mut spinner = Spinner::new(vec![
+        SpinnerComponent::Spinner,
+        SpinnerComponent::Text(" Fetching profiles...".into()),
+    ]);
     let profiles = list_available_profiles().await;
     if profiles.is_empty() {
         info!("Available profiles was empty");
@@ -409,6 +404,7 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
             )
             .await;
         }
+        spinner.stop_with_message(String::new());
         return Ok(fig_settings::state::set_value(
             "api.codewhisperer.profile",
             serde_json::to_value(&profiles[0])?,
@@ -425,6 +421,7 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
         items[default_idx] = format!("{} (active)", items[default_idx].as_str());
     }
 
+    spinner.stop_with_message(String::new());
     let selected = Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt("Select an IAM Identity Center profile")
         .items(&items)
