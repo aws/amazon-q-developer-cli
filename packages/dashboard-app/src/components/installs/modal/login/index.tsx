@@ -172,6 +172,7 @@ export default function LoginModal({ next }: { next: () => void }) {
       next={() => {
         refreshAuth();
         setLoginState("logged in");
+        setShowProfileTab(false);
       }}
       back={() => {
         setLoginState("not started");
