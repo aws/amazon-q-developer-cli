@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::io::Write;
 use std::path::{
     Path,
     PathBuf,
@@ -16,14 +18,24 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use tracing::debug;
+
+use super::hooks::{
+    Hook,
+    HookExecutor,
+};
 
 pub const AMAZONQ_FILENAME: &str = "AmazonQ.md";
 
 /// Configuration for context files, containing paths to include in the context.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct ContextConfig {
     /// List of file paths or glob patterns to include in the context.
     pub paths: Vec<String>,
+
+    /// Map of Hook Name to [`Hook`]. The hook name serves as the hook's ID.
+    pub hooks: HashMap<String, Hook>,
 }
 
 #[allow(dead_code)]
@@ -40,6 +52,8 @@ pub struct ContextManager {
 
     /// Context configuration for the current profile.
     pub profile_config: ContextConfig,
+
+    pub hook_executor: HookExecutor,
 }
 
 #[allow(dead_code)]
@@ -67,6 +81,7 @@ impl ContextManager {
             global_config,
             current_profile,
             profile_config,
+            hook_executor: HookExecutor::new(),
         })
     }
 
@@ -157,11 +172,7 @@ impl ContextManager {
     /// A Result indicating success or an error
     pub async fn remove_paths(&mut self, paths: Vec<String>, global: bool) -> Result<()> {
         // Get reference to the appropriate config
-        let config = if global {
-            &mut self.global_config
-        } else {
-            &mut self.profile_config
-        };
+        let config = self.get_config_mut(global);
 
         // Track if any paths were removed
         let mut removed_any = false;
@@ -201,6 +212,40 @@ impl ContextManager {
         if profiles_dir.exists() {
             let mut read_dir = self.ctx.fs().read_dir(&profiles_dir).await?;
             while let Some(entry) = read_dir.next_entry().await? {
+                let path = entry.path();
+                if let (true, Some(name)) = (path.is_dir(), path.file_name()) {
+                    if name != "default" {
+                        profiles.push(name.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+
+        // Sort non-default profiles alphabetically
+        if profiles.len() > 1 {
+            profiles[1..].sort();
+        }
+
+        Ok(profiles)
+    }
+
+    /// List all available profiles using blocking operations.
+    ///
+    /// Similar to list_profiles but uses synchronous filesystem operations.
+    ///
+    /// # Returns
+    /// A Result containing a vector of profile names, with "default" always first
+    pub fn list_profiles_blocking(&self) -> Result<Vec<String>> {
+        let mut profiles = Vec::new();
+
+        // Always include default profile
+        profiles.push("default".to_string());
+
+        // Read profile directory and extract profile names
+        let profiles_dir = directories::chat_profiles_dir(&self.ctx)?;
+        if profiles_dir.exists() {
+            for entry in std::fs::read_dir(profiles_dir)? {
+                let entry = entry?;
                 let path = entry.path();
                 if let (true, Some(name)) = (path.is_dir(), path.file_name()) {
                     if name != "default" {
@@ -345,6 +390,7 @@ impl ContextManager {
     /// A Result indicating success or an error
     pub async fn switch_profile(&mut self, name: &str) -> Result<()> {
         validate_profile_name(name)?;
+        self.hook_executor.profile_cache.clear();
 
         // Special handling for default profile - it always exists
         if name == "default" {
@@ -392,6 +438,9 @@ impl ContextManager {
         self.collect_context_files(&self.profile_config.paths, &mut context_files, force)
             .await?;
 
+        context_files.sort_by(|a, b| a.0.cmp(&b.0));
+        context_files.dedup_by(|a, b| a.0 == b.0);
+
         Ok(context_files)
     }
 
@@ -433,6 +482,105 @@ impl ContextManager {
         }
         Ok(())
     }
+
+    fn get_config_mut(&mut self, global: bool) -> &mut ContextConfig {
+        if global {
+            &mut self.global_config
+        } else {
+            &mut self.profile_config
+        }
+    }
+
+    /// Add hooks to the context config. If another hook with the same name already exists, throw an
+    /// error.
+    ///
+    /// # Arguments
+    /// * `hook` - name of the hook to delete
+    /// * `global` - If true, the add to the global config. If false, add to the current profile
+    ///   config.
+    /// * `conversation_start` - If true, add the hook to conversation_start. Otherwise, it will be
+    ///   added to per_prompt.
+    pub async fn add_hook(&mut self, name: String, hook: Hook, global: bool) -> Result<()> {
+        let config = self.get_config_mut(global);
+
+        if config.hooks.contains_key(&name) {
+            return Err(eyre!("name already exists."));
+        }
+
+        config.hooks.insert(name, hook);
+        self.save_config(global).await
+    }
+
+    /// Delete hook(s) by name
+    /// # Arguments
+    /// * `name` - name of the hook to delete
+    /// * `global` - If true, the delete from the global config. If false, delete from the current
+    ///   profile config
+    pub async fn remove_hook(&mut self, name: &str, global: bool) -> Result<()> {
+        let config = self.get_config_mut(global);
+
+        if !config.hooks.contains_key(name) {
+            return Err(eyre!("does not exist."));
+        }
+
+        config.hooks.remove(name);
+
+        self.save_config(global).await
+    }
+
+    /// Sets the "disabled" field on any [`Hook`] with the given name
+    /// # Arguments
+    /// * `disable` - Set "disabled" field to this value
+    pub async fn set_hook_disabled(&mut self, name: &str, global: bool, disable: bool) -> Result<()> {
+        let config = self.get_config_mut(global);
+
+        if !config.hooks.contains_key(name) {
+            return Err(eyre!("does not exist."));
+        }
+
+        if let Some(hook) = config.hooks.get_mut(name) {
+            hook.disabled = disable;
+        }
+
+        self.save_config(global).await
+    }
+
+    /// Sets the "disabled" field on all [`Hook`]s
+    /// # Arguments
+    /// * `disable` - Set all "disabled" fields to this value
+    pub async fn set_all_hooks_disabled(&mut self, global: bool, disable: bool) -> Result<()> {
+        let config = self.get_config_mut(global);
+
+        config.hooks.iter_mut().for_each(|(_, h)| h.disabled = disable);
+
+        self.save_config(global).await
+    }
+
+    /// Run all the currently enabled hooks from both the global and profile contexts.
+    /// Skipped hooks (disabled) will not appear in the output.
+    /// # Arguments
+    /// * `updates` - output stream to write hook run status to if Some, else do nothing if None
+    /// # Returns
+    /// A vector containing pairs of a [`Hook`] definition and its execution output
+    pub async fn run_hooks(&mut self, updates: Option<&mut impl Write>) -> Vec<(Hook, String)> {
+        let mut hooks: Vec<&Hook> = Vec::new();
+
+        // Set internal hook states
+        let configs = [
+            (&mut self.global_config.hooks, true),
+            (&mut self.profile_config.hooks, false),
+        ];
+
+        for (hook_list, is_global) in configs {
+            hooks.extend(hook_list.iter_mut().map(|(name, h)| {
+                h.name = name.to_string();
+                h.is_global = is_global;
+                &*h
+            }));
+        }
+
+        self.hook_executor.run_hooks(hooks, updates).await
+    }
 }
 
 fn profile_dir_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
@@ -440,7 +588,7 @@ fn profile_dir_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
 }
 
 /// Path to the context config file for `profile_name`.
-fn profile_context_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
+pub fn profile_context_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
     Ok(directories::chat_profiles_dir(ctx)?
         .join(profile_name)
         .join("context.json"))
@@ -451,6 +599,7 @@ fn profile_context_path(ctx: &Context, profile_name: &str) -> Result<PathBuf> {
 /// If the global configuration file doesn't exist, returns a default configuration.
 async fn load_global_config(ctx: &Context) -> Result<ContextConfig> {
     let global_path = directories::chat_global_context_path(&ctx)?;
+    debug!(?global_path, "loading profile config");
     if ctx.fs().exists(&global_path) {
         let contents = ctx.fs().read_to_string(&global_path).await?;
         let config: ContextConfig =
@@ -464,6 +613,7 @@ async fn load_global_config(ctx: &Context) -> Result<ContextConfig> {
                 "README.md".to_string(),
                 AMAZONQ_FILENAME.to_string(),
             ],
+            hooks: HashMap::new(),
         })
     }
 }
@@ -473,6 +623,7 @@ async fn load_global_config(ctx: &Context) -> Result<ContextConfig> {
 /// If the profile configuration file doesn't exist, creates a default configuration.
 async fn load_profile_config(ctx: &Context, profile_name: &str) -> Result<ContextConfig> {
     let profile_path = profile_context_path(ctx, profile_name)?;
+    debug!(?profile_path, "loading profile config");
     if ctx.fs().exists(&profile_path) {
         let contents = ctx.fs().read_to_string(&profile_path).await?;
         let config: ContextConfig =
@@ -639,6 +790,9 @@ fn validate_profile_name(name: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Stdout;
+
+    use super::super::hooks::HookTrigger;
     use super::*;
 
     // Helper function to create a test ContextManager with Context
@@ -740,6 +894,122 @@ mod tests {
                 .is_err(),
             "adding a glob with no matching and without force should fail"
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_add_hook() -> Result<()> {
+        let mut manager = create_test_context_manager().await?;
+        let hook = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
+
+        // Test adding hook to profile config
+        manager.add_hook("test_hook".to_string(), hook.clone(), false).await?;
+        assert!(manager.profile_config.hooks.contains_key("test_hook"));
+
+        // Test adding hook to global config
+        manager.add_hook("global_hook".to_string(), hook.clone(), true).await?;
+        assert!(manager.global_config.hooks.contains_key("global_hook"));
+
+        // Test adding duplicate hook name
+        assert!(manager.add_hook("test_hook".to_string(), hook, false).await.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_remove_hook() -> Result<()> {
+        let mut manager = create_test_context_manager().await?;
+        let hook = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
+
+        manager.add_hook("test_hook".to_string(), hook, false).await?;
+
+        // Test removing existing hook
+        manager.remove_hook("test_hook", false).await?;
+        assert!(!manager.profile_config.hooks.contains_key("test_hook"));
+
+        // Test removing non-existent hook
+        assert!(manager.remove_hook("test_hook", false).await.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_set_hook_disabled() -> Result<()> {
+        let mut manager = create_test_context_manager().await?;
+        let hook = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
+
+        manager.add_hook("test_hook".to_string(), hook, false).await?;
+
+        // Test disabling hook
+        manager.set_hook_disabled("test_hook", false, true).await?;
+        assert!(manager.profile_config.hooks.get("test_hook").unwrap().disabled);
+
+        // Test enabling hook
+        manager.set_hook_disabled("test_hook", false, false).await?;
+        assert!(!manager.profile_config.hooks.get("test_hook").unwrap().disabled);
+
+        // Test with non-existent hook
+        assert!(manager.set_hook_disabled("nonexistent", false, true).await.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_set_all_hooks_disabled() -> Result<()> {
+        let mut manager = create_test_context_manager().await?;
+        let hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
+        let hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
+
+        manager.add_hook("hook1".to_string(), hook1, false).await?;
+        manager.add_hook("hook2".to_string(), hook2, false).await?;
+
+        // Test disabling all hooks
+        manager.set_all_hooks_disabled(false, true).await?;
+        assert!(manager.profile_config.hooks.values().all(|h| h.disabled));
+
+        // Test enabling all hooks
+        manager.set_all_hooks_disabled(false, false).await?;
+        assert!(manager.profile_config.hooks.values().all(|h| !h.disabled));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_run_hooks() -> Result<()> {
+        let mut manager = create_test_context_manager().await?;
+        let hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
+        let hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
+
+        manager.add_hook("hook1".to_string(), hook1, false).await?;
+        manager.add_hook("hook2".to_string(), hook2, false).await?;
+
+        // Run the hooks
+        let results = manager.run_hooks(None::<&mut Stdout>).await;
+        assert_eq!(results.len(), 2); // Should include both hooks
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_hooks_across_profiles() -> Result<()> {
+        let mut manager = create_test_context_manager().await?;
+        let hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
+        let hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
+
+        manager.add_hook("profile_hook".to_string(), hook1, false).await?;
+        manager.add_hook("global_hook".to_string(), hook2, true).await?;
+
+        let results = manager.run_hooks(None::<&mut Stdout>).await;
+        assert_eq!(results.len(), 2); // Should include both hooks
+
+        // Create and switch to a new profile
+        manager.create_profile("test_profile").await?;
+        manager.switch_profile("test_profile").await?;
+
+        let results = manager.run_hooks(None::<&mut Stdout>).await;
+        assert_eq!(results.len(), 1); // Should include global hook
+        assert_eq!(results[0].0.name, "global_hook");
 
         Ok(())
     }

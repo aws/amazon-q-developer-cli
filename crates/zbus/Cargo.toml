@@ -80,7 +80,7 @@ tokio = { version = "1.44.2", optional = true, features = [
 ] }
 tracing = "0.1.40"
 vsock = { version = "0.5.0", optional = true }
-tokio-vsock = { version = "0.6", optional = true }
+tokio-vsock = { version = "0.7", optional = true }
 xdg-home = "1.1.0"
 
 [target.'cfg(windows)'.dependencies]

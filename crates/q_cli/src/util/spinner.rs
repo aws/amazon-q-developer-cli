@@ -7,12 +7,9 @@ use std::sync::mpsc::{
     TryRecvError,
     channel,
 };
+use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use std::{
-    env,
-    thread,
-};
 
 use anstream::{
     print,
@@ -50,53 +47,6 @@ impl Drop for Spinner {
 pub enum SpinnerComponent {
     Text(String),
     Spinner,
-}
-
-/// Play the terminal bell notification sound
-/// This is a separate function to make it easier to call from multiple places
-pub fn play_notification_bell() {
-    // Check if we should play the bell based on terminal type
-    if should_play_bell() {
-        print!("\x07"); // ASCII bell character
-        stdout().flush().unwrap();
-    }
-}
-
-/// Determine if we should play the bell based on terminal type
-fn should_play_bell() -> bool {
-    // Get the TERM environment variable
-    if let Ok(term) = env::var("TERM") {
-        // List of terminals known to handle bell character well
-        let bell_compatible_terms = [
-            "xterm",
-            "xterm-256color",
-            "screen",
-            "screen-256color",
-            "tmux",
-            "tmux-256color",
-            "rxvt",
-            "rxvt-unicode",
-            "linux",
-            "konsole",
-            "gnome",
-            "gnome-256color",
-            "alacritty",
-            "iterm2",
-        ];
-
-        // Check if the current terminal is in the compatible list
-        for compatible_term in bell_compatible_terms.iter() {
-            if term.starts_with(compatible_term) {
-                return true;
-            }
-        }
-
-        // For other terminals, don't play the bell
-        return false;
-    }
-
-    // If TERM is not set, default to not playing the bell
-    false
 }
 
 impl Spinner {

@@ -142,12 +142,7 @@ pub async fn install_cli(
                 eyre::bail!("You must run with --no-confirm if unattended");
             }
 
-            login_interactive(LoginArgs {
-                license: None,
-                identity_provider: None,
-                region: None,
-            })
-            .await?;
+            login_interactive(LoginArgs::default()).await?;
         } else {
             println!();
             println!("You must login before you can use {PRODUCT_NAME}'s features.");

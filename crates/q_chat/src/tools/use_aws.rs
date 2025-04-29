@@ -106,7 +106,7 @@ impl UseAws {
     pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
         queue!(
             updates,
-            style::Print("Running aws cli command:\n"),
+            style::Print("Running aws cli command:\n\n"),
             style::Print(format!("Service name: {}\n", self.service_name)),
             style::Print(format!("Operation name: {}\n", self.operation_name)),
         )?;

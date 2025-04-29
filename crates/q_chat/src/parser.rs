@@ -1,12 +1,11 @@
-use std::time::Instant;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use eyre::Result;
 use fig_api_client::clients::SendMessageOutput;
-use fig_api_client::model::{
-    AssistantResponseMessage,
-    ChatResponseStream,
-    ToolUse as FigToolUse,
-};
+use fig_api_client::model::ChatResponseStream;
 use rand::distr::{
     Alphanumeric,
     SampleString,
@@ -18,27 +17,10 @@ use tracing::{
     trace,
 };
 
-use super::tools::serde_value_to_document;
-
-/// Represents a tool use requested by the assistant.
-#[derive(Debug, Clone)]
-pub struct ToolUse {
-    /// Corresponds to the `"toolUseId"` returned by the model.
-    pub id: String,
-    pub name: String,
-    /// The tool arguments.
-    pub args: serde_json::Value,
-}
-
-impl From<ToolUse> for FigToolUse {
-    fn from(value: ToolUse) -> Self {
-        Self {
-            tool_use_id: value.id,
-            name: value.name,
-            input: serde_value_to_document(value.args),
-        }
-    }
-}
+use super::message::{
+    AssistantMessage,
+    AssistantToolUse,
+};
 
 #[derive(Debug, Error)]
 pub struct RecvError {
@@ -86,7 +68,8 @@ pub enum RecvErrorKind {
     UnexpectedToolUseEos {
         tool_use_id: String,
         name: String,
-        message: Box<AssistantResponseMessage>,
+        message: Box<AssistantMessage>,
+        time_elapsed: Duration,
     },
 }
 
@@ -107,7 +90,7 @@ pub struct ResponseParser {
     /// Buffer for holding the accumulated assistant response.
     assistant_text: String,
     /// Tool uses requested by the model.
-    tool_uses: Vec<ToolUse>,
+    tool_uses: Vec<AssistantToolUse>,
     /// Whether or not we are currently receiving tool use delta events. Tuple of
     /// `Some((tool_use_id, name))` if true, [None] otherwise.
     parsing_tool_use: Option<(String, String)>,
@@ -178,14 +161,16 @@ impl ResponseParser {
                     _ => {},
                 },
                 Ok(None) => {
-                    let message = AssistantResponseMessage {
-                        message_id: Some(self.message_id.clone()),
-                        content: std::mem::take(&mut self.assistant_text),
-                        tool_uses: if self.tool_uses.is_empty() {
-                            None
-                        } else {
-                            Some(self.tool_uses.clone().into_iter().map(Into::into).collect())
-                        },
+                    let message_id = Some(self.message_id.clone());
+                    let content = std::mem::take(&mut self.assistant_text);
+                    let message = if self.tool_uses.is_empty() {
+                        AssistantMessage::new_response(message_id, content)
+                    } else {
+                        AssistantMessage::new_tool_use(
+                            message_id,
+                            content,
+                            self.tool_uses.clone().into_iter().map(Into::into).collect(),
+                        )
                     };
                     return Ok(ResponseEvent::EndStream { message });
                 },
@@ -197,9 +182,8 @@ impl ResponseParser {
     /// Consumes the response stream until a valid [ToolUse] is parsed.
     ///
     /// The arguments are the fields from the first [ChatResponseStream::ToolUseEvent] consumed.
-    async fn parse_tool_use(&mut self, id: String, name: String) -> Result<ToolUse, RecvError> {
+    async fn parse_tool_use(&mut self, id: String, name: String) -> Result<AssistantToolUse, RecvError> {
         let mut tool_string = String::new();
-        let mut stop_seen = false;
         let start = Instant::now();
         while let Some(ChatResponseStream::ToolUseEvent { .. }) = self.peek().await? {
             if let Some(ChatResponseStream::ToolUseEvent { input, stop, .. }) = self.next().await? {
@@ -207,52 +191,58 @@ impl ResponseParser {
                     tool_string.push_str(&i);
                 }
                 if let Some(true) = stop {
-                    stop_seen = true;
                     break;
                 }
             }
         }
+
         let args = match serde_json::from_str(&tool_string) {
             Ok(args) => args,
-            Err(err) => {
-                // If the stream ended before we saw the final tool use event (and thus failed
-                // deserializing the tool use), this is most likely due to the backend dropping the
-                // connection. The tool was too large!
-                if self.peek().await?.is_none() && !stop_seen {
+            Err(err) if !tool_string.is_empty() => {
+                // If we failed deserializing after waiting for a long time, then this is most
+                // likely bedrock responding with a stop event for some reason without actually
+                // including the tool contents. Essentially, the tool was too large.
+                // Timeouts have been seen as short as ~1 minute, so setting the time to 30.
+                let time_elapsed = start.elapsed();
+                if self.peek().await?.is_none() && time_elapsed > Duration::from_secs(30) {
                     error!(
                         "Received an unexpected end of stream after spending ~{}s receiving tool events",
-                        Instant::now().duration_since(start).as_secs_f64()
+                        time_elapsed.as_secs_f64()
                     );
-                    self.tool_uses.push(ToolUse {
+                    self.tool_uses.push(AssistantToolUse {
                         id: id.clone(),
                         name: name.clone(),
                         args: serde_json::Value::Object(
                             [(
                                 "key".to_string(),
                                 serde_json::Value::String(
-                                    "fake tool use args - actual tool use was too large to include".to_string(),
+                                    "WARNING: the actual tool use arguments were too complicated to be generated"
+                                        .to_string(),
                                 ),
                             )]
                             .into_iter()
                             .collect(),
                         ),
                     });
-                    let message = Box::new(AssistantResponseMessage {
-                        message_id: Some(self.message_id.clone()),
-                        content: std::mem::take(&mut self.assistant_text),
-                        tool_uses: Some(self.tool_uses.clone().into_iter().map(Into::into).collect()),
-                    });
+                    let message = Box::new(AssistantMessage::new_tool_use(
+                        Some(self.message_id.clone()),
+                        std::mem::take(&mut self.assistant_text),
+                        self.tool_uses.clone().into_iter().map(Into::into).collect(),
+                    ));
                     return Err(self.error(RecvErrorKind::UnexpectedToolUseEos {
                         tool_use_id: id,
                         name,
                         message,
+                        time_elapsed,
                     }));
                 } else {
                     return Err(self.error(err));
                 }
             },
+            // if the tool just does not need any input
+            _ => serde_json::json!({}),
         };
-        Ok(ToolUse { id, name, args })
+        Ok(AssistantToolUse { id, name, args })
     }
 
     /// Returns the next event in the [SendMessageOutput] without consuming it.
@@ -314,13 +304,13 @@ pub enum ResponseEvent {
     ToolUseStart { name: String },
     /// A tool use requested by the assistant. This should be displayed to the user as it is
     /// received.
-    ToolUse(ToolUse),
+    ToolUse(AssistantToolUse),
     /// Represents the end of the response. No more events will be returned.
     EndStream {
         /// The completed message containing all of the assistant text and tool use events
         /// previously emitted. This should be stored in the conversation history and sent in
         /// subsequent requests.
-        message: AssistantResponseMessage,
+        message: AssistantMessage,
     },
 }
 

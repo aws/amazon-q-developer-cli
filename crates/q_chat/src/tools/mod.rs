@@ -1,3 +1,4 @@
+pub mod custom_tool;
 pub mod execute_bash;
 pub mod fs_read;
 pub mod fs_write;
@@ -15,23 +16,21 @@ use aws_smithy_types::{
     Document,
     Number as SmithyNumber,
 };
+use crossterm::style::Stylize;
+use custom_tool::CustomTool;
 use execute_bash::ExecuteBash;
 use eyre::Result;
-use fig_api_client::model::{
-    ToolResult,
-    ToolResultContentBlock,
-    ToolResultStatus,
-};
 use fig_os_shim::Context;
 use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
-use serde::Deserialize;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use use_aws::UseAws;
 
-use super::parser::ToolUse;
-
-pub const MAX_TOOL_RESPONSE_SIZE: usize = 800000;
+use super::consts::MAX_TOOL_RESPONSE_SIZE;
 
 /// Represents an executable tool use.
 #[derive(Debug, Clone)]
@@ -40,29 +39,20 @@ pub enum Tool {
     FsWrite(FsWrite),
     ExecuteBash(ExecuteBash),
     UseAws(UseAws),
+    Custom(CustomTool),
     GhIssue(GhIssue),
 }
 
 impl Tool {
     /// The display name of a tool
-    pub fn display_name(&self) -> &'static str {
+    pub fn display_name(&self) -> String {
         match self {
-            Tool::FsRead(_) => "Read from filesystem",
-            Tool::FsWrite(_) => "Write to filesystem",
-            Tool::ExecuteBash(_) => "Execute shell command",
-            Tool::UseAws(_) => "Use AWS CLI",
-            Tool::GhIssue(_) => "Prepare GitHub issue",
-        }
-    }
-
-    // TODO: Remove, just roll with it for now ya?
-    pub fn display_name_action(&self) -> String {
-        match self {
-            Tool::FsRead(_) => "Reading from filesystem",
-            Tool::FsWrite(_) => "Writing to filesystem",
-            Tool::ExecuteBash(execute_bash) => return format!("Executing `{}`", execute_bash.command),
-            Tool::UseAws(_) => "Using AWS CLI",
-            Tool::GhIssue(_) => "Preparing GitHub issue",
+            Tool::FsRead(_) => "fs_read",
+            Tool::FsWrite(_) => "fs_write",
+            Tool::ExecuteBash(_) => "execute_bash",
+            Tool::UseAws(_) => "use_aws",
+            Tool::Custom(custom_tool) => &custom_tool.name,
+            Tool::GhIssue(_) => "gh_issue",
         }
         .to_owned()
     }
@@ -74,6 +64,7 @@ impl Tool {
             Tool::FsWrite(_) => true,
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
+            Tool::Custom(_) => true,
             Tool::GhIssue(_) => false,
         }
     }
@@ -85,6 +76,7 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.invoke(context, updates).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
+            Tool::Custom(custom_tool) => custom_tool.invoke(context, updates).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
         }
     }
@@ -96,6 +88,7 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.queue_description(ctx, updates),
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
+            Tool::Custom(custom_tool) => custom_tool.queue_description(updates),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
         }
     }
@@ -107,39 +100,9 @@ impl Tool {
             Tool::FsWrite(fs_write) => fs_write.validate(ctx).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
+            Tool::Custom(custom_tool) => custom_tool.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
         }
-    }
-}
-
-impl TryFrom<ToolUse> for Tool {
-    type Error = ToolResult;
-
-    fn try_from(value: ToolUse) -> std::result::Result<Self, Self::Error> {
-        let map_err = |parse_error| ToolResult {
-            tool_use_id: value.id.clone(),
-            content: vec![ToolResultContentBlock::Text(format!(
-                "Failed to validate tool parameters: {parse_error}. The model has either suggested tool parameters which are incompatible with the existing tools, or has suggested one or more tool that does not exist in the list of known tools."
-            ))],
-            status: ToolResultStatus::Error,
-        };
-
-        Ok(match value.name.as_str() {
-            "fs_read" => Self::FsRead(serde_json::from_value::<FsRead>(value.args).map_err(map_err)?),
-            "fs_write" => Self::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?),
-            "execute_bash" => Self::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
-            "use_aws" => Self::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
-            "report_issue" => Self::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
-            unknown => {
-                return Err(ToolResult {
-                    tool_use_id: value.id,
-                    content: vec![ToolResultContentBlock::Text(format!(
-                        "The tool, \"{unknown}\" is not supported by the client"
-                    ))],
-                    status: ToolResultStatus::Error,
-                });
-            },
-        })
     }
 }
 
@@ -171,9 +134,9 @@ impl ToolPermissions {
     pub fn display_label(&self, tool_name: &str) -> String {
         if self.has(tool_name) {
             if self.is_trusted(tool_name) {
-                "Trusted".to_string()
+                format!("  {}", "trusted".dark_green().bold())
             } else {
-                "Per-request".to_string()
+                format!("  {}", "not trusted".dark_grey())
             }
         } else {
             Self::default_permission_label(tool_name)
@@ -194,6 +157,10 @@ impl ToolPermissions {
         self.permissions.clear();
     }
 
+    pub fn reset_tool(&mut self, tool_name: &str) {
+        self.permissions.remove(tool_name);
+    }
+
     pub fn has(&self, tool_name: &str) -> bool {
         self.permissions.contains_key(tool_name)
     }
@@ -203,25 +170,47 @@ impl ToolPermissions {
     // This "static" way avoids needing to construct a tool instance.
     fn default_permission_label(tool_name: &str) -> String {
         let label = match tool_name {
-            "fs_read" => "Trusted",
-            "fs_write" => "Per-request",
-            "execute_bash" => "Write-only commands",
-            "use_aws" => "Write-only commands",
-            "report_issue" => "Trusted",
-            _ => "Per-request",
+            "fs_read" => "trusted".dark_green().bold(),
+            "fs_write" => "not trusted".dark_grey(),
+            "execute_bash" => "trust read-only commands".dark_grey(),
+            "use_aws" => "trust read-only commands".dark_grey(),
+            "report_issue" => "trusted".dark_green().bold(),
+            _ => "not trusted".dark_grey(),
         };
 
-        format!("{label} [Default] ")
+        format!("{} {label}", "*".reset())
     }
 }
 
 /// A tool specification to be sent to the model as part of a conversation. Maps to
 /// [BedrockToolSpecification].
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolSpec {
     pub name: String,
     pub description: String,
+    #[serde(alias = "inputSchema")]
     pub input_schema: InputSchema,
+    #[serde(skip_serializing, default = "tool_origin")]
+    pub tool_origin: ToolOrigin,
+}
+
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
+pub enum ToolOrigin {
+    Native,
+    McpServer(String),
+}
+
+impl std::fmt::Display for ToolOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ToolOrigin::Native => write!(f, "Built-in"),
+            ToolOrigin::McpServer(server) => write!(f, "{} (MCP)", server),
+        }
+    }
+}
+
+fn tool_origin() -> ToolOrigin {
+    ToolOrigin::Native
 }
 
 #[derive(Debug, Clone)]
@@ -233,13 +222,22 @@ pub struct QueuedTool {
 }
 
 /// The schema specification describing a tool's fields.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputSchema(pub serde_json::Value);
 
 /// The output received from invoking a [Tool].
 #[derive(Debug, Default)]
 pub struct InvokeOutput {
     pub output: OutputKind,
+}
+
+impl InvokeOutput {
+    pub fn as_str(&self) -> &str {
+        match &self.output {
+            OutputKind::Text(s) => s.as_str(),
+            OutputKind::Json(j) => j.as_str().unwrap_or_default(),
+        }
+    }
 }
 
 #[non_exhaustive]
@@ -277,6 +275,33 @@ pub fn serde_value_to_document(value: serde_json::Value) -> Document {
                 .map(|(k, v)| (k, serde_value_to_document(v)))
                 .collect::<_>(),
         ),
+    }
+}
+
+pub fn document_to_serde_value(value: Document) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Document::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, document_to_serde_value(v)))
+                .collect::<_>(),
+        ),
+        Document::Array(vec) => Value::Array(vec.clone().into_iter().map(document_to_serde_value).collect::<_>()),
+        Document::Number(number) => {
+            if let Ok(v) = TryInto::<u64>::try_into(number) {
+                Value::Number(v.into())
+            } else if let Ok(v) = TryInto::<i64>::try_into(number) {
+                Value::Number(v.into())
+            } else {
+                Value::Number(
+                    serde_json::Number::from_f64(number.to_f64_lossy())
+                        .unwrap_or(serde_json::Number::from_f64(0.0).expect("converting from 0.0 will not fail")),
+                )
+            }
+        },
+        Document::String(s) => serde_json::Value::String(s),
+        Document::Bool(b) => serde_json::Value::Bool(b),
+        Document::Null => serde_json::Value::Null,
     }
 }
 

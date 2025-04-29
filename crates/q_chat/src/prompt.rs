@@ -35,7 +35,7 @@ use rustyline::{
 };
 use winnow::stream::AsChar;
 
-const COMMANDS: &[&str] = &[
+pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
     "/editor",
@@ -66,7 +66,7 @@ const COMMANDS: &[&str] = &[
     "/context clear --global",
     "/compact",
     "/compact help",
-    "/compact --summary",
+    "/usage",
 ];
 
 pub fn generate_prompt(current_profile: Option<&str>, warning: bool) -> String {
@@ -127,14 +127,43 @@ impl PathCompleter {
     }
 }
 
+pub struct PromptCompleter {
+    sender: std::sync::mpsc::Sender<Option<String>>,
+    receiver: std::sync::mpsc::Receiver<Vec<String>>,
+}
+
+impl PromptCompleter {
+    fn new(sender: std::sync::mpsc::Sender<Option<String>>, receiver: std::sync::mpsc::Receiver<Vec<String>>) -> Self {
+        PromptCompleter { sender, receiver }
+    }
+
+    fn complete_prompt(&self, word: &str) -> Result<Vec<String>, ReadlineError> {
+        let sender = &self.sender;
+        let receiver = &self.receiver;
+        sender
+            .send(if !word.is_empty() { Some(word.to_string()) } else { None })
+            .map_err(|e| ReadlineError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let prompt_info = receiver
+            .recv()
+            .map_err(|e| ReadlineError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+            .iter()
+            .map(|n| format!("@{n}"))
+            .collect::<Vec<_>>();
+
+        Ok(prompt_info)
+    }
+}
+
 pub struct ChatCompleter {
     path_completer: PathCompleter,
+    prompt_completer: PromptCompleter,
 }
 
 impl ChatCompleter {
-    fn new() -> Self {
+    fn new(sender: std::sync::mpsc::Sender<Option<String>>, receiver: std::sync::mpsc::Receiver<Vec<String>>) -> Self {
         Self {
             path_completer: PathCompleter::new(),
+            prompt_completer: PromptCompleter::new(sender, receiver),
         }
     }
 }
@@ -153,6 +182,15 @@ impl Completer for ChatCompleter {
         // Handle command completion
         if word.starts_with('/') {
             return Ok(complete_command(word, start));
+        }
+
+        if line.starts_with('@') {
+            let search_word = line.strip_prefix('@').unwrap_or("");
+            if let Ok(completions) = self.prompt_completer.complete_prompt(search_word) {
+                if !completions.is_empty() {
+                    return Ok((0, completions));
+                }
+            }
         }
 
         // Handle file path completion as fallback
@@ -217,7 +255,10 @@ impl Highlighter for ChatHelper {
     }
 }
 
-pub fn rl() -> Result<Editor<ChatHelper, DefaultHistory>> {
+pub fn rl(
+    sender: std::sync::mpsc::Sender<Option<String>>,
+    receiver: std::sync::mpsc::Receiver<Vec<String>>,
+) -> Result<Editor<ChatHelper, DefaultHistory>> {
     let edit_mode = match fig_settings::settings::get_string_opt("chat.editMode").as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
         _ => EditMode::Emacs,
@@ -228,7 +269,7 @@ pub fn rl() -> Result<Editor<ChatHelper, DefaultHistory>> {
         .edit_mode(edit_mode)
         .build();
     let h = ChatHelper {
-        completer: ChatCompleter::new(),
+        completer: ChatCompleter::new(sender, receiver),
         hinter: (),
         validator: MultiLineValidator,
     };
@@ -276,7 +317,9 @@ mod tests {
 
     #[test]
     fn test_chat_completer_command_completion() {
-        let completer = ChatCompleter::new();
+        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
+        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
         let line = "/h";
         let pos = 2; // Position at the end of "/h"
 
@@ -296,7 +339,9 @@ mod tests {
 
     #[test]
     fn test_chat_completer_no_completion() {
-        let completer = ChatCompleter::new();
+        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
+        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
         let line = "Hello, how are you?";
         let pos = line.len();
 

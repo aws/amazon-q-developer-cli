@@ -34,6 +34,10 @@ use fig_util::{
     PRODUCT_NAME,
 };
 use serde_json::json;
+use tokio::signal::unix::{
+    SignalKind,
+    signal,
+};
 use tracing::error;
 
 use super::OutputFormat;
@@ -60,7 +64,7 @@ pub enum RootUserSubcommand {
     },
 }
 
-#[derive(Args, Debug, PartialEq, Eq, Clone)]
+#[derive(Args, Debug, PartialEq, Eq, Clone, Default)]
 pub struct LoginArgs {
     /// License type (pro for Identity Center, free for Builder ID)
     #[arg(long, value_enum)]
@@ -73,6 +77,11 @@ pub struct LoginArgs {
     /// Region (for Identity Center)
     #[arg(long)]
     pub region: Option<String>,
+
+    /// Always use the OAuth device flow for authentication. Useful for instances where browser
+    /// redirects cannot be handled.
+    #[arg(long)]
+    pub use_device_flow: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -173,8 +182,6 @@ pub enum UserSubcommand {
 
 impl UserSubcommand {
     pub async fn execute(self) -> Result<ExitCode> {
-        ctrlc::set_handler(|| exit(1))?;
-
         match self {
             Self::Root(cmd) => cmd.execute().await,
         }
@@ -230,7 +237,7 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
 
             // Remote machine won't be able to handle browser opening and redirects,
             // hence always use device code flow.
-            if is_remote() {
+            if is_remote() || args.use_device_flow {
                 try_device_authorization(&secret_store, start_url.clone(), region.clone()).await?;
             } else {
                 let (client, registration) = start_pkce_authorization(start_url.clone(), region.clone()).await?;
@@ -242,7 +249,14 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                             SpinnerComponent::Spinner,
                             SpinnerComponent::Text(" Logging in...".into()),
                         ]);
-                        registration.finish(&client, Some(&secret_store)).await?;
+                        let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
+                        tokio::select! {
+                            res = registration.finish(&client, Some(&secret_store)) => res?,
+                            Some(_) = ctrl_c_stream.recv() => {
+                                #[allow(clippy::exit)]
+                                exit(1);
+                            },
+                        }
                         fig_telemetry::send_user_logged_in().await;
                         spinner.stop_with_message("Logged in successfully".into());
                     },
@@ -292,8 +306,15 @@ async fn try_device_authorization(
         SpinnerComponent::Text(" Logging in...".into()),
     ]);
 
+    let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
     loop {
-        tokio::time::sleep(Duration::from_secs(device_auth.interval.try_into().unwrap_or(1))).await;
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(device_auth.interval.try_into().unwrap_or(1))) => (),
+            Some(_) = ctrl_c_stream.recv() => {
+                #[allow(clippy::exit)]
+                exit(1);
+            }
+        }
         match poll_create_token(
             secret_store,
             device_auth.device_code.clone(),

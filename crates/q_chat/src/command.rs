@@ -1,11 +1,20 @@
+use std::collections::HashSet;
 use std::io::Write;
 
+use clap::{
+    Parser,
+    Subcommand,
+};
 use crossterm::style::Color;
 use crossterm::{
     queue,
     style,
 };
 use eyre::Result;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -38,6 +47,10 @@ pub enum Command {
     Tools {
         subcommand: Option<ToolsSubcommand>,
     },
+    Prompts {
+        subcommand: Option<PromptsSubcommand>,
+    },
+    Usage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,6 +100,57 @@ Profiles allow you to organize and manage different sets of context files for di
     }
 }
 
+#[derive(Parser, Debug, Clone)]
+#[command(name = "hooks", disable_help_flag = true, disable_help_subcommand = true)]
+struct HooksCommand {
+    #[command(subcommand)]
+    command: HooksSubcommand,
+}
+
+#[derive(Subcommand, Debug, Clone, Eq, PartialEq)]
+pub enum HooksSubcommand {
+    Add {
+        name: String,
+
+        #[arg(long, value_parser = ["per_prompt", "conversation_start"])]
+        trigger: String,
+
+        #[arg(long, value_parser = clap::value_parser!(String))]
+        command: String,
+
+        #[arg(long)]
+        global: bool,
+    },
+    #[command(name = "rm")]
+    Remove {
+        name: String,
+
+        #[arg(long)]
+        global: bool,
+    },
+    Enable {
+        name: String,
+
+        #[arg(long)]
+        global: bool,
+    },
+    Disable {
+        name: String,
+
+        #[arg(long)]
+        global: bool,
+    },
+    EnableAll {
+        #[arg(long)]
+        global: bool,
+    },
+    DisableAll {
+        #[arg(long)]
+        global: bool,
+    },
+    Help,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContextSubcommand {
     Show {
@@ -103,6 +167,9 @@ pub enum ContextSubcommand {
     },
     Clear {
         global: bool,
+    },
+    Hooks {
+        subcommand: Option<HooksSubcommand>,
     },
     Help,
 }
@@ -124,13 +191,41 @@ impl ContextSubcommand {
                                  <black!>--global: Remove specified rules globally</black!>
 
   <em>clear [--global]</em>               <black!>Remove all rules from current profile</black!>
-                                 <black!>--global: Remove global rules</black!>"};
+                                 <black!>--global: Remove global rules</black!>
+
+  <em>hooks</em>                          <black!>View and manage context hooks</black!>"};
     const CLEAR_USAGE: &str = "/context clear [--global]";
+    const HOOKS_AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available subcommands</cyan!>
+  <em>hooks help</em>                         <black!>Show an explanation for context hooks commands</black!>
+
+  <em>hooks add [--global] <<name>></em>        <black!>Add a new command context hook</black!>
+                                         <black!>--global: Add to global hooks</black!>
+         <em>--trigger <<trigger>></em>           <black!>When to trigger the hook, valid options: `per_prompt` or `conversation_start`</black!>
+         <em>--command <<command>></em>             <black!>Shell command to execute</black!>
+
+  <em>hooks rm [--global] <<name>></em>         <black!>Remove an existing context hook</black!>
+                                         <black!>--global: Remove from global hooks</black!>
+
+  <em>hooks enable [--global] <<name>></em>     <black!>Enable an existing context hook</black!>
+                                         <black!>--global: Enable in global hooks</black!>
+
+  <em>hooks disable [--global] <<name>></em>    <black!>Disable an existing context hook</black!>
+                                         <black!>--global: Disable in global hooks</black!>
+
+  <em>hooks enable-all [--global]</em>        <black!>Enable all existing context hooks</black!>
+                                         <black!>--global: Enable all in global hooks</black!>
+
+  <em>hooks disable-all [--global]</em>       <black!>Disable all existing context hooks</black!>
+                                         <black!>--global: Disable all in global hooks</black!>"};
     const REMOVE_USAGE: &str = "/context rm [--global] <path1> [path2...]";
     const SHOW_USAGE: &str = "/context show [--expand]";
 
     fn usage_msg(header: impl AsRef<str>) -> String {
         format!("{}\n\n{}", header.as_ref(), Self::AVAILABLE_COMMANDS)
+    }
+
+    fn hooks_usage_msg(header: impl AsRef<str>) -> String {
+        format!("{}\n\n{}", header.as_ref(), Self::HOOKS_AVAILABLE_COMMANDS)
     }
 
     pub fn help_text() -> String {
@@ -143,6 +238,9 @@ The files matched by these rules provide Amazon Q with additional information
 about your project or environment. Adding relevant files helps Q generate 
 more accurate and helpful responses.
 
+In addition to files, you can specify hooks that will run commands and return 
+the output as context to Amazon Q.
+
 {}
 
 <cyan!>Notes</cyan!>
@@ -154,32 +252,62 @@ more accurate and helpful responses.
             Self::AVAILABLE_COMMANDS
         )
     }
+
+    pub fn hooks_help_text() -> String {
+        color_print::cformat!(
+            r#"
+<magenta,em>(Beta) Context Hooks</magenta,em>
+
+Use context hooks to specify shell commands to run. The output from these 
+commands will be appended to the prompt to Amazon Q. Hooks can be defined 
+in global or local profiles.
+
+<cyan!>Usage: /context hooks [SUBCOMMAND]</cyan!>
+
+<cyan!>Description</cyan!>
+  Show existing global or profile-specific hooks.
+  Alternatively, specify a subcommand to modify the hooks.
+
+{}
+
+<cyan!>Notes</cyan!>
+• Hooks are executed in parallel
+• 'conversation_start' hooks run on the first user prompt and are attached once to the conversation history sent to Amazon Q
+• 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history
+"#,
+            Self::HOOKS_AVAILABLE_COMMANDS
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolsSubcommand {
-    Trust { tool_name: String },
-    Untrust { tool_name: String },
+    Schema,
+    Trust { tool_names: HashSet<String> },
+    Untrust { tool_names: HashSet<String> },
     TrustAll,
     Reset,
+    ResetSingle { tool_name: String },
     Help,
 }
 
 impl ToolsSubcommand {
     const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available subcommands</cyan!>
   <em>help</em>                           <black!>Show an explanation for the tools command</black!>
-  <em>trust <<tool name>></em>              <black!>Trust a specific tool for the session</black!>
-  <em>untrust <<tool name>></em>            <black!>Revert a tool to per-request confirmation</black!>
+  <em>schema</em>                         <black!>Show the input schema for all available tools</black!>
+  <em>trust <<tools...>></em>               <black!>Trust a specific tool or tools for the session</black!>
+  <em>untrust <<tools...>></em>             <black!>Revert a tool or tools to per-request confirmation</black!>
   <em>trustall</em>                       <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
-  <em>reset</em>                          <black!>Reset all tools to default permission levels</black!>"};
+  <em>reset</em>                          <black!>Reset all tools to default permission levels</black!>
+  <em>reset <<tool name>></em>              <black!>Reset a single tool to default permission level</black!>"};
     const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /tools [SUBCOMMAND]</cyan!>
 
 <cyan!>Description</cyan!>
   Show the current set of tools and their permission setting.
   The permission setting states when user confirmation is required. Trusted tools never require confirmation.
   Alternatively, specify a subcommand to modify the tool permissions."};
-    const TRUST_USAGE: &str = "/tools trust <tool name>";
-    const UNTRUST_USAGE: &str = "/tools untrust <tool name>";
+    const TRUST_USAGE: &str = "/tools trust <tools...>";
+    const UNTRUST_USAGE: &str = "/tools untrust <tools...>";
 
     fn usage_msg(header: impl AsRef<str>) -> String {
         format!(
@@ -205,6 +333,66 @@ trust so that no confirmation is required. These settings will last only for thi
             Self::AVAILABLE_COMMANDS
         )
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromptsSubcommand {
+    List { search_word: Option<String> },
+    Get { get_command: PromptsGetCommand },
+    Help,
+}
+
+impl PromptsSubcommand {
+    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available subcommands</cyan!>
+  <em>help</em>                                                   <black!>Show an explanation for the prompts command</black!>
+  <em>list [search word]</em>                                     <black!>List available prompts from a tool or show all available prompts</black!>"};
+    const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /prompts [SUBCOMMAND]</cyan!>
+
+<cyan!>Description</cyan!>
+  Show the current set of reusuable prompts from the current fleet of mcp servers."};
+
+    fn usage_msg(header: impl AsRef<str>) -> String {
+        format!(
+            "{}\n\n{}\n\n{}",
+            header.as_ref(),
+            Self::BASE_COMMAND,
+            Self::AVAILABLE_COMMANDS
+        )
+    }
+
+    pub fn help_text() -> String {
+        color_print::cformat!(
+            r#"
+<magenta,em>Prompts</magenta,em>
+
+Prompts are reusable templates that help you quickly access common workflows and tasks. 
+These templates are provided by the mcp servers you have installed and configured.
+
+To actually retrieve a prompt, directly start with the following command (without prepending /prompt get):
+  <em>@<<prompt name>> [arg]</em>                                   <black!>Retrieve prompt specified</black!>
+Or if you prefer the long way:
+  <em>/prompts get <<prompt name>> [arg]</em>                       <black!>Retrieve prompt specified</black!>
+
+{}
+
+{}"#,
+            Self::BASE_COMMAND,
+            Self::AVAILABLE_COMMANDS
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptsGetCommand {
+    pub orig_input: Option<String>,
+    pub params: PromptsGetParam,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptsGetParam {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<Vec<String>>,
 }
 
 impl Command {
@@ -234,6 +422,14 @@ impl Command {
             return Err(suggestion);
         }
 
+        // Check if the input starts with a literal backslash followed by a slash
+        // This allows users to escape the slash if they actually want to start with one
+        if input.starts_with("\\/") {
+            return Ok(Self::Ask {
+                prompt: input[1..].to_string(), // Remove the backslash but keep the slash
+            });
+        }
+
         if let Some(command) = input.strip_prefix("/") {
             let parts: Vec<&str> = command.split_whitespace().collect();
 
@@ -246,7 +442,7 @@ impl Command {
                 "help" => Self::Help,
                 "compact" => {
                     let mut prompt = None;
-                    let mut show_summary = false;
+                    let show_summary = true;
                     let mut help = false;
 
                     // Check if "help" is the first subcommand
@@ -255,23 +451,7 @@ impl Command {
                     } else {
                         let mut remaining_parts = Vec::new();
 
-                        // Parse the parts to handle both prompt and flags
-                        for part in &parts[1..] {
-                            if *part == "--summary" {
-                                show_summary = true;
-                            } else {
-                                remaining_parts.push(*part);
-                            }
-                        }
-
-                        // Check if the last word is "--summary" (which would have been captured as part of the prompt)
-                        if !remaining_parts.is_empty() {
-                            let last_idx = remaining_parts.len() - 1;
-                            if remaining_parts[last_idx] == "--summary" {
-                                remaining_parts.pop();
-                                show_summary = true;
-                            }
-                        }
+                        remaining_parts.extend_from_slice(&parts[1..]);
 
                         // If we have remaining parts after parsing flags, join them as the prompt
                         if !remaining_parts.is_empty() {
@@ -318,7 +498,9 @@ impl Command {
                 "q" | "exit" | "quit" => Self::Quit,
                 "profile" => {
                     if parts.len() < 2 {
-                        return Err(ProfileSubcommand::usage_msg("Missing subcommand for /profile."));
+                        return Ok(Self::Profile {
+                            subcommand: ProfileSubcommand::Help,
+                        });
                     }
 
                     macro_rules! usage_err {
@@ -424,13 +606,18 @@ impl Command {
                             let mut force = false;
                             let mut paths = Vec::new();
 
-                            for part in &parts[2..] {
-                                if *part == "--global" {
+                            let args = match shlex::split(&parts[2..].join(" ")) {
+                                Some(args) => args,
+                                None => return Err("Failed to parse quoted arguments".to_string()),
+                            };
+
+                            for arg in &args {
+                                if arg == "--global" {
                                     global = true;
-                                } else if *part == "--force" || *part == "-f" {
+                                } else if arg == "--force" || arg == "-f" {
                                     force = true;
                                 } else {
-                                    paths.push((*part).to_string());
+                                    paths.push(arg.to_string());
                                 }
                             }
 
@@ -446,12 +633,16 @@ impl Command {
                             // Parse rm command with paths and --global flag
                             let mut global = false;
                             let mut paths = Vec::new();
+                            let args = match shlex::split(&parts[2..].join(" ")) {
+                                Some(args) => args,
+                                None => return Err("Failed to parse quoted arguments".to_string()),
+                            };
 
-                            for part in &parts[2..] {
-                                if *part == "--global" {
+                            for arg in &args {
+                                if arg == "--global" {
                                     global = true;
                                 } else {
-                                    paths.push((*part).to_string());
+                                    paths.push(arg.to_string());
                                 }
                             }
 
@@ -482,6 +673,18 @@ impl Command {
                         "help" => Self::Context {
                             subcommand: ContextSubcommand::Help,
                         },
+                        "hooks" => {
+                            if parts.get(2).is_none() {
+                                return Ok(Self::Context {
+                                    subcommand: ContextSubcommand::Hooks { subcommand: None },
+                                });
+                            };
+
+                            match Self::parse_hooks(&parts) {
+                                Ok(command) => command,
+                                Err(err) => return Err(ContextSubcommand::hooks_usage_msg(err)),
+                            }
+                        },
                         other => {
                             return Err(ContextSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
                         },
@@ -502,33 +705,52 @@ impl Command {
                     }
 
                     match parts[1].to_lowercase().as_str() {
+                        "schema" => Self::Tools {
+                            subcommand: Some(ToolsSubcommand::Schema),
+                        },
                         "trust" => {
-                            let tool_name = parts.get(2);
-                            match tool_name {
-                                Some(tool_name) => Self::Tools {
-                                    subcommand: Some(ToolsSubcommand::Trust {
-                                        tool_name: (*tool_name).to_string(),
-                                    }),
-                                },
-                                None => usage_err!("trust", ToolsSubcommand::TRUST_USAGE),
+                            let mut tool_names = HashSet::new();
+                            for part in &parts[2..] {
+                                tool_names.insert((*part).to_string());
+                            }
+
+                            if tool_names.is_empty() {
+                                usage_err!("trust", ToolsSubcommand::TRUST_USAGE);
+                            }
+
+                            Self::Tools {
+                                subcommand: Some(ToolsSubcommand::Trust { tool_names }),
                             }
                         },
                         "untrust" => {
-                            let tool_name = parts.get(2);
-                            match tool_name {
-                                Some(tool_name) => Self::Tools {
-                                    subcommand: Some(ToolsSubcommand::Untrust {
-                                        tool_name: (*tool_name).to_string(),
-                                    }),
-                                },
-                                None => usage_err!("untrust", ToolsSubcommand::UNTRUST_USAGE),
+                            let mut tool_names = HashSet::new();
+                            for part in &parts[2..] {
+                                tool_names.insert((*part).to_string());
+                            }
+
+                            if tool_names.is_empty() {
+                                usage_err!("untrust", ToolsSubcommand::UNTRUST_USAGE);
+                            }
+
+                            Self::Tools {
+                                subcommand: Some(ToolsSubcommand::Untrust { tool_names }),
                             }
                         },
                         "trustall" => Self::Tools {
                             subcommand: Some(ToolsSubcommand::TrustAll),
                         },
-                        "reset" => Self::Tools {
-                            subcommand: Some(ToolsSubcommand::Reset),
+                        "reset" => {
+                            let tool_name = parts.get(2);
+                            match tool_name {
+                                Some(tool_name) => Self::Tools {
+                                    subcommand: Some(ToolsSubcommand::ResetSingle {
+                                        tool_name: (*tool_name).to_string(),
+                                    }),
+                                },
+                                None => Self::Tools {
+                                    subcommand: Some(ToolsSubcommand::Reset),
+                                },
+                            }
                         },
                         "help" => Self::Tools {
                             subcommand: Some(ToolsSubcommand::Help),
@@ -538,12 +760,54 @@ impl Command {
                         },
                     }
                 },
-                _ => {
-                    return Ok(Self::Ask {
-                        prompt: input.to_string(),
-                    });
+                "prompts" => {
+                    let subcommand = parts.get(1);
+                    match subcommand {
+                        Some(c) if c.to_lowercase() == "list" => Self::Prompts {
+                            subcommand: Some(PromptsSubcommand::List {
+                                search_word: parts.get(2).map(|v| (*v).to_string()),
+                            }),
+                        },
+                        Some(c) if c.to_lowercase() == "help" => Self::Prompts {
+                            subcommand: Some(PromptsSubcommand::Help),
+                        },
+                        Some(c) if c.to_lowercase() == "get" => {
+                            // Need to reconstruct the input because simple splitting of
+                            // white space might not be sufficient
+                            let command = parts[2..].join(" ");
+                            let get_command = parse_input_to_prompts_get_command(command.as_str())?;
+                            let subcommand = Some(PromptsSubcommand::Get { get_command });
+                            Self::Prompts { subcommand }
+                        },
+                        Some(other) => {
+                            return Err(PromptsSubcommand::usage_msg(format!(
+                                "Unknown subcommand '{}'\n",
+                                other
+                            )));
+                        },
+                        None => Self::Prompts {
+                            subcommand: Some(PromptsSubcommand::List {
+                                search_word: parts.get(2).map(|v| (*v).to_string()),
+                            }),
+                        },
+                    }
+                },
+                "usage" => Self::Usage,
+                unknown_command => {
+                    // If the command starts with a slash but isn't recognized,
+                    // return an error instead of treating it as a prompt
+                    return Err(format!(
+                        "Unknown command: '/{}'. Type '/help' to see available commands.\nTo use a literal slash at the beginning of your message, escape it with a backslash (e.g., '\\//hey' for '/hey').",
+                        unknown_command
+                    ));
                 },
             });
+        }
+
+        if let Some(command) = input.strip_prefix('@') {
+            let get_command = parse_input_to_prompts_get_command(command)?;
+            let subcommand = Some(PromptsSubcommand::Get { get_command });
+            return Ok(Self::Prompts { subcommand });
         }
 
         if let Some(command) = input.strip_prefix("!") {
@@ -556,6 +820,40 @@ impl Command {
             prompt: input.to_string(),
         })
     }
+
+    // NOTE: Here we use clap to parse the hooks subcommand instead of parsing manually
+    // like the rest of the file.
+    // Since the hooks subcommand has a lot of options, this makes more sense.
+    // Ideally, we parse everything with clap instead of trying to do it manually.
+    fn parse_hooks(parts: &[&str]) -> Result<Self, String> {
+        // Skip the first two parts ("/context" and "hooks")
+        let args = match shlex::split(&parts[1..].join(" ")) {
+            Some(args) => args,
+            None => return Err("Failed to parse arguments".to_string()),
+        };
+
+        // Parse with Clap
+        HooksCommand::try_parse_from(args)
+            .map(|hooks_command| Self::Context {
+                subcommand: ContextSubcommand::Hooks {
+                    subcommand: Some(hooks_command.command),
+                },
+            })
+            .map_err(|e| e.to_string())
+    }
+}
+
+fn parse_input_to_prompts_get_command(command: &str) -> Result<PromptsGetCommand, String> {
+    let input = shell_words::split(command).map_err(|e| format!("Error splitting command for prompts: {:?}", e))?;
+    let mut iter = input.into_iter();
+    let prompt_name = iter.next().ok_or("Prompt name needs to be specified")?;
+    let args = iter.collect::<Vec<_>>();
+    let params = PromptsGetParam {
+        name: prompt_name,
+        arguments: { if args.is_empty() { None } else { Some(args) } },
+    };
+    let orig_input = Some(command.to_string());
+    Ok(PromptsGetCommand { orig_input, params })
 }
 
 #[cfg(test)]
@@ -590,18 +888,9 @@ mod tests {
             };
         }
         let tests = &[
-            ("/compact", compact!(None, false)),
-            ("/compact --summary", compact!(None, true)),
+            ("/compact", compact!(None, true)),
             (
                 "/compact custom prompt",
-                compact!(Some("custom prompt".to_string()), false),
-            ),
-            (
-                "/compact --summary custom prompt",
-                compact!(Some("custom prompt".to_string()), true),
-            ),
-            (
-                "/compact custom prompt --summary",
                 compact!(Some("custom prompt".to_string()), true),
             ),
             ("/profile list", profile!(ProfileSubcommand::List)),
@@ -677,6 +966,66 @@ mod tests {
             ("/issue \"there was an error in the chat\"", Command::Issue {
                 prompt: Some("\"there was an error in the chat\"".to_string()),
             }),
+            (
+                "/context hooks",
+                context!(ContextSubcommand::Hooks { subcommand: None }),
+            ),
+            (
+                "/context hooks add test --trigger per_prompt --command 'echo 1' --global",
+                context!(ContextSubcommand::Hooks {
+                    subcommand: Some(HooksSubcommand::Add {
+                        name: "test".to_string(),
+                        global: true,
+                        trigger: "per_prompt".to_string(),
+                        command: "echo 1".to_string()
+                    })
+                }),
+            ),
+            (
+                "/context hooks rm test --global",
+                context!(ContextSubcommand::Hooks {
+                    subcommand: Some(HooksSubcommand::Remove {
+                        name: "test".to_string(),
+                        global: true
+                    })
+                }),
+            ),
+            (
+                "/context hooks enable test --global",
+                context!(ContextSubcommand::Hooks {
+                    subcommand: Some(HooksSubcommand::Enable {
+                        name: "test".to_string(),
+                        global: true
+                    })
+                }),
+            ),
+            (
+                "/context hooks disable test",
+                context!(ContextSubcommand::Hooks {
+                    subcommand: Some(HooksSubcommand::Disable {
+                        name: "test".to_string(),
+                        global: false
+                    })
+                }),
+            ),
+            (
+                "/context hooks enable-all --global",
+                context!(ContextSubcommand::Hooks {
+                    subcommand: Some(HooksSubcommand::EnableAll { global: true })
+                }),
+            ),
+            (
+                "/context hooks disable-all",
+                context!(ContextSubcommand::Hooks {
+                    subcommand: Some(HooksSubcommand::DisableAll { global: false })
+                }),
+            ),
+            (
+                "/context hooks help",
+                context!(ContextSubcommand::Hooks {
+                    subcommand: Some(HooksSubcommand::Help)
+                }),
+            ),
         ];
 
         for (input, parsed) in tests {

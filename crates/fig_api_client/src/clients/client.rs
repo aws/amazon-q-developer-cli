@@ -81,6 +81,7 @@ impl Client {
     pub async fn new_codewhisperer_client(endpoint: &Endpoint) -> Self {
         let conf_builder: amzn_codewhisperer_client::config::Builder = (&bearer_sdk_config(endpoint).await).into();
         let conf = conf_builder
+            .http_client(fig_aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new())
             .interceptor(UserAgentOverrideInterceptor::new())
             .bearer_token_resolver(BearerResolver)
@@ -93,6 +94,7 @@ impl Client {
     pub async fn new_consolas_client(endpoint: &Endpoint) -> Result<Self, Error> {
         let conf_builder: amzn_consolas_client::config::Builder = (&sigv4_sdk_config(endpoint).await?).into();
         let conf = conf_builder
+            .http_client(fig_aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new())
             .interceptor(UserAgentOverrideInterceptor::new())
             .app_name(app_name())

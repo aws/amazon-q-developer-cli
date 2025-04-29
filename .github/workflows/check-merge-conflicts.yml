@@ -1,0 +1,58 @@
+name: Check Merge Conflicts
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-merge-conflicts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Check if PR is against main branch
+        id: check-target-branch
+        run: |
+          TARGET_BRANCH="${{ github.base_ref }}"
+          if [[ "$TARGET_BRANCH" == "main" ]]; then
+            echo "PR is against main branch, no need to check for conflicts"
+            echo "is_main=true" >> $GITHUB_OUTPUT
+          else
+            echo "PR is not against main branch, will check for conflicts"
+            echo "is_main=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for merge conflicts with main
+        if: steps.check-target-branch.outputs.is_main == 'false'
+        id: check-conflicts
+        run: |
+          
+          # Set Git identity for the merge operation
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+          # Fetch main branch
+          git fetch origin main:main
+
+          # Try to merge main into the current branch
+          MERGE_EXIT_CODE=0
+          git merge main --no-commit --no-ff || MERGE_EXIT_CODE=$?
+
+          if [ $MERGE_EXIT_CODE -eq 0 ]; then
+            echo "No merge conflicts detected"
+            # Abort the merge since we're just checking
+            git merge --abort || true  # Don't fail if there's nothing to abort
+          else
+            echo "Merge conflicts detected!"
+            # Abort the merge
+            git merge --abort || true  # Don't fail if there's nothing to abort
+            echo "::error::This branch has merge conflicts with main. Please pull from main and rebase your branch before creating a PR."
+            exit 1
+          fi
+
+      - name: Success message
+        if: success()
+        run: echo "No merge conflicts detected or PR is against main branch"

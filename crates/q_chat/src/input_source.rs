@@ -1,7 +1,15 @@
+use std::sync::Arc;
+
 use eyre::Result;
 use rustyline::error::ReadlineError;
+use rustyline::{
+    EventHandler,
+    KeyEvent,
+};
 
-use crate::cli::chat::prompt::rl;
+use super::context::ContextManager;
+use super::prompt::rl;
+use super::skim_integration::SkimCommandSelector;
 
 #[derive(Debug)]
 pub struct InputSource(inner::Inner);
@@ -10,7 +18,7 @@ mod inner {
     use rustyline::Editor;
     use rustyline::history::FileHistory;
 
-    use crate::cli::chat::prompt::ChatHelper;
+    use super::super::prompt::ChatHelper;
 
     #[derive(Debug)]
     pub enum Inner {
@@ -24,8 +32,24 @@ mod inner {
 }
 
 impl InputSource {
-    pub fn new() -> Result<Self> {
-        Ok(Self(inner::Inner::Readline(rl()?)))
+    pub fn new(
+        sender: std::sync::mpsc::Sender<Option<String>>,
+        receiver: std::sync::mpsc::Receiver<Vec<String>>,
+    ) -> Result<Self> {
+        Ok(Self(inner::Inner::Readline(rl(sender, receiver)?)))
+    }
+
+    pub fn put_skim_command_selector(&mut self, context_manager: Arc<ContextManager>, tool_names: Vec<String>) {
+        if let inner::Inner::Readline(rl) = &mut self.0 {
+            let key_char = match fig_settings::settings::get_string_opt("chat.skimCommandKey").as_deref() {
+                Some(key) if key.len() == 1 => key.chars().next().unwrap_or('k'),
+                _ => 'k', // Default to 'k' if setting is missing or invalid
+            };
+            rl.bind_sequence(
+                KeyEvent::ctrl(key_char),
+                EventHandler::Conditional(Box::new(SkimCommandSelector::new(context_manager, tool_names))),
+            );
+        }
     }
 
     #[allow(dead_code)]
