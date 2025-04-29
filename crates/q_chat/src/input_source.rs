@@ -32,11 +32,14 @@ mod inner {
 }
 
 impl InputSource {
-    pub fn new() -> Result<Self> {
-        Ok(Self(inner::Inner::Readline(rl()?)))
+    pub fn new(
+        sender: std::sync::mpsc::Sender<Option<String>>,
+        receiver: std::sync::mpsc::Receiver<Vec<String>>,
+    ) -> Result<Self> {
+        Ok(Self(inner::Inner::Readline(rl(sender, receiver)?)))
     }
 
-    pub fn put_skim_command_selector(&mut self, context_manager: Arc<ContextManager>) {
+    pub fn put_skim_command_selector(&mut self, context_manager: Arc<ContextManager>, tool_names: Vec<String>) {
         if let inner::Inner::Readline(rl) = &mut self.0 {
             let key_char = match fig_settings::settings::get_string_opt("chat.skimCommandKey").as_deref() {
                 Some(key) if key.len() == 1 => key.chars().next().unwrap_or('k'),
@@ -44,7 +47,7 @@ impl InputSource {
             };
             rl.bind_sequence(
                 KeyEvent::ctrl(key_char),
-                EventHandler::Conditional(Box::new(SkimCommandSelector::new(context_manager))),
+                EventHandler::Conditional(Box::new(SkimCommandSelector::new(context_manager, tool_names))),
             );
         }
     }

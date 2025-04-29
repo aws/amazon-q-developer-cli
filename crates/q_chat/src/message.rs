@@ -27,6 +27,9 @@ use super::tools::{
 };
 use super::util::truncate_safe;
 
+const USER_ENTRY_START_HEADER: &str = "--- USER MESSAGE BEGIN ---\n";
+const USER_ENTRY_END_HEADER: &str = "--- USER MESSAGE END ---\n\n";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserMessage {
     pub additional_context: String,
@@ -115,8 +118,14 @@ impl UserMessage {
     /// Converts this message into a [UserInputMessage] to be sent as
     /// [FigConversationState::user_input_message].
     pub fn into_user_input_message(self) -> UserInputMessage {
+        let formatted_prompt = match self.prompt() {
+            Some(prompt) if !prompt.is_empty() => {
+                format!("{}{}{}", USER_ENTRY_START_HEADER, prompt, USER_ENTRY_END_HEADER)
+            },
+            _ => String::new(),
+        };
         UserInputMessage {
-            content: format!("{} {}", self.additional_context, self.prompt().unwrap_or_default())
+            content: format!("{} {}", self.additional_context, formatted_prompt)
                 .trim()
                 .to_string(),
             user_input_message_context: Some(UserInputMessageContext {

@@ -195,9 +195,10 @@ impl ResponseParser {
                 }
             }
         }
+
         let args = match serde_json::from_str(&tool_string) {
             Ok(args) => args,
-            Err(err) => {
+            Err(err) if !tool_string.is_empty() => {
                 // If we failed deserializing after waiting for a long time, then this is most
                 // likely bedrock responding with a stop event for some reason without actually
                 // including the tool contents. Essentially, the tool was too large.
@@ -238,6 +239,8 @@ impl ResponseParser {
                     return Err(self.error(err));
                 }
             },
+            // if the tool just does not need any input
+            _ => serde_json::json!({}),
         };
         Ok(AssistantToolUse { id, name, args })
     }
