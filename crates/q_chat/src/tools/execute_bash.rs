@@ -33,9 +33,6 @@ const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head"
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecuteBash {
     pub command: String,
-    /// Optional summary explaining what the command does
-    #[serde(default)]
-    pub summary: Option<String>,
 }
 
 impl ExecuteBash {
@@ -117,29 +114,13 @@ impl ExecuteBash {
             queue!(updates, style::Print("\n"),)?;
         }
 
-        queue!(
+        Ok(queue!(
             updates,
             style::SetForegroundColor(Color::Green),
             style::Print(&self.command),
-            style::Print("\n"),
+            style::Print("\n\n"),
             style::ResetColor
-        )?;
-        
-        // Add the summary if available
-        if let Some(summary) = &self.summary {
-            queue!(
-                updates,
-                style::SetForegroundColor(Color::Blue),
-                style::Print("\nPurpose: "),
-                style::SetForegroundColor(Color::Reset),
-                style::Print(summary),
-                style::Print("\n"),
-            )?;
-        }
-        
-        queue!(updates, style::Print("\n"))?;
-        
-        Ok(())
+        )?)
     }
 
     pub async fn validate(&mut self, _ctx: &Context) -> Result<()> {
@@ -335,88 +316,7 @@ mod tests {
             panic!("Expected JSON output");
         }
     }
-    
-    #[test]
-    fn test_deserialize_with_summary() {
-        let json = r#"{"command": "ls -la", "summary": "List all files with details"}"#;
-        let tool = serde_json::from_str::<ExecuteBash>(json).unwrap();
-        assert_eq!(tool.command, "ls -la");
-        assert_eq!(tool.summary, Some("List all files with details".to_string()));
-    }
-    
-    #[test]
-    fn test_deserialize_without_summary() {
-        let json = r#"{"command": "ls -la"}"#;
-        let tool = serde_json::from_str::<ExecuteBash>(json).unwrap();
-        assert_eq!(tool.command, "ls -la");
-        assert_eq!(tool.summary, None);
-    }
-    
-    #[test]
-    fn test_queue_description_with_summary() {
-        let mut buffer = Vec::new();
-        
-        let tool = ExecuteBash {
-            command: "ls -la".to_string(),
-            summary: Some("List all files in the current directory with details".to_string()),
-        };
-        
-        tool.queue_description(&mut buffer).unwrap();
-        
-        let output = String::from_utf8(buffer).unwrap();
-        assert!(output.contains("ls -la"));
-        assert!(output.contains("Purpose: List all files in the current directory with details"));
-    }
-    
-    #[test]
-    fn test_queue_description_without_summary() {
-        let mut buffer = Vec::new();
-        
-        let tool = ExecuteBash {
-            command: "ls -la".to_string(),
-            summary: None,
-        };
-        
-        tool.queue_description(&mut buffer).unwrap();
-        
-        let output = String::from_utf8(buffer).unwrap();
-        assert!(output.contains("ls -la"));
-        assert!(!output.contains("Purpose:"));
-    }
 
-    #[test]
-    fn test_long_summary() {
-        let mut buffer = Vec::new();
-        
-        let tool = ExecuteBash {
-            command: "find . -type f -name '*.rs'".to_string(),
-            summary: Some("This command searches recursively through the current directory and all subdirectories for files with the .rs extension, which are Rust source code files.".to_string()),
-        };
-        
-        tool.queue_description(&mut buffer).unwrap();
-        
-        let output = String::from_utf8(buffer).unwrap();
-        assert!(output.contains("find . -type f -name '*.rs'"));
-        assert!(output.contains("Purpose: This command searches recursively"));
-    }
-    
-    #[test]
-    fn test_summary_with_special_characters() {
-        let mut buffer = Vec::new();
-        
-        let tool = ExecuteBash {
-            command: "grep -E \"[0-9]{3}-[0-9]{2}-[0-9]{4}\" file.txt".to_string(),
-            summary: Some("This command searches for Social Security Number patterns (###-##-####) in file.txt. It uses special characters like: * ? $ ^ & % ! @ # ( ) [ ] { } < > | \\ / \" ' ` ~".to_string()),
-        };
-        
-        tool.queue_description(&mut buffer).unwrap();
-        
-        let output = String::from_utf8(buffer).unwrap();
-        assert!(output.contains("grep -E"));
-        assert!(output.contains("Purpose: This command searches for Social Security Number patterns"));
-        assert!(output.contains("special characters like:"));
-    }
-    
     #[test]
     fn test_requires_acceptance_for_readonly_commands() {
         let cmds = &[
