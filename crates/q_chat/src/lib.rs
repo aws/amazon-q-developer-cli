@@ -199,7 +199,7 @@ const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
 <em>Welcome to <cyan!>Amazon Q</cyan!>!</em>
 "};
 
-const ROTATING_TIPS: [&str; 7] = [
+const ROTATING_TIPS: [&str; 8] = [
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
     color_print::cstr! {"Q can use tools without asking for confirmation every time. Give <green!>/tools trust</green!> a try"},
@@ -207,6 +207,9 @@ const ROTATING_TIPS: [&str; 7] = [
     color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation history with its summary to free up the context space"},
     color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
     color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
+    color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>.\
+    \nPlace a mcp config in ~/.aws/amazonq/mcp.json or /your/current/workspace/.amazonq/mcp.json.\
+    \nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/what-is.html"},
 ];
 
 const GREETING_BREAK_POINT: usize = 67;
@@ -263,6 +266,9 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>hooks</em>       <black!>View and manage context hooks</black!>
 <em>/usage</em>      <black!>Show current session's context window usage</black!>
 
+<cyan,em>MCP:</cyan,em>
+<black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/en_us/amazonq/latest/qdeveloper-ug/command-line-mcp.html</black!>
+
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
 <em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
@@ -273,7 +279,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
 const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
-\nAgents can sometimes do unexpected things so understand the risks.</green!>"};
+\nAgents can sometimes do unexpected things so understand the risks.</green!>
+\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety"};
 
 const TOOL_BULLET: &str = " ● ";
 const CONTINUATION_LINE: &str = " ⋮ ";
@@ -337,10 +344,21 @@ pub async fn chat(
         _ => StreamingClient::new().await?,
     };
 
-    let mcp_server_configs = McpServerConfig::load_config(&mut output).await.unwrap_or_else(|e| {
-        warn!("No mcp server config loaded: {}", e);
-        McpServerConfig::default()
-    });
+    let mcp_server_configs = match McpServerConfig::load_config(&mut output).await {
+        Ok(config) => {
+            execute!(
+                output,
+                style::Print(
+                    "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n"
+                )
+            )?;
+            config
+        },
+        Err(e) => {
+            warn!("No mcp server config loaded: {}", e);
+            McpServerConfig::default()
+        },
+    };
 
     // If profile is specified, verify it exists before starting the chat
     if let Some(ref profile_name) = profile {
@@ -3002,14 +3020,8 @@ impl ChatContext {
             }
 
             // Set spinner after showing all of the assistant text content so far.
-            if let (Some(name), true) = (&tool_name_being_recvd, self.interactive) {
-                queue!(
-                    self.output,
-                    style::SetForegroundColor(Color::Blue),
-                    style::Print(format!("\n{name}: ")),
-                    style::SetForegroundColor(Color::Reset),
-                    cursor::Hide,
-                )?;
+            if let (Some(_name), true) = (&tool_name_being_recvd, self.interactive) {
+                queue!(self.output, cursor::Hide)?;
                 self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
             }
 
