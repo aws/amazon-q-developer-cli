@@ -383,7 +383,7 @@ message GetPlatformInfoResponse {
 
 message Profile {
   string arn = 1;
-  string profileName = 2;
+  string profile_name = 2;
 }
 
 message ListAvailableProfilesRequest {}
