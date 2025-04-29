@@ -33,7 +33,7 @@ pub async fn set_profile(request: SetProfileRequest) -> RequestResult {
         profile_name: profile.profile_name,
     };
 
-    let profile_str = match serde_json::to_string(&profile) {
+    let profile_str = match serde_json::to_value(&profile) {
         Ok(profile) => profile,
         Err(err) => return RequestResult::error(err.to_string()),
     };

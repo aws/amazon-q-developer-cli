@@ -1,5 +1,8 @@
 import { ProfileSchema } from "@aws/amazon-q-developer-cli-proto/fig";
-import { sendListAvailableProfilesRequest } from "./requests.js";
+import {
+  sendListAvailableProfilesRequest,
+  sendSetProfileRequest,
+} from "./requests.js";
 import { create } from "@bufbuild/protobuf";
 
 export async function listAvailableProfiles() {
@@ -7,7 +10,7 @@ export async function listAvailableProfiles() {
 }
 
 export async function setProfile(profileName: string, arn: string) {
-  return sendListAvailableProfilesRequest({
-    profile: create(ProfileSchema, { profileName, arn }),
+  return sendSetProfileRequest({
+    profile: create(ProfileSchema, { arn, profileName }),
   });
 }

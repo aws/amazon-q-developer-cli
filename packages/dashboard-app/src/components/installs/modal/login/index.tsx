@@ -6,7 +6,7 @@ import {
   Native,
 } from "@aws/amazon-q-developer-cli-api-bindings";
 import { useEffect, useState } from "react";
-import Tab from "./tabs";
+import Tab, { ProfileTab } from "./tabs";
 import { useLocalStateZodDefault } from "@/hooks/store/useState";
 import { z } from "zod";
 import { Link } from "@/components/ui/link";
@@ -46,13 +46,13 @@ export default function LoginModal({ next }: { next: () => void }) {
   const [copyToClipboardText, setCopyToClipboardText] = useState<
     "Copy to clipboard" | "Copied!"
   >("Copy to clipboard");
-
   const [error, setError] = useState<string | null>(null);
   const [completedOnboarding] = useLocalStateZodDefault(
     "desktop.completedOnboarding",
     z.boolean(),
     false,
   );
+  const [showProfileTab, setShowProfileTab] = useState(false);
   const auth = useAuth();
   const refreshAuth = useRefreshAuth();
 
@@ -101,10 +101,13 @@ export default function LoginModal({ next }: { next: () => void }) {
       authRequestId: init.authRequestId,
     })
       .then(() => {
-        setLoginState("logged in");
         Internal.sendWindowFocusRequest({});
-        refreshAuth();
-        next();
+        if (tab == "iam") {
+          setShowProfileTab(true);
+        } else {
+          refreshAuth();
+          next();
+        }
       })
       .catch((err) => {
         // If this promise was originally for some older request attempt,
@@ -160,11 +163,22 @@ export default function LoginModal({ next }: { next: () => void }) {
   }, [auth]);
 
   useEffect(() => {
-    if (loginState !== "logged in") return;
+    if (loginState !== "logged in" || showProfileTab) return;
     next();
-  }, [loginState, next]);
+  }, [loginState, showProfileTab, next]);
 
-  return (
+  return showProfileTab ? (
+    <ProfileTab
+      next={() => {
+        refreshAuth();
+        setLoginState("logged in");
+      }}
+      back={() => {
+        setLoginState("not started");
+        setShowProfileTab(false);
+      }}
+    />
+  ) : (
     <div className="flex flex-col items-center gap-8 gradient-q-secondary-light -m-10 pt-10 p-4 rounded-lg text-white">
       <div className="flex flex-col items-center gap-8">
         <Lockup />
@@ -184,7 +198,6 @@ export default function LoginModal({ next }: { next: () => void }) {
           </div>
         )}
       </div>
-
       {error && (
         <div className="flex flex-col items-center gap-2 w-full bg-red-200 border border-red-600 rounded py-2 px-2">
           <p className="text-black dark:text-white font-semibold text-center">

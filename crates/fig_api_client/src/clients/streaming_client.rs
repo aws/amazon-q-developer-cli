@@ -93,7 +93,7 @@ impl StreamingClient {
             Ok(Some(profile)) => match profile.get("arn") {
                 Some(arn) => Some(arn.to_string()),
                 None => {
-                    error!("Stored profile does not contain an arn");
+                    error!("Stored profile does not contain an arn. Instead it was: {profile}");
                     None
                 },
             },
