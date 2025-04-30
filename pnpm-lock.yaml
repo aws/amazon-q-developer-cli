@@ -549,8 +549,8 @@ importers:
         specifier: ^7.5.0
         version: 7.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react-router-dom:
-        specifier: ^7.5.0
-        version: 7.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: ^7.5.3
+        version: 7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       tailwind-merge:
         specifier: ^3.2.0
         version: 3.2.0
@@ -4944,8 +4944,8 @@ packages:
       '@types/react':
         optional: true
 
-  react-router-dom@7.5.0:
-    resolution: {integrity: sha512-fFhGFCULy4vIseTtH5PNcY/VvDJK5gvOWcwJVHQp8JQcWVr85ENhJ3UpuF/zP1tQOIFYNRJHzXtyhU1Bdgw0RA==}
+  react-router-dom@7.5.3:
+    resolution: {integrity: sha512-cK0jSaTyW4jV9SRKAItMIQfWZ/D6WEZafgHuuCb9g+SjhLolY78qc+De4w/Cz9ybjvLzShAmaIMEXt8iF1Cm+A==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       react: '>=18'
@@ -4953,6 +4953,16 @@ packages:
 
   react-router@7.5.0:
     resolution: {integrity: sha512-estOHrRlDMKdlQa6Mj32gIks4J+AxNsYoE0DbTTxiMy2mPzZuWSDU+N85/r1IlNR7kGfznF3VCUlvc5IUO+B9g==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+
+  react-router@7.5.3:
+    resolution: {integrity: sha512-3iUDM4/fZCQ89SXlDa+Ph3MevBrozBAI655OAfWQlTm9nBR0IKlrmNwFow5lPHttbwvITZfkeeeZFP6zt3F7pw==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       react: '>=18'
@@ -11236,15 +11246,24 @@ snapshots:
     optionalDependencies:
       '@types/react': 18.3.18
 
-  react-router-dom@7.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  react-router-dom@7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      react-router: 7.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      react-router: 7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
 
   react-router@7.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       '@types/cookie': 0.6.0
+      cookie: 1.0.2
+      react: 18.3.1
+      set-cookie-parser: 2.7.1
+      turbo-stream: 2.4.0
+    optionalDependencies:
+      react-dom: 18.3.1(react@18.3.1)
+
+  react-router@7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+    dependencies:
       cookie: 1.0.2
       react: 18.3.1
       set-cookie-parser: 2.7.1
