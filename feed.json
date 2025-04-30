@@ -13,6 +13,18 @@
     {
       "type": "release",
       "date": "2025-04-28",
+      "version": "1.10.0",
+      "title": "Version 1.10.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Multi-region support for pro users"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-04-28",
       "version": "1.9.1",
       "title": "Version 1.9.1",
       "changes": [
