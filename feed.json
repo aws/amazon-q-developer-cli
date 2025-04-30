@@ -12,13 +12,25 @@
     },
     {
       "type": "release",
-      "date": "2025-04-28",
+      "date": "2025-04-30",
       "version": "1.10.0",
       "title": "Version 1.10.0",
       "changes": [
         {
           "type": "added",
           "description": "Multi-region support for pro users"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue where non-interactive chat sessions displayed welcome banner - [#1437](https://github.com/aws/amazon-q-developer-cli/pull/1437)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue where the /context chat command reference was duplicated in /help - [#1438](https://github.com/aws/amazon-q-developer-cli/pull/1438)"
+        },
+        {
+          "type": "fixed",
+          "description": "Preferred default of fuzzy find to ctrl+s - [#1442](https://github.com/aws/amazon-q-developer-cli/pull/1442)"
         }
       ]
     },
