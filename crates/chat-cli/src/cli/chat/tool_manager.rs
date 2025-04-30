@@ -458,10 +458,12 @@ enum OutOfSpecName {
     EmptyDescription(String),
 }
 
+// type ClientInProgress = Either
+
+#[derive(Default)]
 /// Manages the lifecycle and interactions with tools from various sources, including MCP servers.
 /// This struct is responsible for initializing tools, handling tool requests, and maintaining
 /// a cache of available prompts from connected servers.
-#[derive(Default)]
 pub struct ToolManager {
     /// Unique identifier for the current conversation.
     /// This ID is used to track and associate tools with a specific chat session.
@@ -470,6 +472,12 @@ pub struct ToolManager {
     /// Map of server names to their corresponding client instances.
     /// These clients are used to communicate with MCP servers.
     pub clients: HashMap<String, Arc<CustomToolClient>>,
+
+    /// Map of server names to client instances that are currently being initialized.
+    /// This tracks MCP server clients that are in the process of being set up but are not yet
+    /// fully ready for use. Once initialization is complete, these clients will be moved to
+    /// the main `clients` collection.
+    _clients_in_progress: Arc<Mutex<HashMap<String, Arc<CustomToolClient>>>>,
 
     /// Cache for prompts collected from different servers.
     /// Key: prompt name
