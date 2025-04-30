@@ -42,7 +42,7 @@
       "changes": [
         {
           "type": "fixed",
-          "description": "Shortens mcp tip to avoid overflow (emergent deployment)"
+          "description": "A bug where chat would sometimes become unresponsive"
         }
       ]
     },
