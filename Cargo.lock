@@ -2717,7 +2717,7 @@ dependencies = [
  "http 1.2.0",
  "image",
  "infer",
- "keyboard-types",
+ "keyboard-types 0.8.0",
  "libc",
  "macos-utils",
  "mime",
@@ -4694,6 +4694,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyboard-types"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd6e0f18953c66af118a70064505bd3780a226d65b06553b7293fb8933067967"
+dependencies = [
+ "bitflags 2.9.0",
+ "serde",
+]
+
+[[package]]
 name = "kqueue"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5210,7 +5220,7 @@ dependencies = [
  "crossbeam-channel",
  "dpi",
  "gtk",
- "keyboard-types",
+ "keyboard-types 0.7.0",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
