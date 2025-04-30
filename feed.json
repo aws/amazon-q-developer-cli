@@ -30,7 +30,7 @@
         },
         {
           "type": "fixed",
-          "description": "Preferred default of fuzzy find to ctrl+s - [#1442](https://github.com/aws/amazon-q-developer-cli/pull/1442)"
+          "description": "Preferred default of fuzzy find to `ctrl+s` - [#1442](https://github.com/aws/amazon-q-developer-cli/pull/1442)"
         }
       ]
     },
@@ -242,7 +242,7 @@
         },
         {
           "type": "changed",
-          "description": "Ctrl+C so that it exits `q chat` on first attempt - [#830](https://github.com/aws/amazon-q-developer-cli/pull/830)"
+          "description": "`ctrl+c` so that it exits `q chat` on first attempt - [#830](https://github.com/aws/amazon-q-developer-cli/pull/830)"
         },
         {
           "type": "fixed",
