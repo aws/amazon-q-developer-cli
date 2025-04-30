@@ -116,7 +116,7 @@ export default function Page() {
                           <SelectItem
                             key={p.arn}
                             value={p.arn}
-                            description={p.arn}  
+                            description={p.arn}
                           >
                             {p.profileName}
                           </SelectItem>
