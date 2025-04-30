@@ -306,8 +306,6 @@ impl ToolsSubcommand {
   Show the current set of tools and their permission setting.
   The permission setting states when user confirmation is required. Trusted tools never require confirmation.
   Alternatively, specify a subcommand to modify the tool permissions."};
-    const TRUST_USAGE: &str = "/tools trust <tools...>";
-    const UNTRUST_USAGE: &str = "/tools untrust <tools...>";
 
     fn usage_msg(header: impl AsRef<str>) -> String {
         format!(
@@ -695,15 +693,6 @@ impl Command {
                         return Ok(Self::Tools { subcommand: None });
                     }
 
-                    macro_rules! usage_err {
-                        ($subcommand:expr, $usage_str:expr) => {
-                            return Err(format!(
-                                "Invalid /tools {} arguments.\n\nUsage:\n  {}",
-                                $subcommand, $usage_str
-                            ))
-                        };
-                    }
-
                     match parts[1].to_lowercase().as_str() {
                         "schema" => Self::Tools {
                             subcommand: Some(ToolsSubcommand::Schema),
@@ -715,7 +704,21 @@ impl Command {
                             }
 
                             if tool_names.is_empty() {
-                                usage_err!("trust", ToolsSubcommand::TRUST_USAGE);
+                                let _ = queue!(
+                                    output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("\nPlease use"),
+                                    style::SetForegroundColor(Color::DarkGreen),
+                                    style::Print(" /tools trust <tool1> <tool2>"),
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print(" to trust tools.\n\n"),
+                                    style::Print("Use "),
+                                    style::SetForegroundColor(Color::DarkGreen),
+                                    style::Print("/tools"),
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print(" to see all available tools.\n\n"),
+                                    style::SetForegroundColor(Color::Reset),
+                                );
                             }
 
                             Self::Tools {
@@ -729,7 +732,21 @@ impl Command {
                             }
 
                             if tool_names.is_empty() {
-                                usage_err!("untrust", ToolsSubcommand::UNTRUST_USAGE);
+                                let _ = queue!(
+                                    output,
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print("\nPlease use"),
+                                    style::SetForegroundColor(Color::DarkGreen),
+                                    style::Print(" /tools untrust <tool1> <tool2>"),
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print(" to untrust tools.\n\n"),
+                                    style::Print("Use "),
+                                    style::SetForegroundColor(Color::DarkGreen),
+                                    style::Print("/tools"),
+                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::Print(" to see all available tools.\n\n"),
+                                    style::SetForegroundColor(Color::Reset),
+                                );
                             }
 
                             Self::Tools {
