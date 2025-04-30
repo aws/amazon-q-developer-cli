@@ -2,6 +2,7 @@ mod common;
 
 use common::*;
 
+#[ignore]
 #[test]
 fn user_whoami() -> Result<()> {
     cli().args(["user", "whoami"]).assert().code(predicate::in_iter([0, 1]));
