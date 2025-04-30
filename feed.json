@@ -26,7 +26,7 @@
         },
         {
           "type": "fixed",
-          "description": "An issue where the /context chat command reference was duplicated in /help - [#1438](https://github.com/aws/amazon-q-developer-cli/pull/1438)"
+          "description": "An issue where the `/context` chat command reference was duplicated in `/help` - [#1438](https://github.com/aws/amazon-q-developer-cli/pull/1438)"
         },
         {
           "type": "fixed",
