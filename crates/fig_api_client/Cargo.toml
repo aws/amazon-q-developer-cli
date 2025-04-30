@@ -19,7 +19,7 @@ amzn-codewhisperer-streaming-client.workspace = true
 amzn-consolas-client.workspace = true
 amzn-qdeveloper-streaming-client.workspace = true
 aws-config = "1.0.3"
-aws-credential-types = "1.0.3"
+aws-credential-types = "1.2.3"
 aws-smithy-async = "1.2.2"
 aws-smithy-runtime-api.workspace = true
 aws-smithy-types.workspace = true
@@ -43,5 +43,5 @@ url = { workspace = true, features = ["serde"] }
 which.workspace = true
 
 [dev-dependencies]
-aws-smithy-runtime = { version = "1.3.1", features = ["test-util"] }
+aws-smithy-runtime = { version = "1.8.3", features = ["test-util"] }
 tracing-subscriber.workspace = true
