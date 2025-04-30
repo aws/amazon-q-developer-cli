@@ -6,6 +6,8 @@
 pub enum ChatResponseStream {
     /// Assistant response event - Text / Code snippet
     AssistantResponseEvent(crate::types::AssistantResponseEvent),
+    /// Citation event
+    CitationEvent(crate::types::CitationEvent),
     /// Code Generated event
     CodeEvent(crate::types::CodeEvent),
     /// Code References event
@@ -24,6 +26,8 @@ pub enum ChatResponseStream {
     MessageMetadataEvent(crate::types::MessageMetadataEvent),
     /// Web Reference links event
     SupplementaryWebLinksEvent(crate::types::SupplementaryWebLinksEvent),
+    /// Tool use result
+    ToolResultEvent(crate::types::ToolResultEvent),
     /// ToolUse event
     ToolUseEvent(crate::types::ToolUseEvent),
     /// The `Unknown` variant represents cases where new union variant was received. Consider
@@ -54,6 +58,24 @@ impl ChatResponseStream {
     /// [`AssistantResponseEvent`](crate::types::ChatResponseStream::AssistantResponseEvent).
     pub fn is_assistant_response_event(&self) -> bool {
         self.as_assistant_response_event().is_ok()
+    }
+
+    /// Tries to convert the enum instance into
+    /// [`CitationEvent`](crate::types::ChatResponseStream::CitationEvent), extracting the inner
+    /// [`CitationEvent`](crate::types::CitationEvent). Returns `Err(&Self)` if it can't be
+    /// converted.
+    pub fn as_citation_event(&self) -> ::std::result::Result<&crate::types::CitationEvent, &Self> {
+        if let ChatResponseStream::CitationEvent(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`CitationEvent`](crate::types::ChatResponseStream::CitationEvent).
+    pub fn is_citation_event(&self) -> bool {
+        self.as_citation_event().is_ok()
     }
 
     /// Tries to convert the enum instance into
@@ -219,6 +241,24 @@ impl ChatResponseStream {
     /// [`SupplementaryWebLinksEvent`](crate::types::ChatResponseStream::SupplementaryWebLinksEvent).
     pub fn is_supplementary_web_links_event(&self) -> bool {
         self.as_supplementary_web_links_event().is_ok()
+    }
+
+    /// Tries to convert the enum instance into
+    /// [`ToolResultEvent`](crate::types::ChatResponseStream::ToolResultEvent), extracting the inner
+    /// [`ToolResultEvent`](crate::types::ToolResultEvent). Returns `Err(&Self)` if it can't be
+    /// converted.
+    pub fn as_tool_result_event(&self) -> ::std::result::Result<&crate::types::ToolResultEvent, &Self> {
+        if let ChatResponseStream::ToolResultEvent(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`ToolResultEvent`](crate::types::ChatResponseStream::ToolResultEvent).
+    pub fn is_tool_result_event(&self) -> bool {
+        self.as_tool_result_event().is_ok()
     }
 
     /// Tries to convert the enum instance into

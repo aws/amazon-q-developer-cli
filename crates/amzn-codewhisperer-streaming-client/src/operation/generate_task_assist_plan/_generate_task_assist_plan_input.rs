@@ -8,6 +8,8 @@ pub struct GenerateTaskAssistPlanInput {
     pub conversation_state: ::std::option::Option<crate::types::ConversationState>,
     /// Represents a Workspace state uploaded to S3 for Async Code Actions
     pub workspace_state: ::std::option::Option<crate::types::WorkspaceState>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GenerateTaskAssistPlanInput {
     /// Structure to represent the current state of a chat conversation.
@@ -18,6 +20,11 @@ impl GenerateTaskAssistPlanInput {
     /// Represents a Workspace state uploaded to S3 for Async Code Actions
     pub fn workspace_state(&self) -> ::std::option::Option<&crate::types::WorkspaceState> {
         self.workspace_state.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 }
 impl GenerateTaskAssistPlanInput {
@@ -35,6 +42,7 @@ impl GenerateTaskAssistPlanInput {
 pub struct GenerateTaskAssistPlanInputBuilder {
     pub(crate) conversation_state: ::std::option::Option<crate::types::ConversationState>,
     pub(crate) workspace_state: ::std::option::Option<crate::types::WorkspaceState>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GenerateTaskAssistPlanInputBuilder {
     /// Structure to represent the current state of a chat conversation.
@@ -73,6 +81,23 @@ impl GenerateTaskAssistPlanInputBuilder {
         &self.workspace_state
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`GenerateTaskAssistPlanInput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanInput).
     pub fn build(
@@ -85,6 +110,7 @@ impl GenerateTaskAssistPlanInputBuilder {
             crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanInput {
                 conversation_state: self.conversation_state,
                 workspace_state: self.workspace_state,
+                profile_arn: self.profile_arn,
             },
         )
     }

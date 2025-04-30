@@ -18,6 +18,8 @@ pub struct StartTaskAssistCodeGenerationInput {
     pub intent: ::std::option::Option<crate::types::Intent>,
     #[allow(missing_docs)] // documentation missing in model
     pub intent_context: ::std::option::Option<crate::types::IntentContext>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartTaskAssistCodeGenerationInput {
     /// Structure to represent the current state of a chat conversation.
@@ -56,6 +58,11 @@ impl StartTaskAssistCodeGenerationInput {
     pub fn intent_context(&self) -> ::std::option::Option<&crate::types::IntentContext> {
         self.intent_context.as_ref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
+    }
 }
 impl StartTaskAssistCodeGenerationInput {
     /// Creates a new builder-style object to manufacture
@@ -78,6 +85,7 @@ pub struct StartTaskAssistCodeGenerationInputBuilder {
     pub(crate) current_code_generation_id: ::std::option::Option<::std::string::String>,
     pub(crate) intent: ::std::option::Option<crate::types::Intent>,
     pub(crate) intent_context: ::std::option::Option<crate::types::IntentContext>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartTaskAssistCodeGenerationInputBuilder {
     /// Structure to represent the current state of a chat conversation.
@@ -209,6 +217,23 @@ impl StartTaskAssistCodeGenerationInputBuilder {
         &self.intent_context
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`StartTaskAssistCodeGenerationInput`](crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationInput).
     pub fn build(
@@ -226,6 +251,7 @@ impl StartTaskAssistCodeGenerationInputBuilder {
                 current_code_generation_id: self.current_code_generation_id,
                 intent: self.intent,
                 intent_context: self.intent_context,
+                profile_arn: self.profile_arn,
             },
         )
     }

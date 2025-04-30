@@ -2,7 +2,7 @@
 pub(crate) fn de_dry_run_operation_exception_json_err(
     value: &[u8],
     mut builder: crate::types::error::builders::DryRunOperationErrorBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::types::error::builders::DryRunOperationErrorBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

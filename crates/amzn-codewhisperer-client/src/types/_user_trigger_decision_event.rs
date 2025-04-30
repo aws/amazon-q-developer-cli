@@ -31,6 +31,10 @@ pub struct UserTriggerDecisionEvent {
     pub perceived_latency_milliseconds: ::std::option::Option<f64>,
     #[allow(missing_docs)] // documentation missing in model
     pub accepted_character_count: i32,
+    /// List of IDE Diagnostics
+    pub added_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    /// List of IDE Diagnostics
+    pub removed_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
 }
 impl UserTriggerDecisionEvent {
     #[allow(missing_docs)] // documentation missing in model
@@ -104,6 +108,22 @@ impl UserTriggerDecisionEvent {
     pub fn accepted_character_count(&self) -> i32 {
         self.accepted_character_count
     }
+
+    /// List of IDE Diagnostics
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.added_ide_diagnostics.is_none()`.
+    pub fn added_ide_diagnostics(&self) -> &[crate::types::IdeDiagnostic] {
+        self.added_ide_diagnostics.as_deref().unwrap_or_default()
+    }
+
+    /// List of IDE Diagnostics
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.removed_ide_diagnostics.is_none()`.
+    pub fn removed_ide_diagnostics(&self) -> &[crate::types::IdeDiagnostic] {
+        self.removed_ide_diagnostics.as_deref().unwrap_or_default()
+    }
 }
 impl UserTriggerDecisionEvent {
     /// Creates a new builder-style object to manufacture
@@ -131,6 +151,8 @@ pub struct UserTriggerDecisionEventBuilder {
     pub(crate) number_of_recommendations: ::std::option::Option<i32>,
     pub(crate) perceived_latency_milliseconds: ::std::option::Option<f64>,
     pub(crate) accepted_character_count: ::std::option::Option<i32>,
+    pub(crate) added_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    pub(crate) removed_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
 }
 impl UserTriggerDecisionEventBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -378,6 +400,60 @@ impl UserTriggerDecisionEventBuilder {
         &self.accepted_character_count
     }
 
+    /// Appends an item to `added_ide_diagnostics`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_added_ide_diagnostics`](Self::set_added_ide_diagnostics).
+    ///
+    /// List of IDE Diagnostics
+    pub fn added_ide_diagnostics(mut self, input: crate::types::IdeDiagnostic) -> Self {
+        let mut v = self.added_ide_diagnostics.unwrap_or_default();
+        v.push(input);
+        self.added_ide_diagnostics = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// List of IDE Diagnostics
+    pub fn set_added_ide_diagnostics(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    ) -> Self {
+        self.added_ide_diagnostics = input;
+        self
+    }
+
+    /// List of IDE Diagnostics
+    pub fn get_added_ide_diagnostics(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>> {
+        &self.added_ide_diagnostics
+    }
+
+    /// Appends an item to `removed_ide_diagnostics`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_removed_ide_diagnostics`](Self::set_removed_ide_diagnostics).
+    ///
+    /// List of IDE Diagnostics
+    pub fn removed_ide_diagnostics(mut self, input: crate::types::IdeDiagnostic) -> Self {
+        let mut v = self.removed_ide_diagnostics.unwrap_or_default();
+        v.push(input);
+        self.removed_ide_diagnostics = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// List of IDE Diagnostics
+    pub fn set_removed_ide_diagnostics(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    ) -> Self {
+        self.removed_ide_diagnostics = input;
+        self
+    }
+
+    /// List of IDE Diagnostics
+    pub fn get_removed_ide_diagnostics(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>> {
+        &self.removed_ide_diagnostics
+    }
+
     /// Consumes the builder and constructs a
     /// [`UserTriggerDecisionEvent`](crate::types::UserTriggerDecisionEvent). This method will
     /// fail if any of the following fields are not set:
@@ -442,6 +518,8 @@ impl UserTriggerDecisionEventBuilder {
             number_of_recommendations: self.number_of_recommendations.unwrap_or_default(),
             perceived_latency_milliseconds: self.perceived_latency_milliseconds,
             accepted_character_count: self.accepted_character_count.unwrap_or_default(),
+            added_ide_diagnostics: self.added_ide_diagnostics,
+            removed_ide_diagnostics: self.removed_ide_diagnostics,
         })
     }
 }

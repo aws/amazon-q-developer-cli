@@ -8,6 +8,8 @@ pub struct WorkspaceMetadata {
     #[allow(missing_docs)] // documentation missing in model
     pub workspace_status: crate::types::WorkspaceStatus,
     #[allow(missing_docs)] // documentation missing in model
+    pub environment_address: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
     pub environment_id: ::std::option::Option<::std::string::String>,
 }
 impl WorkspaceMetadata {
@@ -23,6 +25,11 @@ impl WorkspaceMetadata {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn environment_address(&self) -> ::std::option::Option<&str> {
+        self.environment_address.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn environment_id(&self) -> ::std::option::Option<&str> {
         self.environment_id.as_deref()
     }
@@ -32,6 +39,7 @@ impl ::std::fmt::Debug for WorkspaceMetadata {
         let mut formatter = f.debug_struct("WorkspaceMetadata");
         formatter.field("workspace_id", &self.workspace_id);
         formatter.field("workspace_status", &self.workspace_status);
+        formatter.field("environment_address", &"*** Sensitive Data Redacted ***");
         formatter.field("environment_id", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
@@ -50,6 +58,7 @@ impl WorkspaceMetadata {
 pub struct WorkspaceMetadataBuilder {
     pub(crate) workspace_id: ::std::option::Option<::std::string::String>,
     pub(crate) workspace_status: ::std::option::Option<crate::types::WorkspaceStatus>,
+    pub(crate) environment_address: ::std::option::Option<::std::string::String>,
     pub(crate) environment_id: ::std::option::Option<::std::string::String>,
 }
 impl WorkspaceMetadataBuilder {
@@ -90,6 +99,23 @@ impl WorkspaceMetadataBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn environment_address(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.environment_address = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_environment_address(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.environment_address = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_environment_address(&self) -> &::std::option::Option<::std::string::String> {
+        &self.environment_address
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn environment_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.environment_id = ::std::option::Option::Some(input.into());
         self
@@ -127,6 +153,7 @@ impl WorkspaceMetadataBuilder {
                     "workspace_status was not specified but it is required when building WorkspaceMetadata",
                 )
             })?,
+            environment_address: self.environment_address,
             environment_id: self.environment_id,
         })
     }
@@ -136,6 +163,7 @@ impl ::std::fmt::Debug for WorkspaceMetadataBuilder {
         let mut formatter = f.debug_struct("WorkspaceMetadataBuilder");
         formatter.field("workspace_id", &self.workspace_id);
         formatter.field("workspace_status", &self.workspace_status);
+        formatter.field("environment_address", &"*** Sensitive Data Redacted ***");
         formatter.field("environment_id", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }

@@ -7,6 +7,7 @@ impl super::Client {
     /// - The fluent builder is configurable:
     ///   - [`conversation_state(ConversationState)`](crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanFluentBuilder::conversation_state) / [`set_conversation_state(Option<ConversationState>)`](crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanFluentBuilder::set_conversation_state):<br>required: **true**<br>Structure to represent the current state of a chat conversation.<br>
     ///   - [`workspace_state(WorkspaceState)`](crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanFluentBuilder::workspace_state) / [`set_workspace_state(Option<WorkspaceState>)`](crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanFluentBuilder::set_workspace_state):<br>required: **true**<br>Represents a Workspace state uploaded to S3 for Async Code Actions<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`GenerateTaskAssistPlanOutput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanOutput)
     ///   with field(s):

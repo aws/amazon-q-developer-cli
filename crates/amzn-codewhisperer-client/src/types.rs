@@ -6,6 +6,8 @@ pub use crate::types::_application_properties::ApplicationProperties;
 pub use crate::types::_artifact_type::ArtifactType;
 pub use crate::types::_assistant_response_message::AssistantResponseMessage;
 pub use crate::types::_by_user_analytics::ByUserAnalytics;
+pub use crate::types::_change_log_granularity_type::ChangeLogGranularityType;
+pub use crate::types::_change_log_options::ChangeLogOptions;
 pub use crate::types::_chat_add_message_event::ChatAddMessageEvent;
 pub use crate::types::_chat_interact_with_message_event::ChatInteractWithMessageEvent;
 pub use crate::types::_chat_message::ChatMessage;
@@ -17,6 +19,7 @@ pub use crate::types::_code_analysis_scope::CodeAnalysisScope;
 pub use crate::types::_code_analysis_status::CodeAnalysisStatus;
 pub use crate::types::_code_analysis_upload_context::CodeAnalysisUploadContext;
 pub use crate::types::_code_coverage_event::CodeCoverageEvent;
+pub use crate::types::_code_description::CodeDescription;
 pub use crate::types::_code_fix_acceptance_event::CodeFixAcceptanceEvent;
 pub use crate::types::_code_fix_generation_event::CodeFixGenerationEvent;
 pub use crate::types::_code_fix_job_status::CodeFixJobStatus;
@@ -34,13 +37,17 @@ pub use crate::types::_completion_type::CompletionType;
 pub use crate::types::_conflict_exception_reason::ConflictExceptionReason;
 pub use crate::types::_console_state::ConsoleState;
 pub use crate::types::_content_checksum_type::ContentChecksumType;
+pub use crate::types::_content_type::ContentType;
 pub use crate::types::_context_truncation_scheme::ContextTruncationScheme;
 pub use crate::types::_conversation_state::ConversationState;
 pub use crate::types::_cursor_state::CursorState;
 pub use crate::types::_customization::Customization;
 pub use crate::types::_dashboard_analytics::DashboardAnalytics;
 pub use crate::types::_diagnostic::Diagnostic;
+pub use crate::types::_diagnostic_location::DiagnosticLocation;
+pub use crate::types::_diagnostic_related_information::DiagnosticRelatedInformation;
 pub use crate::types::_diagnostic_severity::DiagnosticSeverity;
+pub use crate::types::_diagnostic_tag::DiagnosticTag;
 pub use crate::types::_dimension::Dimension;
 pub use crate::types::_doc_folder_level::DocFolderLevel;
 pub use crate::types::_doc_generation_event::DocGenerationEvent;
@@ -51,9 +58,12 @@ pub use crate::types::_doc_v2_generation_event::DocV2GenerationEvent;
 pub use crate::types::_document_symbol::DocumentSymbol;
 pub use crate::types::_documentation_intent_context::DocumentationIntentContext;
 pub use crate::types::_documentation_type::DocumentationType;
+pub use crate::types::_edit::Edit;
 pub use crate::types::_editor_state::EditorState;
 pub use crate::types::_env_state::EnvState;
 pub use crate::types::_environment_variable::EnvironmentVariable;
+pub use crate::types::_event::Event;
+pub use crate::types::_external_identity_details::ExternalIdentityDetails;
 pub use crate::types::_feature_dev_code_acceptance_event::FeatureDevCodeAcceptanceEvent;
 pub use crate::types::_feature_dev_code_generation_event::FeatureDevCodeGenerationEvent;
 pub use crate::types::_feature_dev_event::FeatureDevEvent;
@@ -64,12 +74,20 @@ pub use crate::types::_followup_prompt::FollowupPrompt;
 pub use crate::types::_functionality_name::FunctionalityName;
 pub use crate::types::_git_state::GitState;
 pub use crate::types::_ide_category::IdeCategory;
+pub use crate::types::_ide_diagnostic::IdeDiagnostic;
+pub use crate::types::_ide_diagnostic_type::IdeDiagnosticType;
 pub use crate::types::_identity_details::IdentityDetails;
+pub use crate::types::_image_block::ImageBlock;
+pub use crate::types::_image_format::ImageFormat;
+pub use crate::types::_image_source::ImageSource;
 pub use crate::types::_import::Import;
 pub use crate::types::_inline_chat_event::InlineChatEvent;
 pub use crate::types::_inline_chat_user_decision::InlineChatUserDecision;
 pub use crate::types::_intent::Intent;
 pub use crate::types::_intent_context::IntentContext;
+pub use crate::types::_memory_entry::MemoryEntry;
+pub use crate::types::_memory_entry_metadata::MemoryEntryMetadata;
+pub use crate::types::_memory_status::MemoryStatus;
 pub use crate::types::_metric_data::MetricData;
 pub use crate::types::_notifications_feature::NotificationsFeature;
 pub use crate::types::_operating_system::OperatingSystem;
@@ -79,6 +97,9 @@ pub use crate::types::_opt_out_preference::OptOutPreference;
 pub use crate::types::_origin::Origin;
 pub use crate::types::_package_info::PackageInfo;
 pub use crate::types::_position::Position;
+pub use crate::types::_prediction::Prediction;
+pub use crate::types::_prediction_type::PredictionType;
+pub use crate::types::_previous_editor_state_metadata::PreviousEditorStateMetadata;
 pub use crate::types::_profile::Profile;
 pub use crate::types::_profile_status::ProfileStatus;
 pub use crate::types::_profile_type::ProfileType;
@@ -92,6 +113,7 @@ pub use crate::types::_relevant_text_document::RelevantTextDocument;
 pub use crate::types::_resource_policy::ResourcePolicy;
 pub use crate::types::_resource_policy_effect::ResourcePolicyEffect;
 pub use crate::types::_runtime_diagnostic::RuntimeDiagnostic;
+pub use crate::types::_service_quota_exceeded_exception_reason::ServiceQuotaExceededExceptionReason;
 pub use crate::types::_shell_history_entry::ShellHistoryEntry;
 pub use crate::types::_shell_state::ShellState;
 pub use crate::types::_span::Span;
@@ -99,6 +121,8 @@ pub use crate::types::_sso_identity_details::SsoIdentityDetails;
 pub use crate::types::_suggested_fix::SuggestedFix;
 pub use crate::types::_suggestion_state::SuggestionState;
 pub use crate::types::_supplemental_context::SupplementalContext;
+pub use crate::types::_supplemental_context_metadata::SupplementalContextMetadata;
+pub use crate::types::_supplemental_context_type::SupplementalContextType;
 pub use crate::types::_supplementary_web_link::SupplementaryWebLink;
 pub use crate::types::_symbol_type::SymbolType;
 pub use crate::types::_target_code::TargetCode;
@@ -158,6 +182,7 @@ pub use crate::types::_user_settings::UserSettings;
 pub use crate::types::_user_trigger_decision_event::UserTriggerDecisionEvent;
 pub use crate::types::_validation_exception_reason::ValidationExceptionReason;
 pub use crate::types::_workspace_context::WorkspaceContext;
+pub use crate::types::_workspace_context_upload_context::WorkspaceContextUploadContext;
 pub use crate::types::_workspace_metadata::WorkspaceMetadata;
 pub use crate::types::_workspace_state::WorkspaceState;
 pub use crate::types::_workspace_status::WorkspaceStatus;
@@ -175,6 +200,10 @@ mod _artifact_type;
 mod _assistant_response_message;
 
 mod _by_user_analytics;
+
+mod _change_log_granularity_type;
+
+mod _change_log_options;
 
 mod _chat_add_message_event;
 
@@ -197,6 +226,8 @@ mod _code_analysis_status;
 mod _code_analysis_upload_context;
 
 mod _code_coverage_event;
+
+mod _code_description;
 
 mod _code_fix_acceptance_event;
 
@@ -232,6 +263,8 @@ mod _console_state;
 
 mod _content_checksum_type;
 
+mod _content_type;
+
 mod _context_truncation_scheme;
 
 mod _conversation_state;
@@ -244,7 +277,13 @@ mod _dashboard_analytics;
 
 mod _diagnostic;
 
+mod _diagnostic_location;
+
+mod _diagnostic_related_information;
+
 mod _diagnostic_severity;
+
+mod _diagnostic_tag;
 
 mod _dimension;
 
@@ -266,11 +305,17 @@ mod _documentation_intent_context;
 
 mod _documentation_type;
 
+mod _edit;
+
 mod _editor_state;
 
 mod _env_state;
 
 mod _environment_variable;
+
+mod _event;
+
+mod _external_identity_details;
 
 mod _feature_dev_code_acceptance_event;
 
@@ -292,7 +337,17 @@ mod _git_state;
 
 mod _ide_category;
 
+mod _ide_diagnostic;
+
+mod _ide_diagnostic_type;
+
 mod _identity_details;
+
+mod _image_block;
+
+mod _image_format;
+
+mod _image_source;
 
 mod _import;
 
@@ -303,6 +358,12 @@ mod _inline_chat_user_decision;
 mod _intent;
 
 mod _intent_context;
+
+mod _memory_entry;
+
+mod _memory_entry_metadata;
+
+mod _memory_status;
 
 mod _metric_data;
 
@@ -321,6 +382,12 @@ mod _origin;
 mod _package_info;
 
 mod _position;
+
+mod _prediction;
+
+mod _prediction_type;
+
+mod _previous_editor_state_metadata;
 
 mod _profile;
 
@@ -348,6 +415,8 @@ mod _resource_policy_effect;
 
 mod _runtime_diagnostic;
 
+mod _service_quota_exceeded_exception_reason;
+
 mod _shell_history_entry;
 
 mod _shell_state;
@@ -361,6 +430,10 @@ mod _suggested_fix;
 mod _suggestion_state;
 
 mod _supplemental_context;
+
+mod _supplemental_context_metadata;
+
+mod _supplemental_context_type;
 
 mod _supplementary_web_link;
 
@@ -479,6 +552,8 @@ mod _user_trigger_decision_event;
 mod _validation_exception_reason;
 
 mod _workspace_context;
+
+mod _workspace_context_upload_context;
 
 mod _workspace_metadata;
 

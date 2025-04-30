@@ -23,6 +23,10 @@ pub struct ChatInteractWithMessageEvent {
     pub has_project_level_context: ::std::option::Option<bool>,
     /// User Intent
     pub user_intent: ::std::option::Option<crate::types::UserIntent>,
+    /// List of IDE Diagnostics
+    pub added_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    /// List of IDE Diagnostics
+    pub removed_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
 }
 impl ChatInteractWithMessageEvent {
     /// ID which represents a multi-turn conversation
@@ -76,6 +80,22 @@ impl ChatInteractWithMessageEvent {
     pub fn user_intent(&self) -> ::std::option::Option<&crate::types::UserIntent> {
         self.user_intent.as_ref()
     }
+
+    /// List of IDE Diagnostics
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.added_ide_diagnostics.is_none()`.
+    pub fn added_ide_diagnostics(&self) -> &[crate::types::IdeDiagnostic] {
+        self.added_ide_diagnostics.as_deref().unwrap_or_default()
+    }
+
+    /// List of IDE Diagnostics
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.removed_ide_diagnostics.is_none()`.
+    pub fn removed_ide_diagnostics(&self) -> &[crate::types::IdeDiagnostic] {
+        self.removed_ide_diagnostics.as_deref().unwrap_or_default()
+    }
 }
 impl ChatInteractWithMessageEvent {
     /// Creates a new builder-style object to manufacture
@@ -99,6 +119,8 @@ pub struct ChatInteractWithMessageEventBuilder {
     pub(crate) accepted_snippet_has_reference: ::std::option::Option<bool>,
     pub(crate) has_project_level_context: ::std::option::Option<bool>,
     pub(crate) user_intent: ::std::option::Option<crate::types::UserIntent>,
+    pub(crate) added_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    pub(crate) removed_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
 }
 impl ChatInteractWithMessageEventBuilder {
     /// ID which represents a multi-turn conversation
@@ -276,6 +298,60 @@ impl ChatInteractWithMessageEventBuilder {
         &self.user_intent
     }
 
+    /// Appends an item to `added_ide_diagnostics`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_added_ide_diagnostics`](Self::set_added_ide_diagnostics).
+    ///
+    /// List of IDE Diagnostics
+    pub fn added_ide_diagnostics(mut self, input: crate::types::IdeDiagnostic) -> Self {
+        let mut v = self.added_ide_diagnostics.unwrap_or_default();
+        v.push(input);
+        self.added_ide_diagnostics = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// List of IDE Diagnostics
+    pub fn set_added_ide_diagnostics(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    ) -> Self {
+        self.added_ide_diagnostics = input;
+        self
+    }
+
+    /// List of IDE Diagnostics
+    pub fn get_added_ide_diagnostics(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>> {
+        &self.added_ide_diagnostics
+    }
+
+    /// Appends an item to `removed_ide_diagnostics`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_removed_ide_diagnostics`](Self::set_removed_ide_diagnostics).
+    ///
+    /// List of IDE Diagnostics
+    pub fn removed_ide_diagnostics(mut self, input: crate::types::IdeDiagnostic) -> Self {
+        let mut v = self.removed_ide_diagnostics.unwrap_or_default();
+        v.push(input);
+        self.removed_ide_diagnostics = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// List of IDE Diagnostics
+    pub fn set_removed_ide_diagnostics(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    ) -> Self {
+        self.removed_ide_diagnostics = input;
+        self
+    }
+
+    /// List of IDE Diagnostics
+    pub fn get_removed_ide_diagnostics(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>> {
+        &self.removed_ide_diagnostics
+    }
+
     /// Consumes the builder and constructs a
     /// [`ChatInteractWithMessageEvent`](crate::types::ChatInteractWithMessageEvent).
     /// This method will fail if any of the following fields are not set:
@@ -308,6 +384,8 @@ impl ChatInteractWithMessageEventBuilder {
             accepted_snippet_has_reference: self.accepted_snippet_has_reference,
             has_project_level_context: self.has_project_level_context,
             user_intent: self.user_intent,
+            added_ide_diagnostics: self.added_ide_diagnostics,
+            removed_ide_diagnostics: self.removed_ide_diagnostics,
         })
     }
 }

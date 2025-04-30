@@ -2,7 +2,7 @@
 pub fn ser_diagnostic(
     object_12: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::Diagnostic,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::Diagnostic::TextDocumentDiagnostic(inner) => {
             #[allow(unused_mut)]

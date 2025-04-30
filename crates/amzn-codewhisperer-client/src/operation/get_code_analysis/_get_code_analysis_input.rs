@@ -5,11 +5,18 @@
 pub struct GetCodeAnalysisInput {
     #[allow(missing_docs)] // documentation missing in model
     pub job_id: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GetCodeAnalysisInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn job_id(&self) -> ::std::option::Option<&str> {
         self.job_id.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 }
 impl GetCodeAnalysisInput {
@@ -26,6 +33,7 @@ impl GetCodeAnalysisInput {
 #[non_exhaustive]
 pub struct GetCodeAnalysisInputBuilder {
     pub(crate) job_id: ::std::option::Option<::std::string::String>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GetCodeAnalysisInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -46,6 +54,23 @@ impl GetCodeAnalysisInputBuilder {
         &self.job_id
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`GetCodeAnalysisInput`](crate::operation::get_code_analysis::GetCodeAnalysisInput).
     pub fn build(
@@ -54,6 +79,9 @@ impl GetCodeAnalysisInputBuilder {
         crate::operation::get_code_analysis::GetCodeAnalysisInput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(crate::operation::get_code_analysis::GetCodeAnalysisInput { job_id: self.job_id })
+        ::std::result::Result::Ok(crate::operation::get_code_analysis::GetCodeAnalysisInput {
+            job_id: self.job_id,
+            profile_arn: self.profile_arn,
+        })
     }
 }

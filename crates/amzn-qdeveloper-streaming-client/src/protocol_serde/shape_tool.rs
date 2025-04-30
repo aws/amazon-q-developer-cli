@@ -2,7 +2,7 @@
 pub fn ser_tool(
     object_28: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::Tool,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::Tool::ToolSpecification(inner) => {
             #[allow(unused_mut)]

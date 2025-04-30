@@ -2,7 +2,7 @@
 pub fn ser_transformation_runtime_env(
     object_3: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::TransformationRuntimeEnv,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::TransformationRuntimeEnv::Java(inner) => {
             object_3.key("java").string(inner.as_str());
@@ -24,7 +24,10 @@ pub fn ser_transformation_runtime_env(
 
 pub(crate) fn de_transformation_runtime_env<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<Option<crate::types::TransformationRuntimeEnv>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<
+    Option<crate::types::TransformationRuntimeEnv>,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+>
 where
     I: Iterator<
         Item = Result<

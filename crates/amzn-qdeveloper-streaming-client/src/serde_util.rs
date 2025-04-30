@@ -71,6 +71,18 @@ pub(crate) fn assistant_response_event_correct_errors(
     builder
 }
 
+pub(crate) fn citation_event_correct_errors(
+    mut builder: crate::types::builders::CitationEventBuilder,
+) -> crate::types::builders::CitationEventBuilder {
+    if builder.target.is_none() {
+        builder.target = Some(crate::types::CitationTarget::Unknown)
+    }
+    if builder.citation_link.is_none() {
+        builder.citation_link = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn code_event_correct_errors(
     mut builder: crate::types::builders::CodeEventBuilder,
 ) -> crate::types::builders::CodeEventBuilder {
@@ -116,6 +128,18 @@ pub(crate) fn tool_use_event_correct_errors(
 pub(crate) fn followup_prompt_correct_errors(
     mut builder: crate::types::builders::FollowupPromptBuilder,
 ) -> crate::types::builders::FollowupPromptBuilder {
+    if builder.content.is_none() {
+        builder.content = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn tool_result_correct_errors(
+    mut builder: crate::types::builders::ToolResultBuilder,
+) -> crate::types::builders::ToolResultBuilder {
+    if builder.tool_use_id.is_none() {
+        builder.tool_use_id = Some(Default::default())
+    }
     if builder.content.is_none() {
         builder.content = Some(Default::default())
     }

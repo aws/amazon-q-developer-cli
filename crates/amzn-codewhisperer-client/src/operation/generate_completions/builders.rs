@@ -145,6 +145,23 @@ impl GenerateCompletionsFluentBuilder {
         self.inner.get_file_context()
     }
 
+    /// Represents the state of an Editor
+    pub fn editor_state(mut self, input: crate::types::EditorState) -> Self {
+        self.inner = self.inner.editor_state(input);
+        self
+    }
+
+    /// Represents the state of an Editor
+    pub fn set_editor_state(mut self, input: ::std::option::Option<crate::types::EditorState>) -> Self {
+        self.inner = self.inner.set_editor_state(input);
+        self
+    }
+
+    /// Represents the state of an Editor
+    pub fn get_editor_state(&self) -> &::std::option::Option<crate::types::EditorState> {
+        self.inner.get_editor_state()
+    }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(mut self, input: i32) -> Self {
         self.inner = self.inner.max_results(input);
@@ -160,6 +177,30 @@ impl GenerateCompletionsFluentBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         self.inner.get_max_results()
+    }
+
+    /// Appends an item to `predictionTypes`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_prediction_types`](Self::set_prediction_types).
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn prediction_types(mut self, input: crate::types::PredictionType) -> Self {
+        self.inner = self.inner.prediction_types(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_prediction_types(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::PredictionType>>,
+    ) -> Self {
+        self.inner = self.inner.set_prediction_types(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_prediction_types(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::PredictionType>> {
+        self.inner.get_prediction_types()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -293,5 +334,22 @@ impl GenerateCompletionsFluentBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_profile_arn()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn workspace_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.workspace_id(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_workspace_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_workspace_id(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_workspace_id(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_workspace_id()
     }
 }

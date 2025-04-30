@@ -136,6 +136,23 @@ impl UpdateProfileFluentBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn identity_source(mut self, input: crate::types::IdentitySource) -> Self {
+        self.inner = self.inner.identity_source(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_identity_source(mut self, input: ::std::option::Option<crate::types::IdentitySource>) -> Self {
+        self.inner = self.inner.set_identity_source(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_identity_source(&self) -> &::std::option::Option<crate::types::IdentitySource> {
+        self.inner.get_identity_source()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn profile_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.inner = self.inner.profile_name(input.into());
         self
@@ -150,6 +167,23 @@ impl UpdateProfileFluentBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_name(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_profile_name()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.description(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_description(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_description()
     }
 
     #[allow(missing_docs)] // documentation missing in model

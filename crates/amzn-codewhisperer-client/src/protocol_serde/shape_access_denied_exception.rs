@@ -2,7 +2,7 @@
 pub(crate) fn de_access_denied_exception_json_err(
     value: &[u8],
     mut builder: crate::types::error::builders::AccessDeniedErrorBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::types::error::builders::AccessDeniedErrorBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

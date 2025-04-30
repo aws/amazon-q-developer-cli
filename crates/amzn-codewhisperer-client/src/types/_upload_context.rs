@@ -11,6 +11,8 @@ pub enum UploadContext {
     TaskAssistPlanningUploadContext(crate::types::TaskAssistPlanningUploadContext),
     #[allow(missing_docs)] // documentation missing in model
     TransformationUploadContext(crate::types::TransformationUploadContext),
+    #[allow(missing_docs)] // documentation missing in model
+    WorkspaceContextUploadContext(crate::types::WorkspaceContextUploadContext),
     /// The `Unknown` variant represents cases where new union variant was received. Consider
     /// upgrading the SDK to the latest available version. An unknown enum variant
     ///
@@ -101,6 +103,27 @@ impl UploadContext {
     /// [`TransformationUploadContext`](crate::types::UploadContext::TransformationUploadContext).
     pub fn is_transformation_upload_context(&self) -> bool {
         self.as_transformation_upload_context().is_ok()
+    }
+
+    /// Tries to convert the enum instance into
+    /// [`WorkspaceContextUploadContext`](crate::types::UploadContext::WorkspaceContextUploadContext),
+    /// extracting the inner
+    /// [`WorkspaceContextUploadContext`](crate::types::WorkspaceContextUploadContext).
+    /// Returns `Err(&Self)` if it can't be converted.
+    pub fn as_workspace_context_upload_context(
+        &self,
+    ) -> ::std::result::Result<&crate::types::WorkspaceContextUploadContext, &Self> {
+        if let UploadContext::WorkspaceContextUploadContext(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`WorkspaceContextUploadContext`](crate::types::UploadContext::WorkspaceContextUploadContext).
+    pub fn is_workspace_context_upload_context(&self) -> bool {
+        self.as_workspace_context_upload_context().is_ok()
     }
 
     /// Returns true if the enum instance is the `Unknown` variant.

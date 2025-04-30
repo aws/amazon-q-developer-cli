@@ -25,35 +25,18 @@ pub fn de_get_code_fix_job_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => crate::operation::get_code_fix_job::GetCodeFixJobError::InternalServerError({
+        "AccessDeniedException" => crate::operation::get_code_fix_job::GetCodeFixJobError::AccessDeniedError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?;
                 let output = output.meta(generic);
-                crate::serde_util::internal_server_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?
-            };
-            tmp
-        }),
-        "ThrottlingException" => crate::operation::get_code_fix_job::GetCodeFixJobError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
+                crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?
             };
@@ -76,6 +59,40 @@ pub fn de_get_code_fix_job_http_error(
             };
             tmp
         }),
+        "ThrottlingException" => crate::operation::get_code_fix_job::GetCodeFixJobError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?
+            };
+            tmp
+        }),
+        "InternalServerException" => crate::operation::get_code_fix_job::GetCodeFixJobError::InternalServerError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::internal_server_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?
+            };
+            tmp
+        }),
         "ResourceNotFoundException" => crate::operation::get_code_fix_job::GetCodeFixJobError::ResourceNotFoundError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -85,23 +102,6 @@ pub fn de_get_code_fix_job_http_error(
                     .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::resource_not_found_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?
-            };
-            tmp
-        }),
-        "AccessDeniedException" => crate::operation::get_code_fix_job::GetCodeFixJobError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::get_code_fix_job::GetCodeFixJobError::unhandled)?
             };
@@ -132,7 +132,8 @@ pub fn de_get_code_fix_job_http_response(
 
 pub fn ser_get_code_fix_job_input(
     input: &crate::operation::get_code_fix_job::GetCodeFixJobInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_get_code_fix_job_input::ser_get_code_fix_job_input_input(&mut object, input)?;
@@ -143,7 +144,7 @@ pub fn ser_get_code_fix_job_input(
 pub(crate) fn de_get_code_fix_job(
     value: &[u8],
     mut builder: crate::operation::get_code_fix_job::builders::GetCodeFixJobOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::get_code_fix_job::builders::GetCodeFixJobOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

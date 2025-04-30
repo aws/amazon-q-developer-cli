@@ -10,6 +10,8 @@ pub struct ExportResultArchiveInput {
     pub export_intent: ::std::option::Option<crate::types::ExportIntent>,
     /// Export Context
     pub export_context: ::std::option::Option<crate::types::ExportContext>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl ExportResultArchiveInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -25,6 +27,11 @@ impl ExportResultArchiveInput {
     /// Export Context
     pub fn export_context(&self) -> ::std::option::Option<&crate::types::ExportContext> {
         self.export_context.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 }
 impl ExportResultArchiveInput {
@@ -43,6 +50,7 @@ pub struct ExportResultArchiveInputBuilder {
     pub(crate) export_id: ::std::option::Option<::std::string::String>,
     pub(crate) export_intent: ::std::option::Option<crate::types::ExportIntent>,
     pub(crate) export_context: ::std::option::Option<crate::types::ExportContext>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl ExportResultArchiveInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -98,6 +106,23 @@ impl ExportResultArchiveInputBuilder {
         &self.export_context
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`ExportResultArchiveInput`](crate::operation::export_result_archive::ExportResultArchiveInput).
     pub fn build(
@@ -110,6 +135,7 @@ impl ExportResultArchiveInputBuilder {
             export_id: self.export_id,
             export_intent: self.export_intent,
             export_context: self.export_context,
+            profile_arn: self.profile_arn,
         })
     }
 }

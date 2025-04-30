@@ -10,6 +10,8 @@ pub struct Profile {
     #[allow(missing_docs)] // documentation missing in model
     pub profile_name: ::std::string::String,
     #[allow(missing_docs)] // documentation missing in model
+    pub description: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
     pub reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
     #[allow(missing_docs)] // documentation missing in model
     pub kms_key_arn: ::std::option::Option<::std::string::String>,
@@ -46,6 +48,11 @@ impl Profile {
     pub fn profile_name(&self) -> &str {
         use std::ops::Deref;
         self.profile_name.deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn description(&self) -> ::std::option::Option<&str> {
+        self.description.as_deref()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -118,6 +125,7 @@ pub struct ProfileBuilder {
     pub(crate) arn: ::std::option::Option<::std::string::String>,
     pub(crate) identity_details: ::std::option::Option<crate::types::IdentityDetails>,
     pub(crate) profile_name: ::std::option::Option<::std::string::String>,
+    pub(crate) description: ::std::option::Option<::std::string::String>,
     pub(crate) reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
     pub(crate) kms_key_arn: ::std::option::Option<::std::string::String>,
     pub(crate) active_functionalities: ::std::option::Option<::std::vec::Vec<crate::types::FunctionalityName>>,
@@ -181,6 +189,23 @@ impl ProfileBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_name
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.description = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.description = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
+        &self.description
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -399,6 +424,7 @@ impl ProfileBuilder {
                     "profile_name was not specified but it is required when building Profile",
                 )
             })?,
+            description: self.description,
             reference_tracker_configuration: self.reference_tracker_configuration,
             kms_key_arn: self.kms_key_arn,
             active_functionalities: self.active_functionalities,

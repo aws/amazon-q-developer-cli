@@ -2,7 +2,7 @@
 pub(crate) fn de_service_linked_role_lock_client_exception_json_err(
     value: &[u8],
     mut builder: crate::types::error::builders::ServiceLinkedRoleLockClientErrorBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::types::error::builders::ServiceLinkedRoleLockClientErrorBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

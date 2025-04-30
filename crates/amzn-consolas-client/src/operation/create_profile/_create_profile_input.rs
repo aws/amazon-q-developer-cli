@@ -8,6 +8,8 @@ pub struct CreateProfileInput {
     #[allow(missing_docs)] // documentation missing in model
     pub profile_name: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
+    pub description: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
     pub reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
     #[allow(missing_docs)] // documentation missing in model
     pub active_functionalities: ::std::option::Option<::std::vec::Vec<crate::types::FunctionalityName>>,
@@ -31,6 +33,11 @@ impl CreateProfileInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_name(&self) -> ::std::option::Option<&str> {
         self.profile_name.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn description(&self) -> ::std::option::Option<&str> {
+        self.description.as_deref()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -88,6 +95,7 @@ impl CreateProfileInput {
 pub struct CreateProfileInputBuilder {
     pub(crate) identity_source: ::std::option::Option<crate::types::IdentitySource>,
     pub(crate) profile_name: ::std::option::Option<::std::string::String>,
+    pub(crate) description: ::std::option::Option<::std::string::String>,
     pub(crate) reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
     pub(crate) active_functionalities: ::std::option::Option<::std::vec::Vec<crate::types::FunctionalityName>>,
     pub(crate) client_token: ::std::option::Option<::std::string::String>,
@@ -98,7 +106,6 @@ pub struct CreateProfileInputBuilder {
 }
 impl CreateProfileInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
-    /// This field is required.
     pub fn identity_source(mut self, input: crate::types::IdentitySource) -> Self {
         self.identity_source = ::std::option::Option::Some(input);
         self
@@ -131,6 +138,23 @@ impl CreateProfileInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_name
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.description = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.description = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
+        &self.description
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -283,6 +307,7 @@ impl CreateProfileInputBuilder {
         ::std::result::Result::Ok(crate::operation::create_profile::CreateProfileInput {
             identity_source: self.identity_source,
             profile_name: self.profile_name,
+            description: self.description,
             reference_tracker_configuration: self.reference_tracker_configuration,
             active_functionalities: self.active_functionalities,
             client_token: self.client_token,

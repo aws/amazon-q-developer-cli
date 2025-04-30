@@ -37,7 +37,7 @@
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
 ///
-///  Enum defining types of alerts that can be issued.
+/// Enum defining types of alerts that can be issued.
 #[non_exhaustive]
 #[derive(
     ::std::clone::Clone,

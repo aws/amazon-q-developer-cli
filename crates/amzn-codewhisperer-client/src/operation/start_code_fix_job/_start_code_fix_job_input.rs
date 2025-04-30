@@ -15,6 +15,8 @@ pub struct StartCodeFixJobInput {
     pub code_fix_name: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartCodeFixJobInput {
     /// Indicates Range / Span in a Text Document
@@ -48,6 +50,11 @@ impl StartCodeFixJobInput {
     ) -> ::std::option::Option<&crate::types::ReferenceTrackerConfiguration> {
         self.reference_tracker_configuration.as_ref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
+    }
 }
 impl ::std::fmt::Debug for StartCodeFixJobInput {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -58,6 +65,7 @@ impl ::std::fmt::Debug for StartCodeFixJobInput {
         formatter.field("rule_id", &self.rule_id);
         formatter.field("code_fix_name", &self.code_fix_name);
         formatter.field("reference_tracker_configuration", &self.reference_tracker_configuration);
+        formatter.field("profile_arn", &self.profile_arn);
         formatter.finish()
     }
 }
@@ -80,6 +88,7 @@ pub struct StartCodeFixJobInputBuilder {
     pub(crate) rule_id: ::std::option::Option<::std::string::String>,
     pub(crate) code_fix_name: ::std::option::Option<::std::string::String>,
     pub(crate) reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartCodeFixJobInputBuilder {
     /// Indicates Range / Span in a Text Document
@@ -191,6 +200,23 @@ impl StartCodeFixJobInputBuilder {
         &self.reference_tracker_configuration
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`StartCodeFixJobInput`](crate::operation::start_code_fix_job::StartCodeFixJobInput).
     pub fn build(
@@ -206,6 +232,7 @@ impl StartCodeFixJobInputBuilder {
             rule_id: self.rule_id,
             code_fix_name: self.code_fix_name,
             reference_tracker_configuration: self.reference_tracker_configuration,
+            profile_arn: self.profile_arn,
         })
     }
 }
@@ -218,6 +245,7 @@ impl ::std::fmt::Debug for StartCodeFixJobInputBuilder {
         formatter.field("rule_id", &self.rule_id);
         formatter.field("code_fix_name", &self.code_fix_name);
         formatter.field("reference_tracker_configuration", &self.reference_tracker_configuration);
+        formatter.field("profile_arn", &self.profile_arn);
         formatter.finish()
     }
 }

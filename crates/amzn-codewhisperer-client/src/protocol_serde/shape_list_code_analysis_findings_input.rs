@@ -2,7 +2,7 @@
 pub fn ser_list_code_analysis_findings_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.job_id {
         object.key("jobId").string(var_1.as_str());
     }
@@ -11,6 +11,9 @@ pub fn ser_list_code_analysis_findings_input_input(
     }
     if let Some(var_3) = &input.code_analysis_findings_schema {
         object.key("codeAnalysisFindingsSchema").string(var_3.as_str());
+    }
+    if let Some(var_4) = &input.profile_arn {
+        object.key("profileArn").string(var_4.as_str());
     }
     Ok(())
 }

@@ -41,23 +41,6 @@ pub fn de_resume_transformation_http_error(
                 tmp
             })
         },
-        "ThrottlingException" => crate::operation::resume_transformation::ResumeTransformationError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
-            };
-            tmp
-        }),
         "ValidationException" => crate::operation::resume_transformation::ResumeTransformationError::ValidationError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -75,22 +58,23 @@ pub fn de_resume_transformation_http_error(
             };
             tmp
         }),
-        "ResourceNotFoundException" => {
-            crate::operation::resume_transformation::ResumeTransformationError::ResourceNotFoundError({
+        "ThrottlingException" => crate::operation::resume_transformation::ResumeTransformationError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::resource_not_found_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
-                };
-                tmp
-            })
-        },
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
+            };
+            tmp
+        }),
         "AccessDeniedException" => {
             crate::operation::resume_transformation::ResumeTransformationError::AccessDeniedError({
                 #[allow(unused_mut)]
@@ -104,6 +88,22 @@ pub fn de_resume_transformation_http_error(
                     .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
                     let output = output.meta(generic);
                     crate::serde_util::access_denied_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
+                };
+                tmp
+            })
+        },
+        "ResourceNotFoundException" => {
+            crate::operation::resume_transformation::ResumeTransformationError::ResourceNotFoundError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::resource_not_found_exception_correct_errors(output)
                         .build()
                         .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
                 };
@@ -138,7 +138,8 @@ pub fn de_resume_transformation_http_response(
 
 pub fn ser_resume_transformation_input(
     input: &crate::operation::resume_transformation::ResumeTransformationInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_resume_transformation_input::ser_resume_transformation_input_input(
@@ -152,7 +153,7 @@ pub fn ser_resume_transformation_input(
 pub(crate) fn de_resume_transformation(
     value: &[u8],
     mut builder: crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

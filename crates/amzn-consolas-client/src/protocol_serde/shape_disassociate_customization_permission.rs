@@ -26,6 +26,38 @@ pub fn de_disassociate_customization_permission_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
+        "ValidationException" => {
+            crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::ValidationError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                    output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
+                        .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::validation_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?
+                };
+                tmp
+            })
+        }
+        "AccessDeniedException" => {
+            crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::AccessDeniedError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
+                        .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::access_denied_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?
+                };
+                tmp
+            })
+        }
         "InternalServerException" => {
             crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::InternalServerError({
                 #[allow(unused_mut)]
@@ -52,22 +84,6 @@ pub fn de_disassociate_customization_permission_http_error(
                         .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?;
                     let output = output.meta(generic);
                     crate::serde_util::throttling_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?
-                };
-                tmp
-            })
-        }
-        "ValidationException" => {
-            crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::ValidationError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                    output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
-                        .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::validation_exception_correct_errors(output)
                         .build()
                         .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?
                 };
@@ -105,22 +121,6 @@ pub fn de_disassociate_customization_permission_http_error(
                 tmp
             })
         }
-        "AccessDeniedException" => {
-            crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::AccessDeniedError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
-                        .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::access_denied_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::unhandled)?
-                };
-                tmp
-            })
-        }
         _ => crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::generic(generic),
     })
 }
@@ -145,7 +145,8 @@ pub fn de_disassociate_customization_permission_http_response(
 
 pub fn ser_disassociate_customization_permission_input(
     input: &crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_disassociate_customization_permission_input::ser_disassociate_customization_permission_input_input(

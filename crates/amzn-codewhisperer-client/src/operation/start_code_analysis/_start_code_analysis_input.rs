@@ -14,6 +14,8 @@ pub struct StartCodeAnalysisInput {
     pub scope: ::std::option::Option<crate::types::CodeAnalysisScope>,
     /// Code analysis scan name
     pub code_scan_name: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartCodeAnalysisInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -42,6 +44,11 @@ impl StartCodeAnalysisInput {
     pub fn code_scan_name(&self) -> ::std::option::Option<&str> {
         self.code_scan_name.as_deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
+    }
 }
 impl StartCodeAnalysisInput {
     /// Creates a new builder-style object to manufacture
@@ -62,6 +69,7 @@ pub struct StartCodeAnalysisInputBuilder {
     pub(crate) client_token: ::std::option::Option<::std::string::String>,
     pub(crate) scope: ::std::option::Option<crate::types::CodeAnalysisScope>,
     pub(crate) code_scan_name: ::std::option::Option<::std::string::String>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartCodeAnalysisInputBuilder {
     /// Adds a key-value pair to `artifacts`.
@@ -163,6 +171,23 @@ impl StartCodeAnalysisInputBuilder {
         &self.code_scan_name
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`StartCodeAnalysisInput`](crate::operation::start_code_analysis::StartCodeAnalysisInput).
     pub fn build(
@@ -177,6 +202,7 @@ impl StartCodeAnalysisInputBuilder {
             client_token: self.client_token,
             scope: self.scope,
             code_scan_name: self.code_scan_name,
+            profile_arn: self.profile_arn,
         })
     }
 }

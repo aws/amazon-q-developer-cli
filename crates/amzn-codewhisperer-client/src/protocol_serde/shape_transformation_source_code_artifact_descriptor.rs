@@ -2,7 +2,7 @@
 pub fn ser_transformation_source_code_artifact_descriptor(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::TransformationSourceCodeArtifactDescriptor,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.languages {
         let mut array_2 = object.key("languages").start_array();
         for item_3 in var_1 {
@@ -23,7 +23,7 @@ pub fn ser_transformation_source_code_artifact_descriptor(
 
 pub(crate) fn de_transformation_source_code_artifact_descriptor<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<
+) -> ::std::result::Result<
     Option<crate::types::TransformationSourceCodeArtifactDescriptor>,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 >

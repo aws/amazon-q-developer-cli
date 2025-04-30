@@ -7,9 +7,10 @@ impl super::Client {
     ///
     ///
     /// - The fluent builder is configurable:
-    ///   - [`workspace_root(impl Into<String>)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::workspace_root) / [`set_workspace_root(Option<String>)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::set_workspace_root):<br>required: **true**<br>(undocumented)<br>
+    ///   - [`workspace_root(impl Into<String>)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::workspace_root) / [`set_workspace_root(Option<String>)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::set_workspace_root):<br>required: **false**<br>(undocumented)<br>
     ///   - [`next_token(impl Into<String>)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::next_token) / [`set_next_token(Option<String>)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::set_next_token):<br>required: **false**<br>(undocumented)<br>
     ///   - [`max_results(i32)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::max_results) / [`set_max_results(Option<i32>)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::set_max_results):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`ListWorkspaceMetadataOutput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput)
     ///   with field(s):
