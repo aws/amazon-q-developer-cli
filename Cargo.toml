@@ -86,7 +86,7 @@ http = "1.2.0"
 indicatif = "0.17.11"
 indoc = "2.0.6"
 insta = "1.43.1"
-libc = "0.2.171"
+libc = "0.2.172"
 mcp_client = { path = "crates/mcp_client" }
 mimalloc = "0.1.46"
 nix = { version = "0.29.0", features = [
