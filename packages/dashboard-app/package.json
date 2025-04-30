@@ -49,7 +49,7 @@
     "autoprefixer": "^10.4.21",
     "eslint": "^9.18.0",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.19",
+    "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.0.0",
     "postcss": "^8.5.3",
     "prettier": "^3.4.2",
