@@ -135,7 +135,11 @@ export default function Page() {
                       <SelectContent>
                         {profiles &&
                           profiles.map((p) => (
-                            <SelectItem key={p.arn} value={p.arn}>
+                            <SelectItem
+                              key={p.arn}
+                              value={p.arn}
+                              description={p.arn}
+                            >
                               {p.profileName}
                             </SelectItem>
                           ))}

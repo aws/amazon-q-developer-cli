@@ -254,7 +254,6 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>help</em>        <black!>Show prompts help</black!>
   <em>list</em>        <black!>List or search available prompts</black!>
   <em>get</em>         <black!>Retrieve and send a prompt</black!>
-<em>/context</em>      <black!>Manage context files for the chat session</black!>
 <em>/context</em>      <black!>Manage context files and hooks for the chat session</black!>
   <em>help</em>        <black!>Show context help</black!>
   <em>show</em>        <black!>Display current context rules configuration [--expand]</black!>
@@ -787,20 +786,22 @@ impl ChatContext {
                 .set_value("chat.greeting.rotating_tips_current_index", next_tip_index)?;
         }
 
-        execute!(
-            self.output,
-            style::Print(if is_small_screen {
-                SMALL_SCREEN_POPULAR_SHORTCUTS
-            } else {
-                POPULAR_SHORTCUTS
-            }),
-            style::Print(
-                "━"
-                    .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
-                    .dark_grey()
-            )
-        )?;
-        execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+        if self.interactive {
+            execute!(
+                self.output,
+                style::Print(if is_small_screen {
+                    SMALL_SCREEN_POPULAR_SHORTCUTS
+                } else {
+                    POPULAR_SHORTCUTS
+                }),
+                style::Print(
+                    "━"
+                        .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
+                        .dark_grey()
+                )
+            )?;
+            execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+        }
         if self.interactive && self.all_tools_trusted() {
             queue!(
                 self.output,

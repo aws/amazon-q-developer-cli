@@ -411,7 +411,10 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
         )?);
     }
 
-    let mut items: Vec<String> = profiles.iter().map(|p| p.profile_name.clone()).collect();
+    let mut items: Vec<String> = profiles
+        .iter()
+        .map(|p| format!("{} (arn: {})", p.profile_name, p.arn))
+        .collect();
     let active_profile: Option<Profile> = fig_settings::state::get("api.codewhisperer.profile")?;
 
     if let Some(default_idx) = active_profile
