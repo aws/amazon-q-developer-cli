@@ -200,7 +200,7 @@ const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
 "};
 
 const ROTATING_TIPS: [&str; 9] = [
-    color_print::cstr! {"Get notified whenever Q CLI generates a response or requests permission. Just ask me, or run <green!>q settings chat.enableNotifications true</green!>"},
+    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
     color_print::cstr! {"Q can use tools without asking for confirmation every time. Give <green!>/tools trust</green!> a try"},
