@@ -5,6 +5,7 @@ mod completion;
 mod debug;
 mod diagnostics;
 mod doctor;
+mod feed;
 mod hook;
 mod init;
 mod inline;
@@ -43,6 +44,7 @@ use eyre::{
     WrapErr,
     bail,
 };
+use feed::Feed;
 use fig_auth::is_logged_in;
 use fig_ipc::local::open_ui_element;
 use fig_log::{
@@ -177,7 +179,8 @@ pub enum CliRootCommands {
     /// Version
     #[command(hide = true)]
     Version {
-        /// Show the changelog (use --changelog=all for all versions, or --changelog=x.x.x for a specific version)
+        /// Show the changelog (use --changelog=all for all versions, or --changelog=x.x.x for a
+        /// specific version)
         #[arg(long, num_args = 0..=1, default_missing_value = "")]
         changelog: Option<String>,
     },
@@ -365,76 +368,24 @@ impl Cli {
         Ok(ExitCode::SUCCESS)
     }
 
-    fn read_changelog() -> Result<serde_json::Value> {
-        let feed_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("feed.json");
-        let feed_content = std::fs::read_to_string(feed_path)?;
-        let feed = serde_json::from_str(&feed_content)?;
-        Ok(feed)
-    }
+    fn print_changelog_entry(entry: &feed::Entry) -> Result<()> {
+        println!("Version {} ({})", entry.version, entry.date);
 
-    fn get_version_changelog(version: &str) -> Result<Option<serde_json::Value>> {
-        let feed = Self::read_changelog()?;
-        
-        if let Some(entries) = feed.get("entries").and_then(|e| e.as_array()) {
-            for entry in entries {
-                if entry.get("type").and_then(|t| t.as_str()) == Some("release") &&
-                   entry.get("version").and_then(|v| v.as_str()) == Some(version) &&
-                   entry.get("hidden").and_then(|h| h.as_bool()) != Some(true) {
-                    return Ok(Some(entry.clone()));
-                }
+        if entry.changes.is_empty() {
+            println!("  No changes recorded for this version.");
+        } else {
+            for change in &entry.changes {
+                let type_label = match change.change_type.as_str() {
+                    "added" => "Added",
+                    "fixed" => "Fixed",
+                    "changed" => "Changed",
+                    other => other,
+                };
+
+                println!("  - {}: {}", type_label, change.description);
             }
         }
-        
-        Ok(None)
-    }
 
-    fn get_all_changelogs() -> Result<Vec<serde_json::Value>> {
-        let feed = Self::read_changelog()?;
-        let mut changelogs = Vec::new();
-        
-        if let Some(entries) = feed.get("entries").and_then(|e| e.as_array()) {
-            for entry in entries {
-                if entry.get("type").and_then(|t| t.as_str()) == Some("release") &&
-                   entry.get("hidden").and_then(|h| h.as_bool()) != Some(true) {
-                    changelogs.push(entry.clone());
-                }
-            }
-        }
-        
-        Ok(changelogs)
-    }
-
-    fn print_changelog_entry(entry: &serde_json::Value) -> Result<()> {
-        let version = entry.get("version").and_then(|v| v.as_str()).unwrap_or("Unknown");
-        let date = entry.get("date").and_then(|d| d.as_str()).unwrap_or("Unknown date");
-        
-        println!("Version {} ({})", version, date);
-        
-        if let Some(changes) = entry.get("changes").and_then(|c| c.as_array()) {
-            if changes.is_empty() {
-                println!("  No changes recorded for this version.");
-            } else {
-                for change in changes {
-                    let change_type = change.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                    let description = change.get("description").and_then(|d| d.as_str()).unwrap_or("");
-                    
-                    let type_label = match change_type {
-                        "added" => "Added",
-                        "fixed" => "Fixed",
-                        "changed" => "Changed",
-                        _ => change_type,
-                    };
-                    
-                    println!("  - {}: {}", type_label, description);
-                }
-            }
-        }
-        
         println!();
         Ok(())
     }
@@ -446,68 +397,53 @@ impl Cli {
             let _ = writeln!(stdout(), "{}", Self::command().render_version());
             return Ok(ExitCode::SUCCESS);
         }
-        
+
         let changelog_value = changelog.unwrap_or_default();
-        
+        let feed = Feed::load();
+
         // Display changelog for all versions
         if changelog_value == "all" {
-            match Self::get_all_changelogs() {
-                Ok(entries) => {
-                    if entries.is_empty() {
-                        println!("No changelog information available.");
-                    } else {
-                        println!("Changelog for all versions:");
-                        for entry in entries {
-                            Self::print_changelog_entry(&entry)?;
-                        }
-                    }
-                },
-                Err(err) => {
-                    eprintln!("Error retrieving changelog: {}", err);
-                    return Ok(ExitCode::FAILURE);
+            let entries = feed.get_all_changelogs();
+            if entries.is_empty() {
+                println!("No changelog information available.");
+            } else {
+                println!("Changelog for all versions:");
+                for entry in entries {
+                    Self::print_changelog_entry(&entry)?;
                 }
             }
             return Ok(ExitCode::SUCCESS);
         }
-        
+
         // Display changelog for a specific version (--changelog=x.x.x)
         if !changelog_value.is_empty() {
-            match Self::get_version_changelog(&changelog_value) {
-                Ok(Some(entry)) => {
+            match feed.get_version_changelog(&changelog_value) {
+                Some(entry) => {
                     println!("Changelog for version {}:", changelog_value);
                     Self::print_changelog_entry(&entry)?;
                     return Ok(ExitCode::SUCCESS);
                 },
-                Ok(None) => {
+                None => {
                     println!("No changelog information available for version {}.", changelog_value);
                     return Ok(ExitCode::SUCCESS);
                 },
-                Err(err) => {
-                    eprintln!("Error retrieving changelog: {}", err);
-                    return Ok(ExitCode::FAILURE);
-                }
             }
         }
-        
+
         // Display changelog for the current version (--changelog only)
         let current_version = env!("CARGO_PKG_VERSION");
-        match Self::get_version_changelog(current_version) {
-            Ok(Some(entry)) => {
+        match feed.get_version_changelog(current_version) {
+            Some(entry) => {
                 println!("Changelog for version {}:", current_version);
                 Self::print_changelog_entry(&entry)?;
             },
-            Ok(None) => {
+            None => {
                 println!("No changelog information available for version {}.", current_version);
             },
-            Err(err) => {
-                eprintln!("Error retrieving changelog: {}", err);
-                return Ok(ExitCode::FAILURE);
-            }
         }
-        
+
         Ok(ExitCode::SUCCESS)
-    }    
-    
+    }
 }
 
 async fn launch_dashboard(help_fallback: bool) -> Result<ExitCode> {
@@ -719,32 +655,23 @@ mod test {
 
     #[test]
     fn test_version_changelog() {
-        assert_parse!(
-            ["version", "--changelog"],
-            CliRootCommands::Version {
-                changelog: Some("".to_string()),
-            }
-        );
+        assert_parse!(["version", "--changelog"], CliRootCommands::Version {
+            changelog: Some("".to_string()),
+        });
     }
 
     #[test]
     fn test_version_changelog_all() {
-        assert_parse!(
-            ["version", "--changelog=all"],
-            CliRootCommands::Version {
-                changelog: Some("all".to_string()),
-            }
-        );
+        assert_parse!(["version", "--changelog=all"], CliRootCommands::Version {
+            changelog: Some("all".to_string()),
+        });
     }
 
     #[test]
     fn test_version_changelog_specific() {
-        assert_parse!(
-            ["version", "--changelog=1.8.0"],
-            CliRootCommands::Version {
-                changelog: Some("1.8.0".to_string()),
-            }
-        );
+        assert_parse!(["version", "--changelog=1.8.0"], CliRootCommands::Version {
+            changelog: Some("1.8.0".to_string()),
+        });
     }
 
     #[test]

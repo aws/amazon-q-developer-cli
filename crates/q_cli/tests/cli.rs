@@ -58,7 +58,9 @@ fn version_changelog_nonexistent_version() -> Result<()> {
         .arg("--changelog=999.999.999")
         .assert()
         .success()
-        .stdout(predicate::str::contains("No changelog information available for version 999.999.999"));
+        .stdout(predicate::str::contains(
+            "No changelog information available for version 999.999.999",
+        ));
     Ok(())
 }
 
