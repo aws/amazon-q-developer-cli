@@ -452,6 +452,17 @@ pub struct PromptBundle {
     pub prompt_get: PromptGet,
 }
 
+/// Categorizes different types of tool name validation failures:
+/// - `TooLong`: The tool name exceeds the maximum allowed length
+/// - `IllegalChar`: The tool name contains characters that are not allowed
+/// - `EmptyDescription`: The tool description is empty or missing
+#[allow(dead_code)]
+enum OutOfSpecName {
+    TooLong(String),
+    IllegalChar(String),
+    EmptyDescription(String),
+}
+
 /// Manages the lifecycle and interactions with tools from various sources, including MCP servers.
 /// This struct is responsible for initializing tools, handling tool requests, and maintaining
 /// a cache of available prompts from connected servers.
@@ -519,7 +530,7 @@ impl ToolManager {
                             // Each mcp server might have multiple tools.
                             // To avoid naming conflicts we are going to namespace it.
                             // This would also help us locate which mcp server to call the tool from.
-                            let mut out_of_spec_tool_names = Vec::<String>::new();
+                            let mut out_of_spec_tool_names = Vec::<OutOfSpecName>::new();
                             let mut hasher = DefaultHasher::new();
                             let number_of_tools = specs.len();
                             // Sanitize tool names to ensure they comply with the naming requirements:
@@ -543,7 +554,10 @@ impl ToolManager {
                                 };
                                 let full_name = format!("{}{}{}", server_name, NAMESPACE_DELIMITER, sn);
                                 if full_name.len() > 64 {
-                                    out_of_spec_tool_names.push(spec.name);
+                                    out_of_spec_tool_names.push(OutOfSpecName::TooLong(spec.name));
+                                    continue;
+                                } else if spec.description.is_empty() {
+                                    out_of_spec_tool_names.push(OutOfSpecName::EmptyDescription(spec.name));
                                     continue;
                                 }
                                 if sn != spec.name {
@@ -565,16 +579,15 @@ impl ToolManager {
                             // - There is not a whole lot we can do with this data
                             if let Some(tx_clone) = &tx_clone {
                                 let send_result = if !out_of_spec_tool_names.is_empty() {
-                                    let allowed_len = 64 - server_name.len();
                                     let msg = out_of_spec_tool_names.iter().fold(
-                                        String::from("The following tool names are out of spec. They will be excluded from the list of available tools:\n"),
+                                        String::from("The following tools are out of spec. They will be excluded from the list of available tools:\n"),
                                         |mut acc, name| {
-                                            let msg = if name.len() > allowed_len {
-                                                "exceeded max length of 64 when combined with server name"
-                                            } else {
-                                                "must be compliant with ^[a-zA-Z][a-zA-Z0-9_]*$"
+                                            let (tool_name, msg) = match name {
+                                                OutOfSpecName::TooLong(tool_name) => (tool_name.as_str(), "tool name exceeds max length of 64 when combined with server name"),
+                                                OutOfSpecName::IllegalChar(tool_name) => (tool_name.as_str(), "tool name must be compliant with ^[a-zA-Z][a-zA-Z0-9_]*$"),
+                                                OutOfSpecName::EmptyDescription(tool_name) => (tool_name.as_str(), "tool schema contains empty description"),
                                             };
-                                            acc.push_str(format!("  - {} ({})\n", name, msg).as_str());
+                                            acc.push_str(format!("  - {} ({})\n", tool_name, msg).as_str());
                                             acc
                                         }
                                     );
