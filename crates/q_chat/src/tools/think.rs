@@ -28,7 +28,7 @@ pub struct Think {
 
 impl Think {
     /// Checks if the thinking feature is enabled in settings
-    pub fn is_think_tool_enabled() -> bool {
+    pub fn is_enabled() -> bool {
         // Default to enabled if setting doesn't exist or can't be read
         settings::get_bool_or("chat.enableThinking", true)
     }

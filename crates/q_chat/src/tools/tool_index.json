@@ -173,8 +173,8 @@
       "required": ["title"]
     }
   },
-  "think":{
-    "name": "think",
+  "q_think_tool":{
+    "name": "q_think_tool",
     "description": "The Think Tool is an internal reasoning mechanism enabling the model to systematically approach complex tasks by logically breaking them down before responding or acting; use it specifically for multi-step problems requiring step-by-step dependencies, reasoning through multiple constraints, synthesizing results from previous tool calls, planning intricate sequences of actions, troubleshooting complex errors, or making decisions involving multiple trade-offs. Avoid using it for straightforward tasks, basic information retrieval, summaries, always clearly define the reasoning challenge, structure thoughts explicitly, consider multiple perspectives, and summarize key insights before important decisions or complex tool interactions.",
     "input_schema": {
       "type": "object",
