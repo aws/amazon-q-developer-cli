@@ -496,11 +496,12 @@ impl ToolManager {
         let tx = self.loading_status_sender.take();
         let display_task = self.loading_display_task.take();
         let tool_specs = {
-            let mut tool_specs = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
+            let mut tool_specs =
+                serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
             if !crate::tools::think::Think::is_enabled() {
                 tool_specs.remove("q_think_tool");
             }
-            
+
             Arc::new(Mutex::new(tool_specs))
         };
         let conversation_id = self.conversation_id.clone();
@@ -675,7 +676,9 @@ impl ToolManager {
             "execute_bash" => Tool::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
-            "q_think_tool" => Tool::Think(serde_json::from_value::<crate::tools::think::Think>(value.args).map_err(map_err)?),
+            "q_think_tool" => {
+                Tool::Think(serde_json::from_value::<crate::tools::think::Think>(value.args).map_err(map_err)?)
+            },
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
                 let name = self.tn_map.get(name).map_or(name, String::as_str);
