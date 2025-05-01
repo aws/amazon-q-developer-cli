@@ -2724,7 +2724,7 @@ dependencies = [
  "mime",
  "moka",
  "muda",
- "nix 0.29.0",
+ "nix 0.30.0",
  "notify",
  "objc",
  "objc2 0.5.2",
@@ -2907,7 +2907,7 @@ dependencies = [
  "indoc",
  "insta",
  "macos-utils",
- "nix 0.29.0",
+ "nix 0.30.0",
  "objc",
  "owo-colors 4.2.0",
  "plist",
@@ -2932,7 +2932,7 @@ dependencies = [
  "fig_proto",
  "fig_util",
  "flate2",
- "nix 0.29.0",
+ "nix 0.30.0",
  "pin-project-lite",
  "rand 0.9.0",
  "tempfile",
@@ -2963,7 +2963,7 @@ version = "1.10.0"
 dependencies = [
  "cfg-if",
  "dirs",
- "nix 0.29.0",
+ "nix 0.30.0",
  "serde",
  "sysinfo",
  "tempfile",
@@ -2979,7 +2979,7 @@ dependencies = [
  "fig_util",
  "flate2",
  "hex",
- "nix 0.29.0",
+ "nix 0.30.0",
  "prost",
  "prost-build",
  "prost-reflect",
@@ -3157,7 +3157,7 @@ dependencies = [
  "insta",
  "libc",
  "macos-utils",
- "nix 0.29.0",
+ "nix 0.30.0",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
@@ -3214,7 +3214,7 @@ dependencies = [
  "lazy_static",
  "memmem",
  "mimalloc",
- "nix 0.29.0",
+ "nix 0.30.0",
  "num-traits",
  "parking_lot",
  "pin-project",
@@ -4976,7 +4976,7 @@ dependencies = [
  "flume",
  "fnv",
  "libc",
- "nix 0.29.0",
+ "nix 0.30.0",
  "objc",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
@@ -5044,7 +5044,7 @@ name = "mcp_client"
 version = "1.10.0"
 dependencies = [
  "async-trait",
- "nix 0.29.0",
+ "nix 0.30.0",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -5319,6 +5319,19 @@ name = "nix"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+dependencies = [
+ "bitflags 2.9.0",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+ "memoffset 0.9.1",
+]
+
+[[package]]
+name = "nix"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "537bc3c4a347b87fd52ac6c03a02ab1302962cfd93373c5d7a112cdc337854cc"
 dependencies = [
  "bitflags 2.9.0",
  "cfg-if",
@@ -6876,7 +6889,7 @@ dependencies = [
  "macos-utils",
  "mcp_client",
  "mimalloc",
- "nix 0.29.0",
+ "nix 0.30.0",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
@@ -10510,7 +10523,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "hex",
- "nix 0.29.0",
+ "nix 0.30.0",
  "ntest",
  "ordered-stream",
  "rand 0.8.5",
