@@ -57,6 +57,7 @@ use super::tools::{
 };
 use crate::tools::ToolSpec;
 use crate::tools::custom_tool::CustomTool;
+use crate::tools::web_search::WebSearch;
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name since in the end the tool name as seen by the
@@ -684,6 +685,7 @@ impl ToolManager {
             "execute_bash" => Tool::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
+            "web_search" => Tool::WebSearch(serde_json::from_value::<WebSearch>(value.args).map_err(map_err)?),
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
                 let name = self.tn_map.get(name).map_or(name, String::as_str);

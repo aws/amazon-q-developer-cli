@@ -147,6 +147,33 @@
       ]
     }
   },
+  "web_search": {
+    "name": "web_search",
+    "description": "Search/retrieving the web for the specified query. Currently only supports retrieving.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The search query to use. This is optional when mode is set to Retrieve since the target_url will be used instead."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Retrieve"
+          ],
+          "description": "Retrieve mode will return the markdown representation of the page. Search mode (not supported currently) will return the first x results from a search engine."
+        },
+        "target_url": {
+          "type": "string",
+          "description": "The web page to retrieve. This is only used in Retrieve mode."
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    }
+  },
   "gh_issue": {
     "name": "report_issue",
     "description": "Opens the browser to a pre-filled gh (GitHub) issue template to report chat issues, bugs, or feature requests. Pre-filled information includes the conversation transcript, chat context, and chat request IDs from the service.",
