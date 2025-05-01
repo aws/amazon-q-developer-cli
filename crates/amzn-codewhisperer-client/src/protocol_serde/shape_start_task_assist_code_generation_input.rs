@@ -2,7 +2,7 @@
 pub fn ser_start_task_assist_code_generation_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.conversation_state {
         #[allow(unused_mut)]
         let mut object_2 = object.key("conversationState").start_object();
@@ -41,6 +41,9 @@ pub fn ser_start_task_assist_code_generation_input_input(
         let mut object_13 = object.key("intentContext").start_object();
         crate::protocol_serde::shape_intent_context::ser_intent_context(&mut object_13, var_12)?;
         object_13.finish();
+    }
+    if let Some(var_14) = &input.profile_arn {
+        object.key("profileArn").string(var_14.as_str());
     }
     Ok(())
 }

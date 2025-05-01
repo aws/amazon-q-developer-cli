@@ -2,7 +2,7 @@
 pub fn ser_editor_state(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::EditorState,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.document {
         #[allow(unused_mut)]
         let mut object_2 = object.key("document").start_object();
@@ -29,6 +29,15 @@ pub fn ser_editor_state(
     }
     if let Some(var_9) = &input.use_relevant_documents {
         object.key("useRelevantDocuments").boolean(*var_9);
+    }
+    if let Some(var_10) = &input.workspace_folders {
+        let mut array_11 = object.key("workspaceFolders").start_array();
+        for item_12 in var_10 {
+            {
+                array_11.value().string(item_12.as_str());
+            }
+        }
+        array_11.finish();
     }
     Ok(())
 }

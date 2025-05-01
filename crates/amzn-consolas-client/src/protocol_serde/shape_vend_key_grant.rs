@@ -21,6 +21,40 @@ pub fn de_vend_key_grant_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
+        "ValidationException" => crate::operation::vend_key_grant::VendKeyGrantError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::validation_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?
+            };
+            tmp
+        }),
+        "AccessDeniedException" => crate::operation::vend_key_grant::VendKeyGrantError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?
+            };
+            tmp
+        }),
         "InternalServerException" => crate::operation::vend_key_grant::VendKeyGrantError::InternalServerError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -55,23 +89,6 @@ pub fn de_vend_key_grant_http_error(
             };
             tmp
         }),
-        "ValidationException" => crate::operation::vend_key_grant::VendKeyGrantError::ValidationError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::validation_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?
-            };
-            tmp
-        }),
         "ResourceNotFoundException" => crate::operation::vend_key_grant::VendKeyGrantError::ResourceNotFoundError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -81,23 +98,6 @@ pub fn de_vend_key_grant_http_error(
                     .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::resource_not_found_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?
-            };
-            tmp
-        }),
-        "AccessDeniedException" => crate::operation::vend_key_grant::VendKeyGrantError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::vend_key_grant::VendKeyGrantError::unhandled)?
             };
@@ -128,7 +128,8 @@ pub fn de_vend_key_grant_http_response(
 
 pub fn ser_vend_key_grant_input(
     input: &crate::operation::vend_key_grant::VendKeyGrantInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_vend_key_grant_input::ser_vend_key_grant_input_input(&mut object, input)?;
@@ -139,7 +140,7 @@ pub fn ser_vend_key_grant_input(
 pub(crate) fn de_vend_key_grant(
     value: &[u8],
     mut builder: crate::operation::vend_key_grant::builders::VendKeyGrantOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::vend_key_grant::builders::VendKeyGrantOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

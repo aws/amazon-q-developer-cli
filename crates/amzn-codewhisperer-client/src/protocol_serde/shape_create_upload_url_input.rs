@@ -2,7 +2,7 @@
 pub fn ser_create_upload_url_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::create_upload_url::CreateUploadUrlInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.content_md5 {
         object.key("contentMd5").string(var_1.as_str());
     }
@@ -32,6 +32,9 @@ pub fn ser_create_upload_url_input_input(
     }
     if let Some(var_9) = &input.upload_id {
         object.key("uploadId").string(var_9.as_str());
+    }
+    if let Some(var_10) = &input.profile_arn {
+        object.key("profileArn").string(var_10.as_str());
     }
     Ok(())
 }

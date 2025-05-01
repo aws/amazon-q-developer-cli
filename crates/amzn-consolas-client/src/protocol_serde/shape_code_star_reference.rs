@@ -2,7 +2,7 @@
 pub fn ser_code_star_reference(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::CodeStarReference,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("connectionArn").string(input.connection_arn.as_str());
     }
@@ -11,7 +11,10 @@ pub fn ser_code_star_reference(
 
 pub(crate) fn de_code_star_reference<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<Option<crate::types::CodeStarReference>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<
+    Option<crate::types::CodeStarReference>,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+>
 where
     I: Iterator<
         Item = Result<

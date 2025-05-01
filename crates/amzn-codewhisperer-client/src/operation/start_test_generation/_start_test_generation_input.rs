@@ -14,6 +14,10 @@ pub struct StartTestGenerationInput {
     pub test_generation_job_group_name: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub client_token: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
 }
 impl StartTestGenerationInput {
     /// Upload ID returned by CreateUploadUrl API
@@ -42,6 +46,18 @@ impl StartTestGenerationInput {
     pub fn client_token(&self) -> ::std::option::Option<&str> {
         self.client_token.as_deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn reference_tracker_configuration(
+        &self,
+    ) -> ::std::option::Option<&crate::types::ReferenceTrackerConfiguration> {
+        self.reference_tracker_configuration.as_ref()
+    }
 }
 impl ::std::fmt::Debug for StartTestGenerationInput {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -51,6 +67,8 @@ impl ::std::fmt::Debug for StartTestGenerationInput {
         formatter.field("user_input", &"*** Sensitive Data Redacted ***");
         formatter.field("test_generation_job_group_name", &self.test_generation_job_group_name);
         formatter.field("client_token", &self.client_token);
+        formatter.field("profile_arn", &self.profile_arn);
+        formatter.field("reference_tracker_configuration", &self.reference_tracker_configuration);
         formatter.finish()
     }
 }
@@ -72,6 +90,8 @@ pub struct StartTestGenerationInputBuilder {
     pub(crate) user_input: ::std::option::Option<::std::string::String>,
     pub(crate) test_generation_job_group_name: ::std::option::Option<::std::string::String>,
     pub(crate) client_token: ::std::option::Option<::std::string::String>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
 }
 impl StartTestGenerationInputBuilder {
     /// Upload ID returned by CreateUploadUrl API
@@ -169,6 +189,45 @@ impl StartTestGenerationInputBuilder {
         &self.client_token
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn reference_tracker_configuration(mut self, input: crate::types::ReferenceTrackerConfiguration) -> Self {
+        self.reference_tracker_configuration = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_reference_tracker_configuration(
+        mut self,
+        input: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
+    ) -> Self {
+        self.reference_tracker_configuration = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_reference_tracker_configuration(
+        &self,
+    ) -> &::std::option::Option<crate::types::ReferenceTrackerConfiguration> {
+        &self.reference_tracker_configuration
+    }
+
     /// Consumes the builder and constructs a
     /// [`StartTestGenerationInput`](crate::operation::start_test_generation::StartTestGenerationInput).
     pub fn build(
@@ -183,6 +242,8 @@ impl StartTestGenerationInputBuilder {
             user_input: self.user_input,
             test_generation_job_group_name: self.test_generation_job_group_name,
             client_token: self.client_token,
+            profile_arn: self.profile_arn,
+            reference_tracker_configuration: self.reference_tracker_configuration,
         })
     }
 }
@@ -194,6 +255,8 @@ impl ::std::fmt::Debug for StartTestGenerationInputBuilder {
         formatter.field("user_input", &"*** Sensitive Data Redacted ***");
         formatter.field("test_generation_job_group_name", &self.test_generation_job_group_name);
         formatter.field("client_token", &self.client_token);
+        formatter.field("profile_arn", &self.profile_arn);
+        formatter.field("reference_tracker_configuration", &self.reference_tracker_configuration);
         formatter.finish()
     }
 }

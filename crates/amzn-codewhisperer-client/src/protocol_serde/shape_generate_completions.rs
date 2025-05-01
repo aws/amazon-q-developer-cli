@@ -21,43 +21,6 @@ pub fn de_generate_completions_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => {
-            crate::operation::generate_completions::GenerateCompletionsError::InternalServerError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output =
-                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(crate::operation::generate_completions::GenerateCompletionsError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::internal_server_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::generate_completions::GenerateCompletionsError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ThrottlingException" => crate::operation::generate_completions::GenerateCompletionsError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::generate_completions::GenerateCompletionsError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::generate_completions::GenerateCompletionsError::unhandled)?
-            };
-            tmp
-        }),
         "ValidationException" => crate::operation::generate_completions::GenerateCompletionsError::ValidationError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -94,6 +57,43 @@ pub fn de_generate_completions_http_error(
                 tmp
             })
         },
+        "ThrottlingException" => crate::operation::generate_completions::GenerateCompletionsError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::generate_completions::GenerateCompletionsError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::generate_completions::GenerateCompletionsError::unhandled)?
+            };
+            tmp
+        }),
+        "InternalServerException" => {
+            crate::operation::generate_completions::GenerateCompletionsError::InternalServerError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                    output =
+                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                            _response_body,
+                            output,
+                        )
+                        .map_err(crate::operation::generate_completions::GenerateCompletionsError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::internal_server_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::generate_completions::GenerateCompletionsError::unhandled)?
+                };
+                tmp
+            })
+        },
         _ => crate::operation::generate_completions::GenerateCompletionsError::generic(generic),
     })
 }
@@ -119,7 +119,8 @@ pub fn de_generate_completions_http_response(
 
 pub fn ser_generate_completions_input(
     input: &crate::operation::generate_completions::GenerateCompletionsInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_generate_completions_input::ser_generate_completions_input_input(&mut object, input)?;
@@ -130,7 +131,7 @@ pub fn ser_generate_completions_input(
 pub(crate) fn de_generate_completions(
     value: &[u8],
     mut builder: crate::operation::generate_completions::builders::GenerateCompletionsOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::generate_completions::builders::GenerateCompletionsOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
@@ -142,6 +143,10 @@ pub(crate) fn de_generate_completions(
         match tokens.next().transpose()? {
             Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
+                "predictions" => {
+                    builder =
+                        builder.set_predictions(crate::protocol_serde::shape_predictions::de_predictions(tokens)?);
+                },
                 "completions" => {
                     builder =
                         builder.set_completions(crate::protocol_serde::shape_completions::de_completions(tokens)?);

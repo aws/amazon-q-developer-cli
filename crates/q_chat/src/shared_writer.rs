@@ -64,3 +64,26 @@ impl Write for NullWriter {
         Ok(())
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct TestWriterWithSink {
+    pub sink: Arc<Mutex<Vec<u8>>>,
+}
+
+impl TestWriterWithSink {
+    #[allow(dead_code)]
+    pub fn get_content(&self) -> Vec<u8> {
+        self.sink.lock().unwrap().clone()
+    }
+}
+
+impl Write for TestWriterWithSink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.sink.lock().unwrap().append(&mut buf.to_vec());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}

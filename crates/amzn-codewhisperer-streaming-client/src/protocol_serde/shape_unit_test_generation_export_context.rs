@@ -2,7 +2,7 @@
 pub fn ser_unit_test_generation_export_context(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::UnitTestGenerationExportContext,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object
             .key("testGenerationJobGroupName")

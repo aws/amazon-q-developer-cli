@@ -18,6 +18,7 @@
 ///     UploadIntent::TaskAssistPlanning => { /* ... */ },
 ///     UploadIntent::Transformation => { /* ... */ },
 ///     UploadIntent::UnitTestsGeneration => { /* ... */ },
+///     UploadIntent::WorkspaceContext => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
 /// }
@@ -64,6 +65,8 @@ pub enum UploadIntent {
     Transformation,
     /// Unit Test Generation
     UnitTestsGeneration,
+    /// Workspace Context
+    WorkspaceContext,
     /// `Unknown` contains new variants that have been added since this code was generated.
     #[deprecated(
         note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
@@ -79,6 +82,7 @@ impl ::std::convert::From<&str> for UploadIntent {
             "TASK_ASSIST_PLANNING" => UploadIntent::TaskAssistPlanning,
             "TRANSFORMATION" => UploadIntent::Transformation,
             "UNIT_TESTS_GENERATION" => UploadIntent::UnitTestsGeneration,
+            "WORKSPACE_CONTEXT" => UploadIntent::WorkspaceContext,
             other => UploadIntent::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
             )),
@@ -102,6 +106,7 @@ impl UploadIntent {
             UploadIntent::TaskAssistPlanning => "TASK_ASSIST_PLANNING",
             UploadIntent::Transformation => "TRANSFORMATION",
             UploadIntent::UnitTestsGeneration => "UNIT_TESTS_GENERATION",
+            UploadIntent::WorkspaceContext => "WORKSPACE_CONTEXT",
             UploadIntent::Unknown(value) => value.as_str(),
         }
     }
@@ -115,6 +120,7 @@ impl UploadIntent {
             "TASK_ASSIST_PLANNING",
             "TRANSFORMATION",
             "UNIT_TESTS_GENERATION",
+            "WORKSPACE_CONTEXT",
         ]
     }
 }
@@ -144,6 +150,7 @@ impl ::std::fmt::Display for UploadIntent {
             UploadIntent::TaskAssistPlanning => write!(f, "TASK_ASSIST_PLANNING"),
             UploadIntent::Transformation => write!(f, "TRANSFORMATION"),
             UploadIntent::UnitTestsGeneration => write!(f, "UNIT_TESTS_GENERATION"),
+            UploadIntent::WorkspaceContext => write!(f, "WORKSPACE_CONTEXT"),
             UploadIntent::Unknown(value) => write!(f, "{}", value),
         }
     }

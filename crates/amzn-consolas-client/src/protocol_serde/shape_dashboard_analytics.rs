@@ -2,7 +2,7 @@
 pub fn ser_dashboard_analytics(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::DashboardAnalytics,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("toggle").string(input.toggle.as_str());
     }
@@ -11,7 +11,10 @@ pub fn ser_dashboard_analytics(
 
 pub(crate) fn de_dashboard_analytics<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<Option<crate::types::DashboardAnalytics>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<
+    Option<crate::types::DashboardAnalytics>,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+>
 where
     I: Iterator<
         Item = Result<

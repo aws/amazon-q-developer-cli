@@ -2,7 +2,7 @@
 pub fn ser_relevant_text_document(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::RelevantTextDocument,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("relativeFilePath").string(input.relative_file_path.as_str());
     }
@@ -26,6 +26,9 @@ pub fn ser_relevant_text_document(
             }
         }
         array_5.finish();
+    }
+    if let Some(var_8) = &input.r#type {
+        object.key("type").string(var_8.as_str());
     }
     Ok(())
 }

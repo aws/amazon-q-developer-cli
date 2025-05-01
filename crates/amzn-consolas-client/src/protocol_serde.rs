@@ -21,7 +21,10 @@ pub fn parse_http_error_metadata(
     _response_status: u16,
     response_headers: &::aws_smithy_runtime_api::http::Headers,
     response_body: &[u8],
-) -> Result<::aws_smithy_types::error::metadata::Builder, ::aws_smithy_json::deserialize::error::DeserializeError> {
+) -> ::std::result::Result<
+    ::aws_smithy_types::error::metadata::Builder,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+> {
     crate::json_errors::parse_error_metadata(response_body, response_headers)
 }
 
@@ -179,6 +182,8 @@ pub(crate) mod shape_customization_version_summary;
 
 pub(crate) mod shape_dashboard_analytics;
 
+pub(crate) mod shape_external_identity_source;
+
 pub(crate) mod shape_notifications_feature;
 
 pub(crate) mod shape_profile;
@@ -193,6 +198,8 @@ pub(crate) mod shape_s3_reference;
 
 pub(crate) mod shape_sso_identity_source;
 
+pub(crate) mod shape_supplemental_context_metadata;
+
 pub(crate) mod shape_workspace_context;
 
 pub(crate) mod shape_active_functionality_list;
@@ -203,9 +210,13 @@ pub(crate) mod shape_identity_details;
 
 pub(crate) mod shape_imports;
 
+pub(crate) mod shape_previous_editor_state_metadata;
+
 pub(crate) mod shape_references;
 
 pub(crate) mod shape_application_properties;
+
+pub(crate) mod shape_external_identity_details;
 
 pub(crate) mod shape_import;
 

@@ -4,12 +4,21 @@
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq)]
 pub struct GenerateCompletionsOutput {
     #[allow(missing_docs)] // documentation missing in model
+    pub predictions: ::std::option::Option<::std::vec::Vec<crate::types::Prediction>>,
+    #[allow(missing_docs)] // documentation missing in model
     pub completions: ::std::option::Option<::std::vec::Vec<crate::types::Completion>>,
     #[allow(missing_docs)] // documentation missing in model
     pub next_token: ::std::option::Option<::std::string::String>,
     _request_id: Option<String>,
 }
 impl GenerateCompletionsOutput {
+    #[allow(missing_docs)] // documentation missing in model
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.predictions.is_none()`.
+    pub fn predictions(&self) -> &[crate::types::Prediction] {
+        self.predictions.as_deref().unwrap_or_default()
+    }
+
     #[allow(missing_docs)] // documentation missing in model
     /// If no value was sent for this field, a default will be set. If you want to determine if no
     /// value was sent, use `.completions.is_none()`.
@@ -25,6 +34,7 @@ impl GenerateCompletionsOutput {
 impl ::std::fmt::Debug for GenerateCompletionsOutput {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("GenerateCompletionsOutput");
+        formatter.field("predictions", &self.predictions);
         formatter.field("completions", &self.completions);
         formatter.field("next_token", &"*** Sensitive Data Redacted ***");
         formatter.field("_request_id", &self._request_id);
@@ -49,11 +59,33 @@ impl GenerateCompletionsOutput {
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct GenerateCompletionsOutputBuilder {
+    pub(crate) predictions: ::std::option::Option<::std::vec::Vec<crate::types::Prediction>>,
     pub(crate) completions: ::std::option::Option<::std::vec::Vec<crate::types::Completion>>,
     pub(crate) next_token: ::std::option::Option<::std::string::String>,
     _request_id: Option<String>,
 }
 impl GenerateCompletionsOutputBuilder {
+    /// Appends an item to `predictions`.
+    ///
+    /// To override the contents of this collection use [`set_predictions`](Self::set_predictions).
+    pub fn predictions(mut self, input: crate::types::Prediction) -> Self {
+        let mut v = self.predictions.unwrap_or_default();
+        v.push(input);
+        self.predictions = ::std::option::Option::Some(v);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_predictions(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Prediction>>) -> Self {
+        self.predictions = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_predictions(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Prediction>> {
+        &self.predictions
+    }
+
     /// Appends an item to `completions`.
     ///
     /// To override the contents of this collection use [`set_completions`](Self::set_completions).
@@ -106,6 +138,7 @@ impl GenerateCompletionsOutputBuilder {
     /// [`GenerateCompletionsOutput`](crate::operation::generate_completions::GenerateCompletionsOutput).
     pub fn build(self) -> crate::operation::generate_completions::GenerateCompletionsOutput {
         crate::operation::generate_completions::GenerateCompletionsOutput {
+            predictions: self.predictions,
             completions: self.completions,
             next_token: self.next_token,
             _request_id: self._request_id,
@@ -115,6 +148,7 @@ impl GenerateCompletionsOutputBuilder {
 impl ::std::fmt::Debug for GenerateCompletionsOutputBuilder {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("GenerateCompletionsOutputBuilder");
+        formatter.field("predictions", &self.predictions);
         formatter.field("completions", &self.completions);
         formatter.field("next_token", &"*** Sensitive Data Redacted ***");
         formatter.field("_request_id", &self._request_id);

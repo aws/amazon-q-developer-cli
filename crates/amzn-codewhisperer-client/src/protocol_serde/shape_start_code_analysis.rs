@@ -21,43 +21,6 @@ pub fn de_start_code_analysis_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => {
-            crate::operation::start_code_analysis::StartCodeAnalysisError::InternalServerError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output =
-                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::internal_server_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ThrottlingException" => crate::operation::start_code_analysis::StartCodeAnalysisError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?
-            };
-            tmp
-        }),
         "ConflictException" => crate::operation::start_code_analysis::StartCodeAnalysisError::ConflictError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -92,22 +55,6 @@ pub fn de_start_code_analysis_http_error(
             };
             tmp
         }),
-        "ResourceNotFoundException" => {
-            crate::operation::start_code_analysis::StartCodeAnalysisError::ResourceNotFoundError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::resource_not_found_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?
-                };
-                tmp
-            })
-        },
         "AccessDeniedException" => crate::operation::start_code_analysis::StartCodeAnalysisError::AccessDeniedError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -125,6 +72,59 @@ pub fn de_start_code_analysis_http_error(
             };
             tmp
         }),
+        "ThrottlingException" => crate::operation::start_code_analysis::StartCodeAnalysisError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?
+            };
+            tmp
+        }),
+        "ResourceNotFoundException" => {
+            crate::operation::start_code_analysis::StartCodeAnalysisError::ResourceNotFoundError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::resource_not_found_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?
+                };
+                tmp
+            })
+        },
+        "InternalServerException" => {
+            crate::operation::start_code_analysis::StartCodeAnalysisError::InternalServerError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                    output =
+                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                            _response_body,
+                            output,
+                        )
+                        .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::internal_server_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::start_code_analysis::StartCodeAnalysisError::unhandled)?
+                };
+                tmp
+            })
+        },
         _ => crate::operation::start_code_analysis::StartCodeAnalysisError::generic(generic),
     })
 }
@@ -152,7 +152,8 @@ pub fn de_start_code_analysis_http_response(
 
 pub fn ser_start_code_analysis_input(
     input: &crate::operation::start_code_analysis::StartCodeAnalysisInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_start_code_analysis_input::ser_start_code_analysis_input_input(&mut object, input)?;
@@ -163,7 +164,7 @@ pub fn ser_start_code_analysis_input(
 pub(crate) fn de_start_code_analysis(
     value: &[u8],
     mut builder: crate::operation::start_code_analysis::builders::StartCodeAnalysisOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::start_code_analysis::builders::StartCodeAnalysisOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

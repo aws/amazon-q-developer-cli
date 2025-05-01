@@ -25,40 +25,6 @@ pub fn de_delete_workspace_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => crate::operation::delete_workspace::DeleteWorkspaceError::InternalServerError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::delete_workspace::DeleteWorkspaceError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::internal_server_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::delete_workspace::DeleteWorkspaceError::unhandled)?
-            };
-            tmp
-        }),
-        "ThrottlingException" => crate::operation::delete_workspace::DeleteWorkspaceError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::delete_workspace::DeleteWorkspaceError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::delete_workspace::DeleteWorkspaceError::unhandled)?
-            };
-            tmp
-        }),
         "ValidationException" => crate::operation::delete_workspace::DeleteWorkspaceError::ValidationError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -93,6 +59,40 @@ pub fn de_delete_workspace_http_error(
             };
             tmp
         }),
+        "InternalServerException" => crate::operation::delete_workspace::DeleteWorkspaceError::InternalServerError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::delete_workspace::DeleteWorkspaceError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::internal_server_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::delete_workspace::DeleteWorkspaceError::unhandled)?
+            };
+            tmp
+        }),
+        "ThrottlingException" => crate::operation::delete_workspace::DeleteWorkspaceError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::delete_workspace::DeleteWorkspaceError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::delete_workspace::DeleteWorkspaceError::unhandled)?
+            };
+            tmp
+        }),
         _ => crate::operation::delete_workspace::DeleteWorkspaceError::generic(generic),
     })
 }
@@ -116,7 +116,8 @@ pub fn de_delete_workspace_http_response(
 
 pub fn ser_delete_workspace_input(
     input: &crate::operation::delete_workspace::DeleteWorkspaceInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_delete_workspace_input::ser_delete_workspace_input_input(&mut object, input)?;

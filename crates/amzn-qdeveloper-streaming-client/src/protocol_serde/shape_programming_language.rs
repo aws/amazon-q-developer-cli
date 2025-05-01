@@ -2,7 +2,7 @@
 pub fn ser_programming_language(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::ProgrammingLanguage,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("languageName").string(input.language_name.as_str());
     }

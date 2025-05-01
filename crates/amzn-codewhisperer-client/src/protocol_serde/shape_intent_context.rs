@@ -2,7 +2,7 @@
 pub fn ser_intent_context(
     object_13: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::IntentContext,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::IntentContext::Documentation(inner) => {
             #[allow(unused_mut)]

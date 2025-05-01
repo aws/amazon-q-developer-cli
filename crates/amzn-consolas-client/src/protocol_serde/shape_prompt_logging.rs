@@ -2,7 +2,7 @@
 pub fn ser_prompt_logging(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::PromptLogging,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("s3Uri").string(input.s3_uri.as_str());
     }
@@ -14,7 +14,7 @@ pub fn ser_prompt_logging(
 
 pub(crate) fn de_prompt_logging<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<Option<crate::types::PromptLogging>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<Option<crate::types::PromptLogging>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
     I: Iterator<
         Item = Result<

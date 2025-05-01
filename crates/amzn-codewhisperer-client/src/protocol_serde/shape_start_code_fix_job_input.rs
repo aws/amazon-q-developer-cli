@@ -2,7 +2,7 @@
 pub fn ser_start_code_fix_job_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::start_code_fix_job::StartCodeFixJobInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.snippet_range {
         #[allow(unused_mut)]
         let mut object_2 = object.key("snippetRange").start_object();
@@ -29,6 +29,9 @@ pub fn ser_start_code_fix_job_input_input(
             var_7,
         )?;
         object_8.finish();
+    }
+    if let Some(var_9) = &input.profile_arn {
+        object.key("profileArn").string(var_9.as_str());
     }
     Ok(())
 }

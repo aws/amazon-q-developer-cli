@@ -2,7 +2,7 @@
 pub fn ser_cursor_state(
     object_4: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::CursorState,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::CursorState::Position(inner) => {
             #[allow(unused_mut)]

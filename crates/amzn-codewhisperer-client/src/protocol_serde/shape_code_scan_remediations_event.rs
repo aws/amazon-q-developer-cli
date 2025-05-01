@@ -2,7 +2,7 @@
 pub fn ser_code_scan_remediations_event(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::CodeScanRemediationsEvent,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.programming_language {
         #[allow(unused_mut)]
         let mut object_2 = object.key("programmingLanguage").start_object();

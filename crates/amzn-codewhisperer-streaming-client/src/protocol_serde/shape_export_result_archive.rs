@@ -152,7 +152,8 @@ pub fn de_export_result_archive_http_error(
 
 pub fn ser_export_result_archive_input(
     input: &crate::operation::export_result_archive::ExportResultArchiveInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_export_result_archive_input::ser_export_result_archive_input_input(

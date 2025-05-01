@@ -39,7 +39,7 @@
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
 ///
-///  This supports our current set of supported values - will be expanded in time
+/// This supports our current set of supported values - will be expanded in time
 #[non_exhaustive]
 #[derive(
     ::std::clone::Clone,

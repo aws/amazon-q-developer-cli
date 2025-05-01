@@ -1055,8 +1055,7 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature.
-    /// ```no_run
+    /// `behavior-version-latest` cargo feature. ```no_run
     /// use amzn_toolkit_telemetry::config::BehaviorVersion;
     ///
     /// let config = amzn_toolkit_telemetry::Config::builder()
@@ -1065,7 +1064,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_toolkit_telemetry::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_toolkit_telemetry::config::BehaviorVersion;
@@ -1091,8 +1090,7 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature.
-    /// ```no_run
+    /// `behavior-version-latest` cargo feature. ```no_run
     /// use amzn_toolkit_telemetry::config::BehaviorVersion;
     ///
     /// let config = amzn_toolkit_telemetry::Config::builder()
@@ -1101,7 +1099,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_toolkit_telemetry::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_toolkit_telemetry::config::BehaviorVersion;

@@ -2,7 +2,7 @@
 pub fn ser_user_input_message(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::UserInputMessage,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("content").string(input.content.as_str());
     }
@@ -17,6 +17,18 @@ pub fn ser_user_input_message(
     }
     if let Some(var_4) = &input.origin {
         object.key("origin").string(var_4.as_str());
+    }
+    if let Some(var_5) = &input.images {
+        let mut array_6 = object.key("images").start_array();
+        for item_7 in var_5 {
+            {
+                #[allow(unused_mut)]
+                let mut object_8 = array_6.value().start_object();
+                crate::protocol_serde::shape_image_block::ser_image_block(&mut object_8, item_7)?;
+                object_8.finish();
+            }
+        }
+        array_6.finish();
     }
     Ok(())
 }

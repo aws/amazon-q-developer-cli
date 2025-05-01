@@ -25,6 +25,40 @@ pub fn de_create_workspace_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
+        "ValidationException" => crate::operation::create_workspace::CreateWorkspaceError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::validation_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?
+            };
+            tmp
+        }),
+        "AccessDeniedException" => crate::operation::create_workspace::CreateWorkspaceError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?
+            };
+            tmp
+        }),
         "InternalServerException" => crate::operation::create_workspace::CreateWorkspaceError::InternalServerError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -59,23 +93,6 @@ pub fn de_create_workspace_http_error(
             };
             tmp
         }),
-        "ValidationException" => crate::operation::create_workspace::CreateWorkspaceError::ValidationError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::validation_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?
-            };
-            tmp
-        }),
         "ConflictException" => crate::operation::create_workspace::CreateWorkspaceError::ConflictError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -93,23 +110,25 @@ pub fn de_create_workspace_http_error(
             };
             tmp
         }),
-        "AccessDeniedException" => crate::operation::create_workspace::CreateWorkspaceError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+        "ServiceQuotaExceededException" => {
+            crate::operation::create_workspace::CreateWorkspaceError::ServiceQuotaExceededError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
+                    output = crate::protocol_serde::shape_service_quota_exceeded_exception::de_service_quota_exceeded_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?
-            };
-            tmp
-        }),
+                    let output = output.meta(generic);
+                    crate::serde_util::service_quota_exceeded_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?
+                };
+                tmp
+            })
+        },
         _ => crate::operation::create_workspace::CreateWorkspaceError::generic(generic),
     })
 }
@@ -137,7 +156,8 @@ pub fn de_create_workspace_http_response(
 
 pub fn ser_create_workspace_input(
     input: &crate::operation::create_workspace::CreateWorkspaceInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_create_workspace_input::ser_create_workspace_input_input(&mut object, input)?;
@@ -148,7 +168,7 @@ pub fn ser_create_workspace_input(
 pub(crate) fn de_create_workspace(
     value: &[u8],
     mut builder: crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

@@ -49,6 +49,45 @@ pub fn de_list_code_analysis_findings_http_error(
                 tmp
             })
         },
+        "AccessDeniedException" => {
+            crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::AccessDeniedError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::access_denied_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "ResourceNotFoundException" => {
+            crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::ResourceNotFoundError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::resource_not_found_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
         "ThrottlingException" => {
             crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::ThrottlingError({
                 #[allow(unused_mut)]
@@ -91,45 +130,6 @@ pub fn de_list_code_analysis_findings_http_error(
                 tmp
             })
         },
-        "ResourceNotFoundException" => {
-            crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::ResourceNotFoundError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::resource_not_found_exception_correct_errors(output)
-                        .build()
-                        .map_err(
-                            crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::unhandled,
-                        )?
-                };
-                tmp
-            })
-        },
-        "AccessDeniedException" => {
-            crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::AccessDeniedError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::access_denied_exception_correct_errors(output)
-                        .build()
-                        .map_err(
-                            crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::unhandled,
-                        )?
-                };
-                tmp
-            })
-        },
         _ => crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError::generic(generic),
     })
 }
@@ -161,7 +161,8 @@ pub fn de_list_code_analysis_findings_http_response(
 
 pub fn ser_list_code_analysis_findings_input(
     input: &crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_list_code_analysis_findings_input::ser_list_code_analysis_findings_input_input(
@@ -175,7 +176,7 @@ pub fn ser_list_code_analysis_findings_input(
 pub(crate) fn de_list_code_analysis_findings(
     value: &[u8],
     mut builder: crate::operation::list_code_analysis_findings::builders::ListCodeAnalysisFindingsOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::list_code_analysis_findings::builders::ListCodeAnalysisFindingsOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

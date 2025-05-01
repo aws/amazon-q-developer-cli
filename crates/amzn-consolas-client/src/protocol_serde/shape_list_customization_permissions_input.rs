@@ -2,7 +2,7 @@
 pub fn ser_list_customization_permissions_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::list_customization_permissions::ListCustomizationPermissionsInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.identifier {
         object.key("identifier").string(var_1.as_str());
     }

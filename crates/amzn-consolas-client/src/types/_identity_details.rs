@@ -4,6 +4,8 @@
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub enum IdentityDetails {
     #[allow(missing_docs)] // documentation missing in model
+    ExternalIdentityDetails(crate::types::ExternalIdentityDetails),
+    #[allow(missing_docs)] // documentation missing in model
     SsoIdentityDetails(crate::types::SsoIdentityDetails),
     /// The `Unknown` variant represents cases where new union variant was received. Consider
     /// upgrading the SDK to the latest available version. An unknown enum variant
@@ -17,7 +19,24 @@ pub enum IdentityDetails {
     Unknown,
 }
 impl IdentityDetails {
-    #[allow(irrefutable_let_patterns)]
+    /// Tries to convert the enum instance into
+    /// [`ExternalIdentityDetails`](crate::types::IdentityDetails::ExternalIdentityDetails),
+    /// extracting the inner [`ExternalIdentityDetails`](crate::types::ExternalIdentityDetails).
+    /// Returns `Err(&Self)` if it can't be converted.
+    pub fn as_external_identity_details(&self) -> ::std::result::Result<&crate::types::ExternalIdentityDetails, &Self> {
+        if let IdentityDetails::ExternalIdentityDetails(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`ExternalIdentityDetails`](crate::types::IdentityDetails::ExternalIdentityDetails).
+    pub fn is_external_identity_details(&self) -> bool {
+        self.as_external_identity_details().is_ok()
+    }
+
     /// Tries to convert the enum instance into
     /// [`SsoIdentityDetails`](crate::types::IdentityDetails::SsoIdentityDetails), extracting the
     /// inner [`SsoIdentityDetails`](crate::types::SsoIdentityDetails). Returns `Err(&Self)` if

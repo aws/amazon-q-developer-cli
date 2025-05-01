@@ -12,6 +12,7 @@ mod prompt;
 mod shared_writer;
 mod skim_integration;
 mod token_counter;
+mod tool_manager;
 mod tools;
 pub mod util;
 
@@ -19,6 +20,7 @@ use std::borrow::Cow;
 use std::collections::{
     HashMap,
     HashSet,
+    VecDeque,
 };
 use std::io::{
     IsTerminal,
@@ -38,6 +40,7 @@ use std::{
 
 use command::{
     Command,
+    PromptsSubcommand,
     ToolsSubcommand,
 };
 use consts::CONTEXT_WINDOW_SIZE;
@@ -87,6 +90,10 @@ use message::{
     ToolUseResult,
     ToolUseResultBlock,
 };
+use rand::distr::{
+    Alphanumeric,
+    SampleString,
+};
 use shared_writer::SharedWriter;
 
 /// Help text for the compact command
@@ -102,7 +109,6 @@ that may eventually reach memory constraints.
 <cyan!>Usage</cyan!>
   <em>/compact</em>                   <black!>Summarize the conversation and clear history</black!>
   <em>/compact [prompt]</em>          <black!>Provide custom guidance for summarization</black!>
-  <em>/compact --summary</em>         <black!>Show the summary after compacting</black!>
 
 <cyan!>When to use</cyan!>
 • When you see the memory constraint warning message
@@ -119,6 +125,10 @@ that may eventually reach memory constraints.
     )
 }
 use input_source::InputSource;
+use mcp_client::{
+    Prompt,
+    PromptGetResult,
+};
 use parse::{
     ParseState,
     interpret_markdown,
@@ -142,6 +152,13 @@ use tokio::signal::unix::{
     SignalKind,
     signal,
 };
+use tool_manager::{
+    GetPromptError,
+    McpServerConfig,
+    PromptBundle,
+    ToolManager,
+    ToolManagerBuilder,
+};
 use tools::gh_issue::GhIssueContext;
 use tools::{
     QueuedTool,
@@ -152,9 +169,11 @@ use tools::{
 use tracing::{
     debug,
     error,
+    info,
     trace,
     warn,
 };
+use unicode_width::UnicodeWidthStr;
 use util::{
     animate_output,
     play_notification_bell,
@@ -165,7 +184,6 @@ use winnow::Partial;
 use winnow::stream::Offset;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
-
 <em>Welcome to </em>
 <cyan!>
  █████╗ ███╗   ███╗ █████╗ ███████╗ ██████╗ ███╗   ██╗     ██████╗ 
@@ -181,7 +199,7 @@ const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
 <em>Welcome to <cyan!>Amazon Q</cyan!>!</em>
 "};
 
-const ROTATING_TIPS: [&str; 7] = [
+const ROTATING_TIPS: [&str; 8] = [
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
     color_print::cstr! {"Q can use tools without asking for confirmation every time. Give <green!>/tools trust</green!> a try"},
@@ -189,20 +207,21 @@ const ROTATING_TIPS: [&str; 7] = [
     color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation history with its summary to free up the context space"},
     color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
     color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
+    color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with /help"},
 ];
 
 const GREETING_BREAK_POINT: usize = 67;
 
 const POPULAR_SHORTCUTS: &str = color_print::cstr! {"
 <black!>
-<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + k</green!> fuzzy search
+<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search
 </black!>"};
 
 const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"
 <black!>
 <green!>/help</green!> all commands
 <green!>ctrl + j</green!> new lines
-<green!>ctrl + k</green!> fuzzy search
+<green!>ctrl + s</green!> fuzzy search
 </black!>
 "};
 const HELP_TEXT: &str = color_print::cstr! {"
@@ -218,7 +237,6 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/compact</em>      <black!>Summarize the conversation to free up context space</black!>
   <em>help</em>        <black!>Show help for the compact command</black!>
   <em>[prompt]</em>    <black!>Optional custom prompt to guide summarization</black!>
-  <em>--summary</em>   <black!>Display the summary after compacting</black!>
 <em>/tools</em>        <black!>View and manage tools and permissions</black!>
   <em>help</em>        <black!>Show an explanation for the trust command</black!>
   <em>trust</em>       <black!>Trust a specific tool or tools for the session</black!>
@@ -232,6 +250,10 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>create</em>      <black!>Create a new profile</black!>
   <em>delete</em>      <black!>Delete a profile</black!>
   <em>rename</em>      <black!>Rename a profile</black!>
+<em>/prompts</em>      <black!>View and retrieve prompts</black!>
+  <em>help</em>        <black!>Show prompts help</black!>
+  <em>list</em>        <black!>List or search available prompts</black!>
+  <em>get</em>         <black!>Retrieve and send a prompt</black!>
 <em>/context</em>      <black!>Manage context files and hooks for the chat session</black!>
   <em>help</em>        <black!>Show context help</black!>
   <em>show</em>        <black!>Display current context rules configuration [--expand]</black!>
@@ -241,17 +263,24 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>hooks</em>       <black!>View and manage context hooks</black!>
 <em>/usage</em>      <black!>Show current session's context window usage</black!>
 
+<cyan,em>MCP:</cyan,em>
+<black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/en_us/amazonq/latest/qdeveloper-ug/command-line-mcp.html</black!>
+
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
 <em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
-<em>Ctrl(^) + k</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
+<em>Ctrl(^) + s</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
                       <black!>Change the keybind to ctrl+x with: q settings chat.skimCommandKey x (where x is any key)</black!>
 
 "};
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
 const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
-\nAgents can sometimes do unexpected things so understand the risks.</green!>"};
+\nAgents can sometimes do unexpected things so understand the risks.</green!>
+\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety"};
+
+const TOOL_BULLET: &str = " ● ";
+const CONTINUATION_LINE: &str = " ⋮ ";
 
 pub async fn launch_chat(args: cli::Chat) -> Result<ExitCode> {
     let trust_tools = args.trust_tools.map(|mut tools| {
@@ -312,6 +341,22 @@ pub async fn chat(
         _ => StreamingClient::new().await?,
     };
 
+    let mcp_server_configs = match McpServerConfig::load_config(&mut output).await {
+        Ok(config) => {
+            execute!(
+                output,
+                style::Print(
+                    "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n"
+                )
+            )?;
+            config
+        },
+        Err(e) => {
+            warn!("No mcp server config loaded: {}", e);
+            McpServerConfig::default()
+        },
+    };
+
     // If profile is specified, verify it exists before starting the chat
     if let Some(ref profile_name) = profile {
         // Create a temporary context manager to check if the profile exists
@@ -333,7 +378,17 @@ pub async fn chat(
         }
     }
 
-    let tool_config = load_tools()?;
+    let conversation_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
+    info!(?conversation_id, "Generated new conversation id");
+    let (prompt_request_sender, prompt_request_receiver) = std::sync::mpsc::channel::<Option<String>>();
+    let (prompt_response_sender, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+    let mut tool_manager = ToolManagerBuilder::default()
+        .mcp_server_config(mcp_server_configs)
+        .prompt_list_sender(prompt_response_sender)
+        .prompt_list_receiver(prompt_request_receiver)
+        .conversation_id(&conversation_id)
+        .build()?;
+    let tool_config = tool_manager.load_tools().await?;
     let mut tool_permissions = ToolPermissions::new(tool_config.len());
     if accept_all || trust_all_tools {
         for tool in tool_config.values() {
@@ -362,14 +417,16 @@ pub async fn chat(
 
     let mut chat = ChatContext::new(
         ctx,
+        &conversation_id,
         Settings::new(),
         State::new(),
         output,
         input,
-        InputSource::new()?,
+        InputSource::new(prompt_request_sender, prompt_response_receiver)?,
         interactive,
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
+        tool_manager,
         profile,
         tool_config,
         tool_permissions,
@@ -411,6 +468,8 @@ pub enum ChatError {
         "Tool approval required but --no-interactive was specified. Use --trust-all-tools to automatically approve tools."
     )]
     NonInteractiveToolApproval,
+    #[error(transparent)]
+    GetPromptError(#[from] GetPromptError),
 }
 
 pub struct ChatContext {
@@ -436,14 +495,19 @@ pub struct ChatContext {
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
     /// State used to keep track of tool use relation
     tool_use_status: ToolUseStatus,
+    /// Abstraction that consolidates custom tools with native ones
+    tool_manager: ToolManager,
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
+    /// Pending prompts to be sent
+    pending_prompts: VecDeque<Prompt>,
 }
 
 impl ChatContext {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         ctx: Arc<Context>,
+        conversation_id: &str,
         settings: Settings,
         state: State,
         output: SharedWriter,
@@ -452,12 +516,15 @@ impl ChatContext {
         interactive: bool,
         client: StreamingClient,
         terminal_width_provider: fn() -> Option<usize>,
+        tool_manager: ToolManager,
         profile: Option<String>,
         tool_config: HashMap<String, ToolSpec>,
         tool_permissions: ToolPermissions,
     ) -> Result<Self> {
         let ctx_clone = Arc::clone(&ctx);
         let output_clone = output.clone();
+        let conversation_state =
+            ConversationState::new(ctx_clone, conversation_id, tool_config, profile, Some(output_clone)).await;
         Ok(Self {
             ctx,
             settings,
@@ -470,10 +537,12 @@ impl ChatContext {
             terminal_width_provider,
             spinner: None,
             tool_permissions,
-            conversation_state: ConversationState::new(ctx_clone, tool_config, profile, Some(output_clone)).await,
+            conversation_state,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
+            tool_manager,
             failed_request_ids: Vec::new(),
+            pending_prompts: VecDeque::new(),
         })
     }
 }
@@ -620,8 +689,21 @@ impl ChatContext {
                 }
                 line.push_str(word);
             } else {
-                wrapped_lines.push(line);
-                line = word.to_string();
+                // Here we need to account for words that are too long as well
+                if word.len() >= inner_width {
+                    let mut start = 0_usize;
+                    for (i, _) in word.chars().enumerate() {
+                        if i - start >= inner_width {
+                            wrapped_lines.push(word[start..i].to_string());
+                            start = i;
+                        }
+                    }
+                    wrapped_lines.push(word[start..].to_string());
+                    line = String::new();
+                } else {
+                    wrapped_lines.push(line);
+                    line = word.to_string();
+                }
             }
         }
 
@@ -656,7 +738,7 @@ impl ChatContext {
         // Centered wrapped content
         for line in wrapped_lines {
             let visible_line_len = strip_ansi_escapes::strip(&line).len();
-            let left_pad = (box_width - 4 - visible_line_len) / 2;
+            let left_pad = box_width.saturating_sub(4).saturating_sub(visible_line_len) / 2;
 
             let content = format!(
                 "│ {: <pad$}{}{: <rem$} │",
@@ -664,7 +746,10 @@ impl ChatContext {
                 line,
                 "",
                 pad = left_pad,
-                rem = box_width - 4 - left_pad - visible_line_len
+                rem = box_width
+                    .saturating_sub(4)
+                    .saturating_sub(left_pad)
+                    .saturating_sub(visible_line_len),
             );
             execute!(self.output, style::Print(format!("{}\n", content)))?;
         }
@@ -717,20 +802,22 @@ impl ChatContext {
                 .set_value("chat.greeting.rotating_tips_current_index", next_tip_index)?;
         }
 
-        execute!(
-            self.output,
-            style::Print(if is_small_screen {
-                SMALL_SCREEN_POPULAR_SHORTCUTS
-            } else {
-                POPULAR_SHORTCUTS
-            }),
-            style::Print(
-                "━"
-                    .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
-                    .dark_grey()
-            )
-        )?;
-        execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+        if self.interactive {
+            execute!(
+                self.output,
+                style::Print(if is_small_screen {
+                    SMALL_SCREEN_POPULAR_SHORTCUTS
+                } else {
+                    POPULAR_SHORTCUTS
+                }),
+                style::Print(
+                    "━"
+                        .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
+                        .dark_grey()
+                )
+            )?;
+            execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+        }
         if self.interactive && self.all_tools_trusted() {
             queue!(
                 self.output,
@@ -754,6 +841,7 @@ impl ChatContext {
             if self.interactive {
                 execute!(
                     self.output,
+                    style::SetAttribute(Attribute::Reset),
                     style::SetForegroundColor(Color::Magenta),
                     style::Print("> "),
                     style::SetAttribute(Attribute::Reset),
@@ -1102,15 +1190,6 @@ impl ChatContext {
                     style::Print(format!("• Custom prompt applied: {}\n", custom_prompt))
                 )?;
             }
-            execute!(
-                output,
-                style::Print(
-                    "• The assistant has access to all previous tool executions, code analysis, and discussion details\n"
-                ),
-                style::Print("• The assistant will reference specific information from the summary when relevant\n"),
-                style::Print("• Use '/compact --summary' to view summaries when compacting\n\n"),
-                style::SetForegroundColor(Color::Reset)
-            )?;
             animate_output(&mut self.output, &output)?;
 
             // Display the summary if the show_summary flag is set
@@ -1137,7 +1216,7 @@ impl ChatContext {
                     style::Print(&summary),
                     style::Print("\n\n"),
                     style::SetForegroundColor(Color::Cyan),
-                    style::Print("This summary is stored in memory and available to the assistant.\n"),
+                    style::Print("The conversation history has been replaced with this summary.\n"),
                     style::Print("It contains all important details from previous interactions.\n"),
                 )?;
                 animate_output(&mut self.output, &output)?;
@@ -1216,10 +1295,15 @@ impl ChatContext {
         // q session*. (e.g., if I add files to context, that won't show up for skim for the current
         // q session unless we do this in prompt_user... unless you can find a better way)
         if let Some(ref context_manager) = self.conversation_state.context_manager {
+            let tool_names = self.tool_manager.tn_map.keys().cloned().collect::<Vec<_>>();
             self.input_source
-                .put_skim_command_selector(Arc::new(context_manager.clone()));
+                .put_skim_command_selector(Arc::new(context_manager.clone()), tool_names);
         }
-
+        execute!(
+            self.output,
+            style::SetForegroundColor(Color::Reset),
+            style::SetAttribute(Attribute::Reset)
+        )?;
         let user_input = match self.read_user_input(&self.generate_tool_trust_prompt(), false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
@@ -1235,7 +1319,7 @@ impl ChatContext {
 
     async fn handle_input(
         &mut self,
-        user_input: String,
+        mut user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
     ) -> Result<ChatState, ChatError> {
@@ -1275,6 +1359,12 @@ impl ChatContext {
 
                         return Ok(ChatState::ExecuteTools(tool_uses));
                     }
+                } else if !self.pending_prompts.is_empty() {
+                    let prompts = self.pending_prompts.drain(0..).collect();
+                    user_input = self
+                        .conversation_state
+                        .append_prompts(prompts)
+                        .ok_or(ChatError::Custom("Prompt append failed".into()))?;
                 }
 
                 // Otherwise continue with normal chat on 'n' or other responses
@@ -1411,6 +1501,7 @@ impl ChatContext {
                             // Display the content as if the user typed it
                             execute!(
                                 self.output,
+                                style::SetAttribute(Attribute::Reset),
                                 style::SetForegroundColor(Color::Magenta),
                                 style::Print("> "),
                                 style::SetAttribute(Attribute::Reset),
@@ -2088,11 +2179,18 @@ impl ChatContext {
                 let existing_tools: HashSet<&String> = self
                     .conversation_state
                     .tools
-                    .iter()
+                    .values()
+                    .flatten()
                     .map(|FigTool::ToolSpecification(spec)| &spec.name)
                     .collect();
 
                 match subcommand {
+                    Some(ToolsSubcommand::Schema) => {
+                        let schema_json = serde_json::to_string_pretty(&self.tool_manager.schema).map_err(|e| {
+                            ChatError::Custom(format!("Error converting tool schema to string: {e}").into())
+                        })?;
+                        queue!(self.output, style::Print(schema_json), style::Print("\n"))?;
+                    },
                     Some(ToolsSubcommand::Trust { tool_names }) => {
                         let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) = tool_names
                             .into_iter()
@@ -2172,12 +2270,11 @@ impl ChatContext {
                         }
                     },
                     Some(ToolsSubcommand::TrustAll) => {
-                        self.conversation_state
-                            .tools
-                            .iter()
-                            .for_each(|FigTool::ToolSpecification(spec)| {
+                        self.conversation_state.tools.values().flatten().for_each(
+                            |FigTool::ToolSpecification(spec)| {
                                 self.tool_permissions.trust_tool(spec.name.as_str());
-                            });
+                            },
+                        );
                         queue!(self.output, style::Print(TRUST_ALL_TEXT),)?;
                     },
                     Some(ToolsSubcommand::Reset) => {
@@ -2219,36 +2316,62 @@ impl ChatContext {
                     },
                     None => {
                         // No subcommand - print the current tools and their permissions.
-
                         // Determine how to format the output nicely.
+                        let terminal_width = self.terminal_width();
                         let longest = self
                             .conversation_state
                             .tools
-                            .iter()
+                            .values()
+                            .flatten()
                             .map(|FigTool::ToolSpecification(spec)| spec.name.len())
                             .max()
                             .unwrap_or(0);
 
-                        let tool_permissions: Vec<String> = self
-                            .conversation_state
-                            .tools
-                            .iter()
-                            .map(|FigTool::ToolSpecification(spec)| {
-                                let width = longest - spec.name.len() + 10;
-                                format!(
-                                    "- {}{:>width$}{}",
-                                    spec.name,
-                                    "",
-                                    self.tool_permissions.display_label(&spec.name),
-                                    width = width
-                                )
-                            })
-                            .collect();
+                        queue!(
+                            self.output,
+                            style::Print("\n"),
+                            style::SetAttribute(Attribute::Bold),
+                            style::Print({
+                                // Adding 2 because of "- " preceding every tool name
+                                let width = longest + 2 - "Tool".len() + 4;
+                                format!("Tool{:>width$}Permission", "", width = width)
+                            }),
+                            style::SetAttribute(Attribute::Reset),
+                            style::Print("\n"),
+                            style::Print("▔".repeat(terminal_width)),
+                        )?;
+
+                        self.conversation_state.tools.iter().for_each(|(origin, tools)| {
+                            let to_display =
+                                tools
+                                    .iter()
+                                    .fold(String::new(), |mut acc, FigTool::ToolSpecification(spec)| {
+                                        let width = longest - spec.name.len() + 4;
+                                        acc.push_str(
+                                            format!(
+                                                "- {}{:>width$}{}\n",
+                                                spec.name,
+                                                "",
+                                                self.tool_permissions.display_label(&spec.name),
+                                                width = width
+                                            )
+                                            .as_str(),
+                                        );
+                                        acc
+                                    });
+                            let _ = queue!(
+                                self.output,
+                                style::SetAttribute(Attribute::Bold),
+                                style::Print(format!("{}:\n", origin)),
+                                style::SetAttribute(Attribute::Reset),
+                                style::Print(to_display),
+                                style::Print("\n")
+                            );
+                        });
 
                         queue!(
                             self.output,
                             style::Print("\nTrusted tools can be run without confirmation\n"),
-                            style::Print(format!("\n{}\n", tool_permissions.join("\n"))),
                             style::SetForegroundColor(Color::DarkGrey),
                             style::Print(format!("\n{}\n", "* Default settings")),
                             style::Print("\n💡 Use "),
@@ -2264,8 +2387,208 @@ impl ChatContext {
 
                 // Put spacing between previous output as to not be overwritten by
                 // during PromptUser.
-                execute!(self.output, style::Print("\n\n"),)?;
+                self.output.flush()?;
 
+                ChatState::PromptUser {
+                    tool_uses: Some(tool_uses),
+                    pending_tool_index,
+                    skip_printing_tools: true,
+                }
+            },
+            Command::Prompts { subcommand } => {
+                match subcommand {
+                    Some(PromptsSubcommand::Help) => {
+                        queue!(self.output, style::Print(command::PromptsSubcommand::help_text()))?;
+                    },
+                    Some(PromptsSubcommand::Get { mut get_command }) => {
+                        let orig_input = get_command.orig_input.take();
+                        let prompts = match self.tool_manager.get_prompt(get_command).await {
+                            Ok(resp) => resp,
+                            Err(e) => {
+                                match e {
+                                    GetPromptError::AmbiguousPrompt(prompt_name, alt_msg) => {
+                                        queue!(
+                                            self.output,
+                                            style::Print("\n"),
+                                            style::SetForegroundColor(Color::Yellow),
+                                            style::Print("Prompt "),
+                                            style::SetForegroundColor(Color::Cyan),
+                                            style::Print(prompt_name),
+                                            style::SetForegroundColor(Color::Yellow),
+                                            style::Print(" is ambiguous. Use one of the following "),
+                                            style::SetForegroundColor(Color::Cyan),
+                                            style::Print(alt_msg),
+                                            style::SetForegroundColor(Color::Reset),
+                                        )?;
+                                    },
+                                    GetPromptError::PromptNotFound(prompt_name) => {
+                                        queue!(
+                                            self.output,
+                                            style::Print("\n"),
+                                            style::SetForegroundColor(Color::Yellow),
+                                            style::Print("Prompt "),
+                                            style::SetForegroundColor(Color::Cyan),
+                                            style::Print(prompt_name),
+                                            style::SetForegroundColor(Color::Yellow),
+                                            style::Print(" not found. Use "),
+                                            style::SetForegroundColor(Color::Cyan),
+                                            style::Print("/prompts list"),
+                                            style::SetForegroundColor(Color::Yellow),
+                                            style::Print(" to see available prompts.\n"),
+                                            style::SetForegroundColor(Color::Reset),
+                                        )?;
+                                    },
+                                    _ => return Err(ChatError::Custom(e.to_string().into())),
+                                }
+                                execute!(self.output, style::Print("\n"))?;
+                                return Ok(ChatState::PromptUser {
+                                    tool_uses: Some(tool_uses),
+                                    pending_tool_index,
+                                    skip_printing_tools: true,
+                                });
+                            },
+                        };
+                        if let Some(err) = prompts.error {
+                            // If we are running into error we should just display the error
+                            // and abort.
+                            let to_display = serde_json::json!(err);
+                            queue!(
+                                self.output,
+                                style::Print("\n"),
+                                style::SetAttribute(Attribute::Bold),
+                                style::Print("Error encountered while retrieving prompt:"),
+                                style::SetAttribute(Attribute::Reset),
+                                style::Print("\n"),
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(
+                                    serde_json::to_string_pretty(&to_display)
+                                        .unwrap_or_else(|_| format!("{:?}", &to_display))
+                                ),
+                                style::SetForegroundColor(Color::Reset),
+                                style::Print("\n"),
+                            )?;
+                        } else {
+                            let prompts = prompts
+                                .result
+                                .ok_or(ChatError::Custom("Result field missing from prompt/get request".into()))?;
+                            let prompts = serde_json::from_value::<PromptGetResult>(prompts).map_err(|e| {
+                                ChatError::Custom(format!("Failed to deserialize prompt/get result: {:?}", e).into())
+                            })?;
+                            self.pending_prompts.clear();
+                            self.pending_prompts.append(&mut VecDeque::from(prompts.messages));
+                            return Ok(ChatState::HandleInput {
+                                input: orig_input.unwrap_or_default(),
+                                tool_uses: Some(tool_uses),
+                                pending_tool_index,
+                            });
+                        }
+                    },
+                    subcommand => {
+                        let search_word = match subcommand {
+                            Some(PromptsSubcommand::List { search_word }) => search_word,
+                            _ => None,
+                        };
+                        let terminal_width = self.terminal_width();
+                        let mut prompts_wl = self.tool_manager.prompts.write().map_err(|e| {
+                            ChatError::Custom(
+                                format!("Poison error encountered while retrieving prompts: {}", e).into(),
+                            )
+                        })?;
+                        self.tool_manager.refresh_prompts(&mut prompts_wl)?;
+                        let mut longest_name = "";
+                        let arg_pos = {
+                            let optimal_case = UnicodeWidthStr::width(longest_name) + terminal_width / 4;
+                            if optimal_case > terminal_width {
+                                terminal_width / 3
+                            } else {
+                                optimal_case
+                            }
+                        };
+                        queue!(
+                            self.output,
+                            style::Print("\n"),
+                            style::SetAttribute(Attribute::Bold),
+                            style::Print("Prompt"),
+                            style::SetAttribute(Attribute::Reset),
+                            style::Print({
+                                let name_width = UnicodeWidthStr::width("Prompt");
+                                let padding = arg_pos.saturating_sub(name_width);
+                                " ".repeat(padding)
+                            }),
+                            style::SetAttribute(Attribute::Bold),
+                            style::Print("Arguments (* = required)"),
+                            style::SetAttribute(Attribute::Reset),
+                            style::Print("\n"),
+                            style::Print(format!("{}\n", "▔".repeat(terminal_width))),
+                        )?;
+                        let prompts_by_server = prompts_wl.iter().fold(
+                            HashMap::<&String, Vec<&PromptBundle>>::new(),
+                            |mut acc, (prompt_name, bundles)| {
+                                if prompt_name.contains(search_word.as_deref().unwrap_or("")) {
+                                    if prompt_name.len() > longest_name.len() {
+                                        longest_name = prompt_name.as_str();
+                                    }
+                                    for bundle in bundles {
+                                        acc.entry(&bundle.server_name)
+                                            .and_modify(|b| b.push(bundle))
+                                            .or_insert(vec![bundle]);
+                                    }
+                                }
+                                acc
+                            },
+                        );
+                        for (i, (server_name, bundles)) in prompts_by_server.iter().enumerate() {
+                            if i > 0 {
+                                queue!(self.output, style::Print("\n"))?;
+                            }
+                            queue!(
+                                self.output,
+                                style::SetAttribute(Attribute::Bold),
+                                style::Print(server_name),
+                                style::Print(" (MCP):"),
+                                style::SetAttribute(Attribute::Reset),
+                                style::Print("\n"),
+                            )?;
+                            for bundle in bundles {
+                                queue!(
+                                    self.output,
+                                    style::Print("- "),
+                                    style::Print(&bundle.prompt_get.name),
+                                    style::Print({
+                                        if bundle
+                                            .prompt_get
+                                            .arguments
+                                            .as_ref()
+                                            .is_some_and(|args| !args.is_empty())
+                                        {
+                                            let name_width = UnicodeWidthStr::width(bundle.prompt_get.name.as_str());
+                                            let padding =
+                                                arg_pos.saturating_sub(name_width) - UnicodeWidthStr::width("- ");
+                                            " ".repeat(padding)
+                                        } else {
+                                            "\n".to_owned()
+                                        }
+                                    })
+                                )?;
+                                if let Some(args) = bundle.prompt_get.arguments.as_ref() {
+                                    for (i, arg) in args.iter().enumerate() {
+                                        queue!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::DarkGrey),
+                                            style::Print(match arg.required {
+                                                Some(true) => format!("{}*", arg.name),
+                                                _ => arg.name.clone(),
+                                            }),
+                                            style::SetForegroundColor(Color::Reset),
+                                            style::Print(if i < args.len() - 1 { ", " } else { "\n" }),
+                                        )?;
+                                    }
+                                }
+                            }
+                        }
+                    },
+                }
+                execute!(self.output, style::Print("\n"))?;
                 ChatState::PromptUser {
                     tool_uses: Some(tool_uses),
                     pending_tool_index,
@@ -2456,8 +2779,14 @@ impl ChatContext {
             execute!(self.output, style::Print("\n"))?;
 
             let tool_time = std::time::Instant::now().duration_since(tool_start);
+            if let Tool::Custom(ct) = &tool.tool {
+                tool_telemetry = tool_telemetry.and_modify(|ev| {
+                    ev.custom_tool_call_latency = Some(tool_time.as_secs() as usize);
+                    ev.input_token_size = Some(ct.get_input_token_size());
+                    ev.is_custom_tool = true;
+                });
+            }
             let tool_time = format!("{}.{}", tool_time.as_secs(), tool_time.subsec_millis());
-            const CONTINUATION_LINE: &str = " ⋮ ";
 
             match invoke_result {
                 Ok(result) => {
@@ -2473,7 +2802,11 @@ impl ChatContext {
                         style::Print("\n"),
                     )?;
 
-                    tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
+                    tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
+                    if let Tool::Custom(_) = &tool.tool {
+                        tool_telemetry
+                            .and_modify(|ev| ev.output_token_size = Some(TokenCounter::count_tokens(result.as_str())));
+                    }
                     tool_results.push(ToolUseResult {
                         tool_use_id: tool.id,
                         content: vec![result.into()],
@@ -2709,14 +3042,8 @@ impl ChatContext {
             }
 
             // Set spinner after showing all of the assistant text content so far.
-            if let (Some(name), true) = (&tool_name_being_recvd, self.interactive) {
-                queue!(
-                    self.output,
-                    style::SetForegroundColor(Color::Blue),
-                    style::Print(format!("\n{name}: ")),
-                    style::SetForegroundColor(Color::Reset),
-                    cursor::Hide,
-                )?;
+            if let (Some(_name), true) = (&tool_name_being_recvd, self.interactive) {
+                queue!(self.output, cursor::Hide)?;
                 self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
             }
 
@@ -2780,7 +3107,7 @@ impl ChatContext {
                 .set_tool_use_id(tool_use_id.clone())
                 .set_tool_name(tool_use.name.clone())
                 .utterance_id(self.conversation_state.message_id().map(|s| s.to_string()));
-            match Tool::try_from(tool_use) {
+            match self.tool_manager.get_tool_from_tool_use(tool_use) {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);
@@ -2809,7 +3136,7 @@ impl ChatContext {
                 },
                 Err(err) => {
                     tool_telemetry.is_valid = Some(false);
-                    tool_results.push(err);
+                    tool_results.push(err.into());
                 },
             }
             self.tool_use_telemetry_events.insert(tool_use_id, tool_telemetry);
@@ -2888,20 +3215,27 @@ impl ChatContext {
     }
 
     async fn print_tool_descriptions(&mut self, tool_use: &QueuedTool, trusted: bool) -> Result<(), ChatError> {
-        const TOOL_BULLET: &str = " ● ";
-        const CONTINUATION_LINE: &str = " ⋮ ";
-
         queue!(
             self.output,
             style::SetForegroundColor(Color::Magenta),
             style::Print(format!(
-                "🛠️  Using tool: {} {}\n",
+                "🛠️  Using tool: {}{}",
                 tool_use.tool.display_name(),
-                if trusted { "(trusted)".dark_green() } else { "".reset() }
+                if trusted { " (trusted)".dark_green() } else { "".reset() }
             )),
             style::SetForegroundColor(Color::Reset)
         )?;
-        queue!(self.output, style::Print(CONTINUATION_LINE))?;
+        if let Tool::Custom(ref tool) = tool_use.tool {
+            queue!(
+                self.output,
+                style::SetForegroundColor(Color::Reset),
+                style::Print(" from mcp server "),
+                style::SetForegroundColor(Color::Magenta),
+                style::Print(tool.client.get_server_name()),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+        }
+        queue!(self.output, style::Print("\n"), style::Print(CONTINUATION_LINE))?;
         queue!(self.output, style::Print("\n"))?;
         queue!(self.output, style::Print(TOOL_BULLET))?;
 
@@ -2970,7 +3304,7 @@ impl ChatContext {
     }
 
     fn all_tools_trusted(&self) -> bool {
-        self.conversation_state.tools.iter().all(|t| match t {
+        self.conversation_state.tools.values().flatten().all(|t| match t {
             FigTool::ToolSpecification(t) => self.tool_permissions.is_trusted(&t.name),
         })
     }
@@ -3013,6 +3347,10 @@ struct ToolUseEventBuilder {
     pub is_accepted: bool,
     pub is_success: Option<bool>,
     pub is_valid: Option<bool>,
+    pub is_custom_tool: bool,
+    pub input_token_size: Option<usize>,
+    pub output_token_size: Option<usize>,
+    pub custom_tool_call_latency: Option<usize>,
 }
 
 impl ToolUseEventBuilder {
@@ -3026,6 +3364,10 @@ impl ToolUseEventBuilder {
             is_accepted: false,
             is_success: None,
             is_valid: None,
+            is_custom_tool: false,
+            input_token_size: None,
+            output_token_size: None,
+            custom_tool_call_latency: None,
         }
     }
 
@@ -3056,6 +3398,10 @@ impl From<ToolUseEventBuilder> for fig_telemetry::EventType {
             is_accepted: val.is_accepted,
             is_success: val.is_success,
             is_valid: val.is_valid,
+            is_custom_tool: val.is_custom_tool,
+            input_token_size: val.input_token_size,
+            output_token_size: val.output_token_size,
+            custom_tool_call_latency: val.custom_tool_call_latency,
         }
     }
 }
@@ -3117,13 +3463,11 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
     StreamingClient::mock(mock)
 }
 
-/// Returns all tools supported by Q chat.
-pub fn load_tools() -> Result<HashMap<String, ToolSpec>> {
-    Ok(serde_json::from_str(include_str!("tools/tool_index.json"))?)
-}
-
 #[cfg(test)]
 mod tests {
+    use bstr::ByteSlice;
+    use shared_writer::TestWriterWithSink;
+
     use super::*;
 
     #[tokio::test]
@@ -3148,8 +3492,12 @@ mod tests {
             ],
         ]));
 
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            "fake_conv_id",
             Settings::new_fake(),
             State::new_fake(),
             SharedWriter::stdout(),
@@ -3162,8 +3510,9 @@ mod tests {
             true,
             test_client,
             || Some(80),
+            tool_manager,
             None,
-            load_tools().expect("Tools failed to load."),
+            tool_config,
             ToolPermissions::new(0),
         )
         .await
@@ -3272,8 +3621,12 @@ mod tests {
             ],
         ]));
 
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            "fake_conv_id",
             Settings::new_fake(),
             State::new_fake(),
             SharedWriter::stdout(),
@@ -3299,8 +3652,9 @@ mod tests {
             true,
             test_client,
             || Some(80),
+            tool_manager,
             None,
-            load_tools().expect("Tools failed to load."),
+            tool_config,
             ToolPermissions::new(0),
         )
         .await
@@ -3371,8 +3725,12 @@ mod tests {
             ],
         ]));
 
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            "fake_conv_id",
             Settings::new_fake(),
             State::new_fake(),
             SharedWriter::stdout(),
@@ -3389,8 +3747,9 @@ mod tests {
             true,
             test_client,
             || Some(80),
+            tool_manager,
             None,
-            load_tools().expect("Tools failed to load."),
+            tool_config,
             ToolPermissions::new(0),
         )
         .await
@@ -3442,8 +3801,12 @@ mod tests {
             ],
         ]));
 
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            "fake_conv_id",
             Settings::new_fake(),
             State::new_fake(),
             SharedWriter::stdout(),
@@ -3458,8 +3821,9 @@ mod tests {
             true,
             test_client,
             || Some(80),
+            tool_manager,
             None,
-            load_tools().expect("Tools failed to load."),
+            tool_config,
             ToolPermissions::new(0),
         )
         .await
@@ -3484,6 +3848,88 @@ mod tests {
         for (input, expected) in cases {
             let processed = input.trim().to_string();
             assert_eq!(processed, expected.trim().to_string(), "Failed for input: {}", input);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_draw_tip_box() {
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        let buf = Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let test_writer = TestWriterWithSink { sink: buf.clone() };
+        let output = SharedWriter::new(test_writer.clone());
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+        let test_client = create_stream(serde_json::json!([]));
+
+        let mut chat_context = ChatContext::new(
+            Arc::clone(&ctx),
+            "fake_conv_id",
+            Settings::new_fake(),
+            State::new_fake(),
+            output,
+            None,
+            InputSource::new_mock(vec![]),
+            true,
+            test_client,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            ToolPermissions::new(0),
+        )
+        .await
+        .unwrap();
+
+        // Test with a short tip
+        let short_tip = "This is a short tip";
+        chat_context.draw_tip_box(short_tip).expect("Failed to draw tip box");
+
+        // Test with a longer tip that should wrap
+        let long_tip = "This is a much longer tip that should wrap to multiple lines because it exceeds the inner width of the tip box which is calculated based on the GREETING_BREAK_POINT constant";
+        chat_context.draw_tip_box(long_tip).expect("Failed to draw tip box");
+
+        // Test with a long tip with two long words that should wrap
+        let long_tip_with_one_long_word = {
+            let mut s = "a".repeat(200);
+            s.push(' ');
+            s.push_str(&"a".repeat(200));
+            s
+        };
+        chat_context
+            .draw_tip_box(long_tip_with_one_long_word.as_str())
+            .expect("Failed to draw tip box");
+
+        // Test with a long tip with two long words that should wrap
+        let long_tip_with_two_long_words = "a".repeat(200);
+        chat_context
+            .draw_tip_box(long_tip_with_two_long_words.as_str())
+            .expect("Failed to draw tip box");
+
+        // Get the output and verify it contains expected formatting elements
+        let content = test_writer.get_content();
+        let output_str = content.to_str_lossy();
+
+        // Check for box drawing characters
+        assert!(output_str.contains("╭"), "Output should contain top-left corner");
+        assert!(output_str.contains("╮"), "Output should contain top-right corner");
+        assert!(output_str.contains("│"), "Output should contain vertical lines");
+        assert!(output_str.contains("╰"), "Output should contain bottom-left corner");
+        assert!(output_str.contains("╯"), "Output should contain bottom-right corner");
+
+        // Check for the label
+        assert!(
+            output_str.contains("Did you know?"),
+            "Output should contain the 'Did you know?' label"
+        );
+
+        // Check that both tips are present
+        assert!(output_str.contains(short_tip), "Output should contain the short tip");
+
+        // For the long tip, we check for substrings since it will be wrapped
+        let long_tip_parts: Vec<&str> = long_tip.split_whitespace().collect();
+        for part in long_tip_parts.iter().take(3) {
+            assert!(output_str.contains(part), "Output should contain parts of the long tip");
         }
     }
 }

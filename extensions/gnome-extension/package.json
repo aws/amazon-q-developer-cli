@@ -19,10 +19,10 @@
     "eslint": "9.18.0",
     "globals": "^16.0.0",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.30.1"
+    "typescript-eslint": "^8.31.1"
   },
   "dependencies": {
-    "@girs/gjs": "4.0.0-beta.21",
+    "@girs/gjs": "4.0.0-beta.23",
     "@girs/gnome-shell": "^46.0.2"
   },
   "sideEffects": false

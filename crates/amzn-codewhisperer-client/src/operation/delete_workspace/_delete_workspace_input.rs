@@ -5,11 +5,18 @@
 pub struct DeleteWorkspaceInput {
     #[allow(missing_docs)] // documentation missing in model
     pub workspace_id: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl DeleteWorkspaceInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn workspace_id(&self) -> ::std::option::Option<&str> {
         self.workspace_id.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 }
 impl DeleteWorkspaceInput {
@@ -26,6 +33,7 @@ impl DeleteWorkspaceInput {
 #[non_exhaustive]
 pub struct DeleteWorkspaceInputBuilder {
     pub(crate) workspace_id: ::std::option::Option<::std::string::String>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl DeleteWorkspaceInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -46,6 +54,23 @@ impl DeleteWorkspaceInputBuilder {
         &self.workspace_id
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`DeleteWorkspaceInput`](crate::operation::delete_workspace::DeleteWorkspaceInput).
     pub fn build(
@@ -56,6 +81,7 @@ impl DeleteWorkspaceInputBuilder {
     > {
         ::std::result::Result::Ok(crate::operation::delete_workspace::DeleteWorkspaceInput {
             workspace_id: self.workspace_id,
+            profile_arn: self.profile_arn,
         })
     }
 }

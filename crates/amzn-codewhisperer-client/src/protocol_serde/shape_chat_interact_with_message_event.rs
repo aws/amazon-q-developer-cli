@@ -2,7 +2,7 @@
 pub fn ser_chat_interact_with_message_event(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::ChatInteractWithMessageEvent,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("conversationId").string(input.conversation_id.as_str());
     }
@@ -38,6 +38,30 @@ pub fn ser_chat_interact_with_message_event(
     }
     if let Some(var_8) = &input.user_intent {
         object.key("userIntent").string(var_8.as_str());
+    }
+    if let Some(var_9) = &input.added_ide_diagnostics {
+        let mut array_10 = object.key("addedIdeDiagnostics").start_array();
+        for item_11 in var_9 {
+            {
+                #[allow(unused_mut)]
+                let mut object_12 = array_10.value().start_object();
+                crate::protocol_serde::shape_ide_diagnostic::ser_ide_diagnostic(&mut object_12, item_11)?;
+                object_12.finish();
+            }
+        }
+        array_10.finish();
+    }
+    if let Some(var_13) = &input.removed_ide_diagnostics {
+        let mut array_14 = object.key("removedIdeDiagnostics").start_array();
+        for item_15 in var_13 {
+            {
+                #[allow(unused_mut)]
+                let mut object_16 = array_14.value().start_object();
+                crate::protocol_serde::shape_ide_diagnostic::ser_ide_diagnostic(&mut object_16, item_15)?;
+                object_16.finish();
+            }
+        }
+        array_14.finish();
     }
     Ok(())
 }

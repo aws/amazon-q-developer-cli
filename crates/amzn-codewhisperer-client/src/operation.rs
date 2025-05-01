@@ -10,11 +10,17 @@ pub mod create_task_assist_conversation;
 /// Types for the `CreateUploadUrl` operation.
 pub mod create_upload_url;
 
+/// Types for the `CreateUserMemoryEntry` operation.
+pub mod create_user_memory_entry;
+
 /// Types for the `CreateWorkspace` operation.
 pub mod create_workspace;
 
 /// Types for the `DeleteTaskAssistConversation` operation.
 pub mod delete_task_assist_conversation;
+
+/// Types for the `DeleteUserMemoryEntry` operation.
+pub mod delete_user_memory_entry;
 
 /// Types for the `DeleteWorkspace` operation.
 pub mod delete_workspace;
@@ -49,11 +55,20 @@ pub mod list_available_profiles;
 /// Types for the `ListCodeAnalysisFindings` operation.
 pub mod list_code_analysis_findings;
 
+/// Types for the `ListEvents` operation.
+pub mod list_events;
+
 /// Types for the `ListFeatureEvaluations` operation.
 pub mod list_feature_evaluations;
 
+/// Types for the `ListUserMemoryEntries` operation.
+pub mod list_user_memory_entries;
+
 /// Types for the `ListWorkspaceMetadata` operation.
 pub mod list_workspace_metadata;
+
+/// Types for the `PushTelemetryEvent` operation.
+pub mod push_telemetry_event;
 
 /// Types for the `ResumeTransformation` operation.
 pub mod resume_transformation;

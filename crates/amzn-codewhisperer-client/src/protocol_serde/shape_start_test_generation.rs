@@ -21,43 +21,25 @@ pub fn de_start_test_generation_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => {
-            crate::operation::start_test_generation::StartTestGenerationError::InternalServerError({
+        "AccessDeniedException" => {
+            crate::operation::start_test_generation::StartTestGenerationError::AccessDeniedError({
                 #[allow(unused_mut)]
                 let mut tmp = {
                     #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output =
-                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
+                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
                     let output = output.meta(generic);
-                    crate::serde_util::internal_server_exception_correct_errors(output)
+                    crate::serde_util::access_denied_exception_correct_errors(output)
                         .build()
                         .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?
                 };
                 tmp
             })
         },
-        "ThrottlingException" => crate::operation::start_test_generation::StartTestGenerationError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?
-            };
-            tmp
-        }),
         "ConflictException" => crate::operation::start_test_generation::StartTestGenerationError::ConflictError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -70,6 +52,23 @@ pub fn de_start_test_generation_http_error(
                 .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::conflict_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?
+            };
+            tmp
+        }),
+        "ThrottlingException" => crate::operation::start_test_generation::StartTestGenerationError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?
             };
@@ -92,19 +91,20 @@ pub fn de_start_test_generation_http_error(
             };
             tmp
         }),
-        "AccessDeniedException" => {
-            crate::operation::start_test_generation::StartTestGenerationError::AccessDeniedError({
+        "InternalServerException" => {
+            crate::operation::start_test_generation::StartTestGenerationError::InternalServerError({
                 #[allow(unused_mut)]
                 let mut tmp = {
                     #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
+                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                    output =
+                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                            _response_body,
+                            output,
+                        )
+                        .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
                     let output = output.meta(generic);
-                    crate::serde_util::access_denied_exception_correct_errors(output)
+                    crate::serde_util::internal_server_exception_correct_errors(output)
                         .build()
                         .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?
                 };
@@ -136,7 +136,8 @@ pub fn de_start_test_generation_http_response(
 
 pub fn ser_start_test_generation_input(
     input: &crate::operation::start_test_generation::StartTestGenerationInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_start_test_generation_input::ser_start_test_generation_input_input(
@@ -150,7 +151,7 @@ pub fn ser_start_test_generation_input(
 pub(crate) fn de_start_test_generation(
     value: &[u8],
     mut builder: crate::operation::start_test_generation::builders::StartTestGenerationOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::start_test_generation::builders::StartTestGenerationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

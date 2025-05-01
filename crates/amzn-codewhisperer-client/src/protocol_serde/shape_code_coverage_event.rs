@@ -2,7 +2,7 @@
 pub fn ser_code_coverage_event(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::CodeCoverageEvent,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.customization_arn {
         object.key("customizationArn").string(var_1.as_str());
     }

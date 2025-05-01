@@ -289,19 +289,19 @@ impl ::aws_smithy_runtime_api::client::interceptors::Intercept for UntagResource
 #[non_exhaustive]
 #[derive(::std::fmt::Debug)]
 pub enum UntagResourceError {
-    /// This exception is thrown when an unexpected error occurred during the processing of a
-    /// request.
-    InternalServerError(crate::types::error::InternalServerError),
-    /// This exception is thrown when request was denied due to request throttling.
-    ThrottlingError(crate::types::error::ThrottlingError),
     /// This exception is thrown when the input fails to satisfy the constraints specified by the
     /// service.
     ValidationError(crate::types::error::ValidationError),
-    /// This exception is thrown when describing a resource that does not exist.
-    ResourceNotFoundError(crate::types::error::ResourceNotFoundError),
     /// This exception is thrown when the user does not have sufficient access to perform this
     /// action.
     AccessDeniedError(crate::types::error::AccessDeniedError),
+    /// This exception is thrown when request was denied due to request throttling.
+    ThrottlingError(crate::types::error::ThrottlingError),
+    /// This exception is thrown when an unexpected error occurred during the processing of a
+    /// request.
+    InternalServerError(crate::types::error::InternalServerError),
+    /// This exception is thrown when describing a resource that does not exist.
+    ResourceNotFoundError(crate::types::error::ResourceNotFoundError),
     /// An unexpected error occurred (e.g., invalid JSON returned by the service or an unknown error
     /// code).
     #[deprecated(
@@ -340,23 +340,13 @@ impl UntagResourceError {
     /// request ID, and potentially additional information.
     pub fn meta(&self) -> &::aws_smithy_types::error::ErrorMetadata {
         match self {
-            Self::InternalServerError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
-            Self::ThrottlingError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::ValidationError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
-            Self::ResourceNotFoundError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::AccessDeniedError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
+            Self::ThrottlingError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
+            Self::InternalServerError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
+            Self::ResourceNotFoundError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::Unhandled(e) => &e.meta,
         }
-    }
-
-    /// Returns `true` if the error kind is `UntagResourceError::InternalServerError`.
-    pub fn is_internal_server_error(&self) -> bool {
-        matches!(self, Self::InternalServerError(_))
-    }
-
-    /// Returns `true` if the error kind is `UntagResourceError::ThrottlingError`.
-    pub fn is_throttling_error(&self) -> bool {
-        matches!(self, Self::ThrottlingError(_))
     }
 
     /// Returns `true` if the error kind is `UntagResourceError::ValidationError`.
@@ -364,24 +354,34 @@ impl UntagResourceError {
         matches!(self, Self::ValidationError(_))
     }
 
-    /// Returns `true` if the error kind is `UntagResourceError::ResourceNotFoundError`.
-    pub fn is_resource_not_found_error(&self) -> bool {
-        matches!(self, Self::ResourceNotFoundError(_))
-    }
-
     /// Returns `true` if the error kind is `UntagResourceError::AccessDeniedError`.
     pub fn is_access_denied_error(&self) -> bool {
         matches!(self, Self::AccessDeniedError(_))
+    }
+
+    /// Returns `true` if the error kind is `UntagResourceError::ThrottlingError`.
+    pub fn is_throttling_error(&self) -> bool {
+        matches!(self, Self::ThrottlingError(_))
+    }
+
+    /// Returns `true` if the error kind is `UntagResourceError::InternalServerError`.
+    pub fn is_internal_server_error(&self) -> bool {
+        matches!(self, Self::InternalServerError(_))
+    }
+
+    /// Returns `true` if the error kind is `UntagResourceError::ResourceNotFoundError`.
+    pub fn is_resource_not_found_error(&self) -> bool {
+        matches!(self, Self::ResourceNotFoundError(_))
     }
 }
 impl ::std::error::Error for UntagResourceError {
     fn source(&self) -> ::std::option::Option<&(dyn ::std::error::Error + 'static)> {
         match self {
-            Self::InternalServerError(_inner) => ::std::option::Option::Some(_inner),
-            Self::ThrottlingError(_inner) => ::std::option::Option::Some(_inner),
             Self::ValidationError(_inner) => ::std::option::Option::Some(_inner),
-            Self::ResourceNotFoundError(_inner) => ::std::option::Option::Some(_inner),
             Self::AccessDeniedError(_inner) => ::std::option::Option::Some(_inner),
+            Self::ThrottlingError(_inner) => ::std::option::Option::Some(_inner),
+            Self::InternalServerError(_inner) => ::std::option::Option::Some(_inner),
+            Self::ResourceNotFoundError(_inner) => ::std::option::Option::Some(_inner),
             Self::Unhandled(_inner) => ::std::option::Option::Some(&*_inner.source),
         }
     }
@@ -389,11 +389,11 @@ impl ::std::error::Error for UntagResourceError {
 impl ::std::fmt::Display for UntagResourceError {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         match self {
-            Self::InternalServerError(_inner) => _inner.fmt(f),
-            Self::ThrottlingError(_inner) => _inner.fmt(f),
             Self::ValidationError(_inner) => _inner.fmt(f),
-            Self::ResourceNotFoundError(_inner) => _inner.fmt(f),
             Self::AccessDeniedError(_inner) => _inner.fmt(f),
+            Self::ThrottlingError(_inner) => _inner.fmt(f),
+            Self::InternalServerError(_inner) => _inner.fmt(f),
+            Self::ResourceNotFoundError(_inner) => _inner.fmt(f),
             Self::Unhandled(_inner) => {
                 if let ::std::option::Option::Some(code) =
                     ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self)
@@ -413,8 +413,8 @@ impl ::aws_smithy_types::retry::ProvideErrorKind for UntagResourceError {
 
     fn retryable_error_kind(&self) -> ::std::option::Option<::aws_smithy_types::retry::ErrorKind> {
         match self {
-            Self::InternalServerError(inner) => ::std::option::Option::Some(inner.retryable_error_kind()),
             Self::ThrottlingError(inner) => ::std::option::Option::Some(inner.retryable_error_kind()),
+            Self::InternalServerError(inner) => ::std::option::Option::Some(inner.retryable_error_kind()),
             _ => ::std::option::Option::None,
         }
     }
@@ -422,15 +422,15 @@ impl ::aws_smithy_types::retry::ProvideErrorKind for UntagResourceError {
 impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for UntagResourceError {
     fn meta(&self) -> &::aws_smithy_types::error::ErrorMetadata {
         match self {
+            Self::ValidationError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
+            Self::AccessDeniedError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
+            Self::ThrottlingError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::InternalServerError(_inner) => {
                 ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner)
             },
-            Self::ThrottlingError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
-            Self::ValidationError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::ResourceNotFoundError(_inner) => {
                 ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner)
             },
-            Self::AccessDeniedError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::Unhandled(_inner) => &_inner.meta,
         }
     }

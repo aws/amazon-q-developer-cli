@@ -41,25 +41,6 @@ pub fn de_get_transformation_plan_http_error(
                 tmp
             })
         },
-        "ThrottlingException" => {
-            crate::operation::get_transformation_plan::GetTransformationPlanError::ThrottlingError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(crate::operation::get_transformation_plan::GetTransformationPlanError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::throttling_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::get_transformation_plan::GetTransformationPlanError::unhandled)?
-                };
-                tmp
-            })
-        },
         "ValidationException" => {
             crate::operation::get_transformation_plan::GetTransformationPlanError::ValidationError({
                 #[allow(unused_mut)]
@@ -79,16 +60,19 @@ pub fn de_get_transformation_plan_http_error(
                 tmp
             })
         },
-        "ResourceNotFoundException" => {
-            crate::operation::get_transformation_plan::GetTransformationPlanError::ResourceNotFoundError({
+        "ThrottlingException" => {
+            crate::operation::get_transformation_plan::GetTransformationPlanError::ThrottlingError({
                 #[allow(unused_mut)]
                 let mut tmp = {
                     #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                        _response_body,
+                        output,
+                    )
                     .map_err(crate::operation::get_transformation_plan::GetTransformationPlanError::unhandled)?;
                     let output = output.meta(generic);
-                    crate::serde_util::resource_not_found_exception_correct_errors(output)
+                    crate::serde_util::throttling_exception_correct_errors(output)
                         .build()
                         .map_err(crate::operation::get_transformation_plan::GetTransformationPlanError::unhandled)?
                 };
@@ -108,6 +92,22 @@ pub fn de_get_transformation_plan_http_error(
                     .map_err(crate::operation::get_transformation_plan::GetTransformationPlanError::unhandled)?;
                     let output = output.meta(generic);
                     crate::serde_util::access_denied_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::get_transformation_plan::GetTransformationPlanError::unhandled)?
+                };
+                tmp
+            })
+        },
+        "ResourceNotFoundException" => {
+            crate::operation::get_transformation_plan::GetTransformationPlanError::ResourceNotFoundError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::get_transformation_plan::GetTransformationPlanError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::resource_not_found_exception_correct_errors(output)
                         .build()
                         .map_err(crate::operation::get_transformation_plan::GetTransformationPlanError::unhandled)?
                 };
@@ -143,7 +143,8 @@ pub fn de_get_transformation_plan_http_response(
 
 pub fn ser_get_transformation_plan_input(
     input: &crate::operation::get_transformation_plan::GetTransformationPlanInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_get_transformation_plan_input::ser_get_transformation_plan_input_input(
@@ -157,7 +158,7 @@ pub fn ser_get_transformation_plan_input(
 pub(crate) fn de_get_transformation_plan(
     value: &[u8],
     mut builder: crate::operation::get_transformation_plan::builders::GetTransformationPlanOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::get_transformation_plan::builders::GetTransformationPlanOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

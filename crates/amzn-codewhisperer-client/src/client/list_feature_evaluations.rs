@@ -6,6 +6,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`user_context(UserContext)`](crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsFluentBuilder::user_context) / [`set_user_context(Option<UserContext>)`](crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsFluentBuilder::set_user_context):<br>required: **true**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`ListFeatureEvaluationsOutput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsOutput)
     ///   with field(s):

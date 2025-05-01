@@ -111,20 +111,20 @@ impl From<crate::operation::allow_vended_log_delivery_for_resource::AllowVendedL
         err: crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError,
     ) -> Self {
         match err {
+            crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            }
+            crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            }
             crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             }
             crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             }
-            crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            }
             crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            }
-            crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             }
             crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::Unhandled(inner) => {
                 Error::Unhandled(inner)
@@ -160,23 +160,23 @@ where
 impl From<crate::operation::associate_customization_permission::AssociateCustomizationPermissionError> for Error {
     fn from(err: crate::operation::associate_customization_permission::AssociateCustomizationPermissionError) -> Self {
         match err {
+            crate::operation::associate_customization_permission::AssociateCustomizationPermissionError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            }
+            crate::operation::associate_customization_permission::AssociateCustomizationPermissionError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            }
             crate::operation::associate_customization_permission::AssociateCustomizationPermissionError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             }
             crate::operation::associate_customization_permission::AssociateCustomizationPermissionError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             }
-            crate::operation::associate_customization_permission::AssociateCustomizationPermissionError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            }
             crate::operation::associate_customization_permission::AssociateCustomizationPermissionError::ConflictError(inner) => {
                 Error::ConflictError(inner)
             }
             crate::operation::associate_customization_permission::AssociateCustomizationPermissionError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            }
-            crate::operation::associate_customization_permission::AssociateCustomizationPermissionError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             }
             crate::operation::associate_customization_permission::AssociateCustomizationPermissionError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -210,20 +210,20 @@ where
 impl From<crate::operation::create_customization::CreateCustomizationError> for Error {
     fn from(err: crate::operation::create_customization::CreateCustomizationError) -> Self {
         match err {
+            crate::operation::create_customization::CreateCustomizationError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::create_customization::CreateCustomizationError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
             crate::operation::create_customization::CreateCustomizationError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             },
             crate::operation::create_customization::CreateCustomizationError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             },
-            crate::operation::create_customization::CreateCustomizationError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
             crate::operation::create_customization::CreateCustomizationError::ConflictError(inner) => {
                 Error::ConflictError(inner)
-            },
-            crate::operation::create_customization::CreateCustomizationError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             },
             crate::operation::create_customization::CreateCustomizationError::Unhandled(inner) => {
                 Error::Unhandled(inner)
@@ -255,21 +255,21 @@ where
 impl From<crate::operation::create_profile::CreateProfileError> for Error {
     fn from(err: crate::operation::create_profile::CreateProfileError) -> Self {
         match err {
+            crate::operation::create_profile::CreateProfileError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::create_profile::CreateProfileError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
             crate::operation::create_profile::CreateProfileError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             },
             crate::operation::create_profile::CreateProfileError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             },
-            crate::operation::create_profile::CreateProfileError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
             crate::operation::create_profile::CreateProfileError::ConflictError(inner) => Error::ConflictError(inner),
             crate::operation::create_profile::CreateProfileError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            },
-            crate::operation::create_profile::CreateProfileError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             },
             crate::operation::create_profile::CreateProfileError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -303,23 +303,23 @@ where
 impl From<crate::operation::delete_customization::DeleteCustomizationError> for Error {
     fn from(err: crate::operation::delete_customization::DeleteCustomizationError) -> Self {
         match err {
-            crate::operation::delete_customization::DeleteCustomizationError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            },
-            crate::operation::delete_customization::DeleteCustomizationError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
             crate::operation::delete_customization::DeleteCustomizationError::ValidationError(inner) => {
                 Error::ValidationError(inner)
             },
-            crate::operation::delete_customization::DeleteCustomizationError::ConflictError(inner) => {
-                Error::ConflictError(inner)
+            crate::operation::delete_customization::DeleteCustomizationError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::delete_customization::DeleteCustomizationError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
             },
             crate::operation::delete_customization::DeleteCustomizationError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
             },
-            crate::operation::delete_customization::DeleteCustomizationError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
+            crate::operation::delete_customization::DeleteCustomizationError::ConflictError(inner) => {
+                Error::ConflictError(inner)
+            },
+            crate::operation::delete_customization::DeleteCustomizationError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
             },
             crate::operation::delete_customization::DeleteCustomizationError::Unhandled(inner) => {
                 Error::Unhandled(inner)
@@ -355,23 +355,23 @@ where
 impl From<crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError> for Error {
     fn from(err: crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError) -> Self {
         match err {
+            crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            }
+            crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            }
             crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             }
             crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             }
-            crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            }
             crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError::ConflictError(inner) => {
                 Error::ConflictError(inner)
             }
             crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            }
-            crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             }
             crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -401,21 +401,21 @@ where
 impl From<crate::operation::delete_profile::DeleteProfileError> for Error {
     fn from(err: crate::operation::delete_profile::DeleteProfileError) -> Self {
         match err {
+            crate::operation::delete_profile::DeleteProfileError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::delete_profile::DeleteProfileError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
             crate::operation::delete_profile::DeleteProfileError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             },
             crate::operation::delete_profile::DeleteProfileError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             },
-            crate::operation::delete_profile::DeleteProfileError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
             crate::operation::delete_profile::DeleteProfileError::ConflictError(inner) => Error::ConflictError(inner),
             crate::operation::delete_profile::DeleteProfileError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            },
-            crate::operation::delete_profile::DeleteProfileError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             },
             crate::operation::delete_profile::DeleteProfileError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -451,23 +451,23 @@ impl From<crate::operation::disassociate_customization_permission::DisassociateC
         err: crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError,
     ) -> Self {
         match err {
+            crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            }
+            crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            }
             crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             }
             crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             }
-            crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            }
             crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::ConflictError(inner) => {
                 Error::ConflictError(inner)
             }
             crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            }
-            crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             }
             crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionError::Unhandled(inner) => {
                 Error::Unhandled(inner)
@@ -503,17 +503,17 @@ where
 impl From<crate::operation::generate_recommendations::GenerateRecommendationsError> for Error {
     fn from(err: crate::operation::generate_recommendations::GenerateRecommendationsError) -> Self {
         match err {
-            crate::operation::generate_recommendations::GenerateRecommendationsError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            },
-            crate::operation::generate_recommendations::GenerateRecommendationsError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
             crate::operation::generate_recommendations::GenerateRecommendationsError::ValidationError(inner) => {
                 Error::ValidationError(inner)
             },
             crate::operation::generate_recommendations::GenerateRecommendationsError::AccessDeniedError(inner) => {
                 Error::AccessDeniedError(inner)
+            },
+            crate::operation::generate_recommendations::GenerateRecommendationsError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::generate_recommendations::GenerateRecommendationsError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
             },
             crate::operation::generate_recommendations::GenerateRecommendationsError::Unhandled(inner) => {
                 Error::Unhandled(inner)
@@ -549,20 +549,20 @@ where
 impl From<crate::operation::get_customization::GetCustomizationError> for Error {
     fn from(err: crate::operation::get_customization::GetCustomizationError) -> Self {
         match err {
-            crate::operation::get_customization::GetCustomizationError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            },
-            crate::operation::get_customization::GetCustomizationError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
             crate::operation::get_customization::GetCustomizationError::ValidationError(inner) => {
                 Error::ValidationError(inner)
+            },
+            crate::operation::get_customization::GetCustomizationError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::get_customization::GetCustomizationError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
             },
             crate::operation::get_customization::GetCustomizationError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
             },
-            crate::operation::get_customization::GetCustomizationError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
+            crate::operation::get_customization::GetCustomizationError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
             },
             crate::operation::get_customization::GetCustomizationError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -596,20 +596,20 @@ where
 impl From<crate::operation::list_customization_permissions::ListCustomizationPermissionsError> for Error {
     fn from(err: crate::operation::list_customization_permissions::ListCustomizationPermissionsError) -> Self {
         match err {
+            crate::operation::list_customization_permissions::ListCustomizationPermissionsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            }
+            crate::operation::list_customization_permissions::ListCustomizationPermissionsError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            }
             crate::operation::list_customization_permissions::ListCustomizationPermissionsError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             }
             crate::operation::list_customization_permissions::ListCustomizationPermissionsError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             }
-            crate::operation::list_customization_permissions::ListCustomizationPermissionsError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            }
             crate::operation::list_customization_permissions::ListCustomizationPermissionsError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            }
-            crate::operation::list_customization_permissions::ListCustomizationPermissionsError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             }
             crate::operation::list_customization_permissions::ListCustomizationPermissionsError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -643,17 +643,17 @@ where
 impl From<crate::operation::list_customizations::ListCustomizationsError> for Error {
     fn from(err: crate::operation::list_customizations::ListCustomizationsError) -> Self {
         match err {
-            crate::operation::list_customizations::ListCustomizationsError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            },
-            crate::operation::list_customizations::ListCustomizationsError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
             crate::operation::list_customizations::ListCustomizationsError::ValidationError(inner) => {
                 Error::ValidationError(inner)
             },
             crate::operation::list_customizations::ListCustomizationsError::AccessDeniedError(inner) => {
                 Error::AccessDeniedError(inner)
+            },
+            crate::operation::list_customizations::ListCustomizationsError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::list_customizations::ListCustomizationsError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
             },
             crate::operation::list_customizations::ListCustomizationsError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -687,21 +687,21 @@ where
 impl From<crate::operation::list_customization_versions::ListCustomizationVersionsError> for Error {
     fn from(err: crate::operation::list_customization_versions::ListCustomizationVersionsError) -> Self {
         match err {
+            crate::operation::list_customization_versions::ListCustomizationVersionsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::list_customization_versions::ListCustomizationVersionsError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
             crate::operation::list_customization_versions::ListCustomizationVersionsError::InternalServerError(
                 inner,
             ) => Error::InternalServerError(inner),
             crate::operation::list_customization_versions::ListCustomizationVersionsError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             },
-            crate::operation::list_customization_versions::ListCustomizationVersionsError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
             crate::operation::list_customization_versions::ListCustomizationVersionsError::ResourceNotFoundError(
                 inner,
             ) => Error::ResourceNotFoundError(inner),
-            crate::operation::list_customization_versions::ListCustomizationVersionsError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
-            },
             crate::operation::list_customization_versions::ListCustomizationVersionsError::Unhandled(inner) => {
                 Error::Unhandled(inner)
             },
@@ -728,14 +728,14 @@ where
 impl From<crate::operation::list_profiles::ListProfilesError> for Error {
     fn from(err: crate::operation::list_profiles::ListProfilesError) -> Self {
         match err {
-            crate::operation::list_profiles::ListProfilesError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            },
-            crate::operation::list_profiles::ListProfilesError::ThrottlingError(inner) => Error::ThrottlingError(inner),
             crate::operation::list_profiles::ListProfilesError::ValidationError(inner) => Error::ValidationError(inner),
             crate::operation::list_profiles::ListProfilesError::AccessDeniedError(inner) => {
                 Error::AccessDeniedError(inner)
             },
+            crate::operation::list_profiles::ListProfilesError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::list_profiles::ListProfilesError::ThrottlingError(inner) => Error::ThrottlingError(inner),
             crate::operation::list_profiles::ListProfilesError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
@@ -768,20 +768,20 @@ where
 impl From<crate::operation::list_tags_for_resource::ListTagsForResourceError> for Error {
     fn from(err: crate::operation::list_tags_for_resource::ListTagsForResourceError) -> Self {
         match err {
-            crate::operation::list_tags_for_resource::ListTagsForResourceError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
+            crate::operation::list_tags_for_resource::ListTagsForResourceError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::list_tags_for_resource::ListTagsForResourceError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
             },
             crate::operation::list_tags_for_resource::ListTagsForResourceError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             },
-            crate::operation::list_tags_for_resource::ListTagsForResourceError::ValidationError(inner) => {
-                Error::ValidationError(inner)
+            crate::operation::list_tags_for_resource::ListTagsForResourceError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
             },
             crate::operation::list_tags_for_resource::ListTagsForResourceError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            },
-            crate::operation::list_tags_for_resource::ListTagsForResourceError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             },
             crate::operation::list_tags_for_resource::ListTagsForResourceError::Unhandled(inner) => {
                 Error::Unhandled(inner)
@@ -848,16 +848,16 @@ where
 impl From<crate::operation::tag_resource::TagResourceError> for Error {
     fn from(err: crate::operation::tag_resource::TagResourceError) -> Self {
         match err {
+            crate::operation::tag_resource::TagResourceError::ValidationError(inner) => Error::ValidationError(inner),
+            crate::operation::tag_resource::TagResourceError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::tag_resource::TagResourceError::ThrottlingError(inner) => Error::ThrottlingError(inner),
             crate::operation::tag_resource::TagResourceError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             },
-            crate::operation::tag_resource::TagResourceError::ThrottlingError(inner) => Error::ThrottlingError(inner),
-            crate::operation::tag_resource::TagResourceError::ValidationError(inner) => Error::ValidationError(inner),
             crate::operation::tag_resource::TagResourceError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            },
-            crate::operation::tag_resource::TagResourceError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             },
             crate::operation::tag_resource::TagResourceError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -926,20 +926,20 @@ where
 impl From<crate::operation::untag_resource::UntagResourceError> for Error {
     fn from(err: crate::operation::untag_resource::UntagResourceError) -> Self {
         match err {
-            crate::operation::untag_resource::UntagResourceError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
+            crate::operation::untag_resource::UntagResourceError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::untag_resource::UntagResourceError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
             },
             crate::operation::untag_resource::UntagResourceError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             },
-            crate::operation::untag_resource::UntagResourceError::ValidationError(inner) => {
-                Error::ValidationError(inner)
+            crate::operation::untag_resource::UntagResourceError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
             },
             crate::operation::untag_resource::UntagResourceError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            },
-            crate::operation::untag_resource::UntagResourceError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             },
             crate::operation::untag_resource::UntagResourceError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -973,23 +973,23 @@ where
 impl From<crate::operation::update_customization::UpdateCustomizationError> for Error {
     fn from(err: crate::operation::update_customization::UpdateCustomizationError) -> Self {
         match err {
+            crate::operation::update_customization::UpdateCustomizationError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::update_customization::UpdateCustomizationError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
             crate::operation::update_customization::UpdateCustomizationError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             },
             crate::operation::update_customization::UpdateCustomizationError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             },
-            crate::operation::update_customization::UpdateCustomizationError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
             crate::operation::update_customization::UpdateCustomizationError::ConflictError(inner) => {
                 Error::ConflictError(inner)
             },
             crate::operation::update_customization::UpdateCustomizationError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            },
-            crate::operation::update_customization::UpdateCustomizationError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             },
             crate::operation::update_customization::UpdateCustomizationError::Unhandled(inner) => {
                 Error::Unhandled(inner)
@@ -1021,21 +1021,21 @@ where
 impl From<crate::operation::update_profile::UpdateProfileError> for Error {
     fn from(err: crate::operation::update_profile::UpdateProfileError) -> Self {
         match err {
+            crate::operation::update_profile::UpdateProfileError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::update_profile::UpdateProfileError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
             crate::operation::update_profile::UpdateProfileError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             },
             crate::operation::update_profile::UpdateProfileError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             },
-            crate::operation::update_profile::UpdateProfileError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
             crate::operation::update_profile::UpdateProfileError::ConflictError(inner) => Error::ConflictError(inner),
             crate::operation::update_profile::UpdateProfileError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            },
-            crate::operation::update_profile::UpdateProfileError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             },
             crate::operation::update_profile::UpdateProfileError::Unhandled(inner) => Error::Unhandled(inner),
         }
@@ -1061,20 +1061,20 @@ where
 impl From<crate::operation::vend_key_grant::VendKeyGrantError> for Error {
     fn from(err: crate::operation::vend_key_grant::VendKeyGrantError) -> Self {
         match err {
+            crate::operation::vend_key_grant::VendKeyGrantError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::vend_key_grant::VendKeyGrantError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
             crate::operation::vend_key_grant::VendKeyGrantError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             },
             crate::operation::vend_key_grant::VendKeyGrantError::ThrottlingError(inner) => {
                 Error::ThrottlingError(inner)
             },
-            crate::operation::vend_key_grant::VendKeyGrantError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
             crate::operation::vend_key_grant::VendKeyGrantError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
-            },
-            crate::operation::vend_key_grant::VendKeyGrantError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
             },
             crate::operation::vend_key_grant::VendKeyGrantError::Unhandled(inner) => Error::Unhandled(inner),
         }

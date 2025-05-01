@@ -36,7 +36,7 @@
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
 ///
-///  Workspace context truncation schemes based on usecase
+/// Workspace context truncation schemes based on usecase
 #[non_exhaustive]
 #[derive(
     ::std::clone::Clone,

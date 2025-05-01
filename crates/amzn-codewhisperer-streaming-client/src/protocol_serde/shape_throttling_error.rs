@@ -2,7 +2,7 @@
 pub(crate) fn de_throttling_error_json_err(
     value: &[u8],
     mut builder: crate::types::error::builders::ThrottlingErrorBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::types::error::builders::ThrottlingErrorBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

@@ -2,7 +2,7 @@
 pub fn ser_command_input(
     object_3: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::CommandInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::CommandInput::CommandsList(inner) => {
             let mut array_1 = object_3.key("commandsList").start_array();

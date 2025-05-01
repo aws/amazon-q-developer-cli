@@ -2,7 +2,7 @@
 pub fn ser_code_fix_acceptance_event(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::CodeFixAcceptanceEvent,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("jobId").string(input.job_id.as_str());
     }

@@ -37,6 +37,7 @@ use crate::model::{
     RecommendationsInput,
     RecommendationsOutput,
 };
+use crate::profile::Profile;
 use crate::{
     Customization,
     Endpoint,
@@ -61,7 +62,10 @@ mod inner {
 }
 
 #[derive(Clone, Debug)]
-pub struct Client(inner::Inner);
+pub struct Client {
+    inner: inner::Inner,
+    profile_arn: Option<String>,
+}
 
 impl Client {
     pub async fn new() -> Result<Client, Error> {
@@ -75,7 +79,10 @@ impl Client {
     }
 
     pub fn mock() -> Self {
-        Self(inner::Inner::Mock)
+        Self {
+            inner: inner::Inner::Mock,
+            profile_arn: None,
+        }
     }
 
     pub async fn new_codewhisperer_client(endpoint: &Endpoint) -> Self {
@@ -88,7 +95,31 @@ impl Client {
             .app_name(app_name())
             .endpoint_url(endpoint.url())
             .build();
-        Self(inner::Inner::Codewhisperer(CodewhispererClient::from_conf(conf)))
+
+        let inner = inner::Inner::Codewhisperer(CodewhispererClient::from_conf(conf));
+
+        let profile_arn = match fig_settings::state::get_value("api.codewhisperer.profile") {
+            Ok(Some(profile)) => match profile.get("arn") {
+                Some(arn) => match arn.as_str() {
+                    Some(arn) => Some(arn.to_string()),
+                    None => {
+                        error!("Stored arn is not a string. Instead it was: {arn}");
+                        None
+                    },
+                },
+                None => {
+                    error!("Stored profile does not contain an arn. Instead it was: {profile}");
+                    None
+                },
+            },
+            Ok(None) => None,
+            Err(err) => {
+                error!("Failed to retrieve profile: {}", err);
+                None
+            },
+        };
+
+        Self { inner, profile_arn }
     }
 
     pub async fn new_consolas_client(endpoint: &Endpoint) -> Result<Self, Error> {
@@ -100,7 +131,10 @@ impl Client {
             .app_name(app_name())
             .endpoint_url(endpoint.url())
             .build();
-        Ok(Self(inner::Inner::Consolas(ConsolasClient::from_conf(conf))))
+        Ok(Self {
+            inner: inner::Inner::Consolas(ConsolasClient::from_conf(conf)),
+            profile_arn: None,
+        })
     }
 
     pub async fn generate_recommendations(
@@ -133,8 +167,10 @@ impl Client {
         input.file_context.left_file_content = left_content;
         input.file_context.right_file_content = right_content;
 
-        match &self.0 {
-            inner::Inner::Codewhisperer(client) => Ok(codewhisperer_generate_recommendation(client, input).await?),
+        match &self.inner {
+            inner::Inner::Codewhisperer(client) => {
+                Ok(codewhisperer_generate_recommendation(client, input, self.profile_arn.clone()).await?)
+            },
             inner::Inner::Consolas(client) => Ok(consolas_generate_recommendation(client, input).await?),
             inner::Inner::Mock => Ok(RecommendationsOutput {
                 recommendations: vec![Recommendation {
@@ -151,9 +187,13 @@ impl Client {
     pub async fn list_customizations(&self) -> Result<Vec<Customization>, Error> {
         let mut customizations = Vec::new();
 
-        match &self.0 {
+        match &self.inner {
             inner::Inner::Codewhisperer(client) => {
-                let mut paginator = client.list_available_customizations().into_paginator().send();
+                let mut paginator = client
+                    .list_available_customizations()
+                    .set_profile_arn(self.profile_arn.clone())
+                    .into_paginator()
+                    .send();
                 while let Some(res) = paginator.next().await {
                     let output = res?;
                     customizations.extend(output.customizations.into_iter().map(Into::into));
@@ -192,13 +232,14 @@ impl Client {
         user_context: UserContext,
         opt_out: OptOutPreference,
     ) -> Result<(), Error> {
-        match &self.0 {
+        match &self.inner {
             inner::Inner::Codewhisperer(client) => {
                 let _ = client
                     .send_telemetry_event()
                     .telemetry_event(telemetry_event)
                     .user_context(user_context)
                     .opt_out_preference(opt_out)
+                    .set_profile_arn(self.profile_arn.clone())
                     .send()
                     .await;
                 Ok(())
@@ -207,11 +248,37 @@ impl Client {
             inner::Inner::Mock => Ok(()),
         }
     }
+
+    pub async fn list_available_profiles(&self) -> Result<Vec<Profile>, Error> {
+        match &self.inner {
+            inner::Inner::Codewhisperer(client) => {
+                let mut profiles = vec![];
+                let mut client = client.list_available_profiles().into_paginator().send();
+                while let Some(profiles_output) = client.next().await {
+                    profiles.extend(profiles_output?.profiles().iter().cloned().map(Profile::from));
+                }
+
+                Ok(profiles)
+            },
+            inner::Inner::Consolas(_) => Err(Error::UnsupportedConsolas("list_available_profiles")),
+            inner::Inner::Mock => Ok(vec![
+                Profile {
+                    arn: "my:arn:1".to_owned(),
+                    profile_name: "MyProfile".to_owned(),
+                },
+                Profile {
+                    arn: "my:arn:2".to_owned(),
+                    profile_name: "MyOtherProfile".to_owned(),
+                },
+            ]),
+        }
+    }
 }
 
 async fn codewhisperer_generate_recommendation_inner(
     client: &CodewhispererClient,
     input: RecommendationsInput,
+    profile_arn: Option<String>,
 ) -> Result<RecommendationsOutput, SdkError<GenerateCompletionsError, HttpResponse>> {
     let session_id_lock = Arc::new(Mutex::new(None));
 
@@ -240,6 +307,7 @@ async fn codewhisperer_generate_recommendation_inner(
         .max_results(input.max_results)
         .set_next_token(input.next_token)
         .set_customization_arn(customization_arn)
+        .set_profile_arn(profile_arn.clone())
         .customize()
         .interceptor(SessionIdInterceptor::new(session_id_lock.clone()))
         .send()
@@ -268,8 +336,9 @@ async fn codewhisperer_generate_recommendation_inner(
 async fn codewhisperer_generate_recommendation(
     client: &CodewhispererClient,
     input: RecommendationsInput,
+    profile_arn: Option<String>,
 ) -> Result<RecommendationsOutput, SdkError<GenerateCompletionsError, HttpResponse>> {
-    let res = codewhisperer_generate_recommendation_inner(client, input.clone()).await;
+    let res = codewhisperer_generate_recommendation_inner(client, input.clone(), profile_arn.clone()).await;
 
     let output = match res {
         Ok(output) => output,
@@ -286,7 +355,7 @@ async fn codewhisperer_generate_recommendation(
             if let Err(err) = Customization::delete_selected(&State::new()) {
                 error!(%err, "Failed to delete selected customization");
             }
-            codewhisperer_generate_recommendation_inner(client, input).await?
+            codewhisperer_generate_recommendation_inner(client, input, profile_arn.clone()).await?
         },
         Err(err) => return Err(err),
     };

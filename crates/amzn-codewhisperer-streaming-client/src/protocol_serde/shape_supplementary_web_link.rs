@@ -2,7 +2,7 @@
 pub fn ser_supplementary_web_link(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::SupplementaryWebLink,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("url").string(input.url.as_str());
     }
@@ -17,7 +17,10 @@ pub fn ser_supplementary_web_link(
 
 pub(crate) fn de_supplementary_web_link<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<Option<crate::types::SupplementaryWebLink>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<
+    Option<crate::types::SupplementaryWebLink>,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+>
 where
     I: Iterator<
         Item = Result<
