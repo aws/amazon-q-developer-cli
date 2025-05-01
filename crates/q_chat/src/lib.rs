@@ -796,13 +796,6 @@ impl ChatContext {
                 self.draw_tip_box(tip)?;
             }
 
-            // update the current tip index
-            let next_tip_index = (current_tip_index + 1) % ROTATING_TIPS.len();
-            self.state
-                .set_value("chat.greeting.rotating_tips_current_index", next_tip_index)?;
-        }
-
-        if self.interactive {
             execute!(
                 self.output,
                 style::Print(if is_small_screen {
@@ -817,7 +810,13 @@ impl ChatContext {
                 )
             )?;
             execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+
+            // update the current tip index
+            let next_tip_index = (current_tip_index + 1) % ROTATING_TIPS.len();
+            self.state
+                .set_value("chat.greeting.rotating_tips_current_index", next_tip_index)?;
         }
+
         if self.interactive && self.all_tools_trusted() {
             queue!(
                 self.output,
