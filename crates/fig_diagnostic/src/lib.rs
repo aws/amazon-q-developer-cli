@@ -103,7 +103,7 @@ pub struct SystemInfo {
 impl SystemInfo {
     fn new() -> SystemInfo {
         let system = sysinfo::System::new_with_specifics(
-            RefreshKind::new()
+            RefreshKind::nothing()
                 .with_cpu(CpuRefreshKind::everything())
                 .with_memory(MemoryRefreshKind::everything()),
         );

@@ -2740,7 +2740,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shellexpand",
- "sysinfo 0.32.1",
+ "sysinfo",
  "system-configuration",
  "tao",
  "tempfile",
@@ -2821,7 +2821,7 @@ dependencies = [
  "fig_util",
  "serde",
  "serde_json",
- "sysinfo 0.32.1",
+ "sysinfo",
  "time",
  "tokio",
  "toml",
@@ -2914,7 +2914,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "sysinfo 0.32.1",
+ "sysinfo",
  "tempfile",
  "thiserror 2.0.12",
  "tokio",
@@ -2965,7 +2965,7 @@ dependencies = [
  "dirs",
  "nix 0.29.0",
  "serde",
- "sysinfo 0.32.1",
+ "sysinfo",
  "tempfile",
  "tokio",
 ]
@@ -3168,7 +3168,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "strum 0.27.1",
- "sysinfo 0.32.1",
+ "sysinfo",
  "thiserror 2.0.12",
  "time",
  "tokio",
@@ -3230,7 +3230,7 @@ dependencies = [
  "shell-words",
  "shellexpand",
  "shlex",
- "sysinfo 0.32.1",
+ "sysinfo",
  "tempfile",
  "time",
  "tokio",
@@ -5560,7 +5560,7 @@ dependencies = [
  "nix 0.29.0",
  "ntapi",
  "procfs",
- "sysinfo 0.33.1",
+ "sysinfo",
  "web-time",
  "windows 0.56.0",
 ]
@@ -6914,7 +6914,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spinners",
- "sysinfo 0.32.1",
+ "sysinfo",
  "tempfile",
  "thiserror 2.0.12",
  "time",
@@ -8432,20 +8432,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "sysinfo"
-version = "0.32.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c33cd241af0f2e9e3b5c32163b873b29956890b5342e6745b917ce9d490f4af"
-dependencies = [
- "core-foundation-sys",
- "libc",
- "memchr",
- "ntapi",
- "rayon",
- "windows 0.57.0",
 ]
 
 [[package]]
