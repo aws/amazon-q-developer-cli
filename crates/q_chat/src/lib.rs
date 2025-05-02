@@ -1841,6 +1841,9 @@ impl ChatContext {
                                     style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
                                 )?;
 
+                                self.compact_history(Some(tool_uses.clone()), pending_tool_index, None, true, false)
+                                    .await?;
+
                                 execute!(self.output, style::Print("\n"))?;
                             }
                         },
