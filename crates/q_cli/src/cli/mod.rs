@@ -60,7 +60,10 @@ use fig_util::{
     system_info,
 };
 use internal::InternalSubcommand;
-use q_chat::cli::Chat;
+use q_chat::cli::{
+    Chat,
+    Mcp,
+};
 use serde::Serialize;
 use tracing::{
     Level,
@@ -189,6 +192,9 @@ pub enum CliRootCommands {
     /// AI assistant in your terminal
     #[command(alias("q"))]
     Chat(Chat),
+    /// Model Context Protocol (MCP)
+    #[command(subcommand)]
+    Mcp(Mcp),
     /// Inline shell completions
     #[command(subcommand)]
     Inline(inline::InlineSubcommand),
@@ -224,6 +230,7 @@ impl CliRootCommands {
             CliRootCommands::Version { .. } => "version",
             CliRootCommands::Dashboard => "dashboard",
             CliRootCommands::Chat { .. } => "chat",
+            CliRootCommands::Mcp(_) => "mcp",
             CliRootCommands::Inline(_) => "inline",
         }
     }
@@ -334,6 +341,10 @@ impl Cli {
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
                 CliRootCommands::Chat(args) => q_chat::launch_chat(args).await,
+                CliRootCommands::Mcp(args) => {
+                    println!("{:?}", args);
+                    Ok(ExitCode::SUCCESS)
+                },
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
@@ -479,6 +490,8 @@ async fn launch_dashboard(help_fallback: bool) -> Result<ExitCode> {
 
 #[cfg(test)]
 mod test {
+    use q_chat::cli::McpAdd;
+
     use super::*;
 
     #[test]
@@ -776,6 +789,39 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
             })
+        );
+    }
+
+    #[test]
+    fn test_mcp_subcommand() {
+        assert_parse!(
+            [
+                "mcp",
+                "add",
+                "--name",
+                "test_server",
+                "--command",
+                "test_command",
+                "--profile",
+                "my_profile",
+                "--env",
+                "key1=value1,key2=value2"
+            ],
+            CliRootCommands::Mcp(Mcp::Add(McpAdd {
+                name: "test_server".to_string(),
+                command: "test_command".to_string(),
+                scope: None,
+                profile: Some("my_profile".to_string()),
+                env: Some(
+                    [
+                        ("key1".to_string(), "value1".to_string()),
+                        ("key2".to_string(), "value2".to_string())
+                    ]
+                    .into_iter()
+                    .collect()
+                ),
+                timeout: None,
+            }))
         );
     }
 }
