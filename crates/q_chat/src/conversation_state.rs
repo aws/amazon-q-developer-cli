@@ -195,7 +195,10 @@ impl ConversationState {
             warn!("input must not be empty when adding new messages");
             "Empty prompt".to_string()
         } else {
-            input
+            // Add current UTC time in XML tags at the end of the message
+            let now = chrono::Utc::now();
+            let formatted_time = now.format("%Y-%m-%d %H:%M:%S").to_string();
+            format!("{}\n\n<currentTimeUTC>\n{}\n</currentTimeUTC>", input, formatted_time)
         };
 
         let msg = UserMessage::new_prompt(input);
