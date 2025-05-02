@@ -55,7 +55,7 @@ impl Tool {
             Tool::UseAws(_) => "use_aws",
             Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => "gh_issue",
-            Tool::Think(_) => "q_think_tool",
+            Tool::Think(_) => "q_think_tool (beta)",
         }
         .to_owned()
     }
@@ -182,7 +182,7 @@ impl ToolPermissions {
             "execute_bash" => "trust read-only commands".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
-            "q_think_tool" => "trusted".dark_green().bold(),
+            "q_think_tool" => "trusted (beta)".dark_green().bold(),
             _ => "not trusted".dark_grey(),
         };
 
