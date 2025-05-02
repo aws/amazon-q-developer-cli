@@ -56,6 +56,7 @@ use crate::api_client::model::{
 };
 use crate::mcp_client::{
     JsonRpcResponse,
+    NullMessenger,
     PromptGet,
 };
 use crate::telemetry::send_mcp_server_init;
@@ -528,7 +529,7 @@ impl ToolManager {
                 let tool_specs_clone = tool_specs.clone();
                 let conversation_id = conversation_id.clone();
                 async move {
-                    let tool_spec = client_clone.init().await;
+                    let tool_spec = client_clone.init(None::<NullMessenger>).await;
                     let mut sanitized_mapping = HashMap::<String, String>::new();
                     match tool_spec {
                         Ok((server_name, specs)) => {

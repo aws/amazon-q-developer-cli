@@ -37,15 +37,16 @@ use crate::{
     JsonRpcResponse,
     Listener as _,
     LogListener,
+    Messenger,
     PaginationSupportedOps,
     PromptGet,
     PromptsListResult,
     ResourceTemplatesListResult,
     ResourcesListResult,
+    ServerCapabilities,
     ToolsListResult,
 };
 
-pub type ServerCapabilities = serde_json::Value;
 pub type ClientInfo = serde_json::Value;
 pub type StdioTransport = JsonRpcStdioTransport;
 
@@ -214,7 +215,7 @@ where
     /// - Spawns task for listening to server driven workflows
     /// - Spawns tasks to ask for relevant info such as tools and prompts in accordance to server
     ///   capabilities received
-    pub async fn init(&self) -> Result<ServerCapabilities, ClientError> {
+    pub async fn init(&self, messenger: Option<impl Messenger>) -> Result<ServerCapabilities, ClientError> {
         let transport_ref = self.transport.clone();
         let server_name = self.server_name.clone();
 
@@ -295,63 +296,112 @@ where
             let client_cap = ClientCapabilities::from(self.client_info.clone());
             serde_json::json!(client_cap)
         });
-        let server_capabilities = self.request("initialize", init_params).await?;
-        if let Err(e) = examine_server_capabilities(&server_capabilities) {
+        let init_resp = self.request("initialize", init_params).await?;
+        if let Err(e) = examine_server_capabilities(&init_resp) {
             return Err(ClientError::NegotiationError(format!(
                 "Client {} has failed to negotiate server capabilities with server: {:?}",
                 self.server_name, e
             )));
         }
+        let cap = {
+            let result = init_resp.result.ok_or(ClientError::NegotiationError(format!(
+                "Server {} init resp is missing result",
+                self.server_name
+            )))?;
+            let cap = result
+                .get("capabilities")
+                .ok_or(ClientError::NegotiationError(format!(
+                    "Server {} init resp result is missing capabilities",
+                    self.server_name
+                )))?
+                .clone();
+            serde_json::from_value::<ServerCapabilities>(cap)?
+        };
         self.notify("initialized", None).await?;
 
         // TODO: group this into examine_server_capabilities
         // Prefetch prompts in the background. We should only do this after the server has been
         // initialized
-        if let Some(res) = &server_capabilities.result {
-            if let Some(cap) = res.get("capabilities") {
-                if cap.get("prompts").is_some() {
-                    self.is_prompts_out_of_date.store(true, Ordering::Relaxed);
-                    let client_ref = (*self).clone();
-                    tokio::spawn(async move {
-                        let Ok(resp) = client_ref.request("prompts/list", None).await else {
-                            tracing::error!("Prompt list query failed for {0}", client_ref.server_name);
-                            return;
-                        };
-                        let Some(result) = resp.result else {
-                            tracing::warn!("Prompt list query returned no result for {0}", client_ref.server_name);
-                            return;
-                        };
-                        let Some(prompts) = result.get("prompts") else {
-                            tracing::warn!(
-                                "Prompt list query result contained no field named prompts for {0}",
-                                client_ref.server_name
-                            );
-                            return;
-                        };
-                        let Ok(prompts) = serde_json::from_value::<Vec<PromptGet>>(prompts.clone()) else {
-                            tracing::error!(
-                                "Prompt list query deserialization failed for {0}",
-                                client_ref.server_name
-                            );
-                            return;
-                        };
-                        let Ok(mut lock) = client_ref.prompt_gets.write() else {
-                            tracing::error!(
-                                "Failed to obtain write lock for prompt list query for {0}",
-                                client_ref.server_name
-                            );
-                            return;
-                        };
-                        for prompt in prompts {
-                            let name = prompt.name.clone();
-                            lock.insert(name, prompt);
-                        }
-                    });
+        if cap.prompts.is_some() {
+            self.is_prompts_out_of_date.store(true, Ordering::Relaxed);
+            let client_ref = (*self).clone();
+            tokio::spawn(async move {
+                let Ok(resp) = client_ref.request("prompts/list", None).await else {
+                    tracing::error!("Prompt list query failed for {0}", client_ref.server_name);
+                    return;
+                };
+                let Some(result) = resp.result else {
+                    tracing::warn!("Prompt list query returned no result for {0}", client_ref.server_name);
+                    return;
+                };
+                let Some(prompts) = result.get("prompts") else {
+                    tracing::warn!(
+                        "Prompt list query result contained no field named prompts for {0}",
+                        client_ref.server_name
+                    );
+                    return;
+                };
+                let Ok(prompts) = serde_json::from_value::<Vec<PromptGet>>(prompts.clone()) else {
+                    tracing::error!(
+                        "Prompt list query deserialization failed for {0}",
+                        client_ref.server_name
+                    );
+                    return;
+                };
+                let Ok(mut lock) = client_ref.prompt_gets.write() else {
+                    tracing::error!(
+                        "Failed to obtain write lock for prompt list query for {0}",
+                        client_ref.server_name
+                    );
+                    return;
+                };
+                for prompt in prompts {
+                    let name = prompt.name.clone();
+                    lock.insert(name, prompt);
                 }
-            }
+            });
+        }
+        if let (Some(_), Some(messenger)) = (&cap.tools, messenger) {
+            let client_ref = (*self).clone();
+            let msger = messenger.clone();
+            tokio::spawn(async move {
+                let resp = match client_ref.request("tools/list", None).await {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        tracing::error!("Failed to retrieve tool list from {}: {:?}", client_ref.server_name, e);
+                        return;
+                    },
+                };
+                if let Some(error) = resp.error {
+                    let msg = format!(
+                        "Failed to retrieve tool list for {}: {:?}",
+                        client_ref.server_name, error
+                    );
+                    tracing::error!("{}", &msg);
+                    return;
+                }
+                let Some(result) = resp.result else {
+                    tracing::error!("Tool list response from {} is missing result", client_ref.server_name);
+                    return;
+                };
+                let tool_list_result = match serde_json::from_value::<ToolsListResult>(result) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to deserialize tool result from {}: {:?}",
+                            client_ref.server_name,
+                            e
+                        );
+                        return;
+                    },
+                };
+                if let Err(e) = msger.send_tools_list_result(tool_list_result).await {
+                    tracing::error!("Failed to send tool result through messenger {:?}", e);
+                }
+            });
         }
 
-        Ok(serde_json::to_value(server_capabilities)?)
+        Ok(cap)
     }
 
     /// Sends a request to the server associated.
@@ -520,6 +570,7 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
+    use crate::NullMessenger;
     const TEST_BIN_OUT_DIR: &str = "target/debug";
     const TEST_SERVER_NAME: &str = "test_mcp_server";
 
@@ -609,8 +660,9 @@ mod tests {
         client: &mut Client<T>,
         cap_sent: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let test_messenger = Some(NullMessenger);
         // Test init
-        let _ = client.init().await.expect("Client init failed");
+        let _ = client.init(test_messenger).await.expect("Client init failed");
         tokio::time::sleep(time::Duration::from_millis(1500)).await;
         let client_capabilities_sent = client
             .request("verify_init_ack_sent", None)

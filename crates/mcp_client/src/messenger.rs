@@ -1,3 +1,5 @@
+use thiserror::Error;
+
 use crate::{
     PromptsListResult,
     ResourceTemplatesListResult,
@@ -9,20 +11,55 @@ use crate::{
 /// consumer. It is through this interface secondary information (i.e. information that are needed
 /// to make requests to mcp servers) are obtained passively. Consumers of client can of course
 /// choose to "actively" retrieve these information via explicitly making these requests.
-pub trait Messenger: Send + Sync + 'static {
+#[async_trait::async_trait]
+pub trait Messenger: Clone + Send + Sync + 'static {
     /// Sends the result of a tools list operation to the consumer
     /// This function is used to deliver information about available tools
-    fn send_tools_list_result(result: ToolsListResult);
+    async fn send_tools_list_result(&self, result: ToolsListResult) -> Result<(), MessengerError>;
 
     /// Sends the result of a prompts list operation to the consumer
     /// This function is used to deliver information about available prompts
-    fn send_prompts_list_result(result: PromptsListResult);
+    async fn send_prompts_list_result(&self, result: PromptsListResult) -> Result<(), MessengerError>;
 
     /// Sends the result of a resources list operation to the consumer
     /// This function is used to deliver information about available resources
-    fn send_resources_list_result(result: ResourcesListResult);
+    async fn send_resources_list_result(&self, result: ResourcesListResult) -> Result<(), MessengerError>;
 
     /// Sends the result of a resource templates list operation to the consumer
     /// This function is used to deliver information about available resource templates
-    fn send_resource_templates_list_result(result: ResourceTemplatesListResult);
+    async fn send_resource_templates_list_result(
+        &self,
+        result: ResourceTemplatesListResult,
+    ) -> Result<(), MessengerError>;
+}
+
+#[derive(Clone, Debug, Error)]
+pub enum MessengerError {
+    #[error("{0}")]
+    Custom(String),
+}
+
+#[derive(Clone)]
+pub struct NullMessenger;
+
+#[async_trait::async_trait]
+impl Messenger for NullMessenger {
+    async fn send_tools_list_result(&self, _result: ToolsListResult) -> Result<(), MessengerError> {
+        Ok(())
+    }
+
+    async fn send_prompts_list_result(&self, _result: PromptsListResult) -> Result<(), MessengerError> {
+        Ok(())
+    }
+
+    async fn send_resources_list_result(&self, _result: ResourcesListResult) -> Result<(), MessengerError> {
+        Ok(())
+    }
+
+    async fn send_resource_templates_list_result(
+        &self,
+        _result: ResourceTemplatesListResult,
+    ) -> Result<(), MessengerError> {
+        Ok(())
+    }
 }

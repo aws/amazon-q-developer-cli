@@ -227,3 +227,21 @@ pub struct Resource {
     /// Resource contents
     pub contents: ResourceContents,
 }
+
+/// Represents the capabilities supported by a Model Context Protocol server
+/// This is the "capabilities" field in the result of a response for init
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerCapabilities {
+    /// Configuration for server logging capabilities
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logging: Option<serde_json::Value>,
+    /// Configuration for prompt-related capabilities
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompts: Option<serde_json::Value>,
+    /// Configuration for resource management capabilities
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<serde_json::Value>,
+    /// Configuration for tool integration capabilities
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<serde_json::Value>,
+}
