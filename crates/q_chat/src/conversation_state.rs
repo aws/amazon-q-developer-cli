@@ -42,7 +42,6 @@ use super::message::{
     UserMessageContent,
     build_env_state,
 };
-use super::shared_writer::SharedWriter;
 use super::token_counter::{
     CharCount,
     CharCounter,
@@ -58,6 +57,7 @@ use super::tools::{
 const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
 
+use crate::util::shared_writer::SharedWriter;
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone)]
 pub struct ConversationState {
