@@ -210,8 +210,10 @@ where
 {
     /// Exchange of information specified as per https://spec.modelcontextprotocol.io/specification/2024-11-05/basic/lifecycle/#initialization
     ///
-    /// Also done is the spawn of a background task that constantly listens for incoming messages
-    /// from the server.
+    /// Also done are the following:
+    /// - Spawns task for listening to server driven workflows
+    /// - Spawns tasks to ask for relevant info such as tools and prompts in accordance to server
+    ///   capabilities received
     pub async fn init(&self) -> Result<ServerCapabilities, ClientError> {
         let transport_ref = self.transport.clone();
         let server_name = self.server_name.clone();

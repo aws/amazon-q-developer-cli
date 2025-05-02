@@ -458,8 +458,6 @@ enum OutOfSpecName {
     EmptyDescription(String),
 }
 
-// type ClientInProgress = Either
-
 #[derive(Default)]
 /// Manages the lifecycle and interactions with tools from various sources, including MCP servers.
 /// This struct is responsible for initializing tools, handling tool requests, and maintaining
