@@ -9,7 +9,6 @@ mod message;
 mod parse;
 mod parser;
 mod prompt;
-mod shared_writer;
 mod skim_integration;
 mod token_counter;
 mod tool_manager;
@@ -54,7 +53,6 @@ use crossterm::style::{
     Color,
     Stylize,
 };
-use crossterm::terminal::ClearType;
 use crossterm::{
     cursor,
     execute,
@@ -75,6 +73,7 @@ use fig_api_client::model::{
     ToolResultStatus,
 };
 use fig_os_shim::Context;
+use fig_settings::keys::UPDATE_AVAILABLE_KEY;
 use fig_settings::{
     Settings,
     State,
@@ -94,7 +93,7 @@ use rand::distr::{
     Alphanumeric,
     SampleString,
 };
-use shared_writer::SharedWriter;
+use semver::Version;
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -182,6 +181,9 @@ use util::{
 use uuid::Uuid;
 use winnow::Partial;
 use winnow::stream::Offset;
+
+use crate::util::shared_writer::SharedWriter;
+use crate::util::ui::draw_box;
 
 const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>Welcome to </em>
@@ -674,101 +676,52 @@ impl ChatContext {
         Ok(content.trim().to_string())
     }
 
-    fn draw_tip_box(&mut self, text: &str) -> Result<()> {
-        let box_width = GREETING_BREAK_POINT;
-        let inner_width = box_width - 4; // account for │ and padding
+    fn check_for_updates(&mut self) {
+        let exe_path = match std::env::current_exe().and_then(|p| p.canonicalize()) {
+            Ok(path) => path,
+            Err(_) => return, // Early return if we can't get the executable path
+        };
 
-        // wrap the single line into multiple lines respecting inner width
-        // Manually wrap the text by splitting at word boundaries
-        let mut wrapped_lines = Vec::new();
-        let mut line = String::new();
+        if let Some(exe_parent) = exe_path.parent() {
+            let local_bin = match fig_util::directories::home_local_bin().map(|p| p.canonicalize()) {
+                Ok(path) => path,
+                Err(_) => return,
+            };
 
-        for word in text.split_whitespace() {
-            if line.len() + word.len() < inner_width {
-                if !line.is_empty() {
-                    line.push(' ');
-                }
-                line.push_str(word);
-            } else {
-                // Here we need to account for words that are too long as well
-                if word.len() >= inner_width {
-                    let mut start = 0_usize;
-                    for (i, _) in word.chars().enumerate() {
-                        if i - start >= inner_width {
-                            wrapped_lines.push(word[start..i].to_string());
-                            start = i;
-                        }
-                    }
-                    wrapped_lines.push(word[start..].to_string());
-                    line = String::new();
-                } else {
-                    wrapped_lines.push(line);
-                    line = word.to_string();
+            if let Ok(local_bin) = local_bin {
+                if exe_parent != local_bin {
+                    let _ = self.state.remove_value(UPDATE_AVAILABLE_KEY);
+                    return;
                 }
             }
         }
 
-        if !line.is_empty() {
-            wrapped_lines.push(line);
-        }
+        tokio::spawn(async {
+            let result =
+                tokio::time::timeout(std::time::Duration::from_secs(3), fig_install::check_for_updates(false)).await;
 
-        // ───── Did you know? ─────
-        let label = " Did you know? ";
-        let side_len = (box_width.saturating_sub(label.len())) / 2;
-        let top_border = format!(
-            "╭{}{}{}╮",
-            "─".repeat(side_len - 1),
-            label,
-            "─".repeat(box_width - side_len - label.len() - 1)
-        );
-
-        // Build output
-        execute!(
-            self.output,
-            terminal::Clear(ClearType::CurrentLine),
-            cursor::MoveToColumn(0),
-            style::Print(format!("{top_border}\n")),
-        )?;
-
-        // Top vertical padding
-        execute!(
-            self.output,
-            style::Print(format!("│{: <width$}│\n", "", width = box_width - 2))
-        )?;
-
-        // Centered wrapped content
-        for line in wrapped_lines {
-            let visible_line_len = strip_ansi_escapes::strip(&line).len();
-            let left_pad = box_width.saturating_sub(4).saturating_sub(visible_line_len) / 2;
-
-            let content = format!(
-                "│ {: <pad$}{}{: <rem$} │",
-                "",
-                line,
-                "",
-                pad = left_pad,
-                rem = box_width
-                    .saturating_sub(4)
-                    .saturating_sub(left_pad)
-                    .saturating_sub(visible_line_len),
-            );
-            execute!(self.output, style::Print(format!("{}\n", content)))?;
-        }
-
-        // Bottom vertical padding
-        execute!(
-            self.output,
-            style::Print(format!("│{: <width$}│\n", "", width = box_width - 2))
-        )?;
-
-        // Bottom rounded corner line: ╰────────────╯
-        let bottom = format!("╰{}╯", "─".repeat(box_width - 2));
-        execute!(self.output, style::Print(format!("{}\n", bottom)))?;
-
-        Ok(())
+            match result {
+                Ok(Ok(Some(new_package))) => {
+                    if let Err(err) =
+                        fig_settings::state::set_value(UPDATE_AVAILABLE_KEY, new_package.version.to_string())
+                    {
+                        warn!(?err, "Error setting {UPDATE_AVAILABLE_KEY}: {err}");
+                    }
+                },
+                Ok(Ok(None)) => {},
+                Ok(Err(err)) => {
+                    warn!(?err, "Error checking for updates: {err}");
+                },
+                Err(_) => {
+                    warn!("Update check timed out");
+                },
+            }
+        });
     }
 
     async fn try_chat(&mut self) -> Result<()> {
+        self.check_for_updates();
+
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
         if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
             execute!(
@@ -794,7 +747,13 @@ impl ChatContext {
                     style::Print("\n")
                 )?;
             } else {
-                self.draw_tip_box(tip)?;
+                draw_box(
+                    self.output.clone(),
+                    "Did you know?",
+                    tip,
+                    GREETING_BREAK_POINT,
+                    Color::DarkGrey,
+                )?;
             }
 
             execute!(
@@ -816,6 +775,45 @@ impl ChatContext {
             let next_tip_index = (current_tip_index + 1) % ROTATING_TIPS.len();
             self.state
                 .set_value("chat.greeting.rotating_tips_current_index", next_tip_index)?;
+        }
+
+        match self.state.get_string(UPDATE_AVAILABLE_KEY) {
+            Ok(Some(version)) => match Version::parse(&version) {
+                Ok(version) => {
+                    let current_version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+                    if version > current_version {
+                        execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+                        let content = format!("Run {} to update to the latest version", "q update".dark_green().bold());
+
+                        if is_small_screen {
+                            queue!(
+                                self.output,
+                                style::Print("🎉 New Update: "),
+                                style::Print(content),
+                                style::Print("\n")
+                            )?;
+                        } else {
+                            draw_box(
+                                self.output.clone(),
+                                "New Update!",
+                                &content,
+                                GREETING_BREAK_POINT,
+                                Color::DarkYellow,
+                            )?;
+                        }
+                        execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+                    }
+                },
+                Err(err) => {
+                    warn!(?err, "Error parsing {UPDATE_AVAILABLE_KEY}: {err}");
+                    let _ = fig_settings::state::remove_value(UPDATE_AVAILABLE_KEY);
+                },
+            },
+            Ok(None) => {},
+            Err(err) => {
+                warn!(?err, "Error getting {UPDATE_AVAILABLE_KEY}: {err}");
+                let _ = fig_settings::state::remove_value(UPDATE_AVAILABLE_KEY);
+            },
         }
 
         if self.interactive && self.all_tools_trusted() {
@@ -3465,9 +3463,6 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
 
 #[cfg(test)]
 mod tests {
-    use bstr::ByteSlice;
-    use shared_writer::TestWriterWithSink;
-
     use super::*;
 
     #[tokio::test]
@@ -3848,88 +3843,6 @@ mod tests {
         for (input, expected) in cases {
             let processed = input.trim().to_string();
             assert_eq!(processed, expected.trim().to_string(), "Failed for input: {}", input);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_draw_tip_box() {
-        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
-        let buf = Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
-        let test_writer = TestWriterWithSink { sink: buf.clone() };
-        let output = SharedWriter::new(test_writer.clone());
-        let tool_manager = ToolManager::default();
-        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
-            .expect("Tools failed to load");
-        let test_client = create_stream(serde_json::json!([]));
-
-        let mut chat_context = ChatContext::new(
-            Arc::clone(&ctx),
-            "fake_conv_id",
-            Settings::new_fake(),
-            State::new_fake(),
-            output,
-            None,
-            InputSource::new_mock(vec![]),
-            true,
-            test_client,
-            || Some(80),
-            tool_manager,
-            None,
-            tool_config,
-            ToolPermissions::new(0),
-        )
-        .await
-        .unwrap();
-
-        // Test with a short tip
-        let short_tip = "This is a short tip";
-        chat_context.draw_tip_box(short_tip).expect("Failed to draw tip box");
-
-        // Test with a longer tip that should wrap
-        let long_tip = "This is a much longer tip that should wrap to multiple lines because it exceeds the inner width of the tip box which is calculated based on the GREETING_BREAK_POINT constant";
-        chat_context.draw_tip_box(long_tip).expect("Failed to draw tip box");
-
-        // Test with a long tip with two long words that should wrap
-        let long_tip_with_one_long_word = {
-            let mut s = "a".repeat(200);
-            s.push(' ');
-            s.push_str(&"a".repeat(200));
-            s
-        };
-        chat_context
-            .draw_tip_box(long_tip_with_one_long_word.as_str())
-            .expect("Failed to draw tip box");
-
-        // Test with a long tip with two long words that should wrap
-        let long_tip_with_two_long_words = "a".repeat(200);
-        chat_context
-            .draw_tip_box(long_tip_with_two_long_words.as_str())
-            .expect("Failed to draw tip box");
-
-        // Get the output and verify it contains expected formatting elements
-        let content = test_writer.get_content();
-        let output_str = content.to_str_lossy();
-
-        // Check for box drawing characters
-        assert!(output_str.contains("╭"), "Output should contain top-left corner");
-        assert!(output_str.contains("╮"), "Output should contain top-right corner");
-        assert!(output_str.contains("│"), "Output should contain vertical lines");
-        assert!(output_str.contains("╰"), "Output should contain bottom-left corner");
-        assert!(output_str.contains("╯"), "Output should contain bottom-right corner");
-
-        // Check for the label
-        assert!(
-            output_str.contains("Did you know?"),
-            "Output should contain the 'Did you know?' label"
-        );
-
-        // Check that both tips are present
-        assert!(output_str.contains(short_tip), "Output should contain the short tip");
-
-        // For the long tip, we check for substrings since it will be wrapped
-        let long_tip_parts: Vec<&str> = long_tip.split_whitespace().collect();
-        for part in long_tip_parts.iter().take(3) {
-            assert!(output_str.contains(part), "Output should contain parts of the long tip");
         }
     }
 }
