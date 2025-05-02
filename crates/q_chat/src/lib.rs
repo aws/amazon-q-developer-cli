@@ -1685,25 +1685,27 @@ impl ChatContext {
                                 }
                             }
 
-                            queue!(
-                                self.output,
-                                style::SetAttribute(Attribute::Bold),
-                                style::SetForegroundColor(Color::DarkYellow),
-                                style::Print("\n    🔧 Hooks:\n")
-                            )?;
-                            Self::print_hook_section(
-                                &mut self.output,
-                                &context_manager.global_config.hooks,
-                                HookTrigger::ConversationStart,
-                            )
-                            .map_err(map_chat_error)?;
+                            if expand {
+                                queue!(
+                                    self.output,
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::SetForegroundColor(Color::DarkYellow),
+                                    style::Print("\n    🔧 Hooks:\n")
+                                )?;
+                                Self::print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.global_config.hooks,
+                                    HookTrigger::ConversationStart,
+                                )
+                                .map_err(map_chat_error)?;
 
-                            Self::print_hook_section(
-                                &mut self.output,
-                                &context_manager.global_config.hooks,
-                                HookTrigger::PerPrompt,
-                            )
-                            .map_err(map_chat_error)?;
+                                Self::print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.global_config.hooks,
+                                    HookTrigger::PerPrompt,
+                                )
+                                .map_err(map_chat_error)?;
+                            }
 
                             // Display profile context
                             execute!(
@@ -1744,25 +1746,27 @@ impl ChatContext {
                                 execute!(self.output, style::Print("\n"))?;
                             }
 
-                            queue!(
-                                self.output,
-                                style::SetAttribute(Attribute::Bold),
-                                style::SetForegroundColor(Color::DarkYellow),
-                                style::Print("    🔧 Hooks:\n")
-                            )?;
-                            Self::print_hook_section(
-                                &mut self.output,
-                                &context_manager.profile_config.hooks,
-                                HookTrigger::ConversationStart,
-                            )
-                            .map_err(map_chat_error)?;
-                            Self::print_hook_section(
-                                &mut self.output,
-                                &context_manager.profile_config.hooks,
-                                HookTrigger::PerPrompt,
-                            )
-                            .map_err(map_chat_error)?;
-                            execute!(self.output, style::Print("\n"))?;
+                            if expand {
+                                queue!(
+                                    self.output,
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::SetForegroundColor(Color::DarkYellow),
+                                    style::Print("    🔧 Hooks:\n")
+                                )?;
+                                Self::print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.profile_config.hooks,
+                                    HookTrigger::ConversationStart,
+                                )
+                                .map_err(map_chat_error)?;
+                                Self::print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.profile_config.hooks,
+                                    HookTrigger::PerPrompt,
+                                )
+                                .map_err(map_chat_error)?;
+                                execute!(self.output, style::Print("\n"))?;
+                            }
 
                             if global_context_files.is_empty() && profile_context_files.is_empty() {
                                 execute!(
@@ -1841,8 +1845,16 @@ impl ChatContext {
                                     style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
                                 )?;
 
-                                self.compact_history(Some(tool_uses.clone()), pending_tool_index, None, true, false)
+                                if expand {
+                                    self.compact_history(
+                                        Some(tool_uses.clone()),
+                                        pending_tool_index,
+                                        None,
+                                        true,
+                                        false,
+                                    )
                                     .await?;
+                                }
 
                                 execute!(self.output, style::Print("\n"))?;
                             }
