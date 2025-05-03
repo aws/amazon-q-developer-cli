@@ -28,6 +28,10 @@ pub struct Config {
 }
 impl Config {
     /// Constructs a config builder.
+    /// <div class="warning">
+    /// Note that a config created from this builder will not have the same safe defaults as one
+    /// created by the <a href="https://crates.io/crates/aws-config" target="_blank">aws-config</a> crate.
+    /// </div>
     pub fn builder() -> Builder {
         Builder::default()
     }
@@ -177,6 +181,10 @@ impl ::std::default::Default for Builder {
 }
 impl Builder {
     /// Constructs a config builder.
+    /// <div class="warning">
+    /// Note that a config created from this builder will not have the same safe defaults as one
+    /// created by the <a href="https://crates.io/crates/aws-config" target="_blank">aws-config</a> crate.
+    /// </div>
     pub fn new() -> Self {
         Self::default()
     }
@@ -1136,6 +1144,7 @@ impl Builder {
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
     /// `behavior-version-latest` cargo feature.
+    ///
     /// ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
@@ -1147,7 +1156,8 @@ impl Builder {
     /// ```
     ///
     /// Customizing behavior major version:
-    /// ```no_run
+    ///
+    ///  ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
     /// let config = amzn_consolas_client::Config::builder()
@@ -1172,6 +1182,7 @@ impl Builder {
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
     /// `behavior-version-latest` cargo feature.
+    //
     /// ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
@@ -1183,7 +1194,8 @@ impl Builder {
     /// ```
     ///
     /// Customizing behavior major version:
-    /// ```no_run
+    ///
+    ///  ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
     /// let config = amzn_consolas_client::Config::builder()
@@ -1290,6 +1302,8 @@ impl ServiceRuntimePlugin {
         runtime_components.push_retry_classifier(
             ::aws_smithy_runtime::client::retries::classifiers::HttpStatusCodeClassifier::default(),
         );
+        runtime_components
+            .push_interceptor(crate::sdk_feature_tracker::retry_mode::RetryModeFeatureTrackerInterceptor::new());
         runtime_components.push_interceptor(::aws_runtime::service_clock_skew::ServiceClockSkewInterceptor::new());
         runtime_components.push_interceptor(::aws_runtime::request_info::RequestInfoInterceptor::new());
         runtime_components.push_interceptor(::aws_runtime::user_agent::UserAgentInterceptor::new());
@@ -1448,11 +1462,17 @@ pub(crate) fn base_client_runtime_plugins(
         }
     }
 
+    let default_retry_partition = "codewhisperer";
+    let default_retry_partition = match config.region() {
+        Some(region) => ::std::borrow::Cow::from(format!("{default_retry_partition}-{}", region)),
+        None => ::std::borrow::Cow::from(default_retry_partition),
+    };
+
     let mut plugins = ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins::new()
                         // defaults
                         .with_client_plugins(::aws_smithy_runtime::client::defaults::default_plugins(
                             ::aws_smithy_runtime::client::defaults::DefaultPluginParams::new()
-                                .with_retry_partition_name("codewhisperer")
+                                .with_retry_partition_name(default_retry_partition)
                                 .with_behavior_version(config.behavior_version.expect("Invalid client configuration: A behavior major version must be set when sending a request or constructing a client. You must set it during client construction or by enabling the `behavior-version-latest` cargo feature."))
                         ))
                         // user config

@@ -169,7 +169,7 @@ impl ResponseParser {
                         AssistantMessage::new_tool_use(
                             message_id,
                             content,
-                            self.tool_uses.clone().into_iter().map(Into::into).collect(),
+                            self.tool_uses.clone().into_iter().collect(),
                         )
                     };
                     return Ok(ResponseEvent::EndStream { message });
@@ -227,7 +227,7 @@ impl ResponseParser {
                     let message = Box::new(AssistantMessage::new_tool_use(
                         Some(self.message_id.clone()),
                         std::mem::take(&mut self.assistant_text),
-                        self.tool_uses.clone().into_iter().map(Into::into).collect(),
+                        self.tool_uses.clone().into_iter().collect(),
                     ));
                     return Err(self.error(RecvErrorKind::UnexpectedToolUseEos {
                         tool_use_id: id,

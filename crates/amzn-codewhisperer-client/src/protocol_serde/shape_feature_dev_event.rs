@@ -2,7 +2,7 @@
 pub fn ser_feature_dev_event(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::FeatureDevEvent,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("conversationId").string(input.conversation_id.as_str());
     }

@@ -12,6 +12,8 @@ pub struct UserInputMessage {
     pub user_intent: ::std::option::Option<crate::types::UserIntent>,
     /// User Input Origin.
     pub origin: ::std::option::Option<crate::types::Origin>,
+    /// Images associated with the Chat Message.
+    pub images: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>,
 }
 impl UserInputMessage {
     /// The content of the chat message.
@@ -34,6 +36,14 @@ impl UserInputMessage {
     pub fn origin(&self) -> ::std::option::Option<&crate::types::Origin> {
         self.origin.as_ref()
     }
+
+    /// Images associated with the Chat Message.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.images.is_none()`.
+    pub fn images(&self) -> &[crate::types::ImageBlock] {
+        self.images.as_deref().unwrap_or_default()
+    }
 }
 impl ::std::fmt::Debug for UserInputMessage {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -42,6 +52,7 @@ impl ::std::fmt::Debug for UserInputMessage {
         formatter.field("user_input_message_context", &self.user_input_message_context);
         formatter.field("user_intent", &self.user_intent);
         formatter.field("origin", &self.origin);
+        formatter.field("images", &self.images);
         formatter.finish()
     }
 }
@@ -61,6 +72,7 @@ pub struct UserInputMessageBuilder {
     pub(crate) user_input_message_context: ::std::option::Option<crate::types::UserInputMessageContext>,
     pub(crate) user_intent: ::std::option::Option<crate::types::UserIntent>,
     pub(crate) origin: ::std::option::Option<crate::types::Origin>,
+    pub(crate) images: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>,
 }
 impl UserInputMessageBuilder {
     /// The content of the chat message.
@@ -135,6 +147,29 @@ impl UserInputMessageBuilder {
         &self.origin
     }
 
+    /// Appends an item to `images`.
+    ///
+    /// To override the contents of this collection use [`set_images`](Self::set_images).
+    ///
+    /// Images associated with the Chat Message.
+    pub fn images(mut self, input: crate::types::ImageBlock) -> Self {
+        let mut v = self.images.unwrap_or_default();
+        v.push(input);
+        self.images = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// Images associated with the Chat Message.
+    pub fn set_images(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>) -> Self {
+        self.images = input;
+        self
+    }
+
+    /// Images associated with the Chat Message.
+    pub fn get_images(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>> {
+        &self.images
+    }
+
     /// Consumes the builder and constructs a [`UserInputMessage`](crate::types::UserInputMessage).
     /// This method will fail if any of the following fields are not set:
     /// - [`content`](crate::types::builders::UserInputMessageBuilder::content)
@@ -151,6 +186,7 @@ impl UserInputMessageBuilder {
             user_input_message_context: self.user_input_message_context,
             user_intent: self.user_intent,
             origin: self.origin,
+            images: self.images,
         })
     }
 }
@@ -161,6 +197,7 @@ impl ::std::fmt::Debug for UserInputMessageBuilder {
         formatter.field("user_input_message_context", &self.user_input_message_context);
         formatter.field("user_intent", &self.user_intent);
         formatter.field("origin", &self.origin);
+        formatter.field("images", &self.images);
         formatter.finish()
     }
 }

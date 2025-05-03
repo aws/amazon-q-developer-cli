@@ -6,11 +6,18 @@
 pub struct GetTransformationPlanInput {
     /// Identifier for the Transformation Job
     pub transformation_job_id: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GetTransformationPlanInput {
     /// Identifier for the Transformation Job
     pub fn transformation_job_id(&self) -> ::std::option::Option<&str> {
         self.transformation_job_id.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 }
 impl GetTransformationPlanInput {
@@ -27,6 +34,7 @@ impl GetTransformationPlanInput {
 #[non_exhaustive]
 pub struct GetTransformationPlanInputBuilder {
     pub(crate) transformation_job_id: ::std::option::Option<::std::string::String>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GetTransformationPlanInputBuilder {
     /// Identifier for the Transformation Job
@@ -47,6 +55,23 @@ impl GetTransformationPlanInputBuilder {
         &self.transformation_job_id
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`GetTransformationPlanInput`](crate::operation::get_transformation_plan::GetTransformationPlanInput).
     pub fn build(
@@ -57,6 +82,7 @@ impl GetTransformationPlanInputBuilder {
     > {
         ::std::result::Result::Ok(crate::operation::get_transformation_plan::GetTransformationPlanInput {
             transformation_job_id: self.transformation_job_id,
+            profile_arn: self.profile_arn,
         })
     }
 }

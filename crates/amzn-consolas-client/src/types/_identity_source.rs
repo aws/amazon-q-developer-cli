@@ -4,6 +4,8 @@
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub enum IdentitySource {
     #[allow(missing_docs)] // documentation missing in model
+    ExternalIdentitySource(crate::types::ExternalIdentitySource),
+    #[allow(missing_docs)] // documentation missing in model
     SsoIdentitySource(crate::types::SsoIdentitySource),
     /// The `Unknown` variant represents cases where new union variant was received. Consider
     /// upgrading the SDK to the latest available version. An unknown enum variant
@@ -17,7 +19,24 @@ pub enum IdentitySource {
     Unknown,
 }
 impl IdentitySource {
-    #[allow(irrefutable_let_patterns)]
+    /// Tries to convert the enum instance into
+    /// [`ExternalIdentitySource`](crate::types::IdentitySource::ExternalIdentitySource), extracting
+    /// the inner [`ExternalIdentitySource`](crate::types::ExternalIdentitySource).
+    /// Returns `Err(&Self)` if it can't be converted.
+    pub fn as_external_identity_source(&self) -> ::std::result::Result<&crate::types::ExternalIdentitySource, &Self> {
+        if let IdentitySource::ExternalIdentitySource(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`ExternalIdentitySource`](crate::types::IdentitySource::ExternalIdentitySource).
+    pub fn is_external_identity_source(&self) -> bool {
+        self.as_external_identity_source().is_ok()
+    }
+
     /// Tries to convert the enum instance into
     /// [`SsoIdentitySource`](crate::types::IdentitySource::SsoIdentitySource), extracting the inner
     /// [`SsoIdentitySource`](crate::types::SsoIdentitySource). Returns `Err(&Self)` if it can't

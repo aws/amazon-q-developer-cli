@@ -2,7 +2,7 @@
 pub fn ser_code_fix_upload_context(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::CodeFixUploadContext,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("codeFixName").string(input.code_fix_name.as_str());
     }

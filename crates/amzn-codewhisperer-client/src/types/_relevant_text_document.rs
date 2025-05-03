@@ -12,6 +12,8 @@ pub struct RelevantTextDocument {
     pub text: ::std::option::Option<::std::string::String>,
     /// DocumentSymbols parsed from a text document
     pub document_symbols: ::std::option::Option<::std::vec::Vec<crate::types::DocumentSymbol>>,
+    /// The type of content(file, prompt, symbol, or workspace)
+    pub r#type: ::std::option::Option<crate::types::ContentType>,
 }
 impl RelevantTextDocument {
     /// Filepath relative to the root of the workspace
@@ -37,6 +39,11 @@ impl RelevantTextDocument {
     pub fn document_symbols(&self) -> &[crate::types::DocumentSymbol] {
         self.document_symbols.as_deref().unwrap_or_default()
     }
+
+    /// The type of content(file, prompt, symbol, or workspace)
+    pub fn r#type(&self) -> ::std::option::Option<&crate::types::ContentType> {
+        self.r#type.as_ref()
+    }
 }
 impl ::std::fmt::Debug for RelevantTextDocument {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -45,6 +52,7 @@ impl ::std::fmt::Debug for RelevantTextDocument {
         formatter.field("programming_language", &self.programming_language);
         formatter.field("text", &"*** Sensitive Data Redacted ***");
         formatter.field("document_symbols", &self.document_symbols);
+        formatter.field("r#type", &self.r#type);
         formatter.finish()
     }
 }
@@ -64,6 +72,7 @@ pub struct RelevantTextDocumentBuilder {
     pub(crate) programming_language: ::std::option::Option<crate::types::ProgrammingLanguage>,
     pub(crate) text: ::std::option::Option<::std::string::String>,
     pub(crate) document_symbols: ::std::option::Option<::std::vec::Vec<crate::types::DocumentSymbol>>,
+    pub(crate) r#type: ::std::option::Option<crate::types::ContentType>,
 }
 impl RelevantTextDocumentBuilder {
     /// Filepath relative to the root of the workspace
@@ -145,6 +154,23 @@ impl RelevantTextDocumentBuilder {
         &self.document_symbols
     }
 
+    /// The type of content(file, prompt, symbol, or workspace)
+    pub fn r#type(mut self, input: crate::types::ContentType) -> Self {
+        self.r#type = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The type of content(file, prompt, symbol, or workspace)
+    pub fn set_type(mut self, input: ::std::option::Option<crate::types::ContentType>) -> Self {
+        self.r#type = input;
+        self
+    }
+
+    /// The type of content(file, prompt, symbol, or workspace)
+    pub fn get_type(&self) -> &::std::option::Option<crate::types::ContentType> {
+        &self.r#type
+    }
+
     /// Consumes the builder and constructs a
     /// [`RelevantTextDocument`](crate::types::RelevantTextDocument). This method will fail if
     /// any of the following fields are not set:
@@ -163,6 +189,7 @@ impl RelevantTextDocumentBuilder {
             programming_language: self.programming_language,
             text: self.text,
             document_symbols: self.document_symbols,
+            r#type: self.r#type,
         })
     }
 }
@@ -173,6 +200,7 @@ impl ::std::fmt::Debug for RelevantTextDocumentBuilder {
         formatter.field("programming_language", &self.programming_language);
         formatter.field("text", &"*** Sensitive Data Redacted ***");
         formatter.field("document_symbols", &self.document_symbols);
+        formatter.field("r#type", &self.r#type);
         formatter.finish()
     }
 }

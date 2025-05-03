@@ -23,7 +23,10 @@ pub fn parse_http_error_metadata(
     _response_status: u16,
     response_headers: &::aws_smithy_runtime_api::http::Headers,
     response_body: &[u8],
-) -> Result<::aws_smithy_types::error::metadata::Builder, ::aws_smithy_json::deserialize::error::DeserializeError> {
+) -> ::std::result::Result<
+    ::aws_smithy_types::error::metadata::Builder,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+> {
     crate::json_errors::parse_error_metadata(response_body, response_headers)
 }
 
@@ -71,7 +74,10 @@ pub(crate) mod shape_validation_error;
 
 pub fn parse_event_stream_error_metadata(
     payload: &::bytes::Bytes,
-) -> Result<::aws_smithy_types::error::metadata::Builder, ::aws_smithy_json::deserialize::error::DeserializeError> {
+) -> ::std::result::Result<
+    ::aws_smithy_types::error::metadata::Builder,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+> {
     crate::json_errors::parse_error_metadata(payload, &::aws_smithy_runtime_api::http::Headers::new())
 }
 
@@ -88,6 +94,8 @@ pub(crate) mod shape_binary_metadata_event;
 pub(crate) mod shape_binary_payload_event;
 
 pub(crate) mod shape_chat_message;
+
+pub(crate) mod shape_citation_event;
 
 pub(crate) mod shape_code_event;
 
@@ -107,6 +115,8 @@ pub(crate) mod shape_programming_language;
 
 pub(crate) mod shape_supplementary_web_links_event;
 
+pub(crate) mod shape_tool_result_event;
+
 pub(crate) mod shape_tool_use_event;
 
 pub(crate) mod shape_transformation_export_context;
@@ -117,7 +127,11 @@ pub(crate) mod shape_assistant_response_message;
 
 pub(crate) mod shape_user_input_message;
 
+pub(crate) mod shape_citation_target;
+
 pub(crate) mod shape_followup_prompt;
+
+pub(crate) mod shape_image_block;
 
 pub(crate) mod shape_intent_map;
 
@@ -130,6 +144,8 @@ pub(crate) mod shape_references;
 pub(crate) mod shape_supplementary_web_link;
 
 pub(crate) mod shape_supplementary_web_links;
+
+pub(crate) mod shape_tool_result;
 
 pub(crate) mod shape_tool_use;
 
@@ -149,6 +165,8 @@ pub(crate) mod shape_env_state;
 
 pub(crate) mod shape_git_state;
 
+pub(crate) mod shape_image_source;
+
 pub(crate) mod shape_intent_data;
 
 pub(crate) mod shape_interaction_component_entry;
@@ -159,7 +177,7 @@ pub(crate) mod shape_span;
 
 pub(crate) mod shape_tool;
 
-pub(crate) mod shape_tool_result;
+pub(crate) mod shape_tool_result_content;
 
 pub(crate) mod shape_user_settings;
 
@@ -188,6 +206,10 @@ pub(crate) mod shape_tool_specification;
 pub(crate) mod shape_action;
 
 pub(crate) mod shape_alert;
+
+pub(crate) mod shape_code_description;
+
+pub(crate) mod shape_diagnostic_related_information;
 
 pub(crate) mod shape_document_symbol;
 
@@ -218,6 +240,8 @@ pub(crate) mod shape_text;
 pub(crate) mod shape_tool_input_schema;
 
 pub(crate) mod shape_alert_component_list;
+
+pub(crate) mod shape_diagnostic_location;
 
 pub(crate) mod shape_infrastructure_update_transition;
 

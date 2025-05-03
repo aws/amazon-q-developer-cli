@@ -26,6 +26,12 @@ use super::{
 
 const READONLY_OPS: [&str; 6] = ["get", "describe", "list", "ls", "search", "batch_get"];
 
+/// The environment variable name where we set additional metadata for the AWS CLI user agent.
+const USER_AGENT_ENV_VAR: &str = "AWS_EXECUTION_ENV";
+const USER_AGENT_APP_NAME: &str = "AmazonQ-For-CLI";
+const USER_AGENT_VERSION_KEY: &str = "Version";
+const USER_AGENT_VERSION_VALUE: &str = env!("CARGO_PKG_VERSION");
+
 // TODO: we should perhaps composite this struct with an interface that we can use to mock the
 // actual cli with. That will allow us to more thoroughly test it.
 #[derive(Debug, Clone, Deserialize)]
@@ -45,7 +51,31 @@ impl UseAws {
 
     pub async fn invoke(&self, _ctx: &Context, _updates: impl Write) -> Result<InvokeOutput> {
         let mut command = tokio::process::Command::new("aws");
-        command.envs(std::env::vars()).arg("--region").arg(&self.region);
+
+        // Set up environment variables
+        let mut env_vars: std::collections::HashMap<String, String> = std::env::vars().collect();
+
+        // Set up additional metadata for the AWS CLI user agent
+        let user_agent_metadata_value = format!(
+            "{} {}/{}",
+            USER_AGENT_APP_NAME, USER_AGENT_VERSION_KEY, USER_AGENT_VERSION_VALUE
+        );
+
+        // If the user agent metadata env var already exists, append to it, otherwise set it
+        if let Some(existing_value) = env_vars.get(USER_AGENT_ENV_VAR) {
+            if !existing_value.is_empty() {
+                env_vars.insert(
+                    USER_AGENT_ENV_VAR.to_string(),
+                    format!("{} {}", existing_value, user_agent_metadata_value),
+                );
+            } else {
+                env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
+            }
+        } else {
+            env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
+        }
+
+        command.envs(env_vars).arg("--region").arg(&self.region);
         if let Some(profile_name) = self.profile_name.as_deref() {
             command.arg("--profile").arg(profile_name);
         }

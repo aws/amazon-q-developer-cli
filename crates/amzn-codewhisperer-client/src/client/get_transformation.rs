@@ -6,6 +6,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`transformation_job_id(impl Into<String>)`](crate::operation::get_transformation::builders::GetTransformationFluentBuilder::transformation_job_id) / [`set_transformation_job_id(Option<String>)`](crate::operation::get_transformation::builders::GetTransformationFluentBuilder::set_transformation_job_id):<br>required: **true**<br>Identifier for the Transformation Job<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::get_transformation::builders::GetTransformationFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::get_transformation::builders::GetTransformationFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`GetTransformationOutput`](crate::operation::get_transformation::GetTransformationOutput)
     ///   with field(s):

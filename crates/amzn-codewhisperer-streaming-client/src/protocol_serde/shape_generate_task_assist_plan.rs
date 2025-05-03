@@ -185,7 +185,8 @@ pub fn de_generate_task_assist_plan_http_error(
 
 pub fn ser_generate_task_assist_plan_input(
     input: &crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_generate_task_assist_plan_input::ser_generate_task_assist_plan_input_input(

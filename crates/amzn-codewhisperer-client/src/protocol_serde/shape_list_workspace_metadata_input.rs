@@ -2,7 +2,7 @@
 pub fn ser_list_workspace_metadata_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.workspace_root {
         object.key("workspaceRoot").string(var_1.as_str());
     }
@@ -14,6 +14,9 @@ pub fn ser_list_workspace_metadata_input_input(
             #[allow(clippy::useless_conversion)]
             ::aws_smithy_types::Number::NegInt((*var_3).into()),
         );
+    }
+    if let Some(var_4) = &input.profile_arn {
+        object.key("profileArn").string(var_4.as_str());
     }
     Ok(())
 }

@@ -19,7 +19,6 @@ use std::process::{
     Command,
     ExitCode,
 };
-use std::sync::Mutex;
 use std::time::Duration;
 
 use anstream::println;
@@ -50,8 +49,6 @@ use globset::{
 use regex::Regex;
 pub use region_check::region_check;
 use tracing::warn;
-
-static SET_CTRLC_HANDLER: Mutex<bool> = Mutex::new(false);
 
 /// Glob patterns against full paths
 pub fn glob_dir(glob: &GlobSet, directory: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
@@ -236,17 +233,6 @@ pub fn choose(prompt: impl Display, options: &[impl ToString]) -> Result<Option<
         return Ok(Some(0));
     }
 
-    let mut set_ctrlc_handler = SET_CTRLC_HANDLER.lock().expect("SET_CTRLC_HANDLER is poisoned");
-    if !*set_ctrlc_handler {
-        ctrlc::set_handler(move || {
-            let term = dialoguer::console::Term::stdout();
-            let _ = term.show_cursor();
-        })
-        .context("Failed to set ctrlc handler")?;
-        *set_ctrlc_handler = true;
-    }
-    drop(set_ctrlc_handler);
-
     match Select::with_theme(&dialoguer_theme())
         .items(options)
         .default(0)
@@ -360,7 +346,7 @@ mod tests {
         };
 
         let app_process_name = OsString::from(APP_PROCESS_NAME);
-        let system = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+        let system = System::new_with_specifics(RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()));
         cfg_if! {
             if #[cfg(windows)] {
                 let mut processes = system.processes_by_name(&app_process_name);

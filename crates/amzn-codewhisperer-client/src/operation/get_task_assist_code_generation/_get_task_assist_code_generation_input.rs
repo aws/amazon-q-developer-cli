@@ -8,6 +8,8 @@ pub struct GetTaskAssistCodeGenerationInput {
     pub conversation_id: ::std::option::Option<::std::string::String>,
     /// ID which represents a single code generation in a conversation
     pub code_generation_id: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GetTaskAssistCodeGenerationInput {
     /// ID which represents a multi-turn conversation
@@ -18,6 +20,11 @@ impl GetTaskAssistCodeGenerationInput {
     /// ID which represents a single code generation in a conversation
     pub fn code_generation_id(&self) -> ::std::option::Option<&str> {
         self.code_generation_id.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 }
 impl GetTaskAssistCodeGenerationInput {
@@ -36,6 +43,7 @@ impl GetTaskAssistCodeGenerationInput {
 pub struct GetTaskAssistCodeGenerationInputBuilder {
     pub(crate) conversation_id: ::std::option::Option<::std::string::String>,
     pub(crate) code_generation_id: ::std::option::Option<::std::string::String>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GetTaskAssistCodeGenerationInputBuilder {
     /// ID which represents a multi-turn conversation
@@ -74,6 +82,23 @@ impl GetTaskAssistCodeGenerationInputBuilder {
         &self.code_generation_id
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`GetTaskAssistCodeGenerationInput`](crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationInput).
     pub fn build(
@@ -86,6 +111,7 @@ impl GetTaskAssistCodeGenerationInputBuilder {
             crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationInput {
                 conversation_id: self.conversation_id,
                 code_generation_id: self.code_generation_id,
+                profile_arn: self.profile_arn,
             },
         )
     }

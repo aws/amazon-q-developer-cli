@@ -2,7 +2,7 @@
 pub fn ser_assistant_response_message(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::AssistantResponseMessage,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.message_id {
         object.key("messageId").string(var_1.as_str());
     }

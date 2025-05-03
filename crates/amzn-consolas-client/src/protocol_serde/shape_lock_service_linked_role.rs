@@ -99,7 +99,8 @@ pub fn de_lock_service_linked_role_http_response(
 
 pub fn ser_lock_service_linked_role_input(
     input: &crate::operation::lock_service_linked_role::LockServiceLinkedRoleInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_lock_service_linked_role_input::ser_lock_service_linked_role_input_input(
@@ -113,7 +114,7 @@ pub fn ser_lock_service_linked_role_input(
 pub(crate) fn de_lock_service_linked_role(
     value: &[u8],
     mut builder: crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

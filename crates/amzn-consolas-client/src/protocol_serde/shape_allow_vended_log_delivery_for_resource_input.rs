@@ -2,7 +2,7 @@
 pub fn ser_allow_vended_log_delivery_for_resource_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.resource_arn_being_authorized {
         object.key("resourceArnBeingAuthorized").string(var_1.as_str());
     }

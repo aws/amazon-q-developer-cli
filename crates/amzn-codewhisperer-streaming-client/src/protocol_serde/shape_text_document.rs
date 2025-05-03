@@ -2,7 +2,7 @@
 pub fn ser_text_document(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::TextDocument,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("relativeFilePath").string(input.relative_file_path.as_str());
     }

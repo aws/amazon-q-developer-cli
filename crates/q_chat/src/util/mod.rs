@@ -1,4 +1,6 @@
 pub mod issue;
+pub mod shared_writer;
+pub mod ui;
 
 use std::io::Write;
 use std::time::Duration;

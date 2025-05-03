@@ -7,6 +7,7 @@ impl super::Client {
     /// - The fluent builder is configurable:
     ///   - [`workspace_state(WorkspaceState)`](crate::operation::start_transformation::builders::StartTransformationFluentBuilder::workspace_state) / [`set_workspace_state(Option<WorkspaceState>)`](crate::operation::start_transformation::builders::StartTransformationFluentBuilder::set_workspace_state):<br>required: **true**<br>Represents a Workspace state uploaded to S3 for Async Code Actions<br>
     ///   - [`transformation_spec(TransformationSpec)`](crate::operation::start_transformation::builders::StartTransformationFluentBuilder::transformation_spec) / [`set_transformation_spec(Option<TransformationSpec>)`](crate::operation::start_transformation::builders::StartTransformationFluentBuilder::set_transformation_spec):<br>required: **true**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::start_transformation::builders::StartTransformationFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::start_transformation::builders::StartTransformationFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`StartTransformationOutput`](crate::operation::start_transformation::StartTransformationOutput)
     ///   with field(s):

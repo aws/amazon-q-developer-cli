@@ -3,7 +3,16 @@
 /// Structure to represent bootstrap conversation request.
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
-pub struct CreateTaskAssistConversationInput {}
+pub struct CreateTaskAssistConversationInput {
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
+}
+impl CreateTaskAssistConversationInput {
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
+    }
+}
 impl CreateTaskAssistConversationInput {
     /// Creates a new builder-style object to manufacture
     /// [`CreateTaskAssistConversationInput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationInput).
@@ -17,8 +26,27 @@ impl CreateTaskAssistConversationInput {
 /// [`CreateTaskAssistConversationInput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
-pub struct CreateTaskAssistConversationInputBuilder {}
+pub struct CreateTaskAssistConversationInputBuilder {
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+}
 impl CreateTaskAssistConversationInputBuilder {
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`CreateTaskAssistConversationInput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationInput).
     pub fn build(
@@ -28,7 +56,9 @@ impl CreateTaskAssistConversationInputBuilder {
         ::aws_smithy_types::error::operation::BuildError,
     > {
         ::std::result::Result::Ok(
-            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationInput {},
+            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationInput {
+                profile_arn: self.profile_arn,
+            },
         )
     }
 }

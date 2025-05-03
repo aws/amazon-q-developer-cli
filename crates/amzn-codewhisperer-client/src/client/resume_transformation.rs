@@ -7,6 +7,7 @@ impl super::Client {
     /// - The fluent builder is configurable:
     ///   - [`transformation_job_id(impl Into<String>)`](crate::operation::resume_transformation::builders::ResumeTransformationFluentBuilder::transformation_job_id) / [`set_transformation_job_id(Option<String>)`](crate::operation::resume_transformation::builders::ResumeTransformationFluentBuilder::set_transformation_job_id):<br>required: **true**<br>Identifier for the Transformation Job<br>
     ///   - [`user_action_status(TransformationUserActionStatus)`](crate::operation::resume_transformation::builders::ResumeTransformationFluentBuilder::user_action_status) / [`set_user_action_status(Option<TransformationUserActionStatus>)`](crate::operation::resume_transformation::builders::ResumeTransformationFluentBuilder::set_user_action_status):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::resume_transformation::builders::ResumeTransformationFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::resume_transformation::builders::ResumeTransformationFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`ResumeTransformationOutput`](crate::operation::resume_transformation::ResumeTransformationOutput)
     ///   with field(s):

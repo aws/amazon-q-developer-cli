@@ -2,9 +2,12 @@
 pub fn ser_delete_task_assist_conversation_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.conversation_id {
         object.key("conversationId").string(var_1.as_str());
+    }
+    if let Some(var_2) = &input.profile_arn {
+        object.key("profileArn").string(var_2.as_str());
     }
     Ok(())
 }

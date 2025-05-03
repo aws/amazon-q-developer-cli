@@ -11,16 +11,23 @@ pub use crate::types::_assistant_response_message::AssistantResponseMessage;
 pub use crate::types::_chat_message::ChatMessage;
 pub use crate::types::_chat_response_stream::ChatResponseStream;
 pub use crate::types::_chat_trigger_type::ChatTriggerType;
+pub use crate::types::_citation_event::CitationEvent;
+pub use crate::types::_citation_target::CitationTarget;
 pub use crate::types::_cloud_watch_troubleshooting_link::CloudWatchTroubleshootingLink;
+pub use crate::types::_code_description::CodeDescription;
 pub use crate::types::_code_event::CodeEvent;
 pub use crate::types::_code_reference_event::CodeReferenceEvent;
 pub use crate::types::_command_input::CommandInput;
 pub use crate::types::_conflict_exception_reason::ConflictExceptionReason;
 pub use crate::types::_console_state::ConsoleState;
+pub use crate::types::_content_type::ContentType;
 pub use crate::types::_conversation_state::ConversationState;
 pub use crate::types::_cursor_state::CursorState;
 pub use crate::types::_diagnostic::Diagnostic;
+pub use crate::types::_diagnostic_location::DiagnosticLocation;
+pub use crate::types::_diagnostic_related_information::DiagnosticRelatedInformation;
 pub use crate::types::_diagnostic_severity::DiagnosticSeverity;
+pub use crate::types::_diagnostic_tag::DiagnosticTag;
 pub use crate::types::_document_symbol::DocumentSymbol;
 pub use crate::types::_dry_run_succeed_event::DryRunSucceedEvent;
 pub use crate::types::_editor_state::EditorState;
@@ -30,6 +37,9 @@ pub use crate::types::_followup_prompt::FollowupPrompt;
 pub use crate::types::_followup_prompt_event::FollowupPromptEvent;
 pub use crate::types::_generate_code_from_commands_response_stream::GenerateCodeFromCommandsResponseStream;
 pub use crate::types::_git_state::GitState;
+pub use crate::types::_image_block::ImageBlock;
+pub use crate::types::_image_format::ImageFormat;
+pub use crate::types::_image_source::ImageSource;
 pub use crate::types::_infrastructure_update::InfrastructureUpdate;
 pub use crate::types::_infrastructure_update_transition::InfrastructureUpdateTransition;
 pub use crate::types::_intent_data_type::IntentDataType;
@@ -56,6 +66,7 @@ pub use crate::types::_resource_list::ResourceList;
 pub use crate::types::_runtime_diagnostic::RuntimeDiagnostic;
 pub use crate::types::_section::Section;
 pub use crate::types::_section_component::SectionComponent;
+pub use crate::types::_service_quota_exceeded_exception_reason::ServiceQuotaExceededExceptionReason;
 pub use crate::types::_shell_history_entry::ShellHistoryEntry;
 pub use crate::types::_shell_state::ShellState;
 pub use crate::types::_span::Span;
@@ -83,6 +94,7 @@ pub use crate::types::_tool::Tool;
 pub use crate::types::_tool_input_schema::ToolInputSchema;
 pub use crate::types::_tool_result::ToolResult;
 pub use crate::types::_tool_result_content_block::ToolResultContentBlock;
+pub use crate::types::_tool_result_event::ToolResultEvent;
 pub use crate::types::_tool_result_status::ToolResultStatus;
 pub use crate::types::_tool_specification::ToolSpecification;
 pub use crate::types::_tool_use::ToolUse;
@@ -118,7 +130,13 @@ mod _chat_response_stream;
 
 mod _chat_trigger_type;
 
+mod _citation_event;
+
+mod _citation_target;
+
 mod _cloud_watch_troubleshooting_link;
+
+mod _code_description;
 
 mod _code_event;
 
@@ -130,13 +148,21 @@ mod _conflict_exception_reason;
 
 mod _console_state;
 
+mod _content_type;
+
 mod _conversation_state;
 
 mod _cursor_state;
 
 mod _diagnostic;
 
+mod _diagnostic_location;
+
+mod _diagnostic_related_information;
+
 mod _diagnostic_severity;
+
+mod _diagnostic_tag;
 
 mod _document_symbol;
 
@@ -155,6 +181,12 @@ mod _followup_prompt_event;
 mod _generate_code_from_commands_response_stream;
 
 mod _git_state;
+
+mod _image_block;
+
+mod _image_format;
+
+mod _image_source;
 
 mod _infrastructure_update;
 
@@ -207,6 +239,8 @@ mod _runtime_diagnostic;
 mod _section;
 
 mod _section_component;
+
+mod _service_quota_exceeded_exception_reason;
 
 mod _shell_history_entry;
 
@@ -261,6 +295,8 @@ mod _tool_input_schema;
 mod _tool_result;
 
 mod _tool_result_content_block;
+
+mod _tool_result_event;
 
 mod _tool_result_status;
 

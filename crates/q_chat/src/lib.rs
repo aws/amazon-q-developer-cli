@@ -9,7 +9,6 @@ mod message;
 mod parse;
 mod parser;
 mod prompt;
-mod shared_writer;
 mod skim_integration;
 mod token_counter;
 mod tool_manager;
@@ -54,7 +53,6 @@ use crossterm::style::{
     Color,
     Stylize,
 };
-use crossterm::terminal::ClearType;
 use crossterm::{
     cursor,
     execute,
@@ -75,6 +73,7 @@ use fig_api_client::model::{
     ToolResultStatus,
 };
 use fig_os_shim::Context;
+use fig_settings::keys::UPDATE_AVAILABLE_KEY;
 use fig_settings::{
     Settings,
     State,
@@ -94,7 +93,7 @@ use rand::distr::{
     Alphanumeric,
     SampleString,
 };
-use shared_writer::SharedWriter;
+use semver::Version;
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -183,6 +182,9 @@ use uuid::Uuid;
 use winnow::Partial;
 use winnow::stream::Offset;
 
+use crate::util::shared_writer::SharedWriter;
+use crate::util::ui::draw_box;
+
 const WELCOME_TEXT: &str = color_print::cstr! {"
 <em>Welcome to </em>
 <cyan!>
@@ -199,7 +201,8 @@ const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
 <em>Welcome to <cyan!>Amazon Q</cyan!>!</em>
 "};
 
-const ROTATING_TIPS: [&str; 8] = [
+const ROTATING_TIPS: [&str; 9] = [
+    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
     color_print::cstr! {"Q can use tools without asking for confirmation every time. Give <green!>/tools trust</green!> a try"},
@@ -214,14 +217,14 @@ const GREETING_BREAK_POINT: usize = 67;
 
 const POPULAR_SHORTCUTS: &str = color_print::cstr! {"
 <black!>
-<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + k</green!> fuzzy search
+<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search
 </black!>"};
 
 const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"
 <black!>
 <green!>/help</green!> all commands
 <green!>ctrl + j</green!> new lines
-<green!>ctrl + k</green!> fuzzy search
+<green!>ctrl + s</green!> fuzzy search
 </black!>
 "};
 const HELP_TEXT: &str = color_print::cstr! {"
@@ -254,7 +257,6 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>help</em>        <black!>Show prompts help</black!>
   <em>list</em>        <black!>List or search available prompts</black!>
   <em>get</em>         <black!>Retrieve and send a prompt</black!>
-<em>/context</em>      <black!>Manage context files for the chat session</black!>
 <em>/context</em>      <black!>Manage context files and hooks for the chat session</black!>
   <em>help</em>        <black!>Show context help</black!>
   <em>show</em>        <black!>Display current context rules configuration [--expand]</black!>
@@ -270,7 +272,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
 <em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
-<em>Ctrl(^) + k</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
+<em>Ctrl(^) + s</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
                       <black!>Change the keybind to ctrl+x with: q settings chat.skimCommandKey x (where x is any key)</black!>
 
 "};
@@ -674,85 +676,52 @@ impl ChatContext {
         Ok(content.trim().to_string())
     }
 
-    fn draw_tip_box(&mut self, text: &str) -> Result<()> {
-        let box_width = GREETING_BREAK_POINT;
-        let inner_width = box_width - 4; // account for │ and padding
+    fn check_for_updates(&mut self) {
+        let exe_path = match std::env::current_exe().and_then(|p| p.canonicalize()) {
+            Ok(path) => path,
+            Err(_) => return, // Early return if we can't get the executable path
+        };
 
-        // wrap the single line into multiple lines respecting inner width
-        // Manually wrap the text by splitting at word boundaries
-        let mut wrapped_lines = Vec::new();
-        let mut line = String::new();
+        if let Some(exe_parent) = exe_path.parent() {
+            let local_bin = match fig_util::directories::home_local_bin().map(|p| p.canonicalize()) {
+                Ok(path) => path,
+                Err(_) => return,
+            };
 
-        for word in text.split_whitespace() {
-            if line.len() + word.len() < inner_width {
-                if !line.is_empty() {
-                    line.push(' ');
+            if let Ok(local_bin) = local_bin {
+                if exe_parent != local_bin {
+                    let _ = self.state.remove_value(UPDATE_AVAILABLE_KEY);
+                    return;
                 }
-                line.push_str(word);
-            } else {
-                wrapped_lines.push(line);
-                line = word.to_string();
             }
         }
 
-        if !line.is_empty() {
-            wrapped_lines.push(line);
-        }
+        tokio::spawn(async {
+            let result =
+                tokio::time::timeout(std::time::Duration::from_secs(3), fig_install::check_for_updates(false)).await;
 
-        // ───── Did you know? ─────
-        let label = " Did you know? ";
-        let side_len = (box_width.saturating_sub(label.len())) / 2;
-        let top_border = format!(
-            "╭{}{}{}╮",
-            "─".repeat(side_len - 1),
-            label,
-            "─".repeat(box_width - side_len - label.len() - 1)
-        );
-
-        // Build output
-        execute!(
-            self.output,
-            terminal::Clear(ClearType::CurrentLine),
-            cursor::MoveToColumn(0),
-            style::Print(format!("{top_border}\n")),
-        )?;
-
-        // Top vertical padding
-        execute!(
-            self.output,
-            style::Print(format!("│{: <width$}│\n", "", width = box_width - 2))
-        )?;
-
-        // Centered wrapped content
-        for line in wrapped_lines {
-            let visible_line_len = strip_ansi_escapes::strip(&line).len();
-            let left_pad = (box_width - 4 - visible_line_len) / 2;
-
-            let content = format!(
-                "│ {: <pad$}{}{: <rem$} │",
-                "",
-                line,
-                "",
-                pad = left_pad,
-                rem = box_width - 4 - left_pad - visible_line_len
-            );
-            execute!(self.output, style::Print(format!("{}\n", content)))?;
-        }
-
-        // Bottom vertical padding
-        execute!(
-            self.output,
-            style::Print(format!("│{: <width$}│\n", "", width = box_width - 2))
-        )?;
-
-        // Bottom rounded corner line: ╰────────────╯
-        let bottom = format!("╰{}╯", "─".repeat(box_width - 2));
-        execute!(self.output, style::Print(format!("{}\n", bottom)))?;
-
-        Ok(())
+            match result {
+                Ok(Ok(Some(new_package))) => {
+                    if let Err(err) =
+                        fig_settings::state::set_value(UPDATE_AVAILABLE_KEY, new_package.version.to_string())
+                    {
+                        warn!(?err, "Error setting {UPDATE_AVAILABLE_KEY}: {err}");
+                    }
+                },
+                Ok(Ok(None)) => {},
+                Ok(Err(err)) => {
+                    warn!(?err, "Error checking for updates: {err}");
+                },
+                Err(_) => {
+                    warn!("Update check timed out");
+                },
+            }
+        });
     }
 
     async fn try_chat(&mut self) -> Result<()> {
+        self.check_for_updates();
+
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
         if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
             execute!(
@@ -778,8 +747,29 @@ impl ChatContext {
                     style::Print("\n")
                 )?;
             } else {
-                self.draw_tip_box(tip)?;
+                draw_box(
+                    self.output.clone(),
+                    "Did you know?",
+                    tip,
+                    GREETING_BREAK_POINT,
+                    Color::DarkGrey,
+                )?;
             }
+
+            execute!(
+                self.output,
+                style::Print(if is_small_screen {
+                    SMALL_SCREEN_POPULAR_SHORTCUTS
+                } else {
+                    POPULAR_SHORTCUTS
+                }),
+                style::Print(
+                    "━"
+                        .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
+                        .dark_grey()
+                )
+            )?;
+            execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
 
             // update the current tip index
             let next_tip_index = (current_tip_index + 1) % ROTATING_TIPS.len();
@@ -787,20 +777,45 @@ impl ChatContext {
                 .set_value("chat.greeting.rotating_tips_current_index", next_tip_index)?;
         }
 
-        execute!(
-            self.output,
-            style::Print(if is_small_screen {
-                SMALL_SCREEN_POPULAR_SHORTCUTS
-            } else {
-                POPULAR_SHORTCUTS
-            }),
-            style::Print(
-                "━"
-                    .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
-                    .dark_grey()
-            )
-        )?;
-        execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+        match self.state.get_string(UPDATE_AVAILABLE_KEY) {
+            Ok(Some(version)) => match Version::parse(&version) {
+                Ok(version) => {
+                    let current_version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+                    if version > current_version {
+                        execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+                        let content = format!("Run {} to update to the latest version", "q update".dark_green().bold());
+
+                        if is_small_screen {
+                            queue!(
+                                self.output,
+                                style::Print("🎉 New Update: "),
+                                style::Print(content),
+                                style::Print("\n")
+                            )?;
+                        } else {
+                            draw_box(
+                                self.output.clone(),
+                                "New Update!",
+                                &content,
+                                GREETING_BREAK_POINT,
+                                Color::DarkYellow,
+                            )?;
+                        }
+                        execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+                    }
+                },
+                Err(err) => {
+                    warn!(?err, "Error parsing {UPDATE_AVAILABLE_KEY}: {err}");
+                    let _ = fig_settings::state::remove_value(UPDATE_AVAILABLE_KEY);
+                },
+            },
+            Ok(None) => {},
+            Err(err) => {
+                warn!(?err, "Error getting {UPDATE_AVAILABLE_KEY}: {err}");
+                let _ = fig_settings::state::remove_value(UPDATE_AVAILABLE_KEY);
+            },
+        }
+
         if self.interactive && self.all_tools_trusted() {
             queue!(
                 self.output,
@@ -824,6 +839,7 @@ impl ChatContext {
             if self.interactive {
                 execute!(
                     self.output,
+                    style::SetAttribute(Attribute::Reset),
                     style::SetForegroundColor(Color::Magenta),
                     style::Print("> "),
                     style::SetAttribute(Attribute::Reset),
@@ -1281,7 +1297,11 @@ impl ChatContext {
             self.input_source
                 .put_skim_command_selector(Arc::new(context_manager.clone()), tool_names);
         }
-
+        execute!(
+            self.output,
+            style::SetForegroundColor(Color::Reset),
+            style::SetAttribute(Attribute::Reset)
+        )?;
         let user_input = match self.read_user_input(&self.generate_tool_trust_prompt(), false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
@@ -1479,6 +1499,7 @@ impl ChatContext {
                             // Display the content as if the user typed it
                             execute!(
                                 self.output,
+                                style::SetAttribute(Attribute::Reset),
                                 style::SetForegroundColor(Color::Magenta),
                                 style::Print("> "),
                                 style::SetAttribute(Attribute::Reset),
@@ -2760,6 +2781,7 @@ impl ChatContext {
                 tool_telemetry = tool_telemetry.and_modify(|ev| {
                     ev.custom_tool_call_latency = Some(tool_time.as_secs() as usize);
                     ev.input_token_size = Some(ct.get_input_token_size());
+                    ev.is_custom_tool = true;
                 });
             }
             let tool_time = format!("{}.{}", tool_time.as_secs(), tool_time.subsec_millis());

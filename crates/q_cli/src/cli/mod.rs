@@ -5,6 +5,7 @@ mod completion;
 mod debug;
 mod diagnostics;
 mod doctor;
+mod feed;
 mod hook;
 mod init;
 mod inline;
@@ -43,6 +44,7 @@ use eyre::{
     WrapErr,
     bail,
 };
+use feed::Feed;
 use fig_auth::is_logged_in;
 use fig_ipc::local::open_ui_element;
 use fig_log::{
@@ -176,7 +178,12 @@ pub enum CliRootCommands {
     Telemetry(telemetry::TelemetrySubcommand),
     /// Version
     #[command(hide = true)]
-    Version,
+    Version {
+        /// Show the changelog (use --changelog=all for all versions, or --changelog=x.x.x for a
+        /// specific version)
+        #[arg(long, num_args = 0..=1, default_missing_value = "")]
+        changelog: Option<String>,
+    },
     /// Open the dashboard
     Dashboard,
     /// AI assistant in your terminal
@@ -203,6 +210,7 @@ impl CliRootCommands {
             CliRootCommands::RootUser(RootUserSubcommand::Login(_)) => "login",
             CliRootCommands::RootUser(RootUserSubcommand::Logout) => "logout",
             CliRootCommands::RootUser(RootUserSubcommand::Whoami { .. }) => "whoami",
+            CliRootCommands::RootUser(RootUserSubcommand::Profile) => "profile",
             CliRootCommands::User(_) => "user",
             CliRootCommands::Doctor(_) => "doctor",
             CliRootCommands::Completion(_) => "completion",
@@ -213,7 +221,7 @@ impl CliRootCommands {
             CliRootCommands::Integrations(_) => "integrations",
             CliRootCommands::Translate(_) => "translate",
             CliRootCommands::Telemetry(_) => "telemetry",
-            CliRootCommands::Version => "version",
+            CliRootCommands::Version { .. } => "version",
             CliRootCommands::Dashboard => "dashboard",
             CliRootCommands::Chat { .. } => "chat",
             CliRootCommands::Inline(_) => "inline",
@@ -323,7 +331,7 @@ impl Cli {
                 CliRootCommands::Integrations(subcommand) => subcommand.execute().await,
                 CliRootCommands::Translate(args) => args.execute().await,
                 CliRootCommands::Telemetry(subcommand) => subcommand.execute().await,
-                CliRootCommands::Version => Self::print_version(),
+                CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
                 CliRootCommands::Chat(args) => q_chat::launch_chat(args).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
@@ -360,9 +368,80 @@ impl Cli {
         Ok(ExitCode::SUCCESS)
     }
 
+    fn print_changelog_entry(entry: &feed::Entry) -> Result<()> {
+        println!("Version {} ({})", entry.version, entry.date);
+
+        if entry.changes.is_empty() {
+            println!("  No changes recorded for this version.");
+        } else {
+            for change in &entry.changes {
+                let type_label = match change.change_type.as_str() {
+                    "added" => "Added",
+                    "fixed" => "Fixed",
+                    "changed" => "Changed",
+                    other => other,
+                };
+
+                println!("  - {}: {}", type_label, change.description);
+            }
+        }
+
+        println!();
+        Ok(())
+    }
+
     #[allow(clippy::unused_self)]
-    fn print_version() -> Result<ExitCode> {
-        let _ = writeln!(stdout(), "{}", Self::command().render_version());
+    fn print_version(changelog: Option<String>) -> Result<ExitCode> {
+        // If no changelog is requested, display normal version information
+        if changelog.is_none() {
+            let _ = writeln!(stdout(), "{}", Self::command().render_version());
+            return Ok(ExitCode::SUCCESS);
+        }
+
+        let changelog_value = changelog.unwrap_or_default();
+        let feed = Feed::load();
+
+        // Display changelog for all versions
+        if changelog_value == "all" {
+            let entries = feed.get_all_changelogs();
+            if entries.is_empty() {
+                println!("No changelog information available.");
+            } else {
+                println!("Changelog for all versions:");
+                for entry in entries {
+                    Self::print_changelog_entry(&entry)?;
+                }
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
+
+        // Display changelog for a specific version (--changelog=x.x.x)
+        if !changelog_value.is_empty() {
+            match feed.get_version_changelog(&changelog_value) {
+                Some(entry) => {
+                    println!("Changelog for version {}:", changelog_value);
+                    Self::print_changelog_entry(&entry)?;
+                    return Ok(ExitCode::SUCCESS);
+                },
+                None => {
+                    println!("No changelog information available for version {}.", changelog_value);
+                    return Ok(ExitCode::SUCCESS);
+                },
+            }
+        }
+
+        // Display changelog for the current version (--changelog only)
+        let current_version = env!("CARGO_PKG_VERSION");
+        match feed.get_version_changelog(current_version) {
+            Some(entry) => {
+                println!("Changelog for version {}:", current_version);
+                Self::print_changelog_entry(&entry)?;
+            },
+            None => {
+                println!("No changelog information available for version {}.", current_version);
+            },
+        }
+
         Ok(ExitCode::SUCCESS)
     }
 }
@@ -572,6 +651,27 @@ mod test {
                 strict: true,
             })
         );
+    }
+
+    #[test]
+    fn test_version_changelog() {
+        assert_parse!(["version", "--changelog"], CliRootCommands::Version {
+            changelog: Some("".to_string()),
+        });
+    }
+
+    #[test]
+    fn test_version_changelog_all() {
+        assert_parse!(["version", "--changelog=all"], CliRootCommands::Version {
+            changelog: Some("all".to_string()),
+        });
+    }
+
+    #[test]
+    fn test_version_changelog_specific() {
+        assert_parse!(["version", "--changelog=1.8.0"], CliRootCommands::Version {
+            changelog: Some("1.8.0".to_string()),
+        });
     }
 
     #[test]

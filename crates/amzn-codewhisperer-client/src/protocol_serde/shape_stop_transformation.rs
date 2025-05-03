@@ -41,6 +41,23 @@ pub fn de_stop_transformation_http_error(
                 tmp
             })
         },
+        "ValidationException" => crate::operation::stop_transformation::StopTransformationError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::validation_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?
+            };
+            tmp
+        }),
         "ThrottlingException" => crate::operation::stop_transformation::StopTransformationError::ThrottlingError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -58,18 +75,18 @@ pub fn de_stop_transformation_http_error(
             };
             tmp
         }),
-        "ValidationException" => crate::operation::stop_transformation::StopTransformationError::ValidationError({
+        "AccessDeniedException" => crate::operation::stop_transformation::StopTransformationError::AccessDeniedError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
                 let output = output.meta(generic);
-                crate::serde_util::validation_exception_correct_errors(output)
+                crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?
             };
@@ -91,23 +108,6 @@ pub fn de_stop_transformation_http_error(
                 tmp
             })
         },
-        "AccessDeniedException" => crate::operation::stop_transformation::StopTransformationError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?
-            };
-            tmp
-        }),
         _ => crate::operation::stop_transformation::StopTransformationError::generic(generic),
     })
 }
@@ -135,7 +135,8 @@ pub fn de_stop_transformation_http_response(
 
 pub fn ser_stop_transformation_input(
     input: &crate::operation::stop_transformation::StopTransformationInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_stop_transformation_input::ser_stop_transformation_input_input(&mut object, input)?;
@@ -146,7 +147,7 @@ pub fn ser_stop_transformation_input(
 pub(crate) fn de_stop_transformation(
     value: &[u8],
     mut builder: crate::operation::stop_transformation::builders::StopTransformationOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::stop_transformation::builders::StopTransformationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

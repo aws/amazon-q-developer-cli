@@ -6,7 +6,11 @@ pub struct UpdateProfileInput {
     #[allow(missing_docs)] // documentation missing in model
     pub profile_arn: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
+    pub identity_source: ::std::option::Option<crate::types::IdentitySource>,
+    #[allow(missing_docs)] // documentation missing in model
     pub profile_name: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub description: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
     #[allow(missing_docs)] // documentation missing in model
@@ -27,8 +31,18 @@ impl UpdateProfileInput {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn identity_source(&self) -> ::std::option::Option<&crate::types::IdentitySource> {
+        self.identity_source.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn profile_name(&self) -> ::std::option::Option<&str> {
         self.profile_name.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn description(&self) -> ::std::option::Option<&str> {
+        self.description.as_deref()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -78,7 +92,9 @@ impl UpdateProfileInput {
 #[non_exhaustive]
 pub struct UpdateProfileInputBuilder {
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) identity_source: ::std::option::Option<crate::types::IdentitySource>,
     pub(crate) profile_name: ::std::option::Option<::std::string::String>,
+    pub(crate) description: ::std::option::Option<::std::string::String>,
     pub(crate) reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
     pub(crate) active_functionalities: ::std::option::Option<::std::vec::Vec<crate::types::FunctionalityName>>,
     pub(crate) kms_key_arn: ::std::option::Option<::std::string::String>,
@@ -106,6 +122,23 @@ impl UpdateProfileInputBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn identity_source(mut self, input: crate::types::IdentitySource) -> Self {
+        self.identity_source = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_identity_source(mut self, input: ::std::option::Option<crate::types::IdentitySource>) -> Self {
+        self.identity_source = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_identity_source(&self) -> &::std::option::Option<crate::types::IdentitySource> {
+        &self.identity_source
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn profile_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_name = ::std::option::Option::Some(input.into());
         self
@@ -120,6 +153,23 @@ impl UpdateProfileInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_name
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.description = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.description = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
+        &self.description
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -249,7 +299,9 @@ impl UpdateProfileInputBuilder {
     > {
         ::std::result::Result::Ok(crate::operation::update_profile::UpdateProfileInput {
             profile_arn: self.profile_arn,
+            identity_source: self.identity_source,
             profile_name: self.profile_name,
+            description: self.description,
             reference_tracker_configuration: self.reference_tracker_configuration,
             active_functionalities: self.active_functionalities,
             kms_key_arn: self.kms_key_arn,

@@ -1,8 +1,7 @@
 use amzn_codewhisperer_client::operation::generate_completions::GenerateCompletionsError;
 use amzn_codewhisperer_client::operation::list_available_customizations::ListAvailableCustomizationsError;
+use amzn_codewhisperer_client::operation::list_available_profiles::ListAvailableProfilesError;
 pub use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError;
-// use amzn_codewhisperer_streaming_client::operation::send_message::SendMessageError as
-// CodewhispererSendMessageError;
 use amzn_codewhisperer_streaming_client::types::error::ChatResponseStreamError as CodewhispererChatResponseStreamError;
 use amzn_consolas_client::operation::generate_recommendations::GenerateRecommendationsError;
 use amzn_consolas_client::operation::list_customizations::ListCustomizationsError;
@@ -61,6 +60,9 @@ pub enum Error {
 
     #[error("unsupported action by consolas: {0}")]
     UnsupportedConsolas(&'static str),
+
+    #[error(transparent)]
+    ListAvailableProfilesError(#[from] SdkError<ListAvailableProfilesError, HttpResponse>),
 }
 
 impl Error {
@@ -75,6 +77,7 @@ impl Error {
                 e.as_service_error().is_some_and(|e| e.is_throttling_error())
             },
             Error::QDeveloperSendMessage(e) => e.as_service_error().is_some_and(|e| e.is_throttling_error()),
+            Error::ListAvailableProfilesError(e) => e.as_service_error().is_some_and(|e| e.is_throttling_error()),
             Error::CodewhispererChatResponseStream(_)
             | Error::QDeveloperChatResponseStream(_)
             | Error::SmithyBuild(_)
@@ -94,6 +97,7 @@ impl Error {
             Error::CodewhispererGenerateAssistantResponse(e) => e.as_service_error().is_some(),
             Error::QDeveloperSendMessage(e) => e.as_service_error().is_some(),
             Error::ContextWindowOverflow => true,
+            Error::ListAvailableProfilesError(e) => e.as_service_error().is_some(),
             Error::CodewhispererChatResponseStream(_)
             | Error::QDeveloperChatResponseStream(_)
             | Error::SmithyBuild(_)

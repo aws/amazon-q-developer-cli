@@ -18,6 +18,12 @@ const onboardingSteps: InstallCheck[] = [
     ],
     action: "Sign in",
   },
+  {
+    id: "profile",
+    title: "Select Profile",
+    description: ["SSO users must select a profile"],
+    action: "Select",
+  },
 ];
 
 export default onboardingSteps;

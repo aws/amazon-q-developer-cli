@@ -2,45 +2,73 @@ use std::borrow::Cow;
 
 use aws_config::Region;
 use serde_json::Value;
+use tracing::error;
 
 use crate::consts::{
     PROD_CODEWHISPERER_ENDPOINT_REGION,
     PROD_CODEWHISPERER_ENDPOINT_URL,
+    PROD_CODEWHISPERER_FRA_ENDPOINT_REGION,
+    PROD_CODEWHISPERER_FRA_ENDPOINT_URL,
     PROD_Q_ENDPOINT_REGION,
     PROD_Q_ENDPOINT_URL,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
-    url: Cow<'static, str>,
-    region: Region,
+    pub url: Cow<'static, str>,
+    pub region: Region,
 }
 
 impl Endpoint {
-    const PROD_CODEWHISPERER: Self = Self {
+    pub const CODEWHISPERER_ENDPOINTS: [Self; 2] = [Self::DEFAULT_ENDPOINT, Self {
+        url: Cow::Borrowed(PROD_CODEWHISPERER_FRA_ENDPOINT_URL),
+        region: PROD_CODEWHISPERER_FRA_ENDPOINT_REGION,
+    }];
+    pub const DEFAULT_ENDPOINT: Self = Self {
         url: Cow::Borrowed(PROD_CODEWHISPERER_ENDPOINT_URL),
         region: PROD_CODEWHISPERER_ENDPOINT_REGION,
     };
-    const PROD_Q: Self = Self {
+    pub const PROD_Q: Self = Self {
         url: Cow::Borrowed(PROD_Q_ENDPOINT_URL),
         region: PROD_Q_ENDPOINT_REGION,
     };
 
     pub fn load_codewhisperer() -> Self {
-        match fig_settings::settings::get_value("api.codewhisperer.service") {
-            Ok(Some(Value::Object(o))) => {
-                let endpoint = o.get("endpoint").and_then(|v| v.as_str());
-                let region = o.get("region").and_then(|v| v.as_str());
-
-                match (endpoint, region) {
-                    (Some(endpoint), Some(region)) => Self {
-                        url: endpoint.to_owned().into(),
-                        region: Region::new(region.to_owned()),
+        let (endpoint, region) =
+            if let Ok(Some(Value::Object(o))) = fig_settings::settings::get_value("api.codewhisperer.service") {
+                // The following branch is evaluated in case the user has set their own endpoint.
+                (
+                    o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
+                    o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
+                )
+            } else if let Ok(Some(Value::Object(o))) = fig_settings::state::get_value("api.codewhisperer.profile") {
+                // The following branch is evaluated in the case of user profile being set.
+                match o.get("arn").and_then(|v| v.as_str()).map(|v| v.to_owned()) {
+                    Some(arn) => {
+                        let region = arn.split(':').nth(3).unwrap_or_default().to_owned();
+                        match Self::CODEWHISPERER_ENDPOINTS
+                            .iter()
+                            .find(|e| e.region().as_ref() == region)
+                        {
+                            Some(endpoint) => (Some(endpoint.url().to_owned()), Some(region)),
+                            None => {
+                                error!("Failed to find endpoint for region: {region}");
+                                (None, None)
+                            },
+                        }
                     },
-                    _ => Endpoint::PROD_CODEWHISPERER,
+                    None => (None, None),
                 }
+            } else {
+                (None, None)
+            };
+
+        match (endpoint, region) {
+            (Some(endpoint), Some(region)) => Self {
+                url: endpoint.clone().into(),
+                region: Region::new(region.clone()),
             },
-            _ => Endpoint::PROD_CODEWHISPERER,
+            _ => Endpoint::DEFAULT_ENDPOINT,
         }
     }
 
@@ -82,7 +110,7 @@ mod tests {
         let _ = Endpoint::load_codewhisperer();
         let _ = Endpoint::load_q();
 
-        let prod = Endpoint::PROD_CODEWHISPERER;
+        let prod = &Endpoint::DEFAULT_ENDPOINT;
         Url::parse(prod.url()).unwrap();
         assert_eq!(prod.region(), &PROD_CODEWHISPERER_ENDPOINT_REGION);
 

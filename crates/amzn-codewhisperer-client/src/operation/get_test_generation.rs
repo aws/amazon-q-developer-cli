@@ -201,6 +201,18 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GetTestGener
                 ::std::write!(output, "/").expect("formatting should succeed");
                 ::std::result::Result::Ok(())
             }
+            fn uri_query(
+                _input: &crate::operation::get_test_generation::GetTestGenerationInput,
+                mut output: &mut ::std::string::String,
+            ) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::BuildError> {
+                let mut query = ::aws_smithy_http::query::Writer::new(output);
+                if let ::std::option::Option::Some(inner_1) = &_input.profile_arn {
+                    {
+                        query.push_kv("profileArn", &::aws_smithy_http::query::fmt_string(inner_1));
+                    }
+                }
+                ::std::result::Result::Ok(())
+            }
             #[allow(clippy::unnecessary_wraps)]
             fn update_http_builder(
                 input: &crate::operation::get_test_generation::GetTestGenerationInput,
@@ -209,6 +221,7 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GetTestGener
             {
                 let mut uri = ::std::string::String::new();
                 uri_base(input, &mut uri)?;
+                uri_query(input, &mut uri)?;
                 ::std::result::Result::Ok(builder.method("POST").uri(uri))
             }
             let mut builder = update_http_builder(&input, ::http::request::Builder::new())?;
@@ -282,17 +295,17 @@ impl ::aws_smithy_runtime_api::client::interceptors::Intercept for GetTestGenera
 #[non_exhaustive]
 #[derive(::std::fmt::Debug)]
 pub enum GetTestGenerationError {
-    /// This exception is thrown when an unexpected error occurred during the processing of a
-    /// request.
-    InternalServerError(crate::types::error::InternalServerError),
+    /// This exception is thrown when the user does not have sufficient access to perform this
+    /// action.
+    AccessDeniedError(crate::types::error::AccessDeniedError),
     /// This exception is thrown when request was denied due to request throttling.
     ThrottlingError(crate::types::error::ThrottlingError),
     /// This exception is thrown when the input fails to satisfy the constraints specified by the
     /// service.
     ValidationError(crate::types::error::ValidationError),
-    /// This exception is thrown when the user does not have sufficient access to perform this
-    /// action.
-    AccessDeniedError(crate::types::error::AccessDeniedError),
+    /// This exception is thrown when an unexpected error occurred during the processing of a
+    /// request.
+    InternalServerError(crate::types::error::InternalServerError),
     /// An unexpected error occurred (e.g., invalid JSON returned by the service or an unknown error
     /// code).
     #[deprecated(
@@ -331,17 +344,17 @@ impl GetTestGenerationError {
     /// request ID, and potentially additional information.
     pub fn meta(&self) -> &::aws_smithy_types::error::ErrorMetadata {
         match self {
-            Self::InternalServerError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
+            Self::AccessDeniedError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::ThrottlingError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::ValidationError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
-            Self::AccessDeniedError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
+            Self::InternalServerError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::Unhandled(e) => &e.meta,
         }
     }
 
-    /// Returns `true` if the error kind is `GetTestGenerationError::InternalServerError`.
-    pub fn is_internal_server_error(&self) -> bool {
-        matches!(self, Self::InternalServerError(_))
+    /// Returns `true` if the error kind is `GetTestGenerationError::AccessDeniedError`.
+    pub fn is_access_denied_error(&self) -> bool {
+        matches!(self, Self::AccessDeniedError(_))
     }
 
     /// Returns `true` if the error kind is `GetTestGenerationError::ThrottlingError`.
@@ -354,18 +367,18 @@ impl GetTestGenerationError {
         matches!(self, Self::ValidationError(_))
     }
 
-    /// Returns `true` if the error kind is `GetTestGenerationError::AccessDeniedError`.
-    pub fn is_access_denied_error(&self) -> bool {
-        matches!(self, Self::AccessDeniedError(_))
+    /// Returns `true` if the error kind is `GetTestGenerationError::InternalServerError`.
+    pub fn is_internal_server_error(&self) -> bool {
+        matches!(self, Self::InternalServerError(_))
     }
 }
 impl ::std::error::Error for GetTestGenerationError {
     fn source(&self) -> ::std::option::Option<&(dyn ::std::error::Error + 'static)> {
         match self {
-            Self::InternalServerError(_inner) => ::std::option::Option::Some(_inner),
+            Self::AccessDeniedError(_inner) => ::std::option::Option::Some(_inner),
             Self::ThrottlingError(_inner) => ::std::option::Option::Some(_inner),
             Self::ValidationError(_inner) => ::std::option::Option::Some(_inner),
-            Self::AccessDeniedError(_inner) => ::std::option::Option::Some(_inner),
+            Self::InternalServerError(_inner) => ::std::option::Option::Some(_inner),
             Self::Unhandled(_inner) => ::std::option::Option::Some(&*_inner.source),
         }
     }
@@ -373,10 +386,10 @@ impl ::std::error::Error for GetTestGenerationError {
 impl ::std::fmt::Display for GetTestGenerationError {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         match self {
-            Self::InternalServerError(_inner) => _inner.fmt(f),
+            Self::AccessDeniedError(_inner) => _inner.fmt(f),
             Self::ThrottlingError(_inner) => _inner.fmt(f),
             Self::ValidationError(_inner) => _inner.fmt(f),
-            Self::AccessDeniedError(_inner) => _inner.fmt(f),
+            Self::InternalServerError(_inner) => _inner.fmt(f),
             Self::Unhandled(_inner) => {
                 if let ::std::option::Option::Some(code) =
                     ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self)
@@ -396,8 +409,8 @@ impl ::aws_smithy_types::retry::ProvideErrorKind for GetTestGenerationError {
 
     fn retryable_error_kind(&self) -> ::std::option::Option<::aws_smithy_types::retry::ErrorKind> {
         match self {
-            Self::InternalServerError(inner) => ::std::option::Option::Some(inner.retryable_error_kind()),
             Self::ThrottlingError(inner) => ::std::option::Option::Some(inner.retryable_error_kind()),
+            Self::InternalServerError(inner) => ::std::option::Option::Some(inner.retryable_error_kind()),
             _ => ::std::option::Option::None,
         }
     }
@@ -405,12 +418,12 @@ impl ::aws_smithy_types::retry::ProvideErrorKind for GetTestGenerationError {
 impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for GetTestGenerationError {
     fn meta(&self) -> &::aws_smithy_types::error::ErrorMetadata {
         match self {
+            Self::AccessDeniedError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
+            Self::ThrottlingError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
+            Self::ValidationError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::InternalServerError(_inner) => {
                 ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner)
             },
-            Self::ThrottlingError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
-            Self::ValidationError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
-            Self::AccessDeniedError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::Unhandled(_inner) => &_inner.meta,
         }
     }

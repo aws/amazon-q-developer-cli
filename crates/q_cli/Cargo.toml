@@ -48,6 +48,7 @@ fig_remote_ipc.workspace = true
 fig_request.workspace = true
 fig_settings.workspace = true
 fig_telemetry.workspace = true
+fig_telemetry_core.workspace = true
 fig_util.workspace = true
 flume.workspace = true
 futures.workspace = true

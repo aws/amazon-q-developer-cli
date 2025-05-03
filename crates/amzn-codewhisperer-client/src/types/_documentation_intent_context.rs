@@ -7,6 +7,8 @@ pub struct DocumentationIntentContext {
     pub scope: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub r#type: crate::types::DocumentationType,
+    #[allow(missing_docs)] // documentation missing in model
+    pub change_log_options: ::std::option::Option<crate::types::ChangeLogOptions>,
 }
 impl DocumentationIntentContext {
     #[allow(missing_docs)] // documentation missing in model
@@ -18,12 +20,18 @@ impl DocumentationIntentContext {
     pub fn r#type(&self) -> &crate::types::DocumentationType {
         &self.r#type
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn change_log_options(&self) -> ::std::option::Option<&crate::types::ChangeLogOptions> {
+        self.change_log_options.as_ref()
+    }
 }
 impl ::std::fmt::Debug for DocumentationIntentContext {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("DocumentationIntentContext");
         formatter.field("scope", &"*** Sensitive Data Redacted ***");
         formatter.field("r#type", &self.r#type);
+        formatter.field("change_log_options", &self.change_log_options);
         formatter.finish()
     }
 }
@@ -41,6 +49,7 @@ impl DocumentationIntentContext {
 pub struct DocumentationIntentContextBuilder {
     pub(crate) scope: ::std::option::Option<::std::string::String>,
     pub(crate) r#type: ::std::option::Option<crate::types::DocumentationType>,
+    pub(crate) change_log_options: ::std::option::Option<crate::types::ChangeLogOptions>,
 }
 impl DocumentationIntentContextBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -78,6 +87,23 @@ impl DocumentationIntentContextBuilder {
         &self.r#type
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn change_log_options(mut self, input: crate::types::ChangeLogOptions) -> Self {
+        self.change_log_options = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_change_log_options(mut self, input: ::std::option::Option<crate::types::ChangeLogOptions>) -> Self {
+        self.change_log_options = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_change_log_options(&self) -> &::std::option::Option<crate::types::ChangeLogOptions> {
+        &self.change_log_options
+    }
+
     /// Consumes the builder and constructs a
     /// [`DocumentationIntentContext`](crate::types::DocumentationIntentContext). This method
     /// will fail if any of the following fields are not set:
@@ -94,6 +120,7 @@ impl DocumentationIntentContextBuilder {
                     "r#type was not specified but it is required when building DocumentationIntentContext",
                 )
             })?,
+            change_log_options: self.change_log_options,
         })
     }
 }
@@ -102,6 +129,7 @@ impl ::std::fmt::Debug for DocumentationIntentContextBuilder {
         let mut formatter = f.debug_struct("DocumentationIntentContextBuilder");
         formatter.field("scope", &"*** Sensitive Data Redacted ***");
         formatter.field("r#type", &self.r#type);
+        formatter.field("change_log_options", &self.change_log_options);
         formatter.finish()
     }
 }

@@ -565,8 +565,11 @@ pub async fn logout() -> Result<()> {
         secret_store.delete(DeviceRegistration::SECRET_KEY),
     );
 
+    let profile_res = fig_settings::state::remove_value("api.codewhisperer.profile");
+
     builder_res?;
     device_res?;
+    profile_res?;
 
     Ok(())
 }

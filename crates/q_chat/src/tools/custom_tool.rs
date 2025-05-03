@@ -97,18 +97,23 @@ impl CustomToolClient {
                 // We'll need to first initialize. This is the handshake every client and server
                 // needs to do before proceeding to anything else
                 let init_resp = client.init().await?;
+                // We'll be scrapping this for background server load: https://github.com/aws/amazon-q-developer-cli/issues/1466
+                // So don't worry about the tidiness for now
+                let is_tool_supported = init_resp
+                    .get("result")
+                    .is_some_and(|r| r.get("capabilities").is_some_and(|cap| cap.get("tools").is_some()));
                 server_capabilities.write().await.replace(init_resp);
-                // And now we make the server tell us what tools they have
-                let resp = client.request("tools/list", None).await?;
                 // Assuming a shape of return as per https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#listing-tools
-                let result = resp
-                    .result
-                    .ok_or(eyre::eyre!("Failed to retrieve result for custom tool {}", server_name))?;
-                let tools = result.get("tools").ok_or(eyre::eyre!(
-                    "Failed to retrieve tools from result for custom tool {}",
-                    server_name
-                ))?;
-                let tools = serde_json::from_value::<Vec<ToolSpec>>(tools.clone())?;
+                let tools = if is_tool_supported {
+                    // And now we make the server tell us what tools they have
+                    let resp = client.request("tools/list", None).await?;
+                    match resp.result.and_then(|r| r.get("tools").cloned()) {
+                        Some(value) => serde_json::from_value::<Vec<ToolSpec>>(value)?,
+                        None => Default::default(),
+                    }
+                } else {
+                    Default::default()
+                };
                 Ok((server_name.clone(), tools))
             },
         }

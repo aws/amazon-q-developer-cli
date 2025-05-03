@@ -2,7 +2,7 @@
 pub fn ser_user_trigger_decision_event(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::UserTriggerDecisionEvent,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("sessionId").string(input.session_id.as_str());
     }
@@ -73,6 +73,30 @@ pub fn ser_user_trigger_decision_event(
             #[allow(clippy::useless_conversion)]
             ::aws_smithy_types::Number::NegInt((input.accepted_character_count).into()),
         );
+    }
+    if let Some(var_5) = &input.added_ide_diagnostics {
+        let mut array_6 = object.key("addedIdeDiagnostics").start_array();
+        for item_7 in var_5 {
+            {
+                #[allow(unused_mut)]
+                let mut object_8 = array_6.value().start_object();
+                crate::protocol_serde::shape_ide_diagnostic::ser_ide_diagnostic(&mut object_8, item_7)?;
+                object_8.finish();
+            }
+        }
+        array_6.finish();
+    }
+    if let Some(var_9) = &input.removed_ide_diagnostics {
+        let mut array_10 = object.key("removedIdeDiagnostics").start_array();
+        for item_11 in var_9 {
+            {
+                #[allow(unused_mut)]
+                let mut object_12 = array_10.value().start_object();
+                crate::protocol_serde::shape_ide_diagnostic::ser_ide_diagnostic(&mut object_12, item_11)?;
+                object_12.finish();
+            }
+        }
+        array_10.finish();
     }
     Ok(())
 }

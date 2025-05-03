@@ -23,6 +23,7 @@ use fig_proto::local::{
     CommandResponse,
     ErrorResponse,
 };
+use fig_settings::keys::UPDATE_AVAILABLE_KEY;
 use fig_util::manifest::{
     BundleMetadata,
     FileType,
@@ -36,6 +37,7 @@ use fig_util::{
 use tracing::{
     error,
     info,
+    warn,
 };
 
 use crate::util::dialoguer_theme;
@@ -105,7 +107,12 @@ impl UpdateArgs {
         .await;
 
         match res {
-            Ok(true) => Ok(ExitCode::SUCCESS),
+            Ok(true) => {
+                if let Err(err) = fig_settings::state::remove_value(UPDATE_AVAILABLE_KEY) {
+                    warn!("Failed to remove update.new-version-available: {:?}", err);
+                }
+                Ok(ExitCode::SUCCESS)
+            },
             Ok(false) => {
                 println!(
                     "No updates available, \n{} is the latest version.",
@@ -158,6 +165,9 @@ async fn try_linux_update() -> Result<ExitCode> {
                             ..
                         })) => {
                             spinner.stop_with_message("Update complete".into());
+                            if let Err(err) = fig_settings::state::remove_value(UPDATE_AVAILABLE_KEY) {
+                                warn!("Failed to remove update.new-version-available: {:?}", err);
+                            }
                             Ok(ExitCode::SUCCESS)
                         },
                         Ok(Some(CommandResponse {

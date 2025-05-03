@@ -19,6 +19,8 @@ pub struct CreateArtifactUploadUrlInput {
     pub upload_context: ::std::option::Option<crate::types::UploadContext>,
     /// Upload ID returned by CreateUploadUrl API
     pub upload_id: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl CreateArtifactUploadUrlInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -60,6 +62,11 @@ impl CreateArtifactUploadUrlInput {
     pub fn upload_id(&self) -> ::std::option::Option<&str> {
         self.upload_id.as_deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
+    }
 }
 impl ::std::fmt::Debug for CreateArtifactUploadUrlInput {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -72,6 +79,7 @@ impl ::std::fmt::Debug for CreateArtifactUploadUrlInput {
         formatter.field("upload_intent", &self.upload_intent);
         formatter.field("upload_context", &self.upload_context);
         formatter.field("upload_id", &self.upload_id);
+        formatter.field("profile_arn", &self.profile_arn);
         formatter.finish()
     }
 }
@@ -96,6 +104,7 @@ pub struct CreateArtifactUploadUrlInputBuilder {
     pub(crate) upload_intent: ::std::option::Option<crate::types::UploadIntent>,
     pub(crate) upload_context: ::std::option::Option<crate::types::UploadContext>,
     pub(crate) upload_id: ::std::option::Option<::std::string::String>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl CreateArtifactUploadUrlInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -237,6 +246,23 @@ impl CreateArtifactUploadUrlInputBuilder {
         &self.upload_id
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`CreateArtifactUploadUrlInput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlInput).
     pub fn build(
@@ -255,6 +281,7 @@ impl CreateArtifactUploadUrlInputBuilder {
                 upload_intent: self.upload_intent,
                 upload_context: self.upload_context,
                 upload_id: self.upload_id,
+                profile_arn: self.profile_arn,
             },
         )
     }
@@ -270,6 +297,7 @@ impl ::std::fmt::Debug for CreateArtifactUploadUrlInputBuilder {
         formatter.field("upload_intent", &self.upload_intent);
         formatter.field("upload_context", &self.upload_context);
         formatter.field("upload_id", &self.upload_id);
+        formatter.field("profile_arn", &self.profile_arn);
         formatter.finish()
     }
 }

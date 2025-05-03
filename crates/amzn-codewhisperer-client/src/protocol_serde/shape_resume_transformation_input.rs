@@ -2,12 +2,15 @@
 pub fn ser_resume_transformation_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::resume_transformation::ResumeTransformationInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.transformation_job_id {
         object.key("transformationJobId").string(var_1.as_str());
     }
     if let Some(var_2) = &input.user_action_status {
         object.key("userActionStatus").string(var_2.as_str());
+    }
+    if let Some(var_3) = &input.profile_arn {
+        object.key("profileArn").string(var_3.as_str());
     }
     Ok(())
 }

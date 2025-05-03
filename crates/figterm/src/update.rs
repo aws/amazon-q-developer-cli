@@ -3,6 +3,7 @@ use fig_os_shim::{
     Context,
     Os,
 };
+use fig_settings::keys::UPDATE_AVAILABLE_KEY;
 use fig_settings::settings::get_bool_or;
 use fig_telemetry::{
     InstallMethod,
@@ -15,8 +16,6 @@ use fig_util::manifest::{
 };
 use semver::Version;
 use tracing::warn;
-
-const UPDATE_AVAILABLE_KEY: &str = "update.new-version-available";
 
 fn current_version() -> Version {
     Version::parse(env!("CARGO_PKG_VERSION")).unwrap()

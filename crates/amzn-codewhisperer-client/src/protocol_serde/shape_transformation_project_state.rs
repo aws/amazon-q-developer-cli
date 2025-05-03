@@ -2,7 +2,7 @@
 pub fn ser_transformation_project_state(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::TransformationProjectState,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.language {
         object.key("language").string(var_1.as_str());
     }
@@ -35,7 +35,10 @@ pub fn ser_transformation_project_state(
 
 pub(crate) fn de_transformation_project_state<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<Option<crate::types::TransformationProjectState>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<
+    Option<crate::types::TransformationProjectState>,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+>
 where
     I: Iterator<
         Item = Result<
