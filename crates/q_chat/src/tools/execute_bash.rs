@@ -389,6 +389,7 @@ mod tests {
         assert!(!output.contains("Purpose:"));
     }
 
+    #[test]
     fn test_requires_acceptance_for_readonly_commands() {
         let cmds = &[
             // Safe commands
