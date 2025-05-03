@@ -97,6 +97,14 @@ pub struct LoginArgs {
     /// redirects cannot be handled.
     #[arg(long)]
     pub use_device_flow: bool,
+    
+    /// Show current identity provider information
+    #[arg(long)]
+    pub show_provider: bool,
+    
+    /// List available identity providers
+    #[arg(long)]
+    pub list_providers: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -234,6 +242,11 @@ impl UserSubcommand {
 }
 
 pub async fn login_interactive(args: LoginArgs) -> Result<()> {
+    // If show_provider flag is set, display current identity provider information
+    if args.show_provider {
+        return show_identity_provider().await;
+    }
+
     let login_method = match args.license {
         Some(LicenseType::Free) => AuthMethod::BuilderId,
         Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
@@ -476,5 +489,44 @@ mod tests {
     #[ignore]
     fn unset_profile() {
         fig_settings::state::remove_value("api.codewhisperer.profile").unwrap();
+    }
+}
+
+/// Shows information about the current identity provider
+async fn show_identity_provider() -> Result<()> {
+    let builder_id = fig_auth::builder_id_token().await;
+    
+    match builder_id {
+        Ok(Some(token)) => {
+            match token.token_type() {
+                TokenType::BuilderId => {
+                    println!("Currently logged in with: {}", "Builder ID".green());
+                },
+                TokenType::IamIdentityCenter => {
+                    println!("Currently logged in with: {}", "IAM Identity Center".green());
+                    if let Some(start_url) = &token.start_url {
+                        println!("Identity Provider URL: {}", start_url.clone().bold());
+                    }
+                    if let Some(region) = &token.region {
+                        println!("Region: {}", region.clone().bold());
+                    }
+                    
+                    // Display profile information if available
+                    if let Ok(Some(profile)) = fig_settings::state::get::<fig_api_client::profile::Profile>(
+                        "api.codewhisperer.profile",
+                    ) {
+                        println!("\nActive Profile:");
+                        println!("  Name: {}", profile.profile_name.bold());
+                        println!("  ARN: {}", profile.arn);
+                    }
+                },
+            }
+            Ok(())
+        },
+        _ => {
+            println!("{}", "Not currently logged in.".yellow());
+            println!("Run {} to log in to {PRODUCT_NAME}", format!("{CLI_BINARY_NAME} login").magenta());
+            Ok(())
+        },
     }
 }
