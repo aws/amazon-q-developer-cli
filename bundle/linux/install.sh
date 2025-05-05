@@ -7,6 +7,17 @@ set -o errexit
 set -o nounset
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+INSTALL_Q_CLI_ONLY=false
+
+# Parse command line arguments
+for arg in "$@"; do
+    case "$arg" in
+        --q-cli)
+            INSTALL_Q_CLI_ONLY=true
+            shift
+            ;;
+    esac
+done
 
 log_error() {
     printf '\e[31m[ERROR]\e[0m %s\n' "$1" >&2
@@ -124,6 +135,64 @@ check_glibc_version() {
     return 1
 }
 
+# check and add ~/.local/bin to PATH if needed
+ensure_path_contains_local_bin() {
+    # Check if ~/.local/bin is in PATH
+    if ! echo "$PATH" | grep -q "${HOME}/.local/bin"; then
+        # Determine which shell config file to update
+        local shell_config
+        
+        if [ -n "${SHELL:-}" ]; then
+            case "$SHELL" in
+                */bash)
+                    if [ -f "$HOME/.bashrc" ]; then
+                        shell_config="$HOME/.bashrc"
+            else
+                        shell_config="$HOME/.bash_profile"
+                    fi
+                    ;;
+                */zsh)
+                    shell_config="$HOME/.zshrc"
+                    ;;
+                */fish)
+                    shell_config="$HOME/.config/fish/config.fish"
+                    mkdir -p "$HOME/.config/fish"
+                    ;;
+            esac
+        fi
+
+        # If we found a suitable config file, update it
+        if [ -n "${shell_config:-}" ]; then
+            if [ -f "$shell_config" ]; then
+                if [ "$(basename "$shell_config")" = "config.fish" ]; then
+                    if ! grep -q "set -gx PATH $HOME/.local/bin $PATH" "$shell_config"; then
+                        echo "set -gx PATH $HOME/.local/bin $PATH" >> "$shell_config"
+                        echo "Added ~/.local/bin to PATH in $shell_config"
+                        echo "Please restart your shell or run 'source $shell_config' to apply the changes"
+                    fi
+                else
+                    if ! grep -q "export PATH=\"\$HOME/.local/bin:\$PATH\"" "$shell_config"; then
+                        echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$shell_config"
+                        echo "Added ~/.local/bin to PATH in $shell_config"
+                        echo "Please restart your shell or run 'source $shell_config' to apply the changes"
+                    fi
+                fi
+            else
+                # Create a new config file if it doesn't exist
+                if [ "$(basename "$shell_config")" = "config.fish" ]; then
+                    echo "set -gx PATH $HOME/.local/bin $PATH" > "$shell_config"
+                else
+                    echo "export PATH=\"$HOME/.local/bin:\$PATH\"" > "$shell_config"
+                fi
+                echo "Created $shell_config with PATH updated to include ~/.local/bin"
+                echo "Please restart your shell or run 'source $shell_config' to apply the changes"
+            fi
+        else
+            echo "WARNING: Could not determine shell configuration file. Please manually add ~/.local/bin to your PATH."
+        fi
+    fi
+}
+
 # checks that uname matches the target triple
 if [ "$(uname)" != "$(target_triple_uname)" ]; then
     log_error "This archive is built for a $(target_triple_uname) system."
@@ -137,15 +206,30 @@ fi
 
 if [ -n "${Q_INSTALL_GLOBAL:-}" ]; then
     install -m 755 "$SCRIPT_DIR/bin/q" /usr/local/bin/
-    install -m 755 "$SCRIPT_DIR/bin/qterm" /usr/local/bin/
-
-    /usr/local/bin/q integrations install dotfiles
-    /usr/local/bin/q setup --global "$@"
+    if [ "$INSTALL_Q_CLI_ONLY" = false ]; then
+        install -m 755 "$SCRIPT_DIR/bin/qterm" /usr/local/bin/
+        /usr/local/bin/q integrations install dotfiles
+        /usr/local/bin/q setup --global "$@"
+    else
+        # For global CLI-only install, just run login
+        /usr/local/bin/q login
+    fi
 else
     mkdir -p "$HOME/.local/bin"
-
     install -m 755 "$SCRIPT_DIR/bin/q" "$HOME/.local/bin/"
-    install -m 755 "$SCRIPT_DIR/bin/qterm" "$HOME/.local/bin/"
+    
+    if [ "$INSTALL_Q_CLI_ONLY" = false ]; then
+        # Regular install with qterm and setup
+        install -m 755 "$SCRIPT_DIR/bin/qterm" "$HOME/.local/bin/"
+        "$HOME/.local/bin/q" setup "$@"
+    else
+        # CLI-only install
+        ensure_path_contains_local_bin
+        "$HOME/.local/bin/q" login
+    fi
+fi
 
-    "$HOME/.local/bin/q" setup "$@"
+if [ "$INSTALL_Q_CLI_ONLY" = true ]; then
+    echo "Amazon Q CLI installed successfully for chat usage."
+    echo "Run 'q chat' to start using Amazon Q."
 fi
