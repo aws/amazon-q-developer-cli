@@ -180,8 +180,8 @@ impl ContextSubcommand {
   <em>help</em>                           <black!>Show an explanation for the context command</black!>
 
   <em>show [--expand]</em>                <black!>Display the context rule configuration and matched files</black!>
-                                          <black!>--expand: Print out each matched file's content,
-                                           along with the conversation summaries and hook configurations</black!>
+                                          <black!>--expand: Print out each matched file's content, hook</black!> 
+                                          <black!>          configurations and last conversation summary </black!>
 
   <em>add [--global] [--force] <<paths...>></em>
                                  <black!>Add context rules (filenames or glob patterns)</black!>

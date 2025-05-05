@@ -1845,13 +1845,12 @@ impl ChatContext {
                                     style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
                                 )?;
 
+                                // Show last cached conversation summary if available, otherwise regenerate it
                                 if expand {
-                                    let existing_summary =
-                                        self.conversation_state.latest_summary().map(|s| s.to_owned());
-                                    if let Some(summary) = existing_summary {
-                                        // Add a border around the summary for better visual separation
-                                        let terminal_width = self.terminal_width();
-                                        let border = "═".repeat(terminal_width.min(80));
+                                    if let Some(summary) =
+                                        self.conversation_state.latest_summary().map(|s| s.to_owned())
+                                    {
+                                        let border = "═".repeat(self.terminal_width().min(80));
                                         execute!(
                                             self.output,
                                             style::Print("\n"),
@@ -2742,6 +2741,7 @@ impl ChatContext {
         })
     }
 
+    // Prints hook configuration grouped by trigger: conversation sesiion start or per user message
     fn print_hook_section(output: &mut impl Write, hooks: &HashMap<String, Hook>, trigger: HookTrigger) -> Result<()> {
         let section = match trigger {
             HookTrigger::ConversationStart => "On Session Start",
