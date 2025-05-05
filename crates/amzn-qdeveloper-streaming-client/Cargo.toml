@@ -58,10 +58,10 @@ name = "amzn_qdeveloper_streaming_client"
 path = "src/lib.rs"
 
 [dependencies.aws-credential-types]
-version = "1.2.1"
+version = "1.2.3"
 
 [dependencies.aws-runtime]
-version = "1.5.5"
+version = "1.5.7"
 
 [dependencies.aws-smithy-async]
 version = "1.2.4"
@@ -70,18 +70,18 @@ version = "1.2.4"
 version = "0.60.6"
 
 [dependencies.aws-smithy-http]
-version = "0.60.12"
+version = "0.62.1"
 features = ["event-stream"]
 
 [dependencies.aws-smithy-json]
-version = "0.61.2"
+version = "0.61.3"
 
 [dependencies.aws-smithy-runtime]
 version = "1.7.8"
 features = ["client"]
 
 [dependencies.aws-smithy-runtime-api]
-version = "1.7.3"
+version = "1.8.0"
 features = [
     "client",
     "http-02x",

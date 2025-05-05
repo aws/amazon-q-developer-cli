@@ -8,7 +8,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
-aws-runtime = "1.4.4"
+aws-runtime = "1.5.7"
 aws-smithy-runtime-api.workspace = true
 aws-smithy-types.workspace = true
 aws-types.workspace = true
