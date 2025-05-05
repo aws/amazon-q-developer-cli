@@ -2744,8 +2744,8 @@ impl ChatContext {
 
     fn print_hook_section(output: &mut impl Write, hooks: &HashMap<String, Hook>, trigger: HookTrigger) -> Result<()> {
         let section = match trigger {
-            HookTrigger::ConversationStart => "Conversation Start",
-            HookTrigger::PerPrompt => "Per Prompt",
+            HookTrigger::ConversationStart => "On Session Start",
+            HookTrigger::PerPrompt => "Per User Message",
         };
         let hooks: Vec<(&String, &Hook)> = hooks.iter().filter(|(_, h)| h.trigger == trigger).collect();
 
