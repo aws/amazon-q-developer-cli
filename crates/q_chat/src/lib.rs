@@ -1846,14 +1846,37 @@ impl ChatContext {
                                 )?;
 
                                 if expand {
-                                    self.compact_history(
-                                        Some(tool_uses.clone()),
-                                        pending_tool_index,
-                                        None,
-                                        true,
-                                        false,
-                                    )
-                                    .await?;
+                                    let existing_summary =
+                                        self.conversation_state.latest_summary().map(|s| s.to_owned());
+                                    if let Some(summary) = existing_summary {
+                                        // Add a border around the summary for better visual separation
+                                        let terminal_width = self.terminal_width();
+                                        let border = "═".repeat(terminal_width.min(80));
+                                        execute!(
+                                            self.output,
+                                            style::Print("\n"),
+                                            style::SetForegroundColor(Color::Cyan),
+                                            style::Print(&border),
+                                            style::Print("\n"),
+                                            style::SetAttribute(Attribute::Bold),
+                                            style::Print("                       CONVERSATION SUMMARY"),
+                                            style::Print("\n"),
+                                            style::Print(&border),
+                                            style::SetAttribute(Attribute::Reset),
+                                            style::Print("\n\n"),
+                                            style::Print(&summary),
+                                            style::Print("\n\n")
+                                        )?;
+                                    } else {
+                                        self.compact_history(
+                                            Some(tool_uses.clone()),
+                                            pending_tool_index,
+                                            None,
+                                            true,
+                                            false,
+                                        )
+                                        .await?;
+                                    }
                                 }
 
                                 execute!(self.output, style::Print("\n"))?;
