@@ -120,16 +120,12 @@ impl PathCompleter {
         ctx: &Context<'_>,
     ) -> Result<(usize, Vec<String>), ReadlineError> {
         // Use the filename completer to get path completions
-        match self.filename_completer.complete(line, pos, ctx) {
-            Ok((pos, completions)) => {
-                // Convert the filename completer's pairs to strings
-                let file_completions: Vec<String> = completions.iter().map(|pair| pair.replacement.clone()).collect();
-
-                // Return the completions if we have any
-                Ok((pos, file_completions))
-            },
-            Err(err) => Err(err),
-        }
+        self.filename_completer
+            .complete(line, pos, ctx)
+            .map(|(pos, completions)| {
+                let file_completions = completions.iter().map(|pair| pair.replacement.clone()).collect();
+                (pos, file_completions)
+            })
     }
 }
 
