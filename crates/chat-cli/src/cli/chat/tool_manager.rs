@@ -529,7 +529,7 @@ impl ToolManager {
                 let tool_specs_clone = tool_specs.clone();
                 let conversation_id = conversation_id.clone();
                 async move {
-                    let tool_spec = client_clone.init(None::<NullMessenger>).await;
+                    let tool_spec = client_clone.init().await;
                     let mut sanitized_mapping = HashMap::<String, String>::new();
                     match tool_spec {
                         Ok((server_name, specs)) => {

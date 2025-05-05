@@ -12,7 +12,7 @@ use crate::{
 /// to make requests to mcp servers) are obtained passively. Consumers of client can of course
 /// choose to "actively" retrieve these information via explicitly making these requests.
 #[async_trait::async_trait]
-pub trait Messenger: Clone + Send + Sync + 'static {
+pub trait Messenger: std::fmt::Debug + Send + Sync + 'static {
     /// Sends the result of a tools list operation to the consumer
     /// This function is used to deliver information about available tools
     async fn send_tools_list_result(&self, result: ToolsListResult) -> Result<(), MessengerError>;
@@ -31,6 +31,10 @@ pub trait Messenger: Clone + Send + Sync + 'static {
         &self,
         result: ResourceTemplatesListResult,
     ) -> Result<(), MessengerError>;
+
+    /// Creates a duplicate of the messenger object
+    /// This function is used to create a new instance of the messenger with the same configuration
+    fn duplicate(&self) -> Box<dyn Messenger>;
 }
 
 #[derive(Clone, Debug, Error)]
@@ -39,7 +43,7 @@ pub enum MessengerError {
     Custom(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NullMessenger;
 
 #[async_trait::async_trait]
@@ -61,5 +65,9 @@ impl Messenger for NullMessenger {
         _result: ResourceTemplatesListResult,
     ) -> Result<(), MessengerError> {
         Ok(())
+    }
+
+    fn duplicate(&self) -> Box<dyn Messenger> {
+        Box::new(NullMessenger)
     }
 }

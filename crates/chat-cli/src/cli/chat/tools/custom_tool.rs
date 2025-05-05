@@ -88,7 +88,7 @@ impl CustomToolClient {
         })
     }
 
-    pub async fn init(&self, messenger: Option<impl Messenger>) -> Result<(String, Vec<ToolSpec>)> {
+    pub async fn init(&self) -> Result<(String, Vec<ToolSpec>)> {
         match self {
             CustomToolClient::Stdio {
                 client,
@@ -97,7 +97,7 @@ impl CustomToolClient {
             } => {
                 // We'll need to first initialize. This is the handshake every client and server
                 // needs to do before proceeding to anything else
-                let cap = client.init(messenger).await?;
+                let cap = client.init().await?;
                 // We'll be scrapping this for background server load: https://github.com/aws/amazon-q-developer-cli/issues/1466
                 // So don't worry about the tidiness for now
                 let is_tool_supported = cap.tools.is_some();

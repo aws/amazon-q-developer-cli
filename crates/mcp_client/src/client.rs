@@ -124,6 +124,7 @@ pub struct Client<T: Transport> {
     server_process_id: Option<Pid>,
     client_info: serde_json::Value,
     current_id: Arc<AtomicU64>,
+    pub messenger: Option<Box<dyn Messenger>>,
     pub prompt_gets: Arc<SyncRwLock<HashMap<String, PromptGet>>>,
     pub is_prompts_out_of_date: Arc<AtomicBool>,
 }
@@ -139,6 +140,7 @@ impl<T: Transport> Clone for Client<T> {
             server_process_id: None,
             client_info: self.client_info.clone(),
             current_id: self.current_id.clone(),
+            messenger: None,
             prompt_gets: self.prompt_gets.clone(),
             is_prompts_out_of_date: self.is_prompts_out_of_date.clone(),
         }
@@ -186,6 +188,7 @@ impl Client<StdioTransport> {
             server_process_id,
             client_info,
             current_id: Arc::new(AtomicU64::new(0)),
+            messenger: None,
             prompt_gets: Arc::new(SyncRwLock::new(HashMap::new())),
             is_prompts_out_of_date: Arc::new(AtomicBool::new(false)),
         })
@@ -215,7 +218,7 @@ where
     /// - Spawns task for listening to server driven workflows
     /// - Spawns tasks to ask for relevant info such as tools and prompts in accordance to server
     ///   capabilities received
-    pub async fn init(&self, messenger: Option<impl Messenger>) -> Result<ServerCapabilities, ClientError> {
+    pub async fn init(&self) -> Result<ServerCapabilities, ClientError> {
         let transport_ref = self.transport.clone();
         let server_name = self.server_name.clone();
 
@@ -361,9 +364,9 @@ where
                 }
             });
         }
-        if let (Some(_), Some(messenger)) = (&cap.tools, messenger) {
+        if let (Some(_), Some(messenger)) = (&cap.tools, &self.messenger) {
             let client_ref = (*self).clone();
-            let msger = messenger.clone();
+            let msger = messenger.duplicate();
             tokio::spawn(async move {
                 let resp = match client_ref.request("tools/list", None).await {
                     Ok(resp) => resp,
@@ -570,7 +573,6 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
-    use crate::NullMessenger;
     const TEST_BIN_OUT_DIR: &str = "target/debug";
     const TEST_SERVER_NAME: &str = "test_mcp_server";
 
@@ -660,9 +662,8 @@ mod tests {
         client: &mut Client<T>,
         cap_sent: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let test_messenger = Some(NullMessenger);
         // Test init
-        let _ = client.init(test_messenger).await.expect("Client init failed");
+        let _ = client.init().await.expect("Client init failed");
         tokio::time::sleep(time::Duration::from_millis(1500)).await;
         let client_capabilities_sent = client
             .request("verify_init_ack_sent", None)
