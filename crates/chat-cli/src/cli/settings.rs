@@ -15,7 +15,7 @@ use globset::Glob;
 use serde_json::json;
 
 use super::OutputFormat;
-use crate::fig_settings::JsonStore;
+use crate::settings::JsonStore;
 use crate::fig_util::{
     CliContext,
     directories,
@@ -65,7 +65,7 @@ impl SettingsArgs {
                 }
             },
             Some(SettingsSubcommands::All { format }) => {
-                let settings = crate::fig_settings::OldSettings::load()?.map().clone();
+                let settings = crate::settings::OldSettings::load()?.map().clone();
 
                 match format {
                     OutputFormat::Plain => {
@@ -87,7 +87,7 @@ impl SettingsArgs {
                 };
 
                 match (&self.value, self.delete) {
-                    (None, false) => match crate::fig_settings::settings::get_value(key)? {
+                    (None, false) => match crate::settings::settings::get_value(key)? {
                         Some(value) => {
                             match self.format {
                                 OutputFormat::Plain => match value.as_str() {
@@ -109,12 +109,12 @@ impl SettingsArgs {
                     },
                     (Some(value_str), false) => {
                         let value = serde_json::from_str(value_str).unwrap_or_else(|_| json!(value_str));
-                        crate::fig_settings::settings::set_value(key, value)?;
+                        crate::settings::settings::set_value(key, value)?;
                         Ok(ExitCode::SUCCESS)
                     },
                     (None, true) => {
                         let glob = Glob::new(key).context("Could not create glob")?.compile_matcher();
-                        let settings = crate::fig_settings::OldSettings::load()?;
+                        let settings = crate::settings::OldSettings::load()?;
                         let map = settings.map();
                         let keys_to_remove = map.keys().filter(|key| glob.is_match(key)).collect::<Vec<_>>();
 
@@ -124,7 +124,7 @@ impl SettingsArgs {
                             },
                             1 => {
                                 println!("Removing {:?}", keys_to_remove[0]);
-                                crate::fig_settings::settings::remove_value(keys_to_remove[0])?;
+                                crate::settings::settings::remove_value(keys_to_remove[0])?;
                             },
                             _ => {
                                 println!("Removing:");
@@ -133,7 +133,7 @@ impl SettingsArgs {
                                 }
 
                                 for key in &keys_to_remove {
-                                    crate::fig_settings::settings::remove_value(key)?;
+                                    crate::settings::settings::remove_value(key)?;
                                 }
                             },
                         }

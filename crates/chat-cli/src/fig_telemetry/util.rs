@@ -6,7 +6,7 @@ use uuid::{
     uuid,
 };
 
-use crate::fig_settings::{
+use crate::settings::{
     Settings,
     State,
 };

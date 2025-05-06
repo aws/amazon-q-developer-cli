@@ -541,7 +541,7 @@ pub async fn logout() -> Result<(), AuthError> {
         secret_store.delete(DeviceRegistration::SECRET_KEY),
     );
 
-    let profile_res = crate::fig_settings::state::remove_value("api.codewhisperer.profile");
+    let profile_res = crate::settings::state::remove_value("api.codewhisperer.profile");
 
     builder_res?;
     device_res?;

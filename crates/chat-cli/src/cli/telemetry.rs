@@ -24,15 +24,15 @@ impl TelemetrySubcommand {
     pub async fn execute(&self) -> Result<ExitCode> {
         match self {
             TelemetrySubcommand::Enable => {
-                crate::fig_settings::settings::set_value(TELEMETRY_ENABLED_KEY, true)?;
+                crate::settings::settings::set_value(TELEMETRY_ENABLED_KEY, true)?;
                 Ok(ExitCode::SUCCESS)
             },
             TelemetrySubcommand::Disable => {
-                crate::fig_settings::settings::set_value(TELEMETRY_ENABLED_KEY, false)?;
+                crate::settings::settings::set_value(TELEMETRY_ENABLED_KEY, false)?;
                 Ok(ExitCode::SUCCESS)
             },
             TelemetrySubcommand::Status { format } => {
-                let status = crate::fig_settings::settings::get_bool_or(TELEMETRY_ENABLED_KEY, true);
+                let status = crate::settings::settings::get_bool_or(TELEMETRY_ENABLED_KEY, true);
                 format.print(
                     || {
                         format!(

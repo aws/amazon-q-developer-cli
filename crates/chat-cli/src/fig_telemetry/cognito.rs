@@ -60,7 +60,7 @@ pub(crate) async fn get_cognito_credentials_send(
         session_token: credentials.session_token.clone(),
         expiration: credentials.expiration.and_then(|t| t.fmt(DATE_TIME_FORMAT).ok()),
     }) {
-        crate::fig_settings::state::set_value(CREDENTIALS_KEY, json).ok();
+        crate::settings::state::set_value(CREDENTIALS_KEY, json).ok();
     }
 
     let Some(access_key_id) = credentials.access_key_id else {
@@ -81,7 +81,7 @@ pub(crate) async fn get_cognito_credentials_send(
 }
 
 pub(crate) async fn get_cognito_credentials(telemetry_stage: &TelemetryStage) -> Result<Credentials, CredentialsError> {
-    match crate::fig_settings::state::get_string(CREDENTIALS_KEY).ok().flatten() {
+    match crate::settings::state::get_string(CREDENTIALS_KEY).ok().flatten() {
         Some(creds) => {
             let CredentialsJson {
                 access_key_id,

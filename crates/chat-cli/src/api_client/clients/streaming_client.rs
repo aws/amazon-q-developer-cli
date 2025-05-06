@@ -89,7 +89,7 @@ impl StreamingClient {
             .build();
         let inner = inner::Inner::Codewhisperer(CodewhispererStreamingClient::from_conf(conf));
 
-        let profile_arn = match crate::fig_settings::state::get_value("api.codewhisperer.profile") {
+        let profile_arn = match crate::settings::state::get_value("api.codewhisperer.profile") {
             Ok(Some(profile)) => match profile.get("arn") {
                 Some(arn) => match arn.as_str() {
                     Some(arn) => Some(arn.to_string()),

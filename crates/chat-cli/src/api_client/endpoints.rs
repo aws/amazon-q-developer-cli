@@ -35,14 +35,14 @@ impl Endpoint {
 
     pub fn load_codewhisperer() -> Self {
         let (endpoint, region) = if let Ok(Some(Value::Object(o))) =
-            crate::fig_settings::settings::get_value("api.codewhisperer.service")
+            crate::settings::settings::get_value("api.codewhisperer.service")
         {
             // The following branch is evaluated in case the user has set their own endpoint.
             (
                 o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
                 o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
             )
-        } else if let Ok(Some(Value::Object(o))) = crate::fig_settings::state::get_value("api.codewhisperer.profile") {
+        } else if let Ok(Some(Value::Object(o))) = crate::settings::state::get_value("api.codewhisperer.profile") {
             // The following branch is evaluated in the case of user profile being set.
             match o.get("arn").and_then(|v| v.as_str()).map(|v| v.to_owned()) {
                 Some(arn) => {
@@ -74,7 +74,7 @@ impl Endpoint {
     }
 
     pub fn load_q() -> Self {
-        match crate::fig_settings::settings::get_value("api.q.service") {
+        match crate::settings::settings::get_value("api.q.service") {
             Ok(Some(Value::Object(o))) => {
                 let endpoint = o.get("endpoint").and_then(|v| v.as_str());
                 let region = o.get("region").and_then(|v| v.as_str());

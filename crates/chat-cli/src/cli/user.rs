@@ -168,7 +168,7 @@ impl RootUserSubcommand {
                         );
 
                         if matches!(token.token_type(), TokenType::IamIdentityCenter) {
-                            if let Ok(Some(profile)) = crate::fig_settings::state::get::<
+                            if let Ok(Some(profile)) = crate::settings::state::get::<
                                 crate::api_client::profile::Profile,
                             >("api.codewhisperer.profile")
                             {
@@ -244,19 +244,19 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                 AuthMethod::BuilderId => (None, None),
                 AuthMethod::IdentityCenter => {
                     let default_start_url = args.identity_provider.or_else(|| {
-                        crate::fig_settings::state::get_string("auth.idc.start-url")
+                        crate::settings::state::get_string("auth.idc.start-url")
                             .ok()
                             .flatten()
                     });
                     let default_region = args
                         .region
-                        .or_else(|| crate::fig_settings::state::get_string("auth.idc.region").ok().flatten());
+                        .or_else(|| crate::settings::state::get_string("auth.idc.region").ok().flatten());
 
                     let start_url = input("Enter Start URL", default_start_url.as_deref())?;
                     let region = input("Enter Region", default_region.as_deref())?;
 
-                    let _ = crate::fig_settings::state::set_value("auth.idc.start-url", start_url.clone());
-                    let _ = crate::fig_settings::state::set_value("auth.idc.region", region.clone());
+                    let _ = crate::settings::state::set_value("auth.idc.start-url", start_url.clone());
+                    let _ = crate::settings::state::set_value("auth.idc.region", region.clone());
 
                     (Some(start_url), Some(region))
                 },
@@ -379,7 +379,7 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
         return Ok(());
     }
 
-    let sso_region: Option<String> = crate::fig_settings::state::get_string("auth.idc.region").ok().flatten();
+    let sso_region: Option<String> = crate::settings::state::get_string("auth.idc.region").ok().flatten();
     let total_profiles = profiles.len() as i64;
 
     if whoami && profiles.len() == 1 {
@@ -393,7 +393,7 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
             .await;
         }
         spinner.stop_with_message(String::new());
-        return Ok(crate::fig_settings::state::set_value(
+        return Ok(crate::settings::state::set_value(
             "api.codewhisperer.profile",
             serde_json::to_value(&profiles[0])?,
         )?);
@@ -403,7 +403,7 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
         .iter()
         .map(|p| format!("{} (arn: {})", p.profile_name, p.arn))
         .collect();
-    let active_profile: Option<Profile> = crate::fig_settings::state::get("api.codewhisperer.profile")?;
+    let active_profile: Option<Profile> = crate::settings::state::get("api.codewhisperer.profile")?;
 
     if let Some(default_idx) = active_profile
         .as_ref()
@@ -424,8 +424,8 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
             let chosen = &profiles[i];
             let profile = serde_json::to_value(chosen)?;
             eprintln!("Set profile: {}\n", chosen.profile_name.as_str().green());
-            crate::fig_settings::state::set_value("api.codewhisperer.profile", profile)?;
-            crate::fig_settings::state::remove_value("api.selectedCustomization")?;
+            crate::settings::state::set_value("api.codewhisperer.profile", profile)?;
+            crate::settings::state::remove_value("api.selectedCustomization")?;
 
             if let Some(profile_region) = chosen.arn.split(':').nth(3) {
                 let intent = if whoami {
@@ -463,6 +463,6 @@ mod tests {
     #[test]
     #[ignore]
     fn unset_profile() {
-        crate::fig_settings::state::remove_value("api.codewhisperer.profile").unwrap();
+        crate::settings::state::remove_value("api.codewhisperer.profile").unwrap();
     }
 }

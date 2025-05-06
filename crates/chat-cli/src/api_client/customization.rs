@@ -5,7 +5,7 @@ use serde::{
     Serialize,
 };
 
-use crate::fig_settings::State;
+use crate::settings::State;
 
 const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
 
@@ -21,17 +21,17 @@ pub struct Customization {
 
 impl Customization {
     /// Load the currently selected customization from state
-    pub fn load_selected(state: &State) -> Result<Option<Self>, crate::fig_settings::SettingsError> {
+    pub fn load_selected(state: &State) -> Result<Option<Self>, crate::settings::SettingsError> {
         state.get(CUSTOMIZATION_STATE_KEY)
     }
 
     /// Save the currently selected customization to state
-    pub fn save_selected(&self, state: &State) -> Result<(), crate::fig_settings::SettingsError> {
+    pub fn save_selected(&self, state: &State) -> Result<(), crate::settings::SettingsError> {
         state.set_value(CUSTOMIZATION_STATE_KEY, serde_json::to_value(self)?)
     }
 
     /// Delete the currently selected customization from state
-    pub fn delete_selected(state: &State) -> Result<(), crate::fig_settings::SettingsError> {
+    pub fn delete_selected(state: &State) -> Result<(), crate::settings::SettingsError> {
         state.remove_value(CUSTOMIZATION_STATE_KEY)
     }
 }

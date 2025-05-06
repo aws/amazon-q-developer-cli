@@ -10,7 +10,7 @@ use crate::api_client::consts::{
 };
 
 fn is_codewhisperer_content_optout() -> bool {
-    !crate::fig_settings::settings::get_bool_or(SHARE_CODEWHISPERER_CONTENT_SETTINGS_KEY, true)
+    !crate::settings::settings::get_bool_or(SHARE_CODEWHISPERER_CONTENT_SETTINGS_KEY, true)
 }
 
 #[derive(Debug, Clone)]

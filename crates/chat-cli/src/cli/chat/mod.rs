@@ -91,7 +91,7 @@ use crate::api_client::model::{
     Tool as FigTool,
     ToolResultStatus,
 };
-use crate::fig_settings::{
+use crate::settings::{
     Settings,
     State,
 };

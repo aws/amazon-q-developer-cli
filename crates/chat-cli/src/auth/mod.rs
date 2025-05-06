@@ -43,9 +43,9 @@ pub enum AuthError {
     #[error(transparent)]
     StrFromUtf8(#[from] std::str::Utf8Error),
     #[error(transparent)]
-    DbOpenError(#[from] crate::fig_settings::error::DbOpenError),
+    DbOpenError(#[from] crate::settings::error::DbOpenError),
     #[error(transparent)]
-    Setting(#[from] crate::fig_settings::SettingsError),
+    Setting(#[from] crate::settings::SettingsError),
     #[error("No token")]
     NoToken,
     #[error("OAuth state mismatch. Actual: {} | Expected: {}", .actual, .expected)]

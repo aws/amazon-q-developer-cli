@@ -265,7 +265,7 @@ pub fn rl(
     sender: std::sync::mpsc::Sender<Option<String>>,
     receiver: std::sync::mpsc::Receiver<Vec<String>>,
 ) -> Result<Editor<ChatHelper, DefaultHistory>> {
-    let edit_mode = match crate::fig_settings::settings::get_string_opt("chat.editMode").as_deref() {
+    let edit_mode = match crate::settings::settings::get_string_opt("chat.editMode").as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
         _ => EditMode::Vi,
     };

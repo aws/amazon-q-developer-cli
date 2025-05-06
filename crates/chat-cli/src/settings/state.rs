@@ -8,7 +8,7 @@ use super::sqlite::{
     Db,
     database,
 };
-use crate::fig_settings::Result;
+use crate::settings::Result;
 
 #[derive(Debug, Clone, Default)]
 pub struct State(inner::Inner);

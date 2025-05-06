@@ -18,7 +18,7 @@ use serde_json::Map;
 use tracing::info;
 
 use super::error::DbOpenError;
-use crate::fig_settings::Result;
+use crate::settings::Result;
 use crate::fig_util::directories::fig_data_dir;
 
 const STATE_TABLE_NAME: &str = "state";

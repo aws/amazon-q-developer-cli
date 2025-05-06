@@ -45,7 +45,7 @@ impl InputSource {
         };
 
         if let inner::Inner::Readline(rl) = &mut self.0 {
-            let key_char = match crate::fig_settings::settings::get_string_opt("chat.skimCommandKey").as_deref() {
+            let key_char = match crate::settings::settings::get_string_opt("chat.skimCommandKey").as_deref() {
                 Some(key) if key.len() == 1 => key.chars().next().unwrap_or('s'),
                 _ => 's', // Default to 's' if setting is missing or invalid
             };

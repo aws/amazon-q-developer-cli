@@ -19,7 +19,7 @@ use crate::fig_aws_common::behavior_version;
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 
 pub(crate) fn timeout_config() -> TimeoutConfig {
-    let timeout = crate::fig_settings::settings::get_int("api.timeout")
+    let timeout = crate::settings::settings::get_int("api.timeout")
         .ok()
         .flatten()
         .and_then(|i| i.try_into().ok())

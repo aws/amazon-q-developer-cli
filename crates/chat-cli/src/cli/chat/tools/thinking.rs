@@ -12,7 +12,7 @@ use super::{
     InvokeOutput,
     OutputKind,
 };
-use crate::fig_settings::settings;
+use crate::settings::settings;
 
 /// The Think tool allows the model to reason through complex problems during response generation.
 /// It provides a dedicated space for the model to process information from tool call results,

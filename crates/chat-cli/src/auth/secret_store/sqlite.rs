@@ -2,7 +2,7 @@
 use super::Secret;
 use crate::Result;
 use crate::auth::AuthError;
-use crate::fig_settings::sqlite::{
+use crate::settings::sqlite::{
     Db,
     database,
 };

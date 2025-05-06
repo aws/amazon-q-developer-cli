@@ -10,7 +10,7 @@ pub enum Error {
     #[error(transparent)]
     Util(#[from] crate::fig_util::UtilError),
     #[error(transparent)]
-    Settings(#[from] crate::fig_settings::SettingsError),
+    Settings(#[from] crate::settings::SettingsError),
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
     #[error(transparent)]
