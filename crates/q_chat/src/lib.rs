@@ -39,7 +39,6 @@ use std::{
 
 use command::{
     Command,
-    MemorySubcommand,
     PromptsSubcommand,
     ToolsSubcommand,
 };
@@ -183,7 +182,6 @@ use uuid::Uuid;
 use winnow::Partial;
 use winnow::stream::Offset;
 
-use crate::tools::memory::MemoryStore;
 use crate::util::shared_writer::SharedWriter;
 use crate::util::ui::draw_box;
 
@@ -2714,182 +2712,6 @@ impl ChatContext {
                     tool_uses: Some(tool_uses),
                     pending_tool_index,
                     skip_printing_tools: true,
-                }
-            },
-            Command::Memory { subcommand } => {
-                // Handle memory commands
-                match subcommand {
-                    MemorySubcommand::Show => {
-                        let memory_store = MemoryStore::get_instance();
-                        let store = memory_store.lock().await;
-                        let contexts = store.get_all();
-
-                        if contexts.is_empty() {
-                            queue!(self.output, style::Print("\nNo memory entries found.\n\n"))?;
-                        } else {
-                            queue!(
-                                self.output,
-                                style::Print("\n📚 Memory Contexts:\n"),
-                                style::Print(format!("{}\n", "━".repeat(50)))
-                            )?;
-
-                            for context in contexts {
-                                // Display context header with ID and name
-                                queue!(
-                                    self.output,
-                                    style::SetAttribute(Attribute::Bold),
-                                    style::SetForegroundColor(Color::Cyan),
-                                    style::Print(format!("📂 {}: ", context.id)),
-                                    style::SetForegroundColor(Color::Green),
-                                    style::Print(&context.name),
-                                    style::SetAttribute(Attribute::Reset),
-                                    style::Print("\n")
-                                )?;
-
-                                // Display metadata
-                                queue!(
-                                    self.output,
-                                    style::Print(format!("   Description: {}\n", context.description)),
-                                    style::Print(format!(
-                                        "   Created: {}\n",
-                                        context.created_at.format("%Y-%m-%d %H:%M:%S")
-                                    )),
-                                    style::Print(format!(
-                                        "   Updated: {}\n",
-                                        context.updated_at.format("%Y-%m-%d %H:%M:%S")
-                                    ))
-                                )?;
-
-                                if let Some(path) = &context.source_path {
-                                    queue!(self.output, style::Print(format!("   Source: {}\n", path)))?;
-                                }
-
-                                queue!(
-                                    self.output,
-                                    style::Print("   Items: "),
-                                    style::SetForegroundColor(Color::Yellow),
-                                    style::Print(format!("{}", context.item_count)),
-                                    style::SetForegroundColor(Color::Reset),
-                                    style::Print(" | Persistent: ")
-                                )?;
-
-                                if context.persistent {
-                                    queue!(
-                                        self.output,
-                                        style::SetForegroundColor(Color::Green),
-                                        style::Print("Yes"),
-                                        style::SetForegroundColor(Color::Reset),
-                                        style::Print("\n")
-                                    )?;
-                                } else {
-                                    queue!(
-                                        self.output,
-                                        style::SetForegroundColor(Color::Yellow),
-                                        style::Print("No"),
-                                        style::SetForegroundColor(Color::Reset),
-                                        style::Print("\n")
-                                    )?;
-                                }
-                                queue!(self.output, style::Print(format!("{}\n", "━".repeat(50))))?;
-                            }
-                            queue!(self.output, style::Print("\n"))?;
-                        }
-
-                        ChatState::PromptUser {
-                            tool_uses: Some(tool_uses),
-                            pending_tool_index,
-                            skip_printing_tools: true,
-                        }
-                    },
-                    MemorySubcommand::Add { path } => {
-                        // Implementation for adding memory entries
-                        let memory_store = MemoryStore::get_instance();
-                        let mut store = memory_store.lock().await;
-                        store.add(&path, &path);
-
-                        queue!(
-                            self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nAdded to memory: {}\n\n", path)),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-
-                        ChatState::PromptUser {
-                            tool_uses: Some(tool_uses),
-                            pending_tool_index,
-                            skip_printing_tools: true,
-                        }
-                    },
-                    MemorySubcommand::Remove { path } => {
-                        // Implementation for removing memory entries
-                        let memory_store = MemoryStore::get_instance();
-                        let mut store = memory_store.lock().await;
-
-                        // Try to remove by path first
-                        if store.remove_by_path(&path) {
-                            queue!(
-                                self.output,
-                                style::SetForegroundColor(Color::Green),
-                                style::Print(format!("\nRemoved context with path '{}' from memory\n\n", path)),
-                                style::SetForegroundColor(Color::Reset)
-                            )?;
-                        }
-                        // If path removal fails, try by name
-                        else if store.remove_by_name(&path) {
-                            queue!(
-                                self.output,
-                                style::SetForegroundColor(Color::Green),
-                                style::Print(format!("\nRemoved context with name '{}' from memory\n\n", path)),
-                                style::SetForegroundColor(Color::Reset)
-                            )?;
-                        } else {
-                            queue!(
-                                self.output,
-                                style::SetForegroundColor(Color::Yellow),
-                                style::Print(format!("\nEntry not found in memory: {}\n\n", path)),
-                                style::SetForegroundColor(Color::Reset)
-                            )?;
-                        }
-
-                        ChatState::PromptUser {
-                            tool_uses: Some(tool_uses),
-                            pending_tool_index,
-                            skip_printing_tools: true,
-                        }
-                    },
-                    MemorySubcommand::Clear => {
-                        // Implementation for clearing memory
-                        let memory_store = MemoryStore::get_instance();
-                        let mut store = memory_store.lock().await;
-                        let count = store.clear();
-
-                        queue!(
-                            self.output,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nCleared {} entries from memory\n\n", count)),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-
-                        ChatState::PromptUser {
-                            tool_uses: Some(tool_uses),
-                            pending_tool_index,
-                            skip_printing_tools: true,
-                        }
-                    },
-                    MemorySubcommand::Help => {
-                        queue!(
-                            self.output,
-                            style::Print("\n"),
-                            style::Print(MemorySubcommand::help_text()),
-                            style::Print("\n")
-                        )?;
-
-                        ChatState::PromptUser {
-                            tool_uses: Some(tool_uses),
-                            pending_tool_index,
-                            skip_printing_tools: true,
-                        }
-                    },
                 }
             },
         })

@@ -49,4 +49,3 @@ book/
 .env*
 
 run-build.sh
-**/.fastembed_cache/*
