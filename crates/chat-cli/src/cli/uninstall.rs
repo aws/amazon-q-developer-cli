@@ -44,7 +44,7 @@ pub async fn uninstall_command(no_confirm: bool) -> Result<ExitCode> {
 #[cfg(target_os = "macos")]
 async fn uninstall() -> Result<()> {
     crate::auth::logout().await.ok();
-    crate::fig_install::uninstall().await?;
+    crate::install::uninstall().await?;
     Ok(())
 }
 
@@ -52,4 +52,3 @@ async fn uninstall() -> Result<()> {
 async fn uninstall() -> Result<()> {
     eyre::bail!("Guided uninstallation is not supported on this platform. Please uninstall manually.");
 }
-
