@@ -9,7 +9,7 @@ use aws_sdk_cognitoidentity::primitives::{
     DateTimeFormat,
 };
 
-use crate::fig_aws_common::app_name;
+use crate::aws_common::app_name;
 use crate::telemetry::TelemetryStage;
 
 const CREDENTIALS_KEY: &str = "telemetry-cognito-credentials";

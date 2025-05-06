@@ -14,7 +14,7 @@ use crate::api_client::{
     Endpoint,
 };
 use crate::auth::builder_id::BearerResolver;
-use crate::fig_aws_common::{
+use crate::aws_common::{
     UserAgentOverrideInterceptor,
     app_name,
 };
@@ -51,7 +51,7 @@ impl Client {
     pub async fn new_codewhisperer_client(endpoint: &Endpoint) -> Self {
         let conf_builder: amzn_codewhisperer_client::config::Builder = (&bearer_sdk_config(endpoint).await).into();
         let conf = conf_builder
-            .http_client(crate::fig_aws_common::http_client::client())
+            .http_client(crate::aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new())
             .interceptor(UserAgentOverrideInterceptor::new())
             .bearer_token_resolver(BearerResolver)

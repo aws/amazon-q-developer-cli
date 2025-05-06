@@ -56,7 +56,7 @@ use crate::auth::secret_store::{
     Secret,
     SecretStore,
 };
-use crate::fig_aws_common::app_name;
+use crate::aws_common::app_name;
 use crate::telemetry::send_refresh_credentials;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -88,7 +88,7 @@ pub(crate) fn oidc_url(region: &Region) -> String {
 pub(crate) fn client(region: Region) -> Client {
     let retry_config = RetryConfig::standard().with_max_attempts(3);
     let sdk_config = aws_types::SdkConfig::builder()
-        .http_client(crate::fig_aws_common::http_client::client())
+        .http_client(crate::aws_common::http_client::client())
         .behavior_version(BehaviorVersion::v2025_01_17())
         .endpoint_url(oidc_url(&region))
         .region(region)

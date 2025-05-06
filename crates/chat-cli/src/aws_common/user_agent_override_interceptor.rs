@@ -154,7 +154,7 @@ mod tests {
     use http::HeaderValue;
 
     use super::*;
-    use crate::fig_aws_common::{
+    use crate::aws_common::{
         APP_NAME_STR,
         app_name,
     };

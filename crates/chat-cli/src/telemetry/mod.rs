@@ -45,14 +45,14 @@ use util::telemetry_is_disabled;
 use uuid::Uuid;
 
 use crate::api_client::Client as CodewhispererClient;
-use crate::fig_aws_common::app_name;
-use crate::util::system_info::os_version;
+use crate::aws_common::app_name;
 use crate::telemetry::core::Event;
 pub use crate::telemetry::core::{
     EventType,
     QProfileSwitchIntent,
     TelemetryResult,
 };
+use crate::util::system_info::os_version;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TelemetryError {
@@ -153,7 +153,7 @@ impl Client {
 
         let toolkit_telemetry_client = Some(amzn_toolkit_telemetry_client::Client::from_conf(
             Config::builder()
-                .http_client(crate::fig_aws_common::http_client::client())
+                .http_client(crate::aws_common::http_client::client())
                 .behavior_version(BehaviorVersion::v2025_01_17())
                 .endpoint_resolver(StaticEndpoint(telemetry_stage.endpoint))
                 .app_name(app_name())

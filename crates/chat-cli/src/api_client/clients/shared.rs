@@ -13,7 +13,7 @@ use crate::api_client::{
     ApiClientError,
     Endpoint,
 };
-use crate::fig_aws_common::behavior_version;
+use crate::aws_common::behavior_version;
 
 // TODO(bskiser): confirm timeout is updated to an appropriate value?
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);

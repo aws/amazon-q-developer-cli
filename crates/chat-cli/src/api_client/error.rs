@@ -13,7 +13,7 @@ pub use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::event_stream::RawMessage;
 use thiserror::Error;
 
-use crate::fig_aws_common::SdkErrorDisplay;
+use crate::aws_common::SdkErrorDisplay;
 
 #[derive(Debug, Error)]
 pub enum ApiClientError {

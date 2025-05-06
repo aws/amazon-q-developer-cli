@@ -1,7 +1,7 @@
 mod api_client;
 mod auth;
+mod aws_common;
 mod cli;
-mod fig_aws_common;
 mod install;
 mod logging;
 mod mcp_client;

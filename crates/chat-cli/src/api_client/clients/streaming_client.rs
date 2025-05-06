@@ -26,7 +26,7 @@ use crate::api_client::{
     Endpoint,
 };
 use crate::auth::builder_id::BearerResolver;
-use crate::fig_aws_common::{
+use crate::aws_common::{
     UserAgentOverrideInterceptor,
     app_name,
 };
@@ -79,7 +79,7 @@ impl StreamingClient {
         let conf_builder: amzn_codewhisperer_streaming_client::config::Builder =
             (&bearer_sdk_config(endpoint).await).into();
         let conf = conf_builder
-            .http_client(crate::fig_aws_common::http_client::client())
+            .http_client(crate::aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new())
             .interceptor(UserAgentOverrideInterceptor::new())
             .bearer_token_resolver(BearerResolver)
@@ -117,7 +117,7 @@ impl StreamingClient {
         let conf_builder: amzn_qdeveloper_streaming_client::config::Builder =
             (&sigv4_sdk_config(endpoint).await?).into();
         let conf = conf_builder
-            .http_client(crate::fig_aws_common::http_client::client())
+            .http_client(crate::aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new())
             .interceptor(UserAgentOverrideInterceptor::new())
             .app_name(app_name())
