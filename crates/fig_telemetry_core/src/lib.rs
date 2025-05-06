@@ -5,7 +5,7 @@ use std::time::{
     SystemTime,
 };
 
-pub use amzn_toolkit_telemetry::types::MetricDatum;
+pub use amzn_toolkit_telemetry_client::types::MetricDatum;
 use aws_toolkit_telemetry_definitions::IntoMetricDatum;
 use aws_toolkit_telemetry_definitions::metrics::{
     AmazonqDidSelectProfile,

@@ -4,7 +4,7 @@ extend-exclude = [
   "crates/amzn-codewhisperer-client",
   "crates/amzn-codewhisperer-streaming-client",
   "crates/amzn-consolas-client",
-  "crates/amzn-toolkit-telemetry",
+  "crates/amzn-toolkit-telemetry-client",
   "crates/amzn-qdeveloper-client",
   "crates/amzn-qdeveloper-streaming-client",
   "crates/aws-toolkit-telemetry-definitions/def.json",
@@ -12,7 +12,7 @@ extend-exclude = [
   "crates/zbus_names",
   "packages/fuzzysort",
   "packages/dashboard-app/public/license/NOTICE.txt",
-  "pnpm-lock.yaml"
+  "pnpm-lock.yaml",
 ]
 
 [default]

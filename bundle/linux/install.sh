@@ -137,6 +137,7 @@ fi
 
 if [ -n "${Q_INSTALL_GLOBAL:-}" ]; then
     install -m 755 "$SCRIPT_DIR/bin/q" /usr/local/bin/
+    install -m 755 "$SCRIPT_DIR/bin/qchat" /usr/local/bin/
     install -m 755 "$SCRIPT_DIR/bin/qterm" /usr/local/bin/
 
     /usr/local/bin/q integrations install dotfiles
@@ -145,6 +146,7 @@ else
     mkdir -p "$HOME/.local/bin"
 
     install -m 755 "$SCRIPT_DIR/bin/q" "$HOME/.local/bin/"
+    install -m 755 "$SCRIPT_DIR/bin/qchat" "$HOME/.local/bin/"
     install -m 755 "$SCRIPT_DIR/bin/qterm" "$HOME/.local/bin/"
 
     "$HOME/.local/bin/q" setup "$@"

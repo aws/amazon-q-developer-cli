@@ -60,7 +60,6 @@ mcp_client.workspace = true
 mimalloc.workspace = true
 owo-colors = "4.2.0"
 parking_lot.workspace = true
-q_chat.workspace = true
 rand.workspace = true
 regex.workspace = true
 semver.workspace = true

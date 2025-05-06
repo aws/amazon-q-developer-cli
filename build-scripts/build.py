@@ -33,6 +33,8 @@ from signing import (
 from importlib import import_module
 from const import (
     APP_NAME,
+    CHAT_BINARY_NAME,
+    CHAT_PACKAGE_NAME,
     CLI_BINARY_NAME,
     CLI_PACKAGE_NAME,
     DESKTOP_BINARY_NAME,
@@ -208,12 +210,13 @@ def build_macos_ime(
     return input_method_app
 
 
-def macos_tauri_config(cli_path: pathlib.Path, pty_path: pathlib.Path, target: str) -> str:
+def macos_tauri_config(cli_path: pathlib.Path, chat_path: pathlib.Path, pty_path: pathlib.Path, target: str) -> str:
     config = {
         "tauri": {
             "bundle": {
                 "externalBin": [
                     str(cli_path).removesuffix(f"-{target}"),
+                    str(chat_path).removesuffix(f"-{target}"),
                     str(pty_path).removesuffix(f"-{target}"),
                 ],
                 "resources": ["manifest.json"],
@@ -227,6 +230,7 @@ def build_macos_desktop_app(
     release: bool,
     pty_path: pathlib.Path,
     cli_path: pathlib.Path,
+    chat_path: pathlib.Path,
     npm_packages: NpmBuildOutput,
     is_prod: bool,
     signing_data: CdSigningData | None,
@@ -244,7 +248,7 @@ def build_macos_desktop_app(
 
     info("Building tauri config")
     tauri_config_path = pathlib.Path(DESKTOP_PACKAGE_PATH) / "build-config.json"
-    tauri_config_path.write_text(macos_tauri_config(cli_path=cli_path, pty_path=pty_path, target=target))
+    tauri_config_path.write_text(macos_tauri_config(cli_path=cli_path, chat_path=chat_path, pty_path=pty_path, target=target))
 
     info("Building", DESKTOP_PACKAGE_NAME)
 
@@ -467,6 +471,7 @@ def build_linux_minimal(cli_path: pathlib.Path, pty_path: pathlib.Path):
 def linux_tauri_config(
     cli_path: pathlib.Path,
     pty_path: pathlib.Path,
+    chat_path: pathlib.Path,
     dashboard_path: pathlib.Path,
     autocomplete_path: pathlib.Path,
     vscode_path: pathlib.Path,
@@ -483,6 +488,7 @@ def linux_tauri_config(
                 "externalBin": [
                     str(cli_path).removesuffix(f"-{target}"),
                     str(pty_path).removesuffix(f"-{target}"),
+                    str(chat_path).removesuffix(f"-{target}"),
                 ],
                 "targets": ["appimage"],
                 "icon": ["icons/128x128.png"],
@@ -535,6 +541,7 @@ def make_linux_bundle_metadata(packaged_as: Package) -> pathlib.Path:
 class LinuxDebResources:
     cli_path: pathlib.Path
     pty_path: pathlib.Path
+    chat_path: pathlib.Path
     desktop_path: pathlib.Path
     themes_path: pathlib.Path
     legacy_extension_dir_path: pathlib.Path
@@ -573,6 +580,7 @@ def build_linux_deb(
     bin_path.mkdir(parents=True)
     shutil.copy(resources.cli_path, bin_path / CLI_BINARY_NAME)
     shutil.copy(resources.pty_path, bin_path / PTY_BINARY_NAME)
+    shutil.copy(resources.chat_path, bin_path / CHAT_BINARY_NAME)
     shutil.copy(resources.desktop_path, bin_path / DESKTOP_BINARY_NAME)
 
     info("Copying /usr/share resources")
@@ -629,6 +637,7 @@ def build_linux_full(
     release: bool,
     cli_path: pathlib.Path,
     pty_path: pathlib.Path,
+    chat_path: pathlib.Path,
     npm_packages: NpmBuildOutput,
     features: Mapping[str, Sequence[str]] | None = None,
 ):
@@ -668,6 +677,7 @@ def build_linux_full(
         linux_tauri_config(
             cli_path=cli_path,
             pty_path=pty_path,
+            chat_path=chat_path,
             dashboard_path=npm_packages.dashboard_path,
             autocomplete_path=npm_packages.autocomplete_path,
             vscode_path=npm_packages.vscode_path,
@@ -703,6 +713,7 @@ def build_linux_full(
     deb_resources = LinuxDebResources(
         cli_path=cli_path,
         pty_path=pty_path,
+        chat_path=chat_path,
         desktop_path=desktop_path,
         themes_path=themes_path,
         legacy_extension_dir_path=legacy_extension_dir_path,
@@ -846,6 +857,16 @@ def build(
             targets=targets,
         )
 
+        info("Building", CHAT_PACKAGE_NAME)
+        chat_path = build_cargo_bin(
+            variant=variant,
+            release=release,
+            package=CHAT_PACKAGE_NAME,
+            output_name=CHAT_BINARY_NAME,
+            features=cargo_features,
+            targets=targets,
+        )
+
         info("Building", PTY_PACKAGE_NAME)
         pty_path = build_cargo_bin(
             variant=variant,
@@ -864,6 +885,7 @@ def build(
             build_paths = build_macos_desktop_app(
                 release=release,
                 cli_path=cli_path,
+                chat_path=chat_path,
                 pty_path=pty_path,
                 npm_packages=npm_packages,
                 signing_data=signing_data,
@@ -889,6 +911,7 @@ def build(
                     release=release,
                     cli_path=cli_path,
                     pty_path=pty_path,
+                    chat_path=chat_path,
                     npm_packages=npm_packages,
                     features=cargo_features,
                 )

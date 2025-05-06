@@ -1143,7 +1143,9 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature. ```no_run
+    /// `behavior-version-latest` cargo feature.
+    ///
+    /// ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
     /// let config = amzn_consolas_client::Config::builder()
@@ -1152,9 +1154,10 @@ impl Builder {
     ///     .build();
     /// let client = amzn_consolas_client::Client::from_conf(config);
     /// ```
-    /// 
+    ///
     /// Customizing behavior major version:
-    /// ```no_run
+    ///
+    ///  ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
     /// let config = amzn_consolas_client::Config::builder()
@@ -1178,7 +1181,9 @@ impl Builder {
     /// # Examples
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
-    /// `behavior-version-latest` cargo feature. ```no_run
+    /// `behavior-version-latest` cargo feature.
+    //
+    /// ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
     /// let config = amzn_consolas_client::Config::builder()
@@ -1187,9 +1192,10 @@ impl Builder {
     ///     .build();
     /// let client = amzn_consolas_client::Client::from_conf(config);
     /// ```
-    /// 
+    ///
     /// Customizing behavior major version:
-    /// ```no_run
+    ///
+    ///  ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
     /// let config = amzn_consolas_client::Config::builder()

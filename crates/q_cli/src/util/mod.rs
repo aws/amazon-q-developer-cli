@@ -346,7 +346,7 @@ mod tests {
         };
 
         let app_process_name = OsString::from(APP_PROCESS_NAME);
-        let system = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+        let system = System::new_with_specifics(RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()));
         cfg_if! {
             if #[cfg(windows)] {
                 let mut processes = system.processes_by_name(&app_process_name);

@@ -1,0 +1,216 @@
+[
+  {
+    "identifier": "insertSelected",
+    "name": "Insert selected",
+    "description": "Insert selected suggestion",
+    "category": "Insertion",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["enter"]
+  },
+  {
+    "identifier": "insertCommonPrefix",
+    "name": "Insert common prefix",
+    "description": "Insert shared prefix of available suggestions. Shake if there's no common prefix.",
+    "category": "Insertion",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["tab"]
+  },
+  {
+    "identifier": "insertCommonPrefixOrNavigateDown",
+    "name": "Insert common prefix or navigate",
+    "description": "Insert shared prefix of available suggestions. Navigate if there's no common prefix.",
+    "category": "Insertion",
+    "availability": "WHEN_FOCUSED"
+  },
+  {
+    "identifier": "insertCommonPrefixOrInsertSelected",
+    "name": "Insert common prefix or insert selected",
+    "description": "Insert shared prefix of available suggestions. Insert currently selected suggestion if there's not common prefix.",
+    "category": "Insertion",
+    "availability": "WHEN_FOCUSED"
+  },
+  {
+    "identifier": "insertSelectedAndExecute",
+    "name": "Insert selected and execute",
+    "description": "Insert selected suggestion and then execute the current command.",
+    "category": "Insertion",
+    "availability": "WHEN_FOCUSED"
+  },
+  {
+    "identifier": "execute",
+    "name": "Execute",
+    "description": "Execute the current command.",
+    "category": "Insertion",
+    "availability": "WHEN_FOCUSED"
+  },
+  {
+    "identifier": "hideAutocomplete",
+    "name": "Hide autocomplete",
+    "description": "Hide the autocomplete window",
+    "category": "General",
+    "availability": "ALWAYS",
+    "defaultBindings": ["esc"]
+  },
+  {
+    "identifier": "showAutocomplete",
+    "name": "Show autocomplete",
+    "description": "Show the autocomplete window",
+    "category": "General",
+    "availability": "ALWAYS"
+  },
+  {
+    "identifier": "toggleAutocomplete",
+    "name": "Toggle autocomplete",
+    "description": "Toggle the visibility of the autocomplete window",
+    "availability": "ALWAYS"
+  },
+  {
+    "identifier": "navigateUp",
+    "name": "Navigate up",
+    "description": "Scroll up one entry in the list of suggestions",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["shift+tab", "up", "control+k", "control+p"]
+  },
+  {
+    "identifier": "navigateDown",
+    "name": "Navigate down",
+    "description": "Scroll down one entry in the list of suggestions",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["down", "control+j", "control+n"]
+  },
+  {
+    "identifier": "selectSuggestion1",
+    "name": "Select 1st suggestion",
+    "description": "Select the 1st suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+1"]
+  },
+  {
+    "identifier": "selectSuggestion2",
+    "name": "Select 2nd suggestion",
+    "description": "Select the 2nd suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+2"]
+  },
+  {
+    "identifier": "selectSuggestion3",
+    "name": "Select 3rd suggestion",
+    "description": "Select the 3rd suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+3"]
+  },
+  {
+    "identifier": "selectSuggestion4",
+    "name": "Select 4th suggestion",
+    "description": "Select the 4th suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+4"]
+  },
+  {
+    "identifier": "selectSuggestion5",
+    "name": "Select 5th suggestion",
+    "description": "Select the 5th suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+5"]
+  },
+  {
+    "identifier": "selectSuggestion6",
+    "name": "Select 6th suggestion",
+    "description": "Select the 6th suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+6"]
+  },
+  {
+    "identifier": "selectSuggestion7",
+    "name": "Select 7th suggestion",
+    "description": "Select the 7th suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+7"]
+  },
+  {
+    "identifier": "selectSuggestion8",
+    "name": "Select 8th suggestion",
+    "description": "Select the 8th suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+8"]
+  },
+  {
+    "identifier": "selectSuggestion9",
+    "name": "Select 9th suggestion",
+    "description": "Select the 9th suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+9"]
+  },
+  {
+    "identifier": "selectSuggestion10",
+    "name": "Select 10th suggestion",
+    "description": "Select the 10th suggestion of the list",
+    "category": "Navigation",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+0"]
+  },
+  {
+    "identifier": "hideDescription",
+    "name": "Hide description popout",
+    "description": "Hide autocomplete description popout",
+    "category": "Appearance",
+    "availability": "WHEN_FOCUSED"
+  },
+  {
+    "identifier": "showDescription",
+    "name": "Show description popout",
+    "description": "Show autocomplete description popout",
+    "category": "Appearance",
+    "availability": "WHEN_FOCUSED"
+  },
+  {
+    "identifier": "toggleDescription",
+    "name": "Toggle description popout",
+    "description": "Toggle visibility of autocomplete description popout",
+    "category": "Appearance",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["command+i"]
+  },
+  {
+    "identifier": "toggleHistoryMode",
+    "name": "Toggle history mode",
+    "description": "Toggle between history suggestions and autocomplete spec suggestions",
+    "category": "General",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["control+r"]
+  },
+  {
+    "identifier": "toggleFuzzySearch",
+    "name": "Toggle fuzzy search",
+    "description": "Toggle between normal prefix search and fuzzy search",
+    "category": "General",
+    "availability": "WHEN_FOCUSED"
+  },
+  {
+    "identifier": "increaseSize",
+    "name": "Increase window size",
+    "description": "Increase the size of the autocomplete window",
+    "category": "Appearance",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["command+="]
+  },
+  {
+    "identifier": "decreaseSize",
+    "name": "Decrease window size",
+    "description": "Decrease the size of the autocomplete window",
+    "category": "Appearance",
+    "availability": "WHEN_FOCUSED",
+    "defaultBindings": ["command+-"]
+  }
+]

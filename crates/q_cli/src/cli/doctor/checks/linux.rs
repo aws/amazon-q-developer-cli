@@ -306,7 +306,8 @@ impl DoctorCheck<LinuxContext> for IBusRunningCheck {
             RefreshKind,
         };
 
-        let system = sysinfo::System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+        let system =
+            sysinfo::System::new_with_specifics(RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()));
         let ibus_daemon = OsString::from("ibus-daemon");
 
         if system.processes_by_exact_name(&ibus_daemon).next().is_none() {

@@ -1,5 +1,5 @@
 pub trait IntoMetricDatum: Send {
-    fn into_metric_datum(self) -> amzn_toolkit_telemetry::types::MetricDatum;
+    fn into_metric_datum(self) -> amzn_toolkit_telemetry_client::types::MetricDatum;
 }
 
 include!(concat!(env!("OUT_DIR"), "/mod.rs"));

@@ -162,11 +162,11 @@ fn main() {
         let passive = m.passive.unwrap_or_default();
 
         let unit = match m.unit.map(|u| u.to_lowercase()).as_deref() {
-            Some("bytes") => quote!(::amzn_toolkit_telemetry::types::Unit::Bytes),
-            Some("count") => quote!(::amzn_toolkit_telemetry::types::Unit::Count),
-            Some("milliseconds") => quote!(::amzn_toolkit_telemetry::types::Unit::Milliseconds),
-            Some("percent") => quote!(::amzn_toolkit_telemetry::types::Unit::Percent),
-            Some("none") | None => quote!(::amzn_toolkit_telemetry::types::Unit::None),
+            Some("bytes") => quote!(::amzn_toolkit_telemetry_client::types::Unit::Bytes),
+            Some("count") => quote!(::amzn_toolkit_telemetry_client::types::Unit::Count),
+            Some("milliseconds") => quote!(::amzn_toolkit_telemetry_client::types::Unit::Milliseconds),
+            Some("percent") => quote!(::amzn_toolkit_telemetry_client::types::Unit::Percent),
+            Some("none") | None => quote!(::amzn_toolkit_telemetry_client::types::Unit::None),
             Some(unknown) => {
                 panic!("unknown unit: {:?}", unknown);
             },
@@ -200,7 +200,7 @@ fn main() {
             };
 
             quote!(
-                ::amzn_toolkit_telemetry::types::MetadataEntry::builder()
+                ::amzn_toolkit_telemetry_client::types::MetadataEntry::builder()
                     .key(#raw_name)
                     #value
                     .build()
@@ -222,11 +222,11 @@ fn main() {
             impl #name {
                 const NAME: &'static ::std::primitive::str = #raw_name;
                 const PASSIVE: ::std::primitive::bool = #passive;
-                const UNIT: ::amzn_toolkit_telemetry::types::Unit = #unit;
+                const UNIT: ::amzn_toolkit_telemetry_client::types::Unit = #unit;
             }
 
             impl crate::IntoMetricDatum for #name {
-                fn into_metric_datum(self) -> ::amzn_toolkit_telemetry::types::MetricDatum {
+                fn into_metric_datum(self) -> ::amzn_toolkit_telemetry_client::types::MetricDatum {
                     let metadata_entries = vec![
                         #(
                             #metadata_entries,
@@ -239,7 +239,7 @@ fn main() {
                             |t| t.duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as ::std::primitive::i64
                         );
 
-                    ::amzn_toolkit_telemetry::types::MetricDatum::builder()
+                    ::amzn_toolkit_telemetry_client::types::MetricDatum::builder()
                         .metric_name(#name::NAME)
                         .passive(#name::PASSIVE)
                         .unit(#name::UNIT)

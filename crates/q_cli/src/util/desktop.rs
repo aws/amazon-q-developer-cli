@@ -49,7 +49,7 @@ pub fn desktop_app_running() -> bool {
 
     // Fallback to process name check
     let app_process_name = OsString::from(APP_PROCESS_NAME);
-    let system = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+    let system = System::new_with_specifics(RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()));
     let mut processes = system.processes_by_exact_name(&app_process_name);
     processes.next().is_some()
 }
@@ -83,7 +83,7 @@ pub fn desktop_app_running() -> bool {
         System,
     };
 
-    let s = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+    let s = System::new_with_specifics(RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()));
     let app_process_name = OsString::from(APP_PROCESS_NAME);
     let mut processes = s.processes_by_exact_name(&app_process_name);
     processes.next().is_some()
