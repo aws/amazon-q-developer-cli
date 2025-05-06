@@ -49,7 +49,7 @@ use super::tools::{
     ToolOrigin,
     ToolSpec,
 };
-use crate::fig_api_client::model::{
+use crate::api_client::model::{
     ToolResult,
     ToolResultContentBlock,
     ToolResultStatus,

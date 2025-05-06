@@ -7,9 +7,9 @@ use amzn_codewhisperer_client::types::{
 use tracing::error;
 
 use super::shared::bearer_sdk_config;
-use crate::fig_api_client::interceptor::opt_out::OptOutInterceptor;
-use crate::fig_api_client::profile::Profile;
-use crate::fig_api_client::{
+use crate::api_client::interceptor::opt_out::OptOutInterceptor;
+use crate::api_client::profile::Profile;
+use crate::api_client::{
     ApiClientError,
     Endpoint,
 };

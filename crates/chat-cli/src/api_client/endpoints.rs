@@ -4,7 +4,7 @@ use aws_config::Region;
 use serde_json::Value;
 use tracing::error;
 
-use crate::fig_api_client::consts::{
+use crate::api_client::consts::{
     PROD_CODEWHISPERER_ENDPOINT_REGION,
     PROD_CODEWHISPERER_ENDPOINT_URL,
     PROD_CODEWHISPERER_FRA_ENDPOINT_REGION,

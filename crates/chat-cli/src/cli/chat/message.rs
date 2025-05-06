@@ -14,7 +14,7 @@ use super::tools::{
     serde_value_to_document,
 };
 use super::util::truncate_safe;
-use crate::fig_api_client::model::{
+use crate::api_client::model::{
     AssistantResponseMessage,
     EnvState,
     ToolResult,
@@ -92,7 +92,7 @@ impl UserMessage {
     }
 
     /// Converts this message into a [UserInputMessage] to be stored in the history of
-    /// [fig_api_client::model::ConversationState].
+    /// [api_client::model::ConversationState].
     pub fn into_history_entry(self) -> UserInputMessage {
         UserInputMessage {
             content: self.prompt().unwrap_or_default().to_string(),

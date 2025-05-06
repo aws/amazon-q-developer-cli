@@ -8,8 +8,8 @@ use aws_credential_types::provider::ProvideCredentials;
 use aws_types::SdkConfig;
 use aws_types::sdk_config::StalledStreamProtectionConfig;
 
-use crate::fig_api_client::credentials::CredentialsChain;
-use crate::fig_api_client::{
+use crate::api_client::credentials::CredentialsChain;
+use crate::api_client::{
     ApiClientError,
     Endpoint,
 };

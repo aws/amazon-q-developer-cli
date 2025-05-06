@@ -84,9 +84,9 @@ use tokio::signal::ctrl_c;
 use util::shared_writer::SharedWriter;
 use util::ui::draw_box;
 
-use crate::fig_api_client::StreamingClient;
-use crate::fig_api_client::clients::SendMessageOutput;
-use crate::fig_api_client::model::{
+use crate::api_client::StreamingClient;
+use crate::api_client::clients::SendMessageOutput;
+use crate::api_client::model::{
     ChatResponseStream,
     Tool as FigTool,
     ToolResultStatus,
@@ -455,7 +455,7 @@ enum ToolUseStatus {
 #[derive(Debug, Error)]
 pub enum ChatError {
     #[error("{0}")]
-    Client(#[from] crate::fig_api_client::ApiClientError),
+    Client(#[from] crate::api_client::ApiClientError),
     #[error("{0}")]
     ResponseStream(#[from] parser::RecvError),
     #[error("{0}")]
@@ -909,7 +909,7 @@ impl ChatContext {
                     ChatError::Client(err) => match err {
                         // Errors from attempting to send too large of a conversation history. In
                         // this case, attempt to automatically compact the history for the user.
-                        crate::fig_api_client::ApiClientError::ContextWindowOverflow => {
+                        crate::api_client::ApiClientError::ContextWindowOverflow => {
                             let history_too_small = self
                                 .conversation_state
                                 .backend_conversation_state(false, true)
@@ -938,7 +938,7 @@ impl ChatContext {
                                 help: false,
                             });
                         },
-                        crate::fig_api_client::ApiClientError::QuotaBreach(msg) => {
+                        crate::api_client::ApiClientError::QuotaBreach(msg) => {
                             print_err!(msg, err);
                         },
                         _ => {
@@ -1022,7 +1022,7 @@ impl ChatContext {
         let response = match response {
             Ok(res) => res,
             Err(e) => match e {
-                crate::fig_api_client::ApiClientError::ContextWindowOverflow => {
+                crate::api_client::ApiClientError::ContextWindowOverflow => {
                     self.conversation_state.clear(true);
                     if self.interactive {
                         self.spinner.take();

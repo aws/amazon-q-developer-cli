@@ -28,8 +28,8 @@ use tracing::{
 };
 
 use super::OutputFormat;
-use crate::fig_api_client::list_available_profiles;
-use crate::fig_api_client::profile::Profile;
+use crate::api_client::list_available_profiles;
+use crate::api_client::profile::Profile;
 use crate::fig_auth::builder_id::{
     PollCreateToken,
     TokenType,
@@ -169,7 +169,7 @@ impl RootUserSubcommand {
 
                         if matches!(token.token_type(), TokenType::IamIdentityCenter) {
                             if let Ok(Some(profile)) = crate::fig_settings::state::get::<
-                                crate::fig_api_client::profile::Profile,
+                                crate::api_client::profile::Profile,
                             >("api.codewhisperer.profile")
                             {
                                 color_print::cprintln!(

@@ -16,12 +16,12 @@ use super::shared::{
     sigv4_sdk_config,
     stalled_stream_protection_config,
 };
-use crate::fig_api_client::interceptor::opt_out::OptOutInterceptor;
-use crate::fig_api_client::model::{
+use crate::api_client::interceptor::opt_out::OptOutInterceptor;
+use crate::api_client::model::{
     ChatResponseStream,
     ConversationState,
 };
-use crate::fig_api_client::{
+use crate::api_client::{
     ApiClientError,
     Endpoint,
 };
@@ -40,7 +40,7 @@ mod inner {
     use amzn_codewhisperer_streaming_client::Client as CodewhispererStreamingClient;
     use amzn_qdeveloper_streaming_client::Client as QDeveloperStreamingClient;
 
-    use crate::fig_api_client::model::ChatResponseStream;
+    use crate::api_client::model::ChatResponseStream;
 
     #[derive(Clone, Debug)]
     pub enum Inner {
@@ -259,7 +259,7 @@ impl RequestId for SendMessageOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fig_api_client::model::{
+    use crate::api_client::model::{
         AssistantResponseMessage,
         ChatMessage,
         UserInputMessage,

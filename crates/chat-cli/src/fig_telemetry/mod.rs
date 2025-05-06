@@ -43,7 +43,7 @@ use tracing::{
 use util::telemetry_is_disabled;
 use uuid::Uuid;
 
-use crate::fig_api_client::Client as CodewhispererClient;
+use crate::api_client::Client as CodewhispererClient;
 use crate::fig_aws_common::app_name;
 use crate::fig_telemetry_core::Event;
 pub use crate::fig_telemetry_core::{

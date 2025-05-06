@@ -3,8 +3,8 @@ use serde::{
     Serialize,
 };
 
-use crate::fig_api_client::Client;
-use crate::fig_api_client::endpoints::Endpoint;
+use crate::api_client::Client;
+use crate::api_client::endpoints::Endpoint;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Profile {

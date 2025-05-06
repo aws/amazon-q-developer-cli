@@ -4,7 +4,7 @@ use aws_smithy_runtime_api::client::interceptors::context::BeforeTransmitInterce
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
 use aws_smithy_types::config_bag::ConfigBag;
 
-use crate::fig_api_client::consts::{
+use crate::api_client::consts::{
     SHARE_CODEWHISPERER_CONTENT_SETTINGS_KEY,
     X_AMZN_CODEWHISPERER_OPT_OUT_HEADER,
 };
