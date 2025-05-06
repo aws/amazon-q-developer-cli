@@ -2532,41 +2532,62 @@ impl ChatContext {
                 let left_over_width = progress_bar_width
                     - std::cmp::min(context_width + assistant_width + user_width, progress_bar_width);
 
-                queue!(
-                    self.output,
-                    style::Print(format!(
-                        "\nCurrent context window ({} of {}k tokens used)\n",
-                        total_token_used,
-                        CONTEXT_WINDOW_SIZE / 1000
-                    )),
-                    style::SetForegroundColor(Color::DarkCyan),
-                    // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too
-                    // empty
-                    style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
-                        1
-                    } else {
-                        0
-                    })),
-                    style::Print("█".repeat(context_width)),
-                    style::SetForegroundColor(Color::Blue),
-                    style::Print("|".repeat(if assistant_width == 0 && *assistant_token_count > 0 {
-                        1
-                    } else {
-                        0
-                    })),
-                    style::Print("█".repeat(assistant_width)),
-                    style::SetForegroundColor(Color::Magenta),
-                    style::Print("|".repeat(if user_width == 0 && *user_token_count > 0 { 1 } else { 0 })),
-                    style::Print("█".repeat(user_width)),
-                    style::SetForegroundColor(Color::DarkGrey),
-                    style::Print("█".repeat(left_over_width)),
-                    style::Print(" "),
-                    style::SetForegroundColor(Color::Reset),
-                    style::Print(format!(
-                        "{:.2}%",
-                        (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
-                    )),
-                )?;
+                let is_overflow = (context_width + assistant_width + user_width) > progress_bar_width;
+
+                if is_overflow {
+                    queue!(
+                        self.output,
+                        style::Print(format!(
+                            "\nCurrent context window ({} of {}k tokens used)\n",
+                            total_token_used,
+                            CONTEXT_WINDOW_SIZE / 1000
+                        )),
+                        style::SetForegroundColor(Color::DarkRed),
+                        style::Print("█".repeat(progress_bar_width)),
+                        style::SetForegroundColor(Color::Reset),
+                        style::Print(" "),
+                        style::Print(format!(
+                            "{:.2}%",
+                            (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                        )),
+                    )?;
+                } else {
+                    queue!(
+                        self.output,
+                        style::Print(format!(
+                            "\nCurrent context window ({} of {}k tokens used)\n",
+                            total_token_used,
+                            CONTEXT_WINDOW_SIZE / 1000
+                        )),
+                        style::SetForegroundColor(Color::DarkCyan),
+                        // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too
+                        // empty
+                        style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
+                            1
+                        } else {
+                            0
+                        })),
+                        style::Print("█".repeat(context_width)),
+                        style::SetForegroundColor(Color::Blue),
+                        style::Print("|".repeat(if assistant_width == 0 && *assistant_token_count > 0 {
+                            1
+                        } else {
+                            0
+                        })),
+                        style::Print("█".repeat(assistant_width)),
+                        style::SetForegroundColor(Color::Magenta),
+                        style::Print("|".repeat(if user_width == 0 && *user_token_count > 0 { 1 } else { 0 })),
+                        style::Print("█".repeat(user_width)),
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print("█".repeat(left_over_width)),
+                        style::Print(" "),
+                        style::SetForegroundColor(Color::Reset),
+                        style::Print(format!(
+                            "{:.2}%",
+                            (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                        )),
+                    )?;
+                }
 
                 queue!(self.output, style::Print("\n\n"))?;
                 self.output.flush()?;
