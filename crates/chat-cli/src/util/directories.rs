@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::util::env_var::Q_PARENT;
 use crate::platform::Context;
+use crate::util::env_var::Q_PARENT;
 
 #[derive(Debug, Error)]
 pub enum DirectoryError {

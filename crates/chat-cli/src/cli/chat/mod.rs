@@ -91,13 +91,13 @@ use crate::api_client::model::{
     Tool as FigTool,
     ToolResultStatus,
 };
-use crate::util::CHAT_BINARY_NAME;
 use crate::platform::Context;
 use crate::settings::{
     Settings,
     State,
 };
 use crate::telemetry::core::Event;
+use crate::util::CHAT_BINARY_NAME;
 
 /// Help text for the compact command
 fn compact_help_text() -> String {

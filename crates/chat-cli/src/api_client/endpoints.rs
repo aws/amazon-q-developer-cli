@@ -34,35 +34,34 @@ impl Endpoint {
     };
 
     pub fn load_codewhisperer() -> Self {
-        let (endpoint, region) = if let Ok(Some(Value::Object(o))) =
-            crate::settings::settings::get_value("api.codewhisperer.service")
-        {
-            // The following branch is evaluated in case the user has set their own endpoint.
-            (
-                o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
-                o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
-            )
-        } else if let Ok(Some(Value::Object(o))) = crate::settings::state::get_value("api.codewhisperer.profile") {
-            // The following branch is evaluated in the case of user profile being set.
-            match o.get("arn").and_then(|v| v.as_str()).map(|v| v.to_owned()) {
-                Some(arn) => {
-                    let region = arn.split(':').nth(3).unwrap_or_default().to_owned();
-                    match Self::CODEWHISPERER_ENDPOINTS
-                        .iter()
-                        .find(|e| e.region().as_ref() == region)
-                    {
-                        Some(endpoint) => (Some(endpoint.url().to_owned()), Some(region)),
-                        None => {
-                            error!("Failed to find endpoint for region: {region}");
-                            (None, None)
-                        },
-                    }
-                },
-                None => (None, None),
-            }
-        } else {
-            (None, None)
-        };
+        let (endpoint, region) =
+            if let Ok(Some(Value::Object(o))) = crate::settings::settings::get_value("api.codewhisperer.service") {
+                // The following branch is evaluated in case the user has set their own endpoint.
+                (
+                    o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
+                    o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
+                )
+            } else if let Ok(Some(Value::Object(o))) = crate::settings::state::get_value("api.codewhisperer.profile") {
+                // The following branch is evaluated in the case of user profile being set.
+                match o.get("arn").and_then(|v| v.as_str()).map(|v| v.to_owned()) {
+                    Some(arn) => {
+                        let region = arn.split(':').nth(3).unwrap_or_default().to_owned();
+                        match Self::CODEWHISPERER_ENDPOINTS
+                            .iter()
+                            .find(|e| e.region().as_ref() == region)
+                        {
+                            Some(endpoint) => (Some(endpoint.url().to_owned()), Some(region)),
+                            None => {
+                                error!("Failed to find endpoint for region: {region}");
+                                (None, None)
+                            },
+                        }
+                    },
+                    None => (None, None),
+                }
+            } else {
+                (None, None)
+            };
 
         match (endpoint, region) {
             (Some(endpoint), Some(region)) => Self {

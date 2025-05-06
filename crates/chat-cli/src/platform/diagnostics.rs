@@ -10,13 +10,13 @@ use sysinfo::{
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
+use crate::platform::Context;
+use crate::telemetry::InstallMethod;
 use crate::util::consts::build::HASH;
 use crate::util::system_info::{
     OSVersion,
     os_version,
 };
-use crate::platform::Context;
-use crate::telemetry::InstallMethod;
 
 fn serialize_display<D, S>(display: D, serializer: S) -> Result<S::Ok, S::Error>
 where

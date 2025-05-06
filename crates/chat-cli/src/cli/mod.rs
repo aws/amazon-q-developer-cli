@@ -35,16 +35,16 @@ use tracing::{
 };
 
 use self::user::RootUserSubcommand;
-use crate::util::directories::logs_dir;
-use crate::util::{
-    CHAT_BINARY_NAME,
-    CliContext,
-};
 use crate::logging::{
     LogArgs,
     initialize_logging,
 };
 use crate::telemetry::send_cli_subcommand_executed;
+use crate::util::directories::logs_dir;
+use crate::util::{
+    CHAT_BINARY_NAME,
+    CliContext,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {

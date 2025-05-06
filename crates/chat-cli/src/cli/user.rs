@@ -168,10 +168,9 @@ impl RootUserSubcommand {
                         );
 
                         if matches!(token.token_type(), TokenType::IamIdentityCenter) {
-                            if let Ok(Some(profile)) = crate::settings::state::get::<
-                                crate::api_client::profile::Profile,
-                            >("api.codewhisperer.profile")
-                            {
+                            if let Ok(Some(profile)) = crate::settings::state::get::<crate::api_client::profile::Profile>(
+                                "api.codewhisperer.profile",
+                            ) {
                                 color_print::cprintln!(
                                     "\n<em>Profile:</em>\n{}\n{}\n",
                                     profile.profile_name,
@@ -243,11 +242,9 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
             let (start_url, region) = match login_method {
                 AuthMethod::BuilderId => (None, None),
                 AuthMethod::IdentityCenter => {
-                    let default_start_url = args.identity_provider.or_else(|| {
-                        crate::settings::state::get_string("auth.idc.start-url")
-                            .ok()
-                            .flatten()
-                    });
+                    let default_start_url = args
+                        .identity_provider
+                        .or_else(|| crate::settings::state::get_string("auth.idc.start-url").ok().flatten());
                     let default_region = args
                         .region
                         .or_else(|| crate::settings::state::get_string("auth.idc.region").ok().flatten());

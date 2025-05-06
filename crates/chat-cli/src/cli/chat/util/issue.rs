@@ -5,9 +5,9 @@ use anstream::{
 use crossterm::style::Stylize;
 use eyre::Result;
 
+use crate::platform::diagnostics::Diagnostics;
 use crate::util::GITHUB_REPO_NAME;
 use crate::util::system_info::is_remote;
-use crate::platform::diagnostics::Diagnostics;
 
 const TEMPLATE_NAME: &str = "1_bug_report_template.yml";
 
