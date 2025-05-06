@@ -7028,58 +7028,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
-=======
-name = "q_chat"
-version = "1.10.0"
-dependencies = [
- "anstream",
- "async-trait",
- "aws-smithy-types",
- "bstr",
- "clap",
- "color-print",
- "convert_case 0.8.0",
- "crossterm",
- "eyre",
- "fig_api_client",
- "fig_auth",
- "fig_diagnostic",
- "fig_os_shim",
- "fig_settings",
- "fig_telemetry",
- "fig_util",
- "futures",
- "glob",
- "mcp_client",
- "rand 0.9.0",
- "regex",
- "rustyline",
- "serde",
- "serde_json",
- "shell-color",
- "shell-words",
- "shellexpand",
- "shlex",
- "similar",
- "skim",
- "spinners",
- "strip-ansi-escapes",
- "syntect",
- "tempfile",
- "thiserror 2.0.12",
- "time",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "unicode-width 0.2.0",
- "url",
- "uuid",
- "winnow 0.6.22",
-]
-
-[[package]]
->>>>>>> ca627e83 (loads tools in the background)
 name = "q_cli"
 version = "1.10.0"
 dependencies = [

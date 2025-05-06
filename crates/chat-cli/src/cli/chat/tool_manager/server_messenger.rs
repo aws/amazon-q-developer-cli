@@ -1,15 +1,16 @@
-use mcp_client::{
+use tokio::sync::mpsc::{
+    Receiver,
+    Sender,
+    channel,
+};
+
+use crate::mcp_client::{
     Messenger,
     MessengerError,
     PromptsListResult,
     ResourceTemplatesListResult,
     ResourcesListResult,
     ToolsListResult,
-};
-use tokio::sync::mpsc::{
-    Receiver,
-    Sender,
-    channel,
 };
 
 #[derive(Clone, Debug)]

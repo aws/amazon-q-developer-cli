@@ -7,19 +7,19 @@ use thiserror::Error;
 /// https://spec.modelcontextprotocol.io/specification/2024-11-05/server/utilities/pagination/#operations-supporting-pagination
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaginationSupportedOps {
-    Resources,
-    ResourceTemplates,
-    Prompts,
-    Tools,
+    ResourcesList,
+    ResourceTemplatesList,
+    PromptsList,
+    ToolsList,
 }
 
 impl PaginationSupportedOps {
     pub fn as_key(&self) -> &str {
         match self {
-            PaginationSupportedOps::Resources => "resources",
-            PaginationSupportedOps::ResourceTemplates => "resourceTemplates",
-            PaginationSupportedOps::Prompts => "prompts",
-            PaginationSupportedOps::Tools => "tools",
+            PaginationSupportedOps::ResourcesList => "resources",
+            PaginationSupportedOps::ResourceTemplatesList => "resourceTemplates",
+            PaginationSupportedOps::PromptsList => "prompts",
+            PaginationSupportedOps::ToolsList => "tools",
         }
     }
 }
@@ -29,10 +29,10 @@ impl TryFrom<&str> for PaginationSupportedOps {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "resources/list" => Ok(PaginationSupportedOps::Resources),
-            "resources/templates/list" => Ok(PaginationSupportedOps::ResourceTemplates),
-            "prompts/list" => Ok(PaginationSupportedOps::Prompts),
-            "tools/list" => Ok(PaginationSupportedOps::Tools),
+            "resources/list" => Ok(PaginationSupportedOps::ResourcesList),
+            "resources/templates/list" => Ok(PaginationSupportedOps::ResourceTemplatesList),
+            "prompts/list" => Ok(PaginationSupportedOps::PromptsList),
+            "tools/list" => Ok(PaginationSupportedOps::ToolsList),
             _ => Err(OpsConversionError::InvalidMethod),
         }
     }
@@ -226,4 +226,22 @@ pub struct Resource {
     pub description: Option<String>,
     /// Resource contents
     pub contents: ResourceContents,
+}
+
+/// Represents the capabilities supported by a Model Context Protocol server
+/// This is the "capabilities" field in the result of a response for init
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerCapabilities {
+    /// Configuration for server logging capabilities
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logging: Option<serde_json::Value>,
+    /// Configuration for prompt-related capabilities
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompts: Option<serde_json::Value>,
+    /// Configuration for resource management capabilities
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<serde_json::Value>,
+    /// Configuration for tool integration capabilities
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<serde_json::Value>,
 }

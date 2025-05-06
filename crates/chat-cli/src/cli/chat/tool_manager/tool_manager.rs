@@ -36,35 +36,35 @@ use tracing::{
     warn,
 };
 
-use crate::command::PromptsGetCommand;
-use crate::message::AssistantToolUse;
-use crate::tool_manager::server_messenger::{
-    ServerMessengerBuilder,
-    UpdateEventMessage,
-};
-use crate::tools::custom_tool::{
-    CustomTool,
-    CustomToolClient,
-    CustomToolConfig,
-};
-use crate::tools::execute_bash::ExecuteBash;
-use crate::tools::fs_read::FsRead;
-use crate::tools::fs_write::FsWrite;
-use crate::tools::gh_issue::GhIssue;
-use crate::tools::use_aws::UseAws;
-use crate::tools::{
-    Tool,
-    ToolOrigin,
-    ToolSpec,
-};
 use crate::api_client::model::{
     ToolResult,
     ToolResultContentBlock,
     ToolResultStatus,
 };
+use crate::cli::chat::command::PromptsGetCommand;
+use crate::cli::chat::message::AssistantToolUse;
+use crate::cli::chat::tool_manager::server_messenger::{
+    ServerMessengerBuilder,
+    UpdateEventMessage,
+};
+use crate::cli::chat::tools::custom_tool::{
+    CustomTool,
+    CustomToolClient,
+    CustomToolConfig,
+};
+use crate::cli::chat::tools::execute_bash::ExecuteBash;
+use crate::cli::chat::tools::fs_read::FsRead;
+use crate::cli::chat::tools::fs_write::FsWrite;
+use crate::cli::chat::tools::gh_issue::GhIssue;
+use crate::cli::chat::tools::thinking::Thinking;
+use crate::cli::chat::tools::use_aws::UseAws;
+use crate::cli::chat::tools::{
+    Tool,
+    ToolOrigin,
+    ToolSpec,
+};
 use crate::mcp_client::{
     JsonRpcResponse,
-    NullMessenger,
     PromptGet,
 };
 use crate::telemetry::send_mcp_server_init;
@@ -580,7 +580,7 @@ impl ToolManager {
         let tx = self.loading_status_sender.take();
         let display_task = self.loading_display_task.take();
         let tool_specs = {
-            let tool_specs =
+            let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("../tools/tool_index.json"))?;
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled() {
                 tool_specs.remove("q_think_tool");
@@ -964,13 +964,7 @@ fn process_tool_specs(
     // Send server load success metric datum
     let conversation_id = conversation_id.to_string();
     tokio::spawn(async move {
-        let event = fig_telemetry::EventType::McpServerInit {
-            conversation_id,
-            init_failure_reason: None,
-            number_of_tools,
-        };
-        let app_event = fig_telemetry::AppTelemetryEvent::new(event).await;
-        fig_telemetry::dispatch_or_send_event(app_event).await;
+        send_mcp_server_init(conversation_id, None, number_of_tools).await;
     });
     // Tool name translation. This is beyond of the scope of what is
     // considered a "server load". Reasoning being:

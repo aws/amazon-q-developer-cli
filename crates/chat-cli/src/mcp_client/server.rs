@@ -15,23 +15,21 @@ use tokio::io::{
 };
 use tokio::task::JoinHandle;
 
-use crate::mcp_client::client::StdioTransport;
-use crate::mcp_client::transport::base_protocol::{
+use super::Listener as _;
+use super::client::StdioTransport;
+use super::error::ErrorCode;
+use super::transport::base_protocol::{
     JsonRpcError,
     JsonRpcMessage,
     JsonRpcNotification,
     JsonRpcRequest,
     JsonRpcResponse,
 };
-use crate::mcp_client::transport::stdio::JsonRpcStdioTransport;
-use crate::mcp_client::transport::{
+use super::transport::stdio::JsonRpcStdioTransport;
+use super::transport::{
     JsonRpcVersion,
     Transport,
     TransportError,
-};
-use crate::mcp_client::{
-    Listener as _,
-    McpError,
 };
 
 pub type Request = serde_json::Value;
@@ -179,7 +177,7 @@ async fn process_request<T, H>(
                     jsonrpc: JsonRpcVersion::default(),
                     id,
                     error: Some(JsonRpcError {
-                        code: McpError::InvalidRequest.into(),
+                        code: ErrorCode::InvalidRequest.into(),
                         message: "Server has already been initialized".to_owned(),
                         data: None,
                     }),
@@ -193,7 +191,7 @@ async fn process_request<T, H>(
                     jsonrpc: JsonRpcVersion::default(),
                     id,
                     error: Some(JsonRpcError {
-                        code: McpError::InvalidRequest.into(),
+                        code: ErrorCode::InvalidRequest.into(),
                         message: "Invalid method for initialization (use request)".to_owned(),
                         data: None,
                     }),
@@ -218,7 +216,7 @@ async fn process_request<T, H>(
                         jsonrpc: JsonRpcVersion::default(),
                         id,
                         error: Some(JsonRpcError {
-                            code: McpError::InternalError.into(),
+                            code: ErrorCode::InternalError.into(),
                             message: "Error producing initialization response".to_owned(),
                             data: None,
                         }),
@@ -242,7 +240,7 @@ async fn process_request<T, H>(
                 let resp = handler.handle_incoming(method, params).await.map_or_else(
                     |error| {
                         let err = JsonRpcError {
-                            code: McpError::InternalError.into(),
+                            code: ErrorCode::InternalError.into(),
                             message: error.to_string(),
                             data: None,
                         };
@@ -280,7 +278,7 @@ async fn process_request<T, H>(
                 jsonrpc: JsonRpcVersion::default(),
                 id,
                 error: Some(JsonRpcError {
-                    code: McpError::ServerNotInitialized.into(),
+                    code: ErrorCode::ServerNotInitialized.into(),
                     message: "Server has not been initialized".to_owned(),
                     data: None,
                 }),
