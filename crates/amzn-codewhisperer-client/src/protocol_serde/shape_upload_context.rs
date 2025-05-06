@@ -2,7 +2,7 @@
 pub fn ser_upload_context(
     object_8: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::UploadContext,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::UploadContext::TaskAssistPlanningUploadContext(inner) => {
             #[allow(unused_mut)]
@@ -36,6 +36,15 @@ pub fn ser_upload_context(
             let mut object_4 = object_8.key("codeFixUploadContext").start_object();
             crate::protocol_serde::shape_code_fix_upload_context::ser_code_fix_upload_context(&mut object_4, inner)?;
             object_4.finish();
+        },
+        crate::types::UploadContext::WorkspaceContextUploadContext(inner) => {
+            #[allow(unused_mut)]
+            let mut object_5 = object_8.key("workspaceContextUploadContext").start_object();
+            crate::protocol_serde::shape_workspace_context_upload_context::ser_workspace_context_upload_context(
+                &mut object_5,
+                inner,
+            )?;
+            object_5.finish();
         },
         crate::types::UploadContext::Unknown => {
             return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("UploadContext"));

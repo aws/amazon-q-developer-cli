@@ -7,6 +7,10 @@ pub struct SupplementalContext {
     pub file_path: ::std::string::String,
     #[allow(missing_docs)] // documentation missing in model
     pub content: ::std::string::String,
+    #[allow(missing_docs)] // documentation missing in model
+    pub r#type: ::std::option::Option<crate::types::SupplementalContextType>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub metadata: ::std::option::Option<crate::types::SupplementalContextMetadata>,
 }
 impl SupplementalContext {
     #[allow(missing_docs)] // documentation missing in model
@@ -20,12 +24,24 @@ impl SupplementalContext {
         use std::ops::Deref;
         self.content.deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn r#type(&self) -> ::std::option::Option<&crate::types::SupplementalContextType> {
+        self.r#type.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn metadata(&self) -> ::std::option::Option<&crate::types::SupplementalContextMetadata> {
+        self.metadata.as_ref()
+    }
 }
 impl ::std::fmt::Debug for SupplementalContext {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("SupplementalContext");
         formatter.field("file_path", &"*** Sensitive Data Redacted ***");
         formatter.field("content", &"*** Sensitive Data Redacted ***");
+        formatter.field("r#type", &self.r#type);
+        formatter.field("metadata", &self.metadata);
         formatter.finish()
     }
 }
@@ -43,6 +59,8 @@ impl SupplementalContext {
 pub struct SupplementalContextBuilder {
     pub(crate) file_path: ::std::option::Option<::std::string::String>,
     pub(crate) content: ::std::option::Option<::std::string::String>,
+    pub(crate) r#type: ::std::option::Option<crate::types::SupplementalContextType>,
+    pub(crate) metadata: ::std::option::Option<crate::types::SupplementalContextMetadata>,
 }
 impl SupplementalContextBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -81,6 +99,40 @@ impl SupplementalContextBuilder {
         &self.content
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn r#type(mut self, input: crate::types::SupplementalContextType) -> Self {
+        self.r#type = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_type(mut self, input: ::std::option::Option<crate::types::SupplementalContextType>) -> Self {
+        self.r#type = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_type(&self) -> &::std::option::Option<crate::types::SupplementalContextType> {
+        &self.r#type
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn metadata(mut self, input: crate::types::SupplementalContextMetadata) -> Self {
+        self.metadata = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_metadata(mut self, input: ::std::option::Option<crate::types::SupplementalContextMetadata>) -> Self {
+        self.metadata = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_metadata(&self) -> &::std::option::Option<crate::types::SupplementalContextMetadata> {
+        &self.metadata
+    }
+
     /// Consumes the builder and constructs a
     /// [`SupplementalContext`](crate::types::SupplementalContext). This method will fail if any
     /// of the following fields are not set:
@@ -103,6 +155,8 @@ impl SupplementalContextBuilder {
                     "content was not specified but it is required when building SupplementalContext",
                 )
             })?,
+            r#type: self.r#type,
+            metadata: self.metadata,
         })
     }
 }
@@ -111,6 +165,8 @@ impl ::std::fmt::Debug for SupplementalContextBuilder {
         let mut formatter = f.debug_struct("SupplementalContextBuilder");
         formatter.field("file_path", &"*** Sensitive Data Redacted ***");
         formatter.field("content", &"*** Sensitive Data Redacted ***");
+        formatter.field("r#type", &self.r#type);
+        formatter.field("metadata", &self.metadata);
         formatter.finish()
     }
 }

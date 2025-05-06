@@ -2,7 +2,7 @@
 pub fn ser_followup_prompt(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::FollowupPrompt,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("content").string(input.content.as_str());
     }

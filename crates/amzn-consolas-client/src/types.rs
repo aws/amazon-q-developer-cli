@@ -12,6 +12,8 @@ pub use crate::types::_dashboard_analytics::DashboardAnalytics;
 pub use crate::types::_data_reference::DataReference;
 pub use crate::types::_deletion_status::DeletionStatus;
 pub use crate::types::_evaluation_metrics::EvaluationMetrics;
+pub use crate::types::_external_identity_details::ExternalIdentityDetails;
+pub use crate::types::_external_identity_source::ExternalIdentitySource;
 pub use crate::types::_file_context::FileContext;
 pub use crate::types::_functionality_name::FunctionalityName;
 pub use crate::types::_identity_details::IdentityDetails;
@@ -20,6 +22,7 @@ pub use crate::types::_import::Import;
 pub use crate::types::_notifications_feature::NotificationsFeature;
 pub use crate::types::_opt_in_feature_toggle::OptInFeatureToggle;
 pub use crate::types::_opt_in_features::OptInFeatures;
+pub use crate::types::_previous_editor_state_metadata::PreviousEditorStateMetadata;
 pub use crate::types::_profile::Profile;
 pub use crate::types::_profile_status::ProfileStatus;
 pub use crate::types::_profile_type::ProfileType;
@@ -36,6 +39,8 @@ pub use crate::types::_span::Span;
 pub use crate::types::_sso_identity_details::SsoIdentityDetails;
 pub use crate::types::_sso_identity_source::SsoIdentitySource;
 pub use crate::types::_supplemental_context::SupplementalContext;
+pub use crate::types::_supplemental_context_metadata::SupplementalContextMetadata;
+pub use crate::types::_supplemental_context_type::SupplementalContextType;
 pub use crate::types::_tag::Tag;
 pub use crate::types::_throttling_exception_reason::ThrottlingExceptionReason;
 pub use crate::types::_update_operation::UpdateOperation;
@@ -69,6 +74,10 @@ mod _deletion_status;
 
 mod _evaluation_metrics;
 
+mod _external_identity_details;
+
+mod _external_identity_source;
+
 mod _file_context;
 
 mod _functionality_name;
@@ -84,6 +93,8 @@ mod _notifications_feature;
 mod _opt_in_feature_toggle;
 
 mod _opt_in_features;
+
+mod _previous_editor_state_metadata;
 
 mod _profile;
 
@@ -116,6 +127,10 @@ mod _sso_identity_details;
 mod _sso_identity_source;
 
 mod _supplemental_context;
+
+mod _supplemental_context_metadata;
+
+mod _supplemental_context_type;
 
 mod _tag;
 

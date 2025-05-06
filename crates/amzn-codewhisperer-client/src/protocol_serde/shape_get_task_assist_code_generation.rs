@@ -41,29 +41,6 @@ pub fn de_get_task_assist_code_generation_http_error(
                 tmp
             })
         },
-        "ThrottlingException" => {
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::ThrottlingError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(
-                        crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::unhandled,
-                    )?;
-                    let output = output.meta(generic);
-                    crate::serde_util::throttling_exception_correct_errors(output)
-                        .build()
-                        .map_err(
-                        crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::unhandled,
-                    )?
-                };
-                tmp
-            })
-        },
         "ValidationException" => {
             crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::ValidationError({
                 #[allow(unused_mut)]
@@ -79,29 +56,6 @@ pub fn de_get_task_assist_code_generation_http_error(
                     )?;
                     let output = output.meta(generic);
                     crate::serde_util::validation_exception_correct_errors(output)
-                        .build()
-                        .map_err(
-                        crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::unhandled,
-                    )?
-                };
-                tmp
-            })
-        },
-        "ConflictException" => {
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::ConflictError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
-                    output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(
-                        crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::unhandled,
-                    )?;
-                    let output = output.meta(generic);
-                    crate::serde_util::conflict_exception_correct_errors(output)
                         .build()
                         .map_err(
                         crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::unhandled,
@@ -127,6 +81,52 @@ pub fn de_get_task_assist_code_generation_http_error(
                     tmp
                 },
             )
+        },
+        "ConflictException" => {
+            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::ConflictError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
+                    output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::conflict_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                        crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::unhandled,
+                    )?
+                };
+                tmp
+            })
+        },
+        "ThrottlingException" => {
+            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::ThrottlingError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::throttling_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                        crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::unhandled,
+                    )?
+                };
+                tmp
+            })
         },
         "AccessDeniedException" => {
             crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::AccessDeniedError({
@@ -179,7 +179,8 @@ pub fn de_get_task_assist_code_generation_http_response(
 
 pub fn ser_get_task_assist_code_generation_input(
     input: &crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_get_task_assist_code_generation_input::ser_get_task_assist_code_generation_input_input(&mut object, input)?;
@@ -190,7 +191,7 @@ pub fn ser_get_task_assist_code_generation_input(
 pub(crate) fn de_get_task_assist_code_generation(
     value: &[u8],
     mut builder: crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

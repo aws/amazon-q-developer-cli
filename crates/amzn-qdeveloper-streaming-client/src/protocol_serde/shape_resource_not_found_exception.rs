@@ -2,7 +2,7 @@
 pub(crate) fn de_resource_not_found_exception_json_err(
     value: &[u8],
     mut builder: crate::types::error::builders::ResourceNotFoundErrorBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::types::error::builders::ResourceNotFoundErrorBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

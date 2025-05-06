@@ -58,6 +58,9 @@ import {
   InstallRequest,
   InstallRequestSchema,
   InstallResponse,
+  ListAvailableProfilesRequest,
+  ListAvailableProfilesRequestSchema,
+  ListAvailableProfilesResponse,
   NotificationRequest,
   NotificationRequestSchema,
   OnboardingRequest,
@@ -76,6 +79,8 @@ import {
   RunProcessRequest,
   RunProcessRequestSchema,
   RunProcessResponse,
+  SetProfileRequest,
+  SetProfileRequestSchema,
   TelemetryPageRequest,
   TelemetryPageRequestSchema,
   TelemetryTrackRequest,
@@ -650,6 +655,35 @@ export async function sendGetPlatformInfoRequest(
   });
 }
 
+export async function sendListAvailableProfilesRequest(
+  request: Omit<ListAvailableProfilesRequest, "$typeName" | "$unknown">,
+): Promise<ListAvailableProfilesResponse> {
+  return new Promise((resolve, reject) => {
+    sendMessage(
+      {
+        case: "listAvailableProfilesRequest",
+        value: create(ListAvailableProfilesRequestSchema, request),
+      },
+      (response) => {
+        switch (response?.case) {
+          case "listAvailableProfilesResponse":
+            resolve(response.value);
+            break;
+          case "error":
+            reject(Error(response.value));
+            break;
+          default:
+            reject(
+              Error(
+                `Invalid response '${response?.case}' for 'ListAvailableProfilesRequest'`,
+              ),
+            );
+        }
+      },
+    );
+  });
+}
+
 export async function sendWriteFileRequest(
   request: Omit<WriteFileRequest, "$typeName" | "$unknown">,
 ): Promise<void> {
@@ -1135,6 +1169,35 @@ export async function sendDragWindowRequest(
             reject(
               Error(
                 `Invalid response '${response?.case}' for 'DragWindowRequest'`,
+              ),
+            );
+        }
+      },
+    );
+  });
+}
+
+export async function sendSetProfileRequest(
+  request: Omit<SetProfileRequest, "$typeName" | "$unknown">,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    sendMessage(
+      {
+        case: "setProfileRequest",
+        value: create(SetProfileRequestSchema, request),
+      },
+      (response) => {
+        switch (response?.case) {
+          case "success":
+            resolve();
+            break;
+          case "error":
+            reject(Error(response.value));
+            break;
+          default:
+            reject(
+              Error(
+                `Invalid response '${response?.case}' for 'SetProfileRequest'`,
               ),
             );
         }

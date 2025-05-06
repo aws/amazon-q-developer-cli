@@ -626,7 +626,7 @@ impl InternalSubcommand {
                 use tokio::process::Command;
 
                 let system = tokio::task::block_in_place(|| {
-                    System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()))
+                    System::new_with_specifics(RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()))
                 });
                 let ibus_daemon = OsString::from("ibus-daemon");
                 if system.processes_by_name(&ibus_daemon).next().is_none() {

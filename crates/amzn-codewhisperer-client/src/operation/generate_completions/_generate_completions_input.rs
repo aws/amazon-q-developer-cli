@@ -5,8 +5,12 @@
 pub struct GenerateCompletionsInput {
     #[allow(missing_docs)] // documentation missing in model
     pub file_context: ::std::option::Option<crate::types::FileContext>,
+    /// Represents the state of an Editor
+    pub editor_state: ::std::option::Option<crate::types::EditorState>,
     #[allow(missing_docs)] // documentation missing in model
     pub max_results: ::std::option::Option<i32>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub prediction_types: ::std::option::Option<::std::vec::Vec<crate::types::PredictionType>>,
     #[allow(missing_docs)] // documentation missing in model
     pub next_token: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
@@ -21,6 +25,8 @@ pub struct GenerateCompletionsInput {
     pub user_context: ::std::option::Option<crate::types::UserContext>,
     #[allow(missing_docs)] // documentation missing in model
     pub profile_arn: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub workspace_id: ::std::option::Option<::std::string::String>,
 }
 impl GenerateCompletionsInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -28,9 +34,21 @@ impl GenerateCompletionsInput {
         self.file_context.as_ref()
     }
 
+    /// Represents the state of an Editor
+    pub fn editor_state(&self) -> ::std::option::Option<&crate::types::EditorState> {
+        self.editor_state.as_ref()
+    }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(&self) -> ::std::option::Option<i32> {
         self.max_results
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.prediction_types.is_none()`.
+    pub fn prediction_types(&self) -> &[crate::types::PredictionType] {
+        self.prediction_types.as_deref().unwrap_or_default()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -71,12 +89,19 @@ impl GenerateCompletionsInput {
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn workspace_id(&self) -> ::std::option::Option<&str> {
+        self.workspace_id.as_deref()
+    }
 }
 impl ::std::fmt::Debug for GenerateCompletionsInput {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("GenerateCompletionsInput");
         formatter.field("file_context", &self.file_context);
+        formatter.field("editor_state", &self.editor_state);
         formatter.field("max_results", &self.max_results);
+        formatter.field("prediction_types", &self.prediction_types);
         formatter.field("next_token", &"*** Sensitive Data Redacted ***");
         formatter.field("reference_tracker_configuration", &self.reference_tracker_configuration);
         formatter.field("supplemental_contexts", &self.supplemental_contexts);
@@ -84,6 +109,7 @@ impl ::std::fmt::Debug for GenerateCompletionsInput {
         formatter.field("opt_out_preference", &self.opt_out_preference);
         formatter.field("user_context", &self.user_context);
         formatter.field("profile_arn", &self.profile_arn);
+        formatter.field("workspace_id", &self.workspace_id);
         formatter.finish()
     }
 }
@@ -101,7 +127,9 @@ impl GenerateCompletionsInput {
 #[non_exhaustive]
 pub struct GenerateCompletionsInputBuilder {
     pub(crate) file_context: ::std::option::Option<crate::types::FileContext>,
+    pub(crate) editor_state: ::std::option::Option<crate::types::EditorState>,
     pub(crate) max_results: ::std::option::Option<i32>,
+    pub(crate) prediction_types: ::std::option::Option<::std::vec::Vec<crate::types::PredictionType>>,
     pub(crate) next_token: ::std::option::Option<::std::string::String>,
     pub(crate) reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
     pub(crate) supplemental_contexts: ::std::option::Option<::std::vec::Vec<crate::types::SupplementalContext>>,
@@ -109,6 +137,7 @@ pub struct GenerateCompletionsInputBuilder {
     pub(crate) opt_out_preference: ::std::option::Option<crate::types::OptOutPreference>,
     pub(crate) user_context: ::std::option::Option<crate::types::UserContext>,
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) workspace_id: ::std::option::Option<::std::string::String>,
 }
 impl GenerateCompletionsInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -129,6 +158,23 @@ impl GenerateCompletionsInputBuilder {
         &self.file_context
     }
 
+    /// Represents the state of an Editor
+    pub fn editor_state(mut self, input: crate::types::EditorState) -> Self {
+        self.editor_state = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Represents the state of an Editor
+    pub fn set_editor_state(mut self, input: ::std::option::Option<crate::types::EditorState>) -> Self {
+        self.editor_state = input;
+        self
+    }
+
+    /// Represents the state of an Editor
+    pub fn get_editor_state(&self) -> &::std::option::Option<crate::types::EditorState> {
+        &self.editor_state
+    }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(mut self, input: i32) -> Self {
         self.max_results = ::std::option::Option::Some(input);
@@ -144,6 +190,31 @@ impl GenerateCompletionsInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         &self.max_results
+    }
+
+    /// Appends an item to `prediction_types`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_prediction_types`](Self::set_prediction_types).
+    pub fn prediction_types(mut self, input: crate::types::PredictionType) -> Self {
+        let mut v = self.prediction_types.unwrap_or_default();
+        v.push(input);
+        self.prediction_types = ::std::option::Option::Some(v);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_prediction_types(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::PredictionType>>,
+    ) -> Self {
+        self.prediction_types = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_prediction_types(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::PredictionType>> {
+        &self.prediction_types
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -280,6 +351,23 @@ impl GenerateCompletionsInputBuilder {
         &self.profile_arn
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn workspace_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.workspace_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_workspace_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.workspace_id = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_workspace_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.workspace_id
+    }
+
     /// Consumes the builder and constructs a
     /// [`GenerateCompletionsInput`](crate::operation::generate_completions::GenerateCompletionsInput).
     pub fn build(
@@ -290,7 +378,9 @@ impl GenerateCompletionsInputBuilder {
     > {
         ::std::result::Result::Ok(crate::operation::generate_completions::GenerateCompletionsInput {
             file_context: self.file_context,
+            editor_state: self.editor_state,
             max_results: self.max_results,
+            prediction_types: self.prediction_types,
             next_token: self.next_token,
             reference_tracker_configuration: self.reference_tracker_configuration,
             supplemental_contexts: self.supplemental_contexts,
@@ -298,6 +388,7 @@ impl GenerateCompletionsInputBuilder {
             opt_out_preference: self.opt_out_preference,
             user_context: self.user_context,
             profile_arn: self.profile_arn,
+            workspace_id: self.workspace_id,
         })
     }
 }
@@ -305,7 +396,9 @@ impl ::std::fmt::Debug for GenerateCompletionsInputBuilder {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("GenerateCompletionsInputBuilder");
         formatter.field("file_context", &self.file_context);
+        formatter.field("editor_state", &self.editor_state);
         formatter.field("max_results", &self.max_results);
+        formatter.field("prediction_types", &self.prediction_types);
         formatter.field("next_token", &"*** Sensitive Data Redacted ***");
         formatter.field("reference_tracker_configuration", &self.reference_tracker_configuration);
         formatter.field("supplemental_contexts", &self.supplemental_contexts);
@@ -313,6 +406,7 @@ impl ::std::fmt::Debug for GenerateCompletionsInputBuilder {
         formatter.field("opt_out_preference", &self.opt_out_preference);
         formatter.field("user_context", &self.user_context);
         formatter.field("profile_arn", &self.profile_arn);
+        formatter.field("workspace_id", &self.workspace_id);
         formatter.finish()
     }
 }

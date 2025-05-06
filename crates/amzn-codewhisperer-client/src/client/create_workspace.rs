@@ -6,6 +6,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`workspace_root(impl Into<String>)`](crate::operation::create_workspace::builders::CreateWorkspaceFluentBuilder::workspace_root) / [`set_workspace_root(Option<String>)`](crate::operation::create_workspace::builders::CreateWorkspaceFluentBuilder::set_workspace_root):<br>required: **true**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::create_workspace::builders::CreateWorkspaceFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::create_workspace::builders::CreateWorkspaceFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`CreateWorkspaceOutput`](crate::operation::create_workspace::CreateWorkspaceOutput) with
     ///   field(s):

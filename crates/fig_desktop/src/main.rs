@@ -244,7 +244,7 @@ async fn allow_multiple_running_check(
     }
 
     let system = System::new_with_specifics(
-        RefreshKind::new().with_processes(ProcessRefreshKind::new().with_user(sysinfo::UpdateKind::Always)),
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing().with_user(sysinfo::UpdateKind::Always)),
     );
     let app_process_name = OsString::from(APP_PROCESS_NAME);
     let processes = system.processes_by_exact_name(&app_process_name);
@@ -299,7 +299,7 @@ async fn allow_multiple_running_check(
     use std::ffi::OsString;
 
     let app_process_name = OsString::from(APP_PROCESS_NAME);
-    let system = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+    let system = System::new_with_specifics(RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()));
     let processes = system.processes_by_name(&app_process_name);
     let current_uid = nix::unistd::getuid().as_raw();
 

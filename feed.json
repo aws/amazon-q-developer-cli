@@ -12,6 +12,78 @@
     },
     {
       "type": "release",
+      "date": "2025-04-30",
+      "version": "1.10.0",
+      "title": "Version 1.10.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Multi-region support for pro users"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue where non-interactive chat sessions displayed welcome banner - [#1437](https://github.com/aws/amazon-q-developer-cli/pull/1437)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue where the `/context` chat command reference was duplicated in `/help` - [#1438](https://github.com/aws/amazon-q-developer-cli/pull/1438)"
+        },
+        {
+          "type": "fixed",
+          "description": "Preferred default of fuzzy find to `ctrl+s` - [#1442](https://github.com/aws/amazon-q-developer-cli/pull/1442)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-04-28",
+      "version": "1.9.1",
+      "title": "Version 1.9.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "A bug where chat would sometimes become unresponsive"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-04-28",
+      "version": "1.9.0",
+      "title": "Version 1.9.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Model Context Protocol (MCP) support in `q chat` - [#1365](https://github.com/aws/amazon-q-developer-cli/pull/1365)"
+        },
+        {
+          "type": "added",
+          "description": "Fuzzy finding support for selecting profiles in `q chat` - [#1388](https://github.com/aws/amazon-q-developer-cli/pull/1388)"
+        },
+        {
+          "type": "changed",
+          "description": "`/compact` to display the summary by default in `q chat` - [#1313](https://github.com/aws/amazon-q-developer-cli/pull/1313)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-04-25",
+      "version": "1.8.1",
+      "title": "Version 1.8.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "An issue with `/compact` failing in `q chat`"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-04-22",
       "version": "1.8.0",
       "title": "Version 1.8.0",
@@ -170,7 +242,7 @@
         },
         {
           "type": "changed",
-          "description": "Ctrl+C so that it exits `q chat` on first attempt - [#830](https://github.com/aws/amazon-q-developer-cli/pull/830)"
+          "description": "`ctrl+c` so that it exits `q chat` on first attempt - [#830](https://github.com/aws/amazon-q-developer-cli/pull/830)"
         },
         {
           "type": "fixed",

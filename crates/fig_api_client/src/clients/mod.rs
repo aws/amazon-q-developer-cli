@@ -1,5 +1,5 @@
 mod client;
-mod shared;
+pub(crate) mod shared;
 mod streaming_client;
 
 pub use client::{

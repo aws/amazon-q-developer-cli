@@ -41,23 +41,6 @@ pub fn de_start_transformation_http_error(
                 tmp
             })
         },
-        "ThrottlingException" => crate::operation::start_transformation::StartTransformationError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::start_transformation::StartTransformationError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::start_transformation::StartTransformationError::unhandled)?
-            };
-            tmp
-        }),
         "ValidationException" => crate::operation::start_transformation::StartTransformationError::ValidationError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -75,18 +58,18 @@ pub fn de_start_transformation_http_error(
             };
             tmp
         }),
-        "ConflictException" => crate::operation::start_transformation::StartTransformationError::ConflictError({
+        "ThrottlingException" => crate::operation::start_transformation::StartTransformationError::ThrottlingError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
-                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::start_transformation::StartTransformationError::unhandled)?;
                 let output = output.meta(generic);
-                crate::serde_util::conflict_exception_correct_errors(output)
+                crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::start_transformation::StartTransformationError::unhandled)?
             };
@@ -111,6 +94,23 @@ pub fn de_start_transformation_http_error(
                 tmp
             })
         },
+        "ConflictException" => crate::operation::start_transformation::StartTransformationError::ConflictError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
+                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::start_transformation::StartTransformationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::conflict_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::start_transformation::StartTransformationError::unhandled)?
+            };
+            tmp
+        }),
         _ => crate::operation::start_transformation::StartTransformationError::generic(generic),
     })
 }
@@ -138,7 +138,8 @@ pub fn de_start_transformation_http_response(
 
 pub fn ser_start_transformation_input(
     input: &crate::operation::start_transformation::StartTransformationInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_start_transformation_input::ser_start_transformation_input_input(&mut object, input)?;
@@ -149,7 +150,7 @@ pub fn ser_start_transformation_input(
 pub(crate) fn de_start_transformation(
     value: &[u8],
     mut builder: crate::operation::start_transformation::builders::StartTransformationOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::start_transformation::builders::StartTransformationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

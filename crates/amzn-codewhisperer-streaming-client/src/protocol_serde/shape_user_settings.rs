@@ -2,7 +2,7 @@
 pub fn ser_user_settings(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::UserSettings,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.has_consented_to_cross_region_calls {
         object.key("hasConsentedToCrossRegionCalls").boolean(*var_1);
     }

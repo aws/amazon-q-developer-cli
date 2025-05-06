@@ -12,14 +12,17 @@
 /// ```text
 /// # let origin = unimplemented!();
 /// match origin {
+///     Origin::AiEditor => { /* ... */ },
 ///     Origin::Chatbot => { /* ... */ },
 ///     Origin::Cli => { /* ... */ },
 ///     Origin::Console => { /* ... */ },
 ///     Origin::Documentation => { /* ... */ },
+///     Origin::Gitlab => { /* ... */ },
 ///     Origin::Ide => { /* ... */ },
 ///     Origin::Marketing => { /* ... */ },
 ///     Origin::Md => { /* ... */ },
 ///     Origin::Mobile => { /* ... */ },
+///     Origin::OpensearchDashboard => { /* ... */ },
 ///     Origin::SageMaker => { /* ... */ },
 ///     Origin::ServiceInternal => { /* ... */ },
 ///     Origin::UnifiedSearch => { /* ... */ },
@@ -46,7 +49,7 @@
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
 ///
-///  Enum to represent the origin application conversing with Sidekick.
+/// Enum to represent the origin application conversing with Sidekick.
 ///
 /// _Note: `Origin::Unknown` has been renamed to `::UnknownValue`._
 #[non_exhaustive]
@@ -60,6 +63,8 @@
     ::std::hash::Hash,
 )]
 pub enum Origin {
+    /// Any AI Editor.
+    AiEditor,
     /// AWS Chatbot
     Chatbot,
     /// Any CLI caller.
@@ -68,6 +73,8 @@ pub enum Origin {
     Console,
     /// AWS Documentation Website (https://docs.aws.amazon.com)
     Documentation,
+    /// Any caller from GitLab Q integration.
+    Gitlab,
     /// Any IDE caller.
     Ide,
     /// AWS Marketing Website (https://aws.amazon.com)
@@ -76,6 +83,8 @@ pub enum Origin {
     Md,
     /// AWS Mobile Application (ACMA)
     Mobile,
+    /// Amazon OpenSearch dashboard
+    OpensearchDashboard,
     /// Amazon SageMaker's Rome Chat.
     SageMaker,
     /// Internal Service Traffic (Integ Tests, Canaries, etc.). This is the default when no Origin
@@ -96,14 +105,17 @@ pub enum Origin {
 impl ::std::convert::From<&str> for Origin {
     fn from(s: &str) -> Self {
         match s {
+            "AI_EDITOR" => Origin::AiEditor,
             "CHATBOT" => Origin::Chatbot,
             "CLI" => Origin::Cli,
             "CONSOLE" => Origin::Console,
             "DOCUMENTATION" => Origin::Documentation,
+            "GITLAB" => Origin::Gitlab,
             "IDE" => Origin::Ide,
             "MARKETING" => Origin::Marketing,
             "MD" => Origin::Md,
             "MOBILE" => Origin::Mobile,
+            "OPENSEARCH_DASHBOARD" => Origin::OpensearchDashboard,
             "SAGE_MAKER" => Origin::SageMaker,
             "SERVICE_INTERNAL" => Origin::ServiceInternal,
             "UNIFIED_SEARCH" => Origin::UnifiedSearch,
@@ -125,14 +137,17 @@ impl Origin {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            Origin::AiEditor => "AI_EDITOR",
             Origin::Chatbot => "CHATBOT",
             Origin::Cli => "CLI",
             Origin::Console => "CONSOLE",
             Origin::Documentation => "DOCUMENTATION",
+            Origin::Gitlab => "GITLAB",
             Origin::Ide => "IDE",
             Origin::Marketing => "MARKETING",
             Origin::Md => "MD",
             Origin::Mobile => "MOBILE",
+            Origin::OpensearchDashboard => "OPENSEARCH_DASHBOARD",
             Origin::SageMaker => "SAGE_MAKER",
             Origin::ServiceInternal => "SERVICE_INTERNAL",
             Origin::UnifiedSearch => "UNIFIED_SEARCH",
@@ -144,14 +159,17 @@ impl Origin {
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[
+            "AI_EDITOR",
             "CHATBOT",
             "CLI",
             "CONSOLE",
             "DOCUMENTATION",
+            "GITLAB",
             "IDE",
             "MARKETING",
             "MD",
             "MOBILE",
+            "OPENSEARCH_DASHBOARD",
             "SAGE_MAKER",
             "SERVICE_INTERNAL",
             "UNIFIED_SEARCH",
@@ -179,14 +197,17 @@ impl Origin {
 impl ::std::fmt::Display for Origin {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            Origin::AiEditor => write!(f, "AI_EDITOR"),
             Origin::Chatbot => write!(f, "CHATBOT"),
             Origin::Cli => write!(f, "CLI"),
             Origin::Console => write!(f, "CONSOLE"),
             Origin::Documentation => write!(f, "DOCUMENTATION"),
+            Origin::Gitlab => write!(f, "GITLAB"),
             Origin::Ide => write!(f, "IDE"),
             Origin::Marketing => write!(f, "MARKETING"),
             Origin::Md => write!(f, "MD"),
             Origin::Mobile => write!(f, "MOBILE"),
+            Origin::OpensearchDashboard => write!(f, "OPENSEARCH_DASHBOARD"),
             Origin::SageMaker => write!(f, "SAGE_MAKER"),
             Origin::ServiceInternal => write!(f, "SERVICE_INTERNAL"),
             Origin::UnifiedSearch => write!(f, "UNIFIED_SEARCH"),

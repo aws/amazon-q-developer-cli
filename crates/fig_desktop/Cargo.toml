@@ -61,7 +61,7 @@ futures.workspace = true
 http.workspace = true
 image = "0.25.6"
 infer = "0.19.0"
-keyboard-types = "0.7.0"
+keyboard-types = "0.8.0"
 mime = "0.3.17"
 moka = { version = "0.12.1", features = ["future"] }
 muda = { version = "0.15.3", default-features = false }
@@ -75,7 +75,7 @@ rfd = "0.15.1"
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-shellexpand = "3.1.1"
+shellexpand.workspace = true
 sysinfo.workspace = true
 tao = { version = "0.31.1", features = ["serde"] }
 tempfile.workspace = true

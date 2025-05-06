@@ -4,9 +4,8 @@ impl super::Client {
     /// [`CreateTaskAssistConversation`](crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationFluentBuilder)
     /// operation.
     ///
-    /// - The fluent builder takes no input, just
-    ///   [`send`](crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationFluentBuilder::send)
-    ///   it.
+    /// - The fluent builder is configurable:
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with [`CreateTaskAssistConversationOutput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput) with field(s):
     ///   - [`conversation_id(String)`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput::conversation_id): ID which represents a multi-turn conversation
     /// - On failure, responds with [`SdkError<CreateTaskAssistConversationError>`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError)

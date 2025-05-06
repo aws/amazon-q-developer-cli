@@ -18,6 +18,7 @@ import * as Telemetry from "./telemetry.js";
 import * as Types from "./types.js";
 import * as User from "./user.js";
 import * as WindowPosition from "./position.js";
+import * as Profile from "./profile.js";
 
 const lib = {
   Auth,
@@ -39,6 +40,7 @@ const lib = {
   Types,
   User,
   WindowPosition,
+  Profile,
 };
 
 export {
@@ -62,6 +64,7 @@ export {
   Types,
   User,
   WindowPosition,
+  Profile,
 };
 
 declare global {

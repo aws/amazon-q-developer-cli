@@ -23,45 +23,6 @@ pub fn de_generate_recommendations_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => {
-            crate::operation::generate_recommendations::GenerateRecommendationsError::InternalServerError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output =
-                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(crate::operation::generate_recommendations::GenerateRecommendationsError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::internal_server_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::generate_recommendations::GenerateRecommendationsError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ThrottlingException" => {
-            crate::operation::generate_recommendations::GenerateRecommendationsError::ThrottlingError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(crate::operation::generate_recommendations::GenerateRecommendationsError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::throttling_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::generate_recommendations::GenerateRecommendationsError::unhandled)?
-                };
-                tmp
-            })
-        },
         "ValidationException" => {
             crate::operation::generate_recommendations::GenerateRecommendationsError::ValidationError({
                 #[allow(unused_mut)]
@@ -100,6 +61,45 @@ pub fn de_generate_recommendations_http_error(
                 tmp
             })
         },
+        "ThrottlingException" => {
+            crate::operation::generate_recommendations::GenerateRecommendationsError::ThrottlingError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(crate::operation::generate_recommendations::GenerateRecommendationsError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::throttling_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::generate_recommendations::GenerateRecommendationsError::unhandled)?
+                };
+                tmp
+            })
+        },
+        "InternalServerException" => {
+            crate::operation::generate_recommendations::GenerateRecommendationsError::InternalServerError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                    output =
+                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                            _response_body,
+                            output,
+                        )
+                        .map_err(crate::operation::generate_recommendations::GenerateRecommendationsError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::internal_server_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::generate_recommendations::GenerateRecommendationsError::unhandled)?
+                };
+                tmp
+            })
+        },
         _ => crate::operation::generate_recommendations::GenerateRecommendationsError::generic(generic),
     })
 }
@@ -127,7 +127,8 @@ pub fn de_generate_recommendations_http_response(
 
 pub fn ser_generate_recommendations_input(
     input: &crate::operation::generate_recommendations::GenerateRecommendationsInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_generate_recommendations_input::ser_generate_recommendations_input_input(
@@ -141,7 +142,7 @@ pub fn ser_generate_recommendations_input(
 pub(crate) fn de_generate_recommendations(
     value: &[u8],
     mut builder: crate::operation::generate_recommendations::builders::GenerateRecommendationsOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::generate_recommendations::builders::GenerateRecommendationsOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

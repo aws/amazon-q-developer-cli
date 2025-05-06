@@ -8,7 +8,9 @@ use std::time::{
 pub use amzn_toolkit_telemetry::types::MetricDatum;
 use aws_toolkit_telemetry_definitions::IntoMetricDatum;
 use aws_toolkit_telemetry_definitions::metrics::{
+    AmazonqDidSelectProfile,
     AmazonqEndChat,
+    AmazonqProfileState,
     AmazonqStartChat,
     CodewhispererterminalAddChatMessage,
     CodewhispererterminalCliSubcommandExecuted,
@@ -17,6 +19,7 @@ use aws_toolkit_telemetry_definitions::metrics::{
     CodewhispererterminalDoctorCheckFailed,
     CodewhispererterminalFigUserMigrated,
     CodewhispererterminalInlineShellActioned,
+    CodewhispererterminalMcpServerInit,
     CodewhispererterminalMenuBarActioned,
     CodewhispererterminalMigrateOldClientId,
     CodewhispererterminalRefreshCredentials,
@@ -25,11 +28,16 @@ use aws_toolkit_telemetry_definitions::metrics::{
     CodewhispererterminalUserLoggedIn,
 };
 use aws_toolkit_telemetry_definitions::types::{
+    CodewhispererterminalCustomToolInputTokenSize,
+    CodewhispererterminalCustomToolLatency,
+    CodewhispererterminalCustomToolOutputTokenSize,
     CodewhispererterminalInCloudshell,
     CodewhispererterminalIsToolValid,
+    CodewhispererterminalMcpServerInitFailureReason,
     CodewhispererterminalToolName,
     CodewhispererterminalToolUseId,
     CodewhispererterminalToolUseIsSuccess,
+    CodewhispererterminalToolsPerMcpServer,
     CodewhispererterminalUserInputId,
     CodewhispererterminalUtteranceId,
 };
@@ -317,6 +325,10 @@ impl Event {
                 is_accepted,
                 is_valid,
                 is_success,
+                is_custom_tool,
+                input_token_size,
+                output_token_size,
+                custom_tool_call_latency,
             } => Some(
                 CodewhispererterminalToolUseSuggested {
                     create_time: self.created_time,
@@ -330,6 +342,66 @@ impl Event {
                     codewhispererterminal_is_tool_use_accepted: Some(is_accepted.into()),
                     codewhispererterminal_is_tool_valid: is_valid.map(CodewhispererterminalIsToolValid),
                     codewhispererterminal_tool_use_is_success: is_success.map(CodewhispererterminalToolUseIsSuccess),
+                    codewhispererterminal_is_custom_tool: Some(is_custom_tool.into()),
+                    codewhispererterminal_custom_tool_input_token_size: input_token_size
+                        .map(|s| CodewhispererterminalCustomToolInputTokenSize(s as i64)),
+                    codewhispererterminal_custom_tool_output_token_size: output_token_size
+                        .map(|s| CodewhispererterminalCustomToolOutputTokenSize(s as i64)),
+                    codewhispererterminal_custom_tool_latency: custom_tool_call_latency
+                        .map(|l| CodewhispererterminalCustomToolLatency(l as i64)),
+                }
+                .into_metric_datum(),
+            ),
+            EventType::McpServerInit {
+                conversation_id,
+                init_failure_reason,
+                number_of_tools,
+            } => Some(
+                CodewhispererterminalMcpServerInit {
+                    create_time: self.created_time,
+                    value: None,
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_mcp_server_init_failure_reason: init_failure_reason
+                        .map(CodewhispererterminalMcpServerInitFailureReason),
+                    codewhispererterminal_tools_per_mcp_server: Some(CodewhispererterminalToolsPerMcpServer(
+                        number_of_tools as i64,
+                    )),
+                }
+                .into_metric_datum(),
+            ),
+            EventType::DidSelectProfile {
+                source,
+                amazonq_profile_region,
+                result,
+                sso_region,
+                profile_count,
+            } => Some(
+                AmazonqDidSelectProfile {
+                    create_time: self.created_time,
+                    value: None,
+                    source: Some(source.to_string().into()),
+                    amazon_q_profile_region: Some(amazonq_profile_region.into()),
+                    result: Some(result.to_string().into()),
+                    sso_region: sso_region.map(Into::into),
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    profile_count: profile_count.map(Into::into),
+                }
+                .into_metric_datum(),
+            ),
+            EventType::ProfileState {
+                source,
+                amazonq_profile_region,
+                result,
+                sso_region,
+            } => Some(
+                AmazonqProfileState {
+                    create_time: self.created_time,
+                    value: None,
+                    source: Some(source.to_string().into()),
+                    amazon_q_profile_region: Some(amazonq_profile_region.into()),
+                    result: Some(result.to_string().into()),
+                    sso_region: sso_region.map(Into::into),
+                    credential_start_url: self.credential_start_url.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -418,6 +490,28 @@ pub enum EventType {
         is_accepted: bool,
         is_success: Option<bool>,
         is_valid: Option<bool>,
+        is_custom_tool: bool,
+        input_token_size: Option<usize>,
+        output_token_size: Option<usize>,
+        custom_tool_call_latency: Option<usize>,
+    },
+    McpServerInit {
+        conversation_id: String,
+        init_failure_reason: Option<String>,
+        number_of_tools: usize,
+    },
+    DidSelectProfile {
+        source: QProfileSwitchIntent,
+        amazonq_profile_region: String,
+        result: TelemetryResult,
+        sso_region: Option<String>,
+        profile_count: Option<i64>,
+    },
+    ProfileState {
+        source: QProfileSwitchIntent,
+        amazonq_profile_region: String,
+        result: TelemetryResult,
+        sso_region: Option<String>,
     },
 }
 
@@ -459,6 +553,19 @@ impl From<SuggestionState> for amzn_codewhisperer_client::types::SuggestionState
 pub enum TelemetryResult {
     Succeeded,
     Failed,
+    Cancelled,
+}
+
+/// 'user' -> users change the profile through Q CLI user profile command
+/// 'auth' -> users change the profile through dashboard
+/// 'update' -> CLI auto select the profile on users' behalf as there is only 1 profile
+/// 'reload' -> CLI will try to reload previous selected profile upon CLI is running
+#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumString, Display, serde::Serialize, serde::Deserialize)]
+pub enum QProfileSwitchIntent {
+    User,
+    Auth,
+    Update,
+    Reload,
 }
 
 fn in_cloudshell() -> Option<CodewhispererterminalInCloudshell> {

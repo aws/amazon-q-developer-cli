@@ -25,40 +25,6 @@ pub fn de_get_customization_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => crate::operation::get_customization::GetCustomizationError::InternalServerError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::internal_server_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?
-            };
-            tmp
-        }),
-        "ThrottlingException" => crate::operation::get_customization::GetCustomizationError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?
-            };
-            tmp
-        }),
         "ValidationException" => crate::operation::get_customization::GetCustomizationError::ValidationError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -71,6 +37,40 @@ pub fn de_get_customization_http_error(
                 .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?
+            };
+            tmp
+        }),
+        "AccessDeniedException" => crate::operation::get_customization::GetCustomizationError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?
+            };
+            tmp
+        }),
+        "InternalServerException" => crate::operation::get_customization::GetCustomizationError::InternalServerError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::internal_server_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?
             };
@@ -92,18 +92,18 @@ pub fn de_get_customization_http_error(
                 tmp
             })
         },
-        "AccessDeniedException" => crate::operation::get_customization::GetCustomizationError::AccessDeniedError({
+        "ThrottlingException" => crate::operation::get_customization::GetCustomizationError::ThrottlingError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?;
                 let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
+                crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::get_customization::GetCustomizationError::unhandled)?
             };
@@ -136,7 +136,8 @@ pub fn de_get_customization_http_response(
 
 pub fn ser_get_customization_input(
     input: &crate::operation::get_customization::GetCustomizationInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_get_customization_input::ser_get_customization_input_input(&mut object, input)?;
@@ -147,7 +148,7 @@ pub fn ser_get_customization_input(
 pub(crate) fn de_get_customization(
     value: &[u8],
     mut builder: crate::operation::get_customization::builders::GetCustomizationOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::get_customization::builders::GetCustomizationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

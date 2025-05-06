@@ -23,45 +23,6 @@ pub fn de_list_feature_evaluations_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => {
-            crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::InternalServerError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output =
-                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::internal_server_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ThrottlingException" => {
-            crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::ThrottlingError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::throttling_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::unhandled)?
-                };
-                tmp
-            })
-        },
         "ValidationException" => {
             crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::ValidationError({
                 #[allow(unused_mut)]
@@ -100,6 +61,45 @@ pub fn de_list_feature_evaluations_http_error(
                 tmp
             })
         },
+        "ThrottlingException" => {
+            crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::ThrottlingError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::throttling_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::unhandled)?
+                };
+                tmp
+            })
+        },
+        "InternalServerException" => {
+            crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::InternalServerError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                    output =
+                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                            _response_body,
+                            output,
+                        )
+                        .map_err(crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::internal_server_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::unhandled)?
+                };
+                tmp
+            })
+        },
         _ => crate::operation::list_feature_evaluations::ListFeatureEvaluationsError::generic(generic),
     })
 }
@@ -129,7 +129,8 @@ pub fn de_list_feature_evaluations_http_response(
 
 pub fn ser_list_feature_evaluations_input(
     input: &crate::operation::list_feature_evaluations::ListFeatureEvaluationsInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_list_feature_evaluations_input::ser_list_feature_evaluations_input_input(
@@ -143,7 +144,7 @@ pub fn ser_list_feature_evaluations_input(
 pub(crate) fn de_list_feature_evaluations(
     value: &[u8],
     mut builder: crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

@@ -201,6 +201,18 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GetTaskAssis
                 ::std::write!(output, "/").expect("formatting should succeed");
                 ::std::result::Result::Ok(())
             }
+            fn uri_query(
+                _input: &crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationInput,
+                mut output: &mut ::std::string::String,
+            ) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::BuildError> {
+                let mut query = ::aws_smithy_http::query::Writer::new(output);
+                if let ::std::option::Option::Some(inner_1) = &_input.profile_arn {
+                    {
+                        query.push_kv("profileArn", &::aws_smithy_http::query::fmt_string(inner_1));
+                    }
+                }
+                ::std::result::Result::Ok(())
+            }
             #[allow(clippy::unnecessary_wraps)]
             fn update_http_builder(
                 input: &crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationInput,
@@ -209,6 +221,7 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GetTaskAssis
             {
                 let mut uri = ::std::string::String::new();
                 uri_base(input, &mut uri)?;
+                uri_query(input, &mut uri)?;
                 ::std::result::Result::Ok(builder.method("POST").uri(uri))
             }
             let mut builder = update_http_builder(&input, ::http::request::Builder::new())?;
@@ -289,16 +302,16 @@ pub enum GetTaskAssistCodeGenerationError {
     /// This exception is thrown when an unexpected error occurred during the processing of a
     /// request.
     InternalServerError(crate::types::error::InternalServerError),
-    /// This exception is thrown when request was denied due to request throttling.
-    ThrottlingError(crate::types::error::ThrottlingError),
     /// This exception is thrown when the input fails to satisfy the constraints specified by the
     /// service.
     ValidationError(crate::types::error::ValidationError),
+    /// This exception is thrown when describing a resource that does not exist.
+    ResourceNotFoundError(crate::types::error::ResourceNotFoundError),
     /// This exception is thrown when the action to perform could not be completed because the
     /// resource is in a conflicting state.
     ConflictError(crate::types::error::ConflictError),
-    /// This exception is thrown when describing a resource that does not exist.
-    ResourceNotFoundError(crate::types::error::ResourceNotFoundError),
+    /// This exception is thrown when request was denied due to request throttling.
+    ThrottlingError(crate::types::error::ThrottlingError),
     /// This exception is thrown when the user does not have sufficient access to perform this
     /// action.
     AccessDeniedError(crate::types::error::AccessDeniedError),
@@ -341,10 +354,10 @@ impl GetTaskAssistCodeGenerationError {
     pub fn meta(&self) -> &::aws_smithy_types::error::ErrorMetadata {
         match self {
             Self::InternalServerError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
-            Self::ThrottlingError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::ValidationError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
-            Self::ConflictError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::ResourceNotFoundError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
+            Self::ConflictError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
+            Self::ThrottlingError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::AccessDeniedError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::Unhandled(e) => &e.meta,
         }
@@ -355,14 +368,15 @@ impl GetTaskAssistCodeGenerationError {
         matches!(self, Self::InternalServerError(_))
     }
 
-    /// Returns `true` if the error kind is `GetTaskAssistCodeGenerationError::ThrottlingError`.
-    pub fn is_throttling_error(&self) -> bool {
-        matches!(self, Self::ThrottlingError(_))
-    }
-
     /// Returns `true` if the error kind is `GetTaskAssistCodeGenerationError::ValidationError`.
     pub fn is_validation_error(&self) -> bool {
         matches!(self, Self::ValidationError(_))
+    }
+
+    /// Returns `true` if the error kind is
+    /// `GetTaskAssistCodeGenerationError::ResourceNotFoundError`.
+    pub fn is_resource_not_found_error(&self) -> bool {
+        matches!(self, Self::ResourceNotFoundError(_))
     }
 
     /// Returns `true` if the error kind is `GetTaskAssistCodeGenerationError::ConflictError`.
@@ -370,10 +384,9 @@ impl GetTaskAssistCodeGenerationError {
         matches!(self, Self::ConflictError(_))
     }
 
-    /// Returns `true` if the error kind is
-    /// `GetTaskAssistCodeGenerationError::ResourceNotFoundError`.
-    pub fn is_resource_not_found_error(&self) -> bool {
-        matches!(self, Self::ResourceNotFoundError(_))
+    /// Returns `true` if the error kind is `GetTaskAssistCodeGenerationError::ThrottlingError`.
+    pub fn is_throttling_error(&self) -> bool {
+        matches!(self, Self::ThrottlingError(_))
     }
 
     /// Returns `true` if the error kind is `GetTaskAssistCodeGenerationError::AccessDeniedError`.
@@ -385,10 +398,10 @@ impl ::std::error::Error for GetTaskAssistCodeGenerationError {
     fn source(&self) -> ::std::option::Option<&(dyn ::std::error::Error + 'static)> {
         match self {
             Self::InternalServerError(_inner) => ::std::option::Option::Some(_inner),
-            Self::ThrottlingError(_inner) => ::std::option::Option::Some(_inner),
             Self::ValidationError(_inner) => ::std::option::Option::Some(_inner),
-            Self::ConflictError(_inner) => ::std::option::Option::Some(_inner),
             Self::ResourceNotFoundError(_inner) => ::std::option::Option::Some(_inner),
+            Self::ConflictError(_inner) => ::std::option::Option::Some(_inner),
+            Self::ThrottlingError(_inner) => ::std::option::Option::Some(_inner),
             Self::AccessDeniedError(_inner) => ::std::option::Option::Some(_inner),
             Self::Unhandled(_inner) => ::std::option::Option::Some(&*_inner.source),
         }
@@ -398,10 +411,10 @@ impl ::std::fmt::Display for GetTaskAssistCodeGenerationError {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         match self {
             Self::InternalServerError(_inner) => _inner.fmt(f),
-            Self::ThrottlingError(_inner) => _inner.fmt(f),
             Self::ValidationError(_inner) => _inner.fmt(f),
-            Self::ConflictError(_inner) => _inner.fmt(f),
             Self::ResourceNotFoundError(_inner) => _inner.fmt(f),
+            Self::ConflictError(_inner) => _inner.fmt(f),
+            Self::ThrottlingError(_inner) => _inner.fmt(f),
             Self::AccessDeniedError(_inner) => _inner.fmt(f),
             Self::Unhandled(_inner) => {
                 if let ::std::option::Option::Some(code) =
@@ -434,12 +447,12 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for GetTaskAssist
             Self::InternalServerError(_inner) => {
                 ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner)
             },
-            Self::ThrottlingError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::ValidationError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
-            Self::ConflictError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::ResourceNotFoundError(_inner) => {
                 ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner)
             },
+            Self::ConflictError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
+            Self::ThrottlingError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::AccessDeniedError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::Unhandled(_inner) => &_inner.meta,
         }

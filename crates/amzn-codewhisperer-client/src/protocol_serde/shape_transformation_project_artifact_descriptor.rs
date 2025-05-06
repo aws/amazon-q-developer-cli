@@ -2,7 +2,7 @@
 pub fn ser_transformation_project_artifact_descriptor(
     object_7: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::TransformationProjectArtifactDescriptor,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::TransformationProjectArtifactDescriptor::SourceCodeArtifact(inner) => {
             #[allow(unused_mut)]
@@ -26,7 +26,7 @@ pub fn ser_transformation_project_artifact_descriptor(
 
 pub(crate) fn de_transformation_project_artifact_descriptor<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<
+) -> ::std::result::Result<
     Option<crate::types::TransformationProjectArtifactDescriptor>,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 >

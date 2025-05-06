@@ -6,16 +6,22 @@ use std::process::{
 };
 use std::time::Duration;
 
-use anstream::println;
+use anstream::{
+    eprintln,
+    println,
+};
 use clap::{
     Args,
     Subcommand,
 };
 use crossterm::style::Stylize;
+use dialoguer::Select;
 use eyre::{
     Result,
     bail,
 };
+use fig_api_client::list_available_profiles;
+use fig_api_client::profile::Profile;
 use fig_auth::builder_id::{
     PollCreateToken,
     TokenType,
@@ -28,13 +34,24 @@ use fig_ipc::local::{
     login_command,
     logout_command,
 };
+use fig_telemetry_core::{
+    QProfileSwitchIntent,
+    TelemetryResult,
+};
 use fig_util::system_info::is_remote;
 use fig_util::{
     CLI_BINARY_NAME,
     PRODUCT_NAME,
 };
 use serde_json::json;
-use tracing::error;
+use tokio::signal::unix::{
+    SignalKind,
+    signal,
+};
+use tracing::{
+    error,
+    info,
+};
 
 use super::OutputFormat;
 use crate::util::spinner::{
@@ -58,9 +75,11 @@ pub enum RootUserSubcommand {
         #[arg(long, short, value_enum, default_value_t)]
         format: OutputFormat,
     },
+    /// Show the profile associated with this idc user
+    Profile,
 }
 
-#[derive(Args, Debug, PartialEq, Eq, Clone)]
+#[derive(Args, Debug, PartialEq, Eq, Clone, Default)]
 pub struct LoginArgs {
     /// License type (pro for Identity Center, free for Builder ID)
     #[arg(long, value_enum)]
@@ -73,6 +92,11 @@ pub struct LoginArgs {
     /// Region (for Identity Center)
     #[arg(long)]
     pub region: Option<String>,
+
+    /// Always use the OAuth device flow for authentication. Useful for instances where browser
+    /// redirects cannot be handled.
+    #[arg(long)]
+    pub use_device_flow: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -153,6 +177,18 @@ impl RootUserSubcommand {
                                 })
                             },
                         );
+
+                        if matches!(token.token_type(), TokenType::IamIdentityCenter) {
+                            if let Ok(Some(profile)) = fig_settings::state::get::<fig_api_client::profile::Profile>(
+                                "api.codewhisperer.profile",
+                            ) {
+                                color_print::cprintln!(
+                                    "\n<em>Profile:</em>\n{}\n{}\n",
+                                    profile.profile_name,
+                                    profile.arn
+                                );
+                            }
+                        }
                         Ok(ExitCode::SUCCESS)
                     },
                     _ => {
@@ -160,6 +196,24 @@ impl RootUserSubcommand {
                         Ok(ExitCode::FAILURE)
                     },
                 }
+            },
+            Self::Profile => {
+                if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
+                    bail!(
+                        "You are not logged in, please log in with {}",
+                        format!("{CLI_BINARY_NAME} login",).bold()
+                    );
+                }
+
+                if let Ok(Some(token)) = fig_auth::builder_id_token().await {
+                    if matches!(token.token_type(), TokenType::BuilderId) {
+                        bail!("This command is only available for Pro users");
+                    }
+                }
+
+                select_profile_interactive(false).await?;
+
+                Ok(ExitCode::SUCCESS)
             },
         }
     }
@@ -173,8 +227,6 @@ pub enum UserSubcommand {
 
 impl UserSubcommand {
     pub async fn execute(self) -> Result<ExitCode> {
-        ctrlc::set_handler(|| exit(1))?;
-
         match self {
             Self::Root(cmd) => cmd.execute().await,
         }
@@ -208,17 +260,8 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                         .region
                         .or_else(|| fig_settings::state::get_string("auth.idc.region").ok().flatten());
 
-                    let start_url = if let Some(url) = default_start_url.clone() {
-                        url
-                    } else {
-                        input("Enter Start URL", default_start_url.as_deref())?
-                    };
-
-                    let region = if let Some(reg) = default_region.clone() {
-                        reg
-                    } else {
-                        input("Enter Region", default_region.as_deref())?
-                    };
+                    let start_url = input("Enter Start URL", default_start_url.as_deref())?;
+                    let region = input("Enter Region", default_region.as_deref())?;
 
                     let _ = fig_settings::state::set_value("auth.idc.start-url", start_url.clone());
                     let _ = fig_settings::state::set_value("auth.idc.region", region.clone());
@@ -230,7 +273,7 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
 
             // Remote machine won't be able to handle browser opening and redirects,
             // hence always use device code flow.
-            if is_remote() {
+            if is_remote() || args.use_device_flow {
                 try_device_authorization(&secret_store, start_url.clone(), region.clone()).await?;
             } else {
                 let (client, registration) = start_pkce_authorization(start_url.clone(), region.clone()).await?;
@@ -242,9 +285,16 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                             SpinnerComponent::Spinner,
                             SpinnerComponent::Text(" Logging in...".into()),
                         ]);
-                        registration.finish(&client, Some(&secret_store)).await?;
+                        let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
+                        tokio::select! {
+                            res = registration.finish(&client, Some(&secret_store)) => res?,
+                            Some(_) = ctrl_c_stream.recv() => {
+                                #[allow(clippy::exit)]
+                                exit(1);
+                            },
+                        }
                         fig_telemetry::send_user_logged_in().await;
-                        spinner.stop_with_message("Logged in successfully".into());
+                        spinner.stop_with_message("Device authorized".into());
                     },
                     // If we are unable to open the link with the browser, then fallback to
                     // the device code flow.
@@ -260,8 +310,14 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
     };
 
     if let Err(err) = login_command().await {
-        error!(%err, "Failed to send login command");
+        error!(%err, "Failed to send login command.");
     }
+
+    if login_method == AuthMethod::IdentityCenter {
+        select_profile_interactive(true).await?;
+    }
+
+    eprintln!("Logged in successfully");
 
     Ok(())
 }
@@ -292,8 +348,15 @@ async fn try_device_authorization(
         SpinnerComponent::Text(" Logging in...".into()),
     ]);
 
+    let mut ctrl_c_stream = signal(SignalKind::interrupt())?;
     loop {
-        tokio::time::sleep(Duration::from_secs(device_auth.interval.try_into().unwrap_or(1))).await;
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(device_auth.interval.try_into().unwrap_or(1))) => (),
+            Some(_) = ctrl_c_stream.recv() => {
+                #[allow(clippy::exit)]
+                exit(1);
+            }
+        }
         match poll_create_token(
             secret_store,
             device_auth.device_code.clone(),
@@ -305,7 +368,7 @@ async fn try_device_authorization(
             PollCreateToken::Pending => {},
             PollCreateToken::Complete(_) => {
                 fig_telemetry::send_user_logged_in().await;
-                spinner.stop_with_message("Logged in successfully".into());
+                spinner.stop_with_message("Device authorized".into());
                 break;
             },
             PollCreateToken::Error(err) => {
@@ -315,4 +378,103 @@ async fn try_device_authorization(
         };
     }
     Ok(())
+}
+
+async fn select_profile_interactive(whoami: bool) -> Result<()> {
+    let mut spinner = Spinner::new(vec![
+        SpinnerComponent::Spinner,
+        SpinnerComponent::Text(" Fetching profiles...".into()),
+    ]);
+    let profiles = list_available_profiles().await;
+    if profiles.is_empty() {
+        info!("Available profiles was empty");
+        return Ok(());
+    }
+
+    let sso_region: Option<String> = fig_settings::state::get_string("auth.idc.region").ok().flatten();
+    let total_profiles = profiles.len() as i64;
+
+    if whoami && profiles.len() == 1 {
+        if let Some(profile_region) = profiles[0].arn.split(':').nth(3) {
+            fig_telemetry::send_profile_state(
+                QProfileSwitchIntent::Update,
+                profile_region.to_string(),
+                TelemetryResult::Succeeded,
+                sso_region,
+            )
+            .await;
+        }
+        spinner.stop_with_message(String::new());
+        return Ok(fig_settings::state::set_value(
+            "api.codewhisperer.profile",
+            serde_json::to_value(&profiles[0])?,
+        )?);
+    }
+
+    let mut items: Vec<String> = profiles
+        .iter()
+        .map(|p| format!("{} (arn: {})", p.profile_name, p.arn))
+        .collect();
+    let active_profile: Option<Profile> = fig_settings::state::get("api.codewhisperer.profile")?;
+
+    if let Some(default_idx) = active_profile
+        .as_ref()
+        .and_then(|active| profiles.iter().position(|p| p.arn == active.arn))
+    {
+        items[default_idx] = format!("{} (active)", items[default_idx].as_str());
+    }
+
+    spinner.stop_with_message(String::new());
+    let selected = Select::with_theme(&crate::util::dialoguer_theme())
+        .with_prompt("Select an IAM Identity Center profile")
+        .items(&items)
+        .default(0)
+        .interact_opt()?;
+
+    match selected {
+        Some(i) => {
+            let chosen = &profiles[i];
+            let profile = serde_json::to_value(chosen)?;
+            eprintln!("Set profile: {}\n", chosen.profile_name.as_str().green());
+            fig_settings::state::set_value("api.codewhisperer.profile", profile)?;
+            fig_settings::state::remove_value("api.selectedCustomization")?;
+
+            if let Some(profile_region) = chosen.arn.split(':').nth(3) {
+                let intent = if whoami {
+                    QProfileSwitchIntent::Auth
+                } else {
+                    QProfileSwitchIntent::User
+                };
+                fig_telemetry::send_did_select_profile(
+                    intent,
+                    profile_region.to_string(),
+                    TelemetryResult::Succeeded,
+                    sso_region,
+                    Some(total_profiles),
+                )
+                .await;
+            }
+        },
+        None => {
+            fig_telemetry::send_did_select_profile(
+                QProfileSwitchIntent::User,
+                "not-set".to_string(),
+                TelemetryResult::Cancelled,
+                sso_region,
+                Some(total_profiles),
+            )
+            .await;
+            bail!("No profile selected.\n");
+        },
+    }
+
+    Ok(())
+}
+
+mod tests {
+    #[test]
+    #[ignore]
+    fn unset_profile() {
+        fig_settings::state::remove_value("api.codewhisperer.profile").unwrap();
+    }
 }

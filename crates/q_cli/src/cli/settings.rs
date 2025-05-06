@@ -106,6 +106,7 @@ impl SettingsArgs {
 
                 Ok(ExitCode::SUCCESS)
             },
+
             None => match &self.key {
                 Some(key) => match (&self.value, self.delete) {
                     (None, false) => match fig_settings::settings::get_value(key)? {

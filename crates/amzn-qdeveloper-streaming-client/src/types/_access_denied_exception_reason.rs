@@ -13,6 +13,7 @@
 /// # let accessdeniedexceptionreason = unimplemented!();
 /// match accessdeniedexceptionreason {
 ///     AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => { /* ... */ },
+///     AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
 /// }
@@ -35,7 +36,7 @@
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
 ///
-///  Reason for AccessDeniedException
+/// Reason for AccessDeniedException
 #[non_exhaustive]
 #[derive(
     ::std::clone::Clone,
@@ -49,6 +50,8 @@
 pub enum AccessDeniedExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
     UnauthorizedCustomizationResourceAccess,
+    #[allow(missing_docs)] // documentation missing in model
+    UnauthorizedWorkspaceContextFeatureAccess,
     /// `Unknown` contains new variants that have been added since this code was generated.
     #[deprecated(
         note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
@@ -60,6 +63,9 @@ impl ::std::convert::From<&str> for AccessDeniedExceptionReason {
         match s {
             "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS" => {
                 AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess
+            },
+            "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS" => {
+                AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess
             },
             other => AccessDeniedExceptionReason::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
@@ -81,13 +87,19 @@ impl AccessDeniedExceptionReason {
             AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => {
                 "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS"
             },
+            AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess => {
+                "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS"
+            },
             AccessDeniedExceptionReason::Unknown(value) => value.as_str(),
         }
     }
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS"]
+        &[
+            "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS",
+            "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS",
+        ]
     }
 }
 impl ::std::convert::AsRef<str> for AccessDeniedExceptionReason {
@@ -112,6 +124,9 @@ impl ::std::fmt::Display for AccessDeniedExceptionReason {
         match self {
             AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => {
                 write!(f, "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS")
+            },
+            AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess => {
+                write!(f, "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS")
             },
             AccessDeniedExceptionReason::Unknown(value) => write!(f, "{}", value),
         }

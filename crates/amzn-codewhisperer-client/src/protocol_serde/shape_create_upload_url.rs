@@ -25,54 +25,18 @@ pub fn de_create_upload_url_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => crate::operation::create_upload_url::CreateUploadUrlError::InternalServerError({
+        "AccessDeniedException" => crate::operation::create_upload_url::CreateUploadUrlError::AccessDeniedError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?;
                 let output = output.meta(generic);
-                crate::serde_util::internal_server_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?
-            };
-            tmp
-        }),
-        "ServiceQuotaExceededException" => {
-            crate::operation::create_upload_url::CreateUploadUrlError::ServiceQuotaExceededError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
-                    output = crate::protocol_serde::shape_service_quota_exceeded_exception::de_service_quota_exceeded_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::service_quota_exceeded_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ThrottlingException" => crate::operation::create_upload_url::CreateUploadUrlError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
+                crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?
             };
@@ -95,18 +59,18 @@ pub fn de_create_upload_url_http_error(
             };
             tmp
         }),
-        "ConflictException" => crate::operation::create_upload_url::CreateUploadUrlError::ConflictError({
+        "ThrottlingException" => crate::operation::create_upload_url::CreateUploadUrlError::ThrottlingError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
-                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?;
                 let output = output.meta(generic);
-                crate::serde_util::conflict_exception_correct_errors(output)
+                crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?
             };
@@ -128,18 +92,54 @@ pub fn de_create_upload_url_http_error(
                 tmp
             })
         },
-        "AccessDeniedException" => crate::operation::create_upload_url::CreateUploadUrlError::AccessDeniedError({
+        "ServiceQuotaExceededException" => {
+            crate::operation::create_upload_url::CreateUploadUrlError::ServiceQuotaExceededError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
+                    output = crate::protocol_serde::shape_service_quota_exceeded_exception::de_service_quota_exceeded_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::service_quota_exceeded_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?
+                };
+                tmp
+            })
+        },
+        "ConflictException" => crate::operation::create_upload_url::CreateUploadUrlError::ConflictError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
+                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?;
                 let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
+                crate::serde_util::conflict_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?
+            };
+            tmp
+        }),
+        "InternalServerException" => crate::operation::create_upload_url::CreateUploadUrlError::InternalServerError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::internal_server_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::create_upload_url::CreateUploadUrlError::unhandled)?
             };
@@ -172,7 +172,8 @@ pub fn de_create_upload_url_http_response(
 
 pub fn ser_create_upload_url_input(
     input: &crate::operation::create_upload_url::CreateUploadUrlInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_create_upload_url_input::ser_create_upload_url_input_input(&mut object, input)?;
@@ -183,7 +184,7 @@ pub fn ser_create_upload_url_input(
 pub(crate) fn de_create_upload_url(
     value: &[u8],
     mut builder: crate::operation::create_upload_url::builders::CreateUploadUrlOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::create_upload_url::builders::CreateUploadUrlOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

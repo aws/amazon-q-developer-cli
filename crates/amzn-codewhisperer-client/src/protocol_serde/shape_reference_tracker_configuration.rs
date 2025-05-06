@@ -2,7 +2,7 @@
 pub fn ser_reference_tracker_configuration(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::ReferenceTrackerConfiguration,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object
             .key("recommendationsWithReferences")
@@ -13,7 +13,10 @@ pub fn ser_reference_tracker_configuration(
 
 pub(crate) fn de_reference_tracker_configuration<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<Option<crate::types::ReferenceTrackerConfiguration>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<
+    Option<crate::types::ReferenceTrackerConfiguration>,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+>
 where
     I: Iterator<
         Item = Result<

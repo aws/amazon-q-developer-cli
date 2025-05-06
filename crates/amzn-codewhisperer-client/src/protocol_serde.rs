@@ -21,7 +21,10 @@ pub fn parse_http_error_metadata(
     _response_status: u16,
     response_headers: &::aws_smithy_runtime_api::http::Headers,
     response_body: &[u8],
-) -> Result<::aws_smithy_types::error::metadata::Builder, ::aws_smithy_json::deserialize::error::DeserializeError> {
+) -> ::std::result::Result<
+    ::aws_smithy_types::error::metadata::Builder,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+> {
     crate::json_errors::parse_error_metadata(response_body, response_headers)
 }
 
@@ -31,9 +34,13 @@ pub(crate) mod shape_create_task_assist_conversation;
 
 pub(crate) mod shape_create_upload_url;
 
+pub(crate) mod shape_create_user_memory_entry;
+
 pub(crate) mod shape_create_workspace;
 
 pub(crate) mod shape_delete_task_assist_conversation;
+
+pub(crate) mod shape_delete_user_memory_entry;
 
 pub(crate) mod shape_delete_workspace;
 
@@ -57,9 +64,15 @@ pub(crate) mod shape_list_available_profiles;
 
 pub(crate) mod shape_list_code_analysis_findings;
 
+pub(crate) mod shape_list_events;
+
 pub(crate) mod shape_list_feature_evaluations;
 
+pub(crate) mod shape_list_user_memory_entries;
+
 pub(crate) mod shape_list_workspace_metadata;
+
+pub(crate) mod shape_push_telemetry_event;
 
 pub(crate) mod shape_resume_transformation;
 
@@ -87,11 +100,17 @@ pub(crate) mod shape_conflict_exception;
 
 pub(crate) mod shape_create_artifact_upload_url_input;
 
+pub(crate) mod shape_create_task_assist_conversation_input;
+
 pub(crate) mod shape_create_upload_url_input;
+
+pub(crate) mod shape_create_user_memory_entry_input;
 
 pub(crate) mod shape_create_workspace_input;
 
 pub(crate) mod shape_delete_task_assist_conversation_input;
+
+pub(crate) mod shape_delete_user_memory_entry_input;
 
 pub(crate) mod shape_delete_workspace_input;
 
@@ -117,9 +136,15 @@ pub(crate) mod shape_list_available_profiles_input;
 
 pub(crate) mod shape_list_code_analysis_findings_input;
 
+pub(crate) mod shape_list_events_input;
+
 pub(crate) mod shape_list_feature_evaluations_input;
 
+pub(crate) mod shape_list_user_memory_entries_input;
+
 pub(crate) mod shape_list_workspace_metadata_input;
+
+pub(crate) mod shape_push_telemetry_event_input;
 
 pub(crate) mod shape_resource_not_found_exception;
 
@@ -153,11 +178,21 @@ pub(crate) mod shape_conversation_state;
 
 pub(crate) mod shape_customizations;
 
+pub(crate) mod shape_editor_state;
+
+pub(crate) mod shape_event_list;
+
 pub(crate) mod shape_feature_evaluations_list;
 
 pub(crate) mod shape_file_context;
 
 pub(crate) mod shape_intent_context;
+
+pub(crate) mod shape_memory_entry;
+
+pub(crate) mod shape_memory_entry_list;
+
+pub(crate) mod shape_predictions;
 
 pub(crate) mod shape_profile_list;
 
@@ -225,6 +260,8 @@ pub(crate) mod shape_code_scan_succeeded_event;
 
 pub(crate) mod shape_completion;
 
+pub(crate) mod shape_cursor_state;
+
 pub(crate) mod shape_customization;
 
 pub(crate) mod shape_doc_generation_event;
@@ -234,6 +271,8 @@ pub(crate) mod shape_doc_v2_acceptance_event;
 pub(crate) mod shape_doc_v2_generation_event;
 
 pub(crate) mod shape_documentation_intent_context;
+
+pub(crate) mod shape_event;
 
 pub(crate) mod shape_feature_dev_code_acceptance_event;
 
@@ -245,21 +284,31 @@ pub(crate) mod shape_feature_evaluation;
 
 pub(crate) mod shape_inline_chat_event;
 
+pub(crate) mod shape_memory_entry_metadata;
+
 pub(crate) mod shape_metric_data;
 
 pub(crate) mod shape_package_info_list;
 
 pub(crate) mod shape_position;
 
+pub(crate) mod shape_prediction;
+
 pub(crate) mod shape_profile;
 
 pub(crate) mod shape_references;
+
+pub(crate) mod shape_relevant_text_document;
+
+pub(crate) mod shape_supplemental_context_metadata;
 
 pub(crate) mod shape_task_assist_planning_upload_context;
 
 pub(crate) mod shape_terminal_user_interaction_event;
 
 pub(crate) mod shape_test_generation_event;
+
+pub(crate) mod shape_text_document;
 
 pub(crate) mod shape_transform_event;
 
@@ -273,15 +322,27 @@ pub(crate) mod shape_user_modification_event;
 
 pub(crate) mod shape_user_trigger_decision_event;
 
+pub(crate) mod shape_workspace_context_upload_context;
+
 pub(crate) mod shape_active_functionality_list;
 
 pub(crate) mod shape_application_properties_list;
 
 pub(crate) mod shape_assistant_response_message;
 
+pub(crate) mod shape_attributes_map;
+
+pub(crate) mod shape_change_log_options;
+
 pub(crate) mod shape_dimension;
 
+pub(crate) mod shape_document_symbol;
+
+pub(crate) mod shape_edit;
+
 pub(crate) mod shape_feature_value;
+
+pub(crate) mod shape_ide_diagnostic;
 
 pub(crate) mod shape_identity_details;
 
@@ -290,6 +351,8 @@ pub(crate) mod shape_imports;
 pub(crate) mod shape_opt_in_features;
 
 pub(crate) mod shape_package_info;
+
+pub(crate) mod shape_previous_editor_state_metadata;
 
 pub(crate) mod shape_reference;
 
@@ -311,7 +374,11 @@ pub(crate) mod shape_by_user_analytics;
 
 pub(crate) mod shape_dashboard_analytics;
 
+pub(crate) mod shape_external_identity_details;
+
 pub(crate) mod shape_followup_prompt;
+
+pub(crate) mod shape_image_block;
 
 pub(crate) mod shape_import;
 
@@ -324,6 +391,8 @@ pub(crate) mod shape_prompt_logging;
 pub(crate) mod shape_span;
 
 pub(crate) mod shape_sso_identity_details;
+
+pub(crate) mod shape_string_list;
 
 pub(crate) mod shape_supplementary_web_link;
 
@@ -345,11 +414,11 @@ pub(crate) mod shape_console_state;
 
 pub(crate) mod shape_diagnostic;
 
-pub(crate) mod shape_editor_state;
-
 pub(crate) mod shape_env_state;
 
 pub(crate) mod shape_git_state;
+
+pub(crate) mod shape_image_source;
 
 pub(crate) mod shape_notifications_feature;
 
@@ -365,17 +434,11 @@ pub(crate) mod shape_transformation_progress_update;
 
 pub(crate) mod shape_user_settings;
 
-pub(crate) mod shape_cursor_state;
-
 pub(crate) mod shape_environment_variable;
-
-pub(crate) mod shape_relevant_text_document;
 
 pub(crate) mod shape_runtime_diagnostic;
 
 pub(crate) mod shape_shell_history_entry;
-
-pub(crate) mod shape_text_document;
 
 pub(crate) mod shape_text_document_diagnostic;
 
@@ -387,8 +450,12 @@ pub(crate) mod shape_transformation_download_artifacts;
 
 pub(crate) mod shape_transformation_languages;
 
-pub(crate) mod shape_document_symbol;
+pub(crate) mod shape_code_description;
+
+pub(crate) mod shape_diagnostic_related_information;
 
 pub(crate) mod shape_tool_input_schema;
 
 pub(crate) mod shape_transformation_download_artifact;
+
+pub(crate) mod shape_diagnostic_location;

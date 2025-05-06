@@ -2,7 +2,7 @@
 pub fn ser_sso_identity_source(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::SsoIdentitySource,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("instanceArn").string(input.instance_arn.as_str());
     }

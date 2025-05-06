@@ -2,7 +2,7 @@
 pub fn ser_terminal_user_interaction_event(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::TerminalUserInteractionEvent,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.terminal_user_interaction_event_type {
         object.key("terminalUserInteractionEventType").string(var_1.as_str());
     }

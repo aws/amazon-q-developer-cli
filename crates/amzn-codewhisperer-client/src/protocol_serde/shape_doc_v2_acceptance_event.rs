@@ -2,7 +2,7 @@
 pub fn ser_doc_v2_acceptance_event(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::DocV2AcceptanceEvent,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("conversationId").string(input.conversation_id.as_str());
     }

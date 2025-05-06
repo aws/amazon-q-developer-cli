@@ -11,6 +11,9 @@ import { Input } from "@/components/ui/input";
 import { useLocalStateZodDefault } from "@/hooks/store/useState";
 import { z } from "zod";
 import { AMZN_START_URL } from "@/lib/constants";
+import { useEffect, useState, useCallback } from "react";
+import { Profile } from "@aws/amazon-q-developer-cli-api-bindings";
+import { State } from "@aws/amazon-q-developer-cli-api-bindings";
 
 function BuilderIdTab({
   handleLogin,
@@ -236,13 +239,154 @@ function IamTab({
   );
 }
 
+type ProfileData = { profileName: string; arn: string };
+
+export function ProfileTab({
+  next,
+  back,
+}: {
+  next: () => void;
+  back: () => void;
+}) {
+  const [selectedProfile, setSelectedProfile] = useState<ProfileData | null>(
+    null,
+  );
+  const [profiles, setProfiles] = useState<Array<ProfileData>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Centralized function to set profile to avoid duplication
+  const handleSetProfile = useCallback(
+    (profile: ProfileData | null) => {
+      if (!profile || isSubmitting) return;
+
+      setIsSubmitting(true);
+
+      // Set the profile
+      Profile.setProfile(profile.profileName, profile.arn)
+        .then(() => {
+          next();
+        })
+        .catch((_) => {
+          setError("Failed to set profile. Please try again.");
+          setIsSubmitting(false);
+        });
+    },
+    [isSubmitting, next],
+  );
+
+  useEffect(() => {
+    // Fetch available profiles
+    Profile.listAvailableProfiles()
+      .then(async (res) => {
+        if (res.profiles && res.profiles.length > 0) {
+          setProfiles(
+            res.profiles.map((p) => ({
+              profileName: p.profileName,
+              arn: p.arn,
+            })),
+          );
+        } else {
+          setProfiles([]);
+        }
+      })
+      .catch((_) => {
+        setError("Failed to fetch available profiles");
+      })
+      .finally(async () => {
+        setLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    // Try to get current profile if available and swallow the error otherwise
+    State.get("api.codewhisperer.profile")
+      .then((profile) => {
+        if (profile) {
+          setSelectedProfile(profile);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // If there's only one profile, automatically select it and continue
+  useEffect(() => {
+    if (!loading && profiles.length === 1) {
+      const profile = profiles[0];
+      handleSetProfile(profile);
+    }
+  }, [loading, profiles, handleSetProfile]);
+
+  return (
+    <div className="flex flex-col items-center gap-8 gradient-q-secondary-light -m-10 p-10 rounded-lg text-white">
+      <h2 className="text-xl text-white font-semibold select-none leading-none font-ember tracking-tight">
+        Select a profile
+      </h2>
+
+      {error && (
+        <div className="flex flex-col items-center gap-2 w-full bg-red-200 border border-red-600 rounded py-2 px-2">
+          <p className="text-black dark:text-white font-semibold text-center">
+            Error
+          </p>
+          <p className="text-black dark:text-white text-center">{error}</p>
+        </div>
+      )}
+
+      <div className="flex flex-col items-center gap-4 text-white text-sm w-full max-w-md">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center h-20 w-full">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            <p className="mt-4">Loading profiles...</p>
+          </div>
+        ) : (
+          <>
+            <div className="w-full max-h-60 overflow-y-auto pr-2">
+              {profiles.map((profileItem) => (
+                <div
+                  key={profileItem.arn}
+                  className={`p-3 mb-2 rounded-md cursor-pointer border ${
+                    selectedProfile && selectedProfile.arn === profileItem.arn
+                      ? "bg-white/20 border-white"
+                      : "bg-white/5 border-transparent hover:bg-white/10"
+                  }`}
+                  onClick={() => {
+                    if (!isSubmitting) {
+                      setSelectedProfile(profileItem);
+                    }
+                  }}
+                >
+                  <div className="font-medium">{profileItem.profileName}</div>
+                  <div className="text-xs text-white/70 truncate">
+                    {profileItem.arn}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-between w-full mt-4">
+              <Button onClick={back}>Back</Button>
+              <Button
+                onClick={() => handleSetProfile(selectedProfile)}
+                disabled={!selectedProfile || isSubmitting}
+              >
+                {isSubmitting ? "Setting profile..." : "Continue"}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Tab({
   tab,
   handleLogin,
   toggleTab,
   signInText,
 }: {
-  tab: "builderId" | "iam";
+  tab: "builderId" | "iam" | "profile";
   handleLogin: () => void;
   toggleTab: () => void;
   signInText: string;

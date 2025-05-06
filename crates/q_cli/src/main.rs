@@ -28,7 +28,7 @@ fn main() -> Result<ExitCode> {
 
     let multithread = matches!(
         std::env::args().nth(1).as_deref(),
-        Some("init" | "_" | "internal" | "completion" | "hook")
+        Some("init" | "_" | "internal" | "completion" | "hook" | "chat")
     );
 
     let parsed = match cli::Cli::try_parse() {

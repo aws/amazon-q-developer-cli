@@ -2,12 +2,15 @@
 pub fn ser_get_test_generation_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::get_test_generation::GetTestGenerationInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.test_generation_job_group_name {
         object.key("testGenerationJobGroupName").string(var_1.as_str());
     }
     if let Some(var_2) = &input.test_generation_job_id {
         object.key("testGenerationJobId").string(var_2.as_str());
+    }
+    if let Some(var_3) = &input.profile_arn {
+        object.key("profileArn").string(var_3.as_str());
     }
     Ok(())
 }

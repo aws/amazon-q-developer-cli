@@ -250,6 +250,33 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::types::ChatResponseStream::ToolUseEvent(parsed),
                     ))
                 },
+                "toolResultEvent" => {
+                    let parsed = crate::protocol_serde::shape_tool_result_event::de_tool_result_event_payload(
+                        &message.payload()[..],
+                    )
+                    .map_err(|err| {
+                        ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
+                            "failed to unmarshall ToolResultEvent: {}",
+                            err
+                        ))
+                    })?;
+                    Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
+                        crate::types::ChatResponseStream::ToolResultEvent(parsed),
+                    ))
+                },
+                "citationEvent" => {
+                    let parsed =
+                        crate::protocol_serde::shape_citation_event::de_citation_event_payload(&message.payload()[..])
+                            .map_err(|err| {
+                                ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
+                                    "failed to unmarshall CitationEvent: {}",
+                                    err
+                                ))
+                            })?;
+                    Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
+                        crate::types::ChatResponseStream::CitationEvent(parsed),
+                    ))
+                },
                 "invalidStateEvent" => {
                     let parsed = crate::protocol_serde::shape_invalid_state_event::de_invalid_state_event_payload(
                         &message.payload()[..],

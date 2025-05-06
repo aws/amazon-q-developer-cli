@@ -9,6 +9,7 @@ impl super::Client {
     ///     Into<String>)`](crate::operation::get_code_fix_job::builders::GetCodeFixJobFluentBuilder::job_id)
     ///     / [`set_job_id(Option<String>)`](crate::operation::get_code_fix_job::builders::GetCodeFixJobFluentBuilder::set_job_id):
     ///     <br>required: **true**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::get_code_fix_job::builders::GetCodeFixJobFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::get_code_fix_job::builders::GetCodeFixJobFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`GetCodeFixJobOutput`](crate::operation::get_code_fix_job::GetCodeFixJobOutput) with
     ///   field(s):

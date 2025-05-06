@@ -41,6 +41,34 @@ pub fn de_create_task_assist_conversation_http_error(
             };
             tmp
         }),
+        "ValidationException" => crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::validation_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::unhandled)?
+            };
+            tmp
+        }),
+        "ThrottlingException" => crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::unhandled)?
+            };
+            tmp
+        }),
         "ServiceQuotaExceededException" => {
             crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::ServiceQuotaExceededError({
                 #[allow(unused_mut)]
@@ -60,34 +88,6 @@ pub fn de_create_task_assist_conversation_http_error(
                 tmp
             })
         }
-        "ThrottlingException" => crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::unhandled)?
-            };
-            tmp
-        }),
-        "ValidationException" => crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::ValidationError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::validation_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::unhandled)?
-            };
-            tmp
-        }),
         "AccessDeniedException" => crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::AccessDeniedError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -131,15 +131,20 @@ pub fn de_create_task_assist_conversation_http_response(
 }
 
 pub fn ser_create_task_assist_conversation_input(
-    _input: &crate::operation::create_task_assist_conversation::CreateTaskAssistConversationInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
-    Ok(::aws_smithy_types::body::SdkBody::from("{}"))
+    input: &crate::operation::create_task_assist_conversation::CreateTaskAssistConversationInput,
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
+    let mut out = String::new();
+    let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
+    crate::protocol_serde::shape_create_task_assist_conversation_input::ser_create_task_assist_conversation_input_input(&mut object, input)?;
+    object.finish();
+    Ok(::aws_smithy_types::body::SdkBody::from(out))
 }
 
 pub(crate) fn de_create_task_assist_conversation(
     value: &[u8],
     mut builder: crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

@@ -12,6 +12,8 @@ pub struct EditorState {
     pub relevant_documents: ::std::option::Option<::std::vec::Vec<crate::types::RelevantTextDocument>>,
     /// Whether service should use relevant document in prompt
     pub use_relevant_documents: ::std::option::Option<bool>,
+    /// Represents IDE provided list of workspace folders
+    pub workspace_folders: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
 }
 impl EditorState {
     /// Represents currently edited file
@@ -36,6 +38,14 @@ impl EditorState {
     pub fn use_relevant_documents(&self) -> ::std::option::Option<bool> {
         self.use_relevant_documents
     }
+
+    /// Represents IDE provided list of workspace folders
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.workspace_folders.is_none()`.
+    pub fn workspace_folders(&self) -> &[::std::string::String] {
+        self.workspace_folders.as_deref().unwrap_or_default()
+    }
 }
 impl EditorState {
     /// Creates a new builder-style object to manufacture
@@ -53,6 +63,7 @@ pub struct EditorStateBuilder {
     pub(crate) cursor_state: ::std::option::Option<crate::types::CursorState>,
     pub(crate) relevant_documents: ::std::option::Option<::std::vec::Vec<crate::types::RelevantTextDocument>>,
     pub(crate) use_relevant_documents: ::std::option::Option<bool>,
+    pub(crate) workspace_folders: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
 }
 impl EditorStateBuilder {
     /// Represents currently edited file
@@ -135,6 +146,33 @@ impl EditorStateBuilder {
         &self.use_relevant_documents
     }
 
+    /// Appends an item to `workspace_folders`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_workspace_folders`](Self::set_workspace_folders).
+    ///
+    /// Represents IDE provided list of workspace folders
+    pub fn workspace_folders(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        let mut v = self.workspace_folders.unwrap_or_default();
+        v.push(input.into());
+        self.workspace_folders = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// Represents IDE provided list of workspace folders
+    pub fn set_workspace_folders(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+    ) -> Self {
+        self.workspace_folders = input;
+        self
+    }
+
+    /// Represents IDE provided list of workspace folders
+    pub fn get_workspace_folders(&self) -> &::std::option::Option<::std::vec::Vec<::std::string::String>> {
+        &self.workspace_folders
+    }
+
     /// Consumes the builder and constructs a [`EditorState`](crate::types::EditorState).
     pub fn build(self) -> crate::types::EditorState {
         crate::types::EditorState {
@@ -142,6 +180,7 @@ impl EditorStateBuilder {
             cursor_state: self.cursor_state,
             relevant_documents: self.relevant_documents,
             use_relevant_documents: self.use_relevant_documents,
+            workspace_folders: self.workspace_folders,
         }
     }
 }

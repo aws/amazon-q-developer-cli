@@ -2,7 +2,7 @@
 pub(crate) fn de_internal_server_exception_json_err(
     value: &[u8],
     mut builder: crate::types::error::builders::InternalServerErrorBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::types::error::builders::InternalServerErrorBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

@@ -7,6 +7,7 @@ impl super::Client {
     /// - The fluent builder is configurable:
     ///   - [`test_generation_job_group_name(impl Into<String>)`](crate::operation::get_test_generation::builders::GetTestGenerationFluentBuilder::test_generation_job_group_name) / [`set_test_generation_job_group_name(Option<String>)`](crate::operation::get_test_generation::builders::GetTestGenerationFluentBuilder::set_test_generation_job_group_name):<br>required: **true**<br>Test generation job group name<br>
     ///   - [`test_generation_job_id(impl Into<String>)`](crate::operation::get_test_generation::builders::GetTestGenerationFluentBuilder::test_generation_job_id) / [`set_test_generation_job_id(Option<String>)`](crate::operation::get_test_generation::builders::GetTestGenerationFluentBuilder::set_test_generation_job_id):<br>required: **true**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::get_test_generation::builders::GetTestGenerationFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::get_test_generation::builders::GetTestGenerationFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`GetTestGenerationOutput`](crate::operation::get_test_generation::GetTestGenerationOutput)
     ///   with field(s):

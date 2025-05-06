@@ -21,6 +21,40 @@ pub fn de_delete_profile_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
+        "ValidationException" => crate::operation::delete_profile::DeleteProfileError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::validation_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?
+            };
+            tmp
+        }),
+        "AccessDeniedException" => crate::operation::delete_profile::DeleteProfileError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?
+            };
+            tmp
+        }),
         "InternalServerException" => crate::operation::delete_profile::DeleteProfileError::InternalServerError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -50,23 +84,6 @@ pub fn de_delete_profile_http_error(
                 .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?
-            };
-            tmp
-        }),
-        "ValidationException" => crate::operation::delete_profile::DeleteProfileError::ValidationError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::validation_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?
             };
@@ -103,23 +120,6 @@ pub fn de_delete_profile_http_error(
             };
             tmp
         }),
-        "AccessDeniedException" => crate::operation::delete_profile::DeleteProfileError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::delete_profile::DeleteProfileError::unhandled)?
-            };
-            tmp
-        }),
         _ => crate::operation::delete_profile::DeleteProfileError::generic(generic),
     })
 }
@@ -143,7 +143,8 @@ pub fn de_delete_profile_http_response(
 
 pub fn ser_delete_profile_input(
     input: &crate::operation::delete_profile::DeleteProfileInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_delete_profile_input::ser_delete_profile_input_input(&mut object, input)?;

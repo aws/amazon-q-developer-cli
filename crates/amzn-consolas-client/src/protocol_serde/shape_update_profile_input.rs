@@ -2,48 +2,57 @@
 pub fn ser_update_profile_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::update_profile::UpdateProfileInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.profile_arn {
         object.key("profileArn").string(var_1.as_str());
     }
-    if let Some(var_2) = &input.profile_name {
-        object.key("profileName").string(var_2.as_str());
-    }
-    if let Some(var_3) = &input.reference_tracker_configuration {
+    if let Some(var_2) = &input.identity_source {
         #[allow(unused_mut)]
-        let mut object_4 = object.key("referenceTrackerConfiguration").start_object();
-        crate::protocol_serde::shape_reference_tracker_configuration::ser_reference_tracker_configuration(
-            &mut object_4,
-            var_3,
-        )?;
-        object_4.finish();
+        let mut object_3 = object.key("identitySource").start_object();
+        crate::protocol_serde::shape_identity_source::ser_identity_source(&mut object_3, var_2)?;
+        object_3.finish();
     }
-    if let Some(var_5) = &input.active_functionalities {
-        let mut array_6 = object.key("activeFunctionalities").start_array();
-        for item_7 in var_5 {
+    if let Some(var_4) = &input.profile_name {
+        object.key("profileName").string(var_4.as_str());
+    }
+    if let Some(var_5) = &input.description {
+        object.key("description").string(var_5.as_str());
+    }
+    if let Some(var_6) = &input.reference_tracker_configuration {
+        #[allow(unused_mut)]
+        let mut object_7 = object.key("referenceTrackerConfiguration").start_object();
+        crate::protocol_serde::shape_reference_tracker_configuration::ser_reference_tracker_configuration(
+            &mut object_7,
+            var_6,
+        )?;
+        object_7.finish();
+    }
+    if let Some(var_8) = &input.active_functionalities {
+        let mut array_9 = object.key("activeFunctionalities").start_array();
+        for item_10 in var_8 {
             {
-                array_6.value().string(item_7.as_str());
+                array_9.value().string(item_10.as_str());
             }
         }
-        array_6.finish();
+        array_9.finish();
     }
-    if let Some(var_8) = &input.kms_key_arn {
-        object.key("kmsKeyArn").string(var_8.as_str());
+    if let Some(var_11) = &input.kms_key_arn {
+        object.key("kmsKeyArn").string(var_11.as_str());
     }
-    if let Some(var_9) = &input.resource_policy {
+    if let Some(var_12) = &input.resource_policy {
         #[allow(unused_mut)]
-        let mut object_10 = object.key("resourcePolicy").start_object();
-        crate::protocol_serde::shape_resource_policy::ser_resource_policy(&mut object_10, var_9)?;
-        object_10.finish();
-    }
-    if let Some(var_11) = &input.target_profile_type {
-        object.key("targetProfileType").string(var_11.as_str());
-    }
-    if let Some(var_12) = &input.opt_in_features {
-        #[allow(unused_mut)]
-        let mut object_13 = object.key("optInFeatures").start_object();
-        crate::protocol_serde::shape_opt_in_features::ser_opt_in_features(&mut object_13, var_12)?;
+        let mut object_13 = object.key("resourcePolicy").start_object();
+        crate::protocol_serde::shape_resource_policy::ser_resource_policy(&mut object_13, var_12)?;
         object_13.finish();
+    }
+    if let Some(var_14) = &input.target_profile_type {
+        object.key("targetProfileType").string(var_14.as_str());
+    }
+    if let Some(var_15) = &input.opt_in_features {
+        #[allow(unused_mut)]
+        let mut object_16 = object.key("optInFeatures").start_object();
+        crate::protocol_serde::shape_opt_in_features::ser_opt_in_features(&mut object_16, var_15)?;
+        object_16.finish();
     }
     Ok(())
 }

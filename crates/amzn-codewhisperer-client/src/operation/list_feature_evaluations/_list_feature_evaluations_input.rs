@@ -5,11 +5,18 @@
 pub struct ListFeatureEvaluationsInput {
     #[allow(missing_docs)] // documentation missing in model
     pub user_context: ::std::option::Option<crate::types::UserContext>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl ListFeatureEvaluationsInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn user_context(&self) -> ::std::option::Option<&crate::types::UserContext> {
         self.user_context.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 }
 impl ListFeatureEvaluationsInput {
@@ -26,6 +33,7 @@ impl ListFeatureEvaluationsInput {
 #[non_exhaustive]
 pub struct ListFeatureEvaluationsInputBuilder {
     pub(crate) user_context: ::std::option::Option<crate::types::UserContext>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl ListFeatureEvaluationsInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -46,6 +54,23 @@ impl ListFeatureEvaluationsInputBuilder {
         &self.user_context
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`ListFeatureEvaluationsInput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsInput).
     pub fn build(
@@ -57,6 +82,7 @@ impl ListFeatureEvaluationsInputBuilder {
         ::std::result::Result::Ok(
             crate::operation::list_feature_evaluations::ListFeatureEvaluationsInput {
                 user_context: self.user_context,
+                profile_arn: self.profile_arn,
             },
         )
     }

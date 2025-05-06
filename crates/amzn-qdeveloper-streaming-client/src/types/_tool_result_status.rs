@@ -36,7 +36,7 @@
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
 ///
-///  Status of the tools result.
+/// Status of the tools result.
 #[non_exhaustive]
 #[derive(
     ::std::clone::Clone,

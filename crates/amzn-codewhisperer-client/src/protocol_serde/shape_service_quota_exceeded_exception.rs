@@ -2,7 +2,7 @@
 pub(crate) fn de_service_quota_exceeded_exception_json_err(
     value: &[u8],
     mut builder: crate::types::error::builders::ServiceQuotaExceededErrorBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::types::error::builders::ServiceQuotaExceededErrorBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
@@ -18,6 +18,16 @@ pub(crate) fn de_service_quota_exceeded_exception_json_err(
                     builder = builder.set_message(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
                             .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                            .transpose()?,
+                    );
+                },
+                "reason" => {
+                    builder = builder.set_reason(
+                        ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                            .map(|s| {
+                                s.to_unescaped()
+                                    .map(|u| crate::types::ServiceQuotaExceededExceptionReason::from(u.as_ref()))
+                            })
                             .transpose()?,
                     );
                 },

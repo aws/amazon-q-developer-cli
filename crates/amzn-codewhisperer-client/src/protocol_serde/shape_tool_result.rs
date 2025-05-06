@@ -2,7 +2,7 @@
 pub fn ser_tool_result(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::ToolResult,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
         object.key("toolUseId").string(input.tool_use_id.as_str());
     }

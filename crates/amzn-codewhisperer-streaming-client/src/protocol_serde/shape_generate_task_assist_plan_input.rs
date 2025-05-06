@@ -2,7 +2,7 @@
 pub fn ser_generate_task_assist_plan_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.conversation_state {
         #[allow(unused_mut)]
         let mut object_2 = object.key("conversationState").start_object();
@@ -14,6 +14,9 @@ pub fn ser_generate_task_assist_plan_input_input(
         let mut object_4 = object.key("workspaceState").start_object();
         crate::protocol_serde::shape_workspace_state::ser_workspace_state(&mut object_4, var_3)?;
         object_4.finish();
+    }
+    if let Some(var_5) = &input.profile_arn {
+        object.key("profileArn").string(var_5.as_str());
     }
     Ok(())
 }

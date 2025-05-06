@@ -2,15 +2,33 @@
 
 ## Installation
 
-**TODO**
+### Direct Download
 
-## Complete onboarding steps
+#### Linux x86-64
+```bash
+curl --proto '=https' --tlsv1.2 -sSf "https://desktop-release.codewhisperer.us-east-1.amazonaws.com/latest/q-x86_64-linux.zip" -o "q.zip"
+unzip q.zip
+q/install.sh
+```
 
-> Most developers will log in using Builder ID as it is the simplest way to authenticate. Enterpise developers will likely authenticate using IAM Identity Center.
+#### Linux ARM (aarch64)
+```bash
+curl --proto '=https' --tlsv1.2 -sSf "https://desktop-release.codewhisperer.us-east-1.amazonaws.com/latest/q-aarch64-linux.zip" -o "q.zip"
+unzip q.zip
+q/install.sh
+```
 
-1. Log in when prompted.
-2. Complete the onboarding steps in order to customize your install.
-3. Open a new terminal session to start using Autocomplete and the `q` CLI.
+## Getting Started
+
+After installation, simply run:
+
+```bash
+q login
+```
+
+> Most developers will log in using Builder ID as it is the simplest way to authenticate. Enterprise developers will likely authenticate using IAM Identity Center.
+
+This will guide you through the authentication process and help you customize your installation. Once complete, open a new terminal session to start using Autocomplete and the `q` CLI.
 
 ## Support and Uninstall
 

@@ -6,6 +6,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`conversation_id(impl Into<String>)`](crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationFluentBuilder::conversation_id) / [`set_conversation_id(Option<String>)`](crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationFluentBuilder::set_conversation_id):<br>required: **true**<br>ID which represents a multi-turn conversation<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with [`DeleteTaskAssistConversationOutput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput) with field(s):
     ///   - [`conversation_id(String)`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput::conversation_id): ID which represents a multi-turn conversation
     /// - On failure, responds with [`SdkError<DeleteTaskAssistConversationError>`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError)

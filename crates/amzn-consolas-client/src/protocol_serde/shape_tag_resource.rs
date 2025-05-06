@@ -21,18 +21,35 @@ pub fn de_tag_resource_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => crate::operation::tag_resource::TagResourceError::InternalServerError({
+        "ValidationException" => crate::operation::tag_resource::TagResourceError::ValidationError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?;
                 let output = output.meta(generic);
-                crate::serde_util::internal_server_exception_correct_errors(output)
+                crate::serde_util::validation_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?
+            };
+            tmp
+        }),
+        "AccessDeniedException" => crate::operation::tag_resource::TagResourceError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?
             };
@@ -55,18 +72,18 @@ pub fn de_tag_resource_http_error(
             };
             tmp
         }),
-        "ValidationException" => crate::operation::tag_resource::TagResourceError::ValidationError({
+        "InternalServerException" => crate::operation::tag_resource::TagResourceError::InternalServerError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?;
                 let output = output.meta(generic);
-                crate::serde_util::validation_exception_correct_errors(output)
+                crate::serde_util::internal_server_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?
             };
@@ -81,23 +98,6 @@ pub fn de_tag_resource_http_error(
                     .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::resource_not_found_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?
-            };
-            tmp
-        }),
-        "AccessDeniedException" => crate::operation::tag_resource::TagResourceError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::tag_resource::TagResourceError::unhandled)?
             };
@@ -126,7 +126,8 @@ pub fn de_tag_resource_http_response(
 
 pub fn ser_tag_resource_input(
     input: &crate::operation::tag_resource::TagResourceInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_tag_resource_input::ser_tag_resource_input_input(&mut object, input)?;

@@ -2,7 +2,7 @@
 pub fn ser_data_reference(
     object_2: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::types::DataReference,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::DataReference::CodeStarReference(inner) => {
             #[allow(unused_mut)]
@@ -25,7 +25,7 @@ pub fn ser_data_reference(
 
 pub(crate) fn de_data_reference<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> Result<Option<crate::types::DataReference>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<Option<crate::types::DataReference>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
     I: Iterator<
         Item = Result<

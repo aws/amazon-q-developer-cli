@@ -21,6 +21,40 @@ pub fn de_update_profile_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
+        "ValidationException" => crate::operation::update_profile::UpdateProfileError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::validation_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?
+            };
+            tmp
+        }),
+        "AccessDeniedException" => crate::operation::update_profile::UpdateProfileError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?
+            };
+            tmp
+        }),
         "InternalServerException" => crate::operation::update_profile::UpdateProfileError::InternalServerError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -50,23 +84,6 @@ pub fn de_update_profile_http_error(
                 .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?
-            };
-            tmp
-        }),
-        "ValidationException" => crate::operation::update_profile::UpdateProfileError::ValidationError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::validation_exception_correct_errors(output)
                     .build()
                     .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?
             };
@@ -103,23 +120,6 @@ pub fn de_update_profile_http_error(
             };
             tmp
         }),
-        "AccessDeniedException" => crate::operation::update_profile::UpdateProfileError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::update_profile::UpdateProfileError::unhandled)?
-            };
-            tmp
-        }),
         _ => crate::operation::update_profile::UpdateProfileError::generic(generic),
     })
 }
@@ -147,7 +147,8 @@ pub fn de_update_profile_http_response(
 
 pub fn ser_update_profile_input(
     input: &crate::operation::update_profile::UpdateProfileInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_update_profile_input::ser_update_profile_input_input(&mut object, input)?;
@@ -158,7 +159,7 @@ pub fn ser_update_profile_input(
 pub(crate) fn de_update_profile(
     value: &[u8],
     mut builder: crate::operation::update_profile::builders::UpdateProfileOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::update_profile::builders::UpdateProfileOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

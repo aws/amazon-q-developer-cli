@@ -137,4 +137,21 @@ impl ListFeatureEvaluationsFluentBuilder {
     pub fn get_user_context(&self) -> &::std::option::Option<crate::types::UserContext> {
         self.inner.get_user_context()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.profile_arn(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_profile_arn(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_profile_arn()
+    }
 }

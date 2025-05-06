@@ -14,6 +14,18 @@ pub struct TextDocumentDiagnostic {
     pub severity: crate::types::DiagnosticSeverity,
     /// The diagnostic's message.
     pub message: ::std::string::String,
+    /// The diagnostic's code, which might appear in the user interface.
+    pub code: ::std::option::Option<::std::string::String>,
+    /// An optional property to describe the error code.
+    pub code_description: ::std::option::Option<crate::types::CodeDescription>,
+    /// Additional metadata about the diagnostic.
+    pub tags: ::std::option::Option<::std::vec::Vec<crate::types::DiagnosticTag>>,
+    /// an array of related diagnostic information, e.g. when symbol-names within a scope collide
+    /// all definitions can be marked via this property.
+    pub related_information: ::std::option::Option<::std::vec::Vec<crate::types::DiagnosticRelatedInformation>>,
+    /// A data entry field that is preserved between a `textDocument/publishDiagnostics`
+    /// notification and `textDocument/codeAction` request.
+    pub data: ::std::option::Option<::std::string::String>,
 }
 impl TextDocumentDiagnostic {
     /// Represents a Text Document associated with Diagnostic
@@ -42,6 +54,39 @@ impl TextDocumentDiagnostic {
         use std::ops::Deref;
         self.message.deref()
     }
+
+    /// The diagnostic's code, which might appear in the user interface.
+    pub fn code(&self) -> ::std::option::Option<&str> {
+        self.code.as_deref()
+    }
+
+    /// An optional property to describe the error code.
+    pub fn code_description(&self) -> ::std::option::Option<&crate::types::CodeDescription> {
+        self.code_description.as_ref()
+    }
+
+    /// Additional metadata about the diagnostic.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.tags.is_none()`.
+    pub fn tags(&self) -> &[crate::types::DiagnosticTag] {
+        self.tags.as_deref().unwrap_or_default()
+    }
+
+    /// an array of related diagnostic information, e.g. when symbol-names within a scope collide
+    /// all definitions can be marked via this property.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.related_information.is_none()`.
+    pub fn related_information(&self) -> &[crate::types::DiagnosticRelatedInformation] {
+        self.related_information.as_deref().unwrap_or_default()
+    }
+
+    /// A data entry field that is preserved between a `textDocument/publishDiagnostics`
+    /// notification and `textDocument/codeAction` request.
+    pub fn data(&self) -> ::std::option::Option<&str> {
+        self.data.as_deref()
+    }
 }
 impl ::std::fmt::Debug for TextDocumentDiagnostic {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -51,6 +96,11 @@ impl ::std::fmt::Debug for TextDocumentDiagnostic {
         formatter.field("source", &"*** Sensitive Data Redacted ***");
         formatter.field("severity", &self.severity);
         formatter.field("message", &"*** Sensitive Data Redacted ***");
+        formatter.field("code", &"*** Sensitive Data Redacted ***");
+        formatter.field("code_description", &self.code_description);
+        formatter.field("tags", &self.tags);
+        formatter.field("related_information", &self.related_information);
+        formatter.field("data", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }
@@ -71,6 +121,11 @@ pub struct TextDocumentDiagnosticBuilder {
     pub(crate) source: ::std::option::Option<::std::string::String>,
     pub(crate) severity: ::std::option::Option<crate::types::DiagnosticSeverity>,
     pub(crate) message: ::std::option::Option<::std::string::String>,
+    pub(crate) code: ::std::option::Option<::std::string::String>,
+    pub(crate) code_description: ::std::option::Option<crate::types::CodeDescription>,
+    pub(crate) tags: ::std::option::Option<::std::vec::Vec<crate::types::DiagnosticTag>>,
+    pub(crate) related_information: ::std::option::Option<::std::vec::Vec<crate::types::DiagnosticRelatedInformation>>,
+    pub(crate) data: ::std::option::Option<::std::string::String>,
 }
 impl TextDocumentDiagnosticBuilder {
     /// Represents a Text Document associated with Diagnostic
@@ -163,6 +218,115 @@ impl TextDocumentDiagnosticBuilder {
         &self.message
     }
 
+    /// The diagnostic's code, which might appear in the user interface.
+    pub fn code(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.code = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// The diagnostic's code, which might appear in the user interface.
+    pub fn set_code(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.code = input;
+        self
+    }
+
+    /// The diagnostic's code, which might appear in the user interface.
+    pub fn get_code(&self) -> &::std::option::Option<::std::string::String> {
+        &self.code
+    }
+
+    /// An optional property to describe the error code.
+    pub fn code_description(mut self, input: crate::types::CodeDescription) -> Self {
+        self.code_description = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// An optional property to describe the error code.
+    pub fn set_code_description(mut self, input: ::std::option::Option<crate::types::CodeDescription>) -> Self {
+        self.code_description = input;
+        self
+    }
+
+    /// An optional property to describe the error code.
+    pub fn get_code_description(&self) -> &::std::option::Option<crate::types::CodeDescription> {
+        &self.code_description
+    }
+
+    /// Appends an item to `tags`.
+    ///
+    /// To override the contents of this collection use [`set_tags`](Self::set_tags).
+    ///
+    /// Additional metadata about the diagnostic.
+    pub fn tags(mut self, input: crate::types::DiagnosticTag) -> Self {
+        let mut v = self.tags.unwrap_or_default();
+        v.push(input);
+        self.tags = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// Additional metadata about the diagnostic.
+    pub fn set_tags(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::DiagnosticTag>>) -> Self {
+        self.tags = input;
+        self
+    }
+
+    /// Additional metadata about the diagnostic.
+    pub fn get_tags(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::DiagnosticTag>> {
+        &self.tags
+    }
+
+    /// Appends an item to `related_information`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_related_information`](Self::set_related_information).
+    ///
+    /// an array of related diagnostic information, e.g. when symbol-names within a scope collide
+    /// all definitions can be marked via this property.
+    pub fn related_information(mut self, input: crate::types::DiagnosticRelatedInformation) -> Self {
+        let mut v = self.related_information.unwrap_or_default();
+        v.push(input);
+        self.related_information = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// an array of related diagnostic information, e.g. when symbol-names within a scope collide
+    /// all definitions can be marked via this property.
+    pub fn set_related_information(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::DiagnosticRelatedInformation>>,
+    ) -> Self {
+        self.related_information = input;
+        self
+    }
+
+    /// an array of related diagnostic information, e.g. when symbol-names within a scope collide
+    /// all definitions can be marked via this property.
+    pub fn get_related_information(
+        &self,
+    ) -> &::std::option::Option<::std::vec::Vec<crate::types::DiagnosticRelatedInformation>> {
+        &self.related_information
+    }
+
+    /// A data entry field that is preserved between a `textDocument/publishDiagnostics`
+    /// notification and `textDocument/codeAction` request.
+    pub fn data(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.data = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// A data entry field that is preserved between a `textDocument/publishDiagnostics`
+    /// notification and `textDocument/codeAction` request.
+    pub fn set_data(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.data = input;
+        self
+    }
+
+    /// A data entry field that is preserved between a `textDocument/publishDiagnostics`
+    /// notification and `textDocument/codeAction` request.
+    pub fn get_data(&self) -> &::std::option::Option<::std::string::String> {
+        &self.data
+    }
+
     /// Consumes the builder and constructs a
     /// [`TextDocumentDiagnostic`](crate::types::TextDocumentDiagnostic). This method will fail
     /// if any of the following fields are not set:
@@ -206,6 +370,11 @@ impl TextDocumentDiagnosticBuilder {
                     "message was not specified but it is required when building TextDocumentDiagnostic",
                 )
             })?,
+            code: self.code,
+            code_description: self.code_description,
+            tags: self.tags,
+            related_information: self.related_information,
+            data: self.data,
         })
     }
 }
@@ -217,6 +386,11 @@ impl ::std::fmt::Debug for TextDocumentDiagnosticBuilder {
         formatter.field("source", &"*** Sensitive Data Redacted ***");
         formatter.field("severity", &self.severity);
         formatter.field("message", &"*** Sensitive Data Redacted ***");
+        formatter.field("code", &"*** Sensitive Data Redacted ***");
+        formatter.field("code_description", &self.code_description);
+        formatter.field("tags", &self.tags);
+        formatter.field("related_information", &self.related_information);
+        formatter.field("data", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }

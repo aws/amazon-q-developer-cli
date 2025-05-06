@@ -8,6 +8,8 @@ pub struct StartTransformationInput {
     pub workspace_state: ::std::option::Option<crate::types::WorkspaceState>,
     #[allow(missing_docs)] // documentation missing in model
     pub transformation_spec: ::std::option::Option<crate::types::TransformationSpec>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartTransformationInput {
     /// Represents a Workspace state uploaded to S3 for Async Code Actions
@@ -18,6 +20,11 @@ impl StartTransformationInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn transformation_spec(&self) -> ::std::option::Option<&crate::types::TransformationSpec> {
         self.transformation_spec.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 }
 impl StartTransformationInput {
@@ -35,6 +42,7 @@ impl StartTransformationInput {
 pub struct StartTransformationInputBuilder {
     pub(crate) workspace_state: ::std::option::Option<crate::types::WorkspaceState>,
     pub(crate) transformation_spec: ::std::option::Option<crate::types::TransformationSpec>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartTransformationInputBuilder {
     /// Represents a Workspace state uploaded to S3 for Async Code Actions
@@ -73,6 +81,23 @@ impl StartTransformationInputBuilder {
         &self.transformation_spec
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`StartTransformationInput`](crate::operation::start_transformation::StartTransformationInput).
     pub fn build(
@@ -84,6 +109,7 @@ impl StartTransformationInputBuilder {
         ::std::result::Result::Ok(crate::operation::start_transformation::StartTransformationInput {
             workspace_state: self.workspace_state,
             transformation_spec: self.transformation_spec,
+            profile_arn: self.profile_arn,
         })
     }
 }

@@ -16,6 +16,7 @@
 ///     FunctionalityName::ChatCustomization => { /* ... */ },
 ///     FunctionalityName::Completions => { /* ... */ },
 ///     FunctionalityName::Conversations => { /* ... */ },
+///     FunctionalityName::FeatureDevelopment => { /* ... */ },
 ///     FunctionalityName::TaskAssist => { /* ... */ },
 ///     FunctionalityName::Transformations => { /* ... */ },
 ///     FunctionalityName::TransformationsWebApp => { /* ... */ },
@@ -61,6 +62,8 @@ pub enum FunctionalityName {
     #[allow(missing_docs)] // documentation missing in model
     Conversations,
     #[allow(missing_docs)] // documentation missing in model
+    FeatureDevelopment,
+    #[allow(missing_docs)] // documentation missing in model
     TaskAssist,
     #[allow(missing_docs)] // documentation missing in model
     Transformations,
@@ -79,6 +82,7 @@ impl ::std::convert::From<&str> for FunctionalityName {
             "CHAT_CUSTOMIZATION" => FunctionalityName::ChatCustomization,
             "COMPLETIONS" => FunctionalityName::Completions,
             "CONVERSATIONS" => FunctionalityName::Conversations,
+            "FEATURE_DEVELOPMENT" => FunctionalityName::FeatureDevelopment,
             "TASK_ASSIST" => FunctionalityName::TaskAssist,
             "TRANSFORMATIONS" => FunctionalityName::Transformations,
             "TRANSFORMATIONS_WEBAPP" => FunctionalityName::TransformationsWebApp,
@@ -103,6 +107,7 @@ impl FunctionalityName {
             FunctionalityName::ChatCustomization => "CHAT_CUSTOMIZATION",
             FunctionalityName::Completions => "COMPLETIONS",
             FunctionalityName::Conversations => "CONVERSATIONS",
+            FunctionalityName::FeatureDevelopment => "FEATURE_DEVELOPMENT",
             FunctionalityName::TaskAssist => "TASK_ASSIST",
             FunctionalityName::Transformations => "TRANSFORMATIONS",
             FunctionalityName::TransformationsWebApp => "TRANSFORMATIONS_WEBAPP",
@@ -117,6 +122,7 @@ impl FunctionalityName {
             "CHAT_CUSTOMIZATION",
             "COMPLETIONS",
             "CONVERSATIONS",
+            "FEATURE_DEVELOPMENT",
             "TASK_ASSIST",
             "TRANSFORMATIONS",
             "TRANSFORMATIONS_WEBAPP",
@@ -147,6 +153,7 @@ impl ::std::fmt::Display for FunctionalityName {
             FunctionalityName::ChatCustomization => write!(f, "CHAT_CUSTOMIZATION"),
             FunctionalityName::Completions => write!(f, "COMPLETIONS"),
             FunctionalityName::Conversations => write!(f, "CONVERSATIONS"),
+            FunctionalityName::FeatureDevelopment => write!(f, "FEATURE_DEVELOPMENT"),
             FunctionalityName::TaskAssist => write!(f, "TASK_ASSIST"),
             FunctionalityName::Transformations => write!(f, "TRANSFORMATIONS"),
             FunctionalityName::TransformationsWebApp => write!(f, "TRANSFORMATIONS_WEBAPP"),

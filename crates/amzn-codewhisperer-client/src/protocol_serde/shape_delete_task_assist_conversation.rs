@@ -43,29 +43,6 @@ pub fn de_delete_task_assist_conversation_http_error(
                 tmp
             })
         },
-        "ThrottlingException" => {
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::ThrottlingError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(
-                        crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::unhandled,
-                    )?;
-                    let output = output.meta(generic);
-                    crate::serde_util::throttling_exception_correct_errors(output)
-                        .build()
-                        .map_err(
-                        crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::unhandled,
-                    )?
-                };
-                tmp
-            })
-        },
         "ValidationException" => {
             crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::ValidationError({
                 #[allow(unused_mut)]
@@ -106,6 +83,29 @@ pub fn de_delete_task_assist_conversation_http_error(
                     tmp
                 },
             )
+        },
+        "ThrottlingException" => {
+            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::ThrottlingError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::throttling_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                        crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::unhandled,
+                    )?
+                };
+                tmp
+            })
         },
         "AccessDeniedException" => {
             crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::AccessDeniedError({
@@ -158,7 +158,8 @@ pub fn de_delete_task_assist_conversation_http_response(
 
 pub fn ser_delete_task_assist_conversation_input(
     input: &crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput,
-) -> Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_delete_task_assist_conversation_input::ser_delete_task_assist_conversation_input_input(&mut object, input)?;
@@ -169,7 +170,7 @@ pub fn ser_delete_task_assist_conversation_input(
 pub(crate) fn de_delete_task_assist_conversation(
     value: &[u8],
     mut builder: crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder,
-) -> Result<
+) -> ::std::result::Result<
     crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {

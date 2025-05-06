@@ -6,6 +6,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`workspace_id(impl Into<String>)`](crate::operation::delete_workspace::builders::DeleteWorkspaceFluentBuilder::workspace_id) / [`set_workspace_id(Option<String>)`](crate::operation::delete_workspace::builders::DeleteWorkspaceFluentBuilder::set_workspace_id):<br>required: **true**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::delete_workspace::builders::DeleteWorkspaceFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::delete_workspace::builders::DeleteWorkspaceFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`DeleteWorkspaceOutput`](crate::operation::delete_workspace::DeleteWorkspaceOutput)
     /// - On failure, responds with

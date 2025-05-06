@@ -6,6 +6,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`job_id(impl Into<String>)`](crate::operation::get_code_analysis::builders::GetCodeAnalysisFluentBuilder::job_id) / [`set_job_id(Option<String>)`](crate::operation::get_code_analysis::builders::GetCodeAnalysisFluentBuilder::set_job_id):<br>required: **true**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::get_code_analysis::builders::GetCodeAnalysisFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::get_code_analysis::builders::GetCodeAnalysisFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`GetCodeAnalysisOutput`](crate::operation::get_code_analysis::GetCodeAnalysisOutput) with
     ///   field(s):

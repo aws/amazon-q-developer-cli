@@ -47,7 +47,7 @@ impl Client {
         &self.handle.conf
     }
 
-    fn validate_config(handle: &Handle) -> Result<(), ::aws_smithy_runtime_api::box_error::BoxError> {
+    fn validate_config(handle: &Handle) -> ::std::result::Result<(), ::aws_smithy_runtime_api::box_error::BoxError> {
         let mut cfg = ::aws_smithy_types::config_bag::ConfigBag::base();
         handle
             .runtime_plugins
@@ -82,12 +82,16 @@ mod create_task_assist_conversation;
 
 mod create_upload_url;
 
+mod create_user_memory_entry;
+
 mod create_workspace;
 
 /// Operation customization and supporting types.
 pub mod customize;
 
 mod delete_task_assist_conversation;
+
+mod delete_user_memory_entry;
 
 mod delete_workspace;
 
@@ -111,9 +115,15 @@ mod list_available_profiles;
 
 mod list_code_analysis_findings;
 
+mod list_events;
+
 mod list_feature_evaluations;
 
+mod list_user_memory_entries;
+
 mod list_workspace_metadata;
+
+mod push_telemetry_event;
 
 mod resume_transformation;
 

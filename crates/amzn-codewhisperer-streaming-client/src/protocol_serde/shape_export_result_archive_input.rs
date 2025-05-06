@@ -2,7 +2,7 @@
 pub fn ser_export_result_archive_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::export_result_archive::ExportResultArchiveInput,
-) -> Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     if let Some(var_1) = &input.export_id {
         object.key("exportId").string(var_1.as_str());
     }
@@ -14,6 +14,9 @@ pub fn ser_export_result_archive_input_input(
         let mut object_4 = object.key("exportContext").start_object();
         crate::protocol_serde::shape_export_context::ser_export_context(&mut object_4, var_3)?;
         object_4.finish();
+    }
+    if let Some(var_5) = &input.profile_arn {
+        object.key("profileArn").string(var_5.as_str());
     }
     Ok(())
 }
