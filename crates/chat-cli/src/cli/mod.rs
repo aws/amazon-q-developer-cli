@@ -35,16 +35,16 @@ use tracing::{
 };
 
 use self::user::RootUserSubcommand;
-use crate::fig_log::{
-    LogArgs,
-    initialize_logging,
-};
-use crate::telemetry::send_cli_subcommand_executed;
 use crate::fig_util::directories::logs_dir;
 use crate::fig_util::{
     CHAT_BINARY_NAME,
     CliContext,
 };
+use crate::logging::{
+    LogArgs,
+    initialize_logging,
+};
+use crate::telemetry::send_cli_subcommand_executed;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
@@ -182,7 +182,7 @@ impl Cli {
             log_to_stdout: std::env::var_os("Q_LOG_STDOUT").is_some() || self.verbose > 0,
             log_file_path: match self.subcommand {
                 Some(CliRootCommands::Chat { .. }) => Some("chat.log".to_owned()),
-                _ => match crate::fig_log::get_log_level_max() >= Level::DEBUG {
+                _ => match crate::logging::get_log_level_max() >= Level::DEBUG {
                     true => Some("cli.log".to_owned()),
                     false => None,
                 },

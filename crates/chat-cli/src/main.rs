@@ -3,10 +3,10 @@ mod auth;
 mod cli;
 mod diagnostics;
 mod fig_aws_common;
-mod fig_log;
 mod fig_telemetry_core;
 mod fig_util;
 mod install;
+mod logging;
 mod mcp_client;
 mod platform;
 mod request;
@@ -23,7 +23,7 @@ use clap::error::{
 };
 use crossterm::style::Stylize;
 use eyre::Result;
-use fig_log::get_log_level_max;
+use logging::get_log_level_max;
 use tracing::metadata::LevelFilter;
 
 use crate::fig_util::{
