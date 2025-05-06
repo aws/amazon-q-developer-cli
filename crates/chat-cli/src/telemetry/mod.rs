@@ -1,4 +1,5 @@
 pub mod cognito;
+pub mod core;
 pub mod definitions;
 pub mod endpoint;
 mod install_method;
@@ -45,13 +46,13 @@ use uuid::Uuid;
 
 use crate::api_client::Client as CodewhispererClient;
 use crate::fig_aws_common::app_name;
-use crate::fig_telemetry_core::Event;
-pub use crate::fig_telemetry_core::{
+use crate::fig_util::system_info::os_version;
+use crate::telemetry::core::Event;
+pub use crate::telemetry::core::{
     EventType,
     QProfileSwitchIntent,
     TelemetryResult,
 };
-use crate::fig_util::system_info::os_version;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TelemetryError {

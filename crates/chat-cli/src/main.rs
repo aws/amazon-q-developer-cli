@@ -3,7 +3,6 @@ mod auth;
 mod cli;
 mod diagnostics;
 mod fig_aws_common;
-mod fig_telemetry_core;
 mod fig_util;
 mod install;
 mod logging;

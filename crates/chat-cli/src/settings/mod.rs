@@ -1,4 +1,5 @@
 pub mod error;
+#[allow(clippy::module_inception)]
 pub mod settings;
 pub mod sqlite;
 pub mod state;
