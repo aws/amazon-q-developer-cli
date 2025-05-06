@@ -36,9 +36,6 @@ pub enum Command {
     Context {
         subcommand: ContextSubcommand,
     },
-    Memory {
-        subcommand: MemorySubcommand,
-    },
     PromptEditor {
         initial_text: Option<String>,
     },
@@ -236,12 +233,12 @@ impl ContextSubcommand {
             r#"
 <magenta,em>(Beta) Context Rule Management</magenta,em>
 
-Context rules determine which files are included in your Amazon Q session.
-The files matched by these rules provide Amazon Q with additional information
-about your project or environment. Adding relevant files helps Q generate
+Context rules determine which files are included in your Amazon Q session. 
+The files matched by these rules provide Amazon Q with additional information 
+about your project or environment. Adding relevant files helps Q generate 
 more accurate and helpful responses.
 
-In addition to files, you can specify hooks that will run commands and return
+In addition to files, you can specify hooks that will run commands and return 
 the output as context to Amazon Q.
 
 {}
@@ -261,8 +258,8 @@ the output as context to Amazon Q.
             r#"
 <magenta,em>(Beta) Context Hooks</magenta,em>
 
-Use context hooks to specify shell commands to run. The output from these
-commands will be appended to the prompt to Amazon Q. Hooks can be defined
+Use context hooks to specify shell commands to run. The output from these 
+commands will be appended to the prompt to Amazon Q. Hooks can be defined 
 in global or local profiles.
 
 <cyan!>Usage: /context hooks [SUBCOMMAND]</cyan!>
@@ -366,7 +363,7 @@ impl PromptsSubcommand {
             r#"
 <magenta,em>Prompts</magenta,em>
 
-Prompts are reusable templates that help you quickly access common workflows and tasks.
+Prompts are reusable templates that help you quickly access common workflows and tasks. 
 These templates are provided by the mcp servers you have installed and configured.
 
 To actually retrieve a prompt, directly start with the following command (without prepending /prompt get):
@@ -387,61 +384,6 @@ Or if you prefer the long way:
 pub struct PromptsGetCommand {
     pub orig_input: Option<String>,
     pub params: PromptsGetParam,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MemorySubcommand {
-    Show,
-    Add { path: String },
-    Remove { path: String },
-    Clear,
-    Help,
-}
-
-impl MemorySubcommand {
-    const ADD_USAGE: &str = "/memory add <path>";
-    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available commands</cyan!>
-  <em>help</em>                           <black!>Show an explanation for the memory command</black!>
-
-  <em>show</em>                           <black!>Display the memory contexts and their contents</black!>
-
-  <em>add <<path>></em>                   <black!>Add a file or directory to memory</black!>
-
-  <em>rm <<name|id|path>></em>                    <black!>Remove specified memory context by name, ID, or path</black!>
-
-  <em>clear</em>                          <black!>Remove all memory contexts</black!>"};
-    const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /memory [SUBCOMMAND]</cyan!>
-
-<cyan!>Description</cyan!>
-  Manage memory contexts for semantic search and retrieval.
-  Memory contexts are used to store and search information across chat sessions."};
-    const REMOVE_USAGE: &str = "/memory rm <name|id|path>";
-
-    fn usage_msg(header: impl AsRef<str>) -> String {
-        format!(
-            "{}\n\n{}\n\n{}",
-            header.as_ref(),
-            Self::BASE_COMMAND,
-            Self::AVAILABLE_COMMANDS
-        )
-    }
-
-    pub fn help_text() -> String {
-        color_print::cformat!(
-            r#"
-<magenta,em>(Beta) Memory Management</magenta,em>
-
-Memory allows you to store and search information across chat sessions.
-Files and directories added to memory are indexed for semantic search,
-enabling more relevant and contextual responses.
-
-{}
-
-{}"#,
-            Self::BASE_COMMAND,
-            Self::AVAILABLE_COMMANDS
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -743,83 +685,6 @@ impl Command {
                         },
                         other => {
                             return Err(ContextSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
-                        },
-                    }
-                },
-                "memory" => {
-                    if parts.len() < 2 {
-                        return Ok(Self::Memory {
-                            subcommand: MemorySubcommand::Help,
-                        });
-                    }
-
-                    // Remove the unused macro
-                    match parts[1].to_lowercase().as_str() {
-                        "show" => Self::Memory {
-                            subcommand: MemorySubcommand::Show,
-                        },
-                        "add" => {
-                            // Parse add command with path
-                            let mut path = None;
-
-                            let args = match shlex::split(&parts[2..].join(" ")) {
-                                Some(args) => args,
-                                None => return Err("Failed to parse quoted arguments".to_string()),
-                            };
-
-                            for arg in &args {
-                                if path.is_none() {
-                                    path = Some(arg.to_string());
-                                } else {
-                                    return Err(format!("Only a single path is allowed. Found extra path: {}", arg));
-                                }
-                            }
-
-                            let path = path.ok_or_else(|| {
-                                format!(
-                                    "Invalid /memory arguments.\n\nUsage:\n  {}",
-                                    MemorySubcommand::ADD_USAGE
-                                )
-                            })?;
-
-                            Self::Memory {
-                                subcommand: MemorySubcommand::Add { path },
-                            }
-                        },
-                        "rm" => {
-                            // Parse rm command with path
-                            let mut path = None;
-                            let args = match shlex::split(&parts[2..].join(" ")) {
-                                Some(args) => args,
-                                None => return Err("Failed to parse quoted arguments".to_string()),
-                            };
-
-                            for arg in &args {
-                                if path.is_none() {
-                                    path = Some(arg.to_string());
-                                } else {
-                                    return Err(format!("Only a single path is allowed. Found extra path: {}", arg));
-                                }
-                            }
-
-                            let path = path.ok_or_else(|| {
-                                format!(
-                                    "Invalid /memory arguments.\n\nUsage:\n  {}",
-                                    MemorySubcommand::REMOVE_USAGE
-                                )
-                            })?;
-                            Self::Memory {
-                                subcommand: MemorySubcommand::Remove { path },
-                            }
-                        },
-                        "clear" => Self::Memory {
-                            subcommand: MemorySubcommand::Clear,
-                        },
-                        "help" => Self::Memory {
-                            subcommand: MemorySubcommand::Help,
-                        },
-                        other => {
-                            return Err(MemorySubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
                         },
                     }
                 },
@@ -1223,40 +1088,6 @@ mod tests {
             let result = Command::parse(input, &mut stdout);
             assert!(result.is_err(), "Expected error for input: {}", input);
             assert_eq!(result.unwrap_err(), expected_message);
-        }
-    }
-
-    #[test]
-    fn test_memory_command_parse() {
-        let mut stdout = std::io::stdout();
-
-        macro_rules! memory {
-            ($subcommand:expr) => {
-                Command::Memory {
-                    subcommand: $subcommand,
-                }
-            };
-        }
-
-        let tests = &[
-            ("/memory show", memory!(MemorySubcommand::Show)),
-            (
-                "/memory add /path/to/file",
-                memory!(MemorySubcommand::Add {
-                    path: "/path/to/file".to_string(),
-                }),
-            ),
-            (
-                "/memory rm /path/to/file",
-                memory!(MemorySubcommand::Remove {
-                    path: "/path/to/file".to_string(),
-                }),
-            ),
-            ("/memory clear", memory!(MemorySubcommand::Clear)),
-        ];
-
-        for (input, parsed) in tests {
-            assert_eq!(&Command::parse(input, &mut stdout).unwrap(), parsed, "{}", input);
         }
     }
 }
