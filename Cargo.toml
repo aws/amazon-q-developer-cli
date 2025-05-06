@@ -88,7 +88,6 @@ indoc = "2.0.6"
 insta = "1.43.1"
 libc = "0.2.172"
 mcp_client = { path = "crates/mcp_client" }
-memory_bank_client = { path = "crates/memory_bank_client" }
 mimalloc = "0.1.46"
 nix = { version = "0.29.0", features = [
     "feature",
