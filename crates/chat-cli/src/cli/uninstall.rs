@@ -4,7 +4,7 @@ use anstream::println;
 use crossterm::style::Stylize;
 use eyre::Result;
 
-use crate::fig_util::{
+use crate::util::{
     CLI_BINARY_NAME,
     PRODUCT_NAME,
     dialoguer_theme,

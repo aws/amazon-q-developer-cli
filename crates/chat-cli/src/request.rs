@@ -19,7 +19,7 @@ pub enum RequestError {
     Reqwest(reqwest::Error),
     Serde(serde_json::Error),
     Io(std::io::Error),
-    Dir(crate::fig_util::directories::DirectoryError),
+    Dir(crate::util::directories::DirectoryError),
     Settings(crate::settings::SettingsError),
     UrlParseError(ParseError),
 }
@@ -57,8 +57,8 @@ impl From<std::io::Error> for RequestError {
     }
 }
 
-impl From<crate::fig_util::directories::DirectoryError> for RequestError {
-    fn from(e: crate::fig_util::directories::DirectoryError) -> Self {
+impl From<crate::util::directories::DirectoryError> for RequestError {
+    fn from(e: crate::util::directories::DirectoryError) -> Self {
         RequestError::Dir(e)
     }
 }

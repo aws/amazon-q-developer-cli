@@ -519,7 +519,7 @@ mod tests {
             .await
             .unwrap();
         println!("{:?}", registration);
-        if crate::fig_util::open::open_url_async(&registration.url).await.is_err() {
+        if crate::util::open::open_url_async(&registration.url).await.is_err() {
             panic!("unable to open the URL");
         }
         println!("Waiting for authorization to complete...");

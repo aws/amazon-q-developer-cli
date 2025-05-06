@@ -31,7 +31,7 @@ use serde_json::Value;
 pub use settings::Settings;
 pub use state::State;
 
-use crate::fig_util::directories;
+use crate::util::directories;
 
 pub type Map = serde_json::Map<String, Value>;
 

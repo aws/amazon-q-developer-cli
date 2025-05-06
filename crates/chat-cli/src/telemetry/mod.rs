@@ -46,7 +46,7 @@ use uuid::Uuid;
 
 use crate::api_client::Client as CodewhispererClient;
 use crate::fig_aws_common::app_name;
-use crate::fig_util::system_info::os_version;
+use crate::util::system_info::os_version;
 use crate::telemetry::core::Event;
 pub use crate::telemetry::core::{
     EventType,

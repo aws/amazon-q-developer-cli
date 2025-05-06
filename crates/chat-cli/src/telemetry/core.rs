@@ -330,5 +330,5 @@ pub enum QProfileSwitchIntent {
 }
 
 fn in_cloudshell() -> Option<CodewhispererterminalInCloudshell> {
-    Some(crate::fig_util::system_info::in_cloudshell().into())
+    Some(crate::util::system_info::in_cloudshell().into())
 }

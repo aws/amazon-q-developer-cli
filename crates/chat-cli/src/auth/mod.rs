@@ -32,7 +32,7 @@ pub enum AuthError {
     #[error(transparent)]
     TimeComponentRange(#[from] time::error::ComponentRange),
     #[error(transparent)]
-    Directories(#[from] crate::fig_util::directories::DirectoryError),
+    Directories(#[from] crate::util::directories::DirectoryError),
     #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
     #[cfg(target_os = "macos")]

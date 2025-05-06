@@ -2,7 +2,7 @@ use std::sync::PoisonError;
 
 use thiserror::Error;
 
-use crate::fig_util::directories::DirectoryError;
+use crate::util::directories::DirectoryError;
 
 // A cloneable error
 #[derive(Debug, Clone, thiserror::Error)]
@@ -16,7 +16,7 @@ pub enum SettingsError {
     #[error(transparent)]
     JsonError(#[from] serde_json::Error),
     #[error(transparent)]
-    FigUtilError(#[from] crate::fig_util::UtilError),
+    FigUtilError(#[from] crate::util::UtilError),
     #[error("settings file is not a json object")]
     SettingsNotObject,
     #[error(transparent)]
@@ -49,9 +49,9 @@ mod tests {
         vec![
             std::io::Error::new(std::io::ErrorKind::InvalidData, "oops").into(),
             serde_json::from_str::<()>("oops").unwrap_err().into(),
-            crate::fig_util::UtilError::UnsupportedPlatform.into(),
+            crate::util::UtilError::UnsupportedPlatform.into(),
             SettingsError::SettingsNotObject,
-            crate::fig_util::directories::DirectoryError::NoHomeDirectory.into(),
+            crate::util::directories::DirectoryError::NoHomeDirectory.into(),
             SettingsError::MemoryBackendNotUsed,
             rusqlite::Error::SqliteSingleThreadedMode.into(),
             // r2d2::Error

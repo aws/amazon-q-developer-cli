@@ -35,8 +35,8 @@ use tracing::{
 };
 
 use self::user::RootUserSubcommand;
-use crate::fig_util::directories::logs_dir;
-use crate::fig_util::{
+use crate::util::directories::logs_dir;
+use crate::util::{
     CHAT_BINARY_NAME,
     CliContext,
 };

@@ -5,7 +5,7 @@ use clap::Args;
 use crossterm::style::Stylize;
 use eyre::Result;
 
-use crate::fig_util::CLI_BINARY_NAME;
+use crate::util::CLI_BINARY_NAME;
 
 #[derive(Debug, PartialEq, Args)]
 pub struct UpdateArgs {

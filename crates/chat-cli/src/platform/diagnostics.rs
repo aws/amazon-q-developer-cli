@@ -10,8 +10,8 @@ use sysinfo::{
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use crate::fig_util::consts::build::HASH;
-use crate::fig_util::system_info::{
+use crate::util::consts::build::HASH;
+use crate::util::system_info::{
     OSVersion,
     os_version,
 };
@@ -40,7 +40,7 @@ pub struct BuildDetails {
 
 impl BuildDetails {
     pub fn new() -> BuildDetails {
-        let date = crate::fig_util::consts::build::DATETIME
+        let date = crate::util::consts::build::DATETIME
             .and_then(|input| OffsetDateTime::parse(input, &Rfc3339).ok())
             .and_then(|time| {
                 let rfc3339 = time.format(&Rfc3339).ok()?;
@@ -112,7 +112,7 @@ impl EnvVarDiagnostic {
     fn new() -> EnvVarDiagnostic {
         let env_vars = std::env::vars()
             .filter(|(key, _)| {
-                let fig_var = crate::fig_util::env_var::ALL.contains(&key.as_str());
+                let fig_var = crate::util::env_var::ALL.contains(&key.as_str());
                 let other_var = [
                     // General env vars
                     "SHELL",
@@ -185,11 +185,11 @@ impl CurrentEnvironment {
 
         let install_method = crate::telemetry::get_install_method();
 
-        let in_cloudshell = crate::fig_util::system_info::in_cloudshell();
-        let in_ssh = crate::fig_util::system_info::in_ssh();
-        let in_ci = crate::fig_util::system_info::in_ci();
-        let in_wsl = crate::fig_util::system_info::in_wsl();
-        let in_codespaces = crate::fig_util::system_info::in_codespaces();
+        let in_cloudshell = crate::util::system_info::in_cloudshell();
+        let in_ssh = crate::util::system_info::in_ssh();
+        let in_ci = crate::util::system_info::in_ci();
+        let in_wsl = crate::util::system_info::in_wsl();
+        let in_codespaces = crate::util::system_info::in_codespaces();
 
         CurrentEnvironment {
             cwd,

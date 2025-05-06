@@ -58,7 +58,7 @@ pub struct StreamingClient {
 
 impl StreamingClient {
     pub async fn new() -> Result<Self, ApiClientError> {
-        let client = if crate::fig_util::system_info::in_cloudshell()
+        let client = if crate::util::system_info::in_cloudshell()
             || std::env::var("Q_USE_SENDMESSAGE").is_ok_and(|v| !v.is_empty())
         {
             Self::new_qdeveloper_client(&Endpoint::load_q()).await?

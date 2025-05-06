@@ -14,7 +14,7 @@ use tracing_subscriber::{
     fmt,
 };
 
-use crate::fig_util::env_var::Q_LOG_LEVEL;
+use crate::util::env_var::Q_LOG_LEVEL;
 
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
 const DEFAULT_FILTER: LevelFilter = LevelFilter::ERROR;

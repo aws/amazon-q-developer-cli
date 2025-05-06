@@ -19,7 +19,7 @@ use tracing::info;
 
 use super::error::DbOpenError;
 use crate::settings::Result;
-use crate::fig_util::directories::fig_data_dir;
+use crate::util::directories::fig_data_dir;
 
 const STATE_TABLE_NAME: &str = "state";
 const AUTH_TABLE_NAME: &str = "auth_kv";

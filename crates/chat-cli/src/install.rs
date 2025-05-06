@@ -8,7 +8,7 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Util(#[from] crate::fig_util::UtilError),
+    Util(#[from] crate::util::UtilError),
     #[error(transparent)]
     Settings(#[from] crate::settings::SettingsError),
     #[error(transparent)]
@@ -24,8 +24,8 @@ pub enum Error {
     SecurityFramework(#[from] security_framework::base::Error),
 }
 
-impl From<crate::fig_util::directories::DirectoryError> for Error {
-    fn from(err: crate::fig_util::directories::DirectoryError) -> Self {
-        crate::fig_util::UtilError::Directory(err).into()
+impl From<crate::util::directories::DirectoryError> for Error {
+    fn from(err: crate::util::directories::DirectoryError) -> Self {
+        crate::util::UtilError::Directory(err).into()
     }
 }

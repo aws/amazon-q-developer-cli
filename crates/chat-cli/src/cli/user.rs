@@ -42,12 +42,12 @@ use crate::telemetry::{
     QProfileSwitchIntent,
     TelemetryResult,
 };
-use crate::fig_util::spinner::{
+use crate::util::spinner::{
     Spinner,
     SpinnerComponent,
 };
-use crate::fig_util::system_info::is_remote;
-use crate::fig_util::{
+use crate::util::system_info::is_remote;
+use crate::util::{
     CHAT_BINARY_NAME,
     PRODUCT_NAME,
     choose,
@@ -188,7 +188,7 @@ impl RootUserSubcommand {
                 }
             },
             Self::Profile => {
-                if !crate::fig_util::system_info::in_cloudshell() && !crate::auth::is_logged_in().await {
+                if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in().await {
                     bail!(
                         "You are not logged in, please log in with {}",
                         format!("{CHAT_BINARY_NAME} login",).bold()
@@ -270,7 +270,7 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
             } else {
                 let (client, registration) = start_pkce_authorization(start_url.clone(), region.clone()).await?;
 
-                match crate::fig_util::open::open_url_async(&registration.url).await {
+                match crate::util::open::open_url_async(&registration.url).await {
                     // If it succeeded, finish PKCE.
                     Ok(()) => {
                         let mut spinner = Spinner::new(vec![
@@ -326,7 +326,7 @@ async fn try_device_authorization(
 
     if is_remote() {
         print_open_url();
-    } else if let Err(err) = crate::fig_util::open::open_url_async(&device_auth.verification_uri_complete).await {
+    } else if let Err(err) = crate::util::open::open_url_async(&device_auth.verification_uri_complete).await {
         error!(%err, "Failed to open URL with browser");
         print_open_url();
     }
@@ -413,7 +413,7 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
     }
 
     spinner.stop_with_message(String::new());
-    let selected = Select::with_theme(&crate::fig_util::dialoguer_theme())
+    let selected = Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt("Select an IAM Identity Center profile")
         .items(&items)
         .default(0)

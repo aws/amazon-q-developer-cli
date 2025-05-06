@@ -16,7 +16,7 @@ use serde_json::json;
 
 use super::OutputFormat;
 use crate::settings::JsonStore;
-use crate::fig_util::{
+use crate::util::{
     CliContext,
     directories,
 };
