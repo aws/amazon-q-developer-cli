@@ -12,7 +12,7 @@ workspace = true
 
 [dependencies]
 amzn-codewhisperer-client = { path = "../amzn-codewhisperer-client" }
-amzn-toolkit-telemetry = { path = "../amzn-toolkit-telemetry" }
+amzn-toolkit-telemetry-client = { path = "../amzn-toolkit-telemetry-client" }
 anyhow.workspace = true
 async-trait.workspace = true
 aws-credential-types = "1.1.6"

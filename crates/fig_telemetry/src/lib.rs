@@ -25,13 +25,13 @@ use amzn_codewhisperer_client::types::{
     UserContext,
     UserTriggerDecisionEvent,
 };
-use amzn_toolkit_telemetry::config::{
+use amzn_toolkit_telemetry_client::config::{
     BehaviorVersion,
     Region,
 };
-use amzn_toolkit_telemetry::error::DisplayErrorContext;
-use amzn_toolkit_telemetry::types::AwsProduct;
-use amzn_toolkit_telemetry::{
+use amzn_toolkit_telemetry_client::error::DisplayErrorContext;
+use amzn_toolkit_telemetry_client::types::AwsProduct;
+use amzn_toolkit_telemetry_client::{
     Client as ToolkitTelemetryClient,
     Config,
 };
@@ -92,7 +92,7 @@ pub enum Error {
     #[error("Telemetry is disabled")]
     TelemetryDisabled,
     #[error(transparent)]
-    ClientError(#[from] amzn_toolkit_telemetry::operation::post_metrics::PostMetricsError),
+    ClientError(#[from] amzn_toolkit_telemetry_client::operation::post_metrics::PostMetricsError),
 }
 
 const PRODUCT: &str = "CodeWhisperer";
@@ -205,10 +205,10 @@ pub struct Client {
 impl Client {
     pub async fn new(telemetry_stage: TelemetryStage) -> Self {
         let client_id = util::get_client_id();
-        let toolkit_telemetry_client = Some(amzn_toolkit_telemetry::Client::from_conf(
+        let toolkit_telemetry_client = Some(amzn_toolkit_telemetry_client::Client::from_conf(
             Config::builder()
                 .http_client(fig_aws_common::http_client::client())
-                .behavior_version(BehaviorVersion::v2024_03_28())
+                .behavior_version(BehaviorVersion::v2025_01_17())
                 .endpoint_resolver(StaticEndpoint(telemetry_stage.endpoint))
                 .app_name(app_name())
                 .region(telemetry_stage.region.clone())

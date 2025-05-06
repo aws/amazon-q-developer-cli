@@ -1,0 +1,172 @@
+{
+  "execute_bash": {
+    "name": "execute_bash",
+    "description": "Execute the specified bash command.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Bash command to execute"
+        },
+        "summary": {
+          "type": "string",
+          "description": "A brief explanation of what the command does"
+        }
+      },
+      "required": ["command"]
+    }
+  },
+  "fs_read": {
+    "name": "fs_read",
+    "description": "Tool for reading files (for example, `cat -n`) and directories (for example, `ls -la`). The behavior of this tool is determined by the `mode` parameter. The available modes are:\n- line: Show lines in a file, given by an optional `start_line` and optional `end_line`.\n- directory: List directory contents. Content is returned in the \"long format\" of ls (that is, `ls -la`).\n- search: Search for a pattern in a file. The pattern is a string. The matching is case insensitive.\n\nExample Usage:\n1. Read all lines from a file: command=\"line\", path=\"/path/to/file.txt\"\n2. Read the last 5 lines from a file: command=\"line\", path=\"/path/to/file.txt\", start_line=-5\n3. List the files in the home directory: command=\"line\", path=\"~\"\n4. Recursively list files in a directory to a max depth of 2: command=\"line\", path=\"/path/to/directory\", depth=2\n5. Search for all instances of \"test\" in a file: command=\"search\", path=\"/path/to/file.txt\", pattern=\"test\"\n",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path to the file or directory. The path should be absolute, or otherwise start with ~ for the user's home.",
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["Line", "Directory", "Search"],
+          "description": "The mode to run in: `Line`, `Directory`, `Search`. `Line` and `Search` are only for text files, and `Directory` is only for directories."
+        },
+        "start_line": {
+          "type": "integer",
+          "description": "Starting line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
+          "default": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "description": "Ending line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
+          "default": -1
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Pattern to search for (required, for Search mode). Case insensitive. The pattern matching is performed per line."
+        },
+        "context_lines": {
+          "type": "integer",
+          "description": "Number of context lines around search results (optional, for Search mode)",
+          "default": 2
+        },
+        "depth": {
+          "type": "integer",
+          "description": "Depth of a recursive directory listing (optional, for Directory mode)",
+          "default": 0
+        }
+      },
+      "required": ["path", "mode"]
+    }
+  },
+  "fs_write": {
+    "name": "fs_write",
+    "description": "A tool for creating and editing files\n * The `create` command will override the file at `path` if it already exists as a file, and otherwise create a new file\n * The `append` command will add content to the end of an existing file, automatically adding a newline if the file doesn't end with one. The file must exist.\n Notes for using the `str_replace` command:\n * The `old_str` parameter should match EXACTLY one or more consecutive lines from the original file. Be mindful of whitespaces!\n * If the `old_str` parameter is not unique in the file, the replacement will not be performed. Make sure to include enough context in `old_str` to make it unique\n * The `new_str` parameter should contain the edited lines that should replace the `old_str`.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "enum": ["create", "str_replace", "insert", "append"],
+          "description": "The commands to run. Allowed options are: `create`, `str_replace`, `insert`, `append`."
+        },
+        "file_text": {
+          "description": "Required parameter of `create` command, with the content of the file to be created.",
+          "type": "string"
+        },
+        "insert_line": {
+          "description": "Required parameter of `insert` command. The `new_str` will be inserted AFTER the line `insert_line` of `path`.",
+          "type": "integer"
+        },
+        "new_str": {
+          "description": "Required parameter of `str_replace` command containing the new string. Required parameter of `insert` command containing the string to insert. Required parameter of `append` command containing the content to append to the file.",
+          "type": "string"
+        },
+        "old_str": {
+          "description": "Required parameter of `str_replace` command containing the string in `path` to replace.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute path to file or directory, e.g. `/repo/file.py` or `/repo`.",
+          "type": "string"
+        }
+      },
+      "required": ["command", "path"]
+    }
+  },
+  "use_aws": {
+    "name": "use_aws",
+    "description": "Make an AWS CLI api call with the specified service, operation, and parameters. All arguments MUST conform to the AWS CLI specification. Should the output of the invocation indicate a malformed command, invoke help to obtain the the correct command.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "service_name": {
+          "type": "string",
+          "description": "The name of the AWS service. If you want to query s3, you should use s3api if possible."
+        },
+        "operation_name": {
+          "type": "string",
+          "description": "The name of the operation to perform."
+        },
+        "parameters": {
+          "type": "object",
+          "description": "The parameters for the operation. The parameter keys MUST conform to the AWS CLI specification. You should prefer to use JSON Syntax over shorthand syntax wherever possible. For parameters that are booleans, prioritize using flags with no value. Denote these flags with flag names as key and an empty string as their value. You should also prefer kebab case."
+        },
+        "region": {
+          "type": "string",
+          "description": "Region name for calling the operation on AWS."
+        },
+        "profile_name": {
+          "type": "string",
+          "description": "Optional: AWS profile name to use from ~/.aws/credentials. Defaults to default profile if not specified."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human readable description of the api that is being called."
+        }
+      },
+      "required": ["region", "service_name", "operation_name", "label"]
+    }
+  },
+  "gh_issue": {
+    "name": "report_issue",
+    "description": "Opens the browser to a pre-filled gh (GitHub) issue template to report chat issues, bugs, or feature requests. Pre-filled information includes the conversation transcript, chat context, and chat request IDs from the service.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the GitHub issue."
+        },
+        "expected_behavior": {
+          "type": "string",
+          "description": "Optional: The expected chat behavior or action that did not happen."
+        },
+        "actual_behavior": {
+          "type": "string",
+          "description": "Optional: The actual chat behavior that happened and demonstrates the issue or lack of a feature."
+        },
+        "steps_to_reproduce": {
+          "type": "string",
+          "description": "Optional: Previous user chat requests or steps that were taken that may have resulted in the issue or error response."
+        }
+      },
+      "required": ["title"]
+    }
+  },
+  "thinking": {
+    "name": "thinking",
+    "description": "Thinking is an internal reasoning mechanism improving the quality of complex tasks by breaking their atomic actions down; use it specifically for multi-step problems requiring step-by-step dependencies, reasoning through multiple constraints, synthesizing results from previous tool calls, planning intricate sequences of actions, troubleshooting complex errors, or making decisions involving multiple trade-offs. Avoid using it for straightforward tasks, basic information retrieval, summaries, always clearly define the reasoning challenge, structure thoughts explicitly, consider multiple perspectives, and summarize key insights before important decisions or complex tool interactions.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "thought": {
+          "type": "string",
+          "description": "A reflective note or intermediate reasoning step such as \"The user needs to prepare their application for production. I need to complete three major asks including 1: building their code from source, 2: bundling their release artifacts together, and 3: signing the application bundle."
+        }
+      },
+      "required": ["thought"]
+    }
+  }
+}

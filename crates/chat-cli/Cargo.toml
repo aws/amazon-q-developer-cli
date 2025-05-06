@@ -1,0 +1,193 @@
+[package]
+name = "chat_cli"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+wayland = ["arboard/wayland-data-control"]
+
+[dependencies]
+amzn-codewhisperer-client = { path = "../amzn-codewhisperer-client" }
+amzn-codewhisperer-streaming-client = { path = "../amzn-codewhisperer-streaming-client" }
+amzn-consolas-client = { path = "../amzn-consolas-client" }
+amzn-qdeveloper-streaming-client = { path = "../amzn-qdeveloper-streaming-client" }
+amzn-toolkit-telemetry-client = { path = "../amzn-toolkit-telemetry-client" }
+anstream = "0.6.13"
+arboard = { version = "3.5.0", default-features = false }
+async-trait = "0.1.87"
+aws-config = "1.0.3"
+aws-credential-types = "1.0.3"
+aws-runtime = "1.4.4"
+aws-sdk-cognitoidentity = "1.51.0"
+aws-sdk-ssooidc = "1.51.0"
+aws-smithy-async = "1.2.2"
+aws-smithy-runtime-api = "1.6.1"
+aws-smithy-types = "1.2.10"
+aws-types = "1.3.0"
+base64 = "0.22.1"
+bitflags = "2.9.0"
+bstr = "1.12.0"
+bytes = "1.10.1"
+camino = { version = "1.1.3", features = ["serde1"] }
+cfg-if = "1.0.0"
+chrono = { version = "0.4.41", default-features = false, features = ["std"] }
+clap = { version = "4.5.32", features = [
+    "deprecated",
+    "derive",
+    "string",
+    "unicode",
+    "wrap_help",
+] }
+clap_complete = "4.5.46"
+clap_complete_fig = "4.4.0"
+color-eyre = "0.6.2"
+color-print = "0.3.5"
+convert_case = "0.8.0"
+cookie = "0.18.1"
+crossterm = { version = "0.28.1", features = ["event-stream", "events"] }
+ctrlc = "3.4.6"
+dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
+dirs = "5.0.0"
+eyre = "0.6.8"
+fd-lock = "4.0.4"
+futures = "0.3.26"
+glob = "0.3.2"
+globset = "0.4.16"
+hex = "0.4.3"
+http = "1.2.0"
+http-body-util = "0.1.3"
+hyper = { version = "1.6.0", features = ["server"] }
+hyper-util = { version = "0.1.11", features = ["tokio"] }
+indicatif = "0.17.11"
+indoc = "2.0.6"
+insta = "1.43.1"
+libc = "0.2.172"
+mimalloc = "0.1.46"
+nix = { version = "0.29.0", features = [
+    "feature",
+    "fs",
+    "ioctl",
+    "process",
+    "signal",
+    "term",
+    "user",
+] }
+owo-colors = "4.2.0"
+parking_lot = "0.12.3"
+paste = "1.0.11"
+percent-encoding = "2.2.0"
+r2d2 = "0.8.10"
+r2d2_sqlite = "0.25.0"
+rand = "0.9.0"
+regex = "1.7.0"
+reqwest = { version = "0.12.14", default-features = false, features = [
+    "http2",
+    "charset",
+    "rustls-tls",
+    "rustls-tls-native-roots",
+    "gzip",
+    "json",
+    "socks",
+    "cookies",
+] }
+ring = "0.17.14"
+rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
+rustls = "0.23.23"
+rustls-native-certs = "0.8.1"
+rustls-pemfile = "2.1.0"
+rustyline = { version = "15.0.0", features = [
+    "custom-bindings",
+    "derive",
+    "with-file-history",
+], default-features = false }
+semver = { version = "1.0.26", features = ["serde"] }
+serde = { version = "1.0.219", features = ["derive", "rc"] }
+serde_json = "1.0.140"
+sha2 = "0.10.9"
+shell-color = "1.0.0"
+shell-words = "1.1.0"
+shellexpand = "3.0.0"
+shlex = "1.3.0"
+similar = "2.7.0"
+spinners = "4.1.0"
+strip-ansi-escapes = "0.2.1"
+strum = { version = "0.27.1", features = ["derive"] }
+syntect = "5.2.0"
+sysinfo = "0.33.1"
+tempfile = "3.18.0"
+thiserror = "2.0.12"
+time = { version = "0.3.39", features = [
+    "parsing",
+    "formatting",
+    "local-offset",
+    "macros",
+    "serde",
+] }
+tokio = { version = "1.44.2", features = ["full"] }
+tokio-tungstenite = "0.26.2"
+tokio-util = { version = "0.7.15", features = ["codec", "compat"] }
+toml = "0.8.12"
+tracing = { version = "0.1.40", features = ["log"] }
+tracing-appender = "0.2.2"
+tracing-subscriber = { version = "0.3.19", features = [
+    "env-filter",
+    "fmt",
+    "parking_lot",
+    "time",
+] }
+unicode-width = "0.2.0"
+url = "2.5.4"
+uuid = { version = "1.15.1", features = ["v4", "serde"] }
+walkdir = "2.5.0"
+webpki-roots = "0.26.8"
+whoami = "1.6.0"
+winnow = "=0.6.2"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29.0", features = [
+    "feature",
+    "fs",
+    "ioctl",
+    "process",
+    "signal",
+    "term",
+    "user",
+] }
+skim = { version = "0.16.2" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5.2"
+objc2-app-kit = { version = "0.2.2", features = ["NSWorkspace"] }
+objc2-foundation = { version = "0.2.2", features = ["NSString", "NSURL"] }
+security-framework = "3.2.0"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61.1", features = [
+    "Foundation",
+    "Win32_System_Threading",
+] }
+winreg = "0.55.0"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+criterion = "0.5.1"
+mockito = "1.7.0"
+paste = "1.0.11"
+predicates = "3.0"
+tracing-test = "0.2.4"
+
+[build-dependencies]
+convert_case = "0.8.0"
+prettyplease = "0.2.32"
+quote = "1.0.40"
+serde = { version = "1.0.219", features = ["derive", "rc"] }
+serde_json = "1.0.140"
+syn = "2.0.101"
