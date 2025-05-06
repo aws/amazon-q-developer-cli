@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::fig_os_shim::{
+use crate::platform::{
     Context,
     Env,
     Fs,

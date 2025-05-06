@@ -6,11 +6,11 @@ use uuid::{
     uuid,
 };
 
-use crate::fig_os_shim::Env;
 use crate::fig_settings::{
     Settings,
     State,
 };
+use crate::platform::Env;
 
 const CLIENT_ID_STATE_KEY: &str = "telemetryClientId";
 const CLIENT_ID_ENV_VAR: &str = "Q_TELEMETRY_CLIENT_ID";

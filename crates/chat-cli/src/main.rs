@@ -5,12 +5,12 @@ mod diagnostics;
 mod fig_aws_common;
 mod fig_install;
 mod fig_log;
-mod fig_os_shim;
 mod fig_settings;
 mod fig_telemetry;
 mod fig_telemetry_core;
 mod fig_util;
 mod mcp_client;
+mod platform;
 mod request;
 
 use std::process::ExitCode;

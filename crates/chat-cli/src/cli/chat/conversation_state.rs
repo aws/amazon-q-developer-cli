@@ -38,7 +38,6 @@ use super::tools::{
     ToolSpec,
     serde_value_to_document,
 };
-use crate::cli::chat::util::shared_writer::SharedWriter;
 use crate::api_client::model::{
     AssistantResponseMessage,
     ChatMessage,
@@ -52,8 +51,9 @@ use crate::api_client::model::{
     UserInputMessage,
     UserInputMessageContext,
 };
-use crate::fig_os_shim::Context;
+use crate::cli::chat::util::shared_writer::SharedWriter;
 use crate::mcp_client::Prompt;
+use crate::platform::Context;
 
 const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
@@ -761,11 +761,11 @@ mod tests {
     };
     use super::super::message::AssistantToolUse;
     use super::*;
-    use crate::cli::chat::tool_manager::ToolManager;
     use crate::api_client::model::{
         AssistantResponseMessage,
         ToolResultStatus,
     };
+    use crate::cli::chat::tool_manager::ToolManager;
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {

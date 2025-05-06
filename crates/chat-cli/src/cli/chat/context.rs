@@ -22,8 +22,8 @@ use super::hooks::{
     Hook,
     HookExecutor,
 };
-use crate::fig_os_shim::Context;
 use crate::fig_util::directories;
+use crate::platform::Context;
 
 pub const AMAZONQ_FILENAME: &str = "AmazonQ.md";
 

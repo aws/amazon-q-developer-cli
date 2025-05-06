@@ -23,7 +23,7 @@ use super::{
     ToolPermission,
 };
 use crate::cli::chat::token_counter::TokenCounter;
-use crate::fig_os_shim::Context;
+use crate::platform::Context;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhIssue {

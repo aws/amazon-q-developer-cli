@@ -8,7 +8,7 @@ use serde::{
     Serialize,
 };
 
-use crate::fig_os_shim::Env;
+use crate::platform::Env;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

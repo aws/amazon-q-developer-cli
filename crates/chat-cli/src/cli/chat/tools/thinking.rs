@@ -62,7 +62,7 @@ impl Thinking {
     }
 
     /// Validates the thought - accepts empty thoughts
-    pub async fn validate(&mut self, _ctx: &crate::fig_os_shim::Context) -> Result<()> {
+    pub async fn validate(&mut self, _ctx: &crate::platform::Context) -> Result<()> {
         // We accept empty thoughts - they'll just be ignored
         // This makes the tool more robust and prevents errors from blocking the model
         Ok(())

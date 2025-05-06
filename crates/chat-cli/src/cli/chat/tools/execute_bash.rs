@@ -26,7 +26,7 @@ use super::{
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
 };
-use crate::fig_os_shim::Context;
+use crate::platform::Context;
 
 const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 

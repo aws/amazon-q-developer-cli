@@ -22,7 +22,7 @@ use super::{
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
 };
-use crate::fig_os_shim::Context;
+use crate::platform::Context;
 
 const READONLY_OPS: [&str; 6] = ["get", "describe", "list", "ls", "search", "batch_get"];
 

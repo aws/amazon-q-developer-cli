@@ -32,7 +32,7 @@ use thinking::Thinking;
 use use_aws::UseAws;
 
 use super::consts::MAX_TOOL_RESPONSE_SIZE;
-use crate::fig_os_shim::Context;
+use crate::platform::Context;
 
 /// Represents an executable tool use.
 #[allow(clippy::large_enum_variant)]
@@ -392,7 +392,7 @@ fn supports_truecolor(ctx: &Context) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fig_os_shim::EnvProvider;
+    use crate::platform::EnvProvider;
 
     #[tokio::test]
     async fn test_tilde_path_expansion() {

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::fig_os_shim::Context;
+use crate::platform::Context;
 
 #[derive(Debug, Clone)]
 pub struct CliContext {

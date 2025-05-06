@@ -28,7 +28,7 @@ use super::{
     format_path,
     sanitize_path_tool_arg,
 };
-use crate::fig_os_shim::Context;
+use crate::platform::Context;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "mode")]

@@ -21,7 +21,6 @@ use super::{
 };
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
-use crate::fig_os_shim::Context;
 use crate::mcp_client::{
     Client as McpClient,
     ClientConfig as McpClientConfig,
@@ -33,6 +32,7 @@ use crate::mcp_client::{
     StdioTransport,
     ToolCallResult,
 };
+use crate::platform::Context;
 
 // TODO: support http transport type
 #[derive(Clone, Serialize, Deserialize, Debug)]
