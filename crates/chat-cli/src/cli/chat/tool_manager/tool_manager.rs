@@ -373,7 +373,7 @@ impl ToolManagerBuilder {
                     },
                     UpdateEventMessage::PromptsListResult { server_name, result } => {},
                     UpdateEventMessage::ResourcesListResult { server_name, result } => {},
-                    UpdateEventMessage::ResouceTemplatesListResult { server_name, result } => {},
+                    UpdateEventMessage::ResourceTemplatesListResult { server_name, result } => {},
                     UpdateEventMessage::DisplayTaskEnded => {
                         is_in_display = false;
                     },

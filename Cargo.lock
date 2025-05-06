@@ -5274,20 +5274,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mcp_client"
-version = "1.10.0"
-dependencies = [
- "async-trait",
- "nix 0.29.0",
- "serde",
- "serde_json",
- "thiserror 2.0.12",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7077,7 +7063,6 @@ dependencies = [
  "indoc",
  "insta",
  "macos-utils",
- "mcp_client",
  "mimalloc",
  "nix 0.29.0",
  "objc2 0.5.2",

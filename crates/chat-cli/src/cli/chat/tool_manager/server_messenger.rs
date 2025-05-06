@@ -27,7 +27,7 @@ pub enum UpdateEventMessage {
         server_name: String,
         result: ResourcesListResult,
     },
-    ResouceTemplatesListResult {
+    ResourceTemplatesListResult {
         server_name: String,
         result: ResourceTemplatesListResult,
     },
@@ -103,7 +103,7 @@ impl Messenger for ServerMessenger {
     ) -> Result<(), MessengerError> {
         Ok(self
             .update_event_sender
-            .send(UpdateEventMessage::ResouceTemplatesListResult {
+            .send(UpdateEventMessage::ResourceTemplatesListResult {
                 server_name: self.server_name.clone(),
                 result,
             })
