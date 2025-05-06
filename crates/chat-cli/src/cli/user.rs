@@ -30,14 +30,14 @@ use tracing::{
 use super::OutputFormat;
 use crate::api_client::list_available_profiles;
 use crate::api_client::profile::Profile;
-use crate::fig_auth::builder_id::{
+use crate::auth::builder_id::{
     PollCreateToken,
     TokenType,
     poll_create_token,
     start_device_authorization,
 };
-use crate::fig_auth::pkce::start_pkce_authorization;
-use crate::fig_auth::secret_store::SecretStore;
+use crate::auth::pkce::start_pkce_authorization;
+use crate::auth::secret_store::SecretStore;
 use crate::fig_telemetry::{
     QProfileSwitchIntent,
     TelemetryResult,
@@ -119,7 +119,7 @@ impl RootUserSubcommand {
     pub async fn execute(self) -> Result<ExitCode> {
         match self {
             Self::Login(args) => {
-                if crate::fig_auth::is_logged_in().await {
+                if crate::auth::is_logged_in().await {
                     eyre::bail!(
                         "Already logged in, please logout with {} first",
                         format!("{CHAT_BINARY_NAME} logout").magenta()
@@ -131,7 +131,7 @@ impl RootUserSubcommand {
                 Ok(ExitCode::SUCCESS)
             },
             Self::Logout => {
-                let _ = crate::fig_auth::logout().await;
+                let _ = crate::auth::logout().await;
 
                 println!("You are now logged out");
                 println!(
@@ -141,7 +141,7 @@ impl RootUserSubcommand {
                 Ok(ExitCode::SUCCESS)
             },
             Self::Whoami { format } => {
-                let builder_id = crate::fig_auth::builder_id_token().await;
+                let builder_id = crate::auth::builder_id_token().await;
 
                 match builder_id {
                     Ok(Some(token)) => {
@@ -188,14 +188,14 @@ impl RootUserSubcommand {
                 }
             },
             Self::Profile => {
-                if !crate::fig_util::system_info::in_cloudshell() && !crate::fig_auth::is_logged_in().await {
+                if !crate::fig_util::system_info::in_cloudshell() && !crate::auth::is_logged_in().await {
                     bail!(
                         "You are not logged in, please log in with {}",
                         format!("{CHAT_BINARY_NAME} login",).bold()
                     );
                 }
 
-                if let Ok(Some(token)) = crate::fig_auth::builder_id_token().await {
+                if let Ok(Some(token)) = crate::auth::builder_id_token().await {
                     if matches!(token.token_type(), TokenType::BuilderId) {
                         bail!("This command is only available for Pro users");
                     }

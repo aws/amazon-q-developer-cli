@@ -49,10 +49,10 @@ use tracing::{
     warn,
 };
 
-use crate::fig_auth::AuthError;
-use crate::fig_auth::consts::*;
-use crate::fig_auth::scope::is_scopes;
-use crate::fig_auth::secret_store::{
+use crate::auth::AuthError;
+use crate::auth::consts::*;
+use crate::auth::scope::is_scopes;
+use crate::auth::secret_store::{
     Secret,
     SecretStore,
 };

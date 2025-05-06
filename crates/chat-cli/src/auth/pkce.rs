@@ -50,10 +50,10 @@ use tracing::{
     error,
 };
 
-use crate::fig_auth::builder_id::*;
-use crate::fig_auth::consts::*;
-use crate::fig_auth::secret_store::SecretStore;
-use crate::fig_auth::{
+use crate::auth::builder_id::*;
+use crate::auth::consts::*;
+use crate::auth::secret_store::SecretStore;
+use crate::auth::{
     AuthError,
     START_URL,
 };
@@ -481,7 +481,7 @@ fn generate_code_challenge(code_verifier: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fig_auth::scope::is_scopes;
+    use crate::auth::scope::is_scopes;
 
     #[derive(Debug, Clone)]
     struct TestPkceClient;

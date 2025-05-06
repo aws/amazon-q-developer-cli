@@ -309,7 +309,7 @@ pub async fn chat(
     trust_all_tools: bool,
     trust_tools: Option<Vec<String>>,
 ) -> Result<ExitCode> {
-    if !crate::fig_util::system_info::in_cloudshell() && !crate::fig_auth::is_logged_in().await {
+    if !crate::fig_util::system_info::in_cloudshell() && !crate::auth::is_logged_in().await {
         bail!(
             "You are not logged in, please log in with {}",
             format!("{CHAT_BINARY_NAME} login",).bold()

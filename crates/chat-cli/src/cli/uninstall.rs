@@ -43,7 +43,7 @@ pub async fn uninstall_command(no_confirm: bool) -> Result<ExitCode> {
 
 #[cfg(target_os = "macos")]
 async fn uninstall() -> Result<()> {
-    crate::fig_auth::logout().await.ok();
+    crate::auth::logout().await.ok();
     crate::fig_install::uninstall().await?;
     Ok(())
 }

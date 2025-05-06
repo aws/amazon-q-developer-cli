@@ -1,7 +1,7 @@
 use super::Secret;
 use super::sqlite::SqliteSecretStore;
 use crate::Result;
-use crate::fig_auth::AuthError;
+use crate::auth::AuthError;
 
 pub struct SecretStoreImpl {
     inner: SqliteSecretStore,

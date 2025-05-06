@@ -25,7 +25,7 @@ use crate::api_client::{
     ApiClientError,
     Endpoint,
 };
-use crate::fig_auth::builder_id::BearerResolver;
+use crate::auth::builder_id::BearerResolver;
 use crate::fig_aws_common::{
     UserAgentOverrideInterceptor,
     app_name,

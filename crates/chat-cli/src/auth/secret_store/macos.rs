@@ -1,5 +1,5 @@
 use super::Secret;
-use crate::fig_auth::AuthError;
+use crate::auth::AuthError;
 
 /// Path to the `security` binary
 const SECURITY_BIN: &str = "/usr/bin/security";

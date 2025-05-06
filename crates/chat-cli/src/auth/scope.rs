@@ -1,4 +1,4 @@
-use crate::fig_auth::consts::SCOPES;
+use crate::auth::consts::SCOPES;
 
 pub fn scopes_match<A: AsRef<str>, B: AsRef<str>>(a: &[A], b: &[B]) -> bool {
     if a.len() != b.len() {

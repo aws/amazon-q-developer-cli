@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use super::Secret;
 use crate::Result;
-use crate::fig_auth::AuthError;
+use crate::auth::AuthError;
 use crate::fig_settings::sqlite::{
     Db,
     database,

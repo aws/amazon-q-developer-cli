@@ -96,7 +96,7 @@ pub enum DebugSubcommand {
 impl DebugSubcommand {
     pub async fn execute(&self) -> Result<ExitCode> {
         match self {
-            DebugSubcommand::RefreshAuthToken => match crate::fig_auth::refresh_token().await? {
+            DebugSubcommand::RefreshAuthToken => match crate::auth::refresh_token().await? {
                 Some(_) => eprintln!("Refreshed token"),
                 None => {
                     eprintln!("No token to refresh");

@@ -1,7 +1,7 @@
 mod api_client;
+mod auth;
 mod cli;
 mod diagnostics;
-mod fig_auth;
 mod fig_aws_common;
 mod fig_install;
 mod fig_log;
