@@ -24,7 +24,14 @@ use futures::{
     StreamExt,
     stream,
 };
+<<<<<<<< HEAD:crates/chat-cli/src/cli/chat/tool_manager.rs
+========
+use mcp_client::{
+    JsonRpcResponse,
+    PromptGet,
+};
 use regex::Regex;
+>>>>>>>> ca627e83 (loads tools in the background):crates/q_chat/src/tool_manager/tool_manager.rs
 use serde::{
     Deserialize,
     Serialize,
@@ -36,6 +43,11 @@ use tracing::{
     warn,
 };
 
+<<<<<<<< HEAD:crates/chat-cli/src/cli/chat/tool_manager.rs
+use super::command::PromptsGetCommand;
+use super::message::AssistantToolUse;
+use super::tools::custom_tool::{
+========
 use crate::command::PromptsGetCommand;
 use crate::message::AssistantToolUse;
 use crate::tool_manager::server_messenger::{
@@ -43,20 +55,32 @@ use crate::tool_manager::server_messenger::{
     UpdateEventMessage,
 };
 use crate::tools::custom_tool::{
+>>>>>>>> ca627e83 (loads tools in the background):crates/q_chat/src/tool_manager/tool_manager.rs
     CustomTool,
     CustomToolClient,
     CustomToolConfig,
 };
+<<<<<<<< HEAD:crates/chat-cli/src/cli/chat/tool_manager.rs
+use super::tools::execute_bash::ExecuteBash;
+use super::tools::fs_read::FsRead;
+use super::tools::fs_write::FsWrite;
+use super::tools::gh_issue::GhIssue;
+use super::tools::thinking::Thinking;
+use super::tools::use_aws::UseAws;
+use super::tools::{
+========
 use crate::tools::execute_bash::ExecuteBash;
 use crate::tools::fs_read::FsRead;
 use crate::tools::fs_write::FsWrite;
 use crate::tools::gh_issue::GhIssue;
 use crate::tools::use_aws::UseAws;
 use crate::tools::{
+>>>>>>>> ca627e83 (loads tools in the background):crates/q_chat/src/tool_manager/tool_manager.rs
     Tool,
     ToolOrigin,
     ToolSpec,
 };
+<<<<<<<< HEAD:crates/chat-cli/src/cli/chat/tool_manager.rs
 use crate::api_client::model::{
     ToolResult,
     ToolResultContentBlock,
@@ -68,6 +92,8 @@ use crate::mcp_client::{
     PromptGet,
 };
 use crate::telemetry::send_mcp_server_init;
+========
+>>>>>>>> ca627e83 (loads tools in the background):crates/q_chat/src/tool_manager/tool_manager.rs
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name since in the end the tool name as seen by the
@@ -580,11 +606,16 @@ impl ToolManager {
         let tx = self.loading_status_sender.take();
         let display_task = self.loading_display_task.take();
         let tool_specs = {
-            let tool_specs =
-                serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("../tools/tool_index.json"))?;
+<<<<<<<< HEAD:crates/chat-cli/src/cli/chat/tool_manager.rs
+            let mut tool_specs =
+                serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled() {
                 tool_specs.remove("q_think_tool");
             }
+========
+            let tool_specs =
+                serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("../tools/tool_index.json"))?;
+>>>>>>>> ca627e83 (loads tools in the background):crates/q_chat/src/tool_manager/tool_manager.rs
             Arc::new(Mutex::new(tool_specs))
         };
         let conversation_id = self.conversation_id.clone();
@@ -592,10 +623,127 @@ impl ToolManager {
         self.new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
         let load_tools = self
             .clients
+<<<<<<<< HEAD:crates/chat-cli/src/cli/chat/tool_manager.rs
+            .iter()
+            .map(|(server_name, client)| {
+                let client_clone = client.clone();
+                let server_name_clone = server_name.clone();
+                let tx_clone = tx.clone();
+                let regex_clone = regex.clone();
+                let tool_specs_clone = tool_specs.clone();
+                let conversation_id = conversation_id.clone();
+                async move {
+                    let tool_spec = client_clone.init().await;
+                    let mut sanitized_mapping = HashMap::<String, String>::new();
+                    match tool_spec {
+                        Ok((server_name, specs)) => {
+                            // Each mcp server might have multiple tools.
+                            // To avoid naming conflicts we are going to namespace it.
+                            // This would also help us locate which mcp server to call the tool from.
+                            let mut out_of_spec_tool_names = Vec::<OutOfSpecName>::new();
+                            let mut hasher = DefaultHasher::new();
+                            let number_of_tools = specs.len();
+                            // Sanitize tool names to ensure they comply with the naming requirements:
+                            // 1. If the name already matches the regex pattern and doesn't contain the namespace delimiter, use it as is
+                            // 2. Otherwise, remove invalid characters and handle special cases:
+                            //    - Remove namespace delimiters
+                            //    - Ensure the name starts with an alphabetic character
+                            //    - Generate a hash-based name if the sanitized result is empty
+                            // This ensures all tool names are valid identifiers that can be safely used in the system
+                            // If after all of the aforementioned modification the combined tool
+                            // name we have exceeds a length of 64, we surface it as an error
+                            for mut spec in specs {
+                                let sn  = if !regex_clone.is_match(&spec.name) {
+                                    let mut sn = sanitize_name(spec.name.clone(), &regex_clone, &mut hasher);
+                                    while sanitized_mapping.contains_key(&sn) {
+                                        sn.push('1');
+                                    }
+                                    sn
+                                } else {
+                                    spec.name.clone()
+                                };
+                                let full_name = format!("{}{}{}", server_name, NAMESPACE_DELIMITER, sn);
+                                if full_name.len() > 64 {
+                                    out_of_spec_tool_names.push(OutOfSpecName::TooLong(spec.name));
+                                    continue;
+                                } else if spec.description.is_empty() {
+                                    out_of_spec_tool_names.push(OutOfSpecName::EmptyDescription(spec.name));
+                                    continue;
+                                }
+                                if sn != spec.name {
+                                    sanitized_mapping.insert(full_name.clone(), format!("{}{}{}", server_name, NAMESPACE_DELIMITER, spec.name));
+                                }
+                                spec.name = full_name;
+                                spec.tool_origin = ToolOrigin::McpServer(server_name.clone());
+                                tool_specs_clone.lock().await.insert(spec.name.clone(), spec);
+                            }
+
+                            // Send server load success metric datum
+                            send_mcp_server_init(conversation_id, None, number_of_tools).await;
+
+                            // Tool name translation. This is beyond of the scope of what is
+                            // considered a "server load". Reasoning being:
+                            // - Failures here are not related to server load
+                            // - There is not a whole lot we can do with this data
+                            if let Some(tx_clone) = &tx_clone {
+                                let send_result = if !out_of_spec_tool_names.is_empty() {
+                                    let msg = out_of_spec_tool_names.iter().fold(
+                                        String::from("The following tools are out of spec. They will be excluded from the list of available tools:\n"),
+                                        |mut acc, name| {
+                                            let (tool_name, msg) = match name {
+                                                OutOfSpecName::TooLong(tool_name) => (tool_name.as_str(), "tool name exceeds max length of 64 when combined with server name"),
+                                                OutOfSpecName::IllegalChar(tool_name) => (tool_name.as_str(), "tool name must be compliant with ^[a-zA-Z][a-zA-Z0-9_]*$"),
+                                                OutOfSpecName::EmptyDescription(tool_name) => (tool_name.as_str(), "tool schema contains empty description"),
+                                            };
+                                            acc.push_str(format!("  - {} ({})\n", tool_name, msg).as_str());
+                                            acc
+                                        }
+                                    );
+                                    tx_clone.send(LoadingMsg::Error {
+                                        name: server_name.clone(),
+                                        msg: eyre::eyre!(msg),
+                                    })
+                                    // TODO: if no tools are valid, we need to offload the server
+                                    // from the fleet (i.e. kill the server)
+                                } else if !sanitized_mapping.is_empty() {
+                                    let warn = sanitized_mapping.iter().fold(String::from("The following tool names are changed:\n"), |mut acc, (k, v)| {
+                                        acc.push_str(format!(" - {} -> {}\n", v, k).as_str());
+                                        acc
+                                    });
+                                    tx_clone.send(LoadingMsg::Warn {
+                                        name: server_name.clone(),
+                                        msg: eyre::eyre!(warn),
+                                    })
+                                } else {
+                                    tx_clone.send(LoadingMsg::Done(server_name.clone()))
+                                };
+                                if let Err(e) = send_result {
+                                    error!("Error while sending status update to display task: {:?}", e);
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            error!("Error obtaining tool spec for {}: {:?}", server_name_clone, e);
+                            let init_failure_reason = Some(e.to_string());
+                            send_mcp_server_init(conversation_id, init_failure_reason, 0).await;
+                            if let Some(tx_clone) = &tx_clone {
+                                if let Err(e) = tx_clone.send(LoadingMsg::Error {
+                                    name: server_name_clone,
+                                    msg: e,
+                                }) {
+                                    error!("Error while sending status update to display task: {:?}", e);
+                                }
+                            }
+                        },
+                    }
+                    Ok::<_, eyre::Report>(Some(sanitized_mapping))
+                }
+========
             .values()
             .map(|c| {
                 let clone = Arc::clone(c);
                 async move { clone.init().await }
+>>>>>>>> ca627e83 (loads tools in the background):crates/q_chat/src/tool_manager/tool_manager.rs
             })
             .collect::<Vec<_>>();
         let some = stream::iter(load_tools)

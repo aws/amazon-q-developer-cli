@@ -365,9 +365,15 @@ where
             });
         }
         if let (Some(_), Some(messenger)) = (&cap.tools, &self.messenger) {
+            tracing::error!(
+                "## background: {} is spawning background task to fetch tools",
+                self.server_name
+            );
             let client_ref = (*self).clone();
             let msger = messenger.duplicate();
             tokio::spawn(async move {
+                // TODO: decouple pagination logic from request and have page fetching logic here
+                // instead
                 let resp = match client_ref.request("tools/list", None).await {
                     Ok(resp) => resp,
                     Err(e) => {

@@ -1,0 +1,58 @@
+[package]
+name = "q_chat"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+anstream.workspace = true
+aws-smithy-types = "1.2.10"
+bstr.workspace = true
+clap.workspace = true
+color-print.workspace = true
+convert_case.workspace = true
+crossterm.workspace = true
+eyre.workspace = true
+fig_api_client.workspace = true
+fig_auth.workspace = true
+fig_diagnostic.workspace = true
+fig_os_shim.workspace = true
+fig_settings.workspace = true
+fig_telemetry.workspace = true
+fig_util.workspace = true
+futures.workspace = true
+glob.workspace = true
+mcp_client.workspace = true
+rand.workspace = true
+regex.workspace = true
+rustyline = { version = "15.0.0", features = ["derive", "custom-bindings"] }
+serde.workspace = true
+serde_json.workspace = true
+shell-color.workspace = true
+shell-words = "1.1"
+shellexpand.workspace = true
+shlex.workspace = true
+similar.workspace = true
+skim = "0.16.2"
+spinners.workspace = true
+syntect = { version = "5.2.0", features = [ "default-syntaxes", "default-themes" ]}
+tempfile.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+unicode-width.workspace = true
+url.workspace = true
+uuid.workspace = true
+winnow.workspace = true
+strip-ansi-escapes = "0.2.1"
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

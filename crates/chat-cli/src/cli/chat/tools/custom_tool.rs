@@ -103,17 +103,26 @@ impl CustomToolClient {
                 let is_tool_supported = cap.tools.is_some();
                 server_capabilities.write().await.replace(cap);
                 // Assuming a shape of return as per https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#listing-tools
-                let tools = if is_tool_supported {
-                    // And now we make the server tell us what tools they have
-                    let resp = client.request("tools/list", None).await?;
-                    match resp.result.and_then(|r| r.get("tools").cloned()) {
-                        Some(value) => serde_json::from_value::<Vec<ToolSpec>>(value)?,
-                        None => Default::default(),
-                    }
-                } else {
-                    Default::default()
-                };
-                Ok((server_name.clone(), tools))
+                // let tools = if is_tool_supported {
+                //     // And now we make the server tell us what tools they have
+                //     let resp = client.request("tools/list", None).await?;
+                //     match resp.result.and_then(|r| r.get("tools").cloned()) {
+                //         Some(value) => serde_json::from_value::<Vec<ToolSpec>>(value)?,
+                //         None => Default::default(),
+                //     }
+                // } else {
+                //     Default::default()
+                // };
+                Ok((server_name.clone(), vec![]))
+            },
+        }
+    }
+
+    pub fn assign_messenger(&mut self, messenger: Box<dyn Messenger>) {
+        tracing::error!("## background: assigned {} with messenger", self.get_server_name());
+        match self {
+            CustomToolClient::Stdio { client, .. } => {
+                client.messenger = Some(messenger);
             },
         }
     }
