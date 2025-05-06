@@ -179,9 +179,9 @@ fn main() {
             let field_name = format_ident!("{}", &field.r#type.to_case(Case::Snake));
             let ty_name = format_ident!("{}", field.r#type.to_case(Case::Pascal));
             let ty = if field.required.unwrap_or_default() {
-                quote!(crate::fig_telemetry::definitions::types::#ty_name)
+                quote!(crate::telemetry::definitions::types::#ty_name)
             } else {
-                quote!(::std::option::Option<crate::fig_telemetry::definitions::types::#ty_name>)
+                quote!(::std::option::Option<crate::telemetry::definitions::types::#ty_name>)
             };
 
             fields.push(quote!(
@@ -225,7 +225,7 @@ fn main() {
                 const UNIT: ::amzn_toolkit_telemetry_client::types::Unit = #unit;
             }
 
-            impl crate::fig_telemetry::definitions::IntoMetricDatum for #name {
+            impl crate::telemetry::definitions::IntoMetricDatum for #name {
                 fn into_metric_datum(self) -> ::amzn_toolkit_telemetry_client::types::MetricDatum {
                     let metadata_entries = vec![
                         #(
@@ -266,7 +266,7 @@ fn main() {
     }
     out.push_str("#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]\n#[serde(tag = \"type\", content = \"content\")]\npub enum Metric {\n");
     for m in metrics {
-        out.push_str(&format!("{m}(crate::fig_telemetry::definitions::metrics::{m}),\n"));
+        out.push_str(&format!("{m}(crate::telemetry::definitions::metrics::{m}),\n"));
     }
     out.push('}');
 

@@ -5,13 +5,13 @@ mod diagnostics;
 mod fig_aws_common;
 mod fig_install;
 mod fig_log;
-mod fig_telemetry;
 mod fig_telemetry_core;
 mod fig_util;
 mod mcp_client;
 mod platform;
 mod request;
 mod settings;
+mod telemetry;
 
 use std::process::ExitCode;
 
@@ -26,11 +26,11 @@ use eyre::Result;
 use fig_log::get_log_level_max;
 use tracing::metadata::LevelFilter;
 
-use crate::fig_telemetry::finish_telemetry;
 use crate::fig_util::{
     CHAT_BINARY_NAME,
     PRODUCT_NAME,
 };
+use crate::telemetry::finish_telemetry;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

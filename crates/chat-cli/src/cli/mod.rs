@@ -39,7 +39,7 @@ use crate::fig_log::{
     LogArgs,
     initialize_logging,
 };
-use crate::fig_telemetry::send_cli_subcommand_executed;
+use crate::telemetry::send_cli_subcommand_executed;
 use crate::fig_util::directories::logs_dir;
 use crate::fig_util::{
     CHAT_BINARY_NAME,

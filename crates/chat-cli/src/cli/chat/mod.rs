@@ -1076,7 +1076,7 @@ impl ChatContext {
         }
 
         if let Some(message_id) = self.conversation_state.message_id() {
-            crate::fig_telemetry::send_chat_added_message(
+            crate::telemetry::send_chat_added_message(
                 self.conversation_state.conversation_id().to_owned(),
                 message_id.to_owned(),
                 self.conversation_state.context_message_length(),
@@ -2072,7 +2072,7 @@ impl ChatContext {
                             }
                         },
                     }
-                    // crate::fig_telemetry::send_context_command_executed
+                    // crate::telemetry::send_context_command_executed
                 } else {
                     execute!(
                         self.output,
@@ -2962,7 +2962,7 @@ impl ChatContext {
 
             if ended {
                 if let Some(message_id) = self.conversation_state.message_id() {
-                    crate::fig_telemetry::send_chat_added_message(
+                    crate::telemetry::send_chat_added_message(
                         self.conversation_state.conversation_id().to_owned(),
                         message_id.to_owned(),
                         self.conversation_state.context_message_length(),
@@ -3207,7 +3207,7 @@ impl ChatContext {
             }
             .map(|v| v.to_string());
 
-            crate::fig_telemetry::client()
+            crate::telemetry::client()
                 .await
                 .send_event(Event::new(event.into()))
                 .await;
@@ -3302,9 +3302,9 @@ impl ToolUseEventBuilder {
     }
 }
 
-impl From<ToolUseEventBuilder> for crate::fig_telemetry::EventType {
+impl From<ToolUseEventBuilder> for crate::telemetry::EventType {
     fn from(val: ToolUseEventBuilder) -> Self {
-        crate::fig_telemetry::EventType::ToolUseSuggested {
+        crate::telemetry::EventType::ToolUseSuggested {
             conversation_id: val.conversation_id,
             utterance_id: val.utterance_id,
             user_input_id: val.user_input_id,

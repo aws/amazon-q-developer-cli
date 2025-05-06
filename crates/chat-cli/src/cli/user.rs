@@ -38,7 +38,7 @@ use crate::auth::builder_id::{
 };
 use crate::auth::pkce::start_pkce_authorization;
 use crate::auth::secret_store::SecretStore;
-use crate::fig_telemetry::{
+use crate::telemetry::{
     QProfileSwitchIntent,
     TelemetryResult,
 };
@@ -285,7 +285,7 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                                 exit(1);
                             },
                         }
-                        crate::fig_telemetry::send_user_logged_in().await;
+                        crate::telemetry::send_user_logged_in().await;
                         spinner.stop_with_message("Device authorized".into());
                     },
                     // If we are unable to open the link with the browser, then fallback to
@@ -355,7 +355,7 @@ async fn try_device_authorization(
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                crate::fig_telemetry::send_user_logged_in().await;
+                crate::telemetry::send_user_logged_in().await;
                 spinner.stop_with_message("Device authorized".into());
                 break;
             },
@@ -384,7 +384,7 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
 
     if whoami && profiles.len() == 1 {
         if let Some(profile_region) = profiles[0].arn.split(':').nth(3) {
-            crate::fig_telemetry::send_profile_state(
+            crate::telemetry::send_profile_state(
                 QProfileSwitchIntent::Update,
                 profile_region.to_string(),
                 TelemetryResult::Succeeded,
@@ -433,7 +433,7 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
                 } else {
                     QProfileSwitchIntent::User
                 };
-                crate::fig_telemetry::send_did_select_profile(
+                crate::telemetry::send_did_select_profile(
                     intent,
                     profile_region.to_string(),
                     TelemetryResult::Succeeded,
@@ -444,7 +444,7 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
             }
         },
         None => {
-            crate::fig_telemetry::send_did_select_profile(
+            crate::telemetry::send_did_select_profile(
                 QProfileSwitchIntent::User,
                 "not-set".to_string(),
                 TelemetryResult::Cancelled,

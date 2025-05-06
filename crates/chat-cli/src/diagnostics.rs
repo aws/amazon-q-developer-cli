@@ -10,13 +10,13 @@ use sysinfo::{
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use crate::fig_telemetry::InstallMethod;
 use crate::fig_util::consts::build::HASH;
 use crate::fig_util::system_info::{
     OSVersion,
     os_version,
 };
 use crate::platform::Context;
+use crate::telemetry::InstallMethod;
 
 fn serialize_display<D, S>(display: D, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -183,7 +183,7 @@ impl CurrentEnvironment {
             .ok()
             .map(|path| path.to_string_lossy().replace(&username, "/USER"));
 
-        let install_method = crate::fig_telemetry::get_install_method();
+        let install_method = crate::telemetry::get_install_method();
 
         let in_cloudshell = crate::fig_util::system_info::in_cloudshell();
         let in_ssh = crate::fig_util::system_info::in_ssh();

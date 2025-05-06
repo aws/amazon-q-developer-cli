@@ -10,7 +10,7 @@ use aws_sdk_cognitoidentity::primitives::{
 };
 
 use crate::fig_aws_common::app_name;
-use crate::fig_telemetry::TelemetryStage;
+use crate::telemetry::TelemetryStage;
 
 const CREDENTIALS_KEY: &str = "telemetry-cognito-credentials";
 

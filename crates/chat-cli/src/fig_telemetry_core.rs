@@ -7,8 +7,8 @@ use strum::{
     EnumString,
 };
 
-use crate::fig_telemetry::definitions::IntoMetricDatum;
-use crate::fig_telemetry::definitions::metrics::{
+use crate::telemetry::definitions::IntoMetricDatum;
+use crate::telemetry::definitions::metrics::{
     AmazonqDidSelectProfile,
     AmazonqEndChat,
     AmazonqProfileState,
@@ -20,7 +20,7 @@ use crate::fig_telemetry::definitions::metrics::{
     CodewhispererterminalToolUseSuggested,
     CodewhispererterminalUserLoggedIn,
 };
-use crate::fig_telemetry::definitions::types::{
+use crate::telemetry::definitions::types::{
     CodewhispererterminalCustomToolInputTokenSize,
     CodewhispererterminalCustomToolLatency,
     CodewhispererterminalCustomToolOutputTokenSize,

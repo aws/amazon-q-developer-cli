@@ -13,7 +13,7 @@ mod tests {
     use std::time::SystemTime;
 
     use super::*;
-    use crate::fig_telemetry::definitions::metrics::CodewhispererterminalAddChatMessage;
+    use crate::telemetry::definitions::metrics::CodewhispererterminalAddChatMessage;
 
     #[test]
     fn test_serde() {

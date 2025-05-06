@@ -54,7 +54,7 @@ use crate::api_client::model::{
     ToolResultContentBlock,
     ToolResultStatus,
 };
-use crate::fig_telemetry::send_mcp_server_init;
+use crate::telemetry::send_mcp_server_init;
 use crate::mcp_client::{
     JsonRpcResponse,
     PromptGet,

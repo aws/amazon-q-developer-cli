@@ -57,7 +57,7 @@ use crate::auth::secret_store::{
     SecretStore,
 };
 use crate::fig_aws_common::app_name;
-use crate::fig_telemetry::send_refresh_credentials;
+use crate::telemetry::send_refresh_credentials;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {

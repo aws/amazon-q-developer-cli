@@ -338,7 +338,7 @@ pub async fn send_mcp_server_init(
 ) {
     client()
         .await
-        .send_event(Event::new(crate::fig_telemetry::EventType::McpServerInit {
+        .send_event(Event::new(crate::telemetry::EventType::McpServerInit {
             conversation_id,
             init_failure_reason,
             number_of_tools,
