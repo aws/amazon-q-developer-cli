@@ -3,6 +3,7 @@ pub mod execute_bash;
 pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
+pub mod memory;
 pub mod think;
 pub mod use_aws;
 use std::collections::HashMap;
@@ -42,6 +43,7 @@ pub enum Tool {
     UseAws(UseAws),
     Custom(CustomTool),
     GhIssue(GhIssue),
+    Memory(memory::Memory),
     Think(Think),
 }
 
@@ -55,6 +57,7 @@ impl Tool {
             Tool::UseAws(_) => "use_aws",
             Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => "gh_issue",
+            Tool::Memory(_) => "memory",
             Tool::Think(_) => "q_think_tool (beta)",
         }
         .to_owned()
@@ -69,6 +72,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
             Tool::Custom(_) => true,
             Tool::GhIssue(_) => false,
+            Tool::Memory(_) => false,
             Tool::Think(_) => true,
         }
     }
@@ -82,6 +86,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(context, updates).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
+            Tool::Memory(memory) => memory.invoke(context, updates).await,
             Tool::Think(think) => think.invoke(updates).await,
         }
     }
@@ -95,6 +100,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
             Tool::Custom(custom_tool) => custom_tool.queue_description(updates),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
+            Tool::Memory(memory) => memory.queue_description(updates).await,
             Tool::Think(think) => Think::queue_description(think, updates),
         }
     }
@@ -108,6 +114,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
             Tool::Custom(custom_tool) => custom_tool.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
+            Tool::Memory(memory) => memory.validate(ctx).await,
             Tool::Think(think) => think.validate(ctx).await,
         }
     }
@@ -182,6 +189,7 @@ impl ToolPermissions {
             "execute_bash" => "trust read-only commands".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
+            "memory" => "trusted".dark_green().bold(),
             "q_think_tool" => "trusted (beta)".dark_green().bold(),
             _ => "not trusted".dark_grey(),
         };

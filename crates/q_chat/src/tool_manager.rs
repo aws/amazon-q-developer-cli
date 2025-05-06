@@ -50,6 +50,7 @@ use super::tools::execute_bash::ExecuteBash;
 use super::tools::fs_read::FsRead;
 use super::tools::fs_write::FsWrite;
 use super::tools::gh_issue::GhIssue;
+use super::tools::memory::Memory;
 use super::tools::use_aws::UseAws;
 use super::tools::{
     Tool,
@@ -689,6 +690,7 @@ impl ToolManager {
             "execute_bash" => Tool::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
+            "memory" => Tool::Memory(serde_json::from_value::<Memory>(value.args).map_err(map_err)?),
             "q_think_tool" => {
                 Tool::Think(serde_json::from_value::<crate::tools::think::Think>(value.args).map_err(map_err)?)
             },
