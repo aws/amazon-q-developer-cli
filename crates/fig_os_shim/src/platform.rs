@@ -1,6 +1,5 @@
 use std::fmt;
 
-use cfg_if::cfg_if;
 use serde::Serialize;
 
 use crate::Shim;
@@ -10,29 +9,48 @@ use crate::Shim;
 pub enum Os {
     Mac,
     Linux,
+    Windows,
 }
 
 impl Os {
     pub fn current() -> Self {
-        cfg_if! {
-            if #[cfg(target_os = "macos")] {
-                Self::Mac
-            } else if #[cfg(target_os = "linux")] {
-                Self::Linux
-            } else {
-                compile_error!("unsupported platform");
-            }
+        #[cfg(target_os = "macos")]
+        {
+            return Self::Mac;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            return Self::Linux;
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            return Self::Windows;
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        {
+            compile_error!("unsupported platform");
+        }
+
+        // This line should never be reached due to the compile_error above,
+        // but it's needed to satisfy the compiler
+        #[allow(unreachable_code)]
+        {
+            panic!("unsupported platform");
         }
     }
 
     pub fn all() -> &'static [Self] {
-        &[Self::Mac, Self::Linux]
+        &[Self::Mac, Self::Linux, Self::Windows]
     }
 
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Mac => "macos",
             Self::Linux => "linux",
+            Self::Windows => "windows",
         }
     }
 }
