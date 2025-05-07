@@ -32,6 +32,7 @@ use thinking::Thinking;
 use use_aws::UseAws;
 
 use super::consts::MAX_TOOL_RESPONSE_SIZE;
+use super::util::images::RichImageBlocks;
 use crate::platform::Context;
 
 /// Represents an executable tool use.
@@ -246,6 +247,7 @@ impl InvokeOutput {
         match &self.output {
             OutputKind::Text(s) => s.as_str(),
             OutputKind::Json(j) => j.as_str().unwrap_or_default(),
+            OutputKind::Images(_) => "",
         }
     }
 }
@@ -255,6 +257,7 @@ impl InvokeOutput {
 pub enum OutputKind {
     Text(String),
     Json(serde_json::Value),
+    Images(RichImageBlocks),
 }
 
 impl Default for OutputKind {
@@ -320,7 +323,7 @@ pub fn document_to_serde_value(value: Document) -> serde_json::Value {
 ///
 /// Required since path arguments are defined by the model.
 #[allow(dead_code)]
-fn sanitize_path_tool_arg(ctx: &Context, path: impl AsRef<Path>) -> PathBuf {
+pub fn sanitize_path_tool_arg(ctx: &Context, path: impl AsRef<Path>) -> PathBuf {
     let mut res = PathBuf::new();
     // Expand `~` only if it is the first part.
     let mut path = path.as_ref().components();

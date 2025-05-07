@@ -680,7 +680,6 @@ impl ToolManager {
             "q_think_tool" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
-                error!("## resolution: name supplied: {name}");
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
                 // it is a valid tool name, we should get a hit.
                 let name = match self.tn_map.get(name) {

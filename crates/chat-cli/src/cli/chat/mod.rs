@@ -44,6 +44,7 @@ use command::{
     ToolsSubcommand,
 };
 use consts::{
+    CONTEXT_FILES_MAX_SIZE,
     CONTEXT_WINDOW_SIZE,
     DUMMY_TOOL_NAME,
 };
@@ -159,6 +160,7 @@ use tool_manager::{
 };
 use tools::gh_issue::GhIssueContext;
 use tools::{
+    OutputKind,
     QueuedTool,
     Tool,
     ToolPermissions,
@@ -172,8 +174,10 @@ use tracing::{
     warn,
 };
 use unicode_width::UnicodeWidthStr;
+use util::images::RichImageBlock;
 use util::{
     animate_output,
+    drop_matched_context_files,
     play_notification_bell,
     region_check,
 };
@@ -364,7 +368,7 @@ pub async fn chat(
     // If profile is specified, verify it exists before starting the chat
     if let Some(ref profile_name) = profile {
         // Create a temporary context manager to check if the profile exists
-        match ContextManager::new(Arc::clone(&ctx)).await {
+        match ContextManager::new(Arc::clone(&ctx), None).await {
             Ok(context_manager) => {
                 let profiles = context_manager.list_profiles().await?;
                 if !profiles.contains(profile_name) {
@@ -1292,14 +1296,6 @@ impl ChatContext {
                 // Otherwise continue with normal chat on 'n' or other responses
                 self.tool_use_status = ToolUseStatus::Idle;
 
-                if pending_tool_index.is_some() {
-                    self.conversation_state.abandon_tool_use(tool_uses, user_input);
-                } else {
-                    self.conversation_state.set_next_user_message(user_input).await;
-                }
-
-                let conv_state = self.conversation_state.as_sendable_conversation_state(true).await;
-
                 if self.interactive {
                     queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
                     queue!(self.output, style::SetForegroundColor(Color::Reset))?;
@@ -1308,6 +1304,13 @@ impl ChatContext {
                     self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
                 }
 
+                if pending_tool_index.is_some() {
+                    self.conversation_state.abandon_tool_use(tool_uses, user_input);
+                } else {
+                    self.conversation_state.set_next_user_message(user_input).await;
+                }
+
+                let conv_state = self.conversation_state.as_sendable_conversation_state(true).await;
                 self.send_tool_use_telemetry().await;
 
                 ChatState::HandleResponseStream(self.client.send_message(conv_state).await?)
@@ -1601,9 +1604,7 @@ impl ChatContext {
                             } else {
                                 for path in &context_manager.global_config.paths {
                                     execute!(self.output, style::Print(format!("    {} ", path)))?;
-                                    if let Ok(context_files) =
-                                        context_manager.get_context_files_by_path(false, path).await
-                                    {
+                                    if let Ok(context_files) = context_manager.get_context_files_by_path(path).await {
                                         execute!(
                                             self.output,
                                             style::SetForegroundColor(Color::Green),
@@ -1639,9 +1640,7 @@ impl ChatContext {
                             } else {
                                 for path in &context_manager.profile_config.paths {
                                     execute!(self.output, style::Print(format!("    {} ", path)))?;
-                                    if let Ok(context_files) =
-                                        context_manager.get_context_files_by_path(false, path).await
-                                    {
+                                    if let Ok(context_files) = context_manager.get_context_files_by_path(path).await {
                                         execute!(
                                             self.output,
                                             style::SetForegroundColor(Color::Green),
@@ -1689,8 +1688,8 @@ impl ChatContext {
                                     style::SetAttribute(Attribute::Reset)
                                 )?;
 
-                                for (filename, content) in global_context_files {
-                                    let est_tokens = TokenCounter::count_tokens(&content);
+                                for (filename, content) in &global_context_files {
+                                    let est_tokens = TokenCounter::count_tokens(content);
                                     execute!(
                                         self.output,
                                         style::Print(format!("🌍 {} ", filename)),
@@ -1708,8 +1707,8 @@ impl ChatContext {
                                     }
                                 }
 
-                                for (filename, content) in profile_context_files {
-                                    let est_tokens = TokenCounter::count_tokens(&content);
+                                for (filename, content) in &profile_context_files {
+                                    let est_tokens = TokenCounter::count_tokens(content);
                                     execute!(
                                         self.output,
                                         style::Print(format!("👤 {} ", filename)),
@@ -1731,10 +1730,54 @@ impl ChatContext {
                                     execute!(self.output, style::Print(format!("{}\n\n", "▔".repeat(3))),)?;
                                 }
 
+                                let mut combined_files: Vec<(String, String)> = global_context_files
+                                    .iter()
+                                    .chain(profile_context_files.iter())
+                                    .cloned()
+                                    .collect();
+
+                                let dropped_files =
+                                    drop_matched_context_files(&mut combined_files, CONTEXT_FILES_MAX_SIZE).ok();
+
                                 execute!(
                                     self.output,
-                                    style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
+                                    style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens))
                                 )?;
+
+                                if let Some(dropped_files) = dropped_files {
+                                    if !dropped_files.is_empty() {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::DarkYellow),
+                                            style::Print(format!(
+                                                "Total token count exceeds limit: {}. The following files will be automatically dropped when interacting with Q. Consider removing them. \n\n",
+                                                CONTEXT_FILES_MAX_SIZE
+                                            )),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                        let total_files = dropped_files.len();
+
+                                        let truncated_dropped_files = &dropped_files[..10];
+
+                                        for (filename, content) in truncated_dropped_files {
+                                            let est_tokens = TokenCounter::count_tokens(content);
+                                            execute!(
+                                                self.output,
+                                                style::Print(format!("{} ", filename)),
+                                                style::SetForegroundColor(Color::DarkGrey),
+                                                style::Print(format!("(~{} tkns)\n", est_tokens)),
+                                                style::SetForegroundColor(Color::Reset),
+                                            )?;
+                                        }
+
+                                        if total_files > 10 {
+                                            execute!(
+                                                self.output,
+                                                style::Print(format!("({} more files)\n", total_files - 10))
+                                            )?;
+                                        }
+                                    }
+                                }
 
                                 execute!(self.output, style::Print("\n"))?;
                             }
@@ -2519,6 +2562,20 @@ impl ChatContext {
             },
             Command::Usage => {
                 let state = self.conversation_state.backend_conversation_state(true, true).await;
+
+                if !state.dropped_context_files.is_empty() {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::DarkYellow),
+                        style::Print("\nSome context files are dropped due to size limit, please run "),
+                        style::SetForegroundColor(Color::DarkGreen),
+                        style::Print("/context show "),
+                        style::SetForegroundColor(Color::DarkYellow),
+                        style::Print("to learn more.\n"),
+                        style::SetForegroundColor(style::Color::Reset)
+                    )?;
+                }
+
                 let data = state.calculate_conversation_size();
 
                 let context_token_count: TokenCount = data.context_messages.into();
@@ -2541,41 +2598,62 @@ impl ChatContext {
                 let left_over_width = progress_bar_width
                     - std::cmp::min(context_width + assistant_width + user_width, progress_bar_width);
 
-                queue!(
-                    self.output,
-                    style::Print(format!(
-                        "\nCurrent context window ({} of {}k tokens used)\n",
-                        total_token_used,
-                        CONTEXT_WINDOW_SIZE / 1000
-                    )),
-                    style::SetForegroundColor(Color::DarkCyan),
-                    // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too
-                    // empty
-                    style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
-                        1
-                    } else {
-                        0
-                    })),
-                    style::Print("█".repeat(context_width)),
-                    style::SetForegroundColor(Color::Blue),
-                    style::Print("|".repeat(if assistant_width == 0 && *assistant_token_count > 0 {
-                        1
-                    } else {
-                        0
-                    })),
-                    style::Print("█".repeat(assistant_width)),
-                    style::SetForegroundColor(Color::Magenta),
-                    style::Print("|".repeat(if user_width == 0 && *user_token_count > 0 { 1 } else { 0 })),
-                    style::Print("█".repeat(user_width)),
-                    style::SetForegroundColor(Color::DarkGrey),
-                    style::Print("█".repeat(left_over_width)),
-                    style::Print(" "),
-                    style::SetForegroundColor(Color::Reset),
-                    style::Print(format!(
-                        "{:.2}%",
-                        (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
-                    )),
-                )?;
+                let is_overflow = (context_width + assistant_width + user_width) > progress_bar_width;
+
+                if is_overflow {
+                    queue!(
+                        self.output,
+                        style::Print(format!(
+                            "\nCurrent context window ({} of {}k tokens used)\n",
+                            total_token_used,
+                            CONTEXT_WINDOW_SIZE / 1000
+                        )),
+                        style::SetForegroundColor(Color::DarkRed),
+                        style::Print("█".repeat(progress_bar_width)),
+                        style::SetForegroundColor(Color::Reset),
+                        style::Print(" "),
+                        style::Print(format!(
+                            "{:.2}%",
+                            (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                        )),
+                    )?;
+                } else {
+                    queue!(
+                        self.output,
+                        style::Print(format!(
+                            "\nCurrent context window ({} of {}k tokens used)\n",
+                            total_token_used,
+                            CONTEXT_WINDOW_SIZE / 1000
+                        )),
+                        style::SetForegroundColor(Color::DarkCyan),
+                        // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too
+                        // empty
+                        style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
+                            1
+                        } else {
+                            0
+                        })),
+                        style::Print("█".repeat(context_width)),
+                        style::SetForegroundColor(Color::Blue),
+                        style::Print("|".repeat(if assistant_width == 0 && *assistant_token_count > 0 {
+                            1
+                        } else {
+                            0
+                        })),
+                        style::Print("█".repeat(assistant_width)),
+                        style::SetForegroundColor(Color::Magenta),
+                        style::Print("|".repeat(if user_width == 0 && *user_token_count > 0 { 1 } else { 0 })),
+                        style::Print("█".repeat(user_width)),
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print("█".repeat(left_over_width)),
+                        style::Print(" "),
+                        style::SetForegroundColor(Color::Reset),
+                        style::Print(format!(
+                            "{:.2}%",
+                            (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                        )),
+                    )?;
+                }
 
                 queue!(self.output, style::Print("\n\n"))?;
                 self.output.flush()?;
@@ -2682,6 +2760,7 @@ impl ChatContext {
 
         // Execute the requested tools.
         let mut tool_results = vec![];
+        let mut image_blocks: Vec<RichImageBlock> = Vec::new();
 
         for tool in tool_uses {
             let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
@@ -2709,9 +2788,20 @@ impl ChatContext {
                 });
             }
             let tool_time = format!("{}.{}", tool_time.as_secs(), tool_time.subsec_millis());
-
             match invoke_result {
                 Ok(result) => {
+                    match result.output {
+                        OutputKind::Text(ref text) => {
+                            debug!("Output is Text: {}", text);
+                        },
+                        OutputKind::Json(ref json) => {
+                            debug!("Output is JSON: {}", json);
+                        },
+                        OutputKind::Images(ref image) => {
+                            image_blocks.extend(image.clone());
+                        },
+                    }
+
                     debug!("tool result output: {:#?}", result);
                     execute!(
                         self.output,
@@ -2771,7 +2861,13 @@ impl ChatContext {
             }
         }
 
-        self.conversation_state.add_tool_results(tool_results);
+        if !image_blocks.is_empty() {
+            let images = image_blocks.into_iter().map(|(block, _)| block).collect();
+            self.conversation_state
+                .add_tool_results_with_images(tool_results, images);
+        } else {
+            self.conversation_state.add_tool_results(tool_results);
+        }
 
         self.send_tool_use_telemetry().await;
         return Ok(ChatState::HandleResponseStream(
@@ -3393,7 +3489,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow() {
-        let _ = tracing_subscriber::fmt::try_init();
+        // let _ = tracing_subscriber::fmt::try_init();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let test_client = create_stream(serde_json::json!([
             [
@@ -3447,7 +3543,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow_tool_permissions() {
-        let _ = tracing_subscriber::fmt::try_init();
+        // let _ = tracing_subscriber::fmt::try_init();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let test_client = create_stream(serde_json::json!([
             [
@@ -3593,7 +3689,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow_multiple_tools() {
-        let _ = tracing_subscriber::fmt::try_init();
+        // let _ = tracing_subscriber::fmt::try_init();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let test_client = create_stream(serde_json::json!([
             [
@@ -3687,7 +3783,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow_tools_trust_all() {
-        let _ = tracing_subscriber::fmt::try_init();
+        // let _ = tracing_subscriber::fmt::try_init();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let test_client = create_stream(serde_json::json!([
             [

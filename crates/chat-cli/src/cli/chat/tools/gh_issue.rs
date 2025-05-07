@@ -175,7 +175,7 @@ impl GhIssue {
         }
 
         // Handle context files
-        match ctx_manager.get_context_files(false).await {
+        match ctx_manager.get_context_files().await {
             Ok(context_files) if !context_files.is_empty() => {
                 ctx_str.push_str("files=\n");
                 let total_size: usize = context_files
