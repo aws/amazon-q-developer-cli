@@ -68,15 +68,77 @@ pub async fn remove_mcp_server(ctx: &Context, args: McpRemove) -> Result<()> {
 }
 
 pub async fn list_mcp_server(ctx: &Context, args: McpList) -> Result<()> {
-    todo!()
+    let configs = get_mcp_server_configs(ctx, args.scope, args.profile).await?;
+    if configs.is_empty() {
+        println!("No MCP server configurations found.\n");
+        return Ok(());
+    }
+
+    for (scope, profile, path, cfg_opt) in configs {
+        println!("{}:", scope_display(&scope, &profile));
+        println!("  {}", path.display());
+        match cfg_opt {
+            Some(cfg) if !cfg.mcp_servers.is_empty() => {
+                for (name, tool_cfg) in &cfg.mcp_servers {
+                    println!("    • {name:<12} {}", tool_cfg.command);
+                }
+            },
+            _ => {
+                println!("    null");
+            },
+        }
+    }
+    Ok(())
 }
 
 async fn get_mcp_server_configs(
     ctx: &Context,
     scope: Option<Scope>,
     profile: Option<String>,
-) -> Result<Vec<(PathBuf, McpServerConfig)>> {
-    todo!()
+) -> Result<Vec<(Scope, Option<String>, PathBuf, Option<McpServerConfig>)>> {
+    let targets: Vec<(Scope, Option<String>)> = match (scope, profile) {
+        (Some(Scope::Workspace), _) => vec![(Scope::Workspace, None)],
+        (Some(Scope::Global), _) => vec![(Scope::Global, None)],
+        (Some(Scope::Profile), Some(p)) => vec![(Scope::Profile, Some(p))],
+        (Some(Scope::Profile), None) => vec![(Scope::Profile, Some("default".to_string()))],
+
+        // no scope but have profile ⇒ search profile
+        (None, Some(p)) => vec![(Scope::Profile, Some(p))],
+
+        // give nothing ⇒ default priority：workspace → global
+        (None, None) => vec![
+            (Scope::Workspace, None),
+            (Scope::Global, None),
+            (Scope::Profile, Some("default".to_string())),
+        ],
+    };
+
+    let mut results = Vec::new();
+    for (sc, prof) in targets {
+        let path = resolve_scope_profile(ctx, Some(sc), prof.as_ref())?;
+
+        let cfg_opt = if ctx.fs().exists(&path) {
+            match McpServerConfig::load_from_file(ctx, &path).await {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    warn!(?path, error = %e, "Invalid MCP config file—ignored, treated as null");
+                    None
+                },
+            }
+        } else {
+            None
+        };
+        results.push((sc, prof.clone(), path, cfg_opt));
+    }
+    Ok(results)
+}
+
+fn scope_display(scope: &Scope, profile: &Option<String>) -> String {
+    match scope {
+        Scope::Workspace => "\n📄 workspace".into(),
+        Scope::Global => "\n🌍 global".into(),
+        Scope::Profile => format!("\n👤 profile({})", profile.as_deref().unwrap_or("default")),
+    }
 }
 
 pub async fn import_mcp_server(ctx: &Context, args: McpImport) -> Result<()> {

@@ -84,7 +84,7 @@ pub fn profile_mcp_config_path<Ctx: FsProvider + EnvProvider>(
     ctx: &Ctx,
     profile_name: impl AsRef<str>,
 ) -> eyre::Result<PathBuf> {
-    Ok(chat_profiles_dir(ctx)?.join(profile_name.as_ref()).join("mcp.join"))
+    Ok(chat_profiles_dir(ctx)?.join(profile_name.as_ref()).join("mcp.json"))
 }
 
 pub fn global_mcp_config_path<Ctx: FsProvider + EnvProvider>(ctx: &Ctx) -> eyre::Result<PathBuf> {

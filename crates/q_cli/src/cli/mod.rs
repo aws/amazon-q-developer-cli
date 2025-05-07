@@ -341,10 +341,7 @@ impl Cli {
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
                 CliRootCommands::Chat(args) => q_chat::launch_chat(args).await,
-                CliRootCommands::Mcp(args) => {
-                    println!("{:?}", args);
-                    Ok(ExitCode::SUCCESS)
-                },
+                CliRootCommands::Mcp(args) => q_chat::mcp::execute_mcp(args).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
