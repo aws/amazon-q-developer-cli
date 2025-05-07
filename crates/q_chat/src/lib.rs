@@ -246,7 +246,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/usage</em>      <black!>Show current session's context window usage</black!>
 <em>/log</em>          <black!>View and manage interaction logs</black!>
   <em>enable</em>      <black!>Enable logging for the current session</black!>
-  <em>disable</em>      <black!>Disable logging for the current session</black!>  
+  <em>disable</em>      <black!>Disable logging for the current session</black!>
   <em>show</em>        <black!>Show recent log entries [--all] [--desc] [--tail=N] [--head=N]</black!>
   <em>delete</em>      <black!>Delete all logs for the current session</black!>
 
@@ -2887,8 +2887,16 @@ impl ChatContext {
                                                 text.clone()
                                             }
                                         },
-                                        // Add other content types as needed
-                                        _ => "Other content".to_string(),
+                                        ToolUseResultBlock::Json(json_value) => {
+                                            // Since json_value is already a &serde_json::Value, just pretty print it
+                                            match serde_json::to_string_pretty(json_value) {
+                                                Ok(pretty_json) => {
+                                                    // Preview the prettified JSON
+                                                    pretty_json
+                                                },
+                                                Err(_) => "Error prettifying JSON value".to_string()
+                                            }
+                                        }
                                     }
                                 } else {
                                     "No content".to_string()

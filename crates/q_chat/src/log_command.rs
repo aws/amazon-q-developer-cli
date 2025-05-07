@@ -191,9 +191,9 @@ impl LogCommandHandler {
         let entry_col_width = 6;      // Entry#
         let time_col_width = 19;      // Timestamp
         let resp_time_col_width = 12; // Response Time
-        let prompt_col_width = 25;    // Prompt (will wrap)
-        let response_col_width = 30;  // Response (will wrap)
-        let context_col_width = 30;   // Context Files (will wrap)
+        let prompt_col_width = 70;    // Prompt (will wrap)
+        let response_col_width = 70;  // Response (will wrap)
+        let context_col_width = 50;   // Context Files (will wrap)
         
         // Calculate total table width
         let total_width = entry_col_width + time_col_width + resp_time_col_width + 
