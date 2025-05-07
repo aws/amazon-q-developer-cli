@@ -3279,7 +3279,7 @@ impl ChatContext {
     }
 }
 
-/// Prints hook configuration grouped by trigger: conversation sesiion start or per user message
+/// Prints hook configuration grouped by trigger: conversation session start or per user message
 fn print_hook_section(output: &mut impl Write, hooks: &HashMap<String, Hook>, trigger: HookTrigger) -> Result<()> {
     let section = match trigger {
         HookTrigger::ConversationStart => "On Session Start",
