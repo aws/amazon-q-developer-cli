@@ -1773,6 +1773,8 @@ impl ChatContext {
                                     self.output,
                                     style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
                                 )?;
+
+                                execute!(self.output, style::Print("\n"))?;
                             }
 
                             // Show last cached conversation summary if available, otherwise regenerate it
@@ -1792,11 +1794,10 @@ impl ChatContext {
                                         style::SetAttribute(Attribute::Reset),
                                         style::Print("\n\n"),
                                         style::Print(&summary),
-                                        style::Print("\n\n")
+                                        style::Print("\n\n\n")
                                     )?;
                                 }
                             }
-                            execute!(self.output, style::Print("\n"))?;
                         },
                         command::ContextSubcommand::Add { global, force, paths } => {
                             match context_manager.add_paths(paths.clone(), global, force).await {
