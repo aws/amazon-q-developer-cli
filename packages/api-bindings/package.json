@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@aws/amazon-q-developer-cli-proto": "workspace:^",
-    "@bufbuild/protobuf": "2.2.5"
+    "@bufbuild/protobuf": "2.3.0"
   },
   "devDependencies": {
     "@amzn/eslint-config": "workspace:^",
