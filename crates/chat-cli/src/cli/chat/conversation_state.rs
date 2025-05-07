@@ -11,6 +11,7 @@ use tracing::{
 };
 
 use super::consts::{
+    DUMMY_TOOL_NAME,
     MAX_CHARS,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
 };
@@ -46,6 +47,7 @@ use crate::api_client::model::{
     ToolInputSchema,
     ToolResult,
     ToolResultContentBlock,
+    ToolResultStatus,
     ToolSpecification,
     ToolUse,
     UserInputMessage,
@@ -271,9 +273,9 @@ impl ConversationState {
 
         // If the last message from the assistant contains tool uses AND next_message is set, we need to
         // ensure that next_message contains tool results.
-        if let (Some((_, AssistantMessage::ToolUse { tool_uses, .. })), Some(user_msg)) = (
+        if let (Some((_, AssistantMessage::ToolUse { ref mut tool_uses, .. })), Some(user_msg)) = (
             self.history
-                .range(self.valid_history_range.0..self.valid_history_range.1)
+                .range_mut(self.valid_history_range.0..self.valid_history_range.1)
                 .last(),
             &mut self.next_message,
         ) {
@@ -285,6 +287,34 @@ impl ConversationState {
                     user_msg.prompt().map(|p| p.to_string()),
                     tool_uses.iter().map(|t| t.id.as_str()),
                 );
+            }
+
+            // Here we also need to make sure that the tool result corresponds to one of the tools
+            // in the list. Otherwise we will see validation error from the backend. We would only
+            // do this if the last message is a tool call that has failed.
+            let tool_use_results = user_msg.tool_use_results();
+            if let Some(tool_use_results) = tool_use_results {
+                let tool_name_list = self
+                    .tools
+                    .values()
+                    .flatten()
+                    .map(|Tool::ToolSpecification(spec)| spec.name.as_str())
+                    .collect::<Vec<_>>();
+                for result in tool_use_results {
+                    if let ToolResultStatus::Error = result.status {
+                        let tool_use_id = result.tool_use_id.as_str();
+                        let _ = tool_uses
+                            .iter_mut()
+                            .filter(|tool_use| tool_use.id == tool_use_id)
+                            .map(|tool_use| {
+                                let tool_name = tool_use.name.as_str();
+                                if !tool_name_list.contains(&tool_name) {
+                                    tool_use.name = DUMMY_TOOL_NAME.to_string();
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                    }
+                }
             }
         }
     }
