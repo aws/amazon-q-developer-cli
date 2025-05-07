@@ -3384,7 +3384,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow() {
-        let _ = tracing_subscriber::fmt::try_init();
+        // let _ = tracing_subscriber::fmt::try_init();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let test_client = create_stream(serde_json::json!([
             [
@@ -3438,7 +3438,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow_tool_permissions() {
-        let _ = tracing_subscriber::fmt::try_init();
+        // let _ = tracing_subscriber::fmt::try_init();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let test_client = create_stream(serde_json::json!([
             [
@@ -3584,7 +3584,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow_multiple_tools() {
-        let _ = tracing_subscriber::fmt::try_init();
+        // let _ = tracing_subscriber::fmt::try_init();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let test_client = create_stream(serde_json::json!([
             [
@@ -3678,7 +3678,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow_tools_trust_all() {
-        let _ = tracing_subscriber::fmt::try_init();
+        // let _ = tracing_subscriber::fmt::try_init();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let test_client = create_stream(serde_json::json!([
             [

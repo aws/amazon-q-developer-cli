@@ -320,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse() {
-        let _ = tracing_subscriber::fmt::try_init();
+        // let _ = tracing_subscriber::fmt::try_init();
         let tool_use_id = "TEST_ID".to_string();
         let tool_name = "execute_bash".to_string();
         let tool_args = serde_json::json!({

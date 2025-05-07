@@ -987,7 +987,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_additional_context() {
-        tracing_subscriber::fmt::try_init().ok();
+        // tracing_subscriber::fmt::try_init().ok();
 
         let mut tool_manager = ToolManager::default();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();

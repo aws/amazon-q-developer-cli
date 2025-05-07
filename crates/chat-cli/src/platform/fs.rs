@@ -39,10 +39,7 @@ mod inner {
 
 impl Fs {
     pub fn new() -> Self {
-        match cfg!(test) {
-            true => Self(inner::Inner::Fake(Arc::new(Mutex::new(HashMap::new())))),
-            false => Self::default(),
-        }
+        Self::default()
     }
 
     pub fn new_chroot() -> Self {
