@@ -67,7 +67,7 @@ pub struct McpAdd {
     pub profile: Option<String>,
     /// Environment variables to use when launching the server
     #[arg(long, value_parser = parse_env_vars)]
-    pub env: Option<HashMap<String, String>>,
+    pub env: Vec<HashMap<String, String>>,
     /// Server launch timeout, in milliseconds
     #[arg(long)]
     pub timeout: Option<u64>,
