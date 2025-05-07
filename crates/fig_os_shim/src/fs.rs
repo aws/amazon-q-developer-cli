@@ -3,8 +3,14 @@ use std::fs::Permissions;
 use std::io;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::path::{
+    Path,
+    PathBuf,
+};
+use std::sync::{
+    Arc,
+    Mutex,
+};
 
 use tempfile::TempDir;
 use tokio::fs;
@@ -17,7 +23,10 @@ pub struct Fs(inner::Inner);
 mod inner {
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{
+        Arc,
+        Mutex,
+    };
 
     use tempfile::TempDir;
 
@@ -365,8 +374,9 @@ impl Fs {
     /// On Windows, it automatically detects whether the target is a file or directory
     /// and uses the appropriate system call.
     ///
-    /// This is a proxy to [`std::os::windows::fs::symlink_file`] or [`std::os::windows::fs::symlink_dir`] on Windows,
-    /// and [`std::os::unix::fs::symlink`] on Unix.
+    /// This is a proxy to [`std::os::windows::fs::symlink_file`] or
+    /// [`std::os::windows::fs::symlink_dir`] on Windows, and [`std::os::unix::fs::symlink`] on
+    /// Unix.
     #[cfg(windows)]
     pub fn symlink_sync(&self, original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
         use inner::Inner;
