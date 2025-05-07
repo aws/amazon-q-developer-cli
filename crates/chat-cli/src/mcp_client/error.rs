@@ -29,7 +29,7 @@ pub enum ErrorCode {
     /// Unknown error code.
     /// This error is returned when an error code is received that is not
     /// recognized by the implementation.
-    UnknownErrorCode     = -32001,
+    Unknown              = -32001,
 
     /// Request failed.
     /// This error is returned when a request fails for a reason not covered
@@ -46,9 +46,9 @@ impl From<i32> for ErrorCode {
             -32602 => ErrorCode::InvalidParams,
             -32603 => ErrorCode::InternalError,
             -32002 => ErrorCode::ServerNotInitialized,
-            -32001 => ErrorCode::UnknownErrorCode,
+            -32001 => ErrorCode::Unknown,
             -32000 => ErrorCode::RequestFailed,
-            _ => ErrorCode::UnknownErrorCode,
+            _ => ErrorCode::Unknown,
         }
     }
 }

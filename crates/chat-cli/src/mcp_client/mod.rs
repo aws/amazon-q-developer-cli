@@ -8,5 +8,4 @@ pub mod transport;
 pub use client::*;
 pub use facilitator_types::*;
 pub use messenger::*;
-pub use server::*;
 pub use transport::*;
