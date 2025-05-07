@@ -1,4 +1,7 @@
-use aws_smithy_types::Document;
+use aws_smithy_types::{
+    Blob,
+    Document,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -642,12 +645,14 @@ pub struct UserInputMessage {
     pub content: String,
     pub user_input_message_context: Option<UserInputMessageContext>,
     pub user_intent: Option<UserIntent>,
+    pub images: Option<Vec<ImageBlock>>,
 }
 
 impl From<UserInputMessage> for amzn_codewhisperer_streaming_client::types::UserInputMessage {
     fn from(value: UserInputMessage) -> Self {
         Self::builder()
             .content(value.content)
+            .set_images(value.images.map(|images| images.into_iter().map(Into::into).collect()))
             .set_user_input_message_context(value.user_input_message_context.map(Into::into))
             .set_user_intent(value.user_intent.map(Into::into))
             .origin(amzn_codewhisperer_streaming_client::types::Origin::Cli)
@@ -660,6 +665,7 @@ impl From<UserInputMessage> for amzn_qdeveloper_streaming_client::types::UserInp
     fn from(value: UserInputMessage) -> Self {
         Self::builder()
             .content(value.content)
+            .set_images(value.images.map(|images| images.into_iter().map(Into::into).collect()))
             .set_user_input_message_context(value.user_input_message_context.map(Into::into))
             .set_user_intent(value.user_intent.map(Into::into))
             .origin(amzn_qdeveloper_streaming_client::types::Origin::Cli)
@@ -701,6 +707,85 @@ impl From<UserInputMessageContext> for amzn_qdeveloper_streaming_client::types::
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageBlock {
+    pub format: ImageFormat,
+    pub source: ImageSource,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ImageFormat {
+    Gif,
+    Jpeg,
+    Png,
+    Webp,
+}
+
+impl From<ImageFormat> for amzn_codewhisperer_streaming_client::types::ImageFormat {
+    fn from(value: ImageFormat) -> Self {
+        match value {
+            ImageFormat::Gif => Self::Gif,
+            ImageFormat::Jpeg => Self::Jpeg,
+            ImageFormat::Png => Self::Png,
+            ImageFormat::Webp => Self::Webp,
+        }
+    }
+}
+impl From<ImageFormat> for amzn_qdeveloper_streaming_client::types::ImageFormat {
+    fn from(value: ImageFormat) -> Self {
+        match value {
+            ImageFormat::Gif => Self::Gif,
+            ImageFormat::Jpeg => Self::Jpeg,
+            ImageFormat::Png => Self::Png,
+            ImageFormat::Webp => Self::Webp,
+        }
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ImageSource {
+    Bytes(Vec<u8>),
+    #[non_exhaustive]
+    Unknown,
+}
+
+impl From<ImageSource> for amzn_codewhisperer_streaming_client::types::ImageSource {
+    fn from(value: ImageSource) -> Self {
+        match value {
+            ImageSource::Bytes(bytes) => Self::Bytes(Blob::new(bytes)),
+            ImageSource::Unknown => Self::Unknown,
+        }
+    }
+}
+impl From<ImageSource> for amzn_qdeveloper_streaming_client::types::ImageSource {
+    fn from(value: ImageSource) -> Self {
+        match value {
+            ImageSource::Bytes(bytes) => Self::Bytes(Blob::new(bytes)),
+            ImageSource::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl From<ImageBlock> for amzn_codewhisperer_streaming_client::types::ImageBlock {
+    fn from(value: ImageBlock) -> Self {
+        Self::builder()
+            .format(value.format.into())
+            .source(value.source.into())
+            .build()
+            .expect("Failed to build ImageBlock")
+    }
+}
+impl From<ImageBlock> for amzn_qdeveloper_streaming_client::types::ImageBlock {
+    fn from(value: ImageBlock) -> Self {
+        Self::builder()
+            .format(value.format.into())
+            .source(value.source.into())
+            .build()
+            .expect("Failed to build ImageBlock")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum UserIntent {
     ApplyCommonBestPractices,
@@ -729,6 +814,10 @@ mod tests {
     #[test]
     fn build_user_input_message() {
         let user_input_message = UserInputMessage {
+            images: Some(vec![ImageBlock {
+                format: ImageFormat::Png,
+                source: ImageSource::Bytes(vec![1, 2, 3]),
+            }]),
             content: "test content".to_string(),
             user_input_message_context: Some(UserInputMessageContext {
                 shell_state: Some(ShellState {
@@ -776,6 +865,7 @@ mod tests {
             content: "test content".to_string(),
             user_input_message_context: None,
             user_intent: None,
+            images: None,
         };
 
         let codewhisper_minimal =

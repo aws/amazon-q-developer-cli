@@ -17,3 +17,8 @@ pub const MAX_USER_MESSAGE_SIZE: usize = 600_000;
 pub const CONTEXT_WINDOW_SIZE: usize = 200_000;
 
 pub const MAX_CHARS: usize = TokenCounter::token_to_chars(CONTEXT_WINDOW_SIZE); // Character-based warning threshold
+
+pub const MAX_NUMBER_OF_IMAGES_PER_REQUEST: usize = 10;
+
+/// In bytes - 10 MB
+pub const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024;

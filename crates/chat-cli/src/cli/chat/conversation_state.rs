@@ -42,6 +42,7 @@ use crate::api_client::model::{
     AssistantResponseMessage,
     ChatMessage,
     ConversationState as FigConversationState,
+    ImageBlock,
     Tool,
     ToolInputSchema,
     ToolResult,
@@ -294,6 +295,11 @@ impl ConversationState {
         self.next_message = Some(UserMessage::new_tool_use_results(tool_results));
     }
 
+    pub fn add_tool_results_with_images(&mut self, tool_results: Vec<ToolUseResult>, images: Vec<ImageBlock>) {
+        debug_assert!(self.next_message.is_none());
+        self.next_message = Some(UserMessage::new_tool_use_results_with_images(tool_results, images));
+    }
+
     /// Sets the next user message with "cancelled" tool results.
     pub fn abandon_tool_use(&mut self, tools_to_be_abandoned: Vec<QueuedTool>, deny_input: String) {
         self.next_message = Some(UserMessage::new_cancelled_tool_uses(
@@ -415,6 +421,7 @@ impl ConversationState {
             content: summary_content,
             user_input_message_context: None,
             user_intent: None,
+            images: None,
         };
 
         // If the last message contains tool uses, then add cancelled tool results to the summary

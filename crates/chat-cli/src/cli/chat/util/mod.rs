@@ -1,3 +1,4 @@
+pub mod images;
 pub mod issue;
 pub mod shared_writer;
 pub mod ui;
