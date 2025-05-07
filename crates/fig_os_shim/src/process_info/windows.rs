@@ -1,9 +1,15 @@
 use std::path::PathBuf;
 use std::sync::Weak;
 
-use sysinfo::{ProcessesToUpdate, System};
+use sysinfo::{
+    ProcessesToUpdate,
+    System,
+};
 
-use super::pid::{Pid, RawPid};
+use super::pid::{
+    Pid,
+    RawPid,
+};
 use crate::Context;
 
 pub fn current(ctx: Weak<Context>) -> Pid {
