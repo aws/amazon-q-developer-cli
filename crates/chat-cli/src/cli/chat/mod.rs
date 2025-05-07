@@ -1779,7 +1779,7 @@ impl ChatContext {
 
                             // Show last cached conversation summary if available, otherwise regenerate it
                             if expand {
-                                if let Some(summary) = self.conversation_state.latest_summary().map(|s| s.to_owned()) {
+                                if let Some(summary) = self.conversation_state.latest_summary() {
                                     let border = "═".repeat(self.terminal_width().min(80));
                                     execute!(
                                         self.output,
