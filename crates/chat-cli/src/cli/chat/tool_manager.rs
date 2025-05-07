@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::hash::{
     DefaultHasher,
     Hasher,
 };
 use std::io::Write;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{
@@ -22,6 +24,7 @@ use crossterm::{
 };
 use futures::{
     StreamExt,
+    future,
     stream,
 };
 use regex::Regex;
@@ -30,6 +33,7 @@ use serde::{
     Serialize,
 };
 use thiserror::Error;
+use tokio::signal::ctrl_c;
 use tokio::sync::Mutex;
 use tracing::{
     error,
@@ -43,7 +47,7 @@ use crate::api_client::model::{
 };
 use crate::cli::chat::command::PromptsGetCommand;
 use crate::cli::chat::message::AssistantToolUse;
-use crate::cli::chat::tool_manager::server_messenger::{
+use crate::cli::chat::server_messenger::{
     ServerMessengerBuilder,
     UpdateEventMessage,
 };
@@ -124,6 +128,7 @@ pub enum LoadingMsg {
 /// * `init_time` - When initialization for this tool began, used to calculate load time
 struct StatusLine {
     init_time: std::time::Instant,
+    is_done: bool,
 }
 
 // This is to mirror claude's config set up
@@ -249,7 +254,8 @@ impl ToolManagerBuilder {
                     Ok(recv_result) => match recv_result {
                         LoadingMsg::Add(name) => {
                             let init_time = std::time::Instant::now();
-                            let status_line = StatusLine { init_time };
+                            let is_done = false;
+                            let status_line = StatusLine { init_time, is_done };
                             execute!(stdout_lock, cursor::MoveToColumn(0))?;
                             if !loading_servers.is_empty() {
                                 // TODO: account for terminal width
@@ -262,7 +268,8 @@ impl ToolManagerBuilder {
                             stdout_lock.flush()?;
                         },
                         LoadingMsg::Done(name) => {
-                            if let Some(status_line) = loading_servers.get(&name) {
+                            if let Some(status_line) = loading_servers.get_mut(&name) {
+                                status_line.is_done = true;
                                 complete += 1;
                                 let time_taken =
                                     (std::time::Instant::now() - status_line.init_time).as_secs_f64().abs();
@@ -278,41 +285,68 @@ impl ToolManagerBuilder {
                                 queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
                                 stdout_lock.flush()?;
                             }
+                            if loading_servers.iter().all(|(_, status)| status.is_done) {
+                                break;
+                            }
                         },
                         LoadingMsg::Error { name, msg } => {
-                            failed += 1;
-                            execute!(
-                                stdout_lock,
-                                cursor::MoveToColumn(0),
-                                cursor::MoveUp(1),
-                                terminal::Clear(terminal::ClearType::CurrentLine),
-                            )?;
-                            queue_failure_message(&name, &msg, &mut stdout_lock)?;
-                            let total = loading_servers.len();
-                            queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
+                            if let Some(status_line) = loading_servers.get_mut(&name) {
+                                status_line.is_done = true;
+                                failed += 1;
+                                execute!(
+                                    stdout_lock,
+                                    cursor::MoveToColumn(0),
+                                    cursor::MoveUp(1),
+                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                )?;
+                                queue_failure_message(&name, &msg, &mut stdout_lock)?;
+                                let total = loading_servers.len();
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
+                            }
+                            if loading_servers.iter().all(|(_, status)| status.is_done) {
+                                break;
+                            }
                         },
                         LoadingMsg::Warn { name, msg } => {
-                            complete += 1;
-                            execute!(
-                                stdout_lock,
-                                cursor::MoveToColumn(0),
-                                cursor::MoveUp(1),
-                                terminal::Clear(terminal::ClearType::CurrentLine),
-                            )?;
-                            let msg = eyre::eyre!(msg.to_string());
-                            queue_warn_message(&name, &msg, &mut stdout_lock)?;
-                            let total = loading_servers.len();
-                            queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
-                            stdout_lock.flush()?;
+                            if let Some(status_line) = loading_servers.get_mut(&name) {
+                                status_line.is_done = true;
+                                complete += 1;
+                                execute!(
+                                    stdout_lock,
+                                    cursor::MoveToColumn(0),
+                                    cursor::MoveUp(1),
+                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                )?;
+                                let msg = eyre::eyre!(msg.to_string());
+                                queue_warn_message(&name, &msg, &mut stdout_lock)?;
+                                let total = loading_servers.len();
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
+                                stdout_lock.flush()?;
+                            }
+                            if loading_servers.iter().all(|(_, status)| status.is_done) {
+                                break;
+                            }
                         },
                         LoadingMsg::Terminate => {
-                            if !loading_servers.is_empty() {
-                                let msg = loading_servers.iter().fold(String::new(), |mut acc, (server_name, _)| {
-                                    acc.push_str(format!("\n - {server_name}").as_str());
-                                    acc
-                                });
+                            if loading_servers.iter().any(|(_, status)| !status.is_done) {
+                                execute!(
+                                    stdout_lock,
+                                    cursor::MoveToColumn(0),
+                                    cursor::MoveUp(1),
+                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                )?;
+                                let msg =
+                                    loading_servers
+                                        .iter()
+                                        .fold(String::new(), |mut acc, (server_name, status)| {
+                                            if !status.is_done {
+                                                acc.push_str(format!("\n - {server_name}").as_str());
+                                            }
+                                            acc
+                                        });
                                 let msg = eyre::eyre!(msg);
                                 queue_incomplete_load_message(&msg, &mut stdout_lock)?;
+                                stdout_lock.flush()?;
                             }
                             break;
                         },
@@ -334,12 +368,13 @@ impl ToolManagerBuilder {
             Ok::<_, eyre::Report>(())
         });
         let mut clients = HashMap::<String, Arc<CustomToolClient>>::new();
-        let load_msg_sender = tx.clone();
+        let mut load_msg_sender = Some(tx.clone());
         let conv_id_clone = conversation_id.clone();
         let regex = Arc::new(Regex::new(VALID_TOOL_NAME)?);
+        let new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
+        let new_tool_specs_clone = new_tool_specs.clone();
         let (mut msg_rx, messenger_builder) = ServerMessengerBuilder::new(20);
         tokio::spawn(async move {
-            let mut is_in_display = true;
             while let Some(msg) = msg_rx.recv().await {
                 // For now we will treat every list result as if they contain the
                 // complete set of tools. This is not necessarily true in the future when
@@ -347,7 +382,6 @@ impl ToolManagerBuilder {
                 // list calls.
                 match msg {
                     UpdateEventMessage::ToolsListResult { server_name, result } => {
-                        error!("## background: from {server_name}: {:?}", result);
                         let mut specs = result
                             .tools
                             .into_iter()
@@ -357,25 +391,44 @@ impl ToolManagerBuilder {
                         if let Some(load_msg) = process_tool_specs(
                             conv_id_clone.as_str(),
                             &server_name,
-                            is_in_display,
+                            load_msg_sender.is_some(),
                             &mut specs,
                             &mut sanitized_mapping,
                             &regex,
                         ) {
-                            if let Err(e) = load_msg_sender.send(load_msg) {
-                                warn!(
-                                    "Error sending update message to display task: {:?}\nAssume display task has completed",
-                                    e
-                                );
-                                is_in_display = false;
+                            let mut has_errored = false;
+                            if let Some(sender) = &load_msg_sender {
+                                if let Err(e) = sender.send(load_msg) {
+                                    warn!(
+                                        "Error sending update message to display task: {:?}\nAssume display task has completed",
+                                        e
+                                    );
+                                    has_errored = true;
+                                }
+                            }
+                            if has_errored {
+                                load_msg_sender.take();
                             }
                         }
+                        new_tool_specs_clone
+                            .lock()
+                            .await
+                            .insert(server_name, (sanitized_mapping, specs));
                     },
-                    UpdateEventMessage::PromptsListResult { server_name, result } => {},
-                    UpdateEventMessage::ResourcesListResult { server_name, result } => {},
-                    UpdateEventMessage::ResourceTemplatesListResult { server_name, result } => {},
+                    UpdateEventMessage::PromptsListResult {
+                        server_name: _,
+                        result: _,
+                    } => {},
+                    UpdateEventMessage::ResourcesListResult {
+                        server_name: _,
+                        result: _,
+                    } => {},
+                    UpdateEventMessage::ResourceTemplatesListResult {
+                        server_name: _,
+                        result: _,
+                    } => {},
                     UpdateEventMessage::DisplayTaskEnded => {
-                        is_in_display = false;
+                        load_msg_sender.take();
                     },
                 }
             }
@@ -503,6 +556,7 @@ impl ToolManagerBuilder {
             prompts,
             loading_display_task,
             loading_status_sender,
+            new_tool_specs,
             ..Default::default()
         })
     }
@@ -579,17 +633,14 @@ impl ToolManager {
     pub async fn load_tools(&mut self) -> eyre::Result<HashMap<String, ToolSpec>> {
         let tx = self.loading_status_sender.take();
         let display_task = self.loading_display_task.take();
-        let tool_specs = {
+        let mut tool_specs = {
             let mut tool_specs =
-                serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("../tools/tool_index.json"))?;
+                serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled() {
                 tool_specs.remove("q_think_tool");
             }
-            Arc::new(Mutex::new(tool_specs))
+            tool_specs
         };
-        let conversation_id = self.conversation_id.clone();
-        let regex = Arc::new(regex::Regex::new(VALID_TOOL_NAME)?);
-        self.new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
         let load_tools = self
             .clients
             .values()
@@ -598,90 +649,57 @@ impl ToolManager {
                 async move { clone.init().await }
             })
             .collect::<Vec<_>>();
-        let some = stream::iter(load_tools)
+        let initial_poll = stream::iter(load_tools)
             .map(|async_closure| tokio::spawn(async_closure))
-            .buffer_unordered(20)
-            .collect::<Vec<_>>()
-            .await;
-        // let load_tool = self
-        //     .clients
-        //     .iter()
-        //     .map(|(server_name, client)| {
-        //         let client_clone = client.clone();
-        //         let server_name_clone = server_name.clone();
-        //         let tx_clone = tx.clone();
-        //         let regex_clone = regex.clone();
-        //         let tool_specs_clone = tool_specs.clone();
-        //         let conversation_id = conversation_id.clone();
-        //         async move {
-        //             let tool_spec = client_clone.init().await;
-        //             let mut sanitized_mapping = HashMap::<String, String>::new();
-        //             match tool_spec {
-        //                 Ok((server_name, mut specs)) => {
-        //                     let msg = process_tool_specs(
-        //                         conversation_id.as_str(),
-        //                         &server_name,
-        //                         true,
-        //                         &mut specs,
-        //                         &mut sanitized_mapping,
-        //                         &regex_clone,
-        //                     );
-        //                     for spec in specs {
-        //                         tool_specs_clone.lock().await.insert(spec.name.clone(), spec);
-        //                     }
-        //                     if let (Some(msg), Some(tx)) = (msg, &tx_clone) {
-        //                         let _ = tx.send(msg);
-        //                     }
-        //                 },
-        //                 Err(e) => {
-        //                     error!("Error obtaining tool spec for {}: {:?}", server_name_clone, e);
-        //                     let init_failure_reason = Some(e.to_string());
-        //                     tokio::spawn(async move {
-        //                         let event = fig_telemetry::EventType::McpServerInit {
-        //                             conversation_id,
-        //                             init_failure_reason,
-        //                             number_of_tools: 0,
-        //                         };
-        //                         let app_event = fig_telemetry::AppTelemetryEvent::new(event).await;
-        //                         fig_telemetry::dispatch_or_send_event(app_event).await;
-        //                     });
-        //                     if let Some(tx_clone) = &tx_clone {
-        //                         if let Err(e) = tx_clone.send(LoadingMsg::Error {
-        //                             name: server_name_clone,
-        //                             msg: e,
-        //                         }) {
-        //                             error!("Error while sending status update to display task: {:?}", e);
-        //                         }
-        //                     }
-        //                 },
-        //             }
-        //             Ok::<_, eyre::Report>(Some(sanitized_mapping))
-        //         }
-        //     })
-        //     .collect::<Vec<_>>();
-        // // TODO: do we want to introduce a timeout here?
-        // self.tn_map = stream::iter(load_tool)
-        //     .map(|async_closure| tokio::task::spawn(async_closure))
-        //     .buffer_unordered(20)
-        //     .collect::<Vec<_>>()
-        //     .await
-        //     .into_iter()
-        //     .filter_map(|r| r.ok())
-        //     .filter_map(|r| r.ok())
-        //     .flatten()
-        //     .flatten()
-        //     .collect::<HashMap<_, _>>();
-        drop(tx);
-        if let Some(display_task) = display_task {
-            if let Err(e) = display_task.await {
-                error!("Error while joining status display task: {:?}", e);
+            .buffer_unordered(20);
+        tokio::spawn(async move {
+            initial_poll.collect::<Vec<_>>().await;
+        });
+        // We need to cast it to erase the type otherwise the compiler will default to static
+        // dispatch, which would result in an error of inconsistent match arm return type.
+        let display_future: Pin<Box<dyn Future<Output = ()>>> = match display_task {
+            Some(display_task) => {
+                let fut = async move {
+                    if let Err(e) = display_task.await {
+                        error!("Error while joining status display task: {:?}", e);
+                    }
+                };
+                Box::pin(fut)
+            },
+            None => {
+                let fut = async { future::pending::<()>().await };
+                Box::pin(fut)
+            },
+        };
+        tokio::select! {
+            _ = display_future => {},
+            // TODO: make this timeout configurable
+            _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+                if let Some(tx) = tx {
+                    let _ = tx.send(LoadingMsg::Terminate);
+                }
+            },
+            _ = ctrl_c() => {
+                if let Some(tx) = tx {
+                    let _ = tx.send(LoadingMsg::Terminate);
+                }
             }
         }
-        let tool_specs = {
-            let mutex =
-                Arc::try_unwrap(tool_specs).map_err(|e| eyre::eyre!("Error unwrapping arc for tool specs {:?}", e))?;
-            mutex.into_inner()
+        let new_tools = {
+            let mut new_tool_specs = self.new_tool_specs.lock().await;
+            new_tool_specs.drain().fold(HashMap::new(), |mut acc, (k, v)| {
+                acc.insert(k, v);
+                acc
+            })
         };
+        for (_server_name, (tool_name_map, specs)) in new_tools {
+            for (k, v) in tool_name_map {
+                self.tn_map.insert(k, v);
+            }
+            for spec in specs {
+                tool_specs.insert(spec.name.clone(), spec);
+            }
+        }
         // caching the tool names for skim operations
         for tool_name in tool_specs.keys() {
             if !self.tn_map.contains_key(tool_name) {
@@ -1104,7 +1122,7 @@ fn queue_init_message(
         style::SetForegroundColor(style::Color::Blue),
         style::Print(format!("{} ", total)),
         style::ResetColor,
-        style::Print("mcp servers initialized\n"),
+        style::Print("mcp servers initialized. Press ctrl-c to load the remaining servers in the background\n"),
     )?)
 }
 

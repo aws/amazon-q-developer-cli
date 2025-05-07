@@ -9,6 +9,7 @@ mod message;
 mod parse;
 mod parser;
 mod prompt;
+mod server_messenger;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
