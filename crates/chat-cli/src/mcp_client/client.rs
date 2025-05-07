@@ -540,6 +540,7 @@ mod tests {
         PathBuf::from(workspace_root)
     }
 
+    #[ignore = "TODO: support test binary"]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_client_stdio() {
         std::process::Command::new("cargo")

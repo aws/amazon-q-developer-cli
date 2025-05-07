@@ -481,7 +481,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_to_string() {
-        let fs = Fs::new();
+        let fs = Fs::new_chroot();
         fs.write("fake", "contents").await.unwrap();
         fs.write("invalid_utf8", &[255]).await.unwrap();
 
