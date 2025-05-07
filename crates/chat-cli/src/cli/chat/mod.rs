@@ -43,7 +43,10 @@ use command::{
     PromptsSubcommand,
     ToolsSubcommand,
 };
-use consts::CONTEXT_WINDOW_SIZE;
+use consts::{
+    CONTEXT_FILES_MAX_SIZE,
+    CONTEXT_WINDOW_SIZE,
+};
 use context::ContextManager;
 use conversation_state::{
     ConversationState,
@@ -171,6 +174,7 @@ use tracing::{
 use unicode_width::UnicodeWidthStr;
 use util::{
     animate_output,
+    drop_matched_context_files,
     play_notification_bell,
     region_check,
 };
@@ -361,7 +365,7 @@ pub async fn chat(
     // If profile is specified, verify it exists before starting the chat
     if let Some(ref profile_name) = profile {
         // Create a temporary context manager to check if the profile exists
-        match ContextManager::new(Arc::clone(&ctx)).await {
+        match ContextManager::new(Arc::clone(&ctx), None).await {
             Ok(context_manager) => {
                 let profiles = context_manager.list_profiles().await?;
                 if !profiles.contains(profile_name) {
@@ -1592,9 +1596,7 @@ impl ChatContext {
                             } else {
                                 for path in &context_manager.global_config.paths {
                                     execute!(self.output, style::Print(format!("    {} ", path)))?;
-                                    if let Ok(context_files) =
-                                        context_manager.get_context_files_by_path(false, path).await
-                                    {
+                                    if let Ok(context_files) = context_manager.get_context_files_by_path(path).await {
                                         execute!(
                                             self.output,
                                             style::SetForegroundColor(Color::Green),
@@ -1630,9 +1632,7 @@ impl ChatContext {
                             } else {
                                 for path in &context_manager.profile_config.paths {
                                     execute!(self.output, style::Print(format!("    {} ", path)))?;
-                                    if let Ok(context_files) =
-                                        context_manager.get_context_files_by_path(false, path).await
-                                    {
+                                    if let Ok(context_files) = context_manager.get_context_files_by_path(path).await {
                                         execute!(
                                             self.output,
                                             style::SetForegroundColor(Color::Green),
@@ -1680,8 +1680,8 @@ impl ChatContext {
                                     style::SetAttribute(Attribute::Reset)
                                 )?;
 
-                                for (filename, content) in global_context_files {
-                                    let est_tokens = TokenCounter::count_tokens(&content);
+                                for (filename, content) in &global_context_files {
+                                    let est_tokens = TokenCounter::count_tokens(content);
                                     execute!(
                                         self.output,
                                         style::Print(format!("🌍 {} ", filename)),
@@ -1699,8 +1699,8 @@ impl ChatContext {
                                     }
                                 }
 
-                                for (filename, content) in profile_context_files {
-                                    let est_tokens = TokenCounter::count_tokens(&content);
+                                for (filename, content) in &profile_context_files {
+                                    let est_tokens = TokenCounter::count_tokens(content);
                                     execute!(
                                         self.output,
                                         style::Print(format!("👤 {} ", filename)),
@@ -1722,10 +1722,54 @@ impl ChatContext {
                                     execute!(self.output, style::Print(format!("{}\n\n", "▔".repeat(3))),)?;
                                 }
 
+                                let mut combined_files: Vec<(String, String)> = global_context_files
+                                    .iter()
+                                    .chain(profile_context_files.iter())
+                                    .cloned()
+                                    .collect();
+
+                                let dropped_files =
+                                    drop_matched_context_files(&mut combined_files, CONTEXT_FILES_MAX_SIZE).ok();
+
                                 execute!(
                                     self.output,
-                                    style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens)),
+                                    style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens))
                                 )?;
+
+                                if let Some(dropped_files) = dropped_files {
+                                    if !dropped_files.is_empty() {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::DarkYellow),
+                                            style::Print(format!(
+                                                "Total token count exceeds limit: {}. The following files will be automatically dropped when interacting with Q. Consider removing them. \n\n",
+                                                CONTEXT_FILES_MAX_SIZE
+                                            )),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                        let total_files = dropped_files.len();
+
+                                        let truncated_dropped_files = &dropped_files[..10];
+
+                                        for (filename, content) in truncated_dropped_files {
+                                            let est_tokens = TokenCounter::count_tokens(content);
+                                            execute!(
+                                                self.output,
+                                                style::Print(format!("{} ", filename)),
+                                                style::SetForegroundColor(Color::DarkGrey),
+                                                style::Print(format!("(~{} tkns)\n", est_tokens)),
+                                                style::SetForegroundColor(Color::Reset),
+                                            )?;
+                                        }
+
+                                        if total_files > 10 {
+                                            execute!(
+                                                self.output,
+                                                style::Print(format!("({} more files)\n", total_files - 10))
+                                            )?;
+                                        }
+                                    }
+                                }
 
                                 execute!(self.output, style::Print("\n"))?;
                             }
@@ -2510,6 +2554,20 @@ impl ChatContext {
             },
             Command::Usage => {
                 let state = self.conversation_state.backend_conversation_state(true, true).await;
+
+                if !state.dropped_context_files.is_empty() {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::DarkYellow),
+                        style::Print("\nSome context files are dropped due to size limit, please run "),
+                        style::SetForegroundColor(Color::DarkGreen),
+                        style::Print("/context show "),
+                        style::SetForegroundColor(Color::DarkYellow),
+                        style::Print("to learn more.\n"),
+                        style::SetForegroundColor(style::Color::Reset)
+                    )?;
+                }
+
                 let data = state.calculate_conversation_size();
 
                 let context_token_count: TokenCount = data.context_messages.into();
