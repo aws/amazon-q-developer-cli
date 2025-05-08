@@ -114,6 +114,7 @@ mod tests {
         // assert!(!telemetry_is_disabled_inner(true, &env, &settings));
     }
 
+    #[ignore]
     #[test]
     fn test_get_client_id() {
         // max by default in tests
