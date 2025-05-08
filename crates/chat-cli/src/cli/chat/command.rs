@@ -1,20 +1,31 @@
 use std::collections::HashSet;
-use std::io::Write;
 
 use clap::{
     Parser,
     Subcommand,
 };
-use crossterm::style::Color;
-use crossterm::{
-    queue,
-    style,
+use eyre::{
+    Result,
+    anyhow,
 };
-use eyre::Result;
 use serde::{
     Deserialize,
     Serialize,
 };
+
+use crate::cli::chat::commands::CommandHandler;
+use crate::cli::chat::commands::clear::CLEAR_HANDLER;
+use crate::cli::chat::commands::compact::COMPACT_HANDLER;
+use crate::cli::chat::commands::context::CONTEXT_HANDLER;
+use crate::cli::chat::commands::editor::EDITOR_HANDLER;
+use crate::cli::chat::commands::execute::EXECUTE_HANDLER;
+// Import static handlers
+use crate::cli::chat::commands::help::HELP_HANDLER;
+use crate::cli::chat::commands::issue::ISSUE_HANDLER;
+use crate::cli::chat::commands::profile::PROFILE_HANDLER;
+use crate::cli::chat::commands::quit::QUIT_HANDLER;
+use crate::cli::chat::commands::tools::TOOLS_HANDLER;
+use crate::cli::chat::commands::usage::USAGE_HANDLER;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -25,7 +36,9 @@ pub enum Command {
         command: String,
     },
     Clear,
-    Help,
+    Help {
+        help_text: Option<String>,
+    },
     Issue {
         prompt: Option<String>,
     },
@@ -78,6 +91,26 @@ impl ProfileSubcommand {
 
     fn usage_msg(header: impl AsRef<str>) -> String {
         format!("{}\n\n{}", header.as_ref(), Self::AVAILABLE_COMMANDS)
+    }
+
+    pub fn to_handler(&self) -> &'static dyn CommandHandler {
+        use crate::cli::chat::commands::profile::{
+            CREATE_PROFILE_HANDLER,
+            DELETE_PROFILE_HANDLER,
+            HELP_PROFILE_HANDLER,
+            LIST_PROFILE_HANDLER,
+            RENAME_PROFILE_HANDLER,
+            SET_PROFILE_HANDLER,
+        };
+
+        match self {
+            ProfileSubcommand::Create { .. } => &CREATE_PROFILE_HANDLER,
+            ProfileSubcommand::Delete { .. } => &DELETE_PROFILE_HANDLER,
+            ProfileSubcommand::List => &LIST_PROFILE_HANDLER,
+            ProfileSubcommand::Set { .. } => &SET_PROFILE_HANDLER,
+            ProfileSubcommand::Rename { .. } => &RENAME_PROFILE_HANDLER,
+            ProfileSubcommand::Help => &HELP_PROFILE_HANDLER,
+        }
     }
 
     pub fn help_text() -> String {
@@ -220,6 +253,25 @@ impl ContextSubcommand {
     const REMOVE_USAGE: &str = "/context rm [--global] <path1> [path2...]";
     const SHOW_USAGE: &str = "/context show [--expand]";
 
+    pub fn to_handler(&self) -> &'static dyn CommandHandler {
+        use crate::cli::chat::commands::context::{
+            CONTEXT_HANDLER,
+            add,
+            clear,
+            remove,
+            show,
+        };
+
+        match self {
+            ContextSubcommand::Add { .. } => &add::ADD_CONTEXT_HANDLER,
+            ContextSubcommand::Remove { .. } => &remove::REMOVE_CONTEXT_HANDLER,
+            ContextSubcommand::Clear { .. } => &clear::CLEAR_CONTEXT_HANDLER,
+            ContextSubcommand::Show { .. } => &show::SHOW_CONTEXT_HANDLER,
+            ContextSubcommand::Hooks { .. } => &CONTEXT_HANDLER, // Delegate to main context handler
+            ContextSubcommand::Help => &CONTEXT_HANDLER,         // Delegate to main context handler
+        }
+    }
+
     fn usage_msg(header: impl AsRef<str>) -> String {
         format!("{}\n\n{}", header.as_ref(), Self::AVAILABLE_COMMANDS)
     }
@@ -285,7 +337,7 @@ pub enum ToolsSubcommand {
     Schema,
     Trust { tool_names: HashSet<String> },
     Untrust { tool_names: HashSet<String> },
-    TrustAll,
+    TrustAll { from_deprecated: bool },
     Reset,
     ResetSingle { tool_name: String },
     Help,
@@ -394,31 +446,9 @@ pub struct PromptsGetParam {
 }
 
 impl Command {
-    // Check if input is a common single-word command that should use slash prefix
-    fn check_common_command(input: &str) -> Option<String> {
-        let input_lower = input.trim().to_lowercase();
-        match input_lower.as_str() {
-            "exit" | "quit" | "q" | "exit()" => {
-                Some("Did you mean to use the command '/quit' to exit? Type '/quit' to exit.".to_string())
-            },
-            "clear" | "cls" => Some(
-                "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear."
-                    .to_string(),
-            ),
-            "help" | "?" => Some(
-                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.".to_string(),
-            ),
-            _ => None,
-        }
-    }
-
-    pub fn parse(input: &str, output: &mut impl Write) -> Result<Self, String> {
+    /// Parse a command string into a Command enum
+    pub fn parse(input: &str) -> Result<Self> {
         let input = input.trim();
-
-        // Check for common single-word commands without slash prefix
-        if let Some(suggestion) = Self::check_common_command(input) {
-            return Err(suggestion);
-        }
 
         // Check if the input starts with a literal backslash followed by a slash
         // This allows users to escape the slash if they actually want to start with one
@@ -432,12 +462,12 @@ impl Command {
             let parts: Vec<&str> = command.split_whitespace().collect();
 
             if parts.is_empty() {
-                return Err("Empty command".to_string());
+                return Err(anyhow!("Empty command"));
             }
 
             return Ok(match parts[0].to_lowercase().as_str() {
                 "clear" => Self::Clear,
-                "help" => Self::Help,
+                "help" => Self::Help { help_text: None },
                 "compact" => {
                     let mut prompt = None;
                     let show_summary = true;
@@ -464,15 +494,9 @@ impl Command {
                     }
                 },
                 "acceptall" => {
-                    let _ = queue!(
-                        output,
-                        style::SetForegroundColor(Color::Yellow),
-                        style::Print("\n/acceptall is deprecated. Use /tools instead.\n\n"),
-                        style::SetForegroundColor(Color::Reset)
-                    );
-
+                    // Deprecated command - set flag to show deprecation message
                     Self::Tools {
-                        subcommand: Some(ToolsSubcommand::TrustAll),
+                        subcommand: Some(ToolsSubcommand::TrustAll { from_deprecated: true }),
                     }
                 },
                 "editor" => {
@@ -503,10 +527,10 @@ impl Command {
 
                     macro_rules! usage_err {
                         ($usage_str:expr) => {
-                            return Err(format!(
+                            return Err(anyhow!(format!(
                                 "Invalid /profile arguments.\n\nUsage:\n  {}",
                                 $usage_str
-                            ))
+                            )))
                         };
                     }
 
@@ -564,7 +588,10 @@ impl Command {
                             subcommand: ProfileSubcommand::Help,
                         },
                         other => {
-                            return Err(ProfileSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
+                            return Err(anyhow!(ProfileSubcommand::usage_msg(format!(
+                                "Unknown subcommand '{}'.",
+                                other
+                            ))));
                         },
                     }
                 },
@@ -577,10 +604,10 @@ impl Command {
 
                     macro_rules! usage_err {
                         ($usage_str:expr) => {
-                            return Err(format!(
+                            return Err(anyhow!(format!(
                                 "Invalid /context arguments.\n\nUsage:\n  {}",
                                 $usage_str
-                            ))
+                            )));
                         };
                     }
 
@@ -606,7 +633,7 @@ impl Command {
 
                             let args = match shlex::split(&parts[2..].join(" ")) {
                                 Some(args) => args,
-                                None => return Err("Failed to parse quoted arguments".to_string()),
+                                None => return Err(anyhow!("Failed to parse quoted arguments")),
                             };
 
                             for arg in &args {
@@ -633,7 +660,7 @@ impl Command {
                             let mut paths = Vec::new();
                             let args = match shlex::split(&parts[2..].join(" ")) {
                                 Some(args) => args,
-                                None => return Err("Failed to parse quoted arguments".to_string()),
+                                None => return Err(anyhow!("Failed to parse quoted arguments")),
                             };
 
                             for arg in &args {
@@ -680,11 +707,14 @@ impl Command {
 
                             match Self::parse_hooks(&parts) {
                                 Ok(command) => command,
-                                Err(err) => return Err(ContextSubcommand::hooks_usage_msg(err)),
+                                Err(err) => return Err(anyhow!(ContextSubcommand::hooks_usage_msg(err))),
                             }
                         },
                         other => {
-                            return Err(ContextSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
+                            return Err(anyhow!(ContextSubcommand::usage_msg(format!(
+                                "Unknown subcommand '{}'.",
+                                other
+                            ))));
                         },
                     }
                 },
@@ -694,6 +724,7 @@ impl Command {
                     }
 
                     match parts[1].to_lowercase().as_str() {
+                        "list" => Self::Tools { subcommand: None },
                         "schema" => Self::Tools {
                             subcommand: Some(ToolsSubcommand::Schema),
                         },
@@ -703,24 +734,7 @@ impl Command {
                                 tool_names.insert((*part).to_string());
                             }
 
-                            if tool_names.is_empty() {
-                                let _ = queue!(
-                                    output,
-                                    style::SetForegroundColor(Color::DarkGrey),
-                                    style::Print("\nPlease use"),
-                                    style::SetForegroundColor(Color::DarkGreen),
-                                    style::Print(" /tools trust <tool1> <tool2>"),
-                                    style::SetForegroundColor(Color::DarkGrey),
-                                    style::Print(" to trust tools.\n\n"),
-                                    style::Print("Use "),
-                                    style::SetForegroundColor(Color::DarkGreen),
-                                    style::Print("/tools"),
-                                    style::SetForegroundColor(Color::DarkGrey),
-                                    style::Print(" to see all available tools.\n\n"),
-                                    style::SetForegroundColor(Color::Reset),
-                                );
-                            }
-
+                            // Usage hints should be handled elsewhere
                             Self::Tools {
                                 subcommand: Some(ToolsSubcommand::Trust { tool_names }),
                             }
@@ -731,30 +745,13 @@ impl Command {
                                 tool_names.insert((*part).to_string());
                             }
 
-                            if tool_names.is_empty() {
-                                let _ = queue!(
-                                    output,
-                                    style::SetForegroundColor(Color::DarkGrey),
-                                    style::Print("\nPlease use"),
-                                    style::SetForegroundColor(Color::DarkGreen),
-                                    style::Print(" /tools untrust <tool1> <tool2>"),
-                                    style::SetForegroundColor(Color::DarkGrey),
-                                    style::Print(" to untrust tools.\n\n"),
-                                    style::Print("Use "),
-                                    style::SetForegroundColor(Color::DarkGreen),
-                                    style::Print("/tools"),
-                                    style::SetForegroundColor(Color::DarkGrey),
-                                    style::Print(" to see all available tools.\n\n"),
-                                    style::SetForegroundColor(Color::Reset),
-                                );
-                            }
-
+                            // Usage hints should be handled elsewhere
                             Self::Tools {
                                 subcommand: Some(ToolsSubcommand::Untrust { tool_names }),
                             }
                         },
                         "trustall" => Self::Tools {
-                            subcommand: Some(ToolsSubcommand::TrustAll),
+                            subcommand: Some(ToolsSubcommand::TrustAll { from_deprecated: false }),
                         },
                         "reset" => {
                             let tool_name = parts.get(2);
@@ -773,7 +770,10 @@ impl Command {
                             subcommand: Some(ToolsSubcommand::Help),
                         },
                         other => {
-                            return Err(ToolsSubcommand::usage_msg(format!("Unknown subcommand '{}'.", other)));
+                            return Err(anyhow!(ToolsSubcommand::usage_msg(format!(
+                                "Unknown subcommand '{}'.",
+                                other
+                            ))));
                         },
                     }
                 },
@@ -797,10 +797,10 @@ impl Command {
                             Self::Prompts { subcommand }
                         },
                         Some(other) => {
-                            return Err(PromptsSubcommand::usage_msg(format!(
+                            return Err(anyhow!(PromptsSubcommand::usage_msg(format!(
                                 "Unknown subcommand '{}'\n",
                                 other
-                            )));
+                            ))));
                         },
                         None => Self::Prompts {
                             subcommand: Some(PromptsSubcommand::List {
@@ -813,10 +813,10 @@ impl Command {
                 unknown_command => {
                     // If the command starts with a slash but isn't recognized,
                     // return an error instead of treating it as a prompt
-                    return Err(format!(
+                    return Err(anyhow!(format!(
                         "Unknown command: '/{}'. Type '/help' to see available commands.\nTo use a literal slash at the beginning of your message, escape it with a backslash (e.g., '\\//hey' for '/hey').",
                         unknown_command
-                    ));
+                    )));
                 },
             });
         }
@@ -842,7 +842,8 @@ impl Command {
     // like the rest of the file.
     // Since the hooks subcommand has a lot of options, this makes more sense.
     // Ideally, we parse everything with clap instead of trying to do it manually.
-    fn parse_hooks(parts: &[&str]) -> Result<Self, String> {
+    // TODO: Move this to the Context commands parse function for better encapsulation
+    pub fn parse_hooks(parts: &[&str]) -> Result<Self, String> {
         // Skip the first two parts ("/context" and "hooks")
         let args = match shlex::split(&parts[1..].join(" ")) {
             Some(args) => args,
@@ -860,10 +861,12 @@ impl Command {
     }
 }
 
-fn parse_input_to_prompts_get_command(command: &str) -> Result<PromptsGetCommand, String> {
-    let input = shell_words::split(command).map_err(|e| format!("Error splitting command for prompts: {:?}", e))?;
+fn parse_input_to_prompts_get_command(command: &str) -> Result<PromptsGetCommand> {
+    let input = shell_words::split(command).map_err(|e| anyhow!("Error splitting command for prompts: {:?}", e))?;
     let mut iter = input.into_iter();
-    let prompt_name = iter.next().ok_or("Prompt name needs to be specified")?;
+    let prompt_name = iter
+        .next()
+        .ok_or_else(|| anyhow!("Prompt name needs to be specified"))?;
     let args = iter.collect::<Vec<_>>();
     let params = PromptsGetParam {
         name: prompt_name,
@@ -879,8 +882,6 @@ mod tests {
 
     #[test]
     fn test_command_parse() {
-        let mut stdout = std::io::stdout();
-
         macro_rules! profile {
             ($subcommand:expr) => {
                 Command::Profile {
@@ -1046,48 +1047,155 @@ mod tests {
         ];
 
         for (input, parsed) in tests {
-            assert_eq!(&Command::parse(input, &mut stdout).unwrap(), parsed, "{}", input);
+            let result = Command::parse(input).unwrap_or_else(|_| panic!("Failed to parse command: {}", input));
+            assert_eq!(&result, parsed, "{}", input);
+        }
+    }
+}
+/// Structure to hold command descriptions
+#[derive(Debug, Clone)]
+pub struct CommandDescription {
+    pub short_description: String,
+    pub full_description: String,
+    #[allow(dead_code)]
+    pub usage: String,
+}
+
+impl Command {
+    /// Get the appropriate handler for this command variant
+    pub fn to_handler(&self) -> &'static dyn CommandHandler {
+        match self {
+            Command::Help { .. } => &HELP_HANDLER,
+            Command::Quit => &QUIT_HANDLER,
+            Command::Clear => &CLEAR_HANDLER,
+            Command::Context { subcommand } => subcommand.to_handler(),
+            Command::Profile { subcommand } => subcommand.to_handler(), // Use the to_handler method on
+            // ProfileSubcommand
+            Command::Tools { subcommand } => match subcommand {
+                Some(sub) => sub.to_handler(), // Use the to_handler method on ToolsSubcommand
+                None => &crate::cli::chat::commands::tools::LIST_TOOLS_HANDLER, /* Default to list handler when no
+                                                 * subcommand */
+            },
+            Command::Compact { .. } => &COMPACT_HANDLER,
+            Command::PromptEditor { .. } => &EDITOR_HANDLER,
+            Command::Usage => &USAGE_HANDLER,
+            Command::Issue { .. } => &ISSUE_HANDLER,
+            // These commands are not handled through the command system
+            Command::Ask { .. } => &HELP_HANDLER,        // Fallback to help handler
+            Command::Execute { .. } => &EXECUTE_HANDLER, // Use the dedicated execute handler
+            Command::Prompts { subcommand } => match subcommand {
+                Some(sub) => sub.to_handler(),
+                None => &crate::cli::chat::commands::prompts::LIST_PROMPTS_HANDLER, /* Default to list handler when
+                                                                                     * no subcommand */
+            },
         }
     }
 
-    #[test]
-    fn test_common_command_suggestions() {
-        let mut stdout = std::io::stdout();
-        let test_cases = vec![
-            (
-                "exit",
-                "Did you mean to use the command '/quit' to exit? Type '/quit' to exit.",
-            ),
-            (
-                "quit",
-                "Did you mean to use the command '/quit' to exit? Type '/quit' to exit.",
-            ),
-            (
-                "q",
-                "Did you mean to use the command '/quit' to exit? Type '/quit' to exit.",
-            ),
-            (
-                "clear",
-                "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear.",
-            ),
-            (
-                "cls",
-                "Did you mean to use the command '/clear' to clear the conversation? Type '/clear' to clear.",
-            ),
-            (
-                "help",
-                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.",
-            ),
-            (
-                "?",
-                "Did you mean to use the command '/help' for help? Type '/help' to see available commands.",
-            ),
-        ];
+    /// Parse a command from components
+    ///
+    /// This method formats a command string from its components and parses it into a Command enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The base command name
+    /// * `subcommand` - Optional subcommand
+    /// * `args` - Optional arguments
+    /// * `flags` - Optional flags
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self>` - The parsed Command enum
+    pub fn parse_from_components(
+        command: &str,
+        subcommand: Option<&String>,
+        args: Option<&Vec<String>>,
+        flags: Option<&std::collections::HashMap<String, String>>,
+    ) -> Result<Self> {
+        // Format the command string
+        let mut cmd_str = if !command.starts_with('/') {
+            format!("/{}", command)
+        } else {
+            command.to_string()
+        };
 
-        for (input, expected_message) in test_cases {
-            let result = Command::parse(input, &mut stdout);
-            assert!(result.is_err(), "Expected error for input: {}", input);
-            assert_eq!(result.unwrap_err(), expected_message);
+        // Add subcommand if present
+        if let Some(subcommand) = subcommand {
+            cmd_str.push_str(&format!(" {}", subcommand));
         }
+
+        // Add arguments if present
+        if let Some(args) = args {
+            for arg in args {
+                cmd_str.push_str(&format!(" {}", arg));
+            }
+        }
+
+        // Add flags if present
+        if let Some(flags) = flags {
+            for (flag, value) in flags {
+                if value.is_empty() {
+                    cmd_str.push_str(&format!(" --{}", flag));
+                } else {
+                    cmd_str.push_str(&format!(" --{}={}", flag, value));
+                }
+            }
+        }
+
+        // Parse the formatted command string
+        Self::parse(&cmd_str)
+    }
+
+    /// Execute the command directly with ChatContext
+    pub async fn execute<'a>(
+        &'a self,
+        chat_context: &'a mut crate::cli::chat::ChatContext,
+        tool_uses: Option<Vec<crate::cli::chat::QueuedTool>>,
+        pending_tool_index: Option<usize>,
+    ) -> Result<crate::cli::chat::ChatState, crate::cli::chat::ChatError> {
+        // Get the appropriate handler and delegate to it
+        let handler = self.to_handler();
+
+        // Create a CommandContextAdapter from the ChatContext
+        let mut adapter = chat_context.command_context_adapter();
+
+        handler
+            .execute_command(self, &mut adapter, tool_uses, pending_tool_index)
+            .await
+    }
+
+    /// Returns a vector of all available commands for dynamic enumeration
+    pub fn all_commands() -> Vec<(&'static str, &'static dyn CommandHandler)> {
+        vec![
+            ("help", &HELP_HANDLER as &dyn CommandHandler),
+            ("quit", &QUIT_HANDLER as &dyn CommandHandler),
+            ("clear", &CLEAR_HANDLER as &dyn CommandHandler),
+            ("context", &CONTEXT_HANDLER as &dyn CommandHandler),
+            ("profile", &PROFILE_HANDLER as &dyn CommandHandler),
+            ("tools", &TOOLS_HANDLER as &dyn CommandHandler),
+            ("compact", &COMPACT_HANDLER as &dyn CommandHandler),
+            ("usage", &USAGE_HANDLER as &dyn CommandHandler),
+            ("editor", &EDITOR_HANDLER as &dyn CommandHandler),
+            ("issue", &ISSUE_HANDLER as &dyn CommandHandler),
+        ]
+    }
+
+    /// Generate descriptions for all commands for LLM tool descriptions
+    ///
+    /// This method dynamically iterates through all available commands and collects
+    /// their descriptions for use in LLM integration. This ensures that all commands
+    /// are properly described and no commands are missed when new ones are added.
+    pub fn generate_llm_descriptions() -> std::collections::HashMap<String, CommandDescription> {
+        let mut descriptions = std::collections::HashMap::new();
+
+        // Dynamically iterate through all commands
+        for (name, handler) in Self::all_commands() {
+            descriptions.insert(name.to_string(), CommandDescription {
+                short_description: handler.description().to_string(),
+                full_description: handler.llm_description(),
+                usage: handler.usage().to_string(),
+            });
+        }
+
+        descriptions
     }
 }

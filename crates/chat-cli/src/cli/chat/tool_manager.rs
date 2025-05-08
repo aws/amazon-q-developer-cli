@@ -42,6 +42,7 @@ use super::tools::execute_bash::ExecuteBash;
 use super::tools::fs_read::FsRead;
 use super::tools::fs_write::FsWrite;
 use super::tools::gh_issue::GhIssue;
+use super::tools::internal_command::InternalCommand;
 use super::tools::thinking::Thinking;
 use super::tools::use_aws::UseAws;
 use super::tools::{
@@ -504,6 +505,13 @@ impl ToolManager {
         let tool_specs = {
             let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
+
+            // Add internal_command tool dynamically using the get_tool_spec function
+            tool_specs.insert(
+                "internal_command".to_string(),
+                super::tools::internal_command::get_tool_spec(),
+            );
+
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled() {
                 tool_specs.remove("q_think_tool");
             }
@@ -677,6 +685,9 @@ impl ToolManager {
             "execute_bash" => Tool::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
+            "internal_command" => {
+                Tool::InternalCommand(serde_json::from_value::<InternalCommand>(value.args).map_err(map_err)?)
+            },
             "q_think_tool" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {

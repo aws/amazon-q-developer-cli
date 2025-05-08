@@ -1,4 +1,3 @@
-
 <p align="center">
   <a href="https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html">
     <picture>
@@ -154,6 +153,7 @@ pnpm install --ignore-scripts
 
 ### 3. Start Local Development
 To compile and view changes made to `q chat`:
+
 ```shell
 cargo run --bin chat_cli
 ```
@@ -161,16 +161,19 @@ cargo run --bin chat_cli
 > If you are working on other q commands, just append `-- <command name>`. For example, to run `q login`, you can run `cargo run --bin chat_cli -- login`
 
 To run tests for the Q CLI crate:
+
 ```shell
 cargo test -p chat_cli
 ```
 
 To format Rust files:
+
 ```shell
 cargo +nightly fmt
 ```
 
 To run clippy:
+
 ```shell
 cargo clippy --locked --workspace --color always -- -D warnings
 ```
@@ -195,11 +198,11 @@ Once inside `q chat`, you can supply project context by adding the [`codebase-su
 
 This enables Q to answer onboarding questions like:
 
-- “What does this crate do?”
+- "What does this crate do?"
 
-- “Where is X implemented?”
+- "Where is X implemented?"
 
-- “How do these components interact?”
+- "How do these components interact?"
 
 Great for speeding up your ramp-up and navigating the repo more effectively.
 
@@ -213,7 +216,7 @@ Several projects live here:
 - [`autocomplete`](packages/autocomplete/) - The autocomplete react app
 - [`dashboard`](packages/dashboard-app/) - The dashboard react app
 - [`figterm`](crates/figterm/) - figterm, our headless terminal/pseudoterminal that
-  intercepts the user’s terminal edit buffer.
+  intercepts the user's terminal edit buffer.
 - [`q_cli`](crates/q_cli/) - the `q` CLI, allows users to interface with Amazon Q Developer from
   the command line
 - [`fig_desktop`](crates/fig_desktop/) - the Rust desktop app, uses
@@ -236,6 +239,10 @@ Other folder to be aware of
   [protocol buffer](https://developers.google.com/protocol-buffers/) message
   specification for inter-process communication
 - [`tests/`](tests/) - Contain integration tests for the projects
+- [`docs/`](docs/) - Contains project documentation
+  - [`docs/development/`](docs/development/) - Contains developer documentation including:
+    - [Implementation Cycle](docs/development/implementation-cycle.md) - Standard workflow for making changes
+    - [Command Execution Flow](docs/development/command-execution-flow.md) - How commands are processed
 
 Below is a high level architecture of how the different components of the app and
 their IPC:
@@ -253,4 +260,4 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 
 This repo is dual licensed under MIT and Apache 2.0 licenses.
 
-“Amazon Web Services” and all related marks, including logos, graphic designs, and service names, are trademarks or trade dress of AWS in the U.S. and other countries. AWS’s trademarks and trade dress may not be used in connection with any product or service that is not AWS’s, in any manner that is likely to cause confusion among customers, or in any manner that disparages or discredits AWS.
+"Amazon Web Services" and all related marks, including logos, graphic designs, and service names, are trademarks or trade dress of AWS in the U.S. and other countries. AWS's trademarks and trade dress may not be used in connection with any product or service that is not AWS's, in any manner that is likely to cause confusion among customers, or in any manner that disparages or discredits AWS.

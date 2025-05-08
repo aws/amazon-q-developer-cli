@@ -49,3 +49,6 @@ book/
 .env*
 
 run-build.sh
+repomix-output.*
+.multiq
+.aiEditorAgent

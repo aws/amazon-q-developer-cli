@@ -190,12 +190,14 @@ impl CustomTool {
                 }
                 Ok(InvokeOutput {
                     output: super::OutputKind::Json(serde_json::json!(de_result)),
+                    next_state: None,
                 })
             },
             Err(e) => {
                 warn!("Tool call result deserialization failed: {:?}", e);
                 Ok(InvokeOutput {
                     output: super::OutputKind::Json(result.clone()),
+                    next_state: None,
                 })
             },
         }

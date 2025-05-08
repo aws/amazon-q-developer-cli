@@ -3,6 +3,7 @@ pub mod execute_bash;
 pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
+pub mod internal_command;
 pub mod thinking;
 pub mod use_aws;
 
@@ -24,6 +25,7 @@ use eyre::Result;
 use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
+use internal_command::InternalCommand;
 use serde::{
     Deserialize,
     Serialize,
@@ -45,6 +47,7 @@ pub enum Tool {
     UseAws(UseAws),
     Custom(CustomTool),
     GhIssue(GhIssue),
+    InternalCommand(InternalCommand),
     Thinking(Thinking),
 }
 
@@ -58,6 +61,7 @@ impl Tool {
             Tool::UseAws(_) => "use_aws",
             Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => "gh_issue",
+            Tool::InternalCommand(_) => "internal_command",
             Tool::Thinking(_) => "thinking (prerelease)",
         }
         .to_owned()
@@ -72,6 +76,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
             Tool::Custom(_) => true,
             Tool::GhIssue(_) => false,
+            Tool::InternalCommand(internal_command) => internal_command.requires_acceptance(),
             Tool::Thinking(_) => false,
         }
     }
@@ -85,6 +90,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(context, updates).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
+            Tool::InternalCommand(internal_command) => internal_command.invoke(context, updates).await,
             Tool::Thinking(think) => think.invoke(updates).await,
         }
     }
@@ -98,6 +104,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
             Tool::Custom(custom_tool) => custom_tool.queue_description(updates),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
+            Tool::InternalCommand(internal_command) => internal_command.queue_description(updates),
             Tool::Thinking(thinking) => thinking.queue_description(updates),
         }
     }
@@ -111,6 +118,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
             Tool::Custom(custom_tool) => custom_tool.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
+            Tool::InternalCommand(internal_command) => internal_command.validate().await,
             Tool::Thinking(think) => think.validate(ctx).await,
         }
     }
@@ -185,6 +193,7 @@ impl ToolPermissions {
             "execute_bash" => "trust read-only commands".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
+            "internal_command" => "trust read-only commands".dark_grey(),
             "thinking" => "trusted (prerelease)".dark_green().bold(),
             _ => "not trusted".dark_grey(),
         };
@@ -239,7 +248,12 @@ pub struct InputSchema(pub serde_json::Value);
 /// The output received from invoking a [Tool].
 #[derive(Debug, Default)]
 pub struct InvokeOutput {
-    pub output: OutputKind,
+    /// The output content from the tool execution
+    pub(crate) output: OutputKind,
+    /// Optional next state to transition to, overriding the default flow
+    /// If set, tool_use_execute will return this state instead of proceeding to
+    /// HandleResponseStream
+    pub(crate) next_state: Option<crate::cli::chat::ChatState>,
 }
 
 impl InvokeOutput {

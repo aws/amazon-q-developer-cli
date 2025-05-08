@@ -1,5 +1,6 @@
 pub mod cli;
 mod command;
+pub mod commands;
 mod consts;
 mod context;
 mod conversation_state;
@@ -554,6 +555,14 @@ impl ChatContext {
             pending_prompts: VecDeque::new(),
         })
     }
+
+    /// Creates a CommandContextAdapter from this ChatContext
+    ///
+    /// This method provides a clean interface for command handlers to access
+    /// only the components they need without exposing the entire ChatContext.
+    pub fn command_context_adapter(&mut self) -> commands::context_adapter::CommandContextAdapter<'_> {
+        commands::context_adapter::CommandContextAdapter::from_chat_context(self)
+    }
 }
 
 impl Drop for ChatContext {
@@ -582,7 +591,7 @@ impl Drop for ChatContext {
 /// Intended to provide more robust handling around state transitions while dealing with, e.g.,
 /// tool validation, execution, response stream handling, etc.
 #[derive(Debug)]
-enum ChatState {
+pub(crate) enum ChatState {
     /// Prompt the user with `tool_uses`, if available.
     PromptUser {
         /// Tool uses to present to the user.
@@ -615,6 +624,12 @@ enum ChatState {
         show_summary: bool,
         /// Whether or not to show the /compact help text.
         help: bool,
+    },
+    /// Execute a command.
+    ExecuteCommand {
+        command: Command,
+        tool_uses: Option<Vec<QueuedTool>>,
+        pending_tool_index: Option<usize>,
     },
     /// Exit the chat.
     Exit,
@@ -834,6 +849,11 @@ impl ChatContext {
                     res = self.handle_response(response) => res,
                     Ok(_) = ctrl_c_stream => Err(ChatError::Interrupted { tool_uses: None })
                 },
+                ChatState::ExecuteCommand {
+                    command,
+                    tool_uses,
+                    pending_tool_index,
+                } => Ok(self.execute(command, tool_uses, pending_tool_index).await?),
                 ChatState::Exit => return Ok(()),
             };
 
@@ -1245,11 +1265,11 @@ impl ChatContext {
 
     async fn handle_input(
         &mut self,
-        mut user_input: String,
+        user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
     ) -> Result<ChatState, ChatError> {
-        let command_result = Command::parse(&user_input, &mut self.output);
+        let command_result = Command::parse(&user_input);
 
         if let Err(error_message) = &command_result {
             // Display error message for command parsing errors
@@ -1268,52 +1288,104 @@ impl ChatContext {
         }
 
         let command = command_result.unwrap();
-        let mut tool_uses: Vec<QueuedTool> = tool_uses.unwrap_or_default();
+
+        // Handle Ask commands directly
+        if let Command::Ask { prompt } = &command {
+            return self
+                .handle_ask_command(prompt, tool_uses.unwrap_or_default(), pending_tool_index)
+                .await;
+        }
+
+        // Use Command::execute to execute the command with self
+        match command.execute(self, tool_uses.clone(), pending_tool_index).await {
+            Ok(state) => Ok(state),
+            Err(e) => {
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print(format!("\nError: {}\n\n", e)),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+
+                Ok(ChatState::PromptUser {
+                    tool_uses,
+                    pending_tool_index,
+                    skip_printing_tools: true,
+                })
+            },
+        }
+    }
+
+    // For Ask commands, handle them directly
+    // TODO:  can this move to command.execute()?
+    async fn handle_ask_command(
+        &mut self,
+        prompt: &str,
+        mut tool_uses: Vec<QueuedTool>,
+        pending_tool_index: Option<usize>,
+    ) -> Result<ChatState, ChatError> {
+        // Handle Ask command logic here
+        let mut user_input = prompt.to_string();
+
+        // Check for a pending tool approval
+        if let Some(index) = pending_tool_index {
+            let tool_use = &mut tool_uses[index];
+
+            let is_trust = ["t", "T"].contains(&prompt);
+            if ["y", "Y"].contains(&prompt) || is_trust {
+                if is_trust {
+                    self.tool_permissions.trust_tool(&tool_use.name);
+                }
+                tool_use.accepted = true;
+
+                return Ok(ChatState::ExecuteTools(tool_uses));
+            }
+        } else if !self.pending_prompts.is_empty() {
+            let prompts = self.pending_prompts.drain(0..).collect();
+            user_input = self
+                .conversation_state
+                .append_prompts(prompts)
+                .ok_or(ChatError::Custom("Prompt append failed".into()))?;
+        }
+
+        // Otherwise continue with normal chat on 'n' or other responses
+        self.tool_use_status = ToolUseStatus::Idle;
+
+        if self.interactive {
+            queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
+            queue!(self.output, style::SetForegroundColor(Color::Reset))?;
+            queue!(self.output, cursor::Hide)?;
+            execute!(self.output, style::Print("\n"))?;
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+        }
+
+        if pending_tool_index.is_some() {
+            self.conversation_state.abandon_tool_use(tool_uses, user_input);
+        } else {
+            self.conversation_state.set_next_user_message(user_input).await;
+        }
+
+        let conv_state = self.conversation_state.as_sendable_conversation_state(true).await;
+        self.send_tool_use_telemetry().await;
+
+        Ok(ChatState::HandleResponseStream(
+            self.client.send_message(conv_state).await?,
+        ))
+    }
+
+    async fn execute(
+        &mut self,
+        command: Command,
+        tool_uses: Option<Vec<QueuedTool>>,
+        pending_tool_index: Option<usize>,
+    ) -> Result<ChatState, ChatError> {
+        let tool_uses: Vec<QueuedTool> = tool_uses.unwrap_or_default();
 
         Ok(match command {
-            Command::Ask { prompt } => {
-                // Check for a pending tool approval
-                if let Some(index) = pending_tool_index {
-                    let tool_use = &mut tool_uses[index];
-
-                    let is_trust = ["t", "T"].contains(&prompt.as_str());
-                    if ["y", "Y"].contains(&prompt.as_str()) || is_trust {
-                        if is_trust {
-                            self.tool_permissions.trust_tool(&tool_use.name);
-                        }
-                        tool_use.accepted = true;
-
-                        return Ok(ChatState::ExecuteTools(tool_uses));
-                    }
-                } else if !self.pending_prompts.is_empty() {
-                    let prompts = self.pending_prompts.drain(0..).collect();
-                    user_input = self
-                        .conversation_state
-                        .append_prompts(prompts)
-                        .ok_or(ChatError::Custom("Prompt append failed".into()))?;
-                }
-
-                // Otherwise continue with normal chat on 'n' or other responses
-                self.tool_use_status = ToolUseStatus::Idle;
-
-                if self.interactive {
-                    queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
-                    queue!(self.output, style::SetForegroundColor(Color::Reset))?;
-                    queue!(self.output, cursor::Hide)?;
-                    execute!(self.output, style::Print("\n"))?;
-                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
-                }
-
-                if pending_tool_index.is_some() {
-                    self.conversation_state.abandon_tool_use(tool_uses, user_input);
-                } else {
-                    self.conversation_state.set_next_user_message(user_input).await;
-                }
-
-                let conv_state = self.conversation_state.as_sendable_conversation_state(true).await;
-                self.send_tool_use_telemetry().await;
-
-                ChatState::HandleResponseStream(self.client.send_message(conv_state).await?)
+            Command::Ask { .. } => {
+                // We should never get here.
+                // Ask is handled in handle_input
+                return Err(ChatError::Custom("Command state is not in a valid state.".into()));
             },
             Command::Execute { command } => {
                 queue!(self.output, style::Print('\n'))?;
@@ -1379,8 +1451,13 @@ impl ChatContext {
                 self.compact_history(Some(tool_uses), pending_tool_index, prompt, show_summary, help)
                     .await?
             },
-            Command::Help => {
-                execute!(self.output, style::Print(HELP_TEXT))?;
+            Command::Help { help_text } => {
+                if let Some(help_text) = help_text {
+                    execute!(self.output, style::Print(help_text))?;
+                } else {
+                    execute!(self.output, style::Print(HELP_TEXT))?;
+                }
+
                 ChatState::PromptUser {
                     tool_uses: Some(tool_uses),
                     pending_tool_index,
@@ -2234,7 +2311,7 @@ impl ChatContext {
                             )?;
                         }
                     },
-                    Some(ToolsSubcommand::TrustAll) => {
+                    Some(ToolsSubcommand::TrustAll { .. }) => {
                         self.conversation_state.tools.values().flatten().for_each(
                             |FigTool::ToolSpecification(spec)| {
                                 self.tool_permissions.trust_tool(spec.name.as_str());
@@ -2813,6 +2890,11 @@ impl ChatContext {
                         style::SetForegroundColor(Color::Reset),
                         style::Print("\n"),
                     )?;
+
+                    // Check if the tool result has a next_state
+                    if let Some(next_state) = result.next_state {
+                        return Ok(next_state);
+                    }
 
                     tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
                     if let Tool::Custom(_) = &tool.tool {

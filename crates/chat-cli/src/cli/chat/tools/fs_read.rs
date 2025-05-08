@@ -104,6 +104,7 @@ impl FsImage {
         let valid_images = handle_images_from_paths(updates, &pre_processed_paths);
         Ok(InvokeOutput {
             output: OutputKind::Images(valid_images),
+            next_state: None,
         })
     }
 
@@ -221,6 +222,7 @@ time. You tried to read {byte_count} bytes. Try executing with fewer lines speci
 
         Ok(InvokeOutput {
             output: OutputKind::Text(file_contents),
+            next_state: None,
         })
     }
 
@@ -326,6 +328,7 @@ impl FsSearch {
 
         Ok(InvokeOutput {
             output: OutputKind::Text(serde_json::to_string(&results)?),
+            next_state: None,
         })
     }
 
@@ -472,6 +475,7 @@ impl FsDirectory {
 
         Ok(InvokeOutput {
             output: OutputKind::Text(result),
+            next_state: None,
         })
     }
 

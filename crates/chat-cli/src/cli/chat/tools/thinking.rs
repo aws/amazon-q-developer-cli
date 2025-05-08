@@ -58,6 +58,7 @@ impl Thinking {
         // 2. When disabled or empty: Nothing should be shown
         Ok(InvokeOutput {
             output: OutputKind::Text(String::new()),
+            next_state: None,
         })
     }
 
