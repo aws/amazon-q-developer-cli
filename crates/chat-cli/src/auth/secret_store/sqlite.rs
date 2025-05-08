@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use super::Secret;
-use crate::Result;
 use crate::auth::AuthError;
 use crate::settings::sqlite::{
     Db,

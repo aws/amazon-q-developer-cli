@@ -7,6 +7,7 @@ use std::sync::atomic::{
 };
 
 use chat_cli::{
+    self,
     JsonRpcRequest,
     JsonRpcResponse,
     JsonRpcStdioTransport,

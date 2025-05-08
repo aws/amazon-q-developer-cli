@@ -135,8 +135,18 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
     let options = create_skim_options("Select files: ", true)?;
 
     // Create a command that will be executed by skim
-    // This avoids loading all files into memory at once
-    let find_cmd = "find . -type f -not -path '*/\\.*'";
+    // This command checks if git is installed and if we're in a git repo
+    // Otherwise falls back to find command
+    let find_cmd = r#"
+    # Check if git is available and we're in a git repo
+    if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree &>/dev/null; then
+        # Git repository - respect .gitignore
+        { git ls-files; git ls-files --others --exclude-standard; } | sort | uniq
+    else
+        # Not a git repository or git not installed - use find command
+        find . -type f -not -path '*/\.*'
+    fi
+    "#;
 
     // Create a command collector that will execute the find command
     let item_reader = SkimItemReader::default();
