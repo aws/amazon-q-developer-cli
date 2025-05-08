@@ -7,7 +7,6 @@ use eyre::{
     bail,
 };
 use fig_os_shim::Context;
-use futures::future::ok;
 use tracing::warn;
 
 use crate::cli::{
@@ -43,33 +42,37 @@ pub async fn execute_mcp(args: Mcp) -> Result<ExitCode> {
 }
 
 pub async fn add_mcp_server(ctx: &Context, args: McpAdd) -> Result<()> {
+    let scope = args.scope.unwrap_or(Scope::Workspace);
     let config_path = resolve_scope_profile(ctx, args.scope, args.profile.as_ref())?;
     let mut config: McpServerConfig = serde_json::from_str(&ctx.fs().read_to_string(&config_path).await?)?;
-    let merged_env = if args.env.is_empty() {
-        None
-    } else {
-        let mut map = HashMap::new();
-        for m in args.env {
-            map.extend(m);
-        }
-        Some(map)
-    };
-    let val: CustomToolConfig = serde_json::from_value(serde_json::json!({
+    let merged_env = args.env.into_iter().flatten().collect::<HashMap<_, _>>();
+
+    let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
         "command": args.command,
         "env": merged_env,
         "timeout": args.timeout,
     }))?;
-    config.mcp_servers.insert(args.name, val);
+    config.mcp_servers.insert(args.name.clone(), tool);
     config.save_to_file(ctx, &config_path).await?;
 
+    println!(
+        "✓ Added MCP server '{}' to {scope}",
+        args.name,
+        scope = scope_display(&scope, &args.profile)
+    );
     Ok(())
 }
 
 pub async fn remove_mcp_server(ctx: &Context, args: McpRemove) -> Result<()> {
-    let config_path = resolve_scope_profile(ctx, args.scope, args.profile.as_ref())?;
-    let mut config = McpServerConfig::load_from_file(ctx, &config_path).await?;
-
     let scope = args.scope.unwrap_or(Scope::Workspace);
+    let config_path = resolve_scope_profile(ctx, args.scope, args.profile.as_ref())?;
+
+    if !ctx.fs().exists(&config_path) {
+        println!("No MCP configuration at {}", config_path.display());
+        return Ok(());
+    }
+
+    let mut config = McpServerConfig::load_from_file(ctx, &config_path).await?;
     match config.mcp_servers.remove(&args.name) {
         Some(_) => {
             config.save_to_file(ctx, &config_path).await?;
@@ -79,9 +82,7 @@ pub async fn remove_mcp_server(ctx: &Context, args: McpRemove) -> Result<()> {
                 scope_display(&scope, &args.profile)
             );
         },
-        None => {
-            warn!(?args, "No MCP server found");
-        },
+        None => println!("No MCP server named '{}' found in {}", args.name, scope_display(&scope, &args.profile)),
     }
     Ok(())
 }
@@ -94,6 +95,7 @@ pub async fn list_mcp_server(ctx: &Context, args: McpList) -> Result<()> {
     }
 
     for (scope, profile, path, cfg_opt) in configs {
+        println!();
         println!("{}:", scope_display(&scope, &profile));
         println!("  {}", path.display());
         match cfg_opt {
@@ -103,11 +105,64 @@ pub async fn list_mcp_server(ctx: &Context, args: McpList) -> Result<()> {
                 }
             },
             _ => {
-                println!("    null");
+                println!("    (empty)");
             },
         }
     }
     Ok(())
+}
+
+pub async fn import_mcp_server(ctx: &Context, args: McpImport) -> Result<()> {
+    let scope: Scope = args.scope.unwrap_or(Scope::Workspace);
+    let config_path = resolve_scope_profile(ctx, args.scope, args.profile.as_ref())?;
+    let mut dst_cfg: McpServerConfig = if ctx.fs().exists(&config_path) {
+        McpServerConfig::load_from_file(ctx, &config_path).await?
+    } else {
+        McpServerConfig::default()
+    };
+    let src_path = expand_path(ctx, &args.file)?;
+    let src_cfg: McpServerConfig = serde_json::from_str(&ctx.fs().read_to_string(&src_path).await?)?;
+
+    let before = dst_cfg.mcp_servers.len();
+    for (name, cfg) in src_cfg.mcp_servers {
+        if dst_cfg.mcp_servers.insert(name.clone(), cfg).is_some() {
+            warn!(%name, "Overwriting existing MCP server configuration");
+        }
+    }
+    let added = dst_cfg.mcp_servers.len() - before;
+    dst_cfg.save_to_file(ctx, &config_path).await?;
+
+    println!(
+        "✓ Imported {added} MCP server(s) into {:?} scope",
+        scope_display(&scope, &args.profile)
+    );
+    Ok(())
+}
+
+pub async fn get_mcp_server_status(ctx: &Context, name: String) -> Result<()> {
+    let configs = get_mcp_server_configs(ctx, None, None).await?;
+
+    for (_, _, _, cfg_opt) in configs {
+        if let Some(cfg) = cfg_opt {
+            if let Some(tool_cfg) = cfg.mcp_servers.get(&name) {
+                println!("MCP Server: {name}");
+                println!("Command    : {}", tool_cfg.command);
+                println!("Timeout    : {} ms", tool_cfg.timeout);
+                println!(
+                    "Env Vars   : {}",
+                    tool_cfg
+                        .env
+                        .as_ref()
+                        .map(|e| e.keys().cloned().collect::<Vec<_>>().join(", "))
+                        .unwrap_or_else(|| "(none)".into())
+                );
+                // todo yifan how can I know the server status
+                println!("Status     : ");
+                return Ok(());
+            }
+        }
+    }
+    bail!("No MCP server named '{name}' found\n")
 }
 
 async fn get_mcp_server_configs(
@@ -160,70 +215,6 @@ fn scope_display(scope: &Scope, profile: &Option<String>) -> String {
     }
 }
 
-pub async fn import_mcp_server(ctx: &Context, args: McpImport) -> Result<()> {
-    let config_path = resolve_scope_profile(ctx, args.scope, args.profile.as_ref())?;
-    let mut dst_cfg = if ctx.fs().exists(&config_path) {
-        McpServerConfig::load_from_file(ctx, &config_path).await?
-    } else {
-        McpServerConfig::default()
-    };
-    let expanded = shellexpand::tilde(&args.file);
-    let mut src_path = std::path::PathBuf::from(expanded.as_ref());
-    if src_path.is_relative() {
-        src_path = ctx.env().current_dir()?.join(src_path);
-    }
-
-    let src_content = ctx
-        .fs()
-        .read_to_string(&src_path)
-        .await
-        .map_err(|e| eyre::eyre!("Failed to read source file '{}': {e}", src_path.display()))?;
-    let src_cfg: McpServerConfig = serde_json::from_str(&src_content)
-        .map_err(|e| eyre::eyre!("Invalid MCP JSON in '{}': {e}", src_path.display()))?;
-
-    let before = dst_cfg.mcp_servers.len();
-    for (name, cfg) in src_cfg.mcp_servers {
-        if dst_cfg.mcp_servers.insert(name.clone(), cfg).is_some() {
-            warn!(server = %name, "Overwriting existing MCP server configuration");
-        }
-    }
-    let added = dst_cfg.mcp_servers.len() - before;
-
-    dst_cfg.save_to_file(ctx, &config_path).await?;
-
-    let scope = args.scope.unwrap_or(Scope::Workspace);
-    println!(
-        "✓ Imported {added} MCP server(s) into {:?} scope",
-        scope_display(&scope, &args.profile)
-    );
-    Ok(())
-}
-
-pub async fn get_mcp_server_status(ctx: &Context, name: String) -> Result<()> {
-    let configs = get_mcp_server_configs(ctx, None, None).await?;
-    for (_, _, _, cfg_opt) in configs {
-        if let Some(cfg) = cfg_opt {
-            if let Some(tool_cfg) = cfg.mcp_servers.get(&name) {
-                println!("MCP Server: {name}");
-                println!("Command    : {}", tool_cfg.command);
-                println!("Timeout    : {} ms", tool_cfg.timeout);
-                println!(
-                    "Env Vars   : {}",
-                    tool_cfg
-                        .env
-                        .as_ref()
-                        .map(|e| e.keys().cloned().collect::<Vec<_>>().join(", "))
-                        .unwrap_or_else(|| "(none)".into())
-                );
-                // todo yifan how can I know the server status
-                println!("Status     : ");
-                return Ok(());
-            }
-        }
-    }
-    bail!("No MCP server named '{name}' found\n")
-}
-
 fn resolve_scope_profile(ctx: &Context, scope: Option<Scope>, profile: Option<&impl AsRef<str>>) -> Result<PathBuf> {
     Ok(match (scope, profile) {
         (None | Some(Scope::Workspace), _) => workspace_mcp_config_path(ctx)?,
@@ -231,6 +222,15 @@ fn resolve_scope_profile(ctx: &Context, scope: Option<Scope>, profile: Option<&i
         (Some(scope @ Scope::Profile), None) => bail!("profile must be specified for scope: {scope}"),
         (_, Some(profile)) => profile_mcp_config_path(ctx, profile)?,
     })
+}
+
+fn expand_path(ctx: &Context, p: &str) -> Result<PathBuf> {
+    let p = shellexpand::tilde(p);
+    let mut path = PathBuf::from(p.as_ref());
+    if path.is_relative() {
+        path = ctx.env().current_dir()?.join(path);
+    }
+    Ok(path)
 }
 
 #[cfg(test)]
