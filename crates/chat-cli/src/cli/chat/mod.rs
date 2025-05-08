@@ -2868,6 +2868,11 @@ impl ChatContext {
         } else {
             self.conversation_state.add_tool_results(tool_results);
         }
+        if self.interactive {
+            execute!(self.output, cursor::Hide)?;
+            execute!(self.output, style::Print("\n"), style::SetAttribute(Attribute::Reset))?;
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
+        }
 
         self.send_tool_use_telemetry().await;
         return Ok(ChatState::HandleResponseStream(
@@ -2887,6 +2892,19 @@ impl ChatContext {
 
         let mut tool_uses = Vec::new();
         let mut tool_name_being_recvd: Option<String> = None;
+
+        if self.interactive && self.spinner.is_some() {
+            drop(self.spinner.take());
+            queue!(
+                self.output,
+                style::SetForegroundColor(Color::Reset),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+                cursor::Show,
+                cursor::MoveUp(1),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+            )?;
+        }
 
         loop {
             match parser.recv().await {
