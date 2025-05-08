@@ -505,8 +505,6 @@ pub struct ChatContext {
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
     /// State used to keep track of tool use relation
     tool_use_status: ToolUseStatus,
-    /// Abstraction that consolidates custom tools with native ones
-    tool_manager: ToolManager,
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
@@ -533,8 +531,15 @@ impl ChatContext {
     ) -> Result<Self> {
         let ctx_clone = Arc::clone(&ctx);
         let output_clone = output.clone();
-        let conversation_state =
-            ConversationState::new(ctx_clone, conversation_id, tool_config, profile, Some(output_clone)).await;
+        let conversation_state = ConversationState::new(
+            ctx_clone,
+            conversation_id,
+            tool_config,
+            profile,
+            Some(output_clone),
+            tool_manager,
+        )
+        .await;
         Ok(Self {
             ctx,
             settings,
@@ -550,7 +555,6 @@ impl ChatContext {
             conversation_state,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
-            tool_manager,
             failed_request_ids: Vec::new(),
             pending_prompts: VecDeque::new(),
         })
@@ -1217,6 +1221,7 @@ impl ChatContext {
         #[cfg(unix)]
         if let Some(ref context_manager) = self.conversation_state.context_manager {
             let tool_names = self
+                .conversation_state
                 .tool_manager
                 .tn_map
                 .keys()
@@ -2152,9 +2157,10 @@ impl ChatContext {
 
                 match subcommand {
                     Some(ToolsSubcommand::Schema) => {
-                        let schema_json = serde_json::to_string_pretty(&self.tool_manager.schema).map_err(|e| {
-                            ChatError::Custom(format!("Error converting tool schema to string: {e}").into())
-                        })?;
+                        let schema_json = serde_json::to_string_pretty(&self.conversation_state.tool_manager.schema)
+                            .map_err(|e| {
+                                ChatError::Custom(format!("Error converting tool schema to string: {e}").into())
+                            })?;
                         queue!(self.output, style::Print(schema_json), style::Print("\n"))?;
                     },
                     Some(ToolsSubcommand::Trust { tool_names }) => {
@@ -2368,7 +2374,7 @@ impl ChatContext {
                     },
                     Some(PromptsSubcommand::Get { mut get_command }) => {
                         let orig_input = get_command.orig_input.take();
-                        let prompts = match self.tool_manager.get_prompt(get_command).await {
+                        let prompts = match self.conversation_state.tool_manager.get_prompt(get_command).await {
                             Ok(resp) => resp,
                             Err(e) => {
                                 match e {
@@ -2455,12 +2461,12 @@ impl ChatContext {
                             _ => None,
                         };
                         let terminal_width = self.terminal_width();
-                        let mut prompts_wl = self.tool_manager.prompts.write().map_err(|e| {
+                        let mut prompts_wl = self.conversation_state.tool_manager.prompts.write().map_err(|e| {
                             ChatError::Custom(
                                 format!("Poison error encountered while retrieving prompts: {}", e).into(),
                             )
                         })?;
-                        self.tool_manager.refresh_prompts(&mut prompts_wl)?;
+                        self.conversation_state.tool_manager.refresh_prompts(&mut prompts_wl)?;
                         let mut longest_name = "";
                         let arg_pos = {
                             let optimal_case = UnicodeWidthStr::width(longest_name) + terminal_width / 4;
@@ -3126,7 +3132,7 @@ impl ChatContext {
                 .set_tool_use_id(tool_use_id.clone())
                 .set_tool_name(tool_use.name.clone())
                 .utterance_id(self.conversation_state.message_id().map(|s| s.to_string()));
-            match self.tool_manager.get_tool_from_tool_use(tool_use) {
+            match self.conversation_state.tool_manager.get_tool_from_tool_use(tool_use) {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);

@@ -13,6 +13,7 @@ use crate::mcp_client::{
     ToolsListResult,
 };
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum UpdateEventMessage {
     ToolsListResult {

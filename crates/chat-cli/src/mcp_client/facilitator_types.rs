@@ -5,6 +5,7 @@ use serde::{
 use thiserror::Error;
 
 /// https://spec.modelcontextprotocol.io/specification/2024-11-05/server/utilities/pagination/#operations-supporting-pagination
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaginationSupportedOps {
     ResourcesList,

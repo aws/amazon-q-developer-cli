@@ -11,6 +11,7 @@ use super::{
 /// consumer. It is through this interface secondary information (i.e. information that are needed
 /// to make requests to mcp servers) are obtained passively. Consumers of client can of course
 /// choose to "actively" retrieve these information via explicitly making these requests.
+#[allow(dead_code)]
 #[async_trait::async_trait]
 pub trait Messenger: std::fmt::Debug + Send + Sync + 'static {
     /// Sends the result of a tools list operation to the consumer

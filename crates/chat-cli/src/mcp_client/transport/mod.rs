@@ -31,6 +31,7 @@ impl From<std::io::Error> for TransportError {
     }
 }
 
+#[allow(dead_code)]
 #[async_trait::async_trait]
 pub trait Transport: Send + Sync + Debug + 'static {
     /// Sends a message over the transport layer.

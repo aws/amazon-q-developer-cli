@@ -596,7 +596,7 @@ enum OutOfSpecName {
 
 type NewToolSpecs = Arc<Mutex<HashMap<String, (HashMap<String, String>, Vec<ToolSpec>)>>>;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 /// Manages the lifecycle and interactions with tools from various sources, including MCP servers.
 /// This struct is responsible for initializing tools, handling tool requests, and maintaining
 /// a cache of available prompts from connected servers.
@@ -637,6 +637,21 @@ pub struct ToolManager {
     /// This is mainly used to show the user what the tools look like from the perspective of the
     /// model.
     pub schema: HashMap<String, ToolSpec>,
+}
+
+impl Clone for ToolManager {
+    fn clone(&self) -> Self {
+        Self {
+            conversation_id: self.conversation_id.clone(),
+            clients: self.clients.clone(),
+            has_new_stuff: self.has_new_stuff.clone(),
+            new_tool_specs: self.new_tool_specs.clone(),
+            prompts: self.prompts.clone(),
+            tn_map: self.tn_map.clone(),
+            schema: self.schema.clone(),
+            ..Default::default()
+        }
+    }
 }
 
 impl ToolManager {

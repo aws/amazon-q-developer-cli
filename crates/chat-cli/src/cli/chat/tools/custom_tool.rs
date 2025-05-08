@@ -15,10 +15,7 @@ use serde::{
 use tokio::sync::RwLock;
 use tracing::warn;
 
-use super::{
-    InvokeOutput,
-    ToolSpec,
-};
+use super::InvokeOutput;
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::mcp_client::{
@@ -88,32 +85,20 @@ impl CustomToolClient {
         })
     }
 
-    pub async fn init(&self) -> Result<(String, Vec<ToolSpec>)> {
+    pub async fn init(&self) -> Result<()> {
         match self {
             CustomToolClient::Stdio {
                 client,
-                server_name,
                 server_capabilities,
+                ..
             } => {
                 // We'll need to first initialize. This is the handshake every client and server
                 // needs to do before proceeding to anything else
                 let cap = client.init().await?;
                 // We'll be scrapping this for background server load: https://github.com/aws/amazon-q-developer-cli/issues/1466
                 // So don't worry about the tidiness for now
-                let is_tool_supported = cap.tools.is_some();
                 server_capabilities.write().await.replace(cap);
-                // Assuming a shape of return as per https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#listing-tools
-                // let tools = if is_tool_supported {
-                //     // And now we make the server tell us what tools they have
-                //     let resp = client.request("tools/list", None).await?;
-                //     match resp.result.and_then(|r| r.get("tools").cloned()) {
-                //         Some(value) => serde_json::from_value::<Vec<ToolSpec>>(value)?,
-                //         None => Default::default(),
-                //     }
-                // } else {
-                //     Default::default()
-                // };
-                Ok((server_name.clone(), vec![]))
+                Ok(())
             },
         }
     }

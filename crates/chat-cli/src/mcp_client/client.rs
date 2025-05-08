@@ -82,6 +82,7 @@ pub struct ClientConfig {
     pub env: Option<HashMap<String, String>>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum ClientError {
     #[error(transparent)]
@@ -546,10 +547,6 @@ where
                 .await
                 .map_err(send_map_err)??,
         )
-    }
-
-    pub async fn shutdown(&self) -> Result<(), ClientError> {
-        Ok(self.transport.shutdown().await?)
     }
 
     fn get_id(&self) -> u64 {

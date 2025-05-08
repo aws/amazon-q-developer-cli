@@ -37,6 +37,7 @@ use super::token_counter::{
     CharCount,
     CharCounter,
 };
+use super::tool_manager::ToolManager;
 use super::tools::{
     InputSchema,
     QueuedTool,
@@ -85,6 +86,8 @@ pub struct ConversationState {
     pub tools: HashMap<ToolOrigin, Vec<Tool>>,
     /// Context manager for handling sticky context files
     pub context_manager: Option<ContextManager>,
+    /// Tool manager for handling tool and mcp related activities
+    pub tool_manager: ToolManager,
     /// Cached value representing the length of the user context message.
     context_message_length: Option<usize>,
     /// Stores the latest conversation summary created by /compact
@@ -99,6 +102,7 @@ impl ConversationState {
         tool_config: HashMap<String, ToolSpec>,
         profile: Option<String>,
         updates: Option<SharedWriter>,
+        tool_manager: ToolManager,
     ) -> Self {
         // Initialize context manager
         let context_manager = match ContextManager::new(ctx, None).await {
@@ -137,6 +141,7 @@ impl ConversationState {
                     acc
                 }),
             context_manager,
+            tool_manager,
             context_message_length: None,
             latest_summary: None,
             updates,
@@ -926,6 +931,7 @@ mod tests {
             tool_manager.load_tools().await.unwrap(),
             None,
             None,
+            tool_manager,
         )
         .await;
 
@@ -944,12 +950,14 @@ mod tests {
     async fn test_conversation_state_history_handling_with_tool_results() {
         // Build a long conversation history of tool use results.
         let mut tool_manager = ToolManager::default();
+        let tool_config = tool_manager.load_tools().await.unwrap();
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
-            tool_manager.load_tools().await.unwrap(),
+            tool_config.clone(),
             None,
             None,
+            tool_manager.clone(),
         )
         .await;
         conversation_state.set_next_user_message("start".to_string()).await;
@@ -975,9 +983,10 @@ mod tests {
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
-            tool_manager.load_tools().await.unwrap(),
+            tool_config.clone(),
             None,
             None,
+            tool_manager.clone(),
         )
         .await;
         conversation_state.set_next_user_message("start".to_string()).await;
@@ -1016,6 +1025,7 @@ mod tests {
             tool_manager.load_tools().await.unwrap(),
             None,
             None,
+            tool_manager,
         )
         .await;
 
@@ -1081,6 +1091,7 @@ mod tests {
             tool_manager.load_tools().await.unwrap(),
             None,
             Some(SharedWriter::stdout()),
+            tool_manager,
         )
         .await;
 
