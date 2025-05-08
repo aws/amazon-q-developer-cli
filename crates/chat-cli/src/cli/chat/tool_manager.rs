@@ -7,7 +7,10 @@ use std::hash::{
 use std::io::Write;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{
     Arc,
@@ -373,6 +376,8 @@ impl ToolManagerBuilder {
         let regex = Arc::new(Regex::new(VALID_TOOL_NAME)?);
         let new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
         let new_tool_specs_clone = new_tool_specs.clone();
+        let has_new_stuff = Arc::new(AtomicBool::new(false));
+        let has_new_stuff_clone = has_new_stuff.clone();
         let (mut msg_rx, messenger_builder) = ServerMessengerBuilder::new(20);
         tokio::spawn(async move {
             while let Some(msg) = msg_rx.recv().await {
@@ -414,6 +419,10 @@ impl ToolManagerBuilder {
                             .lock()
                             .await
                             .insert(server_name, (sanitized_mapping, specs));
+                        // We only want to set this flag when the display task has ended
+                        if load_msg_sender.is_none() {
+                            has_new_stuff_clone.store(true, Ordering::Relaxed);
+                        }
                     },
                     UpdateEventMessage::PromptsListResult {
                         server_name: _,
@@ -557,6 +566,7 @@ impl ToolManagerBuilder {
             loading_display_task,
             loading_status_sender,
             new_tool_specs,
+            has_new_stuff,
             ..Default::default()
         })
     }
