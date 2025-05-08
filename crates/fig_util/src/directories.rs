@@ -14,6 +14,9 @@ use fig_os_shim::{
 use thiserror::Error;
 use time::OffsetDateTime;
 
+#[cfg(unix)]
+use crate::RUNTIME_DIR_NAME;
+use crate::TAURI_PRODUCT_NAME;
 use crate::env_var::{
     Q_BUNDLE_METADATA_PATH,
     Q_PARENT,
@@ -22,10 +25,6 @@ use crate::linux::PACKAGE_NAME;
 use crate::system_info::{
     in_cloudshell,
     is_remote,
-};
-use crate::{
-    RUNTIME_DIR_NAME,
-    TAURI_PRODUCT_NAME,
 };
 
 macro_rules! utf8_dir {
@@ -70,6 +69,25 @@ pub enum DirectoryError {
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
+
+/// The fig directory
+///
+/// - Linux: `$HOME/.local/share/amazon-q`
+/// - MacOS: `$HOME/Library/Application Support/amazon-q`
+/// - Windows: `%LOCALAPPDATA%\Fig`
+pub fn fig_dir() -> Result<PathBuf> {
+    cfg_if::cfg_if! {
+        if #[cfg(unix)] {
+            Ok(dirs::data_local_dir()
+                .ok_or(DirectoryError::NoHomeDirectory)?
+                .join("amazon-q"))
+        } else if #[cfg(windows)] {
+            Ok(dirs::data_local_dir()
+                .ok_or(DirectoryError::NoHomeDirectory)?
+                .join("Fig"))
+        }
+    }
+}
 
 /// The directory of the users home
 ///
@@ -165,6 +183,7 @@ pub fn fig_data_dir_ctx(fs: &impl FsProvider) -> Result<PathBuf> {
 ///
 /// - Linux: `$XDG_DATA_HOME` or `$HOME/.local/share`
 /// - MacOS: `$HOME/Library/Application Support`
+/// - Windows: `%LOCALAPPDATA%`
 pub fn local_data_dir<Ctx: FsProvider + EnvProvider + PlatformProvider>(ctx: &Ctx) -> Result<PathBuf> {
     let env = ctx.env();
     match ctx.platform().os() {
@@ -175,6 +194,12 @@ pub fn local_data_dir<Ctx: FsProvider + EnvProvider + PlatformProvider>(ctx: &Ct
             Ok(home_dir_ctx(ctx)?.join(".local/share"))
         },
         Os::Mac => Ok(home_dir_ctx(ctx)?.join("Library/Application Support")),
+        Os::Windows => {
+            if let Some(path) = env.get_os("LOCALAPPDATA") {
+                return Ok(path.into());
+            }
+            Ok(home_dir_ctx(ctx)?.join("AppData").join("Local"))
+        },
         os => Err(DirectoryError::UnsupportedOs(os)),
     }
 }
@@ -213,21 +238,27 @@ fn macos_tempdir() -> Result<PathBuf> {
 ///
 /// The XDG_RUNTIME_DIR is set by systemd <https://www.freedesktop.org/software/systemd/man/latest/file-hierarchy.html#/run/user/>,
 /// if this is not set such as on macOS it will fallback to TMPDIR which is secure on macOS
-#[cfg(unix)]
+/// On Windows, it uses the TEMP directory
 pub fn runtime_dir() -> Result<PathBuf> {
-    let mut dir = dirs::runtime_dir();
-    dir = dir.or_else(|| std::env::var_os("TMPDIR").map(PathBuf::from));
-
     cfg_if::cfg_if! {
-        if #[cfg(target_os = "macos")] {
-            let macos_tempdir = macos_tempdir()?;
-            dir = dir.or(Some(macos_tempdir));
-        } else {
-            dir = dir.or_else(|| Some(std::env::temp_dir()));
+        if #[cfg(unix)] {
+            let mut dir = dirs::runtime_dir();
+            dir = dir.or_else(|| std::env::var_os("TMPDIR").map(PathBuf::from));
+
+            cfg_if::cfg_if! {
+                if #[cfg(target_os = "macos")] {
+                    let macos_tempdir = macos_tempdir()?;
+                    dir = dir.or(Some(macos_tempdir));
+                } else {
+                    dir = dir.or_else(|| Some(std::env::temp_dir()));
+                }
+            }
+
+            dir.ok_or(DirectoryError::NoRuntimeDirectory)
+        } else if #[cfg(windows)] {
+            Ok(std::env::temp_dir())
         }
     }
-
-    dir.ok_or(DirectoryError::NoRuntimeDirectory)
 }
 
 /// The q sockets directory of the local q installation
@@ -378,21 +409,30 @@ pub fn local_remote_socket_path() -> Result<PathBuf> {
 /// - Linux/Macos: `/var/tmp/fig/%USERNAME%/figterm/$SESSION_ID.sock`
 /// - MacOS: `$TMPDIR/cwrun/t/$SESSION_ID.sock`
 /// - Linux: `$XDG_RUNTIME_DIR/cwrun/t/$SESSION_ID.sock`
-/// - Windows: `%APPDATA%\Fig\$SESSION_ID.sock`
+/// - Windows: `%LOCALAPPDATA%\Fig\sockets\figterm\$SESSION_ID.sock`
 pub fn figterm_socket_path(session_id: impl Display) -> Result<PathBuf> {
-    Ok(sockets_dir()?.join("t").join(format!("{session_id}.sock")))
+    cfg_if::cfg_if! {
+        if #[cfg(unix)] {
+            Ok(sockets_dir()?.join("t").join(format!("{session_id}.sock")))
+        } else if #[cfg(windows)] {
+            Ok(sockets_dir()?.join("figterm").join(format!("{session_id}.sock")))
+        }
+    }
 }
 
 /// The path to the resources directory
 ///
 /// - MacOS: "/Applications/Amazon Q.app/Contents/Resources"
 /// - Linux: "/usr/share/fig"
+/// - Windows: "%LOCALAPPDATA%\Fig\resources"
 pub fn resources_path() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(all(unix, not(target_os = "macos")))] {
             Ok(std::path::Path::new("/usr/share/fig").into())
         } else if #[cfg(target_os = "macos")] {
             Ok(crate::app_bundle_path().join(crate::macos::BUNDLE_CONTENTS_RESOURCE_PATH))
+        } else if #[cfg(windows)] {
+            Ok(fig_dir()?.join("resources"))
         }
     }
 }
@@ -411,7 +451,21 @@ pub fn resources_path_ctx<Ctx: EnvProvider + PlatformProvider>(ctx: &Ctx) -> Res
                 Ok(format!("/usr/share/{}", PACKAGE_NAME).into())
             }
         },
+        fig_os_shim::Os::Windows => Ok(fig_dir()?.join("resources")),
         _ => Err(DirectoryError::UnsupportedOs(os)),
+    }
+}
+
+/// The path to the managed binaries directory
+///
+/// - Windows: "%LOCALAPPDATA%\Fig\bin"
+pub fn managed_binaries_dir() -> Result<PathBuf> {
+    cfg_if::cfg_if! {
+        if #[cfg(windows)] {
+            Ok(fig_dir()?.join("bin"))
+        } else {
+            Ok(resources_path()?)
+        }
     }
 }
 
@@ -419,6 +473,7 @@ pub fn resources_path_ctx<Ctx: EnvProvider + PlatformProvider>(ctx: &Ctx) -> Res
 ///
 /// - MacOS: "/Applications/Amazon Q.app/Contents/Resources/manifest.json"
 /// - Linux: "/usr/share/fig/manifest.json"
+/// - Windows: "%LOCALAPPDATA%\Fig\bin\manifest.json"
 pub fn manifest_path() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
@@ -523,11 +578,13 @@ pub fn local_webview_data_dir<Ctx: FsProvider + EnvProvider + PlatformProvider>(
 utf8_dir!(home_dir);
 #[cfg(unix)]
 utf8_dir!(home_local_bin);
+utf8_dir!(fig_dir);
 utf8_dir!(fig_data_dir);
 utf8_dir!(sockets_dir);
 utf8_dir!(remote_socket_path);
 utf8_dir!(figterm_socket_path, session_id: impl Display);
 utf8_dir!(manifest_path);
+utf8_dir!(managed_binaries_dir);
 utf8_dir!(backups_dir);
 utf8_dir!(logs_dir);
 utf8_dir!(settings_path);
@@ -540,12 +597,16 @@ mod linux_tests {
     fn all_paths() {
         let ctx = Context::new();
         assert!(home_dir().is_ok());
+        #[cfg(unix)]
         assert!(home_local_bin().is_ok());
+        assert!(fig_dir().is_ok());
         assert!(fig_data_dir().is_ok());
         assert!(sockets_dir().is_ok());
         assert!(remote_socket_path().is_ok());
         assert!(local_remote_socket_path().is_ok());
         assert!(figterm_socket_path("test").is_ok());
+        assert!(resources_path().is_ok());
+        assert!(managed_binaries_dir().is_ok());
         assert!(manifest_path().is_ok());
         assert!(backups_dir().is_ok());
         assert!(logs_dir().is_ok());
@@ -568,13 +629,28 @@ mod tests {
     /// own otherwise we will set permissions of directories we shouldn't
     #[test]
     fn test_socket_paths() {
+        #[cfg(unix)]
         assert_eq!(
             host_sockets_dir().unwrap().file_name().unwrap().to_str().unwrap(),
             format!("cwrun")
         );
+
+        #[cfg(windows)]
+        assert_eq!(
+            host_sockets_dir().unwrap().file_name().unwrap().to_str().unwrap(),
+            format!("sockets")
+        );
+
+        #[cfg(unix)]
         assert_eq!(
             figterm_socket_path("").unwrap().parent().unwrap().file_name().unwrap(),
             "t"
+        );
+
+        #[cfg(windows)]
+        assert_eq!(
+            figterm_socket_path("").unwrap().parent().unwrap().file_name().unwrap(),
+            "figterm"
         );
     }
 
@@ -649,8 +725,17 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn snapshot_home_local_bin() {
+        #[cfg(target_os = "linux")]
         linux!(home_local_bin(), @"$HOME/.local/bin");
+        #[cfg(target_os = "macos")]
         macos!(home_local_bin(), @"$HOME/.local/bin");
+    }
+
+    #[test]
+    fn snapshot_fig_dir() {
+        linux!(fig_dir(), @"$HOME/.local/share/amazon-q");
+        macos!(fig_dir(), @"$HOME/Library/Application Support/amazon-q");
+        windows!(fig_dir(), @r"C:\Users\$USER\AppData\Local\Fig");
     }
 
     #[test]
@@ -671,7 +756,7 @@ mod tests {
     fn snapshot_themes_dir() {
         linux!(themes_dir(&Context::new()), @"/usr/share/fig/themes");
         macos!(themes_dir(&Context::new()), @"/Applications/Amazon Q.app/Contents/Resources/themes");
-        windows!(themes_dir(&Context::new()), @r"C:\Users\$USER\AppData\Local\Fig\userdata\themes\themes");
+        windows!(themes_dir(&Context::new()), @r"C:\Users\$USER\AppData\Local\Fig\resources\themes");
     }
 
     #[test]
@@ -710,10 +795,17 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_managed_binaries_dir() {
+        linux!(managed_binaries_dir(), @"/usr/share/fig");
+        macos!(managed_binaries_dir(), @"/Applications/Amazon Q.app/Contents/Resources");
+        windows!(managed_binaries_dir(), @r"C:\Users\$USER\AppData\Local\Fig\bin");
+    }
+
+    #[test]
     fn snapshot_settings_path() {
         linux!(settings_path(), @"$HOME/.local/share/amazon-q/settings.json");
         macos!(settings_path(), @"$HOME/Library/Application Support/amazon-q/settings.json");
-        windows!(settings_path(), @r"C:\Users\$USER\AppData\Lcoal\Fig\settings.json");
+        windows!(settings_path(), @r"C:\Users\$USER\AppData\Local\Fig\userdata\settings.json");
     }
 
     #[test]
