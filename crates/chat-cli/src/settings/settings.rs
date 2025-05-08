@@ -36,10 +36,12 @@ mod inner {
 
 impl Settings {
     pub fn new() -> Self {
-        match cfg!(test) {
-            true => Self(inner::Inner::Fake(Arc::new(Mutex::new(Map::new())))),
-            false => Self(inner::Inner::Real),
-        }
+        Self(inner::Inner::Real)
+    }
+
+    #[allow(dead_code)]
+    pub fn new_fake() -> Self {
+        Self(inner::Inner::Fake(Arc::new(Mutex::new(Map::new()))))
     }
 
     pub fn set_value(&self, key: impl Into<String>, value: impl Into<serde_json::Value>) -> Result<()> {
@@ -203,7 +205,7 @@ mod test {
     /// General read/write settings test
     #[test]
     fn test_settings() -> Result<()> {
-        let settings = Settings::new();
+        let settings = Settings::new_fake();
 
         assert!(settings.get_value("test").unwrap().is_none());
         assert!(settings.get::<String>("test").unwrap().is_none());

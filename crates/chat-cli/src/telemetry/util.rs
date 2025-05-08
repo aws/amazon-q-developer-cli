@@ -120,13 +120,13 @@ mod tests {
         let id = get_client_id();
         assert!(id.is_max());
 
-        let state = State::new();
-        let settings = Settings::new();
+        let state = State::new_fake();
+        let settings = Settings::new_fake();
 
         let env = Env::from_slice(&[(CLIENT_ID_ENV_VAR, TEST_UUID_STR)]);
         assert_eq!(get_client_id_inner(false, &env, &state, &settings), TEST_UUID);
 
-        let env = Env::new();
+        let env = Env::from_slice(&[]);
 
         // in tests returns the test uuid
         assert!(get_client_id_inner(true, &env, &state, &settings).is_max());
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_get_client_id_old() {
-        let settings = Settings::new();
+        let settings = Settings::new_fake();
         assert!(old_client_id_inner(&settings).is_none());
         settings.set_value(CLIENT_ID_STATE_KEY, TEST_UUID_STR).unwrap();
         assert_eq!(old_client_id_inner(&settings), Some(TEST_UUID));

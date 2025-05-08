@@ -26,13 +26,14 @@ mod inner {
 
 impl State {
     pub fn new() -> Self {
-        if cfg!(test) {
-            let db = Db::mock();
-            db.migrate().unwrap();
-            return Self(inner::Inner::Fake(db));
-        }
-
         Self::default()
+    }
+
+    #[allow(dead_code)]
+    pub fn new_fake() -> Self {
+        let db = Db::mock();
+        db.migrate().unwrap();
+        Self(inner::Inner::Fake(db))
     }
 
     fn database(&self) -> Result<&Db> {
@@ -162,7 +163,7 @@ mod tests {
     /// General read/write state test
     #[test]
     fn test_state() -> Result<()> {
-        let state = State::new();
+        let state = State::new_fake();
 
         assert!(state.get_value("test").unwrap().is_none());
         assert!(state.get::<String>("test").unwrap().is_none());
