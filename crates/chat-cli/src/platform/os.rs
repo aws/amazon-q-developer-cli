@@ -2,8 +2,6 @@ use std::fmt;
 
 use serde::Serialize;
 
-use crate::Shim;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub enum Os {
@@ -96,12 +94,6 @@ impl Platform {
     }
 }
 
-impl Shim for Platform {
-    fn is_real(&self) -> bool {
-        matches!(self.0, inner::Inner::Real)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,11 +101,9 @@ mod tests {
     #[test]
     fn test_platform() {
         let platform = Platform::default();
-        assert!(platform.is_real());
 
         for os in Os::all() {
             let platform = Platform::new_fake(*os);
-            assert!(!platform.is_real());
             assert_eq!(&platform.os(), os);
 
             let _ = os.as_str();

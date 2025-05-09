@@ -326,7 +326,7 @@ mod tests {
         );
 
         // Assert all the files in migrations/ are in the list
-        let migration_folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/sqlite/migrations");
+        let migration_folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/settings/sqlite_migrations");
         let migration_count = std::fs::read_dir(migration_folder).unwrap().count();
         assert_eq!(MIGRATIONS.len(), migration_count);
     }

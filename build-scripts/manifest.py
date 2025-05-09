@@ -64,6 +64,10 @@ def app_manifest():
                 path="Contents/MacOS/qterm",
                 identifier="com.amazon.qterm",
             ),
+            EmbeddedRequirement(
+                path="Contents/MacOS/qchat",
+                identifier="com.amazon.qchat",
+            ),
         ],
     )
 

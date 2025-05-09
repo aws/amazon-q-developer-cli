@@ -155,14 +155,14 @@ pnpm install --ignore-scripts
 ### 3. Start Local Development
 To compile and view changes made to `q chat`:
 ```shell
-cargo run --bin q_cli -- chat
+cargo run --bin chat_cli
 ```
 
-> If you are working on other q commands, just replace `chat` with the command name 
+> If you are working on other q commands, just append `-- <command name>`. For example, to run `q login`, you can run `cargo run --bin chat_cli -- login`
 
 To run tests for the Q CLI crate:
 ```shell
-cargo test -p q_cli
+cargo test -p chat_cli
 ```
 
 To format Rust files:

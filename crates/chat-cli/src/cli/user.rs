@@ -227,13 +227,19 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
         Some(LicenseType::Free) => AuthMethod::BuilderId,
         Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
         None => {
-            // No license specified, prompt the user to choose
-            let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
-            let i = match choose("Select login method", &options)? {
-                Some(i) => i,
-                None => bail!("No login method selected"),
-            };
-            options[i]
+            if args.identity_provider.is_some() && args.region.is_some() {
+                // If license is specified and --identity-provider and --region are specified,
+                // the license is determined to be pro
+                AuthMethod::IdentityCenter
+            } else {
+                // --license is not specified, prompt the user to choose
+                let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
+                let i = match choose("Select login method", &options)? {
+                    Some(i) => i,
+                    None => bail!("No login method selected"),
+                };
+                options[i]
+            }
         },
     };
 

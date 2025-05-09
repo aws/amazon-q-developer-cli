@@ -291,6 +291,7 @@ mod tests {
             .send_message(ConversationState {
                 conversation_id: None,
                 user_input_message: UserInputMessage {
+                    images: None,
                     content: "Hello".into(),
                     user_input_message_context: None,
                     user_intent: None,
@@ -315,12 +316,14 @@ mod tests {
             .send_message(ConversationState {
                 conversation_id: None,
                 user_input_message: UserInputMessage {
+                    images: None,
                     content: "How about rustc?".into(),
                     user_input_message_context: None,
                     user_intent: None,
                 },
                 history: Some(vec![
                     ChatMessage::UserInputMessage(UserInputMessage {
+                        images: None,
                         content: "What language is the linux kernel written in, and who wrote it?".into(),
                         user_input_message_context: None,
                         user_intent: None,

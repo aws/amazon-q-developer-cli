@@ -4,6 +4,7 @@
 pub mod diagnostics;
 mod env;
 mod fs;
+mod os;
 mod providers;
 mod sysinfo;
 
@@ -11,6 +12,10 @@ use std::sync::Arc;
 
 pub use env::Env;
 pub use fs::Fs;
+pub use os::{
+    Os,
+    Platform,
+};
 pub use providers::{
     EnvProvider,
     FsProvider,
@@ -28,6 +33,7 @@ pub struct Context {
     fs: Fs,
     env: Env,
     sysinfo: SysInfo,
+    platform: Platform,
 }
 
 impl Context {
@@ -38,11 +44,13 @@ impl Context {
                 fs: Fs::new(),
                 env: Env::new(),
                 sysinfo: SysInfo::new(),
+                platform: Platform::new(),
             }),
             false => Arc::new_cyclic(|_| Self {
                 fs: Default::default(),
                 env: Default::default(),
                 sysinfo: SysInfo::default(),
+                platform: Platform::new(),
             }),
         }
     }
@@ -62,6 +70,10 @@ impl Context {
     pub fn sysinfo(&self) -> &SysInfo {
         &self.sysinfo
     }
+
+    pub fn platform(&self) -> &Platform {
+        &self.platform
+    }
 }
 
 #[derive(Default, Debug)]
@@ -69,6 +81,7 @@ pub struct ContextBuilder {
     fs: Option<Fs>,
     env: Option<Env>,
     sysinfo: Option<SysInfo>,
+    platform: Option<Platform>,
 }
 
 impl ContextBuilder {
@@ -81,7 +94,13 @@ impl ContextBuilder {
         let fs = self.fs.unwrap_or_default();
         let env = self.env.unwrap_or_default();
         let sysinfo = self.sysinfo.unwrap_or_default();
-        Arc::new_cyclic(|_| Context { fs, env, sysinfo })
+        let platform = self.platform.unwrap_or_default();
+        Arc::new_cyclic(|_| Context {
+            fs,
+            env,
+            sysinfo,
+            platform,
+        })
     }
 
     /// Builds an immutable [Context] using fake implementations for each field by default.
@@ -89,7 +108,13 @@ impl ContextBuilder {
         let fs = self.fs.unwrap_or_default();
         let env = self.env.unwrap_or_default();
         let sysinfo = self.sysinfo.unwrap_or_default();
-        Arc::new_cyclic(|_| Context { fs, env, sysinfo })
+        let platform = self.platform.unwrap_or_default();
+        Arc::new_cyclic(|_| Context {
+            fs,
+            env,
+            sysinfo,
+            platform,
+        })
     }
 
     pub fn with_env(mut self, env: Env) -> Self {

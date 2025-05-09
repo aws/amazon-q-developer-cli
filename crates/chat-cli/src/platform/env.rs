@@ -52,10 +52,7 @@ mod inner {
 
 impl Env {
     pub fn new() -> Self {
-        match cfg!(test) {
-            true => Self(inner::Inner::Fake(Arc::new(Mutex::new(inner::Fake::default())))),
-            false => Self::default(),
-        }
+        Self::default()
     }
 
     /// Create a fake process environment from a slice of tuples.
@@ -213,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_default_current_dir() {
-        let env = Env::new();
+        let env = Env::from_slice(&[]);
         assert_eq!(env.current_dir().unwrap(), PathBuf::from("/"));
     }
 }
