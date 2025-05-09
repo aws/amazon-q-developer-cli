@@ -4,6 +4,11 @@ use std::collections::{
 };
 use std::sync::Arc;
 
+use crossterm::style::Color;
+use crossterm::{
+    execute,
+    style,
+};
 use tracing::{
     debug,
     error,
@@ -11,6 +16,7 @@ use tracing::{
 };
 
 use super::consts::{
+    DUMMY_TOOL_NAME,
     MAX_CHARS,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
 };
@@ -42,10 +48,12 @@ use crate::api_client::model::{
     AssistantResponseMessage,
     ChatMessage,
     ConversationState as FigConversationState,
+    ImageBlock,
     Tool,
     ToolInputSchema,
     ToolResult,
     ToolResultContentBlock,
+    ToolResultStatus,
     ToolSpecification,
     ToolUse,
     UserInputMessage,
@@ -93,7 +101,7 @@ impl ConversationState {
         updates: Option<SharedWriter>,
     ) -> Self {
         // Initialize context manager
-        let context_manager = match ContextManager::new(ctx).await {
+        let context_manager = match ContextManager::new(ctx, None).await {
             Ok(mut manager) => {
                 // Switch to specified profile if provided
                 if let Some(profile_name) = profile {
@@ -271,9 +279,9 @@ impl ConversationState {
 
         // If the last message from the assistant contains tool uses AND next_message is set, we need to
         // ensure that next_message contains tool results.
-        if let (Some((_, AssistantMessage::ToolUse { tool_uses, .. })), Some(user_msg)) = (
+        if let (Some((_, AssistantMessage::ToolUse { ref mut tool_uses, .. })), Some(user_msg)) = (
             self.history
-                .range(self.valid_history_range.0..self.valid_history_range.1)
+                .range_mut(self.valid_history_range.0..self.valid_history_range.1)
                 .last(),
             &mut self.next_message,
         ) {
@@ -286,12 +294,45 @@ impl ConversationState {
                     tool_uses.iter().map(|t| t.id.as_str()),
                 );
             }
+
+            // Here we also need to make sure that the tool result corresponds to one of the tools
+            // in the list. Otherwise we will see validation error from the backend. We would only
+            // do this if the last message is a tool call that has failed.
+            let tool_use_results = user_msg.tool_use_results();
+            if let Some(tool_use_results) = tool_use_results {
+                let tool_name_list = self
+                    .tools
+                    .values()
+                    .flatten()
+                    .map(|Tool::ToolSpecification(spec)| spec.name.as_str())
+                    .collect::<Vec<_>>();
+                for result in tool_use_results {
+                    if let ToolResultStatus::Error = result.status {
+                        let tool_use_id = result.tool_use_id.as_str();
+                        let _ = tool_uses
+                            .iter_mut()
+                            .filter(|tool_use| tool_use.id == tool_use_id)
+                            .map(|tool_use| {
+                                let tool_name = tool_use.name.as_str();
+                                if !tool_name_list.contains(&tool_name) {
+                                    tool_use.name = DUMMY_TOOL_NAME.to_string();
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                    }
+                }
+            }
         }
     }
 
     pub fn add_tool_results(&mut self, tool_results: Vec<ToolUseResult>) {
         debug_assert!(self.next_message.is_none());
         self.next_message = Some(UserMessage::new_tool_use_results(tool_results));
+    }
+
+    pub fn add_tool_results_with_images(&mut self, tool_results: Vec<ToolUseResult>, images: Vec<ImageBlock>) {
+        debug_assert!(self.next_message.is_none());
+        self.next_message = Some(UserMessage::new_tool_use_results_with_images(tool_results, images));
     }
 
     /// Sets the next user message with "cancelled" tool results.
@@ -312,8 +353,23 @@ impl ConversationState {
         self.history.drain(self.valid_history_range.1..);
         self.history.drain(..self.valid_history_range.0);
 
-        self.backend_conversation_state(run_hooks, false)
-            .await
+        let context = self.backend_conversation_state(run_hooks, false).await;
+        if !context.dropped_context_files.is_empty() {
+            let mut output = SharedWriter::stdout();
+            execute!(
+                output,
+                style::SetForegroundColor(Color::DarkYellow),
+                style::Print("\nSome context files are dropped due to size limit, please run "),
+                style::SetForegroundColor(Color::DarkGreen),
+                style::Print("/context show "),
+                style::SetForegroundColor(Color::DarkYellow),
+                style::Print("to learn more.\n"),
+                style::SetForegroundColor(style::Color::Reset)
+            )
+            .ok();
+        }
+
+        context
             .into_fig_conversation_state()
             .expect("unable to construct conversation state")
     }
@@ -332,7 +388,6 @@ impl ConversationState {
             } else {
                 Some(self.updates.as_mut().unwrap_or(&mut null_writer))
             };
-
             let hook_results = cm.run_hooks(updates).await;
             conversation_start_context = Some(format_hook_context(hook_results.iter(), HookTrigger::ConversationStart));
 
@@ -342,7 +397,7 @@ impl ConversationState {
             }
         }
 
-        let context_messages = self.context_messages(conversation_start_context).await;
+        let (context_messages, dropped_context_files) = self.context_messages(conversation_start_context).await;
 
         BackendConversationState {
             conversation_id: self.conversation_id.as_str(),
@@ -351,6 +406,7 @@ impl ConversationState {
                 .history
                 .range(self.valid_history_range.0..self.valid_history_range.1),
             context_messages,
+            dropped_context_files,
             tools: &self.tools,
         }
     }
@@ -415,6 +471,7 @@ impl ConversationState {
             content: summary_content,
             user_input_message_context: None,
             user_intent: None,
+            images: None,
         };
 
         // If the last message contains tool uses, then add cancelled tool results to the summary
@@ -474,7 +531,7 @@ impl ConversationState {
     }
 
     /// Returns pairs of user and assistant messages to include as context in the message history
-    /// including both summaries and context files if available.
+    /// including both summaries and context files if available, and the dropped context files.
     ///
     /// TODO:
     /// - Either add support for multiple context messages if the context is too large to fit inside
@@ -484,9 +541,9 @@ impl ConversationState {
     async fn context_messages(
         &mut self,
         conversation_start_context: Option<String>,
-    ) -> Option<Vec<(UserMessage, AssistantMessage)>> {
+    ) -> (Option<Vec<(UserMessage, AssistantMessage)>>, Vec<(String, String)>) {
         let mut context_content = String::new();
-
+        let mut dropped_context_files = Vec::new();
         if let Some(summary) = &self.latest_summary {
             context_content.push_str(CONTEXT_ENTRY_START_HEADER);
             context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\n");
@@ -498,11 +555,15 @@ impl ConversationState {
 
         // Add context files if available
         if let Some(context_manager) = self.context_manager.as_mut() {
-            match context_manager.get_context_files(true).await {
-                Ok(files) => {
-                    if !files.is_empty() {
+            match context_manager.collect_context_files_with_limit().await {
+                Ok((files_to_use, files_dropped)) => {
+                    if !files_dropped.is_empty() {
+                        dropped_context_files.extend(files_dropped);
+                    }
+
+                    if !files_to_use.is_empty() {
                         context_content.push_str(CONTEXT_ENTRY_START_HEADER);
-                        for (filename, content) in files {
+                        for (filename, content) in files_to_use {
                             context_content.push_str(&format!("[{}]\n{}\n", filename, content));
                         }
                         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
@@ -522,9 +583,9 @@ impl ConversationState {
             self.context_message_length = Some(context_content.len());
             let user_msg = UserMessage::new_prompt(context_content);
             let assistant_msg = AssistantMessage::new_response(None, "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into());
-            Some(vec![(user_msg, assistant_msg)])
+            (Some(vec![(user_msg, assistant_msg)]), dropped_context_files)
         } else {
-            None
+            (None, dropped_context_files)
         }
     }
 
@@ -639,6 +700,7 @@ pub struct BackendConversationStateImpl<'a, T, U> {
     pub next_user_message: Option<&'a UserMessage>,
     pub history: T,
     pub context_messages: U,
+    pub dropped_context_files: Vec<(String, String)>,
     pub tools: &'a HashMap<ToolOrigin, Vec<Tool>>,
 }
 
@@ -1002,7 +1064,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_additional_context() {
-        tracing_subscriber::fmt::try_init().ok();
+        // tracing_subscriber::fmt::try_init().ok();
 
         let env = Env::new();
         let mut database = Database::new().await.unwrap();

@@ -365,8 +365,14 @@ impl Fs {
     /// On Windows, it automatically detects whether the target is a file or directory
     /// and uses the appropriate system call.
     ///
+<<<<<<< HEAD
     /// This is a proxy to [`std::os::windows::fs::symlink_file`] or [`std::os::windows::fs::symlink_dir`] on Windows,
     /// and [`std::os::unix::fs::symlink`] on Unix.
+=======
+    /// This is a proxy to [`std::os::windows::fs::symlink_file`] or
+    /// [`std::os::windows::fs::symlink_dir`] on Windows, and [`std::os::unix::fs::symlink`] on
+    /// Unix.
+>>>>>>> origin/main
     #[cfg(windows)]
     pub fn symlink_sync(&self, original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
         use inner::Inner;

@@ -69,7 +69,7 @@ impl StreamingClient {
             {
                 Self::new_qdeveloper_client(database, &Endpoint::load_q()).await?
             } else {
-                Self::new_codewhisperer_client(database, &Endpoint::load_codewhisperer()).await
+                Self::new_codewhisperer_client(database, &Endpoint::load_codewhisperer(&database)).await
             },
         )
     }
@@ -261,7 +261,7 @@ mod tests {
     #[tokio::test]
     async fn create_clients() {
         let mut database = Database::new().await.unwrap();
-        let endpoint = Endpoint::load_codewhisperer();
+        let endpoint = Endpoint::load_codewhisperer(&database);
 
         let _ = StreamingClient::new(&mut database).await;
         let _ = StreamingClient::new_codewhisperer_client(&mut database, &endpoint).await;
@@ -285,6 +285,7 @@ mod tests {
             .send_message(ConversationState {
                 conversation_id: None,
                 user_input_message: UserInputMessage {
+                    images: None,
                     content: "Hello".into(),
                     user_input_message_context: None,
                     user_intent: None,
@@ -310,12 +311,14 @@ mod tests {
             .send_message(ConversationState {
                 conversation_id: None,
                 user_input_message: UserInputMessage {
+                    images: None,
                     content: "How about rustc?".into(),
                     user_input_message_context: None,
                     user_intent: None,
                 },
                 history: Some(vec![
                     ChatMessage::UserInputMessage(UserInputMessage {
+                        images: None,
                         content: "What language is the linux kernel written in, and who wrote it?".into(),
                         user_input_message_context: None,
                         user_intent: None,

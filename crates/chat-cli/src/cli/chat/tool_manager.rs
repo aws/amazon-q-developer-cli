@@ -689,6 +689,47 @@ impl ToolManager {
             "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
+                // Note: tn_map also has tools that underwent no transformation. In otherwords, if
+                // it is a valid tool name, we should get a hit.
+                let name = match self.tn_map.get(name) {
+                    Some(name) => Ok::<&str, ToolResult>(name.as_str()),
+                    None => {
+                        // There are three possibilities:
+                        // - The tool name supplied is valid, it's just missing the server name
+                        // prefix.
+                        // - The tool name supplied is valid, it's missing the server name prefix
+                        // and there are more than one possible tools that fit this description.
+                        // - No server has a tool with this name.
+                        let candidates = self.tn_map.keys().filter(|n| n.ends_with(name)).collect::<Vec<_>>();
+                        #[allow(clippy::comparison_chain)]
+                        if candidates.len() == 1 {
+                            Ok(candidates.first().map(|s| s.as_str()).unwrap())
+                        } else if candidates.len() > 1 {
+                            let mut content = candidates.iter().fold(
+                                "There are multilple tools with given tool name: ".to_string(),
+                                |mut acc, name| {
+                                    acc.push_str(name);
+                                    acc.push_str(", ");
+                                    acc
+                                },
+                            );
+                            content.push_str("specify a tool with its full name.");
+                            Err(ToolResult {
+                                tool_use_id: value.id.clone(),
+                                content: vec![ToolResultContentBlock::Text(content)],
+                                status: ToolResultStatus::Error,
+                            })
+                        } else {
+                            Err(ToolResult {
+                                tool_use_id: value.id.clone(),
+                                content: vec![ToolResultContentBlock::Text(format!(
+                                    "The tool, \"{name}\" is supplied with incorrect name"
+                                ))],
+                                status: ToolResultStatus::Error,
+                            })
+                        }
+                    },
+                }?;
                 let name = self.tn_map.get(name).map_or(name, String::as_str);
                 let (server_name, tool_name) = name.split_once(NAMESPACE_DELIMITER).ok_or(ToolResult {
                     tool_use_id: value.id.clone(),

@@ -7,6 +7,8 @@ mod transport;
 
 pub use client::*;
 pub use facilitator_types::*;
+#[allow(unused_imports)]
+pub use server::*;
 pub use transport::*;
 
 /// Error codes as defined in the MCP protocol.

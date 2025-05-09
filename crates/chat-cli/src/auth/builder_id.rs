@@ -70,7 +70,7 @@ impl std::fmt::Display for OAuthFlow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             OAuthFlow::DeviceCode => write!(f, "DeviceCode"),
-            OAuthFlow::Pkce => write!(f, "PKCE"),
+            OAuthFlow::Pkce => write!(f, "Pkce"),
         }
     }
 }
@@ -594,7 +594,7 @@ mod tests {
     #[test]
     fn test_oauth_flow_ser_deser() {
         test_ser_deser!(OAuthFlow, OAuthFlow::DeviceCode, "DeviceCode");
-        test_ser_deser!(OAuthFlow, OAuthFlow::Pkce, "PKCE");
+        test_ser_deser!(OAuthFlow, OAuthFlow::Pkce, "Pkce");
     }
 
     #[test]

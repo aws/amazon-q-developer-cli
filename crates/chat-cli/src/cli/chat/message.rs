@@ -17,6 +17,7 @@ use super::util::truncate_safe;
 use crate::api_client::model::{
     AssistantResponseMessage,
     EnvState,
+    ImageBlock,
     ToolResult,
     ToolResultContentBlock,
     ToolResultStatus,
@@ -33,6 +34,7 @@ pub struct UserMessage {
     pub additional_context: String,
     pub env_context: UserEnvContext,
     pub content: UserMessageContent,
+    pub images: Option<Vec<ImageBlock>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +58,7 @@ impl UserMessage {
     /// environment [UserEnvContext].
     pub fn new_prompt(prompt: String) -> Self {
         Self {
+            images: None,
             additional_context: String::new(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::Prompt { prompt },
@@ -64,6 +67,7 @@ impl UserMessage {
 
     pub fn new_cancelled_tool_uses<'a>(prompt: Option<String>, tool_use_ids: impl Iterator<Item = &'a str>) -> Self {
         Self {
+            images: None,
             additional_context: String::new(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::CancelledToolUses {
@@ -88,6 +92,18 @@ impl UserMessage {
             content: UserMessageContent::ToolUseResults {
                 tool_use_results: results,
             },
+            images: None,
+        }
+    }
+
+    pub fn new_tool_use_results_with_images(results: Vec<ToolUseResult>, images: Vec<ImageBlock>) -> Self {
+        Self {
+            additional_context: String::new(),
+            env_context: UserEnvContext::generate_new(),
+            content: UserMessageContent::ToolUseResults {
+                tool_use_results: results,
+            },
+            images: Some(images),
         }
     }
 
@@ -95,6 +111,7 @@ impl UserMessage {
     /// [api_client::model::ConversationState].
     pub fn into_history_entry(self) -> UserInputMessage {
         UserInputMessage {
+            images: None,
             content: self.prompt().unwrap_or_default().to_string(),
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
@@ -122,6 +139,7 @@ impl UserMessage {
             _ => String::new(),
         };
         UserInputMessage {
+            images: self.images,
             content: format!("{} {}", self.additional_context, formatted_prompt)
                 .trim()
                 .to_string(),
@@ -232,6 +250,7 @@ impl From<InvokeOutput> for ToolUseResultBlock {
         match value.output {
             OutputKind::Text(text) => Self::Text(text),
             OutputKind::Json(value) => Self::Json(value),
+            OutputKind::Images(_) => Self::Text("See images data supplied".to_string()),
         }
     }
 }

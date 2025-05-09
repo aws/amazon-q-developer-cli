@@ -141,7 +141,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 "};
 
 #[derive(Debug, Parser, PartialEq, Default)]
-#[command(version, about, name = crate::CHAT_BINARY_NAME, help_template = HELP_TEXT)]
+#[command(version, about, name = crate::util::CHAT_BINARY_NAME, help_template = HELP_TEXT)]
 pub struct Cli {
     #[command(subcommand)]
     pub subcommand: Option<CliRootCommands>,
