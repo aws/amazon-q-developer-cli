@@ -252,7 +252,7 @@ pub fn sockets_dir() -> Result<PathBuf> {
         if #[cfg(unix)] {
             Ok(runtime_dir()?.join(RUNTIME_DIR_NAME))
         } else if #[cfg(windows)] {
-            Ok(runtime_dir()?.join("sockets"))
+            Ok(runtime_dir()?.join("AmazonQ").join("sockets"))
         }
     }
 }
@@ -431,15 +431,6 @@ pub fn resources_path_ctx<Ctx: EnvProvider + PlatformProvider>(ctx: &Ctx) -> Res
     }
 }
 
-/// The path to the managed binaries directory
-///
-/// - Linux: "/usr/share/fig"
-/// - MacOS: "/Applications/Amazon Q.app/Contents/Resources"
-/// - Windows: "%LOCALAPPDATA%\AmazonQ\resources\bin"
-pub fn managed_binaries_dir() -> Result<PathBuf> {
-    Ok(resources_path()?.join("bin"))
-}
-
 /// The path to the fig install manifest
 ///
 /// - MacOS: "/Applications/Amazon Q.app/Contents/Resources/manifest.json"
@@ -450,7 +441,7 @@ pub fn manifest_path() -> Result<PathBuf> {
         if #[cfg(unix)] {
             Ok(resources_path()?.join("manifest.json"))
         } else if #[cfg(target_os = "windows")] {
-            Ok(managed_binaries_dir()?.join("manifest.json"))
+            Ok(resources_path()?.join("bin").join("manifest.json"))
         }
     }
 }
@@ -562,7 +553,6 @@ utf8_dir!(sockets_dir);
 utf8_dir!(remote_socket_path);
 utf8_dir!(figterm_socket_path, session_id: impl Display);
 utf8_dir!(manifest_path);
-utf8_dir!(managed_binaries_dir);
 utf8_dir!(backups_dir);
 utf8_dir!(logs_dir);
 utf8_dir!(settings_path);
@@ -583,7 +573,6 @@ mod linux_tests {
         assert!(local_remote_socket_path().is_ok());
         assert!(figterm_socket_path("test").is_ok());
         assert!(resources_path().is_ok());
-        assert!(managed_binaries_dir().is_ok());
         assert!(manifest_path().is_ok());
         assert!(backups_dir().is_ok());
         assert!(logs_dir().is_ok());
@@ -627,7 +616,7 @@ mod tests {
         #[cfg(windows)]
         assert_eq!(
             figterm_socket_path("").unwrap().parent().unwrap().file_name().unwrap(),
-            "figterm"
+            "t"
         );
     }
 
@@ -719,7 +708,7 @@ mod tests {
     fn snapshot_sockets_dir() {
         linux!(sockets_dir(), @"$XDG_RUNTIME_DIR/cwrun");
         macos!(sockets_dir(), @"$TMPDIR/cwrun");
-        windows!(sockets_dir(), @r"C:\Users\$USER\AppData\Local\Temp\sockets");
+        windows!(sockets_dir(), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets");
     }
 
     #[test]
@@ -740,35 +729,28 @@ mod tests {
     fn snapshot_fig_socket_path() {
         linux!(desktop_socket_path(), @"$XDG_RUNTIME_DIR/cwrun/desktop.sock");
         macos!(desktop_socket_path(), @"$TMPDIR/cwrun/desktop.sock");
-        windows!(desktop_socket_path(), @r"C:\Users\$USER\AppData\Local\Temp\sockets\desktop.sock");
+        windows!(desktop_socket_path(), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets\desktop.sock");
     }
 
     #[test]
     fn snapshot_remote_socket_path() {
         linux!(remote_socket_path(), @"$XDG_RUNTIME_DIR/cwrun/remote.sock");
         macos!(remote_socket_path(), @"$TMPDIR/cwrun/remote.sock");
-        windows!(remote_socket_path(), @r"C:\Users\$USER\AppData\Local\Temp\sockets\remote.sock");
+        windows!(remote_socket_path(), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets\remote.sock");
     }
 
     #[test]
     fn snapshot_local_remote_socket_path() {
         linux!(local_remote_socket_path(), @"$XDG_RUNTIME_DIR/cwrun/remote.sock");
         macos!(local_remote_socket_path(), @"$TMPDIR/cwrun/remote.sock");
-        windows!(local_remote_socket_path(), @r"C:\Users\$USER\AppData\Local\Temp\sockets\remote.sock");
+        windows!(local_remote_socket_path(), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets\remote.sock");
     }
 
     #[test]
     fn snapshot_figterm_socket_path() {
         linux!(figterm_socket_path("$SESSION_ID"), @"$XDG_RUNTIME_DIR/cwrun/t/$SESSION_ID.sock");
         macos!(figterm_socket_path("$SESSION_ID"), @"$TMPDIR/cwrun/t/$SESSION_ID.sock");
-        windows!(figterm_socket_path("$SESSION_ID"), @r"C:\Users\$USER\AppData\Local\Temp\sockets\t\$SESSION_ID.sock");
-    }
-
-    #[test]
-    fn snapshot_managed_binaries_dir() {
-        linux!(managed_binaries_dir(), @"/usr/share/fig");
-        macos!(managed_binaries_dir(), @"/Applications/Amazon Q.app/Contents/Resources");
-        windows!(managed_binaries_dir(), @r"C:\Users\$USER\AppData\Local\AmazonQ\resources\bin");
+        windows!(figterm_socket_path("$SESSION_ID"), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets\t\$SESSION_ID.sock");
     }
 
     #[test]
