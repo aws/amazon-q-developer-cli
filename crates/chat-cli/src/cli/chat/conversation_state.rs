@@ -148,6 +148,10 @@ impl ConversationState {
         }
     }
 
+    pub fn latest_summary(&self) -> Option<&str> {
+        self.latest_summary.as_deref()
+    }
+
     pub fn history(&self) -> &VecDeque<(UserMessage, AssistantMessage)> {
         &self.history
     }
