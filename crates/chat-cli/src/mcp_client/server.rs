@@ -109,20 +109,37 @@ where
         let current_id_clone = current_id.clone();
         let request_sender = move |method: &str, params: Option<serde_json::Value>| -> Result<(), ServerError> {
             let id = current_id_clone.fetch_add(1, Ordering::SeqCst);
-            let request = JsonRpcRequest {
-                jsonrpc: JsonRpcVersion::default(),
-                id,
-                method: method.to_owned(),
-                params,
+            let msg = match method.split_once("/") {
+                Some(("request", _)) => {
+                    let request = JsonRpcRequest {
+                        jsonrpc: JsonRpcVersion::default(),
+                        id,
+                        method: method.to_owned(),
+                        params,
+                    };
+                    let msg = JsonRpcMessage::Request(request.clone());
+                    #[allow(clippy::map_err_ignore)]
+                    let mut pending_request = pending_request_clone_two.lock().map_err(|_| ServerError::MutexError)?;
+                    pending_request.insert(id, request);
+                    Some(msg)
+                },
+                Some(("notifications", _)) => {
+                    let notif = JsonRpcNotification {
+                        jsonrpc: JsonRpcVersion::default(),
+                        method: method.to_owned(),
+                        params,
+                    };
+                    let msg = JsonRpcMessage::Notification(notif);
+                    Some(msg)
+                },
+                _ => None,
             };
-            let msg = JsonRpcMessage::Request(request.clone());
-            let transport = transport_clone.clone();
-            tokio::task::spawn(async move {
-                let _ = transport.send(&msg).await;
-            });
-            #[allow(clippy::map_err_ignore)]
-            let mut pending_request = pending_request_clone_two.lock().map_err(|_| ServerError::MutexError)?;
-            pending_request.insert(id, request);
+            if let Some(msg) = msg {
+                let transport = transport_clone.clone();
+                tokio::task::spawn(async move {
+                    let _ = transport.send(&msg).await;
+                });
+            }
             Ok(())
         };
         handler.register_send_request_callback(request_sender);
