@@ -2865,6 +2865,12 @@ impl ChatContext {
             let images = image_blocks.into_iter().map(|(block, _)| block).collect();
             self.conversation_state
                 .add_tool_results_with_images(tool_results, images);
+            execute!(
+                self.output,
+                style::SetAttribute(Attribute::Reset),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n")
+            )?;
         } else {
             self.conversation_state.add_tool_results(tool_results);
         }
