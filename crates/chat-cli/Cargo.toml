@@ -52,7 +52,7 @@ clap = { version = "4.5.32", features = [
     "unicode",
     "wrap_help",
 ] }
-clap_complete = "4.5.46"
+clap_complete = "4.5.50"
 clap_complete_fig = "4.4.0"
 color-eyre = "0.6.2"
 color-print = "0.3.5"
