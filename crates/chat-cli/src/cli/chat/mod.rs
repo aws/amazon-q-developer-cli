@@ -269,7 +269,9 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
   <em>hooks</em>       <black!>View and manage context hooks</black!>
-<em>/usage</em>      <black!>Show current session's context window usage</black!>
+<em>/usage</em>        <black!>Show current session's context window usage</black!>
+<em>/import</em>       <black!>Import conversation state from a JSON file</black!>
+<em>/export</em>       <black!>Export conversation state to a JSON file</black!>
 
 <cyan,em>MCP:</cyan,em>
 <black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/en_us/amazonq/latest/qdeveloper-ug/command-line-mcp.html</black!>
