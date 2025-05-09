@@ -52,7 +52,7 @@
     "@types/react": "^18.3.18",
     "@types/semver": "^7.7.0",
     "@vitejs/plugin-legacy": "^6.1.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^4.4.1",
     "@withfig/autocomplete-types": "^1.31.0",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.18.0",
