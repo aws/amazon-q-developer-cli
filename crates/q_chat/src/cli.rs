@@ -71,6 +71,9 @@ pub struct McpAdd {
     /// Server launch timeout, in milliseconds
     #[arg(long)]
     pub timeout: Option<u64>,
+    /// Overwrite an existing server with the same name
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
@@ -99,6 +102,9 @@ pub struct McpImport {
     pub scope: Option<Scope>,
     #[arg(long)]
     pub profile: Option<String>,
+    /// Overwrite an existing server with the same name
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]

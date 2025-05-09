@@ -23,7 +23,10 @@ use crate::tool_manager::{
     profile_mcp_config_path,
     workspace_mcp_config_path,
 };
-use crate::tools::custom_tool::CustomToolConfig;
+use crate::tools::custom_tool::{
+    CustomToolConfig,
+    default_timeout,
+};
 
 pub async fn execute_mcp(args: Mcp) -> Result<ExitCode> {
     let ctx = Context::new();
@@ -44,14 +47,33 @@ pub async fn execute_mcp(args: Mcp) -> Result<ExitCode> {
 pub async fn add_mcp_server(ctx: &Context, args: McpAdd) -> Result<()> {
     let scope = args.scope.unwrap_or(Scope::Workspace);
     let config_path = resolve_scope_profile(ctx, args.scope, args.profile.as_ref())?;
-    let mut config: McpServerConfig = serde_json::from_str(&ctx.fs().read_to_string(&config_path).await?)?;
-    let merged_env = args.env.into_iter().flatten().collect::<HashMap<_, _>>();
 
+    if !ctx.fs().exists(&config_path) && scope != Scope::Profile {
+        if let Some(parent) = config_path.parent() {
+            ctx.fs().create_dir_all(parent).await?;
+        }
+        McpServerConfig::default().save_to_file(ctx, &config_path).await?;
+        println!("📁 Created MCP config in'{}'", config_path.display());
+    }
+
+    let mut config: McpServerConfig = serde_json::from_str(&ctx.fs().read_to_string(&config_path).await?)?;
+
+    if config.mcp_servers.contains_key(&args.name) && !args.force {
+        bail!(
+            "MCP server '{}' already exists in {} (scope {}). Use --force to overwrite.",
+            args.name,
+            config_path.display(),
+            scope
+        );
+    }
+
+    let merged_env = args.env.into_iter().flatten().collect::<HashMap<_, _>>();
     let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
         "command": args.command,
         "env": merged_env,
-        "timeout": args.timeout,
+        "timeout": args.timeout.unwrap_or(default_timeout()),
     }))?;
+
     config.mcp_servers.insert(args.name.clone(), tool);
     config.save_to_file(ctx, &config_path).await?;
 
@@ -68,7 +90,7 @@ pub async fn remove_mcp_server(ctx: &Context, args: McpRemove) -> Result<()> {
     let config_path = resolve_scope_profile(ctx, args.scope, args.profile.as_ref())?;
 
     if !ctx.fs().exists(&config_path) {
-        println!("No MCP configuration at {}", config_path.display());
+        println!("\n No MCP server configurations found.\n");
         return Ok(());
     }
 
@@ -82,7 +104,11 @@ pub async fn remove_mcp_server(ctx: &Context, args: McpRemove) -> Result<()> {
                 scope_display(&scope, &args.profile)
             );
         },
-        None => println!("No MCP server named '{}' found in {}", args.name, scope_display(&scope, &args.profile)),
+        None => println!(
+            "No MCP server named '{}' found in {}",
+            args.name,
+            scope_display(&scope, &args.profile)
+        ),
     }
     Ok(())
 }
@@ -115,20 +141,33 @@ pub async fn list_mcp_server(ctx: &Context, args: McpList) -> Result<()> {
 pub async fn import_mcp_server(ctx: &Context, args: McpImport) -> Result<()> {
     let scope: Scope = args.scope.unwrap_or(Scope::Workspace);
     let config_path = resolve_scope_profile(ctx, args.scope, args.profile.as_ref())?;
-    let mut dst_cfg: McpServerConfig = if ctx.fs().exists(&config_path) {
-        McpServerConfig::load_from_file(ctx, &config_path).await?
-    } else {
-        McpServerConfig::default()
-    };
+
+    if !ctx.fs().exists(&config_path) && scope != Scope::Profile {
+        if let Some(parent) = config_path.parent() {
+            ctx.fs().create_dir_all(parent).await?;
+        }
+        McpServerConfig::default().save_to_file(ctx, &config_path).await?;
+        println!("📁 Created MCP config in'{}'", config_path.display());
+    }
+
     let src_path = expand_path(ctx, &args.file)?;
     let src_cfg: McpServerConfig = serde_json::from_str(&ctx.fs().read_to_string(&src_path).await?)?;
+    let mut dst_cfg: McpServerConfig = McpServerConfig::load_from_file(ctx, &config_path).await?;
 
     let before = dst_cfg.mcp_servers.len();
     for (name, cfg) in src_cfg.mcp_servers {
-        if dst_cfg.mcp_servers.insert(name.clone(), cfg).is_some() {
-            warn!(%name, "Overwriting existing MCP server configuration");
+        let exists = dst_cfg.mcp_servers.contains_key(&name);
+        if exists && !args.force   {
+            bail!(
+                "MCP server '{}' already exists in {} (scope {}). Use --force to overwrite.",
+                name,
+                config_path.display(),
+                scope
+            );
         }
+        dst_cfg.mcp_servers.insert(name.clone(), cfg);
     }
+
     let added = dst_cfg.mcp_servers.len() - before;
     dst_cfg.save_to_file(ctx, &config_path).await?;
 
