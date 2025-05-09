@@ -810,13 +810,8 @@ impl Command {
                     }
                 },
                 "usage" => Self::Usage,
-                unknown_command => {
-                    // If the command starts with a slash but isn't recognized,
-                    // return an error instead of treating it as a prompt
-                    return Err(format!(
-                        "Unknown command: '/{}'. Type '/help' to see available commands.\nTo use a literal slash at the beginning of your message, escape it with a backslash (e.g., '\\//hey' for '/hey').",
-                        unknown_command
-                    ));
+                _unknown_command => Self::Ask {
+                    prompt: input.to_string(),
                 },
             });
         }
