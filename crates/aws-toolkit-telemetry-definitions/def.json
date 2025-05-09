@@ -392,6 +392,7 @@
       "description": "Emitted once per mcp server on start up" ,
       "passive": false,
       "metadata": [
+        { "type": "credentialStartUrl" },
         { "type": "amazonqConversationId" },
         { "type": "codewhispererterminal_mcpServerInitFailureReason", "required": false },
         { "type": "codewhispererterminal_toolsPerMcpServer" }

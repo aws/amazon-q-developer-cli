@@ -359,6 +359,7 @@ impl Event {
             } => Some(
                 CodewhispererterminalMcpServerInit {
                     create_time: self.created_time,
+                    credential_start_url: self.credential_start_url.map(Into::into),
                     value: None,
                     amazonq_conversation_id: Some(conversation_id.into()),
                     codewhispererterminal_mcp_server_init_failure_reason: init_failure_reason
