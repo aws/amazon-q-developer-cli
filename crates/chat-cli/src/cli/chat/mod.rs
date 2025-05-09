@@ -2716,6 +2716,100 @@ impl ChatContext {
                     skip_printing_tools: true,
                 }
             },
+            Command::Import { path } => {
+                macro_rules! tri {
+                    ($v:expr) => {
+                        match $v {
+                            Ok(v) => v,
+                            Err(err) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nFailed to import from {}: {}\n\n", &path, &err)),
+                                    style::SetAttribute(Attribute::Reset)
+                                )?;
+                                return Ok(ChatState::PromptUser {
+                                    tool_uses: Some(tool_uses),
+                                    pending_tool_index,
+                                    skip_printing_tools: true,
+                                });
+                            },
+                        }
+                    };
+                }
+
+                let contents = tri!(self.ctx.fs().read_to_string(&path).await);
+                let new_state: ConversationState = tri!(serde_json::from_str(&contents));
+                self.conversation_state = new_state;
+                self.conversation_state.updates = Some(self.output.clone());
+
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("\n✔ Imported conversation state from {}\n\n", &path)),
+                    style::SetAttribute(Attribute::Reset)
+                )?;
+
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    pending_tool_index: None,
+                    skip_printing_tools: true,
+                }
+            },
+            Command::Export { path, force } => {
+                macro_rules! tri {
+                    ($v:expr) => {
+                        match $v {
+                            Ok(v) => v,
+                            Err(err) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nFailed to export to {}: {}\n\n", &path, &err)),
+                                    style::SetAttribute(Attribute::Reset)
+                                )?;
+                                return Ok(ChatState::PromptUser {
+                                    tool_uses: Some(tool_uses),
+                                    pending_tool_index,
+                                    skip_printing_tools: true,
+                                });
+                            },
+                        }
+                    };
+                }
+
+                let contents = tri!(serde_json::to_string_pretty(&self.conversation_state));
+                if self.ctx.fs().exists(&path) && !force {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!(
+                            "\nFile at {} already exists. To overwrite, use -f or --force\n\n",
+                            &path
+                        )),
+                        style::SetAttribute(Attribute::Reset)
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        tool_uses: Some(tool_uses),
+                        pending_tool_index,
+                        skip_printing_tools: true,
+                    });
+                }
+                tri!(self.ctx.fs().write(&path, contents).await);
+
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("\n✔ Exported conversation state to {}\n\n", &path)),
+                    style::SetAttribute(Attribute::Reset)
+                )?;
+
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    pending_tool_index: None,
+                    skip_printing_tools: true,
+                }
+            },
         })
     }
 

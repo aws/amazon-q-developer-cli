@@ -10,10 +10,12 @@ use super::consts::MAX_CURRENT_WORKING_DIRECTORY_LEN;
 use super::tools::{
     InvokeOutput,
     OutputKind,
+};
+use super::util::{
     document_to_serde_value,
     serde_value_to_document,
+    truncate_safe,
 };
-use super::util::truncate_safe;
 use crate::api_client::model::{
     AssistantResponseMessage,
     EnvState,
@@ -355,7 +357,7 @@ impl From<AssistantToolUse> for ToolUse {
         Self {
             tool_use_id: value.id,
             name: value.name,
-            input: serde_value_to_document(value.args),
+            input: serde_value_to_document(value.args).into(),
         }
     }
 }
@@ -365,7 +367,7 @@ impl From<ToolUse> for AssistantToolUse {
         Self {
             id: value.tool_use_id,
             name: value.name,
-            args: document_to_serde_value(value.input),
+            args: document_to_serde_value(value.input.into()),
         }
     }
 }

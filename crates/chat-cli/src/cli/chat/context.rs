@@ -42,8 +42,10 @@ pub struct ContextConfig {
 
 #[allow(dead_code)]
 /// Manager for context files and profiles.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextManager {
+    #[serde(skip)]
+    #[serde(default = "default_context")]
     ctx: Arc<Context>,
 
     max_context_files_size: usize,
@@ -796,6 +798,10 @@ fn validate_profile_name(name: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn default_context() -> Arc<Context> {
+    Context::new()
 }
 
 #[cfg(test)]
