@@ -401,6 +401,7 @@ pub async fn chat(
     let tool_config = tool_manager.load_tools().await?;
     let mut tool_permissions = ToolPermissions::new(tool_config.len());
     if accept_all || trust_all_tools {
+        tool_permissions.trust_all = true;
         for tool in tool_config.values() {
             tool_permissions.trust_tool(&tool.name);
         }
@@ -2259,7 +2260,7 @@ impl ChatContext {
                         )?;
                     },
                     Some(ToolsSubcommand::ResetSingle { tool_name }) => {
-                        if self.tool_permissions.has(&tool_name) {
+                        if self.tool_permissions.has(&tool_name) || self.tool_permissions.trust_all {
                             self.tool_permissions.reset_tool(&tool_name);
                             queue!(
                                 self.output,
@@ -2735,11 +2736,9 @@ impl ChatContext {
             }
 
             // If there is an override, we will use it. Otherwise fall back to Tool's default.
-            let allowed = if self.tool_permissions.has(&tool.name) {
-                self.tool_permissions.is_trusted(&tool.name)
-            } else {
-                !tool.tool.requires_acceptance(&self.ctx)
-            };
+            let allowed = self.tool_permissions.trust_all
+                || (self.tool_permissions.has(&tool.name) && self.tool_permissions.is_trusted(&tool.name))
+                || !tool.tool.requires_acceptance(&self.ctx);
 
             if self.settings.get_bool_or("chat.enableNotifications", false) {
                 play_notification_bell(!allowed);

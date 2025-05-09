@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::future::Future;
 use std::hash::{
     DefaultHasher,
@@ -103,7 +106,7 @@ pub enum GetPromptError {
 /// Messages used for communication between the tool initialization thread and the loading
 /// display thread. These messages control the visual loading indicators shown to
 /// the user during tool initialization.
-pub enum LoadingMsg {
+enum LoadingMsg {
     /// Indicates a new tool is being initialized and should be added to the loading
     /// display. The String parameter is the name of the tool being initialized.
     Add(String),
@@ -421,7 +424,7 @@ impl ToolManagerBuilder {
                             .insert(server_name, (sanitized_mapping, specs));
                         // We only want to set this flag when the display task has ended
                         if load_msg_sender.is_none() {
-                            has_new_stuff_clone.store(true, Ordering::Relaxed);
+                            has_new_stuff_clone.store(true, Ordering::Release);
                         }
                     },
                     UpdateEventMessage::PromptsListResult {
@@ -710,28 +713,8 @@ impl ToolManager {
                 }
             }
         }
-        let new_tools = {
-            let mut new_tool_specs = self.new_tool_specs.lock().await;
-            new_tool_specs.drain().fold(HashMap::new(), |mut acc, (k, v)| {
-                acc.insert(k, v);
-                acc
-            })
-        };
-        for (_server_name, (tool_name_map, specs)) in new_tools {
-            for (k, v) in tool_name_map {
-                self.tn_map.insert(k, v);
-            }
-            for spec in specs {
-                tool_specs.insert(spec.name.clone(), spec);
-            }
-        }
-        // caching the tool names for skim operations
-        for tool_name in tool_specs.keys() {
-            if !self.tn_map.contains_key(tool_name) {
-                self.tn_map.insert(tool_name.clone(), tool_name.clone());
-            }
-        }
-        self.schema = tool_specs.clone();
+        self.update().await;
+        tool_specs.extend(self.schema.clone());
         Ok(tool_specs)
     }
 
@@ -829,6 +812,49 @@ impl ToolManager {
                 Tool::Custom(custom_tool)
             },
         })
+    }
+
+    /// Updates tool managers various states with new information
+    pub async fn update(&mut self) {
+        // A hashmap of <tool name, tool spec>
+        let mut tool_specs = HashMap::<String, ToolSpec>::new();
+        let new_tools = {
+            let mut new_tool_specs = self.new_tool_specs.lock().await;
+            new_tool_specs.drain().fold(HashMap::new(), |mut acc, (k, v)| {
+                acc.insert(k, v);
+                acc
+            })
+        };
+        let mut updated_servers = HashSet::<ToolOrigin>::new();
+        for (_server_name, (tool_name_map, specs)) in new_tools {
+            // In a populated tn map (i.e. a partially initialized or outdated fleet of servers) there
+            // will be incoming tools with names that are already in the tn map, we will be writing
+            // over them (perhaps with the same information that they already had), and that's okay.
+            // In an event where a server has removed tools, the tools that are no longer available
+            // will linger in this map. This is also okay to not clean up as it does not affect the
+            // look up of tool names that are still active.
+            for (k, v) in tool_name_map {
+                self.tn_map.insert(k, v);
+            }
+            if let Some(spec) = specs.first() {
+                updated_servers.insert(spec.tool_origin.clone());
+            }
+            for spec in specs {
+                tool_specs.insert(spec.name.clone(), spec);
+            }
+        }
+        // Caching the tool names for skim operations
+        for tool_name in tool_specs.keys() {
+            if !self.tn_map.contains_key(tool_name) {
+                self.tn_map.insert(tool_name.clone(), tool_name.clone());
+            }
+        }
+        // Update schema
+        // As we are writing over the ensemble of tools in a given server, we will need to first
+        // remove everything that it has.
+        self.schema
+            .retain(|_tool_name, spec| !updated_servers.contains(&spec.tool_origin));
+        self.schema.extend(tool_specs);
     }
 
     #[allow(clippy::await_holding_lock)]

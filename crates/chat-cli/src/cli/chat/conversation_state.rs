@@ -3,6 +3,7 @@ use std::collections::{
     VecDeque,
 };
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use crossterm::style::Color;
 use crossterm::{
@@ -354,6 +355,7 @@ impl ConversationState {
     /// - `run_hooks` - whether hooks should be executed and included as context
     pub async fn as_sendable_conversation_state(&mut self, run_hooks: bool) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
+        self.update_state().await;
         self.enforce_conversation_invariants();
         self.history.drain(self.valid_history_range.1..);
         self.history.drain(..self.valid_history_range.0);
@@ -377,6 +379,30 @@ impl ConversationState {
         context
             .into_fig_conversation_state()
             .expect("unable to construct conversation state")
+    }
+
+    pub async fn update_state(&mut self) {
+        let needs_update = self.tool_manager.has_new_stuff.load(Ordering::Acquire);
+        if !needs_update {
+            return;
+        }
+        self.tool_manager.update().await;
+        self.tools = self
+            .tool_manager
+            .schema
+            .values()
+            .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+                let tool = Tool::ToolSpecification(ToolSpecification {
+                    name: v.name.clone(),
+                    description: v.description.clone(),
+                    input_schema: v.input_schema.clone().into(),
+                });
+                acc.entry(v.tool_origin.clone())
+                    .and_modify(|tools| tools.push(tool.clone()))
+                    .or_insert(vec![tool]);
+                acc
+            });
+        self.tool_manager.has_new_stuff.store(false, Ordering::Release);
     }
 
     /// Returns a conversation state representation which reflects the exact conversation to send
