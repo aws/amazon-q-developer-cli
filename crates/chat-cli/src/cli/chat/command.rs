@@ -810,8 +810,26 @@ impl Command {
                     }
                 },
                 "usage" => Self::Usage,
-                _unknown_command => Self::Ask {
-                    prompt: input.to_string(),
+                unknown_command => {
+                    let looks_like_path = {
+                        let after_slash_command_str = parts[1..].join(" ");
+                        unknown_command.contains('/')
+                            || unknown_command.contains('.')
+                            || unknown_command.contains('\\')
+                            || after_slash_command_str.contains('/')
+                            || after_slash_command_str.contains('.')
+                            || after_slash_command_str.contains('\\')
+                    };
+                    if looks_like_path {
+                        return Ok(Self::Ask {
+                            prompt: command.to_string(),
+                        });
+                    }
+
+                    return Err(format!(
+                        "Unknown command: '/{}'. Type '/help' to see available commands.\nTo use a literal slash at the beginning of your message, escape it with a backslash (e.g., '\\//hey' for '/hey').",
+                        unknown_command
+                    ));
                 },
             });
         }
