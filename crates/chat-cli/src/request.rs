@@ -12,74 +12,37 @@ use rustls::{
     ClientConfig,
     RootCertStore,
 };
+use thiserror::Error;
 use url::ParseError;
 
-#[derive(Debug)]
+use crate::database::Database;
+use crate::database::state::StateDatabase;
+
+#[derive(Debug, Error)]
 pub enum RequestError {
-    Reqwest(reqwest::Error),
-    Serde(serde_json::Error),
-    Io(std::io::Error),
-    Dir(crate::util::directories::DirectoryError),
-    Settings(crate::settings::SettingsError),
-    UrlParseError(ParseError),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
+    #[error(transparent)]
+    Serde(#[from] serde_json::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Dir(#[from] crate::util::directories::DirectoryError),
+    #[error(transparent)]
+    Settings(#[from] crate::database::DatabaseError),
+    #[error(transparent)]
+    UrlParseError(#[from] ParseError),
 }
 
-impl std::fmt::Display for RequestError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RequestError::Reqwest(err) => write!(f, "Reqwest error: {err}"),
-            RequestError::Serde(err) => write!(f, "Serde error: {err}"),
-            RequestError::Io(err) => write!(f, "Io error: {err}"),
-            RequestError::Dir(err) => write!(f, "Dir error: {err}"),
-            RequestError::Settings(err) => write!(f, "Settings error: {err}"),
-            RequestError::UrlParseError(err) => write!(f, "Url parse error: {err}"),
-        }
-    }
+pub fn new_client(database: &Database) -> Result<Client, RequestError> {
+    Ok(Client::builder()
+        .use_preconfigured_tls(client_config(database))
+        .user_agent(USER_AGENT.chars().filter(|c| c.is_ascii_graphic()).collect::<String>())
+        .cookie_store(true)
+        .build()?)
 }
 
-impl std::error::Error for RequestError {}
-
-impl From<reqwest::Error> for RequestError {
-    fn from(e: reqwest::Error) -> Self {
-        RequestError::Reqwest(e)
-    }
-}
-
-impl From<serde_json::Error> for RequestError {
-    fn from(e: serde_json::Error) -> Self {
-        RequestError::Serde(e)
-    }
-}
-
-impl From<std::io::Error> for RequestError {
-    fn from(e: std::io::Error) -> Self {
-        RequestError::Io(e)
-    }
-}
-
-impl From<crate::util::directories::DirectoryError> for RequestError {
-    fn from(e: crate::util::directories::DirectoryError) -> Self {
-        RequestError::Dir(e)
-    }
-}
-
-impl From<crate::settings::SettingsError> for RequestError {
-    fn from(e: crate::settings::SettingsError) -> Self {
-        RequestError::Settings(e)
-    }
-}
-
-impl From<ParseError> for RequestError {
-    fn from(e: ParseError) -> Self {
-        RequestError::UrlParseError(e)
-    }
-}
-
-pub fn client() -> Option<&'static Client> {
-    CLIENT_NATIVE_CERTS.as_ref()
-}
-
-pub fn create_default_root_cert_store() -> RootCertStore {
+pub fn create_default_root_cert_store(database: &Database) -> RootCertStore {
     let mut root_cert_store: RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
 
     // The errors are ignored because root certificates often include
@@ -89,11 +52,7 @@ pub fn create_default_root_cert_store() -> RootCertStore {
         let _ = root_cert_store.add(cert);
     }
 
-    let custom_cert = std::env::var("Q_CUSTOM_CERT")
-        .ok()
-        .or_else(|| crate::settings::state::get_string("Q_CUSTOM_CERT").ok().flatten());
-
-    if let Some(custom_cert) = custom_cert {
+    if let Some(custom_cert) = database.get_q_custom_cert() {
         match File::open(Path::new(&custom_cert)) {
             Ok(file) => {
                 let reader = &mut BufReader::new(file);
@@ -115,7 +74,7 @@ pub fn create_default_root_cert_store() -> RootCertStore {
     root_cert_store
 }
 
-fn client_config() -> ClientConfig {
+fn client_config(database: &Database) -> ClientConfig {
     let provider = rustls::crypto::CryptoProvider::get_default()
         .cloned()
         .unwrap_or_else(|| Arc::new(rustls::crypto::ring::default_provider()));
@@ -123,14 +82,8 @@ fn client_config() -> ClientConfig {
     ClientConfig::builder_with_provider(provider)
         .with_protocol_versions(rustls::DEFAULT_VERSIONS)
         .expect("Failed to set supported TLS versions")
-        .with_root_certificates(create_default_root_cert_store())
+        .with_root_certificates(create_default_root_cert_store(database))
         .with_no_client_auth()
-}
-
-static CLIENT_CONFIG_NATIVE_CERTS: LazyLock<Arc<ClientConfig>> = LazyLock::new(|| Arc::new(client_config()));
-
-pub fn client_config_cached() -> Arc<ClientConfig> {
-    CLIENT_CONFIG_NATIVE_CERTS.clone()
 }
 
 static USER_AGENT: LazyLock<String> = LazyLock::new(|| {
@@ -146,24 +99,14 @@ static USER_AGENT: LazyLock<String> = LazyLock::new(|| {
     format!("{name}-{os}-{arch}-{version}")
 });
 
-pub static CLIENT_NATIVE_CERTS: LazyLock<Option<Client>> = LazyLock::new(|| {
-    Some(
-        Client::builder()
-            .use_preconfigured_tls((*client_config_cached()).clone())
-            .user_agent(USER_AGENT.chars().filter(|c| c.is_ascii_graphic()).collect::<String>())
-            .cookie_store(true)
-            .build()
-            .unwrap(),
-    )
-});
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn get_client() {
-        client().unwrap();
+    #[tokio::test]
+    async fn get_client() {
+        let database = Database::new().await.unwrap();
+        new_client(&database).unwrap();
     }
 
     #[tokio::test]
@@ -177,7 +120,8 @@ mod tests {
             .create();
         let url = server.url();
 
-        let client = client().unwrap();
+        let database = Database::new().await.unwrap();
+        let client = new_client(&database).unwrap();
         let res = client.get(format!("{url}/hello")).send().await.unwrap();
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers()["content-type"], "text/plain");

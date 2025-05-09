@@ -29,7 +29,6 @@ use tracing::{
 
 use super::OutputFormat;
 use crate::api_client::list_available_profiles;
-use crate::api_client::profile::Profile;
 use crate::auth::builder_id::{
     PollCreateToken,
     TokenType,
@@ -37,10 +36,12 @@ use crate::auth::builder_id::{
     start_device_authorization,
 };
 use crate::auth::pkce::start_pkce_authorization;
-use crate::auth::secret_store::SecretStore;
+use crate::database::Database;
+use crate::database::state::StateDatabase;
 use crate::telemetry::{
     QProfileSwitchIntent,
     TelemetryResult,
+    TelemetryThread,
 };
 use crate::util::spinner::{
     Spinner,
@@ -53,22 +54,6 @@ use crate::util::{
     choose,
     input,
 };
-
-#[derive(Subcommand, Debug, PartialEq, Eq)]
-pub enum RootUserSubcommand {
-    /// Login
-    Login(LoginArgs),
-    /// Logout
-    Logout,
-    /// Prints details about the current user
-    Whoami {
-        /// Output format to use
-        #[arg(long, short, value_enum, default_value_t)]
-        format: OutputFormat,
-    },
-    /// Show the profile associated with this idc user
-    Profile,
-}
 
 #[derive(Args, Debug, PartialEq, Eq, Clone, Default)]
 pub struct LoginArgs {
@@ -115,8 +100,24 @@ impl Display for AuthMethod {
     }
 }
 
-impl RootUserSubcommand {
-    pub async fn execute(self) -> Result<ExitCode> {
+#[derive(Subcommand, Debug, PartialEq, Eq)]
+pub enum UserSubcommand {
+    /// Login
+    Login(LoginArgs),
+    /// Logout
+    Logout,
+    /// Prints details about the current user
+    Whoami {
+        /// Output format to use
+        #[arg(long, short, value_enum, default_value_t)]
+        format: OutputFormat,
+    },
+    /// Show the profile associated with this idc user
+    Profile,
+}
+
+impl UserSubcommand {
+    pub async fn execute(self, database: &mut Database, telemetry: &TelemetryThread) -> Result<ExitCode> {
         match self {
             Self::Login(args) => {
                 if crate::auth::is_logged_in().await {
@@ -126,12 +127,12 @@ impl RootUserSubcommand {
                     );
                 }
 
-                login_interactive(args).await?;
+                login_interactive(database, telemetry, args).await?;
 
                 Ok(ExitCode::SUCCESS)
             },
             Self::Logout => {
-                let _ = crate::auth::logout().await;
+                let _ = crate::auth::logout(database).await;
 
                 println!("You are now logged out");
                 println!(
@@ -168,9 +169,7 @@ impl RootUserSubcommand {
                         );
 
                         if matches!(token.token_type(), TokenType::IamIdentityCenter) {
-                            if let Ok(Some(profile)) = crate::settings::state::get::<crate::api_client::profile::Profile>(
-                                "api.codewhisperer.profile",
-                            ) {
+                            if let Ok(Some(profile)) = database.get_auth_profile() {
                                 color_print::cprintln!(
                                     "\n<em>Profile:</em>\n{}\n{}\n",
                                     profile.profile_name,
@@ -200,7 +199,7 @@ impl RootUserSubcommand {
                     }
                 }
 
-                select_profile_interactive(false).await?;
+                select_profile_interactive(database, telemetry, false).await?;
 
                 Ok(ExitCode::SUCCESS)
             },
@@ -208,21 +207,7 @@ impl RootUserSubcommand {
     }
 }
 
-#[derive(Subcommand, Debug, PartialEq, Eq)]
-pub enum UserSubcommand {
-    #[command(flatten)]
-    Root(RootUserSubcommand),
-}
-
-impl UserSubcommand {
-    pub async fn execute(self) -> Result<ExitCode> {
-        match self {
-            Self::Root(cmd) => cmd.execute().await,
-        }
-    }
-}
-
-pub async fn login_interactive(args: LoginArgs) -> Result<()> {
+pub async fn login_interactive(database: &mut Database, telemetry: &TelemetryThread, args: LoginArgs) -> Result<()> {
     let login_method = match args.license {
         Some(LicenseType::Free) => AuthMethod::BuilderId,
         Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
@@ -242,30 +227,26 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
             let (start_url, region) = match login_method {
                 AuthMethod::BuilderId => (None, None),
                 AuthMethod::IdentityCenter => {
-                    let default_start_url = args
-                        .identity_provider
-                        .or_else(|| crate::settings::state::get_string("auth.idc.start-url").ok().flatten());
-                    let default_region = args
-                        .region
-                        .or_else(|| crate::settings::state::get_string("auth.idc.region").ok().flatten());
+                    let default_start_url = args.identity_provider.or_else(|| database.get_start_url());
+                    let default_region = args.region.or_else(|| database.get_idc_region());
 
                     let start_url = input("Enter Start URL", default_start_url.as_deref())?;
                     let region = input("Enter Region", default_region.as_deref())?;
 
-                    let _ = crate::settings::state::set_value("auth.idc.start-url", start_url.clone());
-                    let _ = crate::settings::state::set_value("auth.idc.region", region.clone());
+                    let _ = database.set_start_url(start_url.clone());
+                    let _ = database.set_idc_region(region.clone());
 
                     (Some(start_url), Some(region))
                 },
             };
-            let secret_store = SecretStore::new().await?;
 
             // Remote machine won't be able to handle browser opening and redirects,
             // hence always use device code flow.
             if is_remote() || args.use_device_flow {
-                try_device_authorization(&secret_store, start_url.clone(), region.clone()).await?;
+                try_device_authorization(database, telemetry, start_url.clone(), region.clone()).await?;
             } else {
-                let (client, registration) = start_pkce_authorization(start_url.clone(), region.clone()).await?;
+                let (client, registration) =
+                    start_pkce_authorization(database, start_url.clone(), region.clone()).await?;
 
                 match crate::util::open::open_url_async(&registration.url).await {
                     // If it succeeded, finish PKCE.
@@ -276,13 +257,13 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                         ]);
                         let ctrl_c_stream = ctrl_c();
                         tokio::select! {
-                            res = registration.finish(&client, Some(&secret_store)) => res?,
+                            res = registration.finish(&client, Some(&database)) => res?,
                             Ok(_) = ctrl_c_stream => {
                                 #[allow(clippy::exit)]
                                 exit(1);
                             },
                         }
-                        crate::telemetry::send_user_logged_in().await;
+                        telemetry.send_user_logged_in();
                         spinner.stop_with_message("Device authorized".into());
                     },
                     // If we are unable to open the link with the browser, then fallback to
@@ -291,7 +272,7 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
                         error!(%err, "Failed to open URL with browser, falling back to device code flow");
 
                         // Try device code flow.
-                        try_device_authorization(&secret_store, start_url.clone(), region.clone()).await?;
+                        try_device_authorization(database, telemetry, start_url.clone(), region.clone()).await?;
                     },
                 }
             }
@@ -299,7 +280,7 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
     };
 
     if login_method == AuthMethod::IdentityCenter {
-        select_profile_interactive(true).await?;
+        select_profile_interactive(database, telemetry, true).await?;
     }
 
     eprintln!("Logged in successfully");
@@ -308,11 +289,12 @@ pub async fn login_interactive(args: LoginArgs) -> Result<()> {
 }
 
 async fn try_device_authorization(
-    secret_store: &SecretStore,
+    database: &mut Database,
+    telemetry: &TelemetryThread,
     start_url: Option<String>,
     region: Option<String>,
 ) -> Result<()> {
-    let device_auth = start_device_authorization(secret_store, start_url.clone(), region.clone()).await?;
+    let device_auth = start_device_authorization(database, start_url.clone(), region.clone()).await?;
 
     println!();
     println!("Confirm the following code in the browser");
@@ -343,7 +325,7 @@ async fn try_device_authorization(
             }
         }
         match poll_create_token(
-            secret_store,
+            database,
             device_auth.device_code.clone(),
             start_url.clone(),
             region.clone(),
@@ -352,7 +334,7 @@ async fn try_device_authorization(
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                crate::telemetry::send_user_logged_in().await;
+                telemetry.send_user_logged_in();
                 spinner.stop_with_message("Device authorized".into());
                 break;
             },
@@ -365,42 +347,42 @@ async fn try_device_authorization(
     Ok(())
 }
 
-async fn select_profile_interactive(whoami: bool) -> Result<()> {
+async fn select_profile_interactive(database: &mut Database, telemetry: &TelemetryThread, whoami: bool) -> Result<()> {
     let mut spinner = Spinner::new(vec![
         SpinnerComponent::Spinner,
         SpinnerComponent::Text(" Fetching profiles...".into()),
     ]);
-    let profiles = list_available_profiles().await;
+    let profiles = list_available_profiles(database).await;
     if profiles.is_empty() {
         info!("Available profiles was empty");
         return Ok(());
     }
 
-    let sso_region: Option<String> = crate::settings::state::get_string("auth.idc.region").ok().flatten();
+    let sso_region = database.get_idc_region();
     let total_profiles = profiles.len() as i64;
 
     if whoami && profiles.len() == 1 {
         if let Some(profile_region) = profiles[0].arn.split(':').nth(3) {
-            crate::telemetry::send_profile_state(
-                QProfileSwitchIntent::Update,
-                profile_region.to_string(),
-                TelemetryResult::Succeeded,
-                sso_region,
-            )
-            .await;
+            telemetry
+                .send_profile_state(
+                    QProfileSwitchIntent::Update,
+                    profile_region.to_string(),
+                    TelemetryResult::Succeeded,
+                    sso_region,
+                )
+                .ok();
         }
+
         spinner.stop_with_message(String::new());
-        return Ok(crate::settings::state::set_value(
-            "api.codewhisperer.profile",
-            serde_json::to_value(&profiles[0])?,
-        )?);
+        database.set_auth_profile(&profiles[0]);
+        return Ok(());
     }
 
     let mut items: Vec<String> = profiles
         .iter()
         .map(|p| format!("{} (arn: {})", p.profile_name, p.arn))
         .collect();
-    let active_profile: Option<Profile> = crate::settings::state::get("api.codewhisperer.profile")?;
+    let active_profile = database.get_auth_profile()?;
 
     if let Some(default_idx) = active_profile
         .as_ref()
@@ -419,10 +401,8 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
     match selected {
         Some(i) => {
             let chosen = &profiles[i];
-            let profile = serde_json::to_value(chosen)?;
             eprintln!("Set profile: {}\n", chosen.profile_name.as_str().green());
-            crate::settings::state::set_value("api.codewhisperer.profile", profile)?;
-            crate::settings::state::remove_value("api.selectedCustomization")?;
+            database.set_auth_profile(chosen);
 
             if let Some(profile_region) = chosen.arn.split(':').nth(3) {
                 let intent = if whoami {
@@ -430,36 +410,32 @@ async fn select_profile_interactive(whoami: bool) -> Result<()> {
                 } else {
                     QProfileSwitchIntent::User
                 };
-                crate::telemetry::send_did_select_profile(
-                    intent,
-                    profile_region.to_string(),
-                    TelemetryResult::Succeeded,
-                    sso_region,
-                    Some(total_profiles),
-                )
-                .await;
+
+                telemetry
+                    .send_did_select_profile(
+                        intent,
+                        profile_region.to_string(),
+                        TelemetryResult::Succeeded,
+                        sso_region,
+                        Some(total_profiles),
+                    )
+                    .ok();
             }
         },
         None => {
-            crate::telemetry::send_did_select_profile(
-                QProfileSwitchIntent::User,
-                "not-set".to_string(),
-                TelemetryResult::Cancelled,
-                sso_region,
-                Some(total_profiles),
-            )
-            .await;
+            telemetry
+                .send_did_select_profile(
+                    QProfileSwitchIntent::User,
+                    "not-set".to_string(),
+                    TelemetryResult::Cancelled,
+                    sso_region,
+                    Some(total_profiles),
+                )
+                .ok();
+
             bail!("No profile selected.\n");
         },
     }
 
     Ok(())
-}
-
-mod tests {
-    #[test]
-    #[ignore]
-    fn unset_profile() {
-        crate::settings::state::remove_value("api.codewhisperer.profile").unwrap();
-    }
 }

@@ -136,6 +136,11 @@ pub fn settings_path() -> Result<PathBuf> {
     Ok(fig_data_dir()?.join("settings.json"))
 }
 
+/// The path to the local sqlite database
+pub fn database_path() -> Result<PathBuf> {
+    Ok(fig_data_dir()?.join("data.sqlite3"))
+}
+
 #[cfg(test)]
 mod linux_tests {
     use super::*;

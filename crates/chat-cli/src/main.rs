@@ -2,12 +2,12 @@ mod api_client;
 mod auth;
 mod aws_common;
 mod cli;
+mod database;
 mod install;
 mod logging;
 mod mcp_client;
 mod platform;
 mod request;
-mod settings;
 mod telemetry;
 mod util;
 
@@ -24,7 +24,6 @@ use eyre::Result;
 use logging::get_log_level_max;
 use tracing::metadata::LevelFilter;
 
-use crate::telemetry::finish_telemetry;
 use crate::util::{
     CHAT_BINARY_NAME,
     PRODUCT_NAME,
@@ -35,11 +34,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<ExitCode> {
     color_eyre::install()?;
-
-    let multithread = matches!(
-        std::env::args().nth(1).as_deref(),
-        Some("init" | "_" | "internal" | "completion" | "hook" | "chat")
-    );
 
     let parsed = match cli::Cli::try_parse() {
         Ok(cli) => cli,
@@ -67,20 +61,8 @@ fn main() -> Result<ExitCode> {
     };
 
     let verbose = parsed.verbose > 0;
-
-    let runtime = if multithread {
-        tokio::runtime::Builder::new_multi_thread()
-    } else {
-        tokio::runtime::Builder::new_current_thread()
-    }
-    .enable_all()
-    .build()?;
-
-    let result = runtime.block_on(async {
-        let result = parsed.execute().await;
-        finish_telemetry().await;
-        result
-    });
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+    let result = runtime.block_on(parsed.execute());
 
     match result {
         Ok(exit_code) => Ok(exit_code),
@@ -90,6 +72,7 @@ fn main() -> Result<ExitCode> {
             } else {
                 eprintln!("{} {err}", "error:".bold().red());
             }
+
             Ok(ExitCode::FAILURE)
         },
     }

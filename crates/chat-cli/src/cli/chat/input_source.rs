@@ -4,6 +4,7 @@ use rustyline::error::ReadlineError;
 use super::prompt::rl;
 #[cfg(unix)]
 use super::skim_integration::SkimCommandSelector;
+use crate::database::Database;
 
 #[derive(Debug)]
 pub struct InputSource(inner::Inner);
@@ -27,15 +28,17 @@ mod inner {
 
 impl InputSource {
     pub fn new(
+        database: &Database,
         sender: std::sync::mpsc::Sender<Option<String>>,
         receiver: std::sync::mpsc::Receiver<Vec<String>>,
     ) -> Result<Self> {
-        Ok(Self(inner::Inner::Readline(rl(sender, receiver)?)))
+        Ok(Self(inner::Inner::Readline(rl(database, sender, receiver)?)))
     }
 
     #[cfg(unix)]
     pub fn put_skim_command_selector(
         &mut self,
+        database: &crate::database::Database,
         context_manager: std::sync::Arc<super::context::ContextManager>,
         tool_names: Vec<String>,
     ) {
@@ -44,8 +47,10 @@ impl InputSource {
             KeyEvent,
         };
 
+        use crate::database::settings::Setting;
+
         if let inner::Inner::Readline(rl) = &mut self.0 {
-            let key_char = match crate::settings::settings::get_string_opt("chat.skimCommandKey").as_deref() {
+            let key_char = match database.settings.get_string(Setting::SkimCommandKey) {
                 Some(key) if key.len() == 1 => key.chars().next().unwrap_or('s'),
                 _ => 's', // Default to 's' if setting is missing or invalid
             };

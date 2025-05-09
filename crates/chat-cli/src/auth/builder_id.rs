@@ -52,12 +52,13 @@ use tracing::{
 use crate::auth::AuthError;
 use crate::auth::consts::*;
 use crate::auth::scope::is_scopes;
-use crate::auth::secret_store::{
+use crate::aws_common::app_name;
+use crate::database::Database;
+use crate::database::secret_store::{
     Secret,
     SecretStore,
 };
-use crate::aws_common::app_name;
-use crate::telemetry::send_refresh_credentials;
+use crate::database::state::StateDatabase;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
@@ -85,18 +86,18 @@ pub(crate) fn oidc_url(region: &Region) -> String {
     format!("https://oidc.{region}.amazonaws.com")
 }
 
-pub(crate) fn client(region: Region) -> Client {
-    let retry_config = RetryConfig::standard().with_max_attempts(3);
-    let sdk_config = aws_types::SdkConfig::builder()
-        .http_client(crate::aws_common::http_client::client())
-        .behavior_version(BehaviorVersion::v2025_01_17())
-        .endpoint_url(oidc_url(&region))
-        .region(region)
-        .retry_config(retry_config)
-        .sleep_impl(SharedAsyncSleep::new(TokioSleep::new()))
-        .app_name(app_name())
-        .build();
-    Client::new(&sdk_config)
+pub fn client(database: &Database, region: Region) -> Client {
+    Client::new(
+        &aws_types::SdkConfig::builder()
+            .http_client(crate::aws_common::http_client::client(database))
+            .behavior_version(BehaviorVersion::v2025_01_17())
+            .endpoint_url(oidc_url(&region))
+            .region(region)
+            .retry_config(RetryConfig::standard().with_max_attempts(3))
+            .sleep_impl(SharedAsyncSleep::new(TokioSleep::new()))
+            .app_name(app_name())
+            .build(),
+    )
 }
 
 /// Represents an OIDC registered client, resulting from the "register client" API call.
@@ -156,11 +157,11 @@ impl DeviceRegistration {
     /// Loads the client saved in the secret store if available, otherwise registers a new client
     /// and saves it in the secret store.
     pub async fn init_device_code_registration(
+        database: &Database,
         client: &Client,
-        secret_store: &SecretStore,
         region: &Region,
     ) -> Result<Self, AuthError> {
-        match Self::load_from_secret_store(secret_store, region).await {
+        match Self::load_from_secret_store(&database.secret_store, region).await {
             Ok(Some(registration)) if registration.oauth_flow == OAuthFlow::DeviceCode => match &registration.scopes {
                 Some(scopes) if is_scopes(scopes) => return Ok(registration),
                 _ => warn!("Invalid scopes in device registration, ignoring"),
@@ -189,7 +190,7 @@ impl DeviceRegistration {
             SCOPES.iter().map(|s| (*s).to_owned()).collect(),
         );
 
-        if let Err(err) = device_registration.save(secret_store).await {
+        if let Err(err) = device_registration.save(&database.secret_store).await {
             error!(?err, "Failed to write device registration to keychain");
         }
 
@@ -225,18 +226,18 @@ pub struct StartDeviceAuthorizationResponse {
 
 /// Init a builder id request
 pub async fn start_device_authorization(
-    secret_store: &SecretStore,
+    database: &Database,
     start_url: Option<String>,
     region: Option<String>,
 ) -> Result<StartDeviceAuthorizationResponse, AuthError> {
     let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-    let client = client(region.clone());
+    let client = client(database, region.clone());
 
     let DeviceRegistration {
         client_id,
         client_secret,
         ..
-    } = DeviceRegistration::init_device_code_registration(&client, secret_store, &region).await?;
+    } = DeviceRegistration::init_device_code_registration(database, &client, &region).await?;
 
     let output = client
         .start_device_authorization()
@@ -293,7 +294,7 @@ impl BuilderIdToken {
     }
 
     /// Load the token from the keychain, refresh the token if it is expired and return it
-    pub async fn load(secret_store: &SecretStore, force_refresh: bool) -> Result<Option<Self>, AuthError> {
+    pub async fn load(database: &mut Database, force_refresh: bool) -> Result<Option<Self>, AuthError> {
         match secret_store.get(Self::SECRET_KEY).await {
             Ok(Some(secret)) => {
                 let token: Option<Self> = serde_json::from_str(&secret.0)?;
@@ -301,10 +302,10 @@ impl BuilderIdToken {
                     Some(token) => {
                         let region = token.region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
 
-                        let client = client(region.clone());
+                        let client = client(database, region.clone());
                         // if token is expired try to refresh
                         if token.is_expired() || force_refresh {
-                            token.refresh_token(&client, secret_store, &region).await
+                            token.refresh_token(&client, &database.secret_store, &region).await
                         } else {
                             Ok(Some(token))
                         }
@@ -468,20 +469,20 @@ pub enum PollCreateToken {
 
 /// Poll for the create token response
 pub async fn poll_create_token(
-    secret_store: &SecretStore,
+    database: &Database,
     device_code: String,
     start_url: Option<String>,
     region: Option<String>,
 ) -> PollCreateToken {
     let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-    let client = client(region.clone());
+    let client = client(database, region.clone());
 
     let DeviceRegistration {
         client_id,
         client_secret,
         scopes,
         ..
-    } = match DeviceRegistration::init_device_code_registration(&client, secret_store, &region).await {
+    } = match DeviceRegistration::init_device_code_registration(database, &client, &region).await {
         Ok(res) => res,
         Err(err) => {
             return PollCreateToken::Error(err);
@@ -531,7 +532,7 @@ pub async fn is_logged_in() -> bool {
     matches!(builder_id_token().await, Ok(Some(_)))
 }
 
-pub async fn logout() -> Result<(), AuthError> {
+pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
     let Ok(secret_store) = SecretStore::new().await else {
         return Ok(());
     };
@@ -541,7 +542,7 @@ pub async fn logout() -> Result<(), AuthError> {
         secret_store.delete(DeviceRegistration::SECRET_KEY),
     );
 
-    let profile_res = crate::settings::state::remove_value("api.codewhisperer.profile");
+    let profile_res = database.unset_auth_profile();
 
     builder_res?;
     device_res?;

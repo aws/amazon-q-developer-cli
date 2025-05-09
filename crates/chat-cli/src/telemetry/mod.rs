@@ -3,15 +3,14 @@ pub mod core;
 pub mod definitions;
 pub mod endpoint;
 mod install_method;
-mod util;
 
-use std::sync::LazyLock;
+use core::ToolUseEventBuilder;
+use std::str::FromStr;
 
 use amzn_codewhisperer_client::types::{
     ChatAddMessageEvent,
     IdeCategory,
     OperatingSystem,
-    OptOutPreference,
     TelemetryEvent,
     UserContext,
 };
@@ -26,26 +25,34 @@ use amzn_toolkit_telemetry_client::{
     Config,
 };
 use aws_credential_types::provider::SharedCredentialsProvider;
-use cognito::CognitoProvider;
+use cognito::{
+    CognitoProvider,
+    get_cognito_credentials,
+};
 use endpoint::StaticEndpoint;
 pub use install_method::{
     InstallMethod,
     get_install_method,
 };
-use tokio::sync::{
-    Mutex,
-    OnceCell,
-};
-use tokio::task::JoinSet;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tracing::{
     debug,
     error,
+    trace,
 };
-use util::telemetry_is_disabled;
-use uuid::Uuid;
+use uuid::{
+    Uuid,
+    uuid,
+};
 
 use crate::api_client::Client as CodewhispererClient;
 use crate::aws_common::app_name;
+use crate::cli::CliRootCommands;
+use crate::database::Database;
+use crate::database::settings::Setting;
+use crate::database::state::StateDatabase;
+use crate::platform::Env;
 use crate::telemetry::core::Event;
 pub use crate::telemetry::core::{
     EventType,
@@ -58,19 +65,13 @@ use crate::util::system_info::os_version;
 pub enum TelemetryError {
     #[error(transparent)]
     ClientError(#[from] amzn_toolkit_telemetry_client::operation::post_metrics::PostMetricsError),
+    #[error(transparent)]
+    SendError(#[from] mpsc::error::SendError<Event>),
 }
 
 const PRODUCT: &str = "CodeWhisperer";
 const PRODUCT_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-// TODO: DO NOT USE OUTSIDE THIS FILE. Currently being used in one other place as part of a rewrite.
-// but.
-pub async fn client() -> &'static Client {
-    static CLIENT: OnceCell<Client> = OnceCell::const_new();
-    CLIENT
-        .get_or_init(|| async { Client::new(TelemetryStage::EXTERNAL_PROD).await })
-        .await
-}
+const CLIENT_ID_ENV_VAR: &str = "Q_TELEMETRY_CLIENT_ID";
 
 /// A IDE toolkit telemetry stage
 #[derive(Debug, Clone)]
@@ -82,7 +83,6 @@ pub struct TelemetryStage {
 }
 
 impl TelemetryStage {
-    #[allow(dead_code)]
     const BETA: Self = Self::new(
         "https://7zftft3lj2.execute-api.us-east-1.amazonaws.com/Beta",
         "us-east-1:db7bfc9f-8ecd-4fbb-bea7-280c16069a99",
@@ -103,81 +103,258 @@ impl TelemetryStage {
     }
 }
 
-static JOIN_SET: LazyLock<Mutex<JoinSet<()>>> = LazyLock::new(|| Mutex::new(JoinSet::new()));
+#[derive(Debug)]
+pub struct TelemetryThread {
+    handle: Option<JoinHandle<()>>,
+    tx: mpsc::UnboundedSender<Event>,
+}
 
-/// Joins all current telemetry events
-pub async fn finish_telemetry() {
-    let mut set = JOIN_SET.lock().await;
-    while let Some(res) = set.join_next().await {
-        if let Err(err) = res {
-            error!(%err, "Failed to join telemetry event");
+impl Clone for TelemetryThread {
+    fn clone(&self) -> Self {
+        Self {
+            handle: None,
+            tx: self.tx.clone(),
         }
     }
 }
 
-/// Joins all current telemetry events and panics if any fail to join
-#[cfg(test)]
-pub async fn finish_telemetry_unwrap() {
-    let mut set = JOIN_SET.lock().await;
-    while let Some(res) = set.join_next().await {
-        res.unwrap();
-    }
-}
+impl TelemetryThread {
+    pub async fn new(env: &Env, database: &mut Database) -> Self {
+        let telemetry_client = TelemetryClient::new(env, database).await;
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let handle = tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                trace!("Sending telemetry event: {:?}", event);
+                telemetry_client.send_event(event).await;
+            }
+        });
 
-fn opt_out_preference() -> OptOutPreference {
-    if telemetry_is_disabled() {
-        OptOutPreference::OptOut
-    } else {
-        OptOutPreference::OptIn
+        Self {
+            handle: Some(handle),
+            tx,
+        }
+    }
+
+    pub fn send_user_logged_in(&self) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
+    }
+
+    pub fn send_refresh_credentials(
+        &self,
+        credential_start_url: String,
+        request_id: String,
+        oauth_flow: String,
+    ) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(
+            Event::new(EventType::RefreshCredentials {
+                request_id,
+                result: TelemetryResult::Succeeded,
+                reason: None,
+                oauth_flow,
+            })
+            .with_credential_start_url(credential_start_url),
+        )?)
+    }
+
+    pub fn send_cli_subcommand_executed(&self, subcommand: Option<&CliRootCommands>) -> Result<(), TelemetryError> {
+        let Some(subcommand) = subcommand else {
+            return Ok(());
+        };
+
+        Ok(self.tx.send(Event::new(EventType::CliSubcommandExecuted {
+            subcommand: subcommand.name().to_string(),
+        }))?)
+    }
+
+    pub fn send_chat_added_message(
+        &self,
+        conversation_id: String,
+        message_id: String,
+        context_file_length: Option<usize>,
+    ) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::ChatAddedMessage {
+            conversation_id,
+            message_id,
+            context_file_length,
+        }))?)
+    }
+
+    pub fn send_tool_use_suggested(&self, event: ToolUseEventBuilder) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::ToolUseSuggested {
+            conversation_id: event.conversation_id,
+            utterance_id: event.utterance_id,
+            user_input_id: event.user_input_id,
+            tool_use_id: event.tool_use_id,
+            tool_name: event.tool_name,
+            is_accepted: event.is_accepted,
+            is_success: event.is_success,
+            is_valid: event.is_valid,
+            is_custom_tool: event.is_custom_tool,
+            input_token_size: event.input_token_size,
+            output_token_size: event.output_token_size,
+            custom_tool_call_latency: event.custom_tool_call_latency,
+        }))?)
+    }
+
+    pub fn send_mcp_server_init(
+        &self,
+        conversation_id: String,
+        init_failure_reason: Option<String>,
+        number_of_tools: usize,
+    ) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(crate::telemetry::EventType::McpServerInit {
+            conversation_id,
+            init_failure_reason,
+            number_of_tools,
+        }))?)
+    }
+
+    pub fn send_did_select_profile(
+        &self,
+        source: QProfileSwitchIntent,
+        amazonq_profile_region: String,
+        result: TelemetryResult,
+        sso_region: Option<String>,
+        profile_count: Option<i64>,
+    ) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::DidSelectProfile {
+            source,
+            amazonq_profile_region,
+            result,
+            sso_region,
+            profile_count,
+        }))?)
+    }
+
+    pub fn send_profile_state(
+        &self,
+        source: QProfileSwitchIntent,
+        amazonq_profile_region: String,
+        result: TelemetryResult,
+        sso_region: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::ProfileState {
+            source,
+            amazonq_profile_region,
+            result,
+            sso_region,
+        }))?)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Client {
+struct TelemetryClient {
     client_id: Uuid,
+    telemetry_enabled: bool,
+    codewhisperer_client: CodewhispererClient,
     toolkit_telemetry_client: Option<ToolkitTelemetryClient>,
-    codewhisperer_client: Option<CodewhispererClient>,
 }
 
-impl Client {
-    pub async fn new(telemetry_stage: TelemetryStage) -> Self {
-        let client_id = util::get_client_id();
+impl TelemetryClient {
+    async fn new(env: &Env, database: &mut Database) -> Self {
+        let telemetry_enabled = !cfg!(test)
+            && !env.get_os("Q_DISABLE_TELEMETRY").is_some()
+            && database.settings.get_bool(Setting::TelemetryEnabled).unwrap_or(true);
 
-        if cfg!(test) {
-            return Self {
-                client_id,
-                toolkit_telemetry_client: None,
-                codewhisperer_client: CodewhispererClient::new().await.ok(),
-            };
+        // If telemetry is disabled we do not emit using toolkit_telemetry
+        let toolkit_telemetry_client = match telemetry_enabled {
+            true => match get_cognito_credentials(database, &TelemetryStage::EXTERNAL_PROD).await {
+                Ok(credentials) => Some(ToolkitTelemetryClient::from_conf(
+                    Config::builder()
+                        .http_client(crate::aws_common::http_client::client(database))
+                        .behavior_version(BehaviorVersion::v2025_01_17())
+                        .endpoint_resolver(StaticEndpoint(TelemetryStage::EXTERNAL_PROD.endpoint))
+                        .app_name(app_name())
+                        .region(TelemetryStage::EXTERNAL_PROD.region.clone())
+                        .credentials_provider(SharedCredentialsProvider::new(CognitoProvider::new(credentials)))
+                        .build(),
+                )),
+                Err(err) => {
+                    error!("Failed to acquire cognito credentials: {err}");
+                    None
+                },
+            },
+            false => None,
+        };
+
+        fn client_id(env: &Env, database: &mut Database, telemetry_enabled: bool) -> Uuid {
+            if !telemetry_enabled {
+                return uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff");
+            }
+
+            if let Ok(client_id) = env.get(CLIENT_ID_ENV_VAR) {
+                if let Ok(uuid) = Uuid::from_str(&client_id) {
+                    return uuid;
+                }
+            }
+
+            match database.get_client_id() {
+                Some(uuid) => uuid,
+                None => {
+                    let uuid = database
+                        .settings
+                        .get_string(Setting::OldClientId)
+                        .and_then(|id| Uuid::try_parse(&id).ok())
+                        .unwrap_or_else(Uuid::new_v4);
+
+                    if let Err(err) = database.set_client_id(uuid) {
+                        error!(%err, "Failed to set client id in state");
+                    }
+
+                    uuid
+                },
+            }
         }
 
-        let toolkit_telemetry_client = Some(amzn_toolkit_telemetry_client::Client::from_conf(
-            Config::builder()
-                .http_client(crate::aws_common::http_client::client())
-                .behavior_version(BehaviorVersion::v2025_01_17())
-                .endpoint_resolver(StaticEndpoint(telemetry_stage.endpoint))
-                .app_name(app_name())
-                .region(telemetry_stage.region.clone())
-                .credentials_provider(SharedCredentialsProvider::new(CognitoProvider::new(telemetry_stage)))
-                .build(),
-        ));
-        let codewhisperer_client = CodewhispererClient::new().await.ok();
-
         Self {
-            client_id,
+            client_id: client_id(env, database, telemetry_enabled),
+            telemetry_enabled,
             toolkit_telemetry_client,
-            codewhisperer_client,
+            codewhisperer_client: CodewhispererClient::new(database, None).await,
         }
     }
 
-    /// TODO: DO NOT USE OUTSIDE THIS FILE
-    pub async fn send_event(&self, event: Event) {
-        if telemetry_is_disabled() {
-            return;
-        }
-
+    async fn send_event(&self, event: Event) {
+        // This client will exist when telemetry is disabled.
         self.send_cw_telemetry_event(&event).await;
+
+        // This client won't exist when telemetry is disabled.
         self.send_telemetry_toolkit_metric(event).await;
+    }
+
+    async fn send_cw_telemetry_event(&self, event: &Event) {
+        if let EventType::ChatAddedMessage {
+            conversation_id,
+            message_id,
+            ..
+        } = &event.ty
+        {
+            let user_context = self.user_context().unwrap();
+
+            let chat_add_message_event = match ChatAddMessageEvent::builder()
+                .conversation_id(conversation_id)
+                .message_id(message_id)
+                .build()
+            {
+                Ok(event) => event,
+                Err(err) => {
+                    error!(err =% DisplayErrorContext(err), "Failed to send telemetry event");
+                    return;
+                },
+            };
+
+            if let Err(err) = self
+                .codewhisperer_client
+                .send_telemetry_event(
+                    TelemetryEvent::ChatAddMessageEvent(chat_add_message_event),
+                    user_context,
+                    self.telemetry_enabled,
+                )
+                .await
+            {
+                error!(err =% DisplayErrorContext(err), "Failed to send telemetry event");
+            }
+        }
     }
 
     async fn send_telemetry_toolkit_metric(&self, event: Event) {
@@ -189,45 +366,24 @@ impl Client {
             return;
         };
 
-        let mut set = JOIN_SET.lock().await;
-        set.spawn({
-            async move {
-                let product = AwsProduct::CodewhispererTerminal;
-                let product_version = env!("CARGO_PKG_VERSION");
-                let os = std::env::consts::OS;
-                let os_architecture = std::env::consts::ARCH;
-                let os_version = os_version().map(|v| v.to_string()).unwrap_or_default();
-                let metric_name = metric_datum.metric_name().to_owned();
+        let product = AwsProduct::CodewhispererTerminal;
+        let metric_name = metric_datum.metric_name().to_owned();
 
-                debug!(?product, ?metric_datum, "Posting metrics");
-                if let Err(err) = toolkit_telemetry_client
-                    .post_metrics()
-                    .aws_product(product)
-                    .aws_product_version(product_version)
-                    .client_id(client_id)
-                    .os(os)
-                    .os_architecture(os_architecture)
-                    .os_version(os_version)
-                    .metric_data(metric_datum)
-                    .send()
-                    .await
-                    .map_err(DisplayErrorContext)
-                {
-                    error!(%err, ?metric_name, "Failed to post metric");
-                }
-            }
-        });
-    }
-
-    async fn send_cw_telemetry_event(&self, event: &Event) {
-        if let EventType::ChatAddedMessage {
-            conversation_id,
-            message_id,
-            ..
-        } = &event.ty
+        debug!(?product, ?metric_datum, "Posting metrics");
+        if let Err(err) = toolkit_telemetry_client
+            .post_metrics()
+            .aws_product(product)
+            .aws_product_version(env!("CARGO_PKG_VERSION"))
+            .client_id(client_id)
+            .os(std::env::consts::OS)
+            .os_architecture(std::env::consts::ARCH)
+            .os_version(os_version().map(|v| v.to_string()).unwrap_or_default())
+            .metric_data(metric_datum)
+            .send()
+            .await
+            .map_err(DisplayErrorContext)
         {
-            self.send_cw_telemetry_chat_add_message_event(conversation_id.clone(), message_id.clone())
-                .await;
+            error!(%err, ?metric_name, "Failed to post metric");
         }
     }
 
@@ -257,130 +413,6 @@ impl Client {
             },
         }
     }
-
-    async fn send_cw_telemetry_chat_add_message_event(&self, conversation_id: String, message_id: String) {
-        let Some(codewhisperer_client) = self.codewhisperer_client.clone() else {
-            return;
-        };
-        let user_context = self.user_context().unwrap();
-        let opt_out_preference = opt_out_preference();
-
-        let chat_add_message_event = match ChatAddMessageEvent::builder()
-            .conversation_id(conversation_id)
-            .message_id(message_id)
-            .build()
-        {
-            Ok(event) => event,
-            Err(err) => {
-                error!(err =% DisplayErrorContext(err), "Failed to send telemetry event");
-                return;
-            },
-        };
-
-        let mut set = JOIN_SET.lock().await;
-        set.spawn(async move {
-            if let Err(err) = codewhisperer_client
-                .send_telemetry_event(
-                    TelemetryEvent::ChatAddMessageEvent(chat_add_message_event),
-                    user_context,
-                    opt_out_preference,
-                )
-                .await
-            {
-                error!(err =% DisplayErrorContext(err), "Failed to send telemetry event");
-            }
-        });
-    }
-}
-
-pub async fn send_user_logged_in() {
-    client().await.send_event(Event::new(EventType::UserLoggedIn {})).await;
-}
-
-pub async fn send_refresh_credentials(credential_start_url: String, request_id: String, oauth_flow: String) {
-    client()
-        .await
-        .send_event(
-            Event::new(EventType::RefreshCredentials {
-                request_id,
-                result: TelemetryResult::Succeeded,
-                reason: None,
-                oauth_flow,
-            })
-            .with_credential_start_url(credential_start_url),
-        )
-        .await;
-}
-
-pub async fn send_cli_subcommand_executed(subcommand: impl Into<String>) {
-    client()
-        .await
-        .send_event(Event::new(EventType::CliSubcommandExecuted {
-            subcommand: subcommand.into(),
-        }))
-        .await;
-}
-
-pub async fn send_chat_added_message(conversation_id: String, message_id: String, context_file_length: Option<usize>) {
-    client()
-        .await
-        .send_event(Event::new(EventType::ChatAddedMessage {
-            conversation_id,
-            message_id,
-            context_file_length,
-        }))
-        .await;
-}
-
-pub async fn send_mcp_server_init(
-    conversation_id: String,
-    init_failure_reason: Option<String>,
-    number_of_tools: usize,
-) {
-    client()
-        .await
-        .send_event(Event::new(crate::telemetry::EventType::McpServerInit {
-            conversation_id,
-            init_failure_reason,
-            number_of_tools,
-        }))
-        .await;
-}
-
-pub async fn send_did_select_profile(
-    source: QProfileSwitchIntent,
-    amazonq_profile_region: String,
-    result: TelemetryResult,
-    sso_region: Option<String>,
-    profile_count: Option<i64>,
-) {
-    client()
-        .await
-        .send_event(Event::new(EventType::DidSelectProfile {
-            source,
-            amazonq_profile_region,
-            result,
-            sso_region,
-            profile_count,
-        }))
-        .await;
-}
-
-pub async fn send_profile_state(
-    source: QProfileSwitchIntent,
-    amazonq_profile_region: String,
-    result: TelemetryResult,
-    sso_region: Option<String>,
-) {
-    client()
-        .await
-        .send_event(Event::new(EventType::ProfileState {
-            source,
-            amazonq_profile_region,
-            result,
-            sso_region,
-        }))
-        .await;
 }
 
 #[cfg(test)]
@@ -391,7 +423,8 @@ mod test {
 
     #[tokio::test]
     async fn client_context() {
-        let client = client().await;
+        let mut database = Database::new().await.unwrap();
+        let client = TelemetryClient::new(&Env::new(), &mut database).await;
         let context = client.user_context().unwrap();
 
         assert_eq!(context.ide_category, IdeCategory::Cli);
@@ -411,7 +444,9 @@ mod test {
     #[tokio::test]
     #[ignore = "needs auth which is not in CI"]
     async fn test_send() {
-        finish_telemetry_unwrap().await;
+        let mut database = Database::new().await.unwrap();
+        let thread = TelemetryThread::new(&Env::new(), &mut database).await;
+        thread.send_user_logged_in();
 
         assert!(!logs_contain("ERROR"));
         assert!(!logs_contain("error"));
@@ -424,11 +459,14 @@ mod test {
     #[tokio::test]
     #[ignore = "needs auth which is not in CI"]
     async fn test_all_telemetry() {
-        send_user_logged_in().await;
-        send_cli_subcommand_executed("doctor").await;
-        send_chat_added_message("debug".to_owned(), "debug".to_owned(), Some(123)).await;
+        let mut database = Database::new().await.unwrap();
+        let thread = TelemetryThread::new(&Env::new(), &mut database).await;
 
-        finish_telemetry_unwrap().await;
+        thread.send_user_logged_in();
+        thread.send_cli_subcommand_executed(Some(&CliRootCommands::Version { changelog: None }));
+        thread.send_chat_added_message("version".to_owned(), "version".to_owned(), Some(123));
+
+        drop(thread);
 
         assert!(!logs_contain("ERROR"));
         assert!(!logs_contain("error"));
@@ -440,11 +478,10 @@ mod test {
     #[tokio::test]
     #[ignore = "needs auth which is not in CI"]
     async fn test_without_optout() {
-        let client = Client::new(TelemetryStage::BETA).await;
+        let mut database = Database::new().await.unwrap();
+        let client = TelemetryClient::new(&Env::new(), &mut database).await;
         client
             .codewhisperer_client
-            .as_ref()
-            .unwrap()
             .send_telemetry_event(
                 TelemetryEvent::ChatAddMessageEvent(
                     ChatAddMessageEvent::builder()
@@ -454,7 +491,7 @@ mod test {
                         .unwrap(),
                 ),
                 client.user_context().unwrap(),
-                OptOutPreference::OptIn,
+                false,
             )
             .await
             .unwrap();

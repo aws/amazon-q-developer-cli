@@ -52,23 +52,24 @@ use tracing::{
 
 use crate::auth::builder_id::*;
 use crate::auth::consts::*;
-use crate::auth::secret_store::SecretStore;
 use crate::auth::{
     AuthError,
     START_URL,
 };
+use crate::database::Database;
 
 const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(60 * 3);
 
 /// Starts the PKCE authorization flow, using [`START_URL`] and [`OIDC_BUILDER_ID_REGION`] as the
 /// default issuer URL and region. Returns the [`PkceClient`] to use to finish the flow.
 pub async fn start_pkce_authorization(
+    database: &Database,
     start_url: Option<String>,
     region: Option<String>,
 ) -> Result<(Client, PkceRegistration), AuthError> {
     let issuer_url = start_url.as_deref().unwrap_or(START_URL);
     let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-    let client = client(region.clone());
+    let client = client(database, region.clone());
     let registration = PkceRegistration::register(&client, region, issuer_url.to_string(), None).await?;
     Ok((client, registration))
 }
@@ -227,11 +228,11 @@ impl PkceRegistration {
         })
     }
 
-    /// Hosts a local HTTP server to listen for browser redirects. If a [`SecretStore`] is passed,
+    /// Hosts a local HTTP server to listen for browser redirects. If a [`Database`] is passed,
     /// then the access and refresh tokens will be saved.
     ///
     /// Only the first connection will be served.
-    pub async fn finish<C: PkceClient>(self, client: &C, secret_store: Option<&SecretStore>) -> Result<(), AuthError> {
+    pub async fn finish<C: PkceClient>(self, client: &C, database: Option<&Database>) -> Result<(), AuthError> {
         let code = tokio::select! {
             code = Self::recv_code(self.listener, self.state) => {
                 code?
@@ -269,17 +270,15 @@ impl PkceRegistration {
             C::scopes(),
         );
 
-        let Some(secret_store) = secret_store else {
-            return Ok(());
-        };
+        if let Some(database) = database {
+            if let Err(err) = device_registration.save(&database.secret_store).await {
+                error!(?err, "Failed to store pkce registration to secret store");
+            }
 
-        if let Err(err) = device_registration.save(secret_store).await {
-            error!(?err, "Failed to store pkce registration to secret store");
+            if let Err(err) = token.save(&database.secret_store).await {
+                error!(?err, "Failed to store builder id token");
+            };
         }
-
-        if let Err(err) = token.save(secret_store).await {
-            error!(?err, "Failed to store builder id token");
-        };
 
         Ok(())
     }
@@ -512,9 +511,11 @@ mod tests {
     #[tokio::test]
     async fn test_pkce_flow_e2e() {
         tracing_subscriber::fmt::init();
+        let database = Database::new().await.unwrap();
+
         let start_url = "https://amzn.awsapps.com/start".to_string();
         let region = Region::new("us-east-1");
-        let client = client(region.clone());
+        let client = client(&database, region.clone());
         let registration = PkceRegistration::register(&client, region.clone(), start_url, None)
             .await
             .unwrap();
@@ -523,8 +524,8 @@ mod tests {
             panic!("unable to open the URL");
         }
         println!("Waiting for authorization to complete...");
-        let secret_store = SecretStore::new().await.unwrap();
-        registration.finish(&client, Some(&secret_store)).await.unwrap();
+
+        registration.finish(&client, Some(&database)).await.unwrap();
         println!("Authorization successful");
     }
 

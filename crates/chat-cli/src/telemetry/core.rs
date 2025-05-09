@@ -285,6 +285,56 @@ pub enum EventType {
     },
 }
 
+#[derive(Debug)]
+pub struct ToolUseEventBuilder {
+    pub conversation_id: String,
+    pub utterance_id: Option<String>,
+    pub user_input_id: Option<String>,
+    pub tool_use_id: Option<String>,
+    pub tool_name: Option<String>,
+    pub is_accepted: bool,
+    pub is_success: Option<bool>,
+    pub is_valid: Option<bool>,
+    pub is_custom_tool: bool,
+    pub input_token_size: Option<usize>,
+    pub output_token_size: Option<usize>,
+    pub custom_tool_call_latency: Option<usize>,
+}
+
+impl ToolUseEventBuilder {
+    pub fn new(conv_id: String, tool_use_id: String) -> Self {
+        Self {
+            conversation_id: conv_id,
+            utterance_id: None,
+            user_input_id: None,
+            tool_use_id: Some(tool_use_id),
+            tool_name: None,
+            is_accepted: false,
+            is_success: None,
+            is_valid: None,
+            is_custom_tool: false,
+            input_token_size: None,
+            output_token_size: None,
+            custom_tool_call_latency: None,
+        }
+    }
+
+    pub fn utterance_id(mut self, id: Option<String>) -> Self {
+        self.utterance_id = id;
+        self
+    }
+
+    pub fn set_tool_use_id(mut self, id: String) -> Self {
+        self.tool_use_id.replace(id);
+        self
+    }
+
+    pub fn set_tool_name(mut self, name: String) -> Self {
+        self.tool_name.replace(name);
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SuggestionState {
     Accept,

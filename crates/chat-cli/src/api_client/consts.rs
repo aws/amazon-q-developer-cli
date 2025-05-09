@@ -12,5 +12,4 @@ pub const PROD_CODEWHISPERER_FRA_ENDPOINT_URL: &str = "https://q.eu-central-1.am
 pub const PROD_CODEWHISPERER_FRA_ENDPOINT_REGION: Region = Region::from_static("eu-central-1");
 
 // Opt out constants
-pub const SHARE_CODEWHISPERER_CONTENT_SETTINGS_KEY: &str = "codeWhisperer.shareCodeWhispererContentWithAWS";
 pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";

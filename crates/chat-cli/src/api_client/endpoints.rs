@@ -12,6 +12,7 @@ use crate::api_client::consts::{
     PROD_Q_ENDPOINT_REGION,
     PROD_Q_ENDPOINT_URL,
 };
+use crate::database::Database;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
@@ -33,15 +34,17 @@ impl Endpoint {
         region: PROD_Q_ENDPOINT_REGION,
     };
 
-    pub fn load_codewhisperer() -> Self {
+    pub fn load_codewhisperer(database: &Database) -> Self {
         let (endpoint, region) =
-            if let Ok(Some(Value::Object(o))) = crate::settings::settings::get_value("api.codewhisperer.service") {
+            if let Ok(Some(Value::Object(o))) = database.settings.get_value("api.codewhisperer.service") {
                 // The following branch is evaluated in case the user has set their own endpoint.
                 (
                     o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
                     o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
                 )
-            } else if let Ok(Some(Value::Object(o))) = crate::settings::state::get_value("api.codewhisperer.profile") {
+            } else if let Ok(Some(Value::Object(o))) =
+                crate::database::persistent_state::get_value("api.codewhisperer.profile")
+            {
                 // The following branch is evaluated in the case of user profile being set.
                 match o.get("arn").and_then(|v| v.as_str()).map(|v| v.to_owned()) {
                     Some(arn) => {
@@ -73,7 +76,7 @@ impl Endpoint {
     }
 
     pub fn load_q() -> Self {
-        match crate::settings::settings::get_value("api.q.service") {
+        match crate::database::settings::get_value("api.q.service") {
             Ok(Some(Value::Object(o))) => {
                 let endpoint = o.get("endpoint").and_then(|v| v.as_str());
                 let region = o.get("region").and_then(|v| v.as_str());

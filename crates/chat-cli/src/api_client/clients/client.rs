@@ -8,7 +8,6 @@ use tracing::error;
 
 use super::shared::bearer_sdk_config;
 use crate::api_client::interceptor::opt_out::OptOutInterceptor;
-use crate::api_client::profile::Profile;
 use crate::api_client::{
     ApiClientError,
     Endpoint,
@@ -17,6 +16,11 @@ use crate::auth::builder_id::BearerResolver;
 use crate::aws_common::{
     UserAgentOverrideInterceptor,
     app_name,
+};
+use crate::database::Database;
+use crate::database::state::{
+    AuthProfile,
+    StateDatabase,
 };
 
 mod inner {
@@ -32,27 +36,24 @@ mod inner {
 #[derive(Clone, Debug)]
 pub struct Client {
     inner: inner::Inner,
-    profile_arn: Option<String>,
+    profile: Option<AuthProfile>,
 }
 
 impl Client {
-    pub async fn new() -> Result<Client, ApiClientError> {
+    pub async fn new(database: &mut Database, endpoint: Option<Endpoint>) -> Client {
         if cfg!(test) {
-            return Ok(Self {
+            return Self {
                 inner: inner::Inner::Mock,
-                profile_arn: None,
-            });
+                profile: None,
+            };
         }
 
-        let endpoint = Endpoint::load_codewhisperer();
-        Ok(Self::new_codewhisperer_client(&endpoint).await)
-    }
-
-    pub async fn new_codewhisperer_client(endpoint: &Endpoint) -> Self {
-        let conf_builder: amzn_codewhisperer_client::config::Builder = (&bearer_sdk_config(endpoint).await).into();
+        let endpoint = endpoint.unwrap_or(Endpoint::load_codewhisperer(database));
+        let conf_builder: amzn_codewhisperer_client::config::Builder =
+            (&bearer_sdk_config(database, &endpoint).await).into();
         let conf = conf_builder
-            .http_client(crate::aws_common::http_client::client())
-            .interceptor(OptOutInterceptor::new())
+            .http_client(crate::aws_common::http_client::client(database))
+            .interceptor(OptOutInterceptor::new(database))
             .interceptor(UserAgentOverrideInterceptor::new())
             .bearer_token_resolver(BearerResolver)
             .app_name(app_name())
@@ -61,38 +62,22 @@ impl Client {
 
         let inner = inner::Inner::Codewhisperer(CodewhispererClient::from_conf(conf));
 
-        let profile_arn = match crate::settings::state::get_value("api.codewhisperer.profile") {
-            Ok(Some(profile)) => match profile.get("arn") {
-                Some(arn) => match arn.as_str() {
-                    Some(arn) => Some(arn.to_string()),
-                    None => {
-                        error!("Stored arn is not a string. Instead it was: {arn}");
-                        None
-                    },
-                },
-                None => {
-                    error!("Stored profile does not contain an arn. Instead it was: {profile}");
-                    None
-                },
-            },
-            Ok(None) => None,
+        let profile = match database.get_auth_profile() {
+            Ok(profile) => profile,
             Err(err) => {
-                error!("Failed to retrieve profile: {}", err);
+                error!("Failed to get auth profile: {err}");
                 None
             },
         };
 
-        Self { inner, profile_arn }
+        Self { inner, profile }
     }
 
-    // .telemetry_event(TelemetryEvent::UserTriggerDecisionEvent(user_trigger_decision_event))
-    // .user_context(user_context)
-    // .opt_out_preference(opt_out_preference)
     pub async fn send_telemetry_event(
         &self,
         telemetry_event: TelemetryEvent,
         user_context: UserContext,
-        opt_out: OptOutPreference,
+        telemetry_enabled: bool,
     ) -> Result<(), ApiClientError> {
         match &self.inner {
             inner::Inner::Codewhisperer(client) => {
@@ -100,8 +85,11 @@ impl Client {
                     .send_telemetry_event()
                     .telemetry_event(telemetry_event)
                     .user_context(user_context)
-                    .opt_out_preference(opt_out)
-                    .set_profile_arn(self.profile_arn.clone())
+                    .opt_out_preference(match telemetry_enabled {
+                        true => OptOutPreference::OptIn,
+                        false => OptOutPreference::OptOut,
+                    })
+                    .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
                     .send()
                     .await;
                 Ok(())
@@ -110,23 +98,23 @@ impl Client {
         }
     }
 
-    pub async fn list_available_profiles(&self) -> Result<Vec<Profile>, ApiClientError> {
+    pub async fn list_available_profiles(&self) -> Result<Vec<AuthProfile>, ApiClientError> {
         match &self.inner {
             inner::Inner::Codewhisperer(client) => {
                 let mut profiles = vec![];
                 let mut client = client.list_available_profiles().into_paginator().send();
                 while let Some(profiles_output) = client.next().await {
-                    profiles.extend(profiles_output?.profiles().iter().cloned().map(Profile::from));
+                    profiles.extend(profiles_output?.profiles().iter().cloned().map(AuthProfile::from));
                 }
 
                 Ok(profiles)
             },
             inner::Inner::Mock => Ok(vec![
-                Profile {
+                AuthProfile {
                     arn: "my:arn:1".to_owned(),
                     profile_name: "MyProfile".to_owned(),
                 },
-                Profile {
+                AuthProfile {
                     arn: "my:arn:2".to_owned(),
                     profile_name: "MyOtherProfile".to_owned(),
                 },
@@ -147,15 +135,14 @@ mod tests {
 
     #[tokio::test]
     async fn create_clients() {
-        let endpoint = Endpoint::load_codewhisperer();
-
-        let _ = Client::new().await;
-        let _ = Client::new_codewhisperer_client(&endpoint).await;
+        let mut database = crate::database::Database::new().await.unwrap();
+        let _ = Client::new(&mut database, None).await;
     }
 
     #[tokio::test]
     async fn test_mock() {
-        let client = Client::new().await.unwrap();
+        let mut database = crate::database::Database::new().await.unwrap();
+        let client = Client::new(&mut database, None).await;
         client
             .send_telemetry_event(
                 TelemetryEvent::ChatAddMessageEvent(
@@ -171,7 +158,7 @@ mod tests {
                     .product("<product>")
                     .build()
                     .unwrap(),
-                OptOutPreference::OptIn,
+                false,
             )
             .await
             .unwrap();

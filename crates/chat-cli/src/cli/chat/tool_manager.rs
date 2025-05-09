@@ -54,11 +54,12 @@ use crate::api_client::model::{
     ToolResultContentBlock,
     ToolResultStatus,
 };
+use crate::database::Database;
 use crate::mcp_client::{
     JsonRpcResponse,
     PromptGet,
 };
-use crate::telemetry::send_mcp_server_init;
+use crate::telemetry::TelemetryThread;
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name since in the end the tool name as seen by the
@@ -204,7 +205,7 @@ impl ToolManagerBuilder {
         self
     }
 
-    pub async fn build(mut self) -> eyre::Result<ToolManager> {
+    pub async fn build(mut self, telemetry: &TelemetryThread) -> eyre::Result<ToolManager> {
         let McpServerConfig { mcp_servers } = self.mcp_server_config.ok_or(eyre::eyre!("Missing mcp server config"))?;
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
@@ -324,7 +325,9 @@ impl ToolManagerBuilder {
                 },
                 Err(e) => {
                     error!("Error initializing mcp client for server {}: {:?}", name, &e);
-                    send_mcp_server_init(conversation_id.clone(), Some(e.to_string()), 0).await;
+                    telemetry
+                        .send_mcp_server_init(conversation_id.clone(), Some(e.to_string()), 0)
+                        .ok();
 
                     let _ = tx.send(LoadingMsg::Error {
                         name: name.clone(),
@@ -498,23 +501,29 @@ pub struct ToolManager {
 }
 
 impl ToolManager {
-    pub async fn load_tools(&mut self) -> eyre::Result<HashMap<String, ToolSpec>> {
+    pub async fn load_tools(
+        &mut self,
+        database: &Database,
+        telemetry: &TelemetryThread,
+    ) -> eyre::Result<HashMap<String, ToolSpec>> {
         let tx = self.loading_status_sender.take();
         let display_task = self.loading_display_task.take();
         let tool_specs = {
             let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
-            if !crate::cli::chat::tools::thinking::Thinking::is_enabled() {
-                tool_specs.remove("q_think_tool");
+            if !crate::cli::chat::tools::thinking::Thinking::is_enabled(database) {
+                tool_specs.remove("thinking");
             }
             Arc::new(Mutex::new(tool_specs))
         };
         let conversation_id = self.conversation_id.clone();
         let regex = Arc::new(regex::Regex::new(VALID_TOOL_NAME)?);
+
         let load_tool = self
             .clients
             .iter()
             .map(|(server_name, client)| {
+                let telemetry = telemetry.clone();
                 let client_clone = client.clone();
                 let server_name_clone = server_name.clone();
                 let tx_clone = tx.clone();
@@ -568,7 +577,7 @@ impl ToolManager {
                             }
 
                             // Send server load success metric datum
-                            send_mcp_server_init(conversation_id, None, number_of_tools).await;
+                            telemetry.send_mcp_server_init(conversation_id, None, number_of_tools).ok();
 
                             // Tool name translation. This is beyond of the scope of what is
                             // considered a "server load". Reasoning being:
@@ -614,7 +623,7 @@ impl ToolManager {
                         Err(e) => {
                             error!("Error obtaining tool spec for {}: {:?}", server_name_clone, e);
                             let init_failure_reason = Some(e.to_string());
-                            send_mcp_server_init(conversation_id, init_failure_reason, 0).await;
+                            telemetry.send_mcp_server_init(conversation_id, init_failure_reason, 0).ok();
                             if let Some(tx_clone) = &tx_clone {
                                 if let Err(e) = tx_clone.send(LoadingMsg::Error {
                                     name: server_name_clone,
@@ -677,7 +686,7 @@ impl ToolManager {
             "execute_bash" => Tool::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
-            "q_think_tool" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
+            "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
                 let name = self.tn_map.get(name).map_or(name, String::as_str);

@@ -2,7 +2,6 @@ pub mod builder_id;
 mod consts;
 pub mod pkce;
 mod scope;
-pub mod secret_store;
 
 use aws_sdk_ssooidc::error::SdkError;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
@@ -35,17 +34,10 @@ pub enum AuthError {
     Directories(#[from] crate::util::directories::DirectoryError),
     #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
-    #[cfg(target_os = "macos")]
-    #[error("Security error: {}", .0)]
-    Security(String),
     #[error(transparent)]
-    StringFromUtf8(#[from] std::string::FromUtf8Error),
+    DbOpenError(#[from] crate::database::DbOpenError),
     #[error(transparent)]
-    StrFromUtf8(#[from] std::str::Utf8Error),
-    #[error(transparent)]
-    DbOpenError(#[from] crate::settings::error::DbOpenError),
-    #[error(transparent)]
-    Setting(#[from] crate::settings::SettingsError),
+    Setting(#[from] crate::database::DatabaseError),
     #[error("No token")]
     NoToken,
     #[error("OAuth state mismatch. Actual: {} | Expected: {}", .actual, .expected)]
