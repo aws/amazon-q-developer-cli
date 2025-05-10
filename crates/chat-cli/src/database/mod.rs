@@ -2,6 +2,7 @@ pub mod secret_store;
 pub mod settings;
 
 use std::ops::Deref;
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::PoisonError;
 
@@ -31,6 +32,7 @@ use thiserror::Error;
 use tracing::info;
 use uuid::Uuid;
 
+use crate::cli::ConversationState;
 use crate::util::directories::{
     DirectoryError,
     database_path,
@@ -65,7 +67,8 @@ const MIGRATIONS: &[Migration] = migrations![
     "003_improved_history_timing",
     "004_state_table",
     "005_auth_table",
-    "006_make_state_blob"
+    "006_make_state_blob",
+    "007_conversations_table"
 ];
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -136,7 +139,6 @@ pub enum Table {
     /// The state table contains persistent application state.
     State,
     /// The conversations tables contains user chat conversations.
-    #[allow(dead_code)]
     Conversations,
     #[cfg(not(target_os = "macos"))]
     /// The auth table contains
@@ -292,6 +294,37 @@ impl Database {
         self.set_entry(Table::State, ROTATING_TIP_KEY, tip.wrapping_add(1))?;
         Ok(tip)
     }
+
+    /// Get a chat conversation given a path to the conversation.
+    pub fn get_conversation_by_path(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<Option<ConversationState>, DatabaseError> {
+        // We would need to encode this to support non utf8 paths.
+        let path = match path.as_ref().to_str() {
+            Some(path) => path,
+            None => return Ok(None),
+        };
+
+        self.get_json_entry(Table::Conversations, path)
+    }
+
+    /// Set a chat conversation given a path to the conversation.
+    pub fn set_conversation_by_path(
+        &mut self,
+        path: impl AsRef<Path>,
+        state: &ConversationState,
+    ) -> Result<usize, DatabaseError> {
+        // We would need to encode this to support non utf8 paths.
+        let path = match path.as_ref().to_str() {
+            Some(path) => path,
+            None => return Ok(0),
+        };
+
+        self.set_json_entry(Table::Conversations, path, state)
+    }
+
+    // Private functions. Do not expose.
 
     fn migrate(self) -> Result<Self, DatabaseError> {
         let mut conn = self.pool.get()?;

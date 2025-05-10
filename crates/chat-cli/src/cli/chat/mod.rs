@@ -49,10 +49,8 @@ use consts::{
     DUMMY_TOOL_NAME,
 };
 use context::ContextManager;
-use conversation_state::{
-    ConversationState,
-    TokenWarningLevel,
-};
+pub use conversation_state::ConversationState;
+use conversation_state::TokenWarningLevel;
 use crossterm::style::{
     Attribute,
     Color,
@@ -188,21 +186,17 @@ use crate::mcp_client::{
     PromptGetResult,
 };
 
-const WELCOME_TEXT: &str = color_print::cstr! {"
-<em>Welcome to </em>
-<cyan!>
- █████╗ ███╗   ███╗ █████╗ ███████╗ ██████╗ ███╗   ██╗     ██████╗ 
-██╔══██╗████╗ ████║██╔══██╗╚══███╔╝██╔═══██╗████╗  ██║    ██╔═══██╗
-███████║██╔████╔██║███████║  ███╔╝ ██║   ██║██╔██╗ ██║    ██║   ██║
-██╔══██║██║╚██╔╝██║██╔══██║ ███╔╝  ██║   ██║██║╚██╗██║    ██║▄▄ ██║
-██║  ██║██║ ╚═╝ ██║██║  ██║███████╗╚██████╔╝██║ ╚████║    ╚██████╔╝
-╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═══╝     ╚══▀▀═╝ 
-</cyan!>                                                        
-"};
+const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
+    ⢠⣶⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣶⣦⡀⠀
+ ⠀⠀⠀⣾⡿⢻⣿⡆⠀⠀⠀⢀⣄⡄⢀⣠⣤⣤⡀⢀⣠⣤⣤⡀⠀⠀⢀⣠⣤⣤⣤⣄⠀⠀⢀⣄⣤⣤⣤⣤⣤⡀⠀⠀⣀⣤⣤⣤⣀⠀⠀⠀⢠⣠⡀⣀⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⢠⣿⣿⠋⠀⠀⠀⠙⣿⣿⡆
+ ⠀⠀⣼⣿⠇⠀⣿⣿⡄⠀⠀⢸⣿⣿⠛⠉⠻⣿⣿⠛⠉⠛⣿⣿⠀⠀⠘⠛⠉⠉⠻⣿⣧⠀⠈⠛⠛⠛⣻⣿⡿⠀⢀⣾⣿⠛⠉⠻⣿⣷⡀⠀⢸⣿⡟⠛⠉⢻⣿⣷⠀⠀⠀⠀⠀⠀⣼⣿⡏⠀⠀⠀⠀⠀⢸⣿⣿
+ ⠀⢰⣿⣿⣤⣤⣼⣿⣷⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⢀⣴⣶⣶⣶⣿⣿⠀⠀⠀⣠⣾⡿⠋⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⡇⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⢹⣿⣇⠀⠀⠀⠀⠀⢸⣿⡿
+ ⢀⣿⣿⠋⠉⠉⠉⢻⣿⣇⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⣿⣿⡀⠀⣠⣿⣿⠀⢀⣴⣿⣋⣀⣀⣀⡀⠘⣿⣿⣄⣀⣠⣿⣿⠃⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠈⢿⣿⣦⣀⣀⣀⣴⣿⡿⠃
+ ⠚⠛⠋⠀⠀⠀⠀⠘⠛⠛⠀⠘⠛⠛⠀⠀⠀⠛⠛⠀⠀⠀⠛⠛⠀⠀⠙⠻⠿⠟⠋⠛⠛⠀⠘⠛⠛⠛⠛⠛⠛⠃⠀⠈⠛⠿⠿⠿⠛⠁⠀⠀⠘⠛⠃⠀⠀⠘⠛⠛⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⠿⢿⣿⣿⣋⠀⠀
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⢿⡧</cyan!>"};
 
-const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
-<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>
-"};
+const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
+const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
 const ROTATING_TIPS: [&str; 9] = [
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
@@ -216,20 +210,14 @@ const ROTATING_TIPS: [&str; 9] = [
     color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with <green!>/help</green!>"},
 ];
 
-const GREETING_BREAK_POINT: usize = 67;
+const GREETING_BREAK_POINT: usize = 80;
 
-const POPULAR_SHORTCUTS: &str = color_print::cstr! {"
-<black!>
-<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search
-</black!>"};
-
-const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"
-<black!>
-<green!>/help</green!> all commands
+const POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search</black!>"};
+const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands
 <green!>ctrl + j</green!> new lines
 <green!>ctrl + s</green!> fuzzy search
-</black!>
-"};
+</black!>"};
+
 const HELP_TEXT: &str = color_print::cstr! {"
 
 <magenta,em>q</magenta,em> (Amazon Q Chat)
@@ -357,7 +345,7 @@ pub async fn chat(
             execute!(
                 output,
                 style::Print(
-                    "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n"
+                    "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
                 )
             )?;
             config
@@ -429,6 +417,7 @@ pub async fn chat(
 
     let mut chat = ChatContext::new(
         ctx,
+        database,
         &conversation_id,
         output,
         input,
@@ -487,6 +476,8 @@ pub struct ChatContext {
     /// The [Write] destination for printing conversation text.
     output: SharedWriter,
     initial_input: Option<String>,
+    /// Whether we're starting a new conversation or continuing an old one.
+    existing_conversation: bool,
     input_source: InputSource,
     interactive: bool,
     /// The client to use to interact with the model.
@@ -514,9 +505,10 @@ impl ChatContext {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         ctx: Arc<Context>,
+        database: &mut Database,
         conversation_id: &str,
         output: SharedWriter,
-        input: Option<String>,
+        mut input: Option<String>,
         input_source: InputSource,
         interactive: bool,
         client: StreamingClient,
@@ -528,12 +520,26 @@ impl ChatContext {
     ) -> Result<Self> {
         let ctx_clone = Arc::clone(&ctx);
         let output_clone = output.clone();
-        let conversation_state =
-            ConversationState::new(ctx_clone, conversation_id, tool_config, profile, Some(output_clone)).await;
+
+        let mut existing_conversation = false;
+        let conversation_state = match std::env::current_dir()
+            .ok()
+            .and_then(|cwd| database.get_conversation_by_path(cwd).ok())
+            .flatten()
+        {
+            Some(prior) => {
+                existing_conversation = true;
+                input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
+                prior
+            },
+            None => ConversationState::new(ctx_clone, conversation_id, tool_config, profile, Some(output_clone)).await,
+        };
+
         Ok(Self {
             ctx,
             output,
             initial_input: input,
+            existing_conversation,
             input_source,
             interactive,
             client,
@@ -679,15 +685,15 @@ impl ChatContext {
     async fn try_chat(&mut self, database: &mut Database, telemetry: &TelemetryThread) -> Result<()> {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
         if self.interactive && database.settings.get_bool(Setting::ChatGreetingEnabled).unwrap_or(true) {
-            execute!(
-                self.output,
-                style::Print(if is_small_screen {
-                    SMALL_SCREEN_WECLOME_TEXT
-                } else {
-                    WELCOME_TEXT
-                }),
-                style::Print("\n\n"),
-            )?;
+            let welcome_text = match self.existing_conversation {
+                true => RESUME_TEXT,
+                false => match is_small_screen {
+                    true => SMALL_SCREEN_WELCOME_TEXT,
+                    false => WELCOME_TEXT,
+                },
+            };
+
+            execute!(self.output, style::Print(welcome_text), style::Print("\n\n"),)?;
 
             let current_tip_index = database.get_increment_rotating_tip().unwrap_or(0) % ROTATING_TIPS.len();
 
@@ -712,11 +718,12 @@ impl ChatContext {
 
             execute!(
                 self.output,
-                style::Print(if is_small_screen {
-                    SMALL_SCREEN_POPULAR_SHORTCUTS
-                } else {
-                    POPULAR_SHORTCUTS
+                style::Print("\n"),
+                style::Print(match is_small_screen {
+                    true => SMALL_SCREEN_POPULAR_SHORTCUTS,
+                    false => POPULAR_SHORTCUTS,
                 }),
+                style::Print("\n"),
                 style::Print(
                     "━"
                         .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
@@ -744,17 +751,6 @@ impl ChatContext {
         });
 
         if let Some(user_input) = self.initial_input.take() {
-            if self.interactive {
-                execute!(
-                    self.output,
-                    style::SetAttribute(Attribute::Reset),
-                    style::SetForegroundColor(Color::Magenta),
-                    style::Print("> "),
-                    style::SetAttribute(Attribute::Reset),
-                    style::Print(&user_input),
-                    style::Print("\n")
-                )?;
-            }
             next_state = Some(ChatState::HandleInput {
                 input: user_input,
                 tool_uses: None,
@@ -825,7 +821,7 @@ impl ChatContext {
                 ChatState::Exit => return Ok(()),
             };
 
-            next_state = Some(self.handle_state_execution_result(result).await?);
+            next_state = Some(self.handle_state_execution_result(database, result).await?);
         }
     }
 
@@ -833,6 +829,7 @@ impl ChatContext {
     /// to.
     async fn handle_state_execution_result(
         &mut self,
+        database: &mut Database,
         result: Result<ChatState, ChatError>,
     ) -> Result<ChatState, ChatError> {
         // Remove non-ASCII and ANSI characters.
@@ -892,11 +889,13 @@ impl ChatContext {
                                     "The user interrupted the tool execution.".to_string(),
                                 );
                                 let _ = self.conversation_state.as_sendable_conversation_state(false).await;
-                                self.conversation_state
-                                    .push_assistant_message(AssistantMessage::new_response(
+                                self.conversation_state.push_assistant_message(
+                                    AssistantMessage::new_response(
                                         None,
                                         "Tool uses were interrupted, waiting for the next user prompt".to_string(),
-                                    ));
+                                    ),
+                                    database,
+                                );
                             },
                             _ => (),
                         }
@@ -3014,7 +3013,7 @@ impl ChatContext {
 
     async fn handle_response(
         &mut self,
-        database: &Database,
+        database: &mut Database,
         telemetry: &TelemetryThread,
         response: SendMessageOutput,
     ) -> Result<ChatState, ChatError> {
@@ -3061,7 +3060,7 @@ impl ChatContext {
                             if message.content() == RESPONSE_TIMEOUT_CONTENT {
                                 error!(?request_id, ?message, "Encountered an unexpected model response");
                             }
-                            self.conversation_state.push_assistant_message(message);
+                            self.conversation_state.push_assistant_message(message, database);
                             ended = true;
                         },
                     }
@@ -3086,11 +3085,10 @@ impl ChatContext {
                             }
                             // For stream timeouts, we'll tell the model to try and split its response into
                             // smaller chunks.
-                            self.conversation_state
-                                .push_assistant_message(AssistantMessage::new_response(
-                                    None,
-                                    RESPONSE_TIMEOUT_CONTENT.to_string(),
-                                ));
+                            self.conversation_state.push_assistant_message(
+                                AssistantMessage::new_response(None, RESPONSE_TIMEOUT_CONTENT.to_string()),
+                                database,
+                            );
                             self.conversation_state
                                 .set_next_user_message(
                                     "You took too long to respond - try to split up the work into smaller steps."
@@ -3140,7 +3138,7 @@ impl ChatContext {
                                 ));
                             }
 
-                            self.conversation_state.push_assistant_message(*message);
+                            self.conversation_state.push_assistant_message(*message, database);
                             let tool_results = vec![ToolUseResult {
                                     tool_use_id,
                                     content: vec![ToolUseResultBlock::Text(
@@ -3636,6 +3634,7 @@ mod tests {
             .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            &mut database,
             "fake_conv_id",
             SharedWriter::stdout(),
             None,
@@ -3767,6 +3766,7 @@ mod tests {
             .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            &mut database,
             "fake_conv_id",
             SharedWriter::stdout(),
             None,
@@ -3873,6 +3873,7 @@ mod tests {
             .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            &mut database,
             "fake_conv_id",
             SharedWriter::stdout(),
             None,
@@ -3951,6 +3952,7 @@ mod tests {
             .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            &mut database,
             "fake_conv_id",
             SharedWriter::stdout(),
             None,
