@@ -407,7 +407,7 @@ async fn select_profile_interactive(database: &mut Database, telemetry: &Telemet
     match selected {
         Some(i) => {
             let chosen = &profiles[i];
-            eprintln!("Set profile");
+            eprintln!("Profile set");
             database.set_auth_profile(chosen)?;
 
             if let Some(profile_region) = chosen.arn.split(':').nth(3) {
