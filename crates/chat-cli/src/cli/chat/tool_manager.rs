@@ -229,7 +229,6 @@ impl ToolManagerBuilder {
         self
     }
 
-    #[allow(dead_code)]
     pub fn interactive(mut self, is_interactive: bool) -> Self {
         self.is_interactive = is_interactive;
         self
@@ -715,7 +714,7 @@ impl ToolManager {
         });
         // We need to cast it to erase the type otherwise the compiler will default to static
         // dispatch, which would result in an error of inconsistent match arm return type.
-        let display_future: Pin<Box<dyn Future<Output = ()>>> = match display_task {
+        let display_fut: Pin<Box<dyn Future<Output = ()>>> = match display_task {
             Some(display_task) => {
                 let fut = async move {
                     if let Err(e) = display_task.await {
@@ -729,10 +728,19 @@ impl ToolManager {
                 Box::pin(fut)
             },
         };
+        // TODO: make this timeout configurable
+        let timeout_fut: Pin<Box<dyn Future<Output = ()>>> = if self.is_interactive {
+            let init_timeout = crate::settings::settings::get_int("mcp.initTimeout")
+                .map_or(5000_u64, |s| s.map_or(5000_u64, |n| n as u64));
+            error!("## timeout: {init_timeout}");
+            Box::pin(tokio::time::sleep(std::time::Duration::from_millis(init_timeout)))
+        } else {
+            let fut = async { future::pending::<()>().await };
+            Box::pin(fut)
+        };
         tokio::select! {
-            _ = display_future => {},
-            // TODO: make this timeout configurable
-            _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+            _ = display_fut => {},
+            _ = timeout_fut => {
                 if let Some(tx) = tx {
                     let _ = tx.send(LoadingMsg::Terminate);
                 }
