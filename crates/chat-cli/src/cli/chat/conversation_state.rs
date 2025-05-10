@@ -322,6 +322,7 @@ impl ConversationState {
                                 let tool_name = tool_use.name.as_str();
                                 if !tool_name_list.contains(&tool_name) {
                                     tool_use.name = DUMMY_TOOL_NAME.to_string();
+                                    tool_use.args = serde_json::json!({});
                                 }
                             })
                             .collect::<Vec<_>>();

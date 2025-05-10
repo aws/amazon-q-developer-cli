@@ -86,7 +86,10 @@ use rand::distr::{
     SampleString,
 };
 use tokio::signal::ctrl_c;
-use util::shared_writer::SharedWriter;
+use util::shared_writer::{
+    NullWriter,
+    SharedWriter,
+};
 use util::ui::draw_box;
 
 use crate::api_client::StreamingClient;
@@ -396,7 +399,12 @@ pub async fn chat(
         .prompt_list_sender(prompt_response_sender)
         .prompt_list_receiver(prompt_request_receiver)
         .conversation_id(&conversation_id)
-        .build()
+        .interactive(interactive)
+        .build(if interactive {
+            Box::new(output.clone())
+        } else {
+            Box::new(NullWriter {})
+        })
         .await?;
     let tool_config = tool_manager.load_tools().await?;
     let mut tool_permissions = ToolPermissions::new(tool_config.len());

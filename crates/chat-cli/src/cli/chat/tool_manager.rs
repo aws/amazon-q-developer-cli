@@ -205,6 +205,7 @@ pub struct ToolManagerBuilder {
     prompt_list_sender: Option<std::sync::mpsc::Sender<Vec<String>>>,
     prompt_list_receiver: Option<std::sync::mpsc::Receiver<Option<String>>>,
     conversation_id: Option<String>,
+    is_interactive: bool,
 }
 
 impl ToolManagerBuilder {
@@ -228,12 +229,19 @@ impl ToolManagerBuilder {
         self
     }
 
-    pub async fn build(mut self) -> eyre::Result<ToolManager> {
+    #[allow(dead_code)]
+    pub fn interactive(mut self, is_interactive: bool) -> Self {
+        self.is_interactive = is_interactive;
+        self
+    }
+
+    pub async fn build(mut self, mut output: Box<dyn Write + Send + Sync + 'static>) -> eyre::Result<ToolManager> {
         let McpServerConfig { mcp_servers } = self.mcp_server_config.ok_or(eyre::eyre!("Missing mcp server config"))?;
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
         let regex = regex::Regex::new(VALID_TOOL_NAME)?;
         let mut hasher = DefaultHasher::new();
+        let is_interactive = self.is_interactive;
         let pre_initialized = mcp_servers
             .into_iter()
             .map(|(server_name, server_config)| {
@@ -246,11 +254,7 @@ impl ToolManagerBuilder {
 
         // Send up task to update user on server loading status
         let (tx, rx) = std::sync::mpsc::channel::<LoadingMsg>();
-        // Using a hand rolled thread because it's just easier to do this than do deal with the Send
-        // requirements that comes with holding onto the stdout lock.
         let loading_display_task = tokio::task::spawn_blocking(move || {
-            let stdout = std::io::stdout();
-            let mut stdout_lock = stdout.lock();
             let mut loading_servers = HashMap::<String, StatusLine>::new();
             let mut spinner_logo_idx: usize = 0;
             let mut complete: usize = 0;
@@ -262,16 +266,16 @@ impl ToolManagerBuilder {
                             let init_time = std::time::Instant::now();
                             let is_done = false;
                             let status_line = StatusLine { init_time, is_done };
-                            execute!(stdout_lock, cursor::MoveToColumn(0))?;
+                            execute!(output, cursor::MoveToColumn(0))?;
                             if !loading_servers.is_empty() {
                                 // TODO: account for terminal width
-                                execute!(stdout_lock, cursor::MoveUp(1))?;
+                                execute!(output, cursor::MoveUp(1))?;
                             }
                             loading_servers.insert(name.clone(), status_line);
                             let total = loading_servers.len();
-                            execute!(stdout_lock, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                            queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
-                            stdout_lock.flush()?;
+                            execute!(output, terminal::Clear(terminal::ClearType::CurrentLine))?;
+                            queue_init_message(spinner_logo_idx, complete, failed, total, is_interactive, &mut output)?;
+                            output.flush()?;
                         },
                         LoadingMsg::Done(name) => {
                             if let Some(status_line) = loading_servers.get_mut(&name) {
@@ -281,15 +285,22 @@ impl ToolManagerBuilder {
                                     (std::time::Instant::now() - status_line.init_time).as_secs_f64().abs();
                                 let time_taken = format!("{:.2}", time_taken);
                                 execute!(
-                                    stdout_lock,
+                                    output,
                                     cursor::MoveToColumn(0),
                                     cursor::MoveUp(1),
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
-                                queue_success_message(&name, &time_taken, &mut stdout_lock)?;
+                                queue_success_message(&name, &time_taken, &mut output)?;
                                 let total = loading_servers.len();
-                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
-                                stdout_lock.flush()?;
+                                queue_init_message(
+                                    spinner_logo_idx,
+                                    complete,
+                                    failed,
+                                    total,
+                                    is_interactive,
+                                    &mut output,
+                                )?;
+                                output.flush()?;
                             }
                             if loading_servers.iter().all(|(_, status)| status.is_done) {
                                 break;
@@ -300,14 +311,21 @@ impl ToolManagerBuilder {
                                 status_line.is_done = true;
                                 failed += 1;
                                 execute!(
-                                    stdout_lock,
+                                    output,
                                     cursor::MoveToColumn(0),
                                     cursor::MoveUp(1),
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
-                                queue_failure_message(&name, &msg, &mut stdout_lock)?;
+                                queue_failure_message(&name, &msg, &mut output)?;
                                 let total = loading_servers.len();
-                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
+                                queue_init_message(
+                                    spinner_logo_idx,
+                                    complete,
+                                    failed,
+                                    total,
+                                    is_interactive,
+                                    &mut output,
+                                )?;
                             }
                             if loading_servers.iter().all(|(_, status)| status.is_done) {
                                 break;
@@ -318,16 +336,23 @@ impl ToolManagerBuilder {
                                 status_line.is_done = true;
                                 complete += 1;
                                 execute!(
-                                    stdout_lock,
+                                    output,
                                     cursor::MoveToColumn(0),
                                     cursor::MoveUp(1),
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
                                 let msg = eyre::eyre!(msg.to_string());
-                                queue_warn_message(&name, &msg, &mut stdout_lock)?;
+                                queue_warn_message(&name, &msg, &mut output)?;
                                 let total = loading_servers.len();
-                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut stdout_lock)?;
-                                stdout_lock.flush()?;
+                                queue_init_message(
+                                    spinner_logo_idx,
+                                    complete,
+                                    failed,
+                                    total,
+                                    is_interactive,
+                                    &mut output,
+                                )?;
+                                output.flush()?;
                             }
                             if loading_servers.iter().all(|(_, status)| status.is_done) {
                                 break;
@@ -336,7 +361,7 @@ impl ToolManagerBuilder {
                         LoadingMsg::Terminate => {
                             if loading_servers.iter().any(|(_, status)| !status.is_done) {
                                 execute!(
-                                    stdout_lock,
+                                    output,
                                     cursor::MoveToColumn(0),
                                     cursor::MoveUp(1),
                                     terminal::Clear(terminal::ClearType::CurrentLine),
@@ -351,8 +376,9 @@ impl ToolManagerBuilder {
                                             acc
                                         });
                                 let msg = eyre::eyre!(msg);
-                                queue_incomplete_load_message(&msg, &mut stdout_lock)?;
-                                stdout_lock.flush()?;
+                                let total = loading_servers.len();
+                                queue_incomplete_load_message(complete, total, &msg, &mut output)?;
+                                output.flush()?;
                             }
                             break;
                         },
@@ -360,7 +386,7 @@ impl ToolManagerBuilder {
                     Err(RecvTimeoutError::Timeout) => {
                         spinner_logo_idx = (spinner_logo_idx + 1) % SPINNER_CHARS.len();
                         execute!(
-                            stdout_lock,
+                            output,
                             cursor::SavePosition,
                             cursor::MoveToColumn(0),
                             cursor::MoveUp(1),
@@ -570,6 +596,7 @@ impl ToolManagerBuilder {
             loading_status_sender,
             new_tool_specs,
             has_new_stuff,
+            is_interactive,
             ..Default::default()
         })
     }
@@ -640,6 +667,8 @@ pub struct ToolManager {
     /// This is mainly used to show the user what the tools look like from the perspective of the
     /// model.
     pub schema: HashMap<String, ToolSpec>,
+
+    is_interactive: bool,
 }
 
 impl Clone for ToolManager {
@@ -652,6 +681,7 @@ impl Clone for ToolManager {
             prompts: self.prompts.clone(),
             tn_map: self.tn_map.clone(),
             schema: self.schema.clone(),
+            is_interactive: self.is_interactive,
             ..Default::default()
         }
     }
@@ -708,8 +738,12 @@ impl ToolManager {
                 }
             },
             _ = ctrl_c() => {
-                if let Some(tx) = tx {
-                    let _ = tx.send(LoadingMsg::Terminate);
+                if self.is_interactive {
+                    if let Some(tx) = tx {
+                        let _ = tx.send(LoadingMsg::Terminate);
+                    }
+                } else {
+                    return Err(eyre::eyre!("User interrupted mcp server loading in non-interactive mode. Ending."));
                 }
             }
         }
@@ -1186,6 +1220,7 @@ fn queue_init_message(
     complete: usize,
     failed: usize,
     total: usize,
+    is_interactive: bool,
     output: &mut impl Write,
 ) -> eyre::Result<()> {
     if total == complete {
@@ -1205,7 +1240,7 @@ fn queue_init_message(
     } else {
         queue!(output, style::Print(SPINNER_CHARS[spinner_logo_idx]))?;
     }
-    Ok(queue!(
+    queue!(
         output,
         style::SetForegroundColor(style::Color::Blue),
         style::Print(format!(" {}", complete)),
@@ -1214,11 +1249,22 @@ fn queue_init_message(
         style::SetForegroundColor(style::Color::Blue),
         style::Print(format!("{} ", total)),
         style::ResetColor,
-        style::Print("mcp servers initialized. Press ctrl-c to load the remaining servers in the background\n"),
-    )?)
+        style::Print("mcp servers initialized."),
+    )?;
+    if is_interactive {
+        queue!(
+            output,
+            style::SetForegroundColor(style::Color::Blue),
+            style::Print(" ctrl-c "),
+            style::ResetColor,
+            style::Print("to start chatting now")
+        )?;
+    }
+    Ok(queue!(output, style::Print("\n"))?)
 }
 
 fn queue_failure_message(name: &str, fail_load_msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+    use crate::util::CHAT_BINARY_NAME;
     Ok(queue!(
         output,
         style::SetForegroundColor(style::Color::Red),
@@ -1229,7 +1275,9 @@ fn queue_failure_message(name: &str, fail_load_msg: &eyre::Report, output: &mut 
         style::Print(" has failed to load:\n- "),
         style::Print(fail_load_msg),
         style::Print("\n"),
-        style::Print("- run with Q_LOG_LEVEL=trace and see $TMPDIR/qlog for detail\n"),
+        style::Print(format!(
+            "- run with Q_LOG_LEVEL=trace and see $TMPDIR/{CHAT_BINARY_NAME} for detail\n"
+        )),
         style::ResetColor,
     )?)
 }
@@ -1248,14 +1296,27 @@ fn queue_warn_message(name: &str, msg: &eyre::Report, output: &mut impl Write) -
     )?)
 }
 
-fn queue_incomplete_load_message(msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+fn queue_incomplete_load_message(
+    complete: usize,
+    total: usize,
+    msg: &eyre::Report,
+    output: &mut impl Write,
+) -> eyre::Result<()> {
     Ok(queue!(
         output,
         style::SetForegroundColor(style::Color::Yellow),
-        style::Print("⚠ "),
+        style::Print("⚠"),
+        style::SetForegroundColor(style::Color::Blue),
+        style::Print(format!(" {}", complete)),
+        style::ResetColor,
+        style::Print(" of "),
+        style::SetForegroundColor(style::Color::Blue),
+        style::Print(format!("{} ", total)),
+        style::ResetColor,
+        style::Print("mcp servers initialized."),
         style::ResetColor,
         // We expect the message start with a newline
-        style::Print("following servers are still loading:"),
+        style::Print(" Servers still loading:"),
         style::Print(msg),
         style::ResetColor,
     )?)

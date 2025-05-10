@@ -170,9 +170,15 @@ impl CustomTool {
     pub async fn invoke(&self, _ctx: &Context, _updates: &mut impl Write) -> Result<InvokeOutput> {
         // Assuming a response shape as per https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#calling-tools
         let resp = self.client.request(self.method.as_str(), self.params.clone()).await?;
-        let result = resp
-            .result
-            .ok_or(eyre::eyre!("{} invocation failed to produce a result", self.name))?;
+        let result = match resp.result {
+            Some(result) => result,
+            None => {
+                let failure = resp.error.map_or("Unknown error encountered".to_string(), |err| {
+                    serde_json::to_string(&err).unwrap_or_default()
+                });
+                return Err(eyre::eyre!(failure));
+            },
+        };
 
         match serde_json::from_value::<ToolCallResult>(result.clone()) {
             Ok(mut de_result) => {
