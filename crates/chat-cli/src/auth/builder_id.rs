@@ -57,11 +57,12 @@ use crate::database::secret_store::{
     Secret,
     SecretStore,
 };
-use crate::database::state::StateDatabase;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
     DeviceCode,
+    // This must remain backwards compatible
+    #[serde(rename = "PKCE")]
     Pkce,
 }
 
@@ -69,7 +70,7 @@ impl std::fmt::Display for OAuthFlow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             OAuthFlow::DeviceCode => write!(f, "DeviceCode"),
-            OAuthFlow::Pkce => write!(f, "Pkce"),
+            OAuthFlow::Pkce => write!(f, "PKCE"),
         }
     }
 }
@@ -577,7 +578,7 @@ mod tests {
     #[test]
     fn test_oauth_flow_ser_deser() {
         test_ser_deser!(OAuthFlow, OAuthFlow::DeviceCode, "DeviceCode");
-        test_ser_deser!(OAuthFlow, OAuthFlow::Pkce, "Pkce");
+        test_ser_deser!(OAuthFlow, OAuthFlow::Pkce, "PKCE");
     }
 
     #[tokio::test]

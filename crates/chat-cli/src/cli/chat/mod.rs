@@ -97,7 +97,6 @@ use crate::api_client::model::{
 };
 use crate::database::Database;
 use crate::database::settings::Setting;
-use crate::database::state::StateDatabase;
 use crate::platform::Context;
 use crate::telemetry::TelemetryThread;
 use crate::telemetry::core::ToolUseEventBuilder;

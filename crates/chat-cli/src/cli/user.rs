@@ -38,7 +38,6 @@ use crate::auth::builder_id::{
 };
 use crate::auth::pkce::start_pkce_authorization;
 use crate::database::Database;
-use crate::database::state::StateDatabase;
 use crate::telemetry::{
     QProfileSwitchIntent,
     TelemetryResult,
@@ -231,8 +230,14 @@ pub async fn login_interactive(database: &mut Database, telemetry: &TelemetryThr
             let (start_url, region) = match login_method {
                 AuthMethod::BuilderId => (None, None),
                 AuthMethod::IdentityCenter => {
-                    let default_start_url = args.identity_provider.or_else(|| database.get_start_url());
-                    let default_region = args.region.or_else(|| database.get_idc_region());
+                    let default_start_url = match args.identity_provider {
+                        Some(start_url) => Some(start_url),
+                        None => database.get_start_url()?,
+                    };
+                    let default_region = match args.region {
+                        Some(region) => Some(region),
+                        None => database.get_idc_region()?,
+                    };
 
                     let start_url = input("Enter Start URL", default_start_url.as_deref())?;
                     let region = input("Enter Region", default_region.as_deref())?;
@@ -359,7 +364,7 @@ async fn select_profile_interactive(database: &mut Database, telemetry: &Telemet
         return Ok(());
     }
 
-    let sso_region = database.get_idc_region();
+    let sso_region = database.get_idc_region()?;
     let total_profiles = profiles.len() as i64;
 
     if whoami && profiles.len() == 1 {
@@ -402,7 +407,7 @@ async fn select_profile_interactive(database: &mut Database, telemetry: &Telemet
     match selected {
         Some(i) => {
             let chosen = &profiles[i];
-            eprintln!("Set profile: {}\n", chosen.profile_name.as_str().green());
+            eprintln!("Set profile");
             database.set_auth_profile(chosen)?;
 
             if let Some(profile_region) = chosen.arn.split(':').nth(3) {

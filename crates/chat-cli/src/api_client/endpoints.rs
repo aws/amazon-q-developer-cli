@@ -14,7 +14,6 @@ use crate::api_client::consts::{
 };
 use crate::database::Database;
 use crate::database::settings::Setting;
-use crate::database::state::StateDatabase;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {

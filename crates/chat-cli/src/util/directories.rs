@@ -106,8 +106,7 @@ pub fn runtime_dir() -> Result<PathBuf> {
 pub fn logs_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
-            use crate::util::CHAT_BINARY_NAME;
-            Ok(runtime_dir()?.join(format!("{CHAT_BINARY_NAME}log")))
+            Ok(runtime_dir()?.join("qlog"))
         } else if #[cfg(windows)] {
             Ok(std::env::temp_dir().join("amazon-q").join("logs"))
         }

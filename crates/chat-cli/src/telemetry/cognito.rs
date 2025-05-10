@@ -10,10 +10,9 @@ use aws_sdk_cognitoidentity::primitives::{
 };
 
 use crate::aws_common::app_name;
-use crate::database::Database;
-use crate::database::state::{
+use crate::database::{
     CredentialsJson,
-    StateDatabase,
+    Database,
 };
 use crate::telemetry::TelemetryStage;
 

@@ -30,10 +30,9 @@ use crate::aws_common::{
     UserAgentOverrideInterceptor,
     app_name,
 };
-use crate::database::Database;
-use crate::database::state::{
+use crate::database::{
     AuthProfile,
-    StateDatabase,
+    Database,
 };
 
 mod inner {

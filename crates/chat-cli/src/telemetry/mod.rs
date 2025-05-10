@@ -49,9 +49,11 @@ use uuid::{
 use crate::api_client::Client as CodewhispererClient;
 use crate::aws_common::app_name;
 use crate::cli::CliRootCommands;
-use crate::database::Database;
 use crate::database::settings::Setting;
-use crate::database::state::StateDatabase;
+use crate::database::{
+    Database,
+    DatabaseError,
+};
 use crate::platform::Env;
 use crate::telemetry::core::Event;
 pub use crate::telemetry::core::{
@@ -64,13 +66,21 @@ use crate::util::system_info::os_version;
 #[derive(thiserror::Error, Debug)]
 pub enum TelemetryError {
     #[error(transparent)]
-    Client(#[from] amzn_toolkit_telemetry_client::operation::post_metrics::PostMetricsError),
+    Client(Box<amzn_toolkit_telemetry_client::operation::post_metrics::PostMetricsError>),
     #[error(transparent)]
     Send(Box<mpsc::error::SendError<Event>>),
     #[error(transparent)]
     Auth(#[from] crate::auth::AuthError),
     #[error(transparent)]
-    JoinError(#[from] tokio::task::JoinError),
+    Join(#[from] tokio::task::JoinError),
+    #[error(transparent)]
+    Database(#[from] DatabaseError),
+}
+
+impl From<amzn_toolkit_telemetry_client::operation::post_metrics::PostMetricsError> for TelemetryError {
+    fn from(value: amzn_toolkit_telemetry_client::operation::post_metrics::PostMetricsError) -> Self {
+        Self::Client(Box::new(value))
+    }
 }
 
 impl From<mpsc::error::SendError<Event>> for TelemetryError {
@@ -282,18 +292,18 @@ impl TelemetryClient {
             false => None,
         };
 
-        fn client_id(env: &Env, database: &mut Database, telemetry_enabled: bool) -> Uuid {
+        fn client_id(env: &Env, database: &mut Database, telemetry_enabled: bool) -> Result<Uuid, TelemetryError> {
             if !telemetry_enabled {
-                return uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff");
+                return Ok(uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff"));
             }
 
             if let Ok(client_id) = env.get(CLIENT_ID_ENV_VAR) {
                 if let Ok(uuid) = Uuid::from_str(&client_id) {
-                    return uuid;
+                    return Ok(uuid);
                 }
             }
 
-            match database.get_client_id() {
+            Ok(match database.get_client_id()? {
                 Some(uuid) => uuid,
                 None => {
                     let uuid = database
@@ -308,11 +318,11 @@ impl TelemetryClient {
 
                     uuid
                 },
-            }
+            })
         }
 
         Ok(Self {
-            client_id: client_id(env, database, telemetry_enabled),
+            client_id: client_id(env, database, telemetry_enabled)?,
             telemetry_enabled,
             toolkit_telemetry_client,
             codewhisperer_client: CodewhispererClient::new(database, None).await?,

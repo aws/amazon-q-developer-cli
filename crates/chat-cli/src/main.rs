@@ -15,19 +15,10 @@ use std::process::ExitCode;
 
 use anstream::eprintln;
 use clap::Parser;
-use clap::error::{
-    ContextKind,
-    ErrorKind,
-};
 use crossterm::style::Stylize;
 use eyre::Result;
 use logging::get_log_level_max;
 use tracing::metadata::LevelFilter;
-
-use crate::util::{
-    CHAT_BINARY_NAME,
-    PRODUCT_NAME,
-};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -38,24 +29,7 @@ fn main() -> Result<ExitCode> {
     let parsed = match cli::Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => {
-            let _ = err.print();
-
-            let unknown_arg = matches!(err.kind(), ErrorKind::UnknownArgument | ErrorKind::InvalidSubcommand)
-                && !err.context().any(|(context_kind, _)| {
-                    matches!(
-                        context_kind,
-                        ContextKind::SuggestedSubcommand | ContextKind::SuggestedArg
-                    )
-                });
-
-            if unknown_arg {
-                eprintln!(
-                    "\nThis command may be valid in newer versions of the {PRODUCT_NAME} CLI. Try running {} {}.",
-                    CHAT_BINARY_NAME.magenta(),
-                    "update".magenta()
-                );
-            }
-
+            err.print().ok();
             return Ok(ExitCode::from(err.exit_code().try_into().unwrap_or(2)));
         },
     };

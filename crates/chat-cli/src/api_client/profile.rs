@@ -1,8 +1,10 @@
 use crate::api_client::Client;
 use crate::api_client::endpoints::Endpoint;
 use crate::auth::AuthError;
-use crate::database::Database;
-use crate::database::state::AuthProfile;
+use crate::database::{
+    AuthProfile,
+    Database,
+};
 
 pub async fn list_available_profiles(database: &mut Database) -> Result<Vec<AuthProfile>, AuthError> {
     let mut profiles = vec![];
