@@ -6,6 +6,10 @@ use std::mem::{
 use std::ops::Deref;
 use std::path::PathBuf;
 
+use windows::Wdk::System::Threading::{
+    NtQueryInformationProcess,
+    ProcessBasicInformation,
+};
 use windows::Win32::Foundation::{
     CloseHandle,
     HANDLE,
@@ -13,14 +17,12 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::Threading::{
     GetCurrentProcessId,
-    NtQueryInformationProcess,
     OpenProcess,
     PROCESS_BASIC_INFORMATION,
     PROCESS_NAME_FORMAT,
     PROCESS_QUERY_INFORMATION,
     PROCESS_QUERY_LIMITED_INFORMATION,
     PROCESS_VM_READ,
-    ProcessBasicInformation,
     QueryFullProcessImageNameA,
 };
 use windows::core::PSTR;
@@ -41,7 +43,7 @@ impl SafeHandle {
 impl Drop for SafeHandle {
     fn drop(&mut self) {
         unsafe {
-            CloseHandle(self.0);
+            let _ = CloseHandle(self.0);
         }
     }
 }
@@ -86,7 +88,7 @@ impl PidExt for Pid {
             if NtQueryInformationProcess(
                 *handle,
                 ProcessBasicInformation,
-                info.as_mut_ptr() as *mut _,
+                info.as_mut_ptr().cast(),
                 size_of::<PROCESS_BASIC_INFORMATION>() as _,
                 &mut len,
             )
@@ -97,7 +99,7 @@ impl PidExt for Pid {
 
             let info = info.assume_init();
 
-            if info.InheritedFromUniqueProcessId as usize != 0 {
+            if info.InheritedFromUniqueProcessId != 0 {
                 Some(Pid(info.InheritedFromUniqueProcessId as u32))
             } else {
                 None
@@ -114,13 +116,13 @@ impl PidExt for Pid {
             let mut process_name = [0; MAX_PATH as usize + 1];
             process_name[MAX_PATH as usize] = u8::try_from('\0').unwrap();
 
-            if !QueryFullProcessImageNameA(
+            if QueryFullProcessImageNameA(
                 handle,
                 PROCESS_NAME_FORMAT(0),
                 PSTR(process_name.as_mut_ptr()),
                 &mut len,
             )
-            .as_bool()
+            .is_err()
             {
                 return None;
             }

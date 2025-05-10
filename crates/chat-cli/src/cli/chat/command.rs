@@ -51,6 +51,13 @@ pub enum Command {
         subcommand: Option<PromptsSubcommand>,
     },
     Usage,
+    Import {
+        path: String,
+    },
+    Export {
+        path: String,
+        force: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,7 +187,8 @@ impl ContextSubcommand {
   <em>help</em>                           <black!>Show an explanation for the context command</black!>
 
   <em>show [--expand]</em>                <black!>Display the context rule configuration and matched files</black!>
-                                          <black!>--expand: Print out each matched file's content</black!>
+                                          <black!>--expand: Print out each matched file's content, hook</black!> 
+                                          <black!>          configurations and last conversation summary </black!>
 
   <em>add [--global] [--force] <<paths...>></em>
                                  <black!>Add context rules (filenames or glob patterns)</black!>
@@ -810,8 +818,45 @@ impl Command {
                     }
                 },
                 "usage" => Self::Usage,
-                _unknown_command => Self::Ask {
-                    prompt: input.to_string(),
+                "import" => {
+                    let Some(path) = parts.get(1) else {
+                        return Err("path is required".to_string());
+                    };
+                    Self::Import {
+                        path: (*path).to_string(),
+                    }
+                },
+                "export" => {
+                    let force = parts.contains(&"-f") || parts.contains(&"--force");
+                    let Some(path) = parts.get(1) else {
+                        return Err("path is required".to_string());
+                    };
+                    let mut path = (*path).to_string();
+                    if !path.ends_with(".json") {
+                        path.push_str(".json");
+                    }
+                    Self::Export { path, force }
+                },
+                unknown_command => {
+                    let looks_like_path = {
+                        let after_slash_command_str = parts[1..].join(" ");
+                        unknown_command.contains('/')
+                            || unknown_command.contains('.')
+                            || unknown_command.contains('\\')
+                            || after_slash_command_str.contains('/')
+                            || after_slash_command_str.contains('.')
+                            || after_slash_command_str.contains('\\')
+                    };
+                    if looks_like_path {
+                        return Ok(Self::Ask {
+                            prompt: command.to_string(),
+                        });
+                    }
+
+                    return Err(format!(
+                        "Unknown command: '/{}'. Type '/help' to see available commands.\nTo use a literal slash at the beginning of your message, escape it with a backslash (e.g., '\\//hey' for '/hey').",
+                        unknown_command
+                    ));
                 },
             });
         }

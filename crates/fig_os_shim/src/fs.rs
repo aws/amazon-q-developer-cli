@@ -551,7 +551,7 @@ fn append(a: impl AsRef<Path>, b: impl AsRef<Path>) -> PathBuf {
 
     // If b has a drive letter and it's different from a's drive letter (if any),
     // we need to handle it specially
-    let result_path = if let Some(b_drive) = b_drive {
+    if let Some(b_drive) = b_drive {
         if a_str.starts_with(b_drive) {
             // Same drive, continue with normal processing
             let path_str = b_without_drive;
@@ -600,9 +600,7 @@ fn append(a: impl AsRef<Path>, b: impl AsRef<Path>) -> PathBuf {
         }
 
         a_path.join(b_normalized)
-    };
-
-    result_path
+    }
 }
 
 #[cfg(test)]

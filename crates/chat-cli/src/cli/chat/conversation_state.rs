@@ -9,6 +9,10 @@ use crossterm::{
     execute,
     style,
 };
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use tracing::{
     debug,
     error,
@@ -42,8 +46,8 @@ use super::tools::{
     QueuedTool,
     ToolOrigin,
     ToolSpec,
-    serde_value_to_document,
 };
+use super::util::serde_value_to_document;
 use crate::api_client::model::{
     AssistantResponseMessage,
     ChatMessage,
@@ -67,7 +71,7 @@ const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
 
 /// Tracks state related to an ongoing conversation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationState {
     /// Randomly generated on creation.
     conversation_id: String,
@@ -89,7 +93,8 @@ pub struct ConversationState {
     context_message_length: Option<usize>,
     /// Stores the latest conversation summary created by /compact
     latest_summary: Option<String>,
-    updates: Option<SharedWriter>,
+    #[serde(skip)]
+    pub updates: Option<SharedWriter>,
 }
 
 impl ConversationState {
@@ -141,6 +146,10 @@ impl ConversationState {
             latest_summary: None,
             updates,
         }
+    }
+
+    pub fn latest_summary(&self) -> Option<&str> {
+        self.latest_summary.as_deref()
     }
 
     pub fn history(&self) -> &VecDeque<(UserMessage, AssistantMessage)> {
@@ -793,7 +802,7 @@ pub enum TokenWarningLevel {
 impl From<InputSchema> for ToolInputSchema {
     fn from(value: InputSchema) -> Self {
         Self {
-            json: Some(serde_value_to_document(value.0)),
+            json: Some(serde_value_to_document(value.0).into()),
         }
     }
 }
