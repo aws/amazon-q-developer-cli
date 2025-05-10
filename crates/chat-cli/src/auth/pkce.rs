@@ -63,13 +63,12 @@ const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(60 * 3);
 /// Starts the PKCE authorization flow, using [`START_URL`] and [`OIDC_BUILDER_ID_REGION`] as the
 /// default issuer URL and region. Returns the [`PkceClient`] to use to finish the flow.
 pub async fn start_pkce_authorization(
-    database: &Database,
     start_url: Option<String>,
     region: Option<String>,
 ) -> Result<(Client, PkceRegistration), AuthError> {
     let issuer_url = start_url.as_deref().unwrap_or(START_URL);
     let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-    let client = client(database, region.clone());
+    let client = client(region.clone());
     let registration = PkceRegistration::register(&client, region, issuer_url.to_string(), None).await?;
     Ok((client, registration))
 }
@@ -511,11 +510,10 @@ mod tests {
     #[tokio::test]
     async fn test_pkce_flow_e2e() {
         tracing_subscriber::fmt::init();
-        let database = Database::new().await.unwrap();
 
         let start_url = "https://amzn.awsapps.com/start".to_string();
         let region = Region::new("us-east-1");
-        let client = client(&database, region.clone());
+        let client = client(region.clone());
         let registration = PkceRegistration::register(&client, region.clone(), start_url, None)
             .await
             .unwrap();
@@ -525,7 +523,7 @@ mod tests {
         }
         println!("Waiting for authorization to complete...");
 
-        registration.finish(&client, Some(&database)).await.unwrap();
+        registration.finish(&client, None).await.unwrap();
         println!("Authorization successful");
     }
 

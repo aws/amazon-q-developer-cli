@@ -30,6 +30,7 @@ use tracing::{
 use super::OutputFormat;
 use crate::api_client::list_available_profiles;
 use crate::auth::builder_id::{
+    BuilderIdToken,
     PollCreateToken,
     TokenType,
     poll_create_token,
@@ -120,7 +121,7 @@ impl UserSubcommand {
     pub async fn execute(self, database: &mut Database, telemetry: &TelemetryThread) -> Result<ExitCode> {
         match self {
             Self::Login(args) => {
-                if crate::auth::is_logged_in().await {
+                if crate::auth::is_logged_in(database).await {
                     eyre::bail!(
                         "Already logged in, please logout with {} first",
                         format!("{CHAT_BINARY_NAME} logout").magenta()
@@ -142,7 +143,7 @@ impl UserSubcommand {
                 Ok(ExitCode::SUCCESS)
             },
             Self::Whoami { format } => {
-                let builder_id = crate::auth::builder_id_token().await;
+                let builder_id = BuilderIdToken::load(database).await;
 
                 match builder_id {
                     Ok(Some(token)) => {
@@ -186,14 +187,11 @@ impl UserSubcommand {
                 }
             },
             Self::Profile => {
-                if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in().await {
-                    bail!(
-                        "You are not logged in, please log in with {}",
-                        format!("q login",).bold()
-                    );
+                if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in(database).await {
+                    bail!("You are not logged in, please log in with {}", "q login".bold());
                 }
 
-                if let Ok(Some(token)) = crate::auth::builder_id_token().await {
+                if let Ok(Some(token)) = BuilderIdToken::load(database).await {
                     if matches!(token.token_type(), TokenType::BuilderId) {
                         bail!("This command is only available for Pro users");
                     }
@@ -251,8 +249,7 @@ pub async fn login_interactive(database: &mut Database, telemetry: &TelemetryThr
             if is_remote() || args.use_device_flow {
                 try_device_authorization(database, telemetry, start_url.clone(), region.clone()).await?;
             } else {
-                let (client, registration) =
-                    start_pkce_authorization(database, start_url.clone(), region.clone()).await?;
+                let (client, registration) = start_pkce_authorization(start_url.clone(), region.clone()).await?;
 
                 match crate::util::open::open_url_async(&registration.url).await {
                     // If it succeeded, finish PKCE.
@@ -263,14 +260,14 @@ pub async fn login_interactive(database: &mut Database, telemetry: &TelemetryThr
                         ]);
                         let ctrl_c_stream = ctrl_c();
                         tokio::select! {
-                            res = registration.finish(&client, Some(&database)) => res?,
+                            res = registration.finish(&client, Some(database)) => res?,
                             Ok(_) = ctrl_c_stream => {
                                 #[allow(clippy::exit)]
                                 exit(1);
                             },
                         }
-                        telemetry.send_user_logged_in();
-                        spinner.stop_with_message("Device authorized".into());
+                        telemetry.send_user_logged_in().ok();
+                        spinner.stop_with_message("Logged in".into());
                     },
                     // If we are unable to open the link with the browser, then fallback to
                     // the device code flow.
@@ -288,8 +285,6 @@ pub async fn login_interactive(database: &mut Database, telemetry: &TelemetryThr
     if login_method == AuthMethod::IdentityCenter {
         select_profile_interactive(database, telemetry, true).await?;
     }
-
-    eprintln!("Logged in successfully");
 
     Ok(())
 }
@@ -340,8 +335,8 @@ async fn try_device_authorization(
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                telemetry.send_user_logged_in();
-                spinner.stop_with_message("Device authorized".into());
+                telemetry.send_user_logged_in().ok();
+                spinner.stop_with_message("Logged in".into());
                 break;
             },
             PollCreateToken::Error(err) => {
@@ -358,7 +353,7 @@ async fn select_profile_interactive(database: &mut Database, telemetry: &Telemet
         SpinnerComponent::Spinner,
         SpinnerComponent::Text(" Fetching profiles...".into()),
     ]);
-    let profiles = list_available_profiles(database).await;
+    let profiles = list_available_profiles(database).await?;
     if profiles.is_empty() {
         info!("Available profiles was empty");
         return Ok(());
@@ -380,7 +375,7 @@ async fn select_profile_interactive(database: &mut Database, telemetry: &Telemet
         }
 
         spinner.stop_with_message(String::new());
-        database.set_auth_profile(&profiles[0]);
+        database.set_auth_profile(&profiles[0])?;
         return Ok(());
     }
 
@@ -408,7 +403,7 @@ async fn select_profile_interactive(database: &mut Database, telemetry: &Telemet
         Some(i) => {
             let chosen = &profiles[i];
             eprintln!("Set profile: {}\n", chosen.profile_name.as_str().green());
-            database.set_auth_profile(chosen);
+            database.set_auth_profile(chosen)?;
 
             if let Some(profile_region) = chosen.arn.split(':').nth(3) {
                 let intent = if whoami {

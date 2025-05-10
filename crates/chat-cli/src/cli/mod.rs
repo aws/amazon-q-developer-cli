@@ -81,9 +81,6 @@ pub enum Processes {
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum CliRootCommands {
-    /// Debug the app
-    #[command(subcommand)]
-    Debug(debug::DebugSubcommand),
     /// Customize appearance & behavior
     #[command(alias("setting"))]
     Settings(settings::SettingsArgs),
@@ -111,7 +108,6 @@ pub enum CliRootCommands {
 impl CliRootCommands {
     pub fn name(&self) -> &'static str {
         match self {
-            CliRootCommands::Debug(_) => "debug",
             CliRootCommands::Settings(_) => "settings",
             CliRootCommands::Diagnostic(_) => "diagnostics",
             CliRootCommands::Issue(_) => "issue",
@@ -185,9 +181,15 @@ impl Cli {
 
         let env = crate::platform::Env::new();
         let mut database = crate::database::Database::new().await?;
-        let telemetry = crate::telemetry::TelemetryThread::new(&env, &mut database).await;
+        let telemetry = crate::telemetry::TelemetryThread::new(&env, &mut database).await?;
 
-        telemetry.send_cli_subcommand_executed(self.subcommand.as_ref()).ok();
+        let _ = match &self.subcommand {
+            None => telemetry.send_cli_subcommand_executed(None),
+            Some(subcommand) if ["diagnostic", "version"].contains(&subcommand.name()) => {
+                telemetry.send_cli_subcommand_executed(Some(subcommand))
+            },
+            _ => Ok(()),
+        };
 
         if self.help_all {
             return Self::print_help_all();
@@ -195,19 +197,24 @@ impl Cli {
 
         let cli_context = CliContext::new();
 
-        match self.subcommand {
+        let result = match self.subcommand {
             Some(subcommand) => match subcommand {
                 CliRootCommands::Diagnostic(args) => args.execute().await,
                 CliRootCommands::User(user) => user.execute(&mut database, &telemetry).await,
                 CliRootCommands::Settings(settings_args) => settings_args.execute(&mut database, &cli_context).await,
-                CliRootCommands::Debug(debug_subcommand) => debug_subcommand.execute().await,
                 CliRootCommands::Issue(args) => args.execute().await,
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Chat(args) => chat::launch_chat(&mut database, &telemetry, args).await,
             },
             // Root command
             None => chat::launch_chat(&mut database, &telemetry, chat::cli::Chat::default()).await,
-        }
+        };
+
+        let telemetry_result = telemetry.finish().await;
+
+        let exit_code = result?;
+        telemetry_result?;
+        Ok(exit_code)
     }
 
     fn print_help_all() -> Result<ExitCode> {

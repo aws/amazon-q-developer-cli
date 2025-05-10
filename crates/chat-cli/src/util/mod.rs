@@ -29,22 +29,8 @@ use tracing::warn;
 pub enum UtilError {
     #[error("io operation error")]
     IoError(#[from] std::io::Error),
-    #[error("unsupported platform")]
-    UnsupportedPlatform,
-    #[error("unsupported architecture")]
-    UnsupportedArch,
     #[error(transparent)]
     Directory(#[from] directories::DirectoryError),
-    #[error("could not find the os hwid")]
-    HwidNotFound,
-    #[error("the shell, `{0}`, isn't supported yet")]
-    UnknownShell(String),
-    #[error("missing environment variable `{0}`")]
-    MissingEnv(&'static str),
-    #[error("unknown display server `{0}`")]
-    UnknownDisplayServer(String),
-    #[error("unknown desktop, checked environment variables: {0}")]
-    UnknownDesktop(UnknownDesktopErrContext),
     #[error(transparent)]
     StrUtf8Error(#[from] std::str::Utf8Error),
     #[error(transparent)]

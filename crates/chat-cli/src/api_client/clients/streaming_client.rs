@@ -67,9 +67,9 @@ impl StreamingClient {
             if crate::util::system_info::in_cloudshell()
                 || std::env::var("Q_USE_SENDMESSAGE").is_ok_and(|v| !v.is_empty())
             {
-                Self::new_qdeveloper_client(database, &Endpoint::load_q()).await?
+                Self::new_qdeveloper_client(database, &Endpoint::load_q(database)).await?
             } else {
-                Self::new_codewhisperer_client(database, &Endpoint::load_codewhisperer(&database)).await
+                Self::new_codewhisperer_client(database, &Endpoint::load_codewhisperer(database)).await?
             },
         )
     }
@@ -81,14 +81,17 @@ impl StreamingClient {
         }
     }
 
-    pub async fn new_codewhisperer_client(database: &mut Database, endpoint: &Endpoint) -> Self {
+    pub async fn new_codewhisperer_client(
+        database: &mut Database,
+        endpoint: &Endpoint,
+    ) -> Result<Self, ApiClientError> {
         let conf_builder: amzn_codewhisperer_streaming_client::config::Builder =
             (&bearer_sdk_config(database, endpoint).await).into();
         let conf = conf_builder
-            .http_client(crate::aws_common::http_client::client(database))
+            .http_client(crate::aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new(database))
             .interceptor(UserAgentOverrideInterceptor::new())
-            .bearer_token_resolver(BearerResolver)
+            .bearer_token_resolver(BearerResolver::new(database).await?)
             .app_name(app_name())
             .endpoint_url(endpoint.url())
             .stalled_stream_protection(stalled_stream_protection_config())
@@ -103,14 +106,14 @@ impl StreamingClient {
             },
         };
 
-        Self { inner, profile }
+        Ok(Self { inner, profile })
     }
 
     pub async fn new_qdeveloper_client(database: &Database, endpoint: &Endpoint) -> Result<Self, ApiClientError> {
         let conf_builder: amzn_qdeveloper_streaming_client::config::Builder =
             (&sigv4_sdk_config(database, endpoint).await?).into();
         let conf = conf_builder
-            .http_client(crate::aws_common::http_client::client(database))
+            .http_client(crate::aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new(database))
             .interceptor(UserAgentOverrideInterceptor::new())
             .app_name(app_name())
@@ -265,7 +268,7 @@ mod tests {
 
         let _ = StreamingClient::new(&mut database).await;
         let _ = StreamingClient::new_codewhisperer_client(&mut database, &endpoint).await;
-        let _ = StreamingClient::new_qdeveloper_client(&mut database, &endpoint).await;
+        let _ = StreamingClient::new_qdeveloper_client(&database, &endpoint).await;
     }
 
     #[tokio::test]

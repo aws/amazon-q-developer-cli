@@ -63,12 +63,8 @@ pub enum DatabaseError {
     JsonError(#[from] serde_json::Error),
     #[error(transparent)]
     FigUtilError(#[from] crate::util::UtilError),
-    #[error("settings file is not a json object")]
-    SettingsNotObject,
     #[error(transparent)]
     DirectoryError(#[from] DirectoryError),
-    #[error("memory backend is not used")]
-    MemoryBackendNotUsed,
     #[error(transparent)]
     Rusqlite(#[from] rusqlite::Error),
     #[error(transparent)]
@@ -99,7 +95,9 @@ pub enum Table {
     /// The state table contains persistant application state.
     State,
     /// The conversations tables contains user chat conversations.
+    #[allow(dead_code)]
     Conversations,
+    #[cfg(not(target_os = "macos"))]
     /// The auth table contains
     Auth,
 }
@@ -109,6 +107,7 @@ impl std::fmt::Display for Table {
         match self {
             Table::State => write!(f, "state"),
             Table::Conversations => write!(f, "conversations"),
+            #[cfg(not(target_os = "macos"))]
             Table::Auth => write!(f, "auth_kv"),
         }
     }
@@ -167,10 +166,12 @@ impl Database {
             pool,
             settings: Settings::new().await?,
             secret_store: SecretStore::new().await?,
-        })
+        }
+        .migrate()
+        .map_err(|e| DbOpenError(e.to_string()))?)
     }
 
-    fn migrate(&self) -> Result<(), DatabaseError> {
+    fn migrate(self) -> Result<Self, DatabaseError> {
         let mut conn = self.pool.get()?;
         let transaction = conn.transaction()?;
 
@@ -199,7 +200,7 @@ impl Database {
         // commit the transaction
         transaction.commit()?;
 
-        Ok(())
+        Ok(self)
     }
 
     fn get_entry<T: FromSql>(&self, table: Table, key: impl AsRef<str>) -> Result<Option<T>, DatabaseError> {
@@ -225,16 +226,6 @@ impl Database {
             .get()?
             .execute(&format!("DELETE FROM {table} WHERE key = ?1"), [key.as_ref()])?;
         Ok(())
-    }
-
-    fn entry_is_some(&self, table: Table, key: impl AsRef<str>) -> Result<bool, DatabaseError> {
-        let conn = self.pool.get()?;
-        let mut stmt = conn.prepare(&format!("SELECT value FROM {table} WHERE key = ?1"))?;
-        match stmt.query_row([key.as_ref()], |_| Ok(())) {
-            Ok(()) => Ok(true),
-            Err(Error::QueryReturnedNoRows) => Ok(false),
-            Err(err) => Err(err.into()),
-        }
     }
 
     fn all_entries(&self, table: Table) -> Result<Map<String, serde_json::Value>, DatabaseError> {
@@ -277,10 +268,7 @@ mod tests {
         vec![
             std::io::Error::new(std::io::ErrorKind::InvalidData, "oops").into(),
             serde_json::from_str::<()>("oops").unwrap_err().into(),
-            crate::util::UtilError::UnsupportedPlatform.into(),
-            DatabaseError::SettingsNotObject,
             crate::util::directories::DirectoryError::NoHomeDirectory.into(),
-            DatabaseError::MemoryBackendNotUsed,
             rusqlite::Error::SqliteSingleThreadedMode.into(),
             // r2d2::Error
             DbOpenError("oops".into()).into(),

@@ -17,6 +17,7 @@ use serde_json::json;
 use super::OutputFormat;
 use crate::database::Database;
 use crate::database::settings::Setting;
+use crate::database::state::StateDatabase;
 use crate::util::{
     CliContext,
     directories,
@@ -51,6 +52,9 @@ pub struct SettingsArgs {
     /// Format of the output
     #[arg(long, short, value_enum, default_value_t)]
     format: OutputFormat,
+    /// Whether or not we want to modify state instead
+    #[arg(hide = true)]
+    state: bool,
 }
 
 impl SettingsArgs {
@@ -66,7 +70,10 @@ impl SettingsArgs {
                 }
             },
             Some(SettingsSubcommands::All { format }) => {
-                let settings = database.settings.map();
+                let settings = match self.state {
+                    true => database.get_all_entries()?,
+                    false => database.settings.map().clone(),
+                };
 
                 match format {
                     OutputFormat::Plain => {

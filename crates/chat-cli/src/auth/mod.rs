@@ -8,10 +8,8 @@ use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
 use aws_sdk_ssooidc::operation::register_client::RegisterClientError;
 use aws_sdk_ssooidc::operation::start_device_authorization::StartDeviceAuthorizationError;
 pub use builder_id::{
-    builder_id_token,
     is_logged_in,
     logout,
-    refresh_token,
 };
 pub use consts::START_URL;
 use thiserror::Error;
@@ -19,13 +17,13 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AuthError {
     #[error(transparent)]
-    Ssooidc(#[from] Box<aws_sdk_ssooidc::Error>),
+    Ssooidc(Box<aws_sdk_ssooidc::Error>),
     #[error(transparent)]
-    SdkRegisterClient(#[from] SdkError<RegisterClientError>),
+    SdkRegisterClient(Box<SdkError<RegisterClientError>>),
     #[error(transparent)]
-    SdkCreateToken(#[from] SdkError<CreateTokenError>),
+    SdkCreateToken(Box<SdkError<CreateTokenError>>),
     #[error(transparent)]
-    SdkStartDeviceAuthorization(#[from] SdkError<StartDeviceAuthorizationError>),
+    SdkStartDeviceAuthorization(Box<SdkError<StartDeviceAuthorizationError>>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -36,8 +34,6 @@ pub enum AuthError {
     SerdeJson(#[from] serde_json::Error),
     #[error(transparent)]
     DbOpenError(#[from] crate::database::DbOpenError),
-    #[error(transparent)]
-    Setting(#[from] crate::database::DatabaseError),
     #[error("No token")]
     NoToken,
     #[error("OAuth state mismatch. Actual: {} | Expected: {}", .actual, .expected)]
@@ -48,4 +44,30 @@ pub enum AuthError {
     OAuthMissingCode,
     #[error("OAuth error: {0}")]
     OAuthCustomError(String),
+    #[error(transparent)]
+    DatabaseError(#[from] crate::database::DatabaseError),
+}
+
+impl From<aws_sdk_ssooidc::Error> for AuthError {
+    fn from(value: aws_sdk_ssooidc::Error) -> Self {
+        Self::Ssooidc(Box::new(value))
+    }
+}
+
+impl From<SdkError<RegisterClientError>> for AuthError {
+    fn from(value: SdkError<RegisterClientError>) -> Self {
+        Self::SdkRegisterClient(Box::new(value))
+    }
+}
+
+impl From<SdkError<CreateTokenError>> for AuthError {
+    fn from(value: SdkError<CreateTokenError>) -> Self {
+        Self::SdkCreateToken(Box::new(value))
+    }
+}
+
+impl From<SdkError<StartDeviceAuthorizationError>> for AuthError {
+    fn from(value: SdkError<StartDeviceAuthorizationError>) -> Self {
+        Self::SdkStartDeviceAuthorization(Box::new(value))
+    }
 }

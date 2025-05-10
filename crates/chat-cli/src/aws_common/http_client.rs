@@ -13,12 +13,10 @@ use aws_smithy_runtime_api::http::Request;
 use aws_smithy_types::body::SdkBody;
 use reqwest::Client as ReqwestClient;
 
-use crate::database::Database;
-
 /// Returns a wrapper around the global [fig_request::client] that implements
 /// [HttpClient].
-pub fn client(database: &Database) -> Client {
-    let client = crate::request::new_client(&database).expect("failed to create http client");
+pub fn client() -> Client {
+    let client = crate::request::new_client().expect("failed to create http client");
     Client::new(client.clone())
 }
 

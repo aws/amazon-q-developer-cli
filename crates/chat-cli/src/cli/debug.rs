@@ -1,11 +1,7 @@
-use std::process::ExitCode;
-
-use anstream::eprintln;
 use clap::{
     Subcommand,
     ValueEnum,
 };
-use eyre::Result;
 
 #[derive(Debug, ValueEnum, Clone, PartialEq, Eq)]
 pub enum Build {
@@ -86,24 +82,4 @@ pub enum InputMethodDebugAction {
         #[arg(value_enum)]
         action: TISAction,
     },
-}
-
-#[derive(Debug, PartialEq, Subcommand)]
-pub enum DebugSubcommand {
-    RefreshAuthToken,
-}
-
-impl DebugSubcommand {
-    pub async fn execute(&self) -> Result<ExitCode> {
-        match self {
-            DebugSubcommand::RefreshAuthToken => match crate::auth::refresh_token().await? {
-                Some(_) => eprintln!("Refreshed token"),
-                None => {
-                    eprintln!("No token to refresh");
-                    return Ok(ExitCode::FAILURE);
-                },
-            },
-        }
-        Ok(ExitCode::SUCCESS)
-    }
 }

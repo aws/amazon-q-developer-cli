@@ -54,11 +54,6 @@ impl Event {
         }
     }
 
-    pub fn with_credential_start_url(mut self, credential_start_url: String) -> Self {
-        self.credential_start_url = Some(credential_start_url);
-        self
-    }
-
     pub fn into_metric_datum(self) -> Option<MetricDatum> {
         match self.ty {
             EventType::UserLoggedIn {} => Some(

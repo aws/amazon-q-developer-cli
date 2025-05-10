@@ -13,6 +13,7 @@ pub use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::event_stream::RawMessage;
 use thiserror::Error;
 
+use crate::auth::AuthError;
 use crate::aws_common::SdkErrorDisplay;
 
 #[derive(Debug, Error)]
@@ -61,6 +62,9 @@ pub enum ApiClientError {
 
     #[error(transparent)]
     ListAvailableProfilesError(#[from] SdkError<ListAvailableProfilesError, HttpResponse>),
+
+    #[error(transparent)]
+    AuthError(#[from] AuthError),
 }
 
 #[cfg(test)]

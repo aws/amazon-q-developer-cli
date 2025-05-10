@@ -1,9 +1,7 @@
 use std::fmt::Display;
 use std::io::SeekFrom;
 
-use fd_lock::RwLock as FileRwLock;
-use parking_lot::RwLock;
-use serde::de::DeserializeOwned;
+use fd_lock::RwLock;
 use serde_json::{
     Map,
     Value,
@@ -28,6 +26,8 @@ pub enum Setting {
     ApiTimeout,
     ChatEditMode,
     ChatEnableNotifications,
+    ApiCodeWhispererService,
+    ApiQService,
 }
 
 impl AsRef<str> for Setting {
@@ -42,13 +42,9 @@ impl AsRef<str> for Setting {
             Self::ApiTimeout => "api.timeout",
             Self::ChatEditMode => "chat.editMode",
             Self::ChatEnableNotifications => "chat.enableNotifications",
+            Self::ApiCodeWhispererService => "api.codewhisperer.service",
+            Self::ApiQService => "api.q.service",
         }
-    }
-}
-
-impl Into<String> for Setting {
-    fn into(self) -> String {
-        self.as_ref().to_string()
     }
 }
 
@@ -72,12 +68,12 @@ impl TryFrom<&str> for Setting {
             "api.timeout" => Ok(Self::ApiTimeout),
             "chat.editMode" => Ok(Self::ChatEditMode),
             "chat.enableNotifications" => Ok(Self::ChatEnableNotifications),
+            "api.codewhisperer.service" => Ok(Self::ApiCodeWhispererService),
+            "api.q.service" => Ok(Self::ApiQService),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
 }
-
-static SETTINGS_FILE_LOCK: RwLock<()> = RwLock::new(());
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings(Map<String, Value>);
@@ -97,17 +93,15 @@ impl Settings {
             }
         }
 
-        let _lock_guard = SETTINGS_FILE_LOCK.write();
-
         Ok(Self(match path.exists() {
             true => {
-                let mut file = FileRwLock::new(File::open(&path).await?);
+                let mut file = RwLock::new(File::open(&path).await?);
                 let mut buf = Vec::new();
                 file.write()?.read_to_end(&mut buf).await?;
                 serde_json::from_slice(&buf)?
             },
             false => {
-                let mut file = FileRwLock::new(File::create(path).await?);
+                let mut file = RwLock::new(File::create(path).await?);
                 file.write()?.write_all(b"{}").await?;
                 serde_json::Map::new()
             },
@@ -122,12 +116,8 @@ impl Settings {
         self.0.get(key.as_ref())
     }
 
-    pub fn get_mut(&mut self, key: Setting) -> Option<&mut Value> {
-        self.0.get_mut(key.as_ref())
-    }
-
     pub async fn set(&mut self, key: Setting, value: impl Into<serde_json::Value>) -> Result<(), DatabaseError> {
-        self.0.insert(key.into(), value.into());
+        self.0.insert(key.to_string(), value.into());
         self.save_to_file().await
     }
 
@@ -138,22 +128,15 @@ impl Settings {
     }
 
     pub fn get_bool(&self, key: Setting) -> Option<bool> {
-        self.get(key).map(|value| value.as_bool()).flatten()
+        self.get(key).and_then(|value| value.as_bool())
     }
 
     pub fn get_string(&self, key: Setting) -> Option<String> {
-        self.get(key).map(|value| value.as_str().map(|s| s.into())).flatten()
+        self.get(key).and_then(|value| value.as_str().map(|s| s.into()))
     }
 
     pub fn get_int(&self, key: Setting) -> Option<i64> {
         self.get(key).and_then(|value| value.as_i64())
-    }
-
-    pub fn get_as<T: DeserializeOwned>(&self, key: Setting) -> Result<Option<T>, DatabaseError> {
-        match self.get(key) {
-            Some(value) => Ok(serde_json::from_value(value.clone())?),
-            None => Ok(None),
-        }
     }
 
     async fn save_to_file(&self) -> Result<(), DatabaseError> {
@@ -170,14 +153,12 @@ impl Settings {
             }
         }
 
-        let _lock_guard = SETTINGS_FILE_LOCK.write();
-
         let mut file_opts = File::options();
         file_opts.create(true).write(true).truncate(true);
 
         #[cfg(unix)]
         file_opts.mode(0o600);
-        let mut file = FileRwLock::new(file_opts.open(&path).await?);
+        let mut file = RwLock::new(file_opts.open(&path).await?);
         let mut lock = file.write()?;
 
         match serde_json::to_string_pretty(&self.0) {

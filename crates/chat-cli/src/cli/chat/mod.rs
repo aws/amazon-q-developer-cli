@@ -310,6 +310,7 @@ pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, a
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn chat(
     database: &mut Database,
     telemetry: &TelemetryThread,
@@ -320,11 +321,8 @@ pub async fn chat(
     trust_all_tools: bool,
     trust_tools: Option<Vec<String>>,
 ) -> Result<ExitCode> {
-    if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in().await {
-        bail!(
-            "You are not logged in, please log in with {}",
-            format!("q login",).bold()
-        );
+    if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in(database).await {
+        bail!("You are not logged in, please log in with {}", "q login".bold());
     }
 
     region_check("chat")?;
@@ -3342,7 +3340,7 @@ impl ChatContext {
             }
             .map(|v| v.to_string());
 
-            telemetry.send_tool_use_suggested(event);
+            telemetry.send_tool_use_suggested(event).ok();
         }
     }
 
@@ -3470,7 +3468,7 @@ mod tests {
 
         let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await;
+        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
@@ -3601,7 +3599,7 @@ mod tests {
 
         let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await;
+        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
@@ -3707,7 +3705,7 @@ mod tests {
 
         let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await;
+        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
@@ -3785,7 +3783,7 @@ mod tests {
 
         let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await;
+        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))

@@ -64,9 +64,19 @@ use crate::util::system_info::os_version;
 #[derive(thiserror::Error, Debug)]
 pub enum TelemetryError {
     #[error(transparent)]
-    ClientError(#[from] amzn_toolkit_telemetry_client::operation::post_metrics::PostMetricsError),
+    Client(#[from] amzn_toolkit_telemetry_client::operation::post_metrics::PostMetricsError),
     #[error(transparent)]
-    SendError(#[from] mpsc::error::SendError<Event>),
+    Send(Box<mpsc::error::SendError<Event>>),
+    #[error(transparent)]
+    Auth(#[from] crate::auth::AuthError),
+    #[error(transparent)]
+    JoinError(#[from] tokio::task::JoinError),
+}
+
+impl From<mpsc::error::SendError<Event>> for TelemetryError {
+    fn from(value: mpsc::error::SendError<Event>) -> Self {
+        Self::Send(Box::new(value))
+    }
 }
 
 const PRODUCT: &str = "CodeWhisperer";
@@ -83,6 +93,7 @@ pub struct TelemetryStage {
 }
 
 impl TelemetryStage {
+    #[cfg(test)]
     const BETA: Self = Self::new(
         "https://7zftft3lj2.execute-api.us-east-1.amazonaws.com/Beta",
         "us-east-1:db7bfc9f-8ecd-4fbb-bea7-280c16069a99",
@@ -119,8 +130,8 @@ impl Clone for TelemetryThread {
 }
 
 impl TelemetryThread {
-    pub async fn new(env: &Env, database: &mut Database) -> Self {
-        let telemetry_client = TelemetryClient::new(env, database).await;
+    pub async fn new(env: &Env, database: &mut Database) -> Result<Self, TelemetryError> {
+        let telemetry_client = TelemetryClient::new(env, database).await?;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let handle = tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
@@ -129,41 +140,35 @@ impl TelemetryThread {
             }
         });
 
-        Self {
+        Ok(Self {
             handle: Some(handle),
             tx,
+        })
+    }
+
+    pub async fn finish(self) -> Result<(), TelemetryError> {
+        drop(self.tx);
+        if let Some(handle) = self.handle {
+            handle.await?;
         }
+
+        Ok(())
     }
 
     pub fn send_user_logged_in(&self) -> Result<(), TelemetryError> {
         Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
     }
 
-    pub fn send_refresh_credentials(
-        &self,
-        credential_start_url: String,
-        request_id: String,
-        oauth_flow: String,
-    ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(
-            Event::new(EventType::RefreshCredentials {
-                request_id,
-                result: TelemetryResult::Succeeded,
-                reason: None,
-                oauth_flow,
-            })
-            .with_credential_start_url(credential_start_url),
-        )?)
-    }
-
     pub fn send_cli_subcommand_executed(&self, subcommand: Option<&CliRootCommands>) -> Result<(), TelemetryError> {
-        let Some(subcommand) = subcommand else {
-            return Ok(());
-        };
+        let subcommand = match subcommand {
+            Some(subcommand) => subcommand.name(),
+            None => "chat",
+        }
+        .to_owned();
 
-        Ok(self.tx.send(Event::new(EventType::CliSubcommandExecuted {
-            subcommand: subcommand.name().to_string(),
-        }))?)
+        Ok(self
+            .tx
+            .send(Event::new(EventType::CliSubcommandExecuted { subcommand }))?)
     }
 
     pub fn send_chat_added_message(
@@ -251,9 +256,9 @@ struct TelemetryClient {
 }
 
 impl TelemetryClient {
-    async fn new(env: &Env, database: &mut Database) -> Self {
+    async fn new(env: &Env, database: &mut Database) -> Result<Self, TelemetryError> {
         let telemetry_enabled = !cfg!(test)
-            && !env.get_os("Q_DISABLE_TELEMETRY").is_some()
+            && env.get_os("Q_DISABLE_TELEMETRY").is_none()
             && database.settings.get_bool(Setting::TelemetryEnabled).unwrap_or(true);
 
         // If telemetry is disabled we do not emit using toolkit_telemetry
@@ -261,7 +266,7 @@ impl TelemetryClient {
             true => match get_cognito_credentials(database, &TelemetryStage::EXTERNAL_PROD).await {
                 Ok(credentials) => Some(ToolkitTelemetryClient::from_conf(
                     Config::builder()
-                        .http_client(crate::aws_common::http_client::client(database))
+                        .http_client(crate::aws_common::http_client::client())
                         .behavior_version(BehaviorVersion::v2025_01_17())
                         .endpoint_resolver(StaticEndpoint(TelemetryStage::EXTERNAL_PROD.endpoint))
                         .app_name(app_name())
@@ -306,12 +311,12 @@ impl TelemetryClient {
             }
         }
 
-        Self {
+        Ok(Self {
             client_id: client_id(env, database, telemetry_enabled),
             telemetry_enabled,
             toolkit_telemetry_client,
-            codewhisperer_client: CodewhispererClient::new(database, None).await,
-        }
+            codewhisperer_client: CodewhispererClient::new(database, None).await?,
+        })
     }
 
     async fn send_event(&self, event: Event) {
@@ -424,7 +429,7 @@ mod test {
     #[tokio::test]
     async fn client_context() {
         let mut database = Database::new().await.unwrap();
-        let client = TelemetryClient::new(&Env::new(), &mut database).await;
+        let client = TelemetryClient::new(&Env::new(), &mut database).await.unwrap();
         let context = client.user_context().unwrap();
 
         assert_eq!(context.ide_category, IdeCategory::Cli);
@@ -445,8 +450,9 @@ mod test {
     #[ignore = "needs auth which is not in CI"]
     async fn test_send() {
         let mut database = Database::new().await.unwrap();
-        let thread = TelemetryThread::new(&Env::new(), &mut database).await;
-        thread.send_user_logged_in();
+        let thread = TelemetryThread::new(&Env::new(), &mut database).await.unwrap();
+        thread.send_user_logged_in().ok();
+        drop(thread);
 
         assert!(!logs_contain("ERROR"));
         assert!(!logs_contain("error"));
@@ -460,11 +466,15 @@ mod test {
     #[ignore = "needs auth which is not in CI"]
     async fn test_all_telemetry() {
         let mut database = Database::new().await.unwrap();
-        let thread = TelemetryThread::new(&Env::new(), &mut database).await;
+        let thread = TelemetryThread::new(&Env::new(), &mut database).await.unwrap();
 
-        thread.send_user_logged_in();
-        thread.send_cli_subcommand_executed(Some(&CliRootCommands::Version { changelog: None }));
-        thread.send_chat_added_message("version".to_owned(), "version".to_owned(), Some(123));
+        thread.send_user_logged_in().ok();
+        thread
+            .send_cli_subcommand_executed(Some(&CliRootCommands::Version { changelog: None }))
+            .ok();
+        thread
+            .send_chat_added_message("version".to_owned(), "version".to_owned(), Some(123))
+            .ok();
 
         drop(thread);
 
@@ -479,7 +489,7 @@ mod test {
     #[ignore = "needs auth which is not in CI"]
     async fn test_without_optout() {
         let mut database = Database::new().await.unwrap();
-        let client = TelemetryClient::new(&Env::new(), &mut database).await;
+        let client = TelemetryClient::new(&Env::new(), &mut database).await.unwrap();
         client
             .codewhisperer_client
             .send_telemetry_event(

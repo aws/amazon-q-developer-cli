@@ -12,6 +12,7 @@ use crate::api_client::{
     ApiClientError,
     Endpoint,
 };
+use crate::auth::AuthError;
 use crate::auth::builder_id::BearerResolver;
 use crate::aws_common::{
     UserAgentOverrideInterceptor,
@@ -40,22 +41,22 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn new(database: &mut Database, endpoint: Option<Endpoint>) -> Client {
+    pub async fn new(database: &mut Database, endpoint: Option<Endpoint>) -> Result<Client, AuthError> {
         if cfg!(test) {
-            return Self {
+            return Ok(Self {
                 inner: inner::Inner::Mock,
                 profile: None,
-            };
+            });
         }
 
         let endpoint = endpoint.unwrap_or(Endpoint::load_codewhisperer(database));
         let conf_builder: amzn_codewhisperer_client::config::Builder =
             (&bearer_sdk_config(database, &endpoint).await).into();
         let conf = conf_builder
-            .http_client(crate::aws_common::http_client::client(database))
+            .http_client(crate::aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new(database))
             .interceptor(UserAgentOverrideInterceptor::new())
-            .bearer_token_resolver(BearerResolver)
+            .bearer_token_resolver(BearerResolver::new(database).await?)
             .app_name(app_name())
             .endpoint_url(endpoint.url())
             .build();
@@ -70,7 +71,7 @@ impl Client {
             },
         };
 
-        Self { inner, profile }
+        Ok(Self { inner, profile })
     }
 
     pub async fn send_telemetry_event(
@@ -142,7 +143,7 @@ mod tests {
     #[tokio::test]
     async fn test_mock() {
         let mut database = crate::database::Database::new().await.unwrap();
-        let client = Client::new(&mut database, None).await;
+        let client = Client::new(&mut database, None).await.unwrap();
         client
             .send_telemetry_event(
                 TelemetryEvent::ChatAddMessageEvent(

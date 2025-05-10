@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::platform::Context;
-use crate::util::env_var::Q_PARENT;
 
 #[derive(Debug, Error)]
 pub enum DirectoryError {
@@ -11,8 +10,6 @@ pub enum DirectoryError {
     NoHomeDirectory,
     #[error("runtime directory not found: neither XDG_RUNTIME_DIR nor TMPDIR were found")]
     NoRuntimeDirectory,
-    #[error("non absolute path: {0:?}")]
-    NonAbsolutePath(PathBuf),
     #[error("IO Error: {0}")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -25,10 +22,6 @@ pub enum DirectoryError {
     FromVecWithNul(#[from] std::ffi::FromVecWithNulError),
     #[error(transparent)]
     IntoString(#[from] std::ffi::IntoStringError),
-    #[error("{Q_PARENT} env variable not set")]
-    QParentNotSet,
-    #[error("must be ran from an appimage executable")]
-    NotAppImage,
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;

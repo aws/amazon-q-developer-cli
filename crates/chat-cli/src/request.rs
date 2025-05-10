@@ -1,7 +1,4 @@
 use std::env::current_exe;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
 use std::sync::{
     Arc,
     LazyLock,
@@ -14,9 +11,6 @@ use rustls::{
 };
 use thiserror::Error;
 use url::ParseError;
-
-use crate::database::Database;
-use crate::database::state::StateDatabase;
 
 #[derive(Debug, Error)]
 pub enum RequestError {
@@ -34,15 +28,15 @@ pub enum RequestError {
     UrlParseError(#[from] ParseError),
 }
 
-pub fn new_client(database: &Database) -> Result<Client, RequestError> {
+pub fn new_client() -> Result<Client, RequestError> {
     Ok(Client::builder()
-        .use_preconfigured_tls(client_config(database))
+        .use_preconfigured_tls(client_config())
         .user_agent(USER_AGENT.chars().filter(|c| c.is_ascii_graphic()).collect::<String>())
         .cookie_store(true)
         .build()?)
 }
 
-pub fn create_default_root_cert_store(database: &Database) -> RootCertStore {
+pub fn create_default_root_cert_store() -> RootCertStore {
     let mut root_cert_store: RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
 
     // The errors are ignored because root certificates often include
@@ -52,29 +46,10 @@ pub fn create_default_root_cert_store(database: &Database) -> RootCertStore {
         let _ = root_cert_store.add(cert);
     }
 
-    if let Some(custom_cert) = database.get_q_custom_cert() {
-        match File::open(Path::new(&custom_cert)) {
-            Ok(file) => {
-                let reader = &mut BufReader::new(file);
-                for cert in rustls_pemfile::certs(reader) {
-                    match cert {
-                        Ok(cert) => {
-                            if let Err(err) = root_cert_store.add(cert) {
-                                tracing::error!(path =% custom_cert, %err, "Failed to add custom cert");
-                            };
-                        },
-                        Err(err) => tracing::error!(path =% custom_cert, %err, "Failed to parse cert"),
-                    }
-                }
-            },
-            Err(err) => tracing::error!(path =% custom_cert, %err, "Failed to open cert at"),
-        }
-    }
-
     root_cert_store
 }
 
-fn client_config(database: &Database) -> ClientConfig {
+fn client_config() -> ClientConfig {
     let provider = rustls::crypto::CryptoProvider::get_default()
         .cloned()
         .unwrap_or_else(|| Arc::new(rustls::crypto::ring::default_provider()));
@@ -82,7 +57,7 @@ fn client_config(database: &Database) -> ClientConfig {
     ClientConfig::builder_with_provider(provider)
         .with_protocol_versions(rustls::DEFAULT_VERSIONS)
         .expect("Failed to set supported TLS versions")
-        .with_root_certificates(create_default_root_cert_store(database))
+        .with_root_certificates(create_default_root_cert_store())
         .with_no_client_auth()
 }
 
@@ -105,8 +80,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_client() {
-        let database = Database::new().await.unwrap();
-        new_client(&database).unwrap();
+        new_client().unwrap();
     }
 
     #[tokio::test]
@@ -120,8 +94,7 @@ mod tests {
             .create();
         let url = server.url();
 
-        let database = Database::new().await.unwrap();
-        let client = new_client(&database).unwrap();
+        let client = new_client().unwrap();
         let res = client.get(format!("{url}/hello")).send().await.unwrap();
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers()["content-type"], "text/plain");

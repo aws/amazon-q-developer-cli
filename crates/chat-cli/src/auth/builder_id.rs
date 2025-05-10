@@ -41,7 +41,6 @@ use aws_smithy_runtime_api::client::identity::{
 };
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_types::region::Region;
-use aws_types::request_id::RequestId;
 use time::OffsetDateTime;
 use tracing::{
     debug,
@@ -86,10 +85,10 @@ pub(crate) fn oidc_url(region: &Region) -> String {
     format!("https://oidc.{region}.amazonaws.com")
 }
 
-pub fn client(database: &Database, region: Region) -> Client {
+pub fn client(region: Region) -> Client {
     Client::new(
         &aws_types::SdkConfig::builder()
-            .http_client(crate::aws_common::http_client::client(database))
+            .http_client(crate::aws_common::http_client::client())
             .behavior_version(BehaviorVersion::v2025_01_17())
             .endpoint_url(oidc_url(&region))
             .region(region)
@@ -231,7 +230,7 @@ pub async fn start_device_authorization(
     region: Option<String>,
 ) -> Result<StartDeviceAuthorizationResponse, AuthError> {
     let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-    let client = client(database, region.clone());
+    let client = client(region.clone());
 
     let DeviceRegistration {
         client_id,
@@ -294,17 +293,17 @@ impl BuilderIdToken {
     }
 
     /// Load the token from the keychain, refresh the token if it is expired and return it
-    pub async fn load(database: &mut Database, force_refresh: bool) -> Result<Option<Self>, AuthError> {
-        match secret_store.get(Self::SECRET_KEY).await {
+    pub async fn load(database: &mut Database) -> Result<Option<Self>, AuthError> {
+        match database.secret_store.get(Self::SECRET_KEY).await {
             Ok(Some(secret)) => {
                 let token: Option<Self> = serde_json::from_str(&secret.0)?;
                 match token {
                     Some(token) => {
                         let region = token.region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
 
-                        let client = client(database, region.clone());
+                        let client = client(region.clone());
                         // if token is expired try to refresh
-                        if token.is_expired() || force_refresh {
+                        if token.is_expired() {
                             token.refresh_token(&client, &database.secret_store, &region).await
                         } else {
                             Ok(Some(token))
@@ -316,7 +315,7 @@ impl BuilderIdToken {
             Ok(None) => Ok(None),
             Err(err) => {
                 error!(%err, "Error getting builder id token from keychain");
-                Err(err)
+                Err(err)?
             },
         }
     }
@@ -365,13 +364,6 @@ impl BuilderIdToken {
             .await
         {
             Ok(output) => {
-                send_refresh_credentials(
-                    self.start_url.clone().unwrap_or_else(|| START_URL.to_owned()),
-                    output.request_id().unwrap_or_default().into(),
-                    registration.oauth_flow.to_string(),
-                )
-                .await;
-
                 let token: BuilderIdToken = Self::from_output(
                     output,
                     region.clone(),
@@ -393,13 +385,6 @@ impl BuilderIdToken {
 
                 // if the error is the client's fault, clear the token
                 if let SdkError::ServiceError(service_err) = &err {
-                    send_refresh_credentials(
-                        self.start_url.clone().unwrap_or_else(|| START_URL.to_owned()),
-                        err.request_id().unwrap_or_default().into(),
-                        registration.oauth_flow.to_string(),
-                    )
-                    .await;
-
                     if !service_err.err().is_slow_down_exception() {
                         if let Err(err) = self.delete(secret_store).await {
                             error!(?err, "Failed to delete builder id token");
@@ -475,7 +460,7 @@ pub async fn poll_create_token(
     region: Option<String>,
 ) -> PollCreateToken {
     let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-    let client = client(database, region.clone());
+    let client = client(region.clone());
 
     let DeviceRegistration {
         client_id,
@@ -502,7 +487,7 @@ pub async fn poll_create_token(
             let token: BuilderIdToken =
                 BuilderIdToken::from_output(output, region, start_url, OAuthFlow::DeviceCode, scopes);
 
-            if let Err(err) = token.save(secret_store).await {
+            if let Err(err) = token.save(&database.secret_store).await {
                 error!(?err, "Failed to store builder id token");
             };
 
@@ -518,18 +503,8 @@ pub async fn poll_create_token(
     }
 }
 
-pub async fn builder_id_token() -> Result<Option<BuilderIdToken>, AuthError> {
-    let secret_store = SecretStore::new().await?;
-    BuilderIdToken::load(&secret_store, false).await
-}
-
-pub async fn refresh_token() -> Result<Option<BuilderIdToken>, AuthError> {
-    let secret_store = SecretStore::new().await?;
-    BuilderIdToken::load(&secret_store, true).await
-}
-
-pub async fn is_logged_in() -> bool {
-    matches!(builder_id_token().await, Ok(Some(_)))
+pub async fn is_logged_in(database: &mut Database) -> bool {
+    matches!(BuilderIdToken::load(database).await, Ok(Some(_)))
 }
 
 pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
@@ -552,7 +527,17 @@ pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
 }
 
 #[derive(Debug, Clone)]
-pub struct BearerResolver;
+pub struct BearerResolver {
+    token: Option<BuilderIdToken>,
+}
+
+impl BearerResolver {
+    pub async fn new(database: &mut Database) -> Result<Self, AuthError> {
+        Ok(Self {
+            token: BuilderIdToken::load(database).await?,
+        })
+    }
+}
 
 impl ResolveIdentity for BearerResolver {
     fn resolve_identity<'a>(
@@ -561,11 +546,9 @@ impl ResolveIdentity for BearerResolver {
         _config_bag: &'a ConfigBag,
     ) -> IdentityFuture<'a> {
         IdentityFuture::new_boxed(Box::pin(async {
-            let secret_store = SecretStore::new().await?;
-            let token = BuilderIdToken::load(&secret_store, false).await?;
-            match token {
+            match &self.token {
                 Some(token) => Ok(Identity::new(
-                    Token::new(token.access_token.0, Some(token.expires_at.into())),
+                    Token::new(token.access_token.0.clone(), Some(token.expires_at.into())),
                     Some(token.expires_at.into()),
                 )),
                 None => Err(AuthError::NoToken.into()),
@@ -597,8 +580,8 @@ mod tests {
         test_ser_deser!(OAuthFlow, OAuthFlow::Pkce, "Pkce");
     }
 
-    #[test]
-    fn test_client() {
+    #[tokio::test]
+    async fn test_client() {
         println!("{:?}", client(US_EAST_1));
         println!("{:?}", client(US_WEST_2));
     }
@@ -628,67 +611,5 @@ mod tests {
 
         token.start_url = Some("https://amzn.awsapps.com/start".into());
         assert_eq!(token.token_type(), TokenType::IamIdentityCenter);
-    }
-
-    #[ignore = "not in ci"]
-    #[tokio::test]
-    async fn logout_test() {
-        logout().await.unwrap();
-    }
-
-    #[ignore = "login flow"]
-    #[tokio::test]
-    async fn test_login() {
-        let start_url = Some("https://amzn.awsapps.com/start".into());
-        let region = Some("us-east-1".into());
-
-        // let start_url = None;
-        // let region = None;
-
-        let secret_store = SecretStore::new().await.unwrap();
-        let res: StartDeviceAuthorizationResponse =
-            start_device_authorization(&secret_store, start_url.clone(), region.clone())
-                .await
-                .unwrap();
-
-        println!("{:?}", res);
-
-        loop {
-            match poll_create_token(
-                &secret_store,
-                res.device_code.clone(),
-                start_url.clone(),
-                region.clone(),
-            )
-            .await
-            {
-                PollCreateToken::Pending => {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                },
-                PollCreateToken::Complete => {
-                    break;
-                },
-                PollCreateToken::Error(err) => {
-                    println!("{}", err);
-                    break;
-                },
-            }
-        }
-    }
-
-    #[ignore = "not in ci"]
-    #[tokio::test]
-    async fn test_load() {
-        let secret_store = SecretStore::new().await.unwrap();
-        let token = BuilderIdToken::load(&secret_store, false).await;
-        println!("{:?}", token);
-        // println!("{:?}", token.unwrap().unwrap().access_token.0);
-    }
-
-    #[ignore = "not in ci"]
-    #[tokio::test]
-    async fn test_refresh() {
-        let token = refresh_token().await.unwrap().unwrap();
-        println!("{:?}", token);
     }
 }

@@ -6,6 +6,10 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use serde_json::{
+    Map,
+    Value,
+};
 use uuid::Uuid;
 
 use super::{
@@ -13,9 +17,7 @@ use super::{
     DatabaseError,
     Table,
 };
-use crate::api_client::customization::Customization;
 
-const Q_CUSTOM_CERT_KEY: &str = "Q_CUSTOM_CERT";
 const CREDENTIALS_KEY: &str = "telemetry-cognito-credentials";
 const CLIENT_ID_KEY: &str = "telemetryClientId";
 const CODEWHISPERER_PROFILE_KEY: &str = "api.codewhisperer.profile";
@@ -48,8 +50,8 @@ impl From<amzn_codewhisperer_client::types::Profile> for AuthProfile {
 }
 
 pub trait StateDatabase {
-    fn get_q_custom_cert(&self) -> Option<String>;
-    fn set_q_custom_cert(&mut self);
+    /// Get all entries for dumping the persistent application state.
+    fn get_all_entries(&self) -> Result<Map<String, serde_json::Value>, DatabaseError>;
 
     /// Get cognito credentials used by toolkit telemetry.
     fn get_credentials_entry(&mut self) -> Result<Option<CredentialsJson>, DatabaseError>;
@@ -57,18 +59,11 @@ pub trait StateDatabase {
     fn set_credentials_entry(&mut self, credentials: &Credentials) -> Result<(), DatabaseError>;
 
     /// Get the current user profile used to determine API endpoints.
-    fn get_auth_profile(&mut self) -> Result<Option<AuthProfile>, DatabaseError>;
+    fn get_auth_profile(&self) -> Result<Option<AuthProfile>, DatabaseError>;
     /// Set the current user profile used to determine API endpoints.
     fn set_auth_profile(&mut self, profile: &AuthProfile) -> Result<(), DatabaseError>;
     /// Unset the current user profile used to determine API endpoints.
     fn unset_auth_profile(&mut self) -> Result<(), DatabaseError>;
-
-    /// Get the current user profile used to determine API endpoints.
-    fn get_selected_customization(&mut self) -> Result<Option<Customization>, DatabaseError>;
-    /// Set the current user profile used to determine API endpoints.
-    fn set_selected_customization(&mut self, customization: &Customization) -> Result<(), DatabaseError>;
-    /// Unset the current user profile used to determine API endpoints.
-    fn unset_selected_customization(&mut self) -> Result<(), DatabaseError>;
 
     // Get the client ID used for telemetry requests.
     fn get_client_id(&mut self) -> Option<Uuid>;
@@ -90,14 +85,8 @@ pub trait StateDatabase {
 }
 
 impl StateDatabase for Database {
-    fn get_q_custom_cert(&self) -> Option<String> {
-        std::env::var(Q_CUSTOM_CERT_KEY)
-            .ok()
-            .or_else(|| self.get_string(Table::State, Q_CUSTOM_CERT_KEY).ok().flatten())
-    }
-
-    fn set_q_custom_cert(&mut self) {
-        todo!()
+    fn get_all_entries(&self) -> Result<Map<String, Value>, DatabaseError> {
+        self.all_entries(Table::State)
     }
 
     fn get_credentials_entry(&mut self) -> Result<Option<CredentialsJson>, DatabaseError> {
@@ -120,7 +109,7 @@ impl StateDatabase for Database {
         self.set_entry(Table::State, CREDENTIALS_KEY, json)
     }
 
-    fn get_auth_profile(&mut self) -> Result<Option<AuthProfile>, DatabaseError> {
+    fn get_auth_profile(&self) -> Result<Option<AuthProfile>, DatabaseError> {
         Ok(self
             .get_entry::<serde_json::Value>(Table::State, CODEWHISPERER_PROFILE_KEY)?
             .map(|value| serde_json::from_value(value.clone()))
@@ -128,31 +117,12 @@ impl StateDatabase for Database {
     }
 
     fn set_auth_profile(&mut self, profile: &AuthProfile) -> Result<(), DatabaseError> {
-        self.set_entry(Table::State, CODEWHISPERER_PROFILE_KEY, serde_json::to_value(profile)?);
+        self.set_entry(Table::State, CODEWHISPERER_PROFILE_KEY, serde_json::to_value(profile)?)?;
         self.delete_entry(Table::State, CUSTOMIZATION_STATE_KEY)
     }
 
     fn unset_auth_profile(&mut self) -> Result<(), DatabaseError> {
         self.delete_entry(Table::State, CODEWHISPERER_PROFILE_KEY)?;
-        self.delete_entry(Table::State, CUSTOMIZATION_STATE_KEY)
-    }
-
-    fn get_selected_customization(&mut self) -> Result<Option<Customization>, DatabaseError> {
-        Ok(self
-            .get_entry::<serde_json::Value>(Table::State, CUSTOMIZATION_STATE_KEY)?
-            .map(|value| serde_json::from_value(value.clone()))
-            .transpose()?)
-    }
-
-    fn set_selected_customization(&mut self, customization: &Customization) -> Result<(), DatabaseError> {
-        self.set_entry(
-            Table::State,
-            CUSTOMIZATION_STATE_KEY,
-            serde_json::to_value(customization)?,
-        )
-    }
-
-    fn unset_selected_customization(&mut self) -> Result<(), DatabaseError> {
         self.delete_entry(Table::State, CUSTOMIZATION_STATE_KEY)
     }
 
@@ -164,7 +134,7 @@ impl StateDatabase for Database {
     }
 
     fn set_client_id(&mut self, client_id: Uuid) -> Result<(), DatabaseError> {
-        Ok(self.set_entry(Table::State, CLIENT_ID_KEY, client_id.to_string())?)
+        self.set_entry(Table::State, CLIENT_ID_KEY, client_id.to_string())
     }
 
     fn get_start_url(&mut self) -> Option<String> {
@@ -172,7 +142,7 @@ impl StateDatabase for Database {
     }
 
     fn set_start_url(&mut self, start_url: String) -> Result<(), DatabaseError> {
-        Ok(self.set_entry(Table::State, START_URL_KEY, start_url)?)
+        self.set_entry(Table::State, START_URL_KEY, start_url)
     }
 
     fn get_idc_region(&mut self) -> Option<String> {
@@ -180,7 +150,7 @@ impl StateDatabase for Database {
     }
 
     fn set_idc_region(&mut self, region: String) -> Result<(), DatabaseError> {
-        Ok(self.set_entry(Table::State, IDC_REGION_KEY, region)?)
+        self.set_entry(Table::State, IDC_REGION_KEY, region)
     }
 
     fn get_increment_rotating_tip(&mut self) -> Result<usize, DatabaseError> {
@@ -213,9 +183,9 @@ mod tests {
         db.delete_entry(Table::State, "int").unwrap();
 
         // is some
-        assert!(!db.entry_is_some(Table::State, "test").unwrap());
-        assert!(!db.entry_is_some(Table::State, "int").unwrap());
-        assert!(db.entry_is_some(Table::State, "float").unwrap());
-        assert!(db.entry_is_some(Table::State, "bool").unwrap());
+        assert!(db.get_entry::<String>(Table::State, "test").unwrap().is_none());
+        assert!(db.get_entry::<i32>(Table::State, "int").unwrap().is_none());
+        assert!(db.get_entry::<f64>(Table::State, "float").unwrap().is_some());
+        assert!(db.get_entry::<bool>(Table::State, "bool").unwrap().is_some());
     }
 }
