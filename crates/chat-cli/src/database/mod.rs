@@ -133,7 +133,7 @@ impl<T> From<PoisonError<T>> for DatabaseError {
 
 #[derive(Debug)]
 pub enum Table {
-    /// The state table contains persistant application state.
+    /// The state table contains persistent application state.
     State,
     /// The conversations tables contains user chat conversations.
     #[allow(dead_code)]
