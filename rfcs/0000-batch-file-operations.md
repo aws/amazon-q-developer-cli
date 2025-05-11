@@ -36,165 +36,177 @@ By enhancing these tools to support batch operations, we can significantly impro
 
 With the enhanced fs_read tool, you can now read multiple files in a single operation:
 
-```javascript
-// Before: Reading files one at a time
-const file1Content = await fs_read({ mode: "Line", path: "/path/to/file1.txt" });
-const file2Content = await fs_read({ mode: "Line", path: "/path/to/file2.txt" });
-
-// After: Reading multiple files at once
-const results = await fs_read({
-  mode: "Line",
-  paths: ["/path/to/file1.txt", "/path/to/file2.txt", "/path/to/file3.txt"]
-});
-
-// Results will be an array of objects with path, success, and content properties
-results.forEach(result => {
-  if (result.success) {
-    console.log(`Content of ${result.path}: ${result.content}`);
-  } else {
-    console.log(`Failed to read ${result.path}: ${result.error}`);
+```json
+{
+  "name": "fs_read",
+  "parameters": {
+    "mode": "Line",
+    "paths": ["/path/to/file1.txt", "/path/to/file2.txt", "/path/to/file3.txt"]
   }
-});
+}
+```
+
+Results will be an array of objects with path, success, and content properties:
+
+```json
+[
+  {
+    "path": "/path/to/file1.txt",
+    "success": true,
+    "content": "File content here..."
+  },
+  {
+    "path": "/path/to/file2.txt",
+    "success": false,
+    "error": "File not found"
+  }
+]
 ```
 
 ## Writing to Multiple Files with Multiple Edits
 
 The enhanced fs_write tool allows you to perform multiple operations on multiple files:
 
-```javascript
-// Before: Writing to files one at a time
-await fs_write({
-  command: "create",
-  path: "/path/to/file1.txt",
-  file_text: "Hello, world!"
-});
-await fs_write({
-  command: "create",
-  path: "/path/to/file2.txt",
-  file_text: "Another file"
-});
-
-// After: Writing to multiple files at once
-await fs_write({
-  command: "create",
-  fileEdits: [
-    {
-      path: "/path/to/file1.txt",
-      edits: [
-        {
-          command: "create",
-          file_text: "Hello, world!"
-        }
-      ]
-    },
-    {
-      path: "/path/to/file2.txt",
-      edits: [
-        {
-          command: "create",
-          file_text: "Another file"
-        }
-      ]
-    }
-  ]
-});
+```json
+{
+  "name": "fs_write",
+  "parameters": {
+    "command": "create",
+    "fileEdits": [
+      {
+        "path": "/path/to/file1.txt",
+        "edits": [
+          {
+            "command": "create",
+            "file_text": "Hello, world!"
+          }
+        ]
+      },
+      {
+        "path": "/path/to/file2.txt",
+        "edits": [
+          {
+            "command": "create",
+            "file_text": "Another file"
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
 ## Multiple Edits to a Single File
 
 You can now make multiple edits to a single file in one operation:
 
-```javascript
-await fs_write({
-  command: "str_replace",
-  fileEdits: [
-    {
-      path: "/path/to/config.json",
-      edits: [
-        {
-          command: "str_replace",
-          old_str: "\"debug\": false",
-          new_str: "\"debug\": true"
-        },
-        {
-          command: "str_replace",
-          old_str: "\"version\": \"1.0.0\"",
-          new_str: "\"version\": \"1.1.0\""
-        },
-        {
-          command: "insert",
-          insert_line: 5,
-          new_str: "  \"newSetting\": \"value\","
-        }
-      ]
-    }
-  ]
-});
+```json
+{
+  "name": "fs_write",
+  "parameters": {
+    "command": "str_replace",
+    "fileEdits": [
+      {
+        "path": "/path/to/config.json",
+        "edits": [
+          {
+            "command": "str_replace",
+            "old_str": "\"debug\": false",
+            "new_str": "\"debug\": true"
+          },
+          {
+            "command": "str_replace",
+            "old_str": "\"version\": \"1.0.0\"",
+            "new_str": "\"version\": \"1.1.0\""
+          },
+          {
+            "command": "insert",
+            "insert_line": 5,
+            "new_str": "  \"newSetting\": \"value\","
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
 ## New replace_lines Command
 
 The new replace_lines command allows replacing a range of lines in a file:
 
-```javascript
-await fs_write({
-  command: "replace_lines",
-  fileEdits: [
-    {
-      path: "/path/to/file.txt",
-      edits: [
-        {
-          command: "replace_lines",
-          start_line: 10,
-          end_line: 15,
-          new_str: "This content replaces lines 10 through 15"
-        }
-      ]
-    }
-  ]
-});
+```json
+{
+  "name": "fs_write",
+  "parameters": {
+    "command": "replace_lines",
+    "fileEdits": [
+      {
+        "path": "/path/to/file.txt",
+        "edits": [
+          {
+            "command": "replace_lines",
+            "start_line": 10,
+            "end_line": 15,
+            "new_str": "This content replaces lines 10 through 15"
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
 ## Pattern-Based Search and Replace
 
 The new pattern-based search and replace functionality allows you to perform sed-like operations across multiple files matching a pattern:
 
-```javascript
-await fs_write({
-  command: "pattern_replace",
-  directory: "/path/to/project",
-  file_pattern: "*.js",
-  sed_pattern: "s/const /let /g",
-  recursive: true,
-  exclude_patterns: ["node_modules/**", "dist/**"]
-});
+```json
+{
+  "name": "fs_write",
+  "parameters": {
+    "command": "pattern_replace",
+    "directory": "/path/to/project",
+    "file_pattern": "*.js",
+    "sed_pattern": "s/const /let /g",
+    "recursive": true,
+    "exclude_patterns": ["node_modules/**", "dist/**"]
+  }
+}
 ```
 
 This will replace all occurrences of "const " with "let " in all JavaScript files in the project directory and its subdirectories, excluding the node_modules and dist directories.
 
 ## Error Handling
 
-The batch operations provide detailed error reporting:
+The batch operations provide detailed error reporting. Here's an example of the response format:
 
-```javascript
-const results = await fs_write({
-  command: "str_replace",
-  fileEdits: [/* ... */]
-});
-
-// Check results for each file
-results.forEach(result => {
-  if (result.success) {
-    console.log(`Successfully edited ${result.path}: ${result.edits_applied} edits applied`);
-  } else {
-    console.log(`Failed to edit ${result.path}: ${result.error}`);
-    if (result.failed_edits) {
-      result.failed_edits.forEach(failedEdit => {
-        console.log(`  Failed edit (${failedEdit.command}): ${failedEdit.error}`);
-      });
-    }
+```json
+[
+  {
+    "path": "/path/to/file1.txt",
+    "success": true,
+    "edits_applied": 3,
+    "edits_failed": 0
+  },
+  {
+    "path": "/path/to/file2.txt",
+    "success": false,
+    "error": "Permission denied",
+    "edits_applied": 0,
+    "edits_failed": 2,
+    "failed_edits": [
+      {
+        "command": "str_replace",
+        "error": "String not found in file"
+      },
+      {
+        "command": "insert",
+        "error": "Line number out of range"
+      }
+    ]
   }
-});
+]
 ```
 
 # Reference-level explanation
