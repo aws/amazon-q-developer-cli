@@ -306,12 +306,11 @@ impl ConversationState {
             // do this if the last message is a tool call that has failed.
             let tool_use_results = user_msg.tool_use_results();
             if let Some(tool_use_results) = tool_use_results {
-                let tool_name_list = self
-                    .tools
-                    .values()
-                    .flatten()
-                    .map(|Tool::ToolSpecification(spec)| spec.name.as_str())
-                    .collect::<Vec<_>>();
+                // Note that we need to use the keys in tool manager's tn_map as the keys are the
+                // actual tool names as exposed to the model and the backend. If we use the actual
+                // names as they are recognized by their respective servers, we risk concluding
+                // with false positives.
+                let tool_name_list = self.tool_manager.tn_map.keys().map(String::as_str).collect::<Vec<_>>();
                 for result in tool_use_results {
                     if let ToolResultStatus::Error = result.status {
                         let tool_use_id = result.tool_use_id.as_str();
