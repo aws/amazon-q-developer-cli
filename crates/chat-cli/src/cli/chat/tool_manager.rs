@@ -256,6 +256,10 @@ impl ToolManagerBuilder {
 
         // Send up task to update user on server loading status
         let (tx, rx) = std::sync::mpsc::channel::<LoadingMsg>();
+        // TODO: rather than using it as an "anchor" to determine the progress of server loads, we
+        // should make this task optional (and it is defined as an optional right now. There is
+        // just no code path with it being None). When ran with no-interactive mode, we really do
+        // not have a need to run this task.
         let loading_display_task = tokio::task::spawn_blocking(move || {
             let mut loading_servers = HashMap::<String, StatusLine>::new();
             let mut spinner_logo_idx: usize = 0;
@@ -1080,7 +1084,7 @@ impl ToolManager {
         Ok(())
     }
 
-    pub async fn _pending_clients(&self) -> Vec<String> {
+    pub async fn pending_clients(&self) -> Vec<String> {
         self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>()
     }
 }

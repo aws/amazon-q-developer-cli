@@ -2362,6 +2362,21 @@ impl ChatContext {
                             );
                         });
 
+                        let loading = self.conversation_state.tool_manager.pending_clients().await;
+                        if !loading.is_empty() {
+                            queue!(
+                                self.output,
+                                style::SetAttribute(Attribute::Bold),
+                                style::Print("Servers still loading"),
+                                style::SetAttribute(Attribute::Reset),
+                                style::Print("\n"),
+                                style::Print("▔".repeat(terminal_width)),
+                            )?;
+                            for client in loading {
+                                queue!(self.output, style::Print(format!(" - {client}")), style::Print("\n"))?;
+                            }
+                        }
+
                         queue!(
                             self.output,
                             style::Print("\nTrusted tools can be run without confirmation\n"),
