@@ -747,20 +747,17 @@ impl ToolManager {
                 };
                 Box::pin(fut)
             },
-            None => {
-                let fut = async { future::pending::<()>().await };
-                Box::pin(fut)
-            },
+            None => Box::pin(future::pending()),
         };
-        // TODO: make this timeout configurable
-        let timeout_fut: Pin<Box<dyn Future<Output = ()>>> = if self.is_interactive {
+        let timeout_fut: Pin<Box<dyn Future<Output = ()>>> = if self.clients.is_empty() {
+            // If there is no server loaded, we want to resolve immediately
+            Box::pin(future::ready(()))
+        } else if self.is_interactive {
             let init_timeout = crate::settings::settings::get_int("mcp.initTimeout")
                 .map_or(5000_u64, |s| s.map_or(5000_u64, |n| n as u64));
-            error!("## timeout: {init_timeout}");
             Box::pin(tokio::time::sleep(std::time::Duration::from_millis(init_timeout)))
         } else {
-            let fut = async { future::pending::<()>().await };
-            Box::pin(fut)
+            Box::pin(future::pending())
         };
         tokio::select! {
             _ = display_fut => {},
