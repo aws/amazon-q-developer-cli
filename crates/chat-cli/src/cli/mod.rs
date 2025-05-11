@@ -16,6 +16,7 @@ use anstream::{
     eprintln,
     println,
 };
+pub use chat::ConversationState;
 use chat::cli::Chat;
 use clap::{
     ArgAction,
