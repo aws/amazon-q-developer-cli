@@ -490,39 +490,42 @@ This command provides a safer and more controlled alternative to using `execute_
 
 ## Recommended Libraries
 
-For implementing these features, we recommend leveraging the following Rust libraries:
+For implementing these features, we recommend leveraging the following verified Rust libraries:
 
 1. **glob** (or **globset**): For file pattern matching in the `pattern_replace` command
-2. **regex**: For parsing sed-like patterns and performing search/replace operations
-3. **ignore** (from ripgrep): For respecting .gitignore files and efficiently traversing directories
-4. **rayon**: For potential parallel processing of file operations
-5. **walkdir**: For efficient recursive directory traversal
-6. **similar**: For generating diffs of file changes
-7. **memmap2**: For efficient handling of large files
+2. **regex**: The standard Rust regex library for parsing sed-like patterns and performing search/replace operations
+3. **regex-syntax**: For parsing regex syntax that could be used to implement sed-like functionality
+4. **memchr**: For very simple search operations, providing highly optimized byte-level searching functions
+5. **bstr**: The "byte string" library offers efficient string manipulation functions that work directly on byte sequences
+6. **ignore**: From ripgrep, for respecting .gitignore files and efficiently traversing directories
+7. **rayon**: For potential parallel processing of file operations
+8. **walkdir**: For efficient recursive directory traversal
+9. **similar**: For generating diffs of file changes
+10. **memmap2**: For efficient handling of large files
 
-```rust
-fn replace_lines(path: &str, start_line: usize, end_line: usize, new_str: &str) -> Result<()> {
-    let content = fs::read_to_string(path)?;
-    let lines: Vec<&str> = content.lines().collect();
-    
-    if start_line >= lines.len() || end_line >= lines.len() || start_line > end_line {
-        return Err(Error::new("Invalid line range"));
-    }
-    
-    let mut new_lines = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        if i < start_line || i > end_line {
-            new_lines.push(*line);
-        } else if i == start_line {
-            new_lines.push(new_str);
-        }
-    }
-    
-    let new_content = new_lines.join("\n");
-    fs::write(path, new_content)?;
-    Ok(())
-}
-```
+For the `pattern_replace` command, a hybrid approach might be most efficient:
+- Use **glob** or **globset** for file pattern matching
+- Parse the sed pattern into components (search, replace, flags) using **regex-syntax**
+- For simple literal replacements, use **memchr** or **bstr** for better performance
+- For more complex patterns with wildcards or special characters, use **regex**
+
+## Implementation Considerations
+
+The batch operations feature introduces several implementation considerations:
+
+1. **Memory Usage**: When processing multiple files, memory usage should be managed efficiently:
+   - Use streaming approaches for large files with **memmap2** when appropriate
+   - Process files in a way that maintains a consistent memory footprint
+
+2. **Error Handling**: With multiple operations, partial failures are more likely. The implementation should:
+   - Provide detailed error reporting for each file
+   - Consider creating backups before modifications
+   - Support clear reporting of which operations succeeded and which failed
+
+3. **Pattern Matching**: For the `pattern_replace` command, effective pattern matching is important:
+   - Use specialized algorithms for simple cases (literal string matching)
+   - Fall back to regex for complex patterns
+   - Support common sed syntax patterns
 
 # Drawbacks
 
