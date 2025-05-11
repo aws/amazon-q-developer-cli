@@ -32,7 +32,9 @@ pub enum UpdateEventMessage {
         server_name: String,
         result: ResourceTemplatesListResult,
     },
-    DisplayTaskEnded,
+    InitStart {
+        server_name: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -107,6 +109,16 @@ impl Messenger for ServerMessenger {
             .send(UpdateEventMessage::ResourceTemplatesListResult {
                 server_name: self.server_name.clone(),
                 result,
+            })
+            .await
+            .map_err(|e| MessengerError::Custom(e.to_string()))?)
+    }
+
+    async fn send_init_msg(&self) -> Result<(), MessengerError> {
+        Ok(self
+            .update_event_sender
+            .send(UpdateEventMessage::InitStart {
+                server_name: self.server_name.clone(),
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)

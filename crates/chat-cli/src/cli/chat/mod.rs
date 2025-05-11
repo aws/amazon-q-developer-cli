@@ -33,6 +33,7 @@ use std::process::{
     ExitCode,
 };
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{
     env,
@@ -794,6 +795,16 @@ impl ChatContext {
             let chat_state = next_state.take().unwrap_or_default();
             let ctrl_c_stream = ctrl_c();
             debug!(?chat_state, "changing to state");
+
+            // Update conversation state with new tool information
+            if self
+                .conversation_state
+                .tool_manager
+                .has_new_stuff
+                .load(Ordering::Relaxed)
+            {
+                self.conversation_state.update_state().await;
+            }
 
             let result = match chat_state {
                 ChatState::PromptUser {

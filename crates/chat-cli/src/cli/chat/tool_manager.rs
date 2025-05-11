@@ -40,7 +40,10 @@ use serde::{
 };
 use thiserror::Error;
 use tokio::signal::ctrl_c;
-use tokio::sync::Mutex;
+use tokio::sync::{
+    Mutex,
+    RwLock,
+};
 use tracing::{
     error,
     warn,
@@ -406,6 +409,8 @@ impl ToolManagerBuilder {
         let new_tool_specs_clone = new_tool_specs.clone();
         let has_new_stuff = Arc::new(AtomicBool::new(false));
         let has_new_stuff_clone = has_new_stuff.clone();
+        let pending = Arc::new(RwLock::new(HashSet::<String>::new()));
+        let pending_clone = pending.clone();
         let (mut msg_rx, messenger_builder) = ServerMessengerBuilder::new(20);
         tokio::spawn(async move {
             while let Some(msg) = msg_rx.recv().await {
@@ -415,6 +420,7 @@ impl ToolManagerBuilder {
                 // list calls.
                 match msg {
                     UpdateEventMessage::ToolsListResult { server_name, result } => {
+                        pending_clone.write().await.remove(&server_name);
                         let mut specs = result
                             .tools
                             .into_iter()
@@ -464,14 +470,16 @@ impl ToolManagerBuilder {
                         server_name: _,
                         result: _,
                     } => {},
-                    UpdateEventMessage::DisplayTaskEnded => {
-                        load_msg_sender.take();
+                    UpdateEventMessage::InitStart { server_name } => {
+                        pending_clone.write().await.insert(server_name.clone());
+                        if let Some(sender) = &load_msg_sender {
+                            let _ = sender.send(LoadingMsg::Add(server_name));
+                        }
                     },
                 }
             }
         });
         for (mut name, init_res) in pre_initialized {
-            let _ = tx.send(LoadingMsg::Add(name.clone()));
             match init_res {
                 Ok(mut client) => {
                     let messenger = messenger_builder.build_with_name(client.get_server_name().to_owned());
@@ -592,6 +600,7 @@ impl ToolManagerBuilder {
             clients,
             prompts,
             loading_display_task,
+            pending_clients: pending,
             loading_status_sender,
             new_tool_specs,
             has_new_stuff,
@@ -638,8 +647,19 @@ pub struct ToolManager {
     /// These clients are used to communicate with MCP servers.
     pub clients: HashMap<String, Arc<CustomToolClient>>,
 
+    #[allow(dead_code)]
+    /// A list of client names that are still in the process of being initialized
+    pub pending_clients: Arc<RwLock<HashSet<String>>>,
+
+    /// Flag indicating whether new tool specifications have been added since the last update.
+    /// When set to true, it signals that the tool manager needs to refresh its internal state
+    /// to incorporate newly available tools from MCP servers.
     pub has_new_stuff: Arc<AtomicBool>,
 
+    /// Storage for newly discovered tool specifications from MCP servers that haven't yet been
+    /// integrated into the main tool registry. This field holds a thread-safe reference to a map
+    /// of server names to their tool specifications and name mappings, allowing concurrent updates
+    /// from server initialization processes.
     new_tool_specs: NewToolSpecs,
 
     /// Cache for prompts collected from different servers.
@@ -1059,6 +1079,10 @@ impl ToolManager {
         );
         Ok(())
     }
+
+    pub async fn _pending_clients(&self) -> Vec<String> {
+        self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>()
+    }
 }
 
 #[inline]
@@ -1150,7 +1174,7 @@ fn process_tool_specs(
             server_name, msg
         );
         if is_in_display {
-            Some(LoadingMsg::Error {
+            Some(LoadingMsg::Warn {
                 name: server_name.to_string(),
                 msg: eyre::eyre!(msg),
             })

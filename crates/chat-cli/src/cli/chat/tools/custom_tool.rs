@@ -92,6 +92,9 @@ impl CustomToolClient {
                 server_capabilities,
                 ..
             } => {
+                if let Some(messenger) = &client.messenger {
+                    let _ = messenger.send_init_msg().await;
+                }
                 // We'll need to first initialize. This is the handshake every client and server
                 // needs to do before proceeding to anything else
                 let cap = client.init().await?;

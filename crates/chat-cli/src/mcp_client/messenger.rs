@@ -33,6 +33,9 @@ pub trait Messenger: std::fmt::Debug + Send + Sync + 'static {
         result: ResourceTemplatesListResult,
     ) -> Result<(), MessengerError>;
 
+    /// Signals to the orchestrator that a server has started initializing
+    async fn send_init_msg(&self) -> Result<(), MessengerError>;
+
     /// Creates a duplicate of the messenger object
     /// This function is used to create a new instance of the messenger with the same configuration
     fn duplicate(&self) -> Box<dyn Messenger>;
@@ -65,6 +68,10 @@ impl Messenger for NullMessenger {
         &self,
         _result: ResourceTemplatesListResult,
     ) -> Result<(), MessengerError> {
+        Ok(())
+    }
+
+    async fn send_init_msg(&self) -> Result<(), MessengerError> {
         Ok(())
     }
 
