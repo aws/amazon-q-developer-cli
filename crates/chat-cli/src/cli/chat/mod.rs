@@ -210,7 +210,7 @@ const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
 <em>Welcome to <cyan!>Amazon Q</cyan!>!</em>
 "};
 
-const ROTATING_TIPS: [&str; 9] = [
+const ROTATING_TIPS: [&str; 10] = [
     color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
@@ -220,6 +220,7 @@ const ROTATING_TIPS: [&str; 9] = [
     color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
     color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
     color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with /help"},
+    color_print::cstr! {"You can specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use /tools to see pending servers."},
 ];
 
 const GREETING_BREAK_POINT: usize = 67;
