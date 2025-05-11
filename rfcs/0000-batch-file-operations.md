@@ -5,7 +5,7 @@
 
 [summary]: #summary
 
-Enhance the fs_read and fs_write tools to support batch operations on multiple files in a single call, with the ability to perform multiple edits per file and maintain line number integrity through proper edit ordering.
+Enhance the fs_read and fs_write tools to support batch operations on multiple files in a single call, with the ability to perform multiple edits per file, maintain line number integrity through proper edit ordering, and perform search/replace operations across files in a folder using wildcard patterns with sed-like syntax.
 
 # Motivation
 
@@ -24,6 +24,7 @@ Users commonly need to:
 - Perform the same text replacement across multiple files
 - Create multiple related files as part of a single logical operation
 - Make multiple edits to a single file while maintaining line number integrity
+- Search and replace text across multiple files matching a pattern (similar to `sed -i` but safer and more controlled)
 
 By enhancing these tools to support batch operations, we can significantly improve the efficiency and user experience of the Amazon Q CLI.
 
@@ -154,6 +155,23 @@ await fs_write({
 });
 ```
 
+## Pattern-Based Search and Replace
+
+The new pattern-based search and replace functionality allows you to perform sed-like operations across multiple files matching a pattern:
+
+```javascript
+await fs_write({
+  command: "pattern_replace",
+  directory: "/path/to/project",
+  file_pattern: "*.js",
+  sed_pattern: "s/const /let /g",
+  recursive: true,
+  exclude_patterns: ["node_modules/**", "dist/**"]
+});
+```
+
+This will replace all occurrences of "const " with "let " in all JavaScript files in the project directory and its subdirectories, excluding the node_modules and dist directories.
+
 ## Error Handling
 
 The batch operations provide detailed error reporting:
@@ -230,8 +248,8 @@ results.forEach(result => {
   "parameters": {
     "properties": {
       "command": {
-        "description": "The commands to run. Allowed options are: `create`, `str_replace`, `insert`, `append`, `replace_lines`.",
-        "enum": ["create", "str_replace", "insert", "append", "replace_lines"],
+        "description": "The commands to run. Allowed options are: `create`, `str_replace`, `insert`, `append`, `replace_lines`, `pattern_replace`.",
+        "enum": ["create", "str_replace", "insert", "append", "replace_lines", "pattern_replace"],
         "type": "string"
       },
       "path": {
@@ -333,12 +351,41 @@ results.forEach(result => {
           "required": ["path", "edits"]
         }
       },
+      "directory": {
+        "description": "Directory to search for files matching the pattern. Required for pattern_replace command.",
+        "type": "string"
+      },
+      "file_pattern": {
+        "description": "Glob pattern to match files for pattern_replace command (e.g., '*.js', '**/*.py').",
+        "type": "string"
+      },
+      "sed_pattern": {
+        "description": "Sed-like pattern for search and replace (e.g., 's/search/replace/g'). Required for pattern_replace command.",
+        "type": "string"
+      },
+      "recursive": {
+        "description": "Whether to search recursively in subdirectories for pattern_replace command.",
+        "type": "boolean"
+      },
+      "exclude_patterns": {
+        "description": "Array of glob patterns to exclude from pattern_replace command.",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
       // Other existing parameters remain unchanged
     },
     "required": ["command"],
     "oneOf": [
       { "required": ["path"] },
-      { "required": ["fileEdits"] }
+      { "required": ["fileEdits"] },
+      { 
+        "allOf": [
+          { "required": ["directory", "file_pattern", "sed_pattern"] },
+          { "properties": { "command": { "enum": ["pattern_replace"] } } }
+        ]
+      }
     ],
     "type": "object"
   }
@@ -406,31 +453,11 @@ For batch operations (using `fileEdits`), the response will be an array of resul
 
 ### Edit Application Order
 
-For multiple edits on a single file, edits will be applied from the end of the file to the beginning to avoid line number issues. This is implemented by:
+For multiple edits on a single file, edits will be applied from the end of the file to the beginning to avoid line number issues:
 
 1. Sorting edits by line number in descending order
 2. For commands without line numbers (like `str_replace`), they will be applied after line-based edits
 3. For `append` operations, they will always be applied last
-
-```rust
-// Pseudocode for sorting edits
-fn sort_edits(edits: &mut Vec<Edit>) {
-    edits.sort_by(|a, b| {
-        let a_line = get_effective_line_number(a);
-        let b_line = get_effective_line_number(b);
-        b_line.cmp(&a_line) // Descending order
-    });
-}
-
-fn get_effective_line_number(edit: &Edit) -> i32 {
-    match edit.command.as_str() {
-        "insert" => edit.insert_line.unwrap_or(0),
-        "replace_lines" => edit.start_line.unwrap_or(0),
-        "append" => i32::MAX, // Append always goes at the end
-        _ => 0, // Other commands don't have line numbers
-    }
-}
-```
 
 ### Error Handling
 
@@ -449,7 +476,29 @@ The new `replace_lines` command allows replacing a range of lines in a file:
 2. Replaces all lines from `start_line` to `end_line` (inclusive) with the content in `new_str`
 3. Line numbers are 0-based (first line is line 0)
 
-Implementation pseudocode:
+## New pattern_replace Command
+
+The new `pattern_replace` command allows performing search and replace operations across multiple files matching a pattern:
+
+1. Takes `directory`, `file_pattern`, and `sed_pattern` parameters
+2. Optionally takes `recursive` and `exclude_patterns` parameters
+3. Finds all files matching the pattern in the specified directory
+4. Applies the sed-like pattern to each matching file
+5. Returns results with success/failure information for each file
+
+This command provides a safer and more controlled alternative to using `execute_bash` with `sed -i`, with better error handling and reporting.
+
+## Recommended Libraries
+
+For implementing these features, we recommend leveraging the following Rust libraries:
+
+1. **glob** (or **globset**): For file pattern matching in the `pattern_replace` command
+2. **regex**: For parsing sed-like patterns and performing search/replace operations
+3. **ignore** (from ripgrep): For respecting .gitignore files and efficiently traversing directories
+4. **rayon**: For potential parallel processing of file operations
+5. **walkdir**: For efficient recursive directory traversal
+6. **similar**: For generating diffs of file changes
+7. **memmap2**: For efficient handling of large files
 
 ```rust
 fn replace_lines(path: &str, start_line: usize, end_line: usize, new_str: &str) -> Result<()> {
@@ -543,7 +592,7 @@ If we don't implement batch file operations:
 
 2. **Conditional Edits**: Allow edits to be conditional based on file content or the success of previous edits.
 
-3. **Pattern-Based Edits**: Support pattern matching (e.g., regular expressions) for more flexible file modifications.
+3. **Pattern-Based Edits**: Extend pattern matching to support more advanced regular expressions and capture groups for more flexible file modifications.
 
 4. **Diff Preview**: Add the ability to preview the changes that would be made by a batch operation before applying them.
 
@@ -554,3 +603,9 @@ If we don't implement batch file operations:
 7. **Parallel Processing**: Implement parallel processing for independent file operations to improve performance.
 
 8. **Integration with Version Control**: Add awareness of version control systems to handle file modifications more intelligently.
+
+9. **Advanced Sed Features**: Support more advanced sed features like address ranges, branching, and multi-line patterns.
+
+10. **Interactive Mode**: Add an interactive mode that allows users to review and approve each change before it's applied.
+
+11. **Streaming Processing**: For very large files, implement streaming processing to avoid loading the entire file into memory.
