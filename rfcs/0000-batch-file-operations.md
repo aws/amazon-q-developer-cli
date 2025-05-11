@@ -493,8 +493,8 @@ This command provides a safer and more controlled alternative to using `execute_
 For implementing these features, we recommend leveraging the following verified Rust libraries:
 
 1. **glob** (or **globset**): For file pattern matching in the `pattern_replace` command
-2. **regex**: The standard Rust regex library for parsing sed-like patterns and performing search/replace operations
-3. **regex-syntax**: For parsing regex syntax that could be used to implement sed-like functionality
+2. **sd**: A modern, safer alternative to sed written in Rust, ideal for implementing the `pattern_replace` command
+3. **regex**: The standard Rust regex library, used by sd under the hood
 4. **memchr**: For very simple search operations, providing highly optimized byte-level searching functions
 5. **bstr**: The "byte string" library offers efficient string manipulation functions that work directly on byte sequences
 6. **ignore**: From ripgrep, for respecting .gitignore files and efficiently traversing directories
@@ -503,11 +503,12 @@ For implementing these features, we recommend leveraging the following verified 
 9. **similar**: For generating diffs of file changes
 10. **memmap2**: For efficient handling of large files
 
-For the `pattern_replace` command, a hybrid approach might be most efficient:
+For the `pattern_replace` command, we recommend:
 - Use **glob** or **globset** for file pattern matching
-- Parse the sed pattern into components (search, replace, flags) using **regex-syntax**
-- For simple literal replacements, use **memchr** or **bstr** for better performance
-- For more complex patterns with wildcards or special characters, use **regex**
+- Use **sd** as the primary engine for pattern replacement functionality
+- Implement our batch processing layer on top of **sd**
+
+The **sd** crate provides all the functionality we need for standard search and replace operations with sed-like syntax, without requiring fallbacks to direct regex usage for complex patterns.
 
 ## Implementation Considerations
 
@@ -522,10 +523,15 @@ The batch operations feature introduces several implementation considerations:
    - Consider creating backups before modifications
    - Support clear reporting of which operations succeeded and which failed
 
-3. **Pattern Matching**: For the `pattern_replace` command, effective pattern matching is important:
-   - Use specialized algorithms for simple cases (literal string matching)
-   - Fall back to regex for complex patterns
-   - Support common sed syntax patterns
+3. **Pattern Matching**: For the `pattern_replace` command:
+   - Leverage the **sd** crate for its robust implementation of sed-like functionality
+   - Support standard sed syntax patterns that users are familiar with
+   - Integrate with file globbing for efficient file selection
+
+4. **Simplicity**: Keep the implementation straightforward by:
+   - Using the **sd** crate's existing functionality rather than reimplementing sed-like features
+   - Focusing on the most common use cases rather than supporting every possible edge case
+   - Providing clear documentation on supported patterns and syntax
 
 # Drawbacks
 
