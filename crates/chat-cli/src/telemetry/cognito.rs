@@ -10,21 +10,14 @@ use aws_sdk_cognitoidentity::primitives::{
 };
 
 use crate::aws_common::app_name;
+use crate::database::{
+    CredentialsJson,
+    Database,
+};
 use crate::telemetry::TelemetryStage;
 
-const CREDENTIALS_KEY: &str = "telemetry-cognito-credentials";
-
-const DATE_TIME_FORMAT: DateTimeFormat = DateTimeFormat::DateTime;
-
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-struct CredentialsJson {
-    pub access_key_id: Option<String>,
-    pub secret_key: Option<String>,
-    pub session_token: Option<String>,
-    pub expiration: Option<String>,
-}
-
-pub(crate) async fn get_cognito_credentials_send(
+pub async fn get_cognito_credentials_send(
+    database: &mut Database,
     telemetry_stage: &TelemetryStage,
 ) -> Result<Credentials, CredentialsError> {
     let conf = aws_sdk_cognitoidentity::Config::builder()
@@ -54,14 +47,7 @@ pub(crate) async fn get_cognito_credentials_send(
             "no credentials from get_credentials_for_identity",
         ))?;
 
-    if let Ok(json) = serde_json::to_value(CredentialsJson {
-        access_key_id: credentials.access_key_id.clone(),
-        secret_key: credentials.secret_key.clone(),
-        session_token: credentials.session_token.clone(),
-        expiration: credentials.expiration.and_then(|t| t.fmt(DATE_TIME_FORMAT).ok()),
-    }) {
-        crate::settings::state::set_value(CREDENTIALS_KEY, json).ok();
-    }
+    database.set_credentials_entry(&credentials).ok();
 
     let Some(access_key_id) = credentials.access_key_id else {
         return Err(CredentialsError::provider_error("access key id not found"));
@@ -80,22 +66,26 @@ pub(crate) async fn get_cognito_credentials_send(
     ))
 }
 
-pub(crate) async fn get_cognito_credentials(telemetry_stage: &TelemetryStage) -> Result<Credentials, CredentialsError> {
-    match crate::settings::state::get_string(CREDENTIALS_KEY).ok().flatten() {
-        Some(creds) => {
-            let CredentialsJson {
-                access_key_id,
-                secret_key,
-                session_token,
-                expiration,
-            }: CredentialsJson = serde_json::from_str(&creds).map_err(CredentialsError::provider_error)?;
-
+pub async fn get_cognito_credentials(
+    database: &mut Database,
+    telemetry_stage: &TelemetryStage,
+) -> Result<Credentials, CredentialsError> {
+    match database
+        .get_credentials_entry()
+        .map_err(CredentialsError::provider_error)?
+    {
+        Some(CredentialsJson {
+            access_key_id,
+            secret_key,
+            session_token,
+            expiration,
+        }) => {
             let Some(access_key_id) = access_key_id else {
-                return get_cognito_credentials_send(telemetry_stage).await;
+                return get_cognito_credentials_send(database, telemetry_stage).await;
             };
 
             let Some(secret_key) = secret_key else {
-                return get_cognito_credentials_send(telemetry_stage).await;
+                return get_cognito_credentials_send(database, telemetry_stage).await;
             };
 
             Ok(Credentials::new(
@@ -103,23 +93,23 @@ pub(crate) async fn get_cognito_credentials(telemetry_stage: &TelemetryStage) ->
                 secret_key,
                 session_token,
                 expiration
-                    .and_then(|s| DateTime::from_str(&s, DATE_TIME_FORMAT).ok())
+                    .and_then(|s| DateTime::from_str(&s, DateTimeFormat::DateTime).ok())
                     .and_then(|dt| dt.try_into().ok()),
                 "",
             ))
         },
-        None => get_cognito_credentials_send(telemetry_stage).await,
+        None => get_cognito_credentials_send(database, telemetry_stage).await,
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct CognitoProvider {
-    telemetry_stage: TelemetryStage,
+pub struct CognitoProvider {
+    credentials: Credentials,
 }
 
 impl CognitoProvider {
-    pub(crate) fn new(telemetry_stage: TelemetryStage) -> CognitoProvider {
-        CognitoProvider { telemetry_stage }
+    pub fn new(credentials: Credentials) -> CognitoProvider {
+        CognitoProvider { credentials }
     }
 }
 
@@ -128,7 +118,7 @@ impl provider::ProvideCredentials for CognitoProvider {
     where
         Self: 'a,
     {
-        provider::future::ProvideCredentials::new(get_cognito_credentials(&self.telemetry_stage))
+        provider::future::ProvideCredentials::new(async { Ok(self.credentials.clone()) })
     }
 }
 
@@ -139,7 +129,9 @@ mod test {
     #[tokio::test]
     async fn pools() {
         for telemetry_stage in [TelemetryStage::BETA, TelemetryStage::EXTERNAL_PROD] {
-            get_cognito_credentials_send(&telemetry_stage).await.unwrap();
+            get_cognito_credentials_send(&mut Database::new().await.unwrap(), &telemetry_stage)
+                .await
+                .unwrap();
         }
     }
 }

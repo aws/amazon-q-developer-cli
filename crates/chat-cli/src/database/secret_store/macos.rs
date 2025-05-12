@@ -1,5 +1,5 @@
 use super::Secret;
-use crate::auth::AuthError;
+use crate::database::DatabaseError;
 
 /// Path to the `security` binary
 const SECURITY_BIN: &str = "/usr/bin/security";
@@ -12,12 +12,12 @@ pub struct SecretStoreImpl {
 }
 
 impl SecretStoreImpl {
-    pub async fn new() -> Result<Self, AuthError> {
+    pub async fn new() -> Result<Self, DatabaseError> {
         Ok(Self { _private: () })
     }
 
     /// Sets the `key` to `password` on the keychain, this will override any existing value
-    pub async fn set(&self, key: &str, password: &str) -> Result<(), AuthError> {
+    pub async fn set(&self, key: &str, password: &str) -> Result<(), DatabaseError> {
         let output = tokio::process::Command::new(SECURITY_BIN)
             .args(["add-generic-password", "-U", "-s", key, "-a", ACCOUNT, "-w", password])
             .output()
@@ -25,7 +25,7 @@ impl SecretStoreImpl {
 
         if !output.status.success() {
             let stderr = std::str::from_utf8(&output.stderr)?;
-            return Err(AuthError::Security(stderr.into()));
+            return Err(DatabaseError::Security(stderr.into()));
         }
 
         Ok(())
@@ -34,7 +34,7 @@ impl SecretStoreImpl {
     /// Returns the password for the `key`
     ///
     /// If not found the result will be `Ok(None)`, other errors will be returned
-    pub async fn get(&self, key: &str) -> Result<Option<Secret>, AuthError> {
+    pub async fn get(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
         let output = tokio::process::Command::new(SECURITY_BIN)
             .args(["find-generic-password", "-s", key, "-a", ACCOUNT, "-w"])
             .output()
@@ -45,7 +45,7 @@ impl SecretStoreImpl {
             if stderr.contains("could not be found") {
                 return Ok(None);
             } else {
-                return Err(AuthError::Security(stderr.into()));
+                return Err(DatabaseError::Security(stderr.into()));
             }
         }
 
@@ -61,7 +61,7 @@ impl SecretStoreImpl {
     }
 
     /// Deletes the `key` from the keychain
-    pub async fn delete(&self, key: &str) -> Result<(), AuthError> {
+    pub async fn delete(&self, key: &str) -> Result<(), DatabaseError> {
         let output = tokio::process::Command::new(SECURITY_BIN)
             .args(["delete-generic-password", "-s", key, "-a", ACCOUNT])
             .output()
@@ -69,7 +69,7 @@ impl SecretStoreImpl {
 
         if !output.status.success() {
             let stderr = std::str::from_utf8(&output.stderr)?;
-            return Err(AuthError::Security(stderr.into()));
+            return Err(DatabaseError::Security(stderr.into()));
         }
 
         Ok(())

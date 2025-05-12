@@ -52,11 +52,11 @@ use tracing::{
 
 use crate::auth::builder_id::*;
 use crate::auth::consts::*;
-use crate::auth::secret_store::SecretStore;
 use crate::auth::{
     AuthError,
     START_URL,
 };
+use crate::database::Database;
 
 const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(60 * 3);
 
@@ -227,11 +227,11 @@ impl PkceRegistration {
         })
     }
 
-    /// Hosts a local HTTP server to listen for browser redirects. If a [`SecretStore`] is passed,
+    /// Hosts a local HTTP server to listen for browser redirects. If a [`Database`] is passed,
     /// then the access and refresh tokens will be saved.
     ///
     /// Only the first connection will be served.
-    pub async fn finish<C: PkceClient>(self, client: &C, secret_store: Option<&SecretStore>) -> Result<(), AuthError> {
+    pub async fn finish<C: PkceClient>(self, client: &C, database: Option<&Database>) -> Result<(), AuthError> {
         let code = tokio::select! {
             code = Self::recv_code(self.listener, self.state) => {
                 code?
@@ -269,17 +269,15 @@ impl PkceRegistration {
             C::scopes(),
         );
 
-        let Some(secret_store) = secret_store else {
-            return Ok(());
-        };
+        if let Some(database) = database {
+            if let Err(err) = device_registration.save(&database.secret_store).await {
+                error!(?err, "Failed to store pkce registration to secret store");
+            }
 
-        if let Err(err) = device_registration.save(secret_store).await {
-            error!(?err, "Failed to store pkce registration to secret store");
+            if let Err(err) = token.save(&database.secret_store).await {
+                error!(?err, "Failed to store builder id token");
+            };
         }
-
-        if let Err(err) = token.save(secret_store).await {
-            error!(?err, "Failed to store builder id token");
-        };
 
         Ok(())
     }
@@ -512,6 +510,7 @@ mod tests {
     #[tokio::test]
     async fn test_pkce_flow_e2e() {
         tracing_subscriber::fmt::init();
+
         let start_url = "https://amzn.awsapps.com/start".to_string();
         let region = Region::new("us-east-1");
         let client = client(region.clone());
@@ -523,8 +522,8 @@ mod tests {
             panic!("unable to open the URL");
         }
         println!("Waiting for authorization to complete...");
-        let secret_store = SecretStore::new().await.unwrap();
-        registration.finish(&client, Some(&secret_store)).await.unwrap();
+
+        registration.finish(&client, None).await.unwrap();
         println!("Authorization successful");
     }
 

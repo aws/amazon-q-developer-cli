@@ -2,17 +2,14 @@ pub mod builder_id;
 mod consts;
 pub mod pkce;
 mod scope;
-pub mod secret_store;
 
 use aws_sdk_ssooidc::error::SdkError;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
 use aws_sdk_ssooidc::operation::register_client::RegisterClientError;
 use aws_sdk_ssooidc::operation::start_device_authorization::StartDeviceAuthorizationError;
 pub use builder_id::{
-    builder_id_token,
     is_logged_in,
     logout,
-    refresh_token,
 };
 pub use consts::START_URL;
 use thiserror::Error;
@@ -20,13 +17,13 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AuthError {
     #[error(transparent)]
-    Ssooidc(#[from] Box<aws_sdk_ssooidc::Error>),
+    Ssooidc(Box<aws_sdk_ssooidc::Error>),
     #[error(transparent)]
-    SdkRegisterClient(#[from] SdkError<RegisterClientError>),
+    SdkRegisterClient(Box<SdkError<RegisterClientError>>),
     #[error(transparent)]
-    SdkCreateToken(#[from] SdkError<CreateTokenError>),
+    SdkCreateToken(Box<SdkError<CreateTokenError>>),
     #[error(transparent)]
-    SdkStartDeviceAuthorization(#[from] SdkError<StartDeviceAuthorizationError>),
+    SdkStartDeviceAuthorization(Box<SdkError<StartDeviceAuthorizationError>>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -35,17 +32,8 @@ pub enum AuthError {
     Directories(#[from] crate::util::directories::DirectoryError),
     #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
-    #[cfg(target_os = "macos")]
-    #[error("Security error: {}", .0)]
-    Security(String),
     #[error(transparent)]
-    StringFromUtf8(#[from] std::string::FromUtf8Error),
-    #[error(transparent)]
-    StrFromUtf8(#[from] std::str::Utf8Error),
-    #[error(transparent)]
-    DbOpenError(#[from] crate::settings::error::DbOpenError),
-    #[error(transparent)]
-    Setting(#[from] crate::settings::SettingsError),
+    DbOpenError(#[from] crate::database::DbOpenError),
     #[error("No token")]
     NoToken,
     #[error("OAuth state mismatch. Actual: {} | Expected: {}", .actual, .expected)]
@@ -56,4 +44,30 @@ pub enum AuthError {
     OAuthMissingCode,
     #[error("OAuth error: {0}")]
     OAuthCustomError(String),
+    #[error(transparent)]
+    DatabaseError(#[from] crate::database::DatabaseError),
+}
+
+impl From<aws_sdk_ssooidc::Error> for AuthError {
+    fn from(value: aws_sdk_ssooidc::Error) -> Self {
+        Self::Ssooidc(Box::new(value))
+    }
+}
+
+impl From<SdkError<RegisterClientError>> for AuthError {
+    fn from(value: SdkError<RegisterClientError>) -> Self {
+        Self::SdkRegisterClient(Box::new(value))
+    }
+}
+
+impl From<SdkError<CreateTokenError>> for AuthError {
+    fn from(value: SdkError<CreateTokenError>) -> Self {
+        Self::SdkCreateToken(Box::new(value))
+    }
+}
+
+impl From<SdkError<StartDeviceAuthorizationError>> for AuthError {
+    fn from(value: SdkError<StartDeviceAuthorizationError>) -> Self {
+        Self::SdkStartDeviceAuthorization(Box::new(value))
+    }
 }

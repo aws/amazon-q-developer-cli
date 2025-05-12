@@ -4,24 +4,28 @@ use aws_smithy_runtime_api::client::interceptors::context::BeforeTransmitInterce
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
 use aws_smithy_types::config_bag::ConfigBag;
 
-use crate::api_client::consts::{
-    SHARE_CODEWHISPERER_CONTENT_SETTINGS_KEY,
-    X_AMZN_CODEWHISPERER_OPT_OUT_HEADER,
-};
+use crate::api_client::consts::X_AMZN_CODEWHISPERER_OPT_OUT_HEADER;
+use crate::database::Database;
+use crate::database::settings::Setting;
 
-fn is_codewhisperer_content_optout() -> bool {
-    !crate::settings::settings::get_bool_or(SHARE_CODEWHISPERER_CONTENT_SETTINGS_KEY, true)
+fn is_codewhisperer_content_optout(database: &Database) -> bool {
+    !database
+        .settings
+        .get_bool(Setting::ShareCodeWhispererContent)
+        .unwrap_or(true)
 }
 
 #[derive(Debug, Clone)]
 pub struct OptOutInterceptor {
+    is_codewhisperer_content_optout: bool,
     override_value: Option<bool>,
     _inner: (),
 }
 
 impl OptOutInterceptor {
-    pub const fn new() -> Self {
+    pub fn new(database: &Database) -> Self {
         Self {
+            is_codewhisperer_content_optout: is_codewhisperer_content_optout(database),
             override_value: None,
             _inner: (),
         }
@@ -39,7 +43,7 @@ impl Intercept for OptOutInterceptor {
         _runtime_components: &RuntimeComponents,
         _cfg: &mut ConfigBag,
     ) -> Result<(), BoxError> {
-        let opt_out = self.override_value.unwrap_or_else(is_codewhisperer_content_optout);
+        let opt_out = self.override_value.unwrap_or(self.is_codewhisperer_content_optout);
         context
             .request_mut()
             .headers_mut()
@@ -56,8 +60,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_opt_out_interceptor() {
+    #[tokio::test]
+    async fn test_opt_out_interceptor() {
         let rc = RuntimeComponentsBuilder::for_tests().build().unwrap();
         let mut cfg = ConfigBag::base();
 
@@ -65,7 +69,8 @@ mod tests {
         context.set_request(aws_smithy_runtime_api::http::Request::empty());
         let mut context = BeforeTransmitInterceptorContextMut::from(&mut context);
 
-        let mut interceptor = OptOutInterceptor::new();
+        let database = Database::new().await.unwrap();
+        let mut interceptor = OptOutInterceptor::new(&database);
         println!("Interceptor: {}", interceptor.name());
 
         interceptor

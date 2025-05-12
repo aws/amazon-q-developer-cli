@@ -35,6 +35,9 @@ use rustyline::{
 };
 use winnow::stream::AsChar;
 
+use crate::database::Database;
+use crate::database::settings::Setting;
+
 pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
@@ -264,10 +267,11 @@ impl Highlighter for ChatHelper {
 }
 
 pub fn rl(
+    database: &Database,
     sender: std::sync::mpsc::Sender<Option<String>>,
     receiver: std::sync::mpsc::Receiver<Vec<String>>,
 ) -> Result<Editor<ChatHelper, DefaultHistory>> {
-    let edit_mode = match crate::settings::settings::get_string_opt("chat.editMode").as_deref() {
+    let edit_mode = match database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
         _ => EditMode::Vi,
     };

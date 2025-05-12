@@ -266,7 +266,7 @@ mod tests {
     fn test_handle_images_size_limit_exceeded() {
         let temp_dir = tempfile::tempdir().unwrap();
         let large_image_path = temp_dir.path().join("large_image.jpg");
-        let large_image_size = MAX_IMAGE_SIZE as usize + 1;
+        let large_image_size = MAX_IMAGE_SIZE + 1;
         std::fs::write(&large_image_path, vec![0; large_image_size]).unwrap();
         let buf = Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
         let test_writer = TestWriterWithSink { sink: buf.clone() };

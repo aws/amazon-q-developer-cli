@@ -15,7 +15,8 @@ use globset::Glob;
 use serde_json::json;
 
 use super::OutputFormat;
-use crate::settings::JsonStore;
+use crate::database::Database;
+use crate::database::settings::Setting;
 use crate::util::{
     CliContext,
     directories,
@@ -30,6 +31,9 @@ pub enum SettingsSubcommands {
         /// Format of the output
         #[arg(long, short, value_enum, default_value_t)]
         format: OutputFormat,
+        /// Whether or not we want to modify state instead
+        #[arg(long, short, hide = true)]
+        state: bool,
     },
 }
 
@@ -53,7 +57,7 @@ pub struct SettingsArgs {
 }
 
 impl SettingsArgs {
-    pub async fn execute(&self, cli_context: &CliContext) -> Result<ExitCode> {
+    pub async fn execute(&self, database: &mut Database, cli_context: &CliContext) -> Result<ExitCode> {
         match self.cmd {
             Some(SettingsSubcommands::Open) => {
                 let file = directories::settings_path().context("Could not get settings path")?;
@@ -64,8 +68,11 @@ impl SettingsArgs {
                     bail!("The EDITOR environment variable is not set")
                 }
             },
-            Some(SettingsSubcommands::All { format }) => {
-                let settings = crate::settings::OldSettings::load()?.map().clone();
+            Some(SettingsSubcommands::All { format, state }) => {
+                let settings = match state {
+                    true => database.get_all_entries()?,
+                    false => database.settings.map().clone(),
+                };
 
                 match format {
                     OutputFormat::Plain => {
@@ -86,8 +93,9 @@ impl SettingsArgs {
                     return Ok(ExitCode::SUCCESS);
                 };
 
+                let key = Setting::try_from(key.as_str())?;
                 match (&self.value, self.delete) {
-                    (None, false) => match crate::settings::settings::get_value(key)? {
+                    (None, false) => match database.settings.get(key) {
                         Some(value) => {
                             match self.format {
                                 OutputFormat::Plain => match value.as_str() {
@@ -109,14 +117,15 @@ impl SettingsArgs {
                     },
                     (Some(value_str), false) => {
                         let value = serde_json::from_str(value_str).unwrap_or_else(|_| json!(value_str));
-                        crate::settings::settings::set_value(key, value)?;
+                        database.settings.set(key, value).await?;
                         Ok(ExitCode::SUCCESS)
                     },
                     (None, true) => {
-                        let glob = Glob::new(key).context("Could not create glob")?.compile_matcher();
-                        let settings = crate::settings::OldSettings::load()?;
-                        let map = settings.map();
-                        let keys_to_remove = map.keys().filter(|key| glob.is_match(key)).collect::<Vec<_>>();
+                        let glob = Glob::new(key.as_ref())
+                            .context("Could not create glob")?
+                            .compile_matcher();
+                        let map = database.settings.map();
+                        let keys_to_remove = map.keys().filter(|key| glob.is_match(key)).cloned().collect::<Vec<_>>();
 
                         match keys_to_remove.len() {
                             0 => {
@@ -124,16 +133,17 @@ impl SettingsArgs {
                             },
                             1 => {
                                 println!("Removing {:?}", keys_to_remove[0]);
-                                crate::settings::settings::remove_value(keys_to_remove[0])?;
+                                database
+                                    .settings
+                                    .remove(Setting::try_from(keys_to_remove[0].as_str())?)
+                                    .await?;
                             },
                             _ => {
-                                println!("Removing:");
                                 for key in &keys_to_remove {
-                                    println!("  - {key}");
-                                }
-
-                                for key in &keys_to_remove {
-                                    crate::settings::settings::remove_value(key)?;
+                                    if let Ok(key) = Setting::try_from(key.as_str()) {
+                                        println!("Removing `{key}`");
+                                        database.settings.remove(key).await?;
+                                    }
                                 }
                             },
                         }

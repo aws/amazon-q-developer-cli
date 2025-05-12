@@ -12,7 +12,8 @@ use super::{
     InvokeOutput,
     OutputKind,
 };
-use crate::settings::settings;
+use crate::database::Database;
+use crate::database::settings::Setting;
 
 /// The Think tool allows the model to reason through complex problems during response generation.
 /// It provides a dedicated space for the model to process information from tool call results,
@@ -28,9 +29,8 @@ pub struct Thinking {
 
 impl Thinking {
     /// Checks if the thinking feature is enabled in settings
-    pub fn is_enabled() -> bool {
-        // Default to enabled if setting doesn't exist or can't be read
-        settings::get_bool_or("chat.enableThinking", true)
+    pub fn is_enabled(database: &Database) -> bool {
+        database.settings.get_bool(Setting::EnabledThinking).unwrap_or(true)
     }
 
     /// Queues up a description of the think tool for the user

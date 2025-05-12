@@ -5,10 +5,6 @@ use serde::{
     Serialize,
 };
 
-use crate::settings::State;
-
-const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
-
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Customization {
@@ -17,23 +13,6 @@ pub struct Customization {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-}
-
-impl Customization {
-    /// Load the currently selected customization from state
-    pub fn load_selected(state: &State) -> Result<Option<Self>, crate::settings::SettingsError> {
-        state.get(CUSTOMIZATION_STATE_KEY)
-    }
-
-    /// Save the currently selected customization to state
-    pub fn save_selected(&self, state: &State) -> Result<(), crate::settings::SettingsError> {
-        state.set_value(CUSTOMIZATION_STATE_KEY, serde_json::to_value(self)?)
-    }
-
-    /// Delete the currently selected customization from state
-    pub fn delete_selected(state: &State) -> Result<(), crate::settings::SettingsError> {
-        state.remove_value(CUSTOMIZATION_STATE_KEY)
-    }
 }
 
 impl From<Customization> for CodewhispererCustomization {
@@ -113,23 +92,6 @@ mod tests {
         assert_eq!(custom_from_consolas.arn, "arn");
         assert_eq!(custom_from_consolas.name, Some("name".into()));
         assert_eq!(custom_from_consolas.description, Some("description".into()));
-    }
-
-    #[test]
-    fn test_customization_save_load() {
-        let state = State::new();
-
-        let value = Customization {
-            arn: "arn".into(),
-            name: Some("name".into()),
-            description: Some("description".into()),
-        };
-
-        value.save_selected(&state).unwrap();
-        let loaded_value = Customization::load_selected(&state).unwrap();
-        assert_eq!(loaded_value, Some(value));
-
-        Customization::delete_selected(&state).unwrap();
     }
 
     #[test]

@@ -14,14 +14,16 @@ use crate::api_client::{
     Endpoint,
 };
 use crate::aws_common::behavior_version;
+use crate::database::Database;
+use crate::database::settings::Setting;
 
 // TODO(bskiser): confirm timeout is updated to an appropriate value?
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 
-pub(crate) fn timeout_config() -> TimeoutConfig {
-    let timeout = crate::settings::settings::get_int("api.timeout")
-        .ok()
-        .flatten()
+pub fn timeout_config(database: &Database) -> TimeoutConfig {
+    let timeout = database
+        .settings
+        .get_int(Setting::ApiTimeout)
         .and_then(|i| i.try_into().ok())
         .map_or(DEFAULT_TIMEOUT_DURATION, Duration::from_millis);
 
@@ -39,27 +41,31 @@ pub(crate) fn stalled_stream_protection_config() -> StalledStreamProtectionConfi
         .build()
 }
 
-async fn base_sdk_config(region: Region, credentials_provider: impl ProvideCredentials + 'static) -> SdkConfig {
+async fn base_sdk_config(
+    database: &Database,
+    region: Region,
+    credentials_provider: impl ProvideCredentials + 'static,
+) -> SdkConfig {
     aws_config::defaults(behavior_version())
         .region(region)
         .credentials_provider(credentials_provider)
-        .timeout_config(timeout_config())
+        .timeout_config(timeout_config(database))
         .retry_config(RetryConfig::adaptive())
         .load()
         .await
 }
 
-pub(crate) async fn bearer_sdk_config(endpoint: &Endpoint) -> SdkConfig {
+pub async fn bearer_sdk_config(database: &Database, endpoint: &Endpoint) -> SdkConfig {
     let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
-    base_sdk_config(endpoint.region().clone(), credentials).await
+    base_sdk_config(database, endpoint.region().clone(), credentials).await
 }
 
-pub(crate) async fn sigv4_sdk_config(endpoint: &Endpoint) -> Result<SdkConfig, ApiClientError> {
+pub async fn sigv4_sdk_config(database: &Database, endpoint: &Endpoint) -> Result<SdkConfig, ApiClientError> {
     let credentials_chain = CredentialsChain::new().await;
 
     if let Err(err) = credentials_chain.provide_credentials().await {
         return Err(ApiClientError::Credentials(err));
     };
 
-    Ok(base_sdk_config(endpoint.region().clone(), credentials_chain).await)
+    Ok(base_sdk_config(database, endpoint.region().clone(), credentials_chain).await)
 }

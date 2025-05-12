@@ -50,10 +50,8 @@ use consts::{
     DUMMY_TOOL_NAME,
 };
 use context::ContextManager;
-use conversation_state::{
-    ConversationState,
-    TokenWarningLevel,
-};
+pub use conversation_state::ConversationState;
+use conversation_state::TokenWarningLevel;
 use crossterm::style::{
     Attribute,
     Color,
@@ -99,13 +97,11 @@ use crate::api_client::model::{
     Tool as FigTool,
     ToolResultStatus,
 };
+use crate::database::Database;
+use crate::database::settings::Setting;
 use crate::platform::Context;
-use crate::settings::{
-    Settings,
-    State,
-};
-use crate::telemetry::core::Event;
-use crate::util::CHAT_BINARY_NAME;
+use crate::telemetry::TelemetryThread;
+use crate::telemetry::core::ToolUseEventBuilder;
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -194,21 +190,17 @@ use crate::mcp_client::{
     PromptGetResult,
 };
 
-const WELCOME_TEXT: &str = color_print::cstr! {"
-<em>Welcome to </em>
-<cyan!>
- █████╗ ███╗   ███╗ █████╗ ███████╗ ██████╗ ███╗   ██╗     ██████╗ 
-██╔══██╗████╗ ████║██╔══██╗╚══███╔╝██╔═══██╗████╗  ██║    ██╔═══██╗
-███████║██╔████╔██║███████║  ███╔╝ ██║   ██║██╔██╗ ██║    ██║   ██║
-██╔══██║██║╚██╔╝██║██╔══██║ ███╔╝  ██║   ██║██║╚██╗██║    ██║▄▄ ██║
-██║  ██║██║ ╚═╝ ██║██║  ██║███████╗╚██████╔╝██║ ╚████║    ╚██████╔╝
-╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═══╝     ╚══▀▀═╝ 
-</cyan!>                                                        
-"};
+const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
+    ⢠⣶⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣶⣦⡀⠀
+ ⠀⠀⠀⣾⡿⢻⣿⡆⠀⠀⠀⢀⣄⡄⢀⣠⣤⣤⡀⢀⣠⣤⣤⡀⠀⠀⢀⣠⣤⣤⣤⣄⠀⠀⢀⣄⣤⣤⣤⣤⣤⡀⠀⠀⣀⣤⣤⣤⣀⠀⠀⠀⢠⣠⡀⣀⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⢠⣿⣿⠋⠀⠀⠀⠙⣿⣿⡆
+ ⠀⠀⣼⣿⠇⠀⣿⣿⡄⠀⠀⢸⣿⣿⠛⠉⠻⣿⣿⠛⠉⠛⣿⣿⠀⠀⠘⠛⠉⠉⠻⣿⣧⠀⠈⠛⠛⠛⣻⣿⡿⠀⢀⣾⣿⠛⠉⠻⣿⣷⡀⠀⢸⣿⡟⠛⠉⢻⣿⣷⠀⠀⠀⠀⠀⠀⣼⣿⡏⠀⠀⠀⠀⠀⢸⣿⣿
+ ⠀⢰⣿⣿⣤⣤⣼⣿⣷⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⢀⣴⣶⣶⣶⣿⣿⠀⠀⠀⣠⣾⡿⠋⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⡇⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⢹⣿⣇⠀⠀⠀⠀⠀⢸⣿⡿
+ ⢀⣿⣿⠋⠉⠉⠉⢻⣿⣇⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⣿⣿⡀⠀⣠⣿⣿⠀⢀⣴⣿⣋⣀⣀⣀⡀⠘⣿⣿⣄⣀⣠⣿⣿⠃⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠈⢿⣿⣦⣀⣀⣀⣴⣿⡿⠃
+ ⠚⠛⠋⠀⠀⠀⠀⠘⠛⠛⠀⠘⠛⠛⠀⠀⠀⠛⠛⠀⠀⠀⠛⠛⠀⠀⠙⠻⠿⠟⠋⠛⠛⠀⠘⠛⠛⠛⠛⠛⠛⠃⠀⠈⠛⠿⠿⠿⠛⠁⠀⠀⠘⠛⠃⠀⠀⠘⠛⠛⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⠿⢿⣿⣿⣋⠀⠀
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⢿⡧</cyan!>"};
 
-const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
-<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>
-"};
+const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
+const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
 const ROTATING_TIPS: [&str; 11] = [
     color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
@@ -224,20 +216,14 @@ const ROTATING_TIPS: [&str; 11] = [
     color_print::cstr! {"You can specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use /tools to see pending servers."},
 ];
 
-const GREETING_BREAK_POINT: usize = 67;
+const GREETING_BREAK_POINT: usize = 80;
 
-const POPULAR_SHORTCUTS: &str = color_print::cstr! {"
-<black!>
-<green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search
-</black!>"};
-
-const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"
-<black!>
-<green!>/help</green!> all commands
+const POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search</black!>"};
+const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands
 <green!>ctrl + j</green!> new lines
 <green!>ctrl + s</green!> fuzzy search
-</black!>
-"};
+</black!>"};
+
 const HELP_TEXT: &str = color_print::cstr! {"
 
 <magenta,em>q</magenta,em> (Amazon Q Chat)
@@ -298,14 +284,17 @@ const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trus
 const TOOL_BULLET: &str = " ● ";
 const CONTINUATION_LINE: &str = " ⋮ ";
 
-pub async fn launch_chat(args: cli::Chat) -> Result<ExitCode> {
+pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, args: cli::Chat) -> Result<ExitCode> {
     let trust_tools = args.trust_tools.map(|mut tools| {
         if tools.len() == 1 && tools[0].is_empty() {
             tools.pop();
         }
         tools
     });
+
     chat(
+        database,
+        telemetry,
         args.input,
         args.no_interactive,
         args.accept_all,
@@ -316,7 +305,10 @@ pub async fn launch_chat(args: cli::Chat) -> Result<ExitCode> {
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn chat(
+    database: &mut Database,
+    telemetry: &TelemetryThread,
     input: Option<String>,
     no_interactive: bool,
     accept_all: bool,
@@ -324,11 +316,8 @@ pub async fn chat(
     trust_all_tools: bool,
     trust_tools: Option<Vec<String>>,
 ) -> Result<ExitCode> {
-    if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in().await {
-        bail!(
-            "You are not logged in, please log in with {}",
-            format!("{CHAT_BINARY_NAME} login",).bold()
-        );
+    if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in(database).await {
+        bail!("You are not logged in, please log in with {}", "q login".bold());
     }
 
     region_check("chat")?;
@@ -354,7 +343,7 @@ pub async fn chat(
 
     let client = match ctx.env().get("Q_MOCK_CHAT_RESPONSE") {
         Ok(json) => create_stream(serde_json::from_str(std::fs::read_to_string(json)?.as_str())?),
-        _ => StreamingClient::new().await?,
+        _ => StreamingClient::new(database).await?,
     };
 
     let mcp_server_configs = match McpServerConfig::load_config(&mut output).await {
@@ -362,7 +351,7 @@ pub async fn chat(
             execute!(
                 output,
                 style::Print(
-                    "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n"
+                    "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
                 )
             )?;
             config
@@ -398,20 +387,20 @@ pub async fn chat(
     info!(?conversation_id, "Generated new conversation id");
     let (prompt_request_sender, prompt_request_receiver) = std::sync::mpsc::channel::<Option<String>>();
     let (prompt_response_sender, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+    let tool_manager_output: Box<dyn Write + Send + Sync + 'static> = if interactive {
+        Box::new(output.clone())
+    } else {
+        Box::new(NullWriter {})
+    };
     let mut tool_manager = ToolManagerBuilder::default()
         .mcp_server_config(mcp_server_configs)
         .prompt_list_sender(prompt_response_sender)
         .prompt_list_receiver(prompt_request_receiver)
         .conversation_id(&conversation_id)
         .interactive(interactive)
-        .build(if interactive {
-            Box::new(output.clone())
-        } else {
-            Box::new(NullWriter {})
-        })
+        .build(telemetry, tool_manager_output)
         .await?;
-    let tool_config = tool_manager.load_tools().await?;
-    error!("## tool config: {:#?}", tool_config);
+    let tool_config = tool_manager.load_tools(database).await?;
     let mut tool_permissions = ToolPermissions::new(tool_config.len());
     if accept_all || trust_all_tools {
         tool_permissions.trust_all = true;
@@ -441,12 +430,11 @@ pub async fn chat(
 
     let mut chat = ChatContext::new(
         ctx,
+        database,
         &conversation_id,
-        Settings::new(),
-        State::new(),
         output,
         input,
-        InputSource::new(prompt_request_sender, prompt_response_receiver)?,
+        InputSource::new(database, prompt_request_sender, prompt_response_receiver)?,
         interactive,
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
@@ -457,7 +445,7 @@ pub async fn chat(
     )
     .await?;
 
-    let result = chat.try_chat().await.map(|_| ExitCode::SUCCESS);
+    let result = chat.try_chat(database, telemetry).await.map(|_| ExitCode::SUCCESS);
     drop(chat); // Explicit drop for clarity
 
     result
@@ -498,12 +486,11 @@ pub enum ChatError {
 
 pub struct ChatContext {
     ctx: Arc<Context>,
-    settings: Settings,
-    /// The [State] to use for the chat context.
-    state: State,
     /// The [Write] destination for printing conversation text.
     output: SharedWriter,
     initial_input: Option<String>,
+    /// Whether we're starting a new conversation or continuing an old one.
+    existing_conversation: bool,
     input_source: InputSource,
     interactive: bool,
     /// The client to use to interact with the model.
@@ -529,11 +516,10 @@ impl ChatContext {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         ctx: Arc<Context>,
+        database: &mut Database,
         conversation_id: &str,
-        settings: Settings,
-        state: State,
         output: SharedWriter,
-        input: Option<String>,
+        mut input: Option<String>,
         input_source: InputSource,
         interactive: bool,
         client: StreamingClient,
@@ -545,21 +531,37 @@ impl ChatContext {
     ) -> Result<Self> {
         let ctx_clone = Arc::clone(&ctx);
         let output_clone = output.clone();
-        let conversation_state = ConversationState::new(
-            ctx_clone,
-            conversation_id,
-            tool_config,
-            profile,
-            Some(output_clone),
-            tool_manager,
-        )
-        .await;
+
+        let mut existing_conversation = false;
+        let conversation_state = match std::env::current_dir()
+            .ok()
+            .and_then(|cwd| database.get_conversation_by_path(cwd).ok())
+            .flatten()
+        {
+            Some(mut prior) => {
+                existing_conversation = true;
+                input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
+                prior.tool_manager = tool_manager;
+                prior
+            },
+            None => {
+                ConversationState::new(
+                    ctx_clone,
+                    conversation_id,
+                    tool_config,
+                    profile,
+                    Some(output_clone),
+                    tool_manager,
+                )
+                .await
+            },
+        };
+
         Ok(Self {
             ctx,
-            settings,
-            state,
             output,
             initial_input: input,
+            existing_conversation,
             input_source,
             interactive,
             client,
@@ -701,21 +703,20 @@ impl ChatContext {
         Ok(content.trim().to_string())
     }
 
-    async fn try_chat(&mut self) -> Result<()> {
+    async fn try_chat(&mut self, database: &mut Database, telemetry: &TelemetryThread) -> Result<()> {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
-        if self.interactive && self.settings.get_bool_or("chat.greeting.enabled", true) {
-            execute!(
-                self.output,
-                style::Print(if is_small_screen {
-                    SMALL_SCREEN_WECLOME_TEXT
-                } else {
-                    WELCOME_TEXT
-                }),
-                style::Print("\n\n"),
-            )?;
+        if self.interactive && database.settings.get_bool(Setting::ChatGreetingEnabled).unwrap_or(true) {
+            let welcome_text = match self.existing_conversation {
+                true => RESUME_TEXT,
+                false => match is_small_screen {
+                    true => SMALL_SCREEN_WELCOME_TEXT,
+                    false => WELCOME_TEXT,
+                },
+            };
 
-            let current_tip_index =
-                (self.state.get_int_or("chat.greeting.rotating_tips_current_index", 0) as usize) % ROTATING_TIPS.len();
+            execute!(self.output, style::Print(welcome_text), style::Print("\n\n"),)?;
+
+            let current_tip_index = database.get_increment_rotating_tip().unwrap_or(0) % ROTATING_TIPS.len();
 
             let tip = ROTATING_TIPS[current_tip_index];
             if is_small_screen {
@@ -738,11 +739,12 @@ impl ChatContext {
 
             execute!(
                 self.output,
-                style::Print(if is_small_screen {
-                    SMALL_SCREEN_POPULAR_SHORTCUTS
-                } else {
-                    POPULAR_SHORTCUTS
+                style::Print("\n"),
+                style::Print(match is_small_screen {
+                    true => SMALL_SCREEN_POPULAR_SHORTCUTS,
+                    false => POPULAR_SHORTCUTS,
                 }),
+                style::Print("\n"),
                 style::Print(
                     "━"
                         .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
@@ -750,11 +752,6 @@ impl ChatContext {
                 )
             )?;
             execute!(self.output, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
-
-            // update the current tip index
-            let next_tip_index = (current_tip_index + 1) % ROTATING_TIPS.len();
-            self.state
-                .set_value("chat.greeting.rotating_tips_current_index", next_tip_index)?;
         }
 
         if self.interactive && self.all_tools_trusted() {
@@ -775,17 +772,6 @@ impl ChatContext {
         });
 
         if let Some(user_input) = self.initial_input.take() {
-            if self.interactive {
-                execute!(
-                    self.output,
-                    style::SetAttribute(Attribute::Reset),
-                    style::SetForegroundColor(Color::Magenta),
-                    style::Print("> "),
-                    style::SetAttribute(Attribute::Reset),
-                    style::Print(&user_input),
-                    style::Print("\n")
-                )?;
-            }
             next_state = Some(ChatState::HandleInput {
                 input: user_input,
                 tool_uses: None,
@@ -812,7 +798,7 @@ impl ChatContext {
                     if !self.interactive {
                         return Ok(());
                     }
-                    self.prompt_user(tool_uses, pending_tool_index, skip_printing_tools)
+                    self.prompt_user(database, tool_uses, pending_tool_index, skip_printing_tools)
                         .await
                 },
                 ChatState::HandleInput {
@@ -822,7 +808,7 @@ impl ChatContext {
                 } => {
                     let tool_uses_clone = tool_uses.clone();
                     tokio::select! {
-                        res = self.handle_input(input, tool_uses, pending_tool_index) => res,
+                        res = self.handle_input(telemetry, input, tool_uses, pending_tool_index) => res,
                         Ok(_) = ctrl_c_stream => Err(ChatError::Interrupted { tool_uses: tool_uses_clone })
                     }
                 },
@@ -835,31 +821,31 @@ impl ChatContext {
                 } => {
                     let tool_uses_clone = tool_uses.clone();
                     tokio::select! {
-                        res = self.compact_history(tool_uses, pending_tool_index, prompt, show_summary, help) => res,
+                        res = self.compact_history(telemetry, tool_uses, pending_tool_index, prompt, show_summary, help) => res,
                         Ok(_) = ctrl_c_stream => Err(ChatError::Interrupted { tool_uses: tool_uses_clone })
                     }
                 },
                 ChatState::ExecuteTools(tool_uses) => {
                     let tool_uses_clone = tool_uses.clone();
                     tokio::select! {
-                        res = self.tool_use_execute(tool_uses) => res,
+                        res = self.tool_use_execute(database, telemetry, tool_uses) => res,
                         Ok(_) = ctrl_c_stream => Err(ChatError::Interrupted { tool_uses: Some(tool_uses_clone) })
                     }
                 },
                 ChatState::ValidateTools(tool_uses) => {
                     tokio::select! {
-                        res = self.validate_tools(tool_uses) => res,
+                        res = self.validate_tools(telemetry, tool_uses) => res,
                         Ok(_) = ctrl_c_stream => Err(ChatError::Interrupted { tool_uses: None })
                     }
                 },
                 ChatState::HandleResponseStream(response) => tokio::select! {
-                    res = self.handle_response(response) => res,
+                    res = self.handle_response(database, telemetry, response) => res,
                     Ok(_) = ctrl_c_stream => Err(ChatError::Interrupted { tool_uses: None })
                 },
                 ChatState::Exit => return Ok(()),
             };
 
-            next_state = Some(self.handle_state_execution_result(result).await?);
+            next_state = Some(self.handle_state_execution_result(database, result).await?);
         }
     }
 
@@ -867,6 +853,7 @@ impl ChatContext {
     /// to.
     async fn handle_state_execution_result(
         &mut self,
+        database: &mut Database,
         result: Result<ChatState, ChatError>,
     ) -> Result<ChatState, ChatError> {
         // Remove non-ASCII and ANSI characters.
@@ -926,11 +913,13 @@ impl ChatContext {
                                     "The user interrupted the tool execution.".to_string(),
                                 );
                                 let _ = self.conversation_state.as_sendable_conversation_state(false).await;
-                                self.conversation_state
-                                    .push_assistant_message(AssistantMessage::new_response(
+                                self.conversation_state.push_assistant_message(
+                                    AssistantMessage::new_response(
                                         None,
                                         "Tool uses were interrupted, waiting for the next user prompt".to_string(),
-                                    ));
+                                    ),
+                                    database,
+                                );
                             },
                             _ => (),
                         }
@@ -995,6 +984,7 @@ impl ChatContext {
     /// The last two user messages in the history are not included in the compaction process.
     async fn compact_history(
         &mut self,
+        telemetry: &TelemetryThread,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
         custom_prompt: Option<String>,
@@ -1105,12 +1095,13 @@ impl ChatContext {
         }
 
         if let Some(message_id) = self.conversation_state.message_id() {
-            crate::telemetry::send_chat_added_message(
-                self.conversation_state.conversation_id().to_owned(),
-                message_id.to_owned(),
-                self.conversation_state.context_message_length(),
-            )
-            .await;
+            telemetry
+                .send_chat_added_message(
+                    self.conversation_state.conversation_id().to_owned(),
+                    message_id.to_owned(),
+                    self.conversation_state.context_message_length(),
+                )
+                .ok();
         }
 
         self.conversation_state.replace_history_with_summary(summary.clone());
@@ -1191,6 +1182,7 @@ impl ChatContext {
     /// Read input from the user.
     async fn prompt_user(
         &mut self,
+        database: &Database,
         mut tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
         skip_printing_tools: bool,
@@ -1246,7 +1238,7 @@ impl ChatContext {
                 .cloned()
                 .collect::<Vec<_>>();
             self.input_source
-                .put_skim_command_selector(Arc::new(context_manager.clone()), tool_names);
+                .put_skim_command_selector(database, Arc::new(context_manager.clone()), tool_names);
         }
         execute!(
             self.output,
@@ -1268,6 +1260,7 @@ impl ChatContext {
 
     async fn handle_input(
         &mut self,
+        telemetry: &TelemetryThread,
         mut user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
@@ -1334,7 +1327,7 @@ impl ChatContext {
                 }
 
                 let conv_state = self.conversation_state.as_sendable_conversation_state(true).await;
-                self.send_tool_use_telemetry().await;
+                self.send_tool_use_telemetry(telemetry).await;
 
                 ChatState::HandleResponseStream(self.client.send_message(conv_state).await?)
             },
@@ -1399,8 +1392,15 @@ impl ChatContext {
                 show_summary,
                 help,
             } => {
-                self.compact_history(Some(tool_uses), pending_tool_index, prompt, show_summary, help)
-                    .await?
+                self.compact_history(
+                    telemetry,
+                    Some(tool_uses),
+                    pending_tool_index,
+                    prompt,
+                    show_summary,
+                    help,
+                )
+                .await?
             },
             Command::Help => {
                 execute!(self.output, style::Print(HELP_TEXT))?;
@@ -2879,7 +2879,12 @@ impl ChatContext {
         })
     }
 
-    async fn tool_use_execute(&mut self, mut tool_uses: Vec<QueuedTool>) -> Result<ChatState, ChatError> {
+    async fn tool_use_execute(
+        &mut self,
+        database: &Database,
+        telemetry: &TelemetryThread,
+        mut tool_uses: Vec<QueuedTool>,
+    ) -> Result<ChatState, ChatError> {
         // Verify tools have permissions.
         for (index, tool) in tool_uses.iter_mut().enumerate() {
             // Manually accepted by the user or otherwise verified already.
@@ -2892,7 +2897,11 @@ impl ChatContext {
                 || (self.tool_permissions.has(&tool.name) && self.tool_permissions.is_trusted(&tool.name))
                 || !tool.tool.requires_acceptance(&self.ctx);
 
-            if self.settings.get_bool_or("chat.enableNotifications", false) {
+            if database
+                .settings
+                .get_bool(Setting::ChatEnableNotifications)
+                .unwrap_or(false)
+            {
                 play_notification_bell(!allowed);
             }
 
@@ -3033,7 +3042,7 @@ impl ChatContext {
             self.conversation_state.add_tool_results(tool_results);
         }
 
-        self.send_tool_use_telemetry().await;
+        self.send_tool_use_telemetry(telemetry).await;
         return Ok(ChatState::HandleResponseStream(
             self.client
                 .send_message(self.conversation_state.as_sendable_conversation_state(false).await)
@@ -3041,7 +3050,12 @@ impl ChatContext {
         ));
     }
 
-    async fn handle_response(&mut self, response: SendMessageOutput) -> Result<ChatState, ChatError> {
+    async fn handle_response(
+        &mut self,
+        database: &mut Database,
+        telemetry: &TelemetryThread,
+        response: SendMessageOutput,
+    ) -> Result<ChatState, ChatError> {
         let request_id = response.request_id().map(|s| s.to_string());
         let mut buf = String::new();
         let mut offset = 0;
@@ -3085,7 +3099,7 @@ impl ChatContext {
                             if message.content() == RESPONSE_TIMEOUT_CONTENT {
                                 error!(?request_id, ?message, "Encountered an unexpected model response");
                             }
-                            self.conversation_state.push_assistant_message(message);
+                            self.conversation_state.push_assistant_message(message, database);
                             ended = true;
                         },
                     }
@@ -3110,18 +3124,17 @@ impl ChatContext {
                             }
                             // For stream timeouts, we'll tell the model to try and split its response into
                             // smaller chunks.
-                            self.conversation_state
-                                .push_assistant_message(AssistantMessage::new_response(
-                                    None,
-                                    RESPONSE_TIMEOUT_CONTENT.to_string(),
-                                ));
+                            self.conversation_state.push_assistant_message(
+                                AssistantMessage::new_response(None, RESPONSE_TIMEOUT_CONTENT.to_string()),
+                                database,
+                            );
                             self.conversation_state
                                 .set_next_user_message(
                                     "You took too long to respond - try to split up the work into smaller steps."
                                         .to_string(),
                                 )
                                 .await;
-                            self.send_tool_use_telemetry().await;
+                            self.send_tool_use_telemetry(telemetry).await;
                             return Ok(ChatState::HandleResponseStream(
                                 self.client
                                     .send_message(self.conversation_state.as_sendable_conversation_state(false).await)
@@ -3164,7 +3177,7 @@ impl ChatContext {
                                 ));
                             }
 
-                            self.conversation_state.push_assistant_message(*message);
+                            self.conversation_state.push_assistant_message(*message, database);
                             let tool_results = vec![ToolUseResult {
                                     tool_use_id,
                                     content: vec![ToolUseResultBlock::Text(
@@ -3173,7 +3186,7 @@ impl ChatContext {
                                     status: ToolResultStatus::Error,
                                 }];
                             self.conversation_state.add_tool_results(tool_results);
-                            self.send_tool_use_telemetry().await;
+                            self.send_tool_use_telemetry(telemetry).await;
                             return Ok(ChatState::HandleResponseStream(
                                 self.client
                                     .send_message(self.conversation_state.as_sendable_conversation_state(false).await)
@@ -3231,15 +3244,21 @@ impl ChatContext {
 
             if ended {
                 if let Some(message_id) = self.conversation_state.message_id() {
-                    crate::telemetry::send_chat_added_message(
-                        self.conversation_state.conversation_id().to_owned(),
-                        message_id.to_owned(),
-                        self.conversation_state.context_message_length(),
-                    )
-                    .await;
+                    telemetry
+                        .send_chat_added_message(
+                            self.conversation_state.conversation_id().to_owned(),
+                            message_id.to_owned(),
+                            self.conversation_state.context_message_length(),
+                        )
+                        .ok();
                 }
 
-                if self.interactive && self.settings.get_bool_or("chat.enableNotifications", false) {
+                if self.interactive
+                    && database
+                        .settings
+                        .get_bool(Setting::ChatEnableNotifications)
+                        .unwrap_or(false)
+                {
                     // For final responses (no tools suggested), always play the bell
                     play_notification_bell(tool_uses.is_empty());
                 }
@@ -3276,7 +3295,11 @@ impl ChatContext {
         }
     }
 
-    async fn validate_tools(&mut self, tool_uses: Vec<AssistantToolUse>) -> Result<ChatState, ChatError> {
+    async fn validate_tools(
+        &mut self,
+        telemetry: &TelemetryThread,
+        tool_uses: Vec<AssistantToolUse>,
+    ) -> Result<ChatState, ChatError> {
         let conv_id = self.conversation_state.conversation_id().to_owned();
         debug!(?tool_uses, "Validating tool uses");
         let mut queued_tools: Vec<QueuedTool> = Vec::new();
@@ -3354,7 +3377,7 @@ impl ChatContext {
                 }
             }
             self.conversation_state.add_tool_results(tool_results);
-            self.send_tool_use_telemetry().await;
+            self.send_tool_use_telemetry(telemetry).await;
             if let ToolUseStatus::Idle = self.tool_use_status {
                 self.tool_use_status = ToolUseStatus::RetryInProgress(
                     self.conversation_state
@@ -3468,7 +3491,7 @@ impl ChatContext {
         prompt::generate_prompt(self.conversation_state.current_profile(), self.all_tools_trusted())
     }
 
-    async fn send_tool_use_telemetry(&mut self) {
+    async fn send_tool_use_telemetry(&mut self, telemetry: &TelemetryThread) {
         for (_, mut event) in self.tool_use_telemetry_events.drain() {
             event.user_input_id = match self.tool_use_status {
                 ToolUseStatus::Idle => self.conversation_state.message_id(),
@@ -3476,10 +3499,7 @@ impl ChatContext {
             }
             .map(|v| v.to_string());
 
-            crate::telemetry::client()
-                .await
-                .send_event(Event::new(event.into()))
-                .await;
+            telemetry.send_tool_use_suggested(event).ok();
         }
     }
 
@@ -3560,75 +3580,6 @@ fn print_hook_section(output: &mut impl Write, hooks: &HashMap<String, Hook>, tr
     Ok(())
 }
 
-#[derive(Debug)]
-struct ToolUseEventBuilder {
-    pub conversation_id: String,
-    pub utterance_id: Option<String>,
-    pub user_input_id: Option<String>,
-    pub tool_use_id: Option<String>,
-    pub tool_name: Option<String>,
-    pub is_accepted: bool,
-    pub is_success: Option<bool>,
-    pub is_valid: Option<bool>,
-    pub is_custom_tool: bool,
-    pub input_token_size: Option<usize>,
-    pub output_token_size: Option<usize>,
-    pub custom_tool_call_latency: Option<usize>,
-}
-
-impl ToolUseEventBuilder {
-    pub fn new(conv_id: String, tool_use_id: String) -> Self {
-        Self {
-            conversation_id: conv_id,
-            utterance_id: None,
-            user_input_id: None,
-            tool_use_id: Some(tool_use_id),
-            tool_name: None,
-            is_accepted: false,
-            is_success: None,
-            is_valid: None,
-            is_custom_tool: false,
-            input_token_size: None,
-            output_token_size: None,
-            custom_tool_call_latency: None,
-        }
-    }
-
-    pub fn utterance_id(mut self, id: Option<String>) -> Self {
-        self.utterance_id = id;
-        self
-    }
-
-    pub fn set_tool_use_id(mut self, id: String) -> Self {
-        self.tool_use_id.replace(id);
-        self
-    }
-
-    pub fn set_tool_name(mut self, name: String) -> Self {
-        self.tool_name.replace(name);
-        self
-    }
-}
-
-impl From<ToolUseEventBuilder> for crate::telemetry::EventType {
-    fn from(val: ToolUseEventBuilder) -> Self {
-        crate::telemetry::EventType::ToolUseSuggested {
-            conversation_id: val.conversation_id,
-            utterance_id: val.utterance_id,
-            user_input_id: val.user_input_id,
-            tool_use_id: val.tool_use_id,
-            tool_name: val.tool_name,
-            is_accepted: val.is_accepted,
-            is_success: val.is_success,
-            is_valid: val.is_valid,
-            is_custom_tool: val.is_custom_tool,
-            input_token_size: val.input_token_size,
-            output_token_size: val.output_token_size,
-            custom_tool_call_latency: val.custom_tool_call_latency,
-        }
-    }
-}
-
 /// Testing helper
 fn split_tool_use_event(value: &Map<String, serde_json::Value>) -> Vec<ChatResponseStream> {
     let tool_use_id = value.get("tool_use_id").unwrap().as_str().unwrap().to_string();
@@ -3689,6 +3640,7 @@ fn create_stream(model_responses: serde_json::Value) -> StreamingClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::Env;
 
     #[tokio::test]
     async fn test_flow() {
@@ -3712,14 +3664,17 @@ mod tests {
             ],
         ]));
 
+        let env = Env::new();
+        let mut database = Database::new().await.unwrap();
+        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
+
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
             .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            &mut database,
             "fake_conv_id",
-            Settings::new(),
-            State::new(),
             SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -3737,7 +3692,7 @@ mod tests {
         )
         .await
         .unwrap()
-        .try_chat()
+        .try_chat(&mut database, &telemetry)
         .await
         .unwrap();
 
@@ -3841,14 +3796,17 @@ mod tests {
             ],
         ]));
 
+        let env = Env::new();
+        let mut database = Database::new().await.unwrap();
+        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
+
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
             .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            &mut database,
             "fake_conv_id",
-            Settings::new(),
-            State::new(),
             SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -3879,7 +3837,7 @@ mod tests {
         )
         .await
         .unwrap()
-        .try_chat()
+        .try_chat(&mut database, &telemetry)
         .await
         .unwrap();
 
@@ -3945,14 +3903,17 @@ mod tests {
             ],
         ]));
 
+        let env = Env::new();
+        let mut database = Database::new().await.unwrap();
+        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
+
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
             .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            &mut database,
             "fake_conv_id",
-            Settings::new(),
-            State::new(),
             SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -3974,7 +3935,7 @@ mod tests {
         )
         .await
         .unwrap()
-        .try_chat()
+        .try_chat(&mut database, &telemetry)
         .await
         .unwrap();
 
@@ -4021,14 +3982,17 @@ mod tests {
             ],
         ]));
 
+        let env = Env::new();
+        let mut database = Database::new().await.unwrap();
+        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
+
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
             .expect("Tools failed to load");
         ChatContext::new(
             Arc::clone(&ctx),
+            &mut database,
             "fake_conv_id",
-            Settings::new(),
-            State::new(),
             SharedWriter::stdout(),
             None,
             InputSource::new_mock(vec![
@@ -4048,7 +4012,7 @@ mod tests {
         )
         .await
         .unwrap()
-        .try_chat()
+        .try_chat(&mut database, &telemetry)
         .await
         .unwrap();
 

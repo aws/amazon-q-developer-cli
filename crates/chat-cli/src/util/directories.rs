@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::platform::Context;
-use crate::util::env_var::Q_PARENT;
 
 #[derive(Debug, Error)]
 pub enum DirectoryError {
@@ -11,8 +10,6 @@ pub enum DirectoryError {
     NoHomeDirectory,
     #[error("runtime directory not found: neither XDG_RUNTIME_DIR nor TMPDIR were found")]
     NoRuntimeDirectory,
-    #[error("non absolute path: {0:?}")]
-    NonAbsolutePath(PathBuf),
     #[error("IO Error: {0}")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -25,10 +22,6 @@ pub enum DirectoryError {
     FromVecWithNul(#[from] std::ffi::FromVecWithNulError),
     #[error(transparent)]
     IntoString(#[from] std::ffi::IntoStringError),
-    #[error("{Q_PARENT} env variable not set")]
-    QParentNotSet,
-    #[error("must be ran from an appimage executable")]
-    NotAppImage,
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
@@ -113,8 +106,7 @@ pub fn runtime_dir() -> Result<PathBuf> {
 pub fn logs_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
-            use crate::util::CHAT_BINARY_NAME;
-            Ok(runtime_dir()?.join(format!("{CHAT_BINARY_NAME}log")))
+            Ok(runtime_dir()?.join("qlog"))
         } else if #[cfg(windows)] {
             Ok(std::env::temp_dir().join("amazon-q").join("logs"))
         }
@@ -134,6 +126,11 @@ pub fn chat_profiles_dir(ctx: &Context) -> Result<PathBuf> {
 /// The path to the fig settings file
 pub fn settings_path() -> Result<PathBuf> {
     Ok(fig_data_dir()?.join("settings.json"))
+}
+
+/// The path to the local sqlite database
+pub fn database_path() -> Result<PathBuf> {
+    Ok(fig_data_dir()?.join("data.sqlite3"))
 }
 
 #[cfg(test)]

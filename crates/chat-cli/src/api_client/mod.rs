@@ -1,7 +1,7 @@
 pub mod clients;
 pub(crate) mod consts;
 pub(crate) mod credentials;
-mod customization;
+pub mod customization;
 mod endpoints;
 mod error;
 pub(crate) mod interceptor;

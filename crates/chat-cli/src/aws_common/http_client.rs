@@ -16,7 +16,7 @@ use reqwest::Client as ReqwestClient;
 /// Returns a wrapper around the global [fig_request::client] that implements
 /// [HttpClient].
 pub fn client() -> Client {
-    let client = crate::request::client().expect("failed to create http client");
+    let client = crate::request::new_client().expect("failed to create http client");
     Client::new(client.clone())
 }
 

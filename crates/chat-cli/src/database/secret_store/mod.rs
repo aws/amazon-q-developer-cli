@@ -1,14 +1,10 @@
-#[cfg(any(target_os = "linux", windows))]
-mod linux;
-#[cfg(target_os = "macos")]
-mod macos;
-mod sqlite;
-#[cfg(any(target_os = "linux", windows))]
-use linux::SecretStoreImpl;
-#[cfg(target_os = "macos")]
-use macos::SecretStoreImpl;
+#[cfg_attr(target_os = "macos", path = "macos.rs")]
+#[cfg_attr(any(target_os = "linux", windows), path = "linux.rs")]
+mod os;
 
-use super::AuthError;
+use os::SecretStoreImpl;
+
+use super::DatabaseError;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
@@ -34,19 +30,19 @@ pub struct SecretStore {
 }
 
 impl SecretStore {
-    pub async fn new() -> Result<Self, AuthError> {
+    pub async fn new() -> Result<Self, DatabaseError> {
         SecretStoreImpl::new().await.map(|inner| Self { inner })
     }
 
-    pub async fn set(&self, key: &str, password: &str) -> Result<(), AuthError> {
+    pub async fn set(&self, key: &str, password: &str) -> Result<(), DatabaseError> {
         self.inner.set(key, password).await
     }
 
-    pub async fn get(&self, key: &str) -> Result<Option<Secret>, AuthError> {
+    pub async fn get(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
         self.inner.get(key).await
     }
 
-    pub async fn delete(&self, key: &str) -> Result<(), AuthError> {
+    pub async fn delete(&self, key: &str) -> Result<(), DatabaseError> {
         self.inner.delete(key).await
     }
 }

@@ -76,11 +76,13 @@ use crate::cli::chat::tools::{
     ToolOrigin,
     ToolSpec,
 };
+use crate::database::Database;
+use crate::database::settings::Setting;
 use crate::mcp_client::{
     JsonRpcResponse,
     PromptGet,
 };
-use crate::telemetry::send_mcp_server_init;
+use crate::telemetry::TelemetryThread;
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name since in the end the tool name as seen by the
@@ -237,7 +239,11 @@ impl ToolManagerBuilder {
         self
     }
 
-    pub async fn build(mut self, mut output: Box<dyn Write + Send + Sync + 'static>) -> eyre::Result<ToolManager> {
+    pub async fn build(
+        mut self,
+        telemetry: &TelemetryThread,
+        mut output: Box<dyn Write + Send + Sync + 'static>,
+    ) -> eyre::Result<ToolManager> {
         let McpServerConfig { mcp_servers } = self.mcp_server_config.ok_or(eyre::eyre!("Missing mcp server config"))?;
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
@@ -395,6 +401,7 @@ impl ToolManagerBuilder {
         let pending = Arc::new(RwLock::new(HashSet::<String>::new()));
         let pending_clone = pending.clone();
         let (mut msg_rx, messenger_builder) = ServerMessengerBuilder::new(20);
+        let telemetry_clone = telemetry.clone();
         tokio::spawn(async move {
             while let Some(msg) = msg_rx.recv().await {
                 // For now we will treat every list result as if they contain the
@@ -417,6 +424,7 @@ impl ToolManagerBuilder {
                             &mut specs,
                             &mut sanitized_mapping,
                             &regex,
+                            &telemetry_clone,
                         ) {
                             let mut has_errored = false;
                             if let Some(sender) = &load_msg_sender {
@@ -477,7 +485,9 @@ impl ToolManagerBuilder {
                 },
                 Err(e) => {
                     error!("Error initializing mcp client for server {}: {:?}", name, &e);
-                    send_mcp_server_init(conversation_id.clone(), Some(e.to_string()), 0).await;
+                    telemetry
+                        .send_mcp_server_init(conversation_id.clone(), Some(e.to_string()), 0)
+                        .ok();
 
                     let _ = tx.send(LoadingMsg::Error {
                         name: name.clone(),
@@ -689,14 +699,14 @@ impl Clone for ToolManager {
 }
 
 impl ToolManager {
-    pub async fn load_tools(&mut self) -> eyre::Result<HashMap<String, ToolSpec>> {
+    pub async fn load_tools(&mut self, database: &Database) -> eyre::Result<HashMap<String, ToolSpec>> {
         let tx = self.loading_status_sender.take();
         let display_task = self.loading_display_task.take();
         self.schema = {
             let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
-            if !crate::cli::chat::tools::thinking::Thinking::is_enabled() {
-                tool_specs.remove("q_think_tool");
+            if !crate::cli::chat::tools::thinking::Thinking::is_enabled(database) {
+                tool_specs.remove("thinking");
             }
             tool_specs
         };
@@ -731,8 +741,10 @@ impl ToolManager {
             // If there is no server loaded, we want to resolve immediately
             Box::pin(future::ready(()))
         } else if self.is_interactive {
-            let init_timeout = crate::settings::settings::get_int("mcp.initTimeout")
-                .map_or(5000_u64, |s| s.map_or(5000_u64, |n| n as u64));
+            let init_timeout = database
+                .settings
+                .get_int(Setting::McpInitTimeout)
+                .map_or(5000_u64, |s| s as u64);
             Box::pin(tokio::time::sleep(std::time::Duration::from_millis(init_timeout)))
         } else {
             Box::pin(future::pending())
@@ -773,7 +785,7 @@ impl ToolManager {
             "execute_bash" => Tool::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
             "report_issue" => Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
-            "q_think_tool" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
+            "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
@@ -1071,6 +1083,7 @@ fn process_tool_specs(
     specs: &mut Vec<ToolSpec>,
     tn_map: &mut HashMap<String, String>,
     regex: &Arc<Regex>,
+    telemetry: &TelemetryThread,
 ) -> Option<LoadingMsg> {
     // Each mcp server might have multiple tools.
     // To avoid naming conflicts we are going to namespace it.
@@ -1117,9 +1130,7 @@ fn process_tool_specs(
     }
     // Send server load success metric datum
     let conversation_id = conversation_id.to_string();
-    tokio::spawn(async move {
-        send_mcp_server_init(conversation_id, None, number_of_tools).await;
-    });
+    let _ = telemetry.send_mcp_server_init(conversation_id, None, number_of_tools);
     // Tool name translation. This is beyond of the scope of what is
     // considered a "server load". Reasoning being:
     // - Failures here are not related to server load

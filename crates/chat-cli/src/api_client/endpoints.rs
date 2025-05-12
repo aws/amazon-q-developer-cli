@@ -12,6 +12,8 @@ use crate::api_client::consts::{
     PROD_Q_ENDPOINT_REGION,
     PROD_Q_ENDPOINT_URL,
 };
+use crate::database::Database;
+use crate::database::settings::Setting;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
@@ -33,35 +35,30 @@ impl Endpoint {
         region: PROD_Q_ENDPOINT_REGION,
     };
 
-    pub fn load_codewhisperer() -> Self {
-        let (endpoint, region) =
-            if let Ok(Some(Value::Object(o))) = crate::settings::settings::get_value("api.codewhisperer.service") {
-                // The following branch is evaluated in case the user has set their own endpoint.
-                (
-                    o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
-                    o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
-                )
-            } else if let Ok(Some(Value::Object(o))) = crate::settings::state::get_value("api.codewhisperer.profile") {
-                // The following branch is evaluated in the case of user profile being set.
-                match o.get("arn").and_then(|v| v.as_str()).map(|v| v.to_owned()) {
-                    Some(arn) => {
-                        let region = arn.split(':').nth(3).unwrap_or_default().to_owned();
-                        match Self::CODEWHISPERER_ENDPOINTS
-                            .iter()
-                            .find(|e| e.region().as_ref() == region)
-                        {
-                            Some(endpoint) => (Some(endpoint.url().to_owned()), Some(region)),
-                            None => {
-                                error!("Failed to find endpoint for region: {region}");
-                                (None, None)
-                            },
-                        }
-                    },
-                    None => (None, None),
-                }
-            } else {
-                (None, None)
-            };
+    pub fn load_codewhisperer(database: &Database) -> Self {
+        let (endpoint, region) = if let Some(Value::Object(o)) = database.settings.get(Setting::ApiCodeWhispererService)
+        {
+            // The following branch is evaluated in case the user has set their own endpoint.
+            (
+                o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
+                o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
+            )
+        } else if let Ok(Some(profile)) = database.get_auth_profile() {
+            // The following branch is evaluated in the case of user profile being set.
+            let region = profile.arn.split(':').nth(3).unwrap_or_default().to_owned();
+            match Self::CODEWHISPERER_ENDPOINTS
+                .iter()
+                .find(|e| e.region().as_ref() == region)
+            {
+                Some(endpoint) => (Some(endpoint.url().to_owned()), Some(region)),
+                None => {
+                    error!("Failed to find endpoint for region: {region}");
+                    (None, None)
+                },
+            }
+        } else {
+            (None, None)
+        };
 
         match (endpoint, region) {
             (Some(endpoint), Some(region)) => Self {
@@ -72,9 +69,9 @@ impl Endpoint {
         }
     }
 
-    pub fn load_q() -> Self {
-        match crate::settings::settings::get_value("api.q.service") {
-            Ok(Some(Value::Object(o))) => {
+    pub fn load_q(database: &Database) -> Self {
+        match database.settings.get(Setting::ApiQService) {
+            Some(Value::Object(o)) => {
                 let endpoint = o.get("endpoint").and_then(|v| v.as_str());
                 let region = o.get("region").and_then(|v| v.as_str());
 
@@ -105,10 +102,11 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_endpoints() {
-        let _ = Endpoint::load_codewhisperer();
-        let _ = Endpoint::load_q();
+    #[tokio::test]
+    async fn test_endpoints() {
+        let database = Database::new().await.unwrap();
+        let _ = Endpoint::load_codewhisperer(&database);
+        let _ = Endpoint::load_q(&database);
 
         let prod = &Endpoint::DEFAULT_ENDPOINT;
         Url::parse(prod.url()).unwrap();

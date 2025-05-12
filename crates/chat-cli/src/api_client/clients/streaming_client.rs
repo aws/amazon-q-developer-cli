@@ -30,6 +30,10 @@ use crate::aws_common::{
     UserAgentOverrideInterceptor,
     app_name,
 };
+use crate::database::{
+    AuthProfile,
+    Database,
+};
 
 mod inner {
     use std::sync::{
@@ -53,72 +57,63 @@ mod inner {
 #[derive(Clone, Debug)]
 pub struct StreamingClient {
     inner: inner::Inner,
-    profile_arn: Option<String>,
+    profile: Option<AuthProfile>,
 }
 
 impl StreamingClient {
-    pub async fn new() -> Result<Self, ApiClientError> {
-        let client = if crate::util::system_info::in_cloudshell()
-            || std::env::var("Q_USE_SENDMESSAGE").is_ok_and(|v| !v.is_empty())
-        {
-            Self::new_qdeveloper_client(&Endpoint::load_q()).await?
-        } else {
-            Self::new_codewhisperer_client(&Endpoint::load_codewhisperer()).await
-        };
-        Ok(client)
+    pub async fn new(database: &mut Database) -> Result<Self, ApiClientError> {
+        Ok(
+            if crate::util::system_info::in_cloudshell()
+                || std::env::var("Q_USE_SENDMESSAGE").is_ok_and(|v| !v.is_empty())
+            {
+                Self::new_qdeveloper_client(database, &Endpoint::load_q(database)).await?
+            } else {
+                Self::new_codewhisperer_client(database, &Endpoint::load_codewhisperer(database)).await?
+            },
+        )
     }
 
     pub fn mock(events: Vec<Vec<ChatResponseStream>>) -> Self {
         Self {
             inner: inner::Inner::Mock(Arc::new(Mutex::new(events.into_iter()))),
-            profile_arn: None,
+            profile: None,
         }
     }
 
-    pub async fn new_codewhisperer_client(endpoint: &Endpoint) -> Self {
+    pub async fn new_codewhisperer_client(
+        database: &mut Database,
+        endpoint: &Endpoint,
+    ) -> Result<Self, ApiClientError> {
         let conf_builder: amzn_codewhisperer_streaming_client::config::Builder =
-            (&bearer_sdk_config(endpoint).await).into();
+            (&bearer_sdk_config(database, endpoint).await).into();
         let conf = conf_builder
             .http_client(crate::aws_common::http_client::client())
-            .interceptor(OptOutInterceptor::new())
+            .interceptor(OptOutInterceptor::new(database))
             .interceptor(UserAgentOverrideInterceptor::new())
-            .bearer_token_resolver(BearerResolver)
+            .bearer_token_resolver(BearerResolver::new(database).await?)
             .app_name(app_name())
             .endpoint_url(endpoint.url())
             .stalled_stream_protection(stalled_stream_protection_config())
             .build();
         let inner = inner::Inner::Codewhisperer(CodewhispererStreamingClient::from_conf(conf));
 
-        let profile_arn = match crate::settings::state::get_value("api.codewhisperer.profile") {
-            Ok(Some(profile)) => match profile.get("arn") {
-                Some(arn) => match arn.as_str() {
-                    Some(arn) => Some(arn.to_string()),
-                    None => {
-                        error!("Stored arn is not a string. Instead it was: {arn}");
-                        None
-                    },
-                },
-                None => {
-                    error!("Stored profile does not contain an arn. Instead it was: {profile}");
-                    None
-                },
-            },
-            Ok(None) => None,
+        let profile = match database.get_auth_profile() {
+            Ok(profile) => profile,
             Err(err) => {
-                error!("Failed to retrieve profile: {}", err);
+                error!("Failed to get auth profile: {err}");
                 None
             },
         };
 
-        Self { inner, profile_arn }
+        Ok(Self { inner, profile })
     }
 
-    pub async fn new_qdeveloper_client(endpoint: &Endpoint) -> Result<Self, ApiClientError> {
+    pub async fn new_qdeveloper_client(database: &Database, endpoint: &Endpoint) -> Result<Self, ApiClientError> {
         let conf_builder: amzn_qdeveloper_streaming_client::config::Builder =
-            (&sigv4_sdk_config(endpoint).await?).into();
+            (&sigv4_sdk_config(database, endpoint).await?).into();
         let conf = conf_builder
             .http_client(crate::aws_common::http_client::client())
-            .interceptor(OptOutInterceptor::new())
+            .interceptor(OptOutInterceptor::new(database))
             .interceptor(UserAgentOverrideInterceptor::new())
             .app_name(app_name())
             .endpoint_url(endpoint.url())
@@ -127,7 +122,7 @@ impl StreamingClient {
         let client = QDeveloperStreamingClient::from_conf(conf);
         Ok(Self {
             inner: inner::Inner::QDeveloper(client),
-            profile_arn: None,
+            profile: None,
         })
     }
 
@@ -162,7 +157,7 @@ impl StreamingClient {
                 let response = client
                     .generate_assistant_response()
                     .conversation_state(conversation_state)
-                    .set_profile_arn(self.profile_arn.clone())
+                    .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
                     .send()
                     .await;
 
@@ -267,11 +262,12 @@ mod tests {
 
     #[tokio::test]
     async fn create_clients() {
-        let endpoint = Endpoint::load_codewhisperer();
+        let mut database = Database::new().await.unwrap();
+        let endpoint = Endpoint::load_codewhisperer(&database);
 
-        let _ = StreamingClient::new().await;
-        let _ = StreamingClient::new_codewhisperer_client(&endpoint).await;
-        let _ = StreamingClient::new_qdeveloper_client(&endpoint).await;
+        let _ = StreamingClient::new(&mut database).await;
+        let _ = StreamingClient::new_codewhisperer_client(&mut database, &endpoint).await;
+        let _ = StreamingClient::new_qdeveloper_client(&database, &endpoint).await;
     }
 
     #[tokio::test]
@@ -311,7 +307,8 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn assistant_response() {
-        let client = StreamingClient::new().await.unwrap();
+        let mut database = Database::new().await.unwrap();
+        let client = StreamingClient::new(&mut database).await.unwrap();
         let mut response = client
             .send_message(ConversationState {
                 conversation_id: None,
