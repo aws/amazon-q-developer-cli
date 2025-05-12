@@ -162,8 +162,15 @@ impl TelemetryThread {
     pub async fn finish(self) -> Result<(), TelemetryError> {
         drop(self.tx);
         if let Some(handle) = self.handle {
-            if let Err(e) = tokio::time::timeout(std::time::Duration::from_millis(1000), handle).await {
-                return Err(TelemetryError::Timeout(e));
+            match tokio::time::timeout(std::time::Duration::from_millis(1000), handle).await {
+                Ok(result) => {
+                    if let Err(e) = result {
+                        return Err(TelemetryError::Join(e));
+                    }
+                },
+                Err(_) => {
+                    // Ignore timeout errors
+                },
             }
         }
 
