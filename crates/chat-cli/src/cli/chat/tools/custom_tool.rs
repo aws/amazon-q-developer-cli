@@ -107,7 +107,6 @@ impl CustomToolClient {
     }
 
     pub fn assign_messenger(&mut self, messenger: Box<dyn Messenger>) {
-        tracing::error!("## background: assigned {} with messenger", self.get_server_name());
         match self {
             CustomToolClient::Stdio { client, .. } => {
                 client.messenger = Some(messenger);
