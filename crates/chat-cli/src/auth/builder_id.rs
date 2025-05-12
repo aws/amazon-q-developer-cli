@@ -62,7 +62,7 @@ use crate::database::secret_store::{
 pub enum OAuthFlow {
     DeviceCode,
     // This must remain backwards compatible
-    #[serde(rename = "PKCE")]
+    #[serde(alias = "PKCE")]
     Pkce,
 }
 

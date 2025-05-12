@@ -56,7 +56,6 @@ glob.workspace = true
 globset.workspace = true
 indicatif.workspace = true
 indoc.workspace = true
-mcp_client.workspace = true
 mimalloc.workspace = true
 owo-colors = "4.2.0"
 parking_lot.workspace = true

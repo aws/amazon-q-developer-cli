@@ -3,7 +3,6 @@ mod auth;
 mod aws_common;
 mod cli;
 mod database;
-mod install;
 mod logging;
 mod mcp_client;
 mod platform;
