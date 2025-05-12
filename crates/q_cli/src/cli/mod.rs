@@ -487,7 +487,13 @@ async fn launch_dashboard(help_fallback: bool) -> Result<ExitCode> {
 
 #[cfg(test)]
 mod test {
-    use q_chat::cli::McpAdd;
+    use q_chat::cli::{
+        McpAdd,
+        McpImport,
+        McpList,
+        McpRemove,
+        Scope,
+    };
 
     use super::*;
 
@@ -790,7 +796,7 @@ mod test {
     }
 
     #[test]
-    fn test_mcp_subcommand() {
+    fn test_mcp_subcomman_add() {
         assert_parse!(
             [
                 "mcp",
@@ -809,15 +815,68 @@ mod test {
                 command: "test_command".to_string(),
                 scope: None,
                 profile: Some("my_profile".to_string()),
-                env: Some(
+                env: vec![
                     [
                         ("key1".to_string(), "value1".to_string()),
                         ("key2".to_string(), "value2".to_string())
                     ]
                     .into_iter()
                     .collect()
-                ),
+                ],
                 timeout: None,
+                force: false,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_mcp_subcomman_remove_workspace() {
+        assert_parse!(
+            ["mcp", "remove", "--name", "old"],
+            CliRootCommands::Mcp(Mcp::Remove(McpRemove {
+                name: "old".into(),
+                scope: None,
+                profile: None,
+            }))
+        );
+    }
+    #[test]
+    fn test_mcp_subcomman_import_profile_force() {
+        assert_parse!(
+            [
+                "mcp",
+                "import",
+                "--file",
+                "servers.json",
+                "profile",
+                "--profile",
+                "qa",
+                "--force"
+            ],
+            CliRootCommands::Mcp(Mcp::Import(McpImport {
+                file: "servers.json".into(),
+                scope: Some(Scope::Profile),
+                profile: Some("qa".into()),
+                force: true,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_mcp_subcommand_status_simple() {
+        assert_parse!(
+            ["mcp", "status", "--name", "aws"],
+            CliRootCommands::Mcp(Mcp::Status { name: "aws".into() })
+        );
+    }
+    
+    #[test]
+    fn test_mcp_subcommand_list() {
+        assert_parse!(
+            ["mcp", "list", "global"],
+            CliRootCommands::Mcp(Mcp::List( McpList{  
+                scope: Some(Scope::Global),
+                profile: None    
             }))
         );
     }
