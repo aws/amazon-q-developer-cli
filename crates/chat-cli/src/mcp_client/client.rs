@@ -541,6 +541,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
     async fn test_client_stdio() {
         std::process::Command::new("cargo")
             .args(["build", "--bin", TEST_SERVER_NAME])

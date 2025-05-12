@@ -45,13 +45,16 @@ use eyre::{
     bail,
 };
 use feed::Feed;
+use fig_auth::builder_id::BuilderIdToken;
 use fig_auth::is_logged_in;
+use fig_auth::secret_store::SecretStore;
 use fig_ipc::local::open_ui_element;
 use fig_log::{
     LogArgs,
     initialize_logging,
 };
 use fig_proto::local::UiElement;
+use fig_settings::sqlite::database;
 use fig_util::directories::home_local_bin;
 use fig_util::{
     CHAT_BINARY_NAME,
@@ -346,7 +349,20 @@ impl Cli {
     }
 
     async fn execute_chat(args: Option<Vec<String>>) -> Result<ExitCode> {
+        let secret_store = SecretStore::new().await.ok();
+        if let Some(secret_store) = secret_store {
+            if let Ok(database) = database() {
+                if let Ok(token) = BuilderIdToken::load(&secret_store, false).await {
+                    if let Ok(token) = serde_json::to_string(&token) {
+                        database.set_auth_value("codewhisperer:odic:token", token).ok();
+                    }
+                }
+            }
+        }
+
         let mut cmd = tokio::process::Command::new(home_local_bin()?.join(CHAT_BINARY_NAME));
+        cmd.arg("chat");
+
         if let Some(args) = args {
             cmd.args(args);
         }

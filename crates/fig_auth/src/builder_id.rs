@@ -138,7 +138,7 @@ impl DeviceRegistration {
     }
 
     /// Loads the OIDC registered client from the secret store, deleting it if it is expired.
-    async fn load_from_secret_store(secret_store: &SecretStore, region: &Region) -> Result<Option<Self>> {
+    pub async fn load_from_secret_store(secret_store: &SecretStore, region: &Region) -> Result<Option<Self>> {
         let device_registration = secret_store.get(Self::SECRET_KEY).await?;
 
         if let Some(device_registration) = device_registration {
