@@ -895,7 +895,6 @@ mod tests {
     };
     use crate::cli::chat::tool_manager::ToolManager;
     use crate::database::Database;
-    use crate::platform::Env;
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {

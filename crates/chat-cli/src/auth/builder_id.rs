@@ -58,12 +58,32 @@ use crate::database::secret_store::{
     SecretStore,
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Deserialize)]
 pub enum OAuthFlow {
     DeviceCode,
     // This must remain backwards compatible
     #[serde(alias = "PKCE")]
     Pkce,
+}
+
+// Implement Serialize manually to ensure proper serialization
+impl serde::Serialize for OAuthFlow {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match *self {
+            OAuthFlow::DeviceCode => serializer.serialize_str("DeviceCode"),
+            OAuthFlow::Pkce => serialize_pkce(serializer),
+        }
+    }
+}
+
+fn serialize_pkce<S>(serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str("PKCE")
 }
 
 impl std::fmt::Display for OAuthFlow {
