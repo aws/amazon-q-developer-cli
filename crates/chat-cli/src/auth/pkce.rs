@@ -231,7 +231,7 @@ impl PkceRegistration {
     /// then the access and refresh tokens will be saved.
     ///
     /// Only the first connection will be served.
-    pub async fn finish<C: PkceClient>(self, client: &C, database: Option<&Database>) -> Result<(), AuthError> {
+    pub async fn finish<C: PkceClient>(self, client: &C, database: Option<&mut Database>) -> Result<(), AuthError> {
         let code = tokio::select! {
             code = Self::recv_code(self.listener, self.state) => {
                 code?
@@ -270,11 +270,11 @@ impl PkceRegistration {
         );
 
         if let Some(database) = database {
-            if let Err(err) = device_registration.save(&database.secret_store).await {
+            if let Err(err) = device_registration.save(database).await {
                 error!(?err, "Failed to store pkce registration to secret store");
             }
 
-            if let Err(err) = token.save(&database.secret_store).await {
+            if let Err(err) = token.save(database).await {
                 error!(?err, "Failed to store builder id token");
             };
         }

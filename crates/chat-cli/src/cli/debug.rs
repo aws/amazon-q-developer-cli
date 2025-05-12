@@ -1,7 +1,4 @@
-use clap::{
-    Subcommand,
-    ValueEnum,
-};
+use clap::ValueEnum;
 
 #[derive(Debug, ValueEnum, Clone, PartialEq, Eq)]
 pub enum Build {
@@ -65,7 +62,7 @@ pub enum TISAction {
 use std::path::PathBuf;
 
 #[cfg(target_os = "macos")]
-#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
+#[derive(Debug, clap::Subcommand, Clone, PartialEq, Eq)]
 pub enum InputMethodDebugAction {
     Install {
         bundle_path: Option<PathBuf>,
