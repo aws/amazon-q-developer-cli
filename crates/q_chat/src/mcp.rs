@@ -7,6 +7,8 @@ use eyre::{
     bail,
 };
 use fig_os_shim::Context;
+use fig_util::directories::chat_profiles_dir;
+use tokio::fs;
 use tracing::warn;
 
 use crate::cli::{
@@ -154,10 +156,10 @@ pub async fn import_mcp_server(ctx: &Context, args: McpImport) -> Result<()> {
     let src_cfg: McpServerConfig = serde_json::from_str(&ctx.fs().read_to_string(&src_path).await?)?;
     let mut dst_cfg: McpServerConfig = McpServerConfig::load_from_file(ctx, &config_path).await?;
 
-    let before = dst_cfg.mcp_servers.len();
+    let mut added = 0;
     for (name, cfg) in src_cfg.mcp_servers {
         let exists = dst_cfg.mcp_servers.contains_key(&name);
-        if exists && !args.force   {
+        if exists && !args.force {
             bail!(
                 "MCP server '{}' already exists in {} (scope {}). Use --force to overwrite.",
                 name,
@@ -166,9 +168,9 @@ pub async fn import_mcp_server(ctx: &Context, args: McpImport) -> Result<()> {
             );
         }
         dst_cfg.mcp_servers.insert(name.clone(), cfg);
+        added +=1;
     }
 
-    let added = dst_cfg.mcp_servers.len() - before;
     dst_cfg.save_to_file(ctx, &config_path).await?;
 
     println!(
@@ -180,28 +182,41 @@ pub async fn import_mcp_server(ctx: &Context, args: McpImport) -> Result<()> {
 
 pub async fn get_mcp_server_status(ctx: &Context, name: String) -> Result<()> {
     let configs = get_mcp_server_configs(ctx, None, None).await?;
+    let mut found = false;
 
-    for (_, _, _, cfg_opt) in configs {
+    for (sc, prof, path, cfg_opt) in configs {
         if let Some(cfg) = cfg_opt {
             if let Some(tool_cfg) = cfg.mcp_servers.get(&name) {
-                println!("MCP Server: {name}");
-                println!("Command    : {}", tool_cfg.command);
-                println!("Timeout    : {} ms", tool_cfg.timeout);
+                found = true;
+                println!("─────────────\n");
+                match sc {
+                    Scope::Workspace => println!("Scope   : workspace"),
+                    Scope::Global => println!("Scope   : global"),
+                    Scope::Profile => {
+                        let p = prof.as_deref().unwrap_or("<unknown>");
+                        println!("Scope   : profile ({p})");
+                    },
+                }
+                println!("File    : {}", path.display());
+                println!("Command : {}", tool_cfg.command);
+                println!("Timeout : {} ms", tool_cfg.timeout);
                 println!(
-                    "Env Vars   : {}",
+                    "Env Vars: {}",
                     tool_cfg
                         .env
                         .as_ref()
                         .map(|e| e.keys().cloned().collect::<Vec<_>>().join(", "))
                         .unwrap_or_else(|| "(none)".into())
                 );
-                // todo yifan how can I know the server status
-                println!("Status     : ");
-                return Ok(());
             }
         }
     }
-    bail!("No MCP server named '{name}' found\n")
+
+    if !found {
+        bail!("No MCP server named '{name}' found in any scope/profile");
+    }
+
+    Ok(())
 }
 
 async fn get_mcp_server_configs(
@@ -209,21 +224,36 @@ async fn get_mcp_server_configs(
     scope: Option<Scope>,
     profile: Option<String>,
 ) -> Result<Vec<(Scope, Option<String>, PathBuf, Option<McpServerConfig>)>> {
+    let mut all_profiles: Vec<String> = Vec::new();
+    if let Ok(dir) = chat_profiles_dir(ctx) {
+        if dir.exists() {
+            let mut rd = fs::read_dir(&dir).await?;
+            while let Some(entry) = rd.next_entry().await? {
+                if entry.file_type().await?.is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        all_profiles.push(name.to_owned());
+                    }
+                }
+            }
+        }
+    }
+
     let targets: Vec<(Scope, Option<String>)> = match (scope, profile) {
         (Some(Scope::Workspace), _) => vec![(Scope::Workspace, None)],
         (Some(Scope::Global), _) => vec![(Scope::Global, None)],
         (Some(Scope::Profile), Some(p)) => vec![(Scope::Profile, Some(p))],
         (Some(Scope::Profile), None) => vec![(Scope::Profile, Some("default".to_string()))],
-
-        // no scope but have profile ⇒ search profile
         (None, Some(p)) => vec![(Scope::Profile, Some(p))],
 
-        // give nothing ⇒ default priority：workspace → global
-        (None, None) => vec![
-            (Scope::Workspace, None),
-            (Scope::Global, None),
-            (Scope::Profile, Some("default".to_string())),
-        ],
+        // give nothing ⇒ default priority：workspace → global -> profile
+        (None, None) => {
+            let mut v = vec![(Scope::Workspace, None), (Scope::Global, None)];
+            all_profiles.sort();
+            for p in &all_profiles {
+                v.push((Scope::Profile, Some(p.clone())));
+            }
+            v
+        },
     };
 
     let mut results = Vec::new();
