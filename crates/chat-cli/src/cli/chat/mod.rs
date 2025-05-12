@@ -33,7 +33,6 @@ use std::process::{
     ExitCode,
 };
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{
     env,
@@ -409,6 +408,7 @@ pub async fn chat(
         })
         .await?;
     let tool_config = tool_manager.load_tools().await?;
+    error!("## tool config: {:#?}", tool_config);
     let mut tool_permissions = ToolPermissions::new(tool_config.len());
     if accept_all || trust_all_tools {
         tool_permissions.trust_all = true;
@@ -797,14 +797,7 @@ impl ChatContext {
             debug!(?chat_state, "changing to state");
 
             // Update conversation state with new tool information
-            if self
-                .conversation_state
-                .tool_manager
-                .has_new_stuff
-                .load(Ordering::Relaxed)
-            {
-                self.conversation_state.update_state().await;
-            }
+            self.conversation_state.update_state().await;
 
             let result = match chat_state {
                 ChatState::PromptUser {

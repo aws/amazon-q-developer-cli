@@ -280,7 +280,7 @@ impl ToolManagerBuilder {
                             loading_servers.insert(name.clone(), status_line);
                             let total = loading_servers.len();
                             execute!(output, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                            queue_init_message(spinner_logo_idx, complete, failed, total, is_interactive, &mut output)?;
+                            queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                             output.flush()?;
                         },
                         LoadingMsg::Done(name) => {
@@ -298,14 +298,7 @@ impl ToolManagerBuilder {
                                 )?;
                                 queue_success_message(&name, &time_taken, &mut output)?;
                                 let total = loading_servers.len();
-                                queue_init_message(
-                                    spinner_logo_idx,
-                                    complete,
-                                    failed,
-                                    total,
-                                    is_interactive,
-                                    &mut output,
-                                )?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 output.flush()?;
                             }
                             if loading_servers.iter().all(|(_, status)| status.is_done) {
@@ -324,14 +317,7 @@ impl ToolManagerBuilder {
                                 )?;
                                 queue_failure_message(&name, &msg, &mut output)?;
                                 let total = loading_servers.len();
-                                queue_init_message(
-                                    spinner_logo_idx,
-                                    complete,
-                                    failed,
-                                    total,
-                                    is_interactive,
-                                    &mut output,
-                                )?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                             }
                             if loading_servers.iter().all(|(_, status)| status.is_done) {
                                 break;
@@ -350,14 +336,7 @@ impl ToolManagerBuilder {
                                 let msg = eyre::eyre!(msg.to_string());
                                 queue_warn_message(&name, &msg, &mut output)?;
                                 let total = loading_servers.len();
-                                queue_init_message(
-                                    spinner_logo_idx,
-                                    complete,
-                                    failed,
-                                    total,
-                                    is_interactive,
-                                    &mut output,
-                                )?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 output.flush()?;
                             }
                             if loading_servers.iter().all(|(_, status)| status.is_done) {
@@ -714,7 +693,7 @@ impl ToolManager {
     pub async fn load_tools(&mut self) -> eyre::Result<HashMap<String, ToolSpec>> {
         let tx = self.loading_status_sender.take();
         let display_task = self.loading_display_task.take();
-        let mut tool_specs = {
+        self.schema = {
             let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled() {
@@ -777,8 +756,7 @@ impl ToolManager {
             }
         }
         self.update().await;
-        tool_specs.extend(self.schema.clone());
-        Ok(tool_specs)
+        Ok(self.schema.clone())
     }
 
     pub fn get_tool_from_tool_use(&self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
@@ -1253,7 +1231,6 @@ fn queue_init_message(
     complete: usize,
     failed: usize,
     total: usize,
-    is_interactive: bool,
     output: &mut impl Write,
 ) -> eyre::Result<()> {
     if total == complete {
@@ -1284,7 +1261,7 @@ fn queue_init_message(
         style::ResetColor,
         style::Print("mcp servers initialized."),
     )?;
-    if is_interactive {
+    if total > complete + failed {
         queue!(
             output,
             style::SetForegroundColor(style::Color::Blue),

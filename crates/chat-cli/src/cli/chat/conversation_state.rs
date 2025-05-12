@@ -302,8 +302,17 @@ impl ConversationState {
             }
 
             // Here we also need to make sure that the tool result corresponds to one of the tools
-            // in the list. Otherwise we will see validation error from the backend. We would only
-            // do this if the last message is a tool call that has failed.
+            // in the list. Otherwise we will see validation error from the backend. There are three
+            // such circumstances where intervention would be needed:
+            // 1. The model had decided to call a tool with its partial name AND there is only one such tool, in
+            //    which case we would automatically resolve this tool call to its correct name. This will NOT
+            //    result in an error in its tool result. The intervention here is to substitute the partial name
+            //    with its full name.
+            // 2. The model had decided to call a tool with its partial name AND there are multiple tools it
+            //    could be referring to, in which case we WILL return an error in the tool result. The
+            //    intervention here is to substitute the ambiguous, partial name with a dummy.
+            // 3. The model had decided to call a tool that does not exist. The intervention here is to
+            //    substitute the non-existent tool name with a dummy.
             let tool_use_results = user_msg.tool_use_results();
             if let Some(tool_use_results) = tool_use_results {
                 // Note that we need to use the keys in tool manager's tn_map as the keys are the
@@ -312,19 +321,30 @@ impl ConversationState {
                 // with false positives.
                 let tool_name_list = self.tool_manager.tn_map.keys().map(String::as_str).collect::<Vec<_>>();
                 for result in tool_use_results {
-                    if let ToolResultStatus::Error = result.status {
-                        let tool_use_id = result.tool_use_id.as_str();
-                        let _ = tool_uses
-                            .iter_mut()
-                            .filter(|tool_use| tool_use.id == tool_use_id)
-                            .map(|tool_use| {
-                                let tool_name = tool_use.name.as_str();
-                                if !tool_name_list.contains(&tool_name) {
-                                    tool_use.name = DUMMY_TOOL_NAME.to_string();
-                                    tool_use.args = serde_json::json!({});
-                                }
-                            })
-                            .collect::<Vec<_>>();
+                    let tool_use_id = result.tool_use_id.as_str();
+                    let corresponding_tool_use = tool_uses.iter_mut().find(|tool_use| tool_use_id == tool_use.id);
+                    if let Some(tool_use) = corresponding_tool_use {
+                        if tool_name_list.contains(&tool_use.name.as_str()) {
+                            // If this tool matches of the tools in our list, this is not our
+                            // concern, error or not.
+                            continue;
+                        }
+                        if let ToolResultStatus::Error = result.status {
+                            // case 2 and 3
+                            tool_use.name = DUMMY_TOOL_NAME.to_string();
+                            tool_use.args = serde_json::json!({});
+                        } else {
+                            // case 1
+                            let full_name = tool_name_list.iter().find(|name| name.ends_with(&tool_use.name));
+                            // We should be able to find a match but if not we'll just treat it as
+                            // a dummy and move on
+                            if let Some(full_name) = full_name {
+                                tool_use.name = (*full_name).to_string();
+                            } else {
+                                tool_use.name = DUMMY_TOOL_NAME.to_string();
+                                tool_use.args = serde_json::json!({});
+                            }
+                        }
                     }
                 }
             }
