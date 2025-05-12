@@ -66,15 +66,6 @@ pub enum OAuthFlow {
     Pkce,
 }
 
-impl std::fmt::Display for OAuthFlow {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            OAuthFlow::DeviceCode => write!(f, "DeviceCode"),
-            OAuthFlow::Pkce => write!(f, "PKCE"),
-        }
-    }
-}
-
 /// Indicates if an expiration time has passed, there is a small 1 min window that is removed
 /// so the token will not expire in transit
 fn is_expired(expiration_time: &OffsetDateTime) -> bool {
@@ -565,20 +556,10 @@ mod tests {
     const US_EAST_1: Region = Region::from_static("us-east-1");
     const US_WEST_2: Region = Region::from_static("us-west-2");
 
-    macro_rules! test_ser_deser {
-        ($ty:ident, $variant:expr, $text:expr) => {
-            let quoted = format!("\"{}\"", $text);
-            assert_eq!(quoted, serde_json::to_string(&$variant).unwrap());
-            assert_eq!($variant, serde_json::from_str(&quoted).unwrap());
-
-            assert_eq!($text, format!("{}", $variant));
-        };
-    }
-
     #[test]
-    fn test_oauth_flow_ser_deser() {
-        test_ser_deser!(OAuthFlow, OAuthFlow::DeviceCode, "DeviceCode");
-        test_ser_deser!(OAuthFlow, OAuthFlow::Pkce, "PKCE");
+    fn test_oauth_flow_deser() {
+        assert_eq!(OAuthFlow::Pkce, serde_json::from_str("\"PKCE\"").unwrap());
+        assert_eq!(OAuthFlow::Pkce, serde_json::from_str("\"Pkce\"").unwrap());
     }
 
     #[tokio::test]
