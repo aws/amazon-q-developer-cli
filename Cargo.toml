@@ -162,7 +162,7 @@ uuid = { version = "1.15.1", features = ["v4", "serde"] }
 walkdir = "2.5.0"
 which = "6.0.3"
 whoami = "1.6.0"
-winnow = "0.6.2"
+winnow = "0.7.10"
 
 # Keep these minor synced with reqwest
 # https://github.com/seanmonstar/reqwest/blob/v0.12.12/Cargo.toml
