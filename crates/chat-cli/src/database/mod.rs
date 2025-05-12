@@ -134,9 +134,6 @@ pub enum DatabaseError {
     DbOpenError(#[from] DbOpenError),
     #[error("{}", .0)]
     PoisonError(String),
-    #[cfg(target_os = "macos")]
-    #[error("Security error: {}", .0)]
-    Security(String),
     #[error(transparent)]
     StringFromUtf8(#[from] std::string::FromUtf8Error),
     #[error(transparent)]
@@ -157,8 +154,7 @@ pub enum Table {
     State,
     /// The conversations tables contains user chat conversations.
     Conversations,
-    #[cfg(not(target_os = "macos"))]
-    /// The auth table contains
+    /// The auth table contains SSO and Builder ID credentials.
     Auth,
 }
 
@@ -167,7 +163,6 @@ impl std::fmt::Display for Table {
         match self {
             Table::State => write!(f, "state"),
             Table::Conversations => write!(f, "conversations"),
-            #[cfg(not(target_os = "macos"))]
             Table::Auth => write!(f, "auth_kv"),
         }
     }
@@ -433,86 +428,7 @@ impl Database {
 
         Ok(map)
     }
-}
 
-#[cfg(target_os = "macos")]
-impl Database {
-    /// The account name is not used.
-    const ACCOUNT: &str = "";
-    /// Path to the `security` binary
-    const SECURITY_BIN: &str = "/usr/bin/security";
-
-    /// Sets the `key` to `password` on the keychain, this will override any existing value
-    pub async fn set_secret(&self, key: &str, password: &str) -> Result<(), DatabaseError> {
-        let output = tokio::process::Command::new(Self::SECURITY_BIN)
-            .args([
-                "add-generic-password",
-                "-U",
-                "-s",
-                key,
-                "-a",
-                Self::ACCOUNT,
-                "-w",
-                password,
-            ])
-            .output()
-            .await?;
-
-        if !output.status.success() {
-            let stderr = std::str::from_utf8(&output.stderr)?;
-            return Err(DatabaseError::Security(stderr.into()));
-        }
-
-        Ok(())
-    }
-
-    /// Returns the password for the `key`
-    ///
-    /// If not found the result will be `Ok(None)`, other errors will be returned
-    pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
-        let output = tokio::process::Command::new(Self::SECURITY_BIN)
-            .args(["find-generic-password", "-s", key, "-a", Self::ACCOUNT, "-w"])
-            .output()
-            .await?;
-
-        if !output.status.success() {
-            let stderr = std::str::from_utf8(&output.stderr)?;
-            if stderr.contains("could not be found") {
-                return Ok(None);
-            } else {
-                return Err(DatabaseError::Security(stderr.into()));
-            }
-        }
-
-        let stdout = std::str::from_utf8(&output.stdout)?;
-
-        // strip newline
-        let stdout = match stdout.strip_suffix('\n') {
-            Some(stdout) => stdout,
-            None => stdout,
-        };
-
-        Ok(Some(stdout.into()))
-    }
-
-    /// Deletes the `key` from the keychain
-    pub async fn delete_secret(&self, key: &str) -> Result<(), DatabaseError> {
-        let output = tokio::process::Command::new(Self::SECURITY_BIN)
-            .args(["delete-generic-password", "-s", key, "-a", Self::ACCOUNT])
-            .output()
-            .await?;
-
-        if !output.status.success() {
-            let stderr = std::str::from_utf8(&output.stderr)?;
-            return Err(DatabaseError::Security(stderr.into()));
-        }
-
-        Ok(())
-    }
-}
-
-#[cfg(any(target_os = "linux", windows))]
-impl Database {
     pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
         Ok(self.get_entry::<String>(Table::Auth, key)?.map(Into::into))
     }
