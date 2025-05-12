@@ -52,10 +52,9 @@ use crate::auth::AuthError;
 use crate::auth::consts::*;
 use crate::auth::scope::is_scopes;
 use crate::aws_common::app_name;
-use crate::database::Database;
-use crate::database::secret_store::{
+use crate::database::{
+    Database,
     Secret,
-    SecretStore,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -132,8 +131,8 @@ impl DeviceRegistration {
     }
 
     /// Loads the OIDC registered client from the secret store, deleting it if it is expired.
-    async fn load_from_secret_store(secret_store: &SecretStore, region: &Region) -> Result<Option<Self>, AuthError> {
-        let device_registration = secret_store.get(Self::SECRET_KEY).await?;
+    async fn load_from_secret_store(database: &Database, region: &Region) -> Result<Option<Self>, AuthError> {
+        let device_registration = database.get_secret(Self::SECRET_KEY).await?;
 
         if let Some(device_registration) = device_registration {
             // check that the data is not expired, assume it is invalid if not present
@@ -147,7 +146,7 @@ impl DeviceRegistration {
         }
 
         // delete the data if its expired or invalid
-        if let Err(err) = secret_store.delete(Self::SECRET_KEY).await {
+        if let Err(err) = database.delete_secret(Self::SECRET_KEY).await {
             error!(?err, "Failed to delete device registration from keychain");
         }
 
@@ -161,7 +160,7 @@ impl DeviceRegistration {
         client: &Client,
         region: &Region,
     ) -> Result<Self, AuthError> {
-        match Self::load_from_secret_store(&database.secret_store, region).await {
+        match Self::load_from_secret_store(database, region).await {
             Ok(Some(registration)) if registration.oauth_flow == OAuthFlow::DeviceCode => match &registration.scopes {
                 Some(scopes) if is_scopes(scopes) => return Ok(registration),
                 _ => warn!("Invalid scopes in device registration, ignoring"),
@@ -190,7 +189,7 @@ impl DeviceRegistration {
             SCOPES.iter().map(|s| (*s).to_owned()).collect(),
         );
 
-        if let Err(err) = device_registration.save(&database.secret_store).await {
+        if let Err(err) = device_registration.save(database).await {
             error!(?err, "Failed to write device registration to keychain");
         }
 
@@ -198,9 +197,9 @@ impl DeviceRegistration {
     }
 
     /// Saves to the passed secret store.
-    pub async fn save(&self, secret_store: &SecretStore) -> Result<(), AuthError> {
+    pub async fn save(&self, secret_store: &Database) -> Result<(), AuthError> {
         secret_store
-            .set(Self::SECRET_KEY, &serde_json::to_string(&self)?)
+            .set_secret(Self::SECRET_KEY, &serde_json::to_string(&self)?)
             .await?;
         Ok(())
     }
@@ -294,8 +293,8 @@ impl BuilderIdToken {
     }
 
     /// Load the token from the keychain, refresh the token if it is expired and return it
-    pub async fn load(database: &mut Database) -> Result<Option<Self>, AuthError> {
-        match database.secret_store.get(Self::SECRET_KEY).await {
+    pub async fn load(database: &Database) -> Result<Option<Self>, AuthError> {
+        match database.get_secret(Self::SECRET_KEY).await {
             Ok(Some(secret)) => {
                 let token: Option<Self> = serde_json::from_str(&secret.0)?;
                 match token {
@@ -305,7 +304,7 @@ impl BuilderIdToken {
                         let client = client(region.clone());
                         // if token is expired try to refresh
                         if token.is_expired() {
-                            token.refresh_token(&client, &database.secret_store, &region).await
+                            token.refresh_token(&client, database, &region).await
                         } else {
                             Ok(Some(token))
                         }
@@ -325,19 +324,19 @@ impl BuilderIdToken {
     pub async fn refresh_token(
         &self,
         client: &Client,
-        secret_store: &SecretStore,
+        database: &Database,
         region: &Region,
     ) -> Result<Option<Self>, AuthError> {
         let Some(refresh_token) = &self.refresh_token else {
             // if the token is expired and has no refresh token, delete it
-            if let Err(err) = self.delete(secret_store).await {
+            if let Err(err) = self.delete(database).await {
                 error!(?err, "Failed to delete builder id token");
             }
 
             return Ok(None);
         };
 
-        let registration = match DeviceRegistration::load_from_secret_store(secret_store, region).await? {
+        let registration = match DeviceRegistration::load_from_secret_store(database, region).await? {
             Some(registration) if registration.oauth_flow == self.oauth_flow => registration,
             // If the OIDC client registration is for a different oauth flow or doesn't exist, then
             // we can't refresh the token.
@@ -374,7 +373,7 @@ impl BuilderIdToken {
                 );
                 debug!("Refreshed access token, new token: {:?}", token);
 
-                if let Err(err) = token.save(secret_store).await {
+                if let Err(err) = token.save(database).await {
                     error!(?err, "Failed to store builder id access token");
                 };
 
@@ -387,7 +386,7 @@ impl BuilderIdToken {
                 // if the error is the client's fault, clear the token
                 if let SdkError::ServiceError(service_err) = &err {
                     if !service_err.err().is_slow_down_exception() {
-                        if let Err(err) = self.delete(secret_store).await {
+                        if let Err(err) = self.delete(database).await {
                             error!(?err, "Failed to delete builder id token");
                         }
                     }
@@ -407,16 +406,16 @@ impl BuilderIdToken {
     }
 
     /// Save the token to the keychain
-    pub async fn save(&self, secret_store: &SecretStore) -> Result<(), AuthError> {
-        secret_store
-            .set(Self::SECRET_KEY, &serde_json::to_string(self)?)
+    pub async fn save(&self, database: &Database) -> Result<(), AuthError> {
+        database
+            .set_secret(Self::SECRET_KEY, &serde_json::to_string(self)?)
             .await?;
         Ok(())
     }
 
     /// Delete the token from the keychain
-    pub async fn delete(&self, secret_store: &SecretStore) -> Result<(), AuthError> {
-        secret_store.delete(Self::SECRET_KEY).await?;
+    pub async fn delete(&self, database: &Database) -> Result<(), AuthError> {
+        database.delete_secret(Self::SECRET_KEY).await?;
         Ok(())
     }
 
@@ -488,7 +487,7 @@ pub async fn poll_create_token(
             let token: BuilderIdToken =
                 BuilderIdToken::from_output(output, region, start_url, OAuthFlow::DeviceCode, scopes);
 
-            if let Err(err) = token.save(&database.secret_store).await {
+            if let Err(err) = token.save(database).await {
                 error!(?err, "Failed to store builder id token");
             };
 
@@ -509,13 +508,13 @@ pub async fn is_logged_in(database: &mut Database) -> bool {
 }
 
 pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
-    let Ok(secret_store) = SecretStore::new().await else {
+    let Ok(secret_store) = Database::new().await else {
         return Ok(());
     };
 
     let (builder_res, device_res) = tokio::join!(
-        secret_store.delete(BuilderIdToken::SECRET_KEY),
-        secret_store.delete(DeviceRegistration::SECRET_KEY),
+        secret_store.delete_secret(BuilderIdToken::SECRET_KEY),
+        secret_store.delete_secret(DeviceRegistration::SECRET_KEY),
     );
 
     let profile_res = database.unset_auth_profile();

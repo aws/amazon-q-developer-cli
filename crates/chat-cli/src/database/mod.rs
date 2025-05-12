@@ -1,4 +1,3 @@
-pub mod secret_store;
 pub mod settings;
 
 use std::ops::Deref;
@@ -17,7 +16,6 @@ use rusqlite::{
     ToSql,
     params,
 };
-use secret_store::SecretStore;
 use serde::de::DeserializeOwned;
 use serde::{
     Deserialize,
@@ -94,6 +92,25 @@ impl From<amzn_codewhisperer_client::types::Profile> for AuthProfile {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Secret(pub String);
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Secret").finish()
+    }
+}
+
+impl<T> From<T> for Secret
+where
+    T: Into<String>,
+{
+    fn from(value: T) -> Self {
+        Self(value.into())
+    }
+}
+
 // A cloneable error
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("Failed to open database: {}", .0)]
@@ -166,7 +183,6 @@ struct Migration {
 pub struct Database {
     pool: Pool<SqliteConnectionManager>,
     pub settings: Settings,
-    pub secret_store: SecretStore,
 }
 
 impl Database {
@@ -176,7 +192,6 @@ impl Database {
                 return Self {
                     pool: Pool::builder().build(SqliteConnectionManager::memory()).unwrap(),
                     settings: Settings::new().await?,
-                    secret_store: SecretStore::new().await?,
                 }
                 .migrate();
             },
@@ -209,7 +224,6 @@ impl Database {
         Ok(Self {
             pool,
             settings: Settings::new().await?,
-            secret_store: SecretStore::new().await?,
         }
         .migrate()
         .map_err(|e| DbOpenError(e.to_string()))?)
@@ -421,6 +435,98 @@ impl Database {
     }
 }
 
+#[cfg(target_os = "macos")]
+impl Database {
+    /// The account name is not used.
+    const ACCOUNT: &str = "";
+    /// Path to the `security` binary
+    const SECURITY_BIN: &str = "/usr/bin/security";
+
+    /// Sets the `key` to `password` on the keychain, this will override any existing value
+    pub async fn set_secret(&self, key: &str, password: &str) -> Result<(), DatabaseError> {
+        let output = tokio::process::Command::new(Self::SECURITY_BIN)
+            .args([
+                "add-generic-password",
+                "-U",
+                "-s",
+                key,
+                "-a",
+                Self::ACCOUNT,
+                "-w",
+                password,
+            ])
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            let stderr = std::str::from_utf8(&output.stderr)?;
+            return Err(DatabaseError::Security(stderr.into()));
+        }
+
+        Ok(())
+    }
+
+    /// Returns the password for the `key`
+    ///
+    /// If not found the result will be `Ok(None)`, other errors will be returned
+    pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
+        let output = tokio::process::Command::new(Self::SECURITY_BIN)
+            .args(["find-generic-password", "-s", key, "-a", Self::ACCOUNT, "-w"])
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            let stderr = std::str::from_utf8(&output.stderr)?;
+            if stderr.contains("could not be found") {
+                return Ok(None);
+            } else {
+                return Err(DatabaseError::Security(stderr.into()));
+            }
+        }
+
+        let stdout = std::str::from_utf8(&output.stdout)?;
+
+        // strip newline
+        let stdout = match stdout.strip_suffix('\n') {
+            Some(stdout) => stdout,
+            None => stdout,
+        };
+
+        Ok(Some(stdout.into()))
+    }
+
+    /// Deletes the `key` from the keychain
+    pub async fn delete_secret(&self, key: &str) -> Result<(), DatabaseError> {
+        let output = tokio::process::Command::new(Self::SECURITY_BIN)
+            .args(["delete-generic-password", "-s", key, "-a", Self::ACCOUNT])
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            let stderr = std::str::from_utf8(&output.stderr)?;
+            return Err(DatabaseError::Security(stderr.into()));
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "linux", windows))]
+impl Database {
+    pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
+        Ok(self.get_entry::<String>(Table::Auth, key)?.map(Into::into))
+    }
+
+    pub async fn set_secret(&self, key: &str, value: &str) -> Result<(), DatabaseError> {
+        self.set_entry(Table::Auth, key, value)?;
+        Ok(())
+    }
+
+    pub async fn delete_secret(&self, key: &str) -> Result<(), DatabaseError> {
+        self.delete_entry(Table::Auth, key)
+    }
+}
+
 fn max_migration<C: Deref<Target = Connection>>(conn: &C) -> Option<i64> {
     let mut stmt = conn.prepare("SELECT MAX(id) FROM migrations").ok()?;
     stmt.query_row([], |row| row.get(0)).ok()
@@ -501,5 +607,44 @@ mod tests {
         assert!(db.get_entry::<i32>(Table::State, "int").unwrap().is_none());
         assert!(db.get_entry::<f32>(Table::State, "float").unwrap().is_some());
         assert!(db.get_entry::<bool>(Table::State, "bool").unwrap().is_some());
+    }
+
+    #[tokio::test]
+    #[ignore = "not on ci"]
+    async fn test_set_password() {
+        let key = "test_set_password";
+        let store = Database::new().await.unwrap();
+        store.set_secret(key, "test").await.unwrap();
+        assert_eq!(store.get_secret(key).await.unwrap().unwrap().0, "test");
+        store.delete_secret(key).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "not on ci"]
+    async fn secret_get_time() {
+        let key = "test_secret_get_time";
+        let store = Database::new().await.unwrap();
+        store.set_secret(key, "1234").await.unwrap();
+
+        let now = std::time::Instant::now();
+        for _ in 0..100 {
+            store.get_secret(key).await.unwrap();
+        }
+
+        println!("duration: {:?}", now.elapsed() / 100);
+
+        store.delete_secret(key).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "not on ci"]
+    async fn secret_delete() {
+        let key = "test_secret_delete";
+
+        let store = Database::new().await.unwrap();
+        store.set_secret(key, "1234").await.unwrap();
+        assert_eq!(store.get_secret(key).await.unwrap().unwrap().0, "1234");
+        store.delete_secret(key).await.unwrap();
+        assert_eq!(store.get_secret(key).await.unwrap(), None);
     }
 }
