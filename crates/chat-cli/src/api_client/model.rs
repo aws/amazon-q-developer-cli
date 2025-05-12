@@ -1,10 +1,20 @@
+use std::collections::HashMap;
+
 use aws_smithy_types::{
     Blob,
-    Document,
+    Document as AwsDocument,
+};
+use serde::de::{
+    self,
+    MapAccess,
+    SeqAccess,
+    Visitor,
 };
 use serde::{
     Deserialize,
+    Deserializer,
     Serialize,
+    Serializer,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -125,8 +135,189 @@ impl TryFrom<ChatMessage> for amzn_qdeveloper_streaming_client::types::ChatMessa
     }
 }
 
-/// Information about a tool that can be used.
+/// Wrapper around [aws_smithy_types::Document].
+///
+/// Used primarily so we can implement [Serialize] and [Deserialize] for
+/// [aws_smith_types::Document].
 #[derive(Debug, Clone)]
+pub struct FigDocument(AwsDocument);
+
+impl From<AwsDocument> for FigDocument {
+    fn from(value: AwsDocument) -> Self {
+        Self(value)
+    }
+}
+
+impl From<FigDocument> for AwsDocument {
+    fn from(value: FigDocument) -> Self {
+        value.0
+    }
+}
+
+/// Internal type used only during serialization for `FigDocument` to avoid unnecessary cloning.
+#[derive(Debug, Clone)]
+struct FigDocumentRef<'a>(&'a AwsDocument);
+
+impl Serialize for FigDocumentRef<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use aws_smithy_types::Number;
+        match self.0 {
+            AwsDocument::Null => serializer.serialize_unit(),
+            AwsDocument::Bool(b) => serializer.serialize_bool(*b),
+            AwsDocument::Number(n) => match n {
+                Number::PosInt(u) => serializer.serialize_u64(*u),
+                Number::NegInt(i) => serializer.serialize_i64(*i),
+                Number::Float(f) => serializer.serialize_f64(*f),
+            },
+            AwsDocument::String(s) => serializer.serialize_str(s),
+            AwsDocument::Array(arr) => {
+                use serde::ser::SerializeSeq;
+                let mut seq = serializer.serialize_seq(Some(arr.len()))?;
+                for value in arr {
+                    seq.serialize_element(&Self(value))?;
+                }
+                seq.end()
+            },
+            AwsDocument::Object(m) => {
+                use serde::ser::SerializeMap;
+                let mut map = serializer.serialize_map(Some(m.len()))?;
+                for (k, v) in m {
+                    map.serialize_entry(k, &Self(v))?;
+                }
+                map.end()
+            },
+        }
+    }
+}
+
+impl Serialize for FigDocument {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        FigDocumentRef(&self.0).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FigDocument {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use aws_smithy_types::Number;
+
+        struct FigDocumentVisitor;
+
+        impl<'de> Visitor<'de> for FigDocumentVisitor {
+            type Value = FigDocument;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("any valid JSON value")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FigDocument(AwsDocument::Bool(value)))
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FigDocument(AwsDocument::Number(if value < 0 {
+                    Number::NegInt(value)
+                } else {
+                    Number::PosInt(value as u64)
+                })))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FigDocument(AwsDocument::Number(Number::PosInt(value))))
+            }
+
+            fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FigDocument(AwsDocument::Number(Number::Float(value))))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FigDocument(AwsDocument::String(value.to_owned())))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FigDocument(AwsDocument::String(value)))
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FigDocument(AwsDocument::Null))
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                Deserialize::deserialize(deserializer)
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FigDocument(AwsDocument::Null))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut vec = Vec::new();
+
+                while let Some(elem) = seq.next_element::<FigDocument>()? {
+                    vec.push(elem.0);
+                }
+
+                Ok(FigDocument(AwsDocument::Array(vec)))
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut map = HashMap::new();
+
+                while let Some((key, value)) = access.next_entry::<String, FigDocument>()? {
+                    map.insert(key, value.0);
+                }
+
+                Ok(FigDocument(AwsDocument::Object(map)))
+            }
+        }
+
+        deserializer.deserialize_any(FigDocumentVisitor)
+    }
+}
+
+/// Information about a tool that can be used.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Tool {
     ToolSpecification(ToolSpecification),
 }
@@ -148,7 +339,7 @@ impl From<Tool> for amzn_qdeveloper_streaming_client::types::Tool {
 }
 
 /// The specification for the tool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolSpecification {
     /// The name for the tool.
     pub name: String,
@@ -181,33 +372,33 @@ impl From<ToolSpecification> for amzn_qdeveloper_streaming_client::types::ToolSp
 }
 
 /// The input schema for the tool in JSON format.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolInputSchema {
-    pub json: Option<Document>,
+    pub json: Option<FigDocument>,
 }
 
 impl From<ToolInputSchema> for amzn_codewhisperer_streaming_client::types::ToolInputSchema {
     fn from(value: ToolInputSchema) -> Self {
-        Self::builder().set_json(value.json).build()
+        Self::builder().set_json(value.json.map(Into::into)).build()
     }
 }
 
 impl From<ToolInputSchema> for amzn_qdeveloper_streaming_client::types::ToolInputSchema {
     fn from(value: ToolInputSchema) -> Self {
-        Self::builder().set_json(value.json).build()
+        Self::builder().set_json(value.json.map(Into::into)).build()
     }
 }
 
 /// Contains information about a tool that the model is requesting be run. The model uses the result
 /// from the tool to generate a response.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolUse {
     /// The ID for the tool request.
     pub tool_use_id: String,
     /// The name for the tool.
     pub name: String,
     /// The input to pass to the tool.
-    pub input: Document,
+    pub input: FigDocument,
 }
 
 impl From<ToolUse> for amzn_codewhisperer_streaming_client::types::ToolUse {
@@ -215,7 +406,7 @@ impl From<ToolUse> for amzn_codewhisperer_streaming_client::types::ToolUse {
         Self::builder()
             .tool_use_id(value.tool_use_id)
             .name(value.name)
-            .input(value.input)
+            .input(value.input.into())
             .build()
             .expect("building ToolUse should not fail")
     }
@@ -226,7 +417,7 @@ impl From<ToolUse> for amzn_qdeveloper_streaming_client::types::ToolUse {
         Self::builder()
             .tool_use_id(value.tool_use_id)
             .name(value.name)
-            .input(value.input)
+            .input(value.input.into())
             .build()
             .expect("building ToolUse should not fail")
     }
@@ -268,7 +459,7 @@ impl From<ToolResult> for amzn_qdeveloper_streaming_client::types::ToolResult {
 #[derive(Debug, Clone)]
 pub enum ToolResultContentBlock {
     /// A tool result that is JSON format data.
-    Json(Document),
+    Json(AwsDocument),
     /// A tool result that is text.
     Text(String),
 }
@@ -780,7 +971,7 @@ mod tests {
                     name: "test tool name".to_string(),
                     description: "test tool description".to_string(),
                     input_schema: ToolInputSchema {
-                        json: Some(Document::Null),
+                        json: Some(AwsDocument::Null.into()),
                     },
                 })]),
             }),
@@ -814,7 +1005,9 @@ mod tests {
             tool_uses: Some(vec![ToolUse {
                 tool_use_id: "tooluseid_test".to_string(),
                 name: "tool_name_test".to_string(),
-                input: Document::Object([("key1".to_string(), Document::Null)].into_iter().collect()),
+                input: FigDocument(AwsDocument::Object(
+                    [("key1".to_string(), AwsDocument::Null)].into_iter().collect(),
+                )),
             }]),
         };
         let codewhisper_input =

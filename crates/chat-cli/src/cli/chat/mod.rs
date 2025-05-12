@@ -210,14 +210,15 @@ const SMALL_SCREEN_WECLOME_TEXT: &str = color_print::cstr! {"
 <em>Welcome to <cyan!>Amazon Q</cyan!>!</em>
 "};
 
-const ROTATING_TIPS: [&str; 10] = [
+const ROTATING_TIPS: [&str; 11] = [
     color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
+    color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
+    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
     color_print::cstr! {"Q can use tools without asking for confirmation every time. Give <green!>/tools trust</green!> a try"},
     color_print::cstr! {"You can programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks help</green!>"},
     color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation history with its summary to free up the context space"},
-    color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
     color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
     color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with /help"},
     color_print::cstr! {"You can specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use /tools to see pending servers."},
@@ -274,7 +275,9 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>rm</em>          <black!>Remove file(s) from context [--global]</black!>
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
   <em>hooks</em>       <black!>View and manage context hooks</black!>
-<em>/usage</em>      <black!>Show current session's context window usage</black!>
+<em>/usage</em>        <black!>Show current session's context window usage</black!>
+<em>/import</em>       <black!>Import conversation state from a JSON file</black!>
+<em>/export</em>       <black!>Export conversation state to a JSON file</black!>
 
 <cyan,em>MCP:</cyan,em>
 <black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/en_us/amazonq/latest/qdeveloper-ug/command-line-mcp.html</black!>
@@ -1604,6 +1607,9 @@ impl ChatContext {
                 if let Some(context_manager) = &mut self.conversation_state.context_manager {
                     match subcommand {
                         command::ContextSubcommand::Show { expand } => {
+                            fn map_chat_error(e: ErrReport) -> ChatError {
+                                ChatError::Custom(e.to_string().into())
+                            }
                             // Display global context
                             execute!(
                                 self.output,
@@ -1641,6 +1647,28 @@ impl ChatContext {
                                 }
                             }
 
+                            if expand {
+                                queue!(
+                                    self.output,
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::SetForegroundColor(Color::DarkYellow),
+                                    style::Print("\n    🔧 Hooks:\n")
+                                )?;
+                                print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.global_config.hooks,
+                                    HookTrigger::ConversationStart,
+                                )
+                                .map_err(map_chat_error)?;
+
+                                print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.global_config.hooks,
+                                    HookTrigger::PerPrompt,
+                                )
+                                .map_err(map_chat_error)?;
+                            }
+
                             // Display profile context
                             execute!(
                                 self.output,
@@ -1675,6 +1703,28 @@ impl ChatContext {
                                     }
                                     execute!(self.output, style::Print("\n"))?;
                                 }
+                                execute!(self.output, style::Print("\n"))?;
+                            }
+
+                            if expand {
+                                queue!(
+                                    self.output,
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::SetForegroundColor(Color::DarkYellow),
+                                    style::Print("    🔧 Hooks:\n")
+                                )?;
+                                print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.profile_config.hooks,
+                                    HookTrigger::ConversationStart,
+                                )
+                                .map_err(map_chat_error)?;
+                                print_hook_section(
+                                    &mut self.output,
+                                    &context_manager.profile_config.hooks,
+                                    HookTrigger::PerPrompt,
+                                )
+                                .map_err(map_chat_error)?;
                                 execute!(self.output, style::Print("\n"))?;
                             }
 
@@ -1800,6 +1850,28 @@ impl ChatContext {
                                 }
 
                                 execute!(self.output, style::Print("\n"))?;
+                            }
+
+                            // Show last cached conversation summary if available, otherwise regenerate it
+                            if expand {
+                                if let Some(summary) = self.conversation_state.latest_summary() {
+                                    let border = "═".repeat(self.terminal_width().min(80));
+                                    execute!(
+                                        self.output,
+                                        style::Print("\n"),
+                                        style::SetForegroundColor(Color::Cyan),
+                                        style::Print(&border),
+                                        style::Print("\n"),
+                                        style::SetAttribute(Attribute::Bold),
+                                        style::Print("                       CONVERSATION SUMMARY"),
+                                        style::Print("\n"),
+                                        style::Print(&border),
+                                        style::SetAttribute(Attribute::Reset),
+                                        style::Print("\n\n"),
+                                        style::Print(&summary),
+                                        style::Print("\n\n\n")
+                                    )?;
+                                }
                             }
                         },
                         command::ContextSubcommand::Add { global, force, paths } => {
@@ -2050,48 +2122,6 @@ impl ChatContext {
                                     },
                                 }
                             } else {
-                                fn print_hook_section(
-                                    output: &mut impl Write,
-                                    hooks: &HashMap<String, Hook>,
-                                    trigger: HookTrigger,
-                                ) -> Result<()> {
-                                    let section = match trigger {
-                                        HookTrigger::ConversationStart => "Conversation Start",
-                                        HookTrigger::PerPrompt => "Per Prompt",
-                                    };
-                                    let hooks: Vec<(&String, &Hook)> =
-                                        hooks.iter().filter(|(_, h)| h.trigger == trigger).collect();
-
-                                    queue!(
-                                        output,
-                                        style::SetForegroundColor(Color::Cyan),
-                                        style::Print(format!("    {section}:\n")),
-                                        style::SetForegroundColor(Color::Reset),
-                                    )?;
-
-                                    if hooks.is_empty() {
-                                        queue!(
-                                            output,
-                                            style::SetForegroundColor(Color::DarkGrey),
-                                            style::Print("      <none>\n"),
-                                            style::SetForegroundColor(Color::Reset)
-                                        )?;
-                                    } else {
-                                        for (name, hook) in hooks {
-                                            if hook.disabled {
-                                                queue!(
-                                                    output,
-                                                    style::SetForegroundColor(Color::DarkGrey),
-                                                    style::Print(format!("      {} (disabled)\n", name)),
-                                                    style::SetForegroundColor(Color::Reset)
-                                                )?;
-                                            } else {
-                                                queue!(output, style::Print(format!("      {}\n", name)),)?;
-                                            }
-                                        }
-                                    }
-                                    Ok(())
-                                }
                                 queue!(
                                     self.output,
                                     style::SetAttribute(Attribute::Bold),
@@ -2752,6 +2782,100 @@ impl ChatContext {
                     skip_printing_tools: true,
                 }
             },
+            Command::Import { path } => {
+                macro_rules! tri {
+                    ($v:expr) => {
+                        match $v {
+                            Ok(v) => v,
+                            Err(err) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nFailed to import from {}: {}\n\n", &path, &err)),
+                                    style::SetAttribute(Attribute::Reset)
+                                )?;
+                                return Ok(ChatState::PromptUser {
+                                    tool_uses: Some(tool_uses),
+                                    pending_tool_index,
+                                    skip_printing_tools: true,
+                                });
+                            },
+                        }
+                    };
+                }
+
+                let contents = tri!(self.ctx.fs().read_to_string(&path).await);
+                let new_state: ConversationState = tri!(serde_json::from_str(&contents));
+                self.conversation_state = new_state;
+                self.conversation_state.updates = Some(self.output.clone());
+
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("\n✔ Imported conversation state from {}\n\n", &path)),
+                    style::SetAttribute(Attribute::Reset)
+                )?;
+
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    pending_tool_index: None,
+                    skip_printing_tools: true,
+                }
+            },
+            Command::Export { path, force } => {
+                macro_rules! tri {
+                    ($v:expr) => {
+                        match $v {
+                            Ok(v) => v,
+                            Err(err) => {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nFailed to export to {}: {}\n\n", &path, &err)),
+                                    style::SetAttribute(Attribute::Reset)
+                                )?;
+                                return Ok(ChatState::PromptUser {
+                                    tool_uses: Some(tool_uses),
+                                    pending_tool_index,
+                                    skip_printing_tools: true,
+                                });
+                            },
+                        }
+                    };
+                }
+
+                let contents = tri!(serde_json::to_string_pretty(&self.conversation_state));
+                if self.ctx.fs().exists(&path) && !force {
+                    execute!(
+                        self.output,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!(
+                            "\nFile at {} already exists. To overwrite, use -f or --force\n\n",
+                            &path
+                        )),
+                        style::SetAttribute(Attribute::Reset)
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        tool_uses: Some(tool_uses),
+                        pending_tool_index,
+                        skip_printing_tools: true,
+                    });
+                }
+                tri!(self.ctx.fs().write(&path, contents).await);
+
+                execute!(
+                    self.output,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("\n✔ Exported conversation state to {}\n\n", &path)),
+                    style::SetAttribute(Attribute::Reset)
+                )?;
+
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    pending_tool_index: None,
+                    skip_printing_tools: true,
+                }
+            },
         })
     }
 
@@ -2899,6 +3023,12 @@ impl ChatContext {
             let images = image_blocks.into_iter().map(|(block, _)| block).collect();
             self.conversation_state
                 .add_tool_results_with_images(tool_results, images);
+            execute!(
+                self.output,
+                style::SetAttribute(Attribute::Reset),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n")
+            )?;
         } else {
             self.conversation_state.add_tool_results(tool_results);
         }
@@ -3389,6 +3519,45 @@ impl ChatContext {
 
         Ok(())
     }
+}
+
+/// Prints hook configuration grouped by trigger: conversation session start or per user message
+fn print_hook_section(output: &mut impl Write, hooks: &HashMap<String, Hook>, trigger: HookTrigger) -> Result<()> {
+    let section = match trigger {
+        HookTrigger::ConversationStart => "On Session Start",
+        HookTrigger::PerPrompt => "Per User Message",
+    };
+    let hooks: Vec<(&String, &Hook)> = hooks.iter().filter(|(_, h)| h.trigger == trigger).collect();
+
+    queue!(
+        output,
+        style::SetForegroundColor(Color::Cyan),
+        style::Print(format!("    {section}:\n")),
+        style::SetForegroundColor(Color::Reset),
+    )?;
+
+    if hooks.is_empty() {
+        queue!(
+            output,
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print("      <none>\n"),
+            style::SetForegroundColor(Color::Reset)
+        )?;
+    } else {
+        for (name, hook) in hooks {
+            if hook.disabled {
+                queue!(
+                    output,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(format!("      {} (disabled)\n", name)),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+            } else {
+                queue!(output, style::Print(format!("      {}\n", name)),)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug)]

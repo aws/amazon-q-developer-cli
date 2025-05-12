@@ -31,9 +31,17 @@ fn protoc_version() -> Option<Version> {
 
 fn download_protoc() {
     let protoc_version = "26.1";
-
     let tmp_folder = tempfile::tempdir().unwrap();
 
+    #[cfg(not(windows))]
+    download_protoc_unix(protoc_version, &tmp_folder);
+
+    #[cfg(windows)]
+    download_protoc_windows(protoc_version, &tmp_folder);
+}
+
+#[cfg(not(windows))]
+fn download_protoc_unix(protoc_version: &str, tmp_folder: &tempfile::TempDir) {
     let os = match std::env::consts::OS {
         "linux" => "linux",
         "macos" => "osx",
@@ -84,6 +92,80 @@ fn download_protoc() {
     let mut mv = Command::new("mv");
     mv.arg(tmp_folder.path().join("bin/protoc")).arg(&out_bin);
     assert!(mv.spawn().unwrap().wait().unwrap().success());
+
+    std::env::set_var("PROTOC", out_bin);
+}
+
+#[cfg(windows)]
+fn download_protoc_windows(protoc_version: &str, tmp_folder: &tempfile::TempDir) {
+    // Determine Windows architecture (win32 or win64)
+    let win_arch = match std::env::consts::ARCH {
+        "x86_64" => "win64",
+        "x86" => "win32",
+        arch => panic!("Unsupported Windows architecture: {arch}"),
+    };
+
+    // Windows-specific checksums
+    let checksum = match win_arch {
+        "win64" => "9090d135a1159042b13b4e51b210e40cb820d85a5032a6eca5f9b3ca3bdfb539",
+        "win32" => "11fc8f280922e86d917e30f7b9960a1e77453f64990d965080697b394a8d9d74",
+        _ => unreachable!(),
+    };
+
+    // Windows-specific URL format
+    let download_url = format!(
+        "https://github.com/protocolbuffers/protobuf/releases/download/v{protoc_version}/protoc-{protoc_version}-{win_arch}.zip"
+    );
+
+    eprintln!("Downloading protoc from: {download_url}");
+
+    // Download using curl (assuming curl is available on Windows)
+    let mut download_command = Command::new("curl");
+    download_command
+        .arg("-Lf")
+        .arg(download_url)
+        .arg("-o")
+        .arg(tmp_folder.path().join("protoc.zip"));
+    assert!(download_command.spawn().unwrap().wait().unwrap().success());
+
+    // Verify checksum using PowerShell
+    let mut checksum_command = Command::new("powershell");
+    checksum_command.arg("-Command").arg(format!(
+        "(Get-FileHash -Path '{}' -Algorithm SHA256).Hash.ToLower()",
+        tmp_folder.path().join("protoc.zip").display()
+    ));
+    let checksum_output = checksum_command.output().unwrap();
+    let checksum_output = String::from_utf8(checksum_output.stdout).unwrap().trim().to_lowercase();
+
+    eprintln!("checksum: {checksum_output:?}");
+    assert_eq!(
+        checksum_output,
+        checksum.to_lowercase(),
+        "Checksum verification failed. Expected: {}, Got: {}",
+        checksum.to_lowercase(),
+        checksum_output
+    );
+
+    // Extract using PowerShell
+    let mut unzip_command = Command::new("powershell");
+    unzip_command.arg("-Command").arg(format!(
+        "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+        tmp_folder.path().join("protoc.zip").display(),
+        tmp_folder.path().display()
+    ));
+    assert!(unzip_command.spawn().unwrap().wait().unwrap().success());
+
+    // Set output path with .exe extension for Windows
+    let out_bin = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("protoc.exe");
+
+    // Copy the protoc binary using PowerShell
+    let mut copy_command = Command::new("powershell");
+    copy_command.arg("-Command").arg(format!(
+        "Copy-Item -Path '{}' -Destination '{}'",
+        tmp_folder.path().join("bin").join("protoc.exe").display(),
+        out_bin.display()
+    ));
+    assert!(copy_command.spawn().unwrap().wait().unwrap().success());
 
     std::env::set_var("PROTOC", out_bin);
 }

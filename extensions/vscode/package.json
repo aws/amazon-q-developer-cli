@@ -43,13 +43,13 @@
     "@eslint/js": "^9.18.0",
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^22.15.3",
+    "@types/node": "^22.15.17",
     "@types/vscode": "~1.80.0",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^2.32.0",
     "eslint": "^9.18.0",
     "glob": "^11.0.2",
-    "globals": "^16.0.0",
+    "globals": "^16.1.0",
     "mocha": "^11.1.0",
     "typescript": "^5.8.3"
   }

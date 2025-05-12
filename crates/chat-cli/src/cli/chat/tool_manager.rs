@@ -630,7 +630,6 @@ pub struct ToolManager {
     /// These clients are used to communicate with MCP servers.
     pub clients: HashMap<String, Arc<CustomToolClient>>,
 
-    #[allow(dead_code)]
     /// A list of client names that are still in the process of being initialized
     pub pending_clients: Arc<RwLock<HashSet<String>>>,
 
