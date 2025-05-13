@@ -187,7 +187,10 @@ impl UserSubcommand {
             },
             Self::Profile => {
                 if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in(database).await {
-                    bail!("You are not logged in, please log in with {}", "q login".bold());
+                    bail!(
+                        "You are not logged in, please log in with {}",
+                        format!("{CHAT_BINARY_NAME} login").bold()
+                    );
                 }
 
                 if let Ok(Some(token)) = BuilderIdToken::load(database).await {
