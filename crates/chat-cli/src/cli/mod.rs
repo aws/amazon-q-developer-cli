@@ -34,8 +34,9 @@ use tracing::{
     debug,
 };
 use user::UserSubcommand;
-use crate::cli::chat::mcp;
+
 use crate::cli::chat::cli::Mcp;
+use crate::cli::chat::mcp;
 use crate::logging::{
     LogArgs,
     initialize_logging,
@@ -314,6 +315,7 @@ impl Cli {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::cli::chat::cli::{
         McpAdd,
         McpImport,
@@ -321,7 +323,6 @@ mod test {
         McpRemove,
         Scope,
     };
-    use super::*;
 
     #[test]
     fn debug_assert() {

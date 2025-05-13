@@ -191,8 +191,7 @@ pub async fn get_mcp_server_status(ctx: &Context, output: &mut SharedWriter, nam
                     "Env Vars: {}\n",
                     cfg.env
                         .as_ref()
-                        .map(|e| e.keys().cloned().collect::<Vec<_>>().join(", "))
-                        .unwrap_or_else(|| "(none)".into())
+                        .map_or_else(|| "(none)".into(), |e| e.keys().cloned().collect::<Vec<_>>().join(", "))
                 )),
             )?;
         }
