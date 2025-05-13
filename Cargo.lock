@@ -1521,7 +1521,6 @@ dependencies = [
  "bytes",
  "camino",
  "cfg-if",
- "chrono",
  "clap",
  "clap_complete",
  "clap_complete_fig",

@@ -213,9 +213,7 @@ impl ConversationState {
             warn!("input must not be empty when adding new messages");
             "Empty prompt".to_string()
         } else {
-            let now = chrono::Utc::now();
-            let formatted_time = now.format("%Y-%m-%d %H:%M:%S").to_string();
-            format!("{}\n\n<currentTimeUTC>\n{}\n</currentTimeUTC>", input, formatted_time)
+            input
         };
 
         let msg = UserMessage::new_prompt(input);

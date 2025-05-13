@@ -72,19 +72,72 @@ use hooks::{
     Hook,
     HookTrigger,
 };
+use input_source::InputSource;
 use message::{
     AssistantMessage,
     AssistantToolUse,
     ToolUseResult,
     ToolUseResultBlock,
 };
+use parse::{
+    ParseState,
+    interpret_markdown,
+};
+use parser::{
+    RecvErrorKind,
+    ResponseParser,
+};
 use rand::distr::{
     Alphanumeric,
     SampleString,
 };
+use regex::Regex;
+use serde_json::Map;
+use spinners::{
+    Spinner,
+    Spinners,
+};
+use thiserror::Error;
+use token_counter::{
+    TokenCount,
+    TokenCounter,
+};
 use tokio::signal::ctrl_c;
+use tool_manager::{
+    GetPromptError,
+    McpServerConfig,
+    PromptBundle,
+    ToolManager,
+    ToolManagerBuilder,
+};
+use tools::gh_issue::GhIssueContext;
+use tools::{
+    OutputKind,
+    QueuedTool,
+    Tool,
+    ToolPermissions,
+    ToolSpec,
+};
+use tracing::{
+    debug,
+    error,
+    info,
+    trace,
+    warn,
+};
+use unicode_width::UnicodeWidthStr;
+use util::images::RichImageBlock;
 use util::shared_writer::SharedWriter;
 use util::ui::draw_box;
+use util::{
+    animate_output,
+    drop_matched_context_files,
+    play_notification_bell,
+    region_check,
+};
+use uuid::Uuid;
+use winnow::Partial;
+use winnow::stream::Offset;
 
 use crate::api_client::StreamingClient;
 use crate::api_client::clients::SendMessageOutput;
@@ -95,9 +148,14 @@ use crate::api_client::model::{
 };
 use crate::database::Database;
 use crate::database::settings::Setting;
+use crate::mcp_client::{
+    Prompt,
+    PromptGetResult,
+};
 use crate::platform::Context;
 use crate::telemetry::TelemetryThread;
 use crate::telemetry::core::ToolUseEventBuilder;
+use crate::util::CHAT_BINARY_NAME;
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -127,64 +185,6 @@ that may eventually reach memory constraints.
 "#
     )
 }
-use input_source::InputSource;
-use parse::{
-    ParseState,
-    interpret_markdown,
-};
-use parser::{
-    RecvErrorKind,
-    ResponseParser,
-};
-use regex::Regex;
-use serde_json::Map;
-use spinners::{
-    Spinner,
-    Spinners,
-};
-use thiserror::Error;
-use token_counter::{
-    TokenCount,
-    TokenCounter,
-};
-use tool_manager::{
-    GetPromptError,
-    McpServerConfig,
-    PromptBundle,
-    ToolManager,
-    ToolManagerBuilder,
-};
-use tools::gh_issue::GhIssueContext;
-use tools::{
-    OutputKind,
-    QueuedTool,
-    Tool,
-    ToolPermissions,
-    ToolSpec,
-};
-use tracing::{
-    debug,
-    error,
-    info,
-    trace,
-    warn,
-};
-use unicode_width::UnicodeWidthStr;
-use util::images::RichImageBlock;
-use util::{
-    animate_output,
-    drop_matched_context_files,
-    play_notification_bell,
-    region_check,
-};
-use uuid::Uuid;
-use winnow::Partial;
-use winnow::stream::Offset;
-
-use crate::mcp_client::{
-    Prompt,
-    PromptGetResult,
-};
 
 const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
     ⢠⣶⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣶⣦⡀⠀
@@ -311,7 +311,10 @@ pub async fn chat(
     trust_tools: Option<Vec<String>>,
 ) -> Result<ExitCode> {
     if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in(database).await {
-        bail!("You are not logged in, please log in with {}", "q login".bold());
+        bail!(
+            "You are not logged in, please log in with {}",
+            format!("{CHAT_BINARY_NAME} login").bold()
+        );
     }
 
     region_check("chat")?;
