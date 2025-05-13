@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::collections::HashMap;
 use std::sync::atomic::{
     AtomicBool,
@@ -15,23 +16,21 @@ use tokio::io::{
 };
 use tokio::task::JoinHandle;
 
-use crate::mcp_client::client::StdioTransport;
-use crate::mcp_client::transport::base_protocol::{
+use super::Listener as _;
+use super::client::StdioTransport;
+use super::error::ErrorCode;
+use super::transport::base_protocol::{
     JsonRpcError,
     JsonRpcMessage,
     JsonRpcNotification,
     JsonRpcRequest,
     JsonRpcResponse,
 };
-use crate::mcp_client::transport::stdio::JsonRpcStdioTransport;
-use crate::mcp_client::transport::{
+use super::transport::stdio::JsonRpcStdioTransport;
+use super::transport::{
     JsonRpcVersion,
     Transport,
     TransportError,
-};
-use crate::mcp_client::{
-    Listener as _,
-    McpError,
 };
 
 pub type Request = serde_json::Value;
@@ -110,20 +109,37 @@ where
         let current_id_clone = current_id.clone();
         let request_sender = move |method: &str, params: Option<serde_json::Value>| -> Result<(), ServerError> {
             let id = current_id_clone.fetch_add(1, Ordering::SeqCst);
-            let request = JsonRpcRequest {
-                jsonrpc: JsonRpcVersion::default(),
-                id,
-                method: method.to_owned(),
-                params,
+            let msg = match method.split_once("/") {
+                Some(("request", _)) => {
+                    let request = JsonRpcRequest {
+                        jsonrpc: JsonRpcVersion::default(),
+                        id,
+                        method: method.to_owned(),
+                        params,
+                    };
+                    let msg = JsonRpcMessage::Request(request.clone());
+                    #[allow(clippy::map_err_ignore)]
+                    let mut pending_request = pending_request_clone_two.lock().map_err(|_| ServerError::MutexError)?;
+                    pending_request.insert(id, request);
+                    Some(msg)
+                },
+                Some(("notifications", _)) => {
+                    let notif = JsonRpcNotification {
+                        jsonrpc: JsonRpcVersion::default(),
+                        method: method.to_owned(),
+                        params,
+                    };
+                    let msg = JsonRpcMessage::Notification(notif);
+                    Some(msg)
+                },
+                _ => None,
             };
-            let msg = JsonRpcMessage::Request(request.clone());
-            let transport = transport_clone.clone();
-            tokio::task::spawn(async move {
-                let _ = transport.send(&msg).await;
-            });
-            #[allow(clippy::map_err_ignore)]
-            let mut pending_request = pending_request_clone_two.lock().map_err(|_| ServerError::MutexError)?;
-            pending_request.insert(id, request);
+            if let Some(msg) = msg {
+                let transport = transport_clone.clone();
+                tokio::task::spawn(async move {
+                    let _ = transport.send(&msg).await;
+                });
+            }
             Ok(())
         };
         handler.register_send_request_callback(request_sender);
@@ -179,7 +195,7 @@ async fn process_request<T, H>(
                     jsonrpc: JsonRpcVersion::default(),
                     id,
                     error: Some(JsonRpcError {
-                        code: McpError::InvalidRequest.into(),
+                        code: ErrorCode::InvalidRequest.into(),
                         message: "Server has already been initialized".to_owned(),
                         data: None,
                     }),
@@ -193,7 +209,7 @@ async fn process_request<T, H>(
                     jsonrpc: JsonRpcVersion::default(),
                     id,
                     error: Some(JsonRpcError {
-                        code: McpError::InvalidRequest.into(),
+                        code: ErrorCode::InvalidRequest.into(),
                         message: "Invalid method for initialization (use request)".to_owned(),
                         data: None,
                     }),
@@ -218,7 +234,7 @@ async fn process_request<T, H>(
                         jsonrpc: JsonRpcVersion::default(),
                         id,
                         error: Some(JsonRpcError {
-                            code: McpError::InternalError.into(),
+                            code: ErrorCode::InternalError.into(),
                             message: "Error producing initialization response".to_owned(),
                             data: None,
                         }),
@@ -242,7 +258,7 @@ async fn process_request<T, H>(
                 let resp = handler.handle_incoming(method, params).await.map_or_else(
                     |error| {
                         let err = JsonRpcError {
-                            code: McpError::InternalError.into(),
+                            code: ErrorCode::InternalError.into(),
                             message: error.to_string(),
                             data: None,
                         };
@@ -280,7 +296,7 @@ async fn process_request<T, H>(
                 jsonrpc: JsonRpcVersion::default(),
                 id,
                 error: Some(JsonRpcError {
-                    code: McpError::ServerNotInitialized.into(),
+                    code: ErrorCode::ServerNotInitialized.into(),
                     message: "Server has not been initialized".to_owned(),
                     data: None,
                 }),

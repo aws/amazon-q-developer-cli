@@ -3,6 +3,7 @@ use std::collections::{
     VecDeque,
 };
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use crossterm::style::Color;
 use crossterm::{
@@ -41,6 +42,7 @@ use super::token_counter::{
     CharCount,
     CharCounter,
 };
+use super::tool_manager::ToolManager;
 use super::tools::{
     InputSchema,
     QueuedTool,
@@ -90,6 +92,9 @@ pub struct ConversationState {
     pub tools: HashMap<ToolOrigin, Vec<Tool>>,
     /// Context manager for handling sticky context files
     pub context_manager: Option<ContextManager>,
+    /// Tool manager for handling tool and mcp related activities
+    #[serde(skip)]
+    pub tool_manager: ToolManager,
     /// Cached value representing the length of the user context message.
     context_message_length: Option<usize>,
     /// Stores the latest conversation summary created by /compact
@@ -105,6 +110,7 @@ impl ConversationState {
         tool_config: HashMap<String, ToolSpec>,
         profile: Option<String>,
         updates: Option<SharedWriter>,
+        tool_manager: ToolManager,
     ) -> Self {
         // Initialize context manager
         let context_manager = match ContextManager::new(ctx, None).await {
@@ -143,6 +149,7 @@ impl ConversationState {
                     acc
                 }),
             context_manager,
+            tool_manager,
             context_message_length: None,
             latest_summary: None,
             updates,
@@ -308,29 +315,49 @@ impl ConversationState {
             }
 
             // Here we also need to make sure that the tool result corresponds to one of the tools
-            // in the list. Otherwise we will see validation error from the backend. We would only
-            // do this if the last message is a tool call that has failed.
+            // in the list. Otherwise we will see validation error from the backend. There are three
+            // such circumstances where intervention would be needed:
+            // 1. The model had decided to call a tool with its partial name AND there is only one such tool, in
+            //    which case we would automatically resolve this tool call to its correct name. This will NOT
+            //    result in an error in its tool result. The intervention here is to substitute the partial name
+            //    with its full name.
+            // 2. The model had decided to call a tool with its partial name AND there are multiple tools it
+            //    could be referring to, in which case we WILL return an error in the tool result. The
+            //    intervention here is to substitute the ambiguous, partial name with a dummy.
+            // 3. The model had decided to call a tool that does not exist. The intervention here is to
+            //    substitute the non-existent tool name with a dummy.
             let tool_use_results = user_msg.tool_use_results();
             if let Some(tool_use_results) = tool_use_results {
-                let tool_name_list = self
-                    .tools
-                    .values()
-                    .flatten()
-                    .map(|Tool::ToolSpecification(spec)| spec.name.as_str())
-                    .collect::<Vec<_>>();
+                // Note that we need to use the keys in tool manager's tn_map as the keys are the
+                // actual tool names as exposed to the model and the backend. If we use the actual
+                // names as they are recognized by their respective servers, we risk concluding
+                // with false positives.
+                let tool_name_list = self.tool_manager.tn_map.keys().map(String::as_str).collect::<Vec<_>>();
                 for result in tool_use_results {
-                    if let ToolResultStatus::Error = result.status {
-                        let tool_use_id = result.tool_use_id.as_str();
-                        let _ = tool_uses
-                            .iter_mut()
-                            .filter(|tool_use| tool_use.id == tool_use_id)
-                            .map(|tool_use| {
-                                let tool_name = tool_use.name.as_str();
-                                if !tool_name_list.contains(&tool_name) {
-                                    tool_use.name = DUMMY_TOOL_NAME.to_string();
-                                }
-                            })
-                            .collect::<Vec<_>>();
+                    let tool_use_id = result.tool_use_id.as_str();
+                    let corresponding_tool_use = tool_uses.iter_mut().find(|tool_use| tool_use_id == tool_use.id);
+                    if let Some(tool_use) = corresponding_tool_use {
+                        if tool_name_list.contains(&tool_use.name.as_str()) {
+                            // If this tool matches of the tools in our list, this is not our
+                            // concern, error or not.
+                            continue;
+                        }
+                        if let ToolResultStatus::Error = result.status {
+                            // case 2 and 3
+                            tool_use.name = DUMMY_TOOL_NAME.to_string();
+                            tool_use.args = serde_json::json!({});
+                        } else {
+                            // case 1
+                            let full_name = tool_name_list.iter().find(|name| name.ends_with(&tool_use.name));
+                            // We should be able to find a match but if not we'll just treat it as
+                            // a dummy and move on
+                            if let Some(full_name) = full_name {
+                                tool_use.name = (*full_name).to_string();
+                            } else {
+                                tool_use.name = DUMMY_TOOL_NAME.to_string();
+                                tool_use.args = serde_json::json!({});
+                            }
+                        }
                     }
                 }
             }
@@ -361,6 +388,7 @@ impl ConversationState {
     /// - `run_hooks` - whether hooks should be executed and included as context
     pub async fn as_sendable_conversation_state(&mut self, run_hooks: bool) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
+        self.update_state().await;
         self.enforce_conversation_invariants();
         self.history.drain(self.valid_history_range.1..);
         self.history.drain(..self.valid_history_range.0);
@@ -384,6 +412,30 @@ impl ConversationState {
         context
             .into_fig_conversation_state()
             .expect("unable to construct conversation state")
+    }
+
+    pub async fn update_state(&mut self) {
+        let needs_update = self.tool_manager.has_new_stuff.load(Ordering::Acquire);
+        if !needs_update {
+            return;
+        }
+        self.tool_manager.update().await;
+        self.tools = self
+            .tool_manager
+            .schema
+            .values()
+            .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+                let tool = Tool::ToolSpecification(ToolSpecification {
+                    name: v.name.clone(),
+                    description: v.description.clone(),
+                    input_schema: v.input_schema.clone().into(),
+                });
+                acc.entry(v.tool_origin.clone())
+                    .and_modify(|tools| tools.push(tool.clone()))
+                    .or_insert(vec![tool]);
+                acc
+            });
+        self.tool_manager.has_new_stuff.store(false, Ordering::Release);
     }
 
     /// Returns a conversation state representation which reflects the exact conversation to send
@@ -841,8 +893,6 @@ mod tests {
     };
     use crate::cli::chat::tool_manager::ToolManager;
     use crate::database::Database;
-    use crate::platform::Env;
-    use crate::telemetry::TelemetryThread;
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
@@ -934,17 +984,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
-        let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let mut tool_manager = ToolManager::default();
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_manager.load_tools(&database).await.unwrap(),
             None,
             None,
+            tool_manager,
         )
         .await;
 
@@ -962,18 +1011,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
-        let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         // Build a long conversation history of tool use results.
         let mut tool_manager = ToolManager::default();
+        let tool_config = tool_manager.load_tools(&database).await.unwrap();
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_config.clone(),
             None,
             None,
+            tool_manager.clone(),
         )
         .await;
         conversation_state.set_next_user_message("start".to_string()).await;
@@ -1000,9 +1049,10 @@ mod tests {
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_config.clone(),
             None,
             None,
+            tool_manager.clone(),
         )
         .await;
         conversation_state.set_next_user_message("start".to_string()).await;
@@ -1033,9 +1083,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_with_context_files() {
-        let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         ctx.fs().write(AMAZONQ_FILENAME, "test context").await.unwrap();
@@ -1044,9 +1092,10 @@ mod tests {
         let mut conversation_state = ConversationState::new(
             ctx,
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_manager.load_tools(&database).await.unwrap(),
             None,
             None,
+            tool_manager,
         )
         .await;
 
@@ -1083,9 +1132,7 @@ mod tests {
     async fn test_conversation_state_additional_context() {
         // tracing_subscriber::fmt::try_init().ok();
 
-        let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let mut tool_manager = ToolManager::default();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
@@ -1114,9 +1161,10 @@ mod tests {
         let mut conversation_state = ConversationState::new(
             ctx,
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_manager.load_tools(&database).await.unwrap(),
             None,
             Some(SharedWriter::stdout()),
+            tool_manager,
         )
         .await;
 

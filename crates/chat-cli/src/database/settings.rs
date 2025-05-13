@@ -28,6 +28,7 @@ pub enum Setting {
     ChatEnableNotifications,
     ApiCodeWhispererService,
     ApiQService,
+    McpInitTimeout,
 }
 
 impl AsRef<str> for Setting {
@@ -44,6 +45,7 @@ impl AsRef<str> for Setting {
             Self::ChatEnableNotifications => "chat.enableNotifications",
             Self::ApiCodeWhispererService => "api.codewhisperer.service",
             Self::ApiQService => "api.q.service",
+            Self::McpInitTimeout => "mcp.initTimeout",
         }
     }
 }
@@ -70,6 +72,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableNotifications" => Ok(Self::ChatEnableNotifications),
             "api.codewhisperer.service" => Ok(Self::ApiCodeWhispererService),
             "api.q.service" => Ok(Self::ApiQService),
+            "mcp.initTimeout" => Ok(Self::McpInitTimeout),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

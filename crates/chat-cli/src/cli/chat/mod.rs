@@ -9,6 +9,7 @@ mod message;
 mod parse;
 mod parser;
 mod prompt;
+mod server_messenger;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -127,7 +128,10 @@ use tracing::{
 };
 use unicode_width::UnicodeWidthStr;
 use util::images::RichImageBlock;
-use util::shared_writer::SharedWriter;
+use util::shared_writer::{
+    NullWriter,
+    SharedWriter,
+};
 use util::ui::draw_box;
 use util::{
     animate_output,
@@ -198,7 +202,8 @@ const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
 const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
-const ROTATING_TIPS: [&str; 9] = [
+const ROTATING_TIPS: [&str; 11] = [
+    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
@@ -207,7 +212,8 @@ const ROTATING_TIPS: [&str; 9] = [
     color_print::cstr! {"You can programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks help</green!>"},
     color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation history with its summary to free up the context space"},
     color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
-    color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with <green!>/help</green!>"},
+    color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with /help"},
+    color_print::cstr! {"You can specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use /tools to see pending servers."},
 ];
 
 const GREETING_BREAK_POINT: usize = 80;
@@ -384,16 +390,23 @@ pub async fn chat(
     info!(?conversation_id, "Generated new conversation id");
     let (prompt_request_sender, prompt_request_receiver) = std::sync::mpsc::channel::<Option<String>>();
     let (prompt_response_sender, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+    let tool_manager_output: Box<dyn Write + Send + Sync + 'static> = if interactive {
+        Box::new(output.clone())
+    } else {
+        Box::new(NullWriter {})
+    };
     let mut tool_manager = ToolManagerBuilder::default()
         .mcp_server_config(mcp_server_configs)
         .prompt_list_sender(prompt_response_sender)
         .prompt_list_receiver(prompt_request_receiver)
         .conversation_id(&conversation_id)
-        .build(telemetry)
+        .interactive(interactive)
+        .build(telemetry, tool_manager_output)
         .await?;
-    let tool_config = tool_manager.load_tools(database, telemetry).await?;
+    let tool_config = tool_manager.load_tools(database).await?;
     let mut tool_permissions = ToolPermissions::new(tool_config.len());
     if accept_all || trust_all_tools {
+        tool_permissions.trust_all = true;
         for tool in tool_config.values() {
             tool_permissions.trust_tool(&tool.name);
         }
@@ -496,8 +509,6 @@ pub struct ChatContext {
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
     /// State used to keep track of tool use relation
     tool_use_status: ToolUseStatus,
-    /// Abstraction that consolidates custom tools with native ones
-    tool_manager: ToolManager,
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
@@ -530,12 +541,23 @@ impl ChatContext {
             .and_then(|cwd| database.get_conversation_by_path(cwd).ok())
             .flatten()
         {
-            Some(prior) => {
+            Some(mut prior) => {
                 existing_conversation = true;
                 input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
+                prior.tool_manager = tool_manager;
                 prior
             },
-            None => ConversationState::new(ctx_clone, conversation_id, tool_config, profile, Some(output_clone)).await,
+            None => {
+                ConversationState::new(
+                    ctx_clone,
+                    conversation_id,
+                    tool_config,
+                    profile,
+                    Some(output_clone),
+                    tool_manager,
+                )
+                .await
+            },
         };
 
         Ok(Self {
@@ -552,7 +574,6 @@ impl ChatContext {
             conversation_state,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
-            tool_manager,
             failed_request_ids: Vec::new(),
             pending_prompts: VecDeque::new(),
         })
@@ -766,6 +787,9 @@ impl ChatContext {
             let chat_state = next_state.take().unwrap_or_default();
             let ctrl_c_stream = ctrl_c();
             debug!(?chat_state, "changing to state");
+
+            // Update conversation state with new tool information
+            self.conversation_state.update_state().await;
 
             let result = match chat_state {
                 ChatState::PromptUser {
@@ -1209,6 +1233,7 @@ impl ChatContext {
         #[cfg(unix)]
         if let Some(ref context_manager) = self.conversation_state.context_manager {
             let tool_names = self
+                .conversation_state
                 .tool_manager
                 .tn_map
                 .keys()
@@ -2179,9 +2204,10 @@ impl ChatContext {
 
                 match subcommand {
                     Some(ToolsSubcommand::Schema) => {
-                        let schema_json = serde_json::to_string_pretty(&self.tool_manager.schema).map_err(|e| {
-                            ChatError::Custom(format!("Error converting tool schema to string: {e}").into())
-                        })?;
+                        let schema_json = serde_json::to_string_pretty(&self.conversation_state.tool_manager.schema)
+                            .map_err(|e| {
+                                ChatError::Custom(format!("Error converting tool schema to string: {e}").into())
+                            })?;
                         queue!(self.output, style::Print(schema_json), style::Print("\n"))?;
                     },
                     Some(ToolsSubcommand::Trust { tool_names }) => {
@@ -2280,7 +2306,7 @@ impl ChatContext {
                         )?;
                     },
                     Some(ToolsSubcommand::ResetSingle { tool_name }) => {
-                        if self.tool_permissions.has(&tool_name) {
+                        if self.tool_permissions.has(&tool_name) || self.tool_permissions.trust_all {
                             self.tool_permissions.reset_tool(&tool_name);
                             queue!(
                                 self.output,
@@ -2362,6 +2388,21 @@ impl ChatContext {
                             );
                         });
 
+                        let loading = self.conversation_state.tool_manager.pending_clients().await;
+                        if !loading.is_empty() {
+                            queue!(
+                                self.output,
+                                style::SetAttribute(Attribute::Bold),
+                                style::Print("Servers still loading"),
+                                style::SetAttribute(Attribute::Reset),
+                                style::Print("\n"),
+                                style::Print("▔".repeat(terminal_width)),
+                            )?;
+                            for client in loading {
+                                queue!(self.output, style::Print(format!(" - {client}")), style::Print("\n"))?;
+                            }
+                        }
+
                         queue!(
                             self.output,
                             style::Print("\nTrusted tools can be run without confirmation\n"),
@@ -2395,7 +2436,7 @@ impl ChatContext {
                     },
                     Some(PromptsSubcommand::Get { mut get_command }) => {
                         let orig_input = get_command.orig_input.take();
-                        let prompts = match self.tool_manager.get_prompt(get_command).await {
+                        let prompts = match self.conversation_state.tool_manager.get_prompt(get_command).await {
                             Ok(resp) => resp,
                             Err(e) => {
                                 match e {
@@ -2482,12 +2523,12 @@ impl ChatContext {
                             _ => None,
                         };
                         let terminal_width = self.terminal_width();
-                        let mut prompts_wl = self.tool_manager.prompts.write().map_err(|e| {
+                        let mut prompts_wl = self.conversation_state.tool_manager.prompts.write().map_err(|e| {
                             ChatError::Custom(
                                 format!("Poison error encountered while retrieving prompts: {}", e).into(),
                             )
                         })?;
-                        self.tool_manager.refresh_prompts(&mut prompts_wl)?;
+                        self.conversation_state.tool_manager.refresh_prompts(&mut prompts_wl)?;
                         let mut longest_name = "";
                         let arg_pos = {
                             let optimal_case = UnicodeWidthStr::width(longest_name) + terminal_width / 4;
@@ -2855,11 +2896,9 @@ impl ChatContext {
             }
 
             // If there is an override, we will use it. Otherwise fall back to Tool's default.
-            let allowed = if self.tool_permissions.has(&tool.name) {
-                self.tool_permissions.is_trusted(&tool.name)
-            } else {
-                !tool.tool.requires_acceptance(&self.ctx)
-            };
+            let allowed = self.tool_permissions.trust_all
+                || (self.tool_permissions.has(&tool.name) && self.tool_permissions.is_trusted(&tool.name))
+                || !tool.tool.requires_acceptance(&self.ctx);
 
             if database
                 .settings
@@ -3276,7 +3315,7 @@ impl ChatContext {
                 .set_tool_use_id(tool_use_id.clone())
                 .set_tool_name(tool_use.name.clone())
                 .utterance_id(self.conversation_state.message_id().map(|s| s.to_string()));
-            match self.tool_manager.get_tool_from_tool_use(tool_use) {
+            match self.conversation_state.tool_manager.get_tool_from_tool_use(tool_use) {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);

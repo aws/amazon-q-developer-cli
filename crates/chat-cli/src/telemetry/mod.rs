@@ -36,6 +36,7 @@ pub use install_method::{
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tokio::time::error::Elapsed;
 use tracing::{
     debug,
     error,
@@ -75,6 +76,8 @@ pub enum TelemetryError {
     Join(#[from] tokio::task::JoinError),
     #[error(transparent)]
     Database(#[from] DatabaseError),
+    #[error(transparent)]
+    Timeout(#[from] Elapsed),
 }
 
 impl From<amzn_toolkit_telemetry_client::operation::post_metrics::PostMetricsError> for TelemetryError {
@@ -159,7 +162,16 @@ impl TelemetryThread {
     pub async fn finish(self) -> Result<(), TelemetryError> {
         drop(self.tx);
         if let Some(handle) = self.handle {
-            handle.await?;
+            match tokio::time::timeout(std::time::Duration::from_millis(1000), handle).await {
+                Ok(result) => {
+                    if let Err(e) = result {
+                        return Err(TelemetryError::Join(e));
+                    }
+                },
+                Err(_) => {
+                    // Ignore timeout errors
+                },
+            }
         }
 
         Ok(())
