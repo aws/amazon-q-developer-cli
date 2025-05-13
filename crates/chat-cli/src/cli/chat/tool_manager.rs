@@ -878,13 +878,9 @@ impl ToolManager {
             })
         };
         let mut updated_servers = HashSet::<ToolOrigin>::new();
-        for (_server_name, (tool_name_map, specs)) in new_tools {
-            // In a populated tn map (i.e. a partially initialized or outdated fleet of servers) there
-            // will be incoming tools with names that are already in the tn map, we will be writing
-            // over them (perhaps with the same information that they already had), and that's okay.
-            // In an event where a server has removed tools, the tools that are no longer available
-            // will linger in this map. This is also okay to not clean up as it does not affect the
-            // look up of tool names that are still active.
+        for (server_name, (tool_name_map, specs)) in new_tools {
+            let target = format!("{server_name}{NAMESPACE_DELIMITER}");
+            self.tn_map.retain(|k, _| !k.starts_with(&target));
             for (k, v) in tool_name_map {
                 self.tn_map.insert(k, v);
             }

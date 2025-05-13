@@ -204,6 +204,16 @@ impl ResponseParser {
                 // including the tool contents. Essentially, the tool was too large.
                 // Timeouts have been seen as short as ~1 minute, so setting the time to 30.
                 let time_elapsed = start.elapsed();
+                let args = serde_json::Value::Object(
+                    [(
+                        "key".to_string(),
+                        serde_json::Value::String(
+                            "WARNING: the actual tool use arguments were too complicated to be generated".to_string(),
+                        ),
+                    )]
+                    .into_iter()
+                    .collect(),
+                );
                 if self.peek().await?.is_none() && time_elapsed > Duration::from_secs(30) {
                     error!(
                         "Received an unexpected end of stream after spending ~{}s receiving tool events",
@@ -212,17 +222,9 @@ impl ResponseParser {
                     self.tool_uses.push(AssistantToolUse {
                         id: id.clone(),
                         name: name.clone(),
-                        args: serde_json::Value::Object(
-                            [(
-                                "key".to_string(),
-                                serde_json::Value::String(
-                                    "WARNING: the actual tool use arguments were too complicated to be generated"
-                                        .to_string(),
-                                ),
-                            )]
-                            .into_iter()
-                            .collect(),
-                        ),
+                        orig_name: Some(name.clone()),
+                        args: args.clone(),
+                        orig_args: Some(args.clone()),
                     });
                     let message = Box::new(AssistantMessage::new_tool_use(
                         Some(self.message_id.clone()),
@@ -242,7 +244,12 @@ impl ResponseParser {
             // if the tool just does not need any input
             _ => serde_json::json!({}),
         };
-        Ok(AssistantToolUse { id, name, args })
+        Ok(AssistantToolUse {
+            id,
+            name,
+            args,
+            ..Default::default()
+        })
     }
 
     /// Returns the next event in the [SendMessageOutput] without consuming it.
