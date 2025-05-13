@@ -65,8 +65,8 @@ use fig_util::{
     system_info,
 };
 use internal::InternalSubcommand;
-use q_chat::cli::Mcp;
 use serde::Serialize;
+use tokio::signal::ctrl_c;
 use tracing::{
     Level,
     debug,
@@ -197,9 +197,6 @@ pub enum CliRootCommands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Model Context Protocol (MCP)
-    #[command(subcommand)]
-    Mcp(Mcp),
     /// Inline shell completions
     #[command(subcommand)]
     Inline(inline::InlineSubcommand),
@@ -235,7 +232,6 @@ impl CliRootCommands {
             CliRootCommands::Version { .. } => "version",
             CliRootCommands::Dashboard => "dashboard",
             CliRootCommands::Chat { .. } => "chat",
-            CliRootCommands::Mcp(_) => "mcp",
             CliRootCommands::Inline(_) => "inline",
         }
     }
@@ -346,7 +342,6 @@ impl Cli {
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
                 CliRootCommands::Chat { args } => Self::execute_chat(Some(args)).await,
-                CliRootCommands::Mcp(args) => q_chat::mcp::execute_mcp(args).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
@@ -373,9 +368,20 @@ impl Cli {
             cmd.args(args);
         }
 
-        cmd.status().await?;
+        // Because we are spawning chat as a child process, we need the parent process (this one)
+        // to ignore sigint that are meant for chat (i.e. all of them)
+        tokio::spawn(async move {
+            loop {
+                let _ = ctrl_c().await;
+            }
+        });
 
-        Ok(ExitCode::SUCCESS)
+        let exit_status = cmd.status().await?;
+        let exit_code = exit_status
+            .code()
+            .map_or(ExitCode::FAILURE, |e| ExitCode::from(e as u8));
+
+        Ok(exit_code)
     }
 
     async fn send_telemetry(&self) {
@@ -516,14 +522,6 @@ async fn launch_dashboard(help_fallback: bool) -> Result<ExitCode> {
 
 #[cfg(test)]
 mod test {
-    use q_chat::cli::{
-        McpAdd,
-        McpImport,
-        McpList,
-        McpRemove,
-        Scope,
-    };
-
     use super::*;
 
     #[test]
@@ -704,196 +702,5 @@ mod test {
         assert_parse!(["version", "--changelog=1.8.0"], CliRootCommands::Version {
             changelog: Some("1.8.0".to_string()),
         });
-    }
-
-    #[test]
-    fn test_chat_with_context_profile() {
-        assert_parse!(
-            ["chat", "--profile", "my-profile"],
-            CliRootCommands::Chat(Chat {
-                accept_all: false,
-                no_interactive: false,
-                input: None,
-                profile: Some("my-profile".to_string()),
-                trust_all_tools: false,
-                trust_tools: None,
-            })
-        );
-    }
-
-    #[test]
-    fn test_chat_with_context_profile_and_input() {
-        assert_parse!(
-            ["chat", "--profile", "my-profile", "Hello"],
-            CliRootCommands::Chat(Chat {
-                accept_all: false,
-                no_interactive: false,
-                input: Some("Hello".to_string()),
-                profile: Some("my-profile".to_string()),
-                trust_all_tools: false,
-                trust_tools: None,
-            })
-        );
-    }
-
-    #[test]
-    fn test_chat_with_context_profile_and_accept_all() {
-        assert_parse!(
-            ["chat", "--profile", "my-profile", "--accept-all"],
-            CliRootCommands::Chat(Chat {
-                accept_all: true,
-                no_interactive: false,
-                input: None,
-                profile: Some("my-profile".to_string()),
-                trust_all_tools: false,
-                trust_tools: None,
-            })
-        );
-    }
-
-    #[test]
-    fn test_chat_with_no_interactive() {
-        assert_parse!(
-            ["chat", "--no-interactive"],
-            CliRootCommands::Chat(Chat {
-                accept_all: false,
-                no_interactive: true,
-                input: None,
-                profile: None,
-                trust_all_tools: false,
-                trust_tools: None,
-            })
-        );
-    }
-
-    #[test]
-    fn test_chat_with_tool_trust_all() {
-        assert_parse!(
-            ["chat", "--trust-all-tools"],
-            CliRootCommands::Chat(Chat {
-                accept_all: false,
-                no_interactive: false,
-                input: None,
-                profile: None,
-                trust_all_tools: true,
-                trust_tools: None,
-            })
-        );
-    }
-
-    #[test]
-    fn test_chat_with_tool_trust_none() {
-        assert_parse!(
-            ["chat", "--trust-tools="],
-            CliRootCommands::Chat(Chat {
-                accept_all: false,
-                no_interactive: false,
-                input: None,
-                profile: None,
-                trust_all_tools: false,
-                trust_tools: Some(vec!["".to_string()]),
-            })
-        );
-    }
-
-    #[test]
-    fn test_chat_with_tool_trust_some() {
-        assert_parse!(
-            ["chat", "--trust-tools=fs_read,fs_write"],
-            CliRootCommands::Chat(Chat {
-                accept_all: false,
-                no_interactive: false,
-                input: None,
-                profile: None,
-                trust_all_tools: false,
-                trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
-            })
-        );
-    }
-
-    #[test]
-    fn test_mcp_subcomman_add() {
-        assert_parse!(
-            [
-                "mcp",
-                "add",
-                "--name",
-                "test_server",
-                "--command",
-                "test_command",
-                "--profile",
-                "my_profile",
-                "--env",
-                "key1=value1,key2=value2"
-            ],
-            CliRootCommands::Mcp(Mcp::Add(McpAdd {
-                name: "test_server".to_string(),
-                command: "test_command".to_string(),
-                scope: None,
-                profile: Some("my_profile".to_string()),
-                env: vec![
-                    [
-                        ("key1".to_string(), "value1".to_string()),
-                        ("key2".to_string(), "value2".to_string())
-                    ]
-                    .into_iter()
-                    .collect()
-                ],
-                timeout: None,
-                force: false,
-            }))
-        );
-    }
-
-    #[test]
-    fn test_mcp_subcomman_remove_workspace() {
-        assert_parse!(
-            ["mcp", "remove", "--name", "old"],
-            CliRootCommands::Mcp(Mcp::Remove(McpRemove {
-                name: "old".into(),
-                scope: None,
-                profile: None,
-            }))
-        );
-    }
-    #[test]
-    fn test_mcp_subcomman_import_profile_force() {
-        assert_parse!(
-            [
-                "mcp",
-                "import",
-                "--file",
-                "servers.json",
-                "profile",
-                "--profile",
-                "qa",
-                "--force"
-            ],
-            CliRootCommands::Mcp(Mcp::Import(McpImport {
-                file: "servers.json".into(),
-                scope: Some(Scope::Profile),
-                profile: Some("qa".into()),
-                force: true,
-            }))
-        );
-    }
-
-    #[test]
-    fn test_mcp_subcommand_status_simple() {
-        assert_parse!(
-            ["mcp", "status", "--name", "aws"],
-            CliRootCommands::Mcp(Mcp::Status { name: "aws".into() })
-        );
-    }
-    
-    #[test]
-    fn test_mcp_subcommand_list() {
-        assert_parse!(
-            ["mcp", "list", "global"],
-            CliRootCommands::Mcp(Mcp::List( McpList{  
-                scope: Some(Scope::Global),
-                profile: None    
-            }))
-        );
     }
 }

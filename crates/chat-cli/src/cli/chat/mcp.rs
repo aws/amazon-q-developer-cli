@@ -11,12 +11,10 @@ use eyre::{
     Result,
     bail,
 };
-use fig_os_shim::Context;
-use fig_util::directories::chat_profiles_dir;
 use tokio::fs;
 use tracing::warn;
 
-use crate::cli::{
+use crate::cli::chat::cli::{
     Mcp,
     McpAdd,
     McpImport,
@@ -24,17 +22,19 @@ use crate::cli::{
     McpRemove,
     Scope,
 };
-use crate::tool_manager::{
+use crate::cli::chat::tool_manager::{
     McpServerConfig,
     global_mcp_config_path,
     profile_mcp_config_path,
     workspace_mcp_config_path,
 };
-use crate::tools::custom_tool::{
+use crate::cli::chat::tools::custom_tool::{
     CustomToolConfig,
     default_timeout,
 };
-use crate::util::shared_writer::SharedWriter;
+use crate::cli::chat::util::shared_writer::SharedWriter;
+use crate::platform::Context;
+use crate::util::directories::chat_profiles_dir;
 
 pub async fn execute_mcp(args: Mcp) -> Result<ExitCode> {
     let ctx = Context::new();
@@ -367,7 +367,7 @@ mod tests {
 
     #[tokio::test]
     async fn add_then_remove_cycle() {
-        use crate::cli::{
+        use crate::cli::chat::cli::{
             McpAdd,
             McpRemove,
         };

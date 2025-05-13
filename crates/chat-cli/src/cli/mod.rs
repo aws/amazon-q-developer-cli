@@ -34,7 +34,8 @@ use tracing::{
     debug,
 };
 use user::UserSubcommand;
-
+use crate::cli::chat::mcp;
+use crate::cli::chat::cli::Mcp;
 use crate::logging::{
     LogArgs,
     initialize_logging,
@@ -104,6 +105,9 @@ pub enum CliRootCommands {
     /// AI assistant in your terminal
     #[command(alias("q"))]
     Chat(Chat),
+    /// Model Context Protocol (MCP)
+    #[command(subcommand)]
+    Mcp(Mcp),
 }
 
 impl CliRootCommands {
@@ -118,6 +122,7 @@ impl CliRootCommands {
             CliRootCommands::User(UserSubcommand::Profile) => "profile",
             CliRootCommands::Version { .. } => "version",
             CliRootCommands::Chat { .. } => "chat",
+            CliRootCommands::Mcp(_) => "mcp",
         }
     }
 }
@@ -206,6 +211,7 @@ impl Cli {
                 CliRootCommands::Issue(args) => args.execute().await,
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Chat(args) => chat::launch_chat(&mut database, &telemetry, args).await,
+                CliRootCommands::Mcp(args) => mcp::execute_mcp(args).await,
             },
             // Root command
             None => chat::launch_chat(&mut database, &telemetry, chat::cli::Chat::default()).await,
@@ -308,6 +314,13 @@ impl Cli {
 
 #[cfg(test)]
 mod test {
+    use crate::cli::chat::cli::{
+        McpAdd,
+        McpImport,
+        McpList,
+        McpRemove,
+        Scope,
+    };
     use super::*;
 
     #[test]
@@ -488,6 +501,91 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
             })
+        );
+    }
+    #[test]
+    fn test_mcp_subcomman_add() {
+        assert_parse!(
+            [
+                "mcp",
+                "add",
+                "--name",
+                "test_server",
+                "--command",
+                "test_command",
+                "--profile",
+                "my_profile",
+                "--env",
+                "key1=value1,key2=value2"
+            ],
+            CliRootCommands::Mcp(Mcp::Add(McpAdd {
+                name: "test_server".to_string(),
+                command: "test_command".to_string(),
+                scope: None,
+                profile: Some("my_profile".to_string()),
+                env: vec![
+                    [
+                        ("key1".to_string(), "value1".to_string()),
+                        ("key2".to_string(), "value2".to_string())
+                    ]
+                    .into_iter()
+                    .collect()
+                ],
+                timeout: None,
+                force: false,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_mcp_subcomman_remove_workspace() {
+        assert_parse!(
+            ["mcp", "remove", "--name", "old"],
+            CliRootCommands::Mcp(Mcp::Remove(McpRemove {
+                name: "old".into(),
+                scope: None,
+                profile: None,
+            }))
+        );
+    }
+    #[test]
+    fn test_mcp_subcomman_import_profile_force() {
+        assert_parse!(
+            [
+                "mcp",
+                "import",
+                "--file",
+                "servers.json",
+                "profile",
+                "--profile",
+                "qa",
+                "--force"
+            ],
+            CliRootCommands::Mcp(Mcp::Import(McpImport {
+                file: "servers.json".into(),
+                scope: Some(Scope::Profile),
+                profile: Some("qa".into()),
+                force: true,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_mcp_subcommand_status_simple() {
+        assert_parse!(
+            ["mcp", "status", "--name", "aws"],
+            CliRootCommands::Mcp(Mcp::Status { name: "aws".into() })
+        );
+    }
+
+    #[test]
+    fn test_mcp_subcommand_list() {
+        assert_parse!(
+            ["mcp", "list", "global"],
+            CliRootCommands::Mcp(Mcp::List(McpList {
+                scope: Some(Scope::Global),
+                profile: None
+            }))
         );
     }
 }
