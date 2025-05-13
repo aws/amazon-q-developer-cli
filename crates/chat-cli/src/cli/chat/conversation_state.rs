@@ -156,6 +156,37 @@ impl ConversationState {
         }
     }
 
+    /// Reloads necessary fields after being deserialized. This should be called after
+    /// deserialization.
+    pub async fn reload_serialized_state(&mut self, ctx: Arc<Context>, updates: Option<SharedWriter>) {
+        self.updates = updates;
+
+        // Try to reload ContextManager, but do not return an error if we fail.
+        // TODO: Currently the failure modes around ContextManager is unclear, and we don't return
+        // errors in most cases. Thus, we try to preserve the same behavior here and simply have
+        // self.context_manager equal to None if any errors are encountered. This needs to be
+        // refactored.
+        let mut failed = false;
+        if let Some(context_manager) = self.context_manager.as_mut() {
+            match context_manager.reload_config().await {
+                Ok(_) => (),
+                Err(err) => {
+                    error!(?err, "failed to reload context config");
+                    match ContextManager::new(ctx, None).await {
+                        Ok(v) => *context_manager = v,
+                        Err(err) => {
+                            failed = true;
+                            error!(?err, "failed to construct context manager");
+                        },
+                    }
+                },
+            }
+        }
+        if failed {
+            self.context_manager.take();
+        }
+    }
+
     pub fn latest_summary(&self) -> Option<&str> {
         self.latest_summary.as_deref()
     }

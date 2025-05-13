@@ -543,6 +543,9 @@ impl ChatContext {
         {
             Some(mut prior) => {
                 existing_conversation = true;
+                prior
+                    .reload_serialized_state(Arc::clone(&ctx), Some(output.clone()))
+                    .await;
                 input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
                 prior.tool_manager = tool_manager;
                 prior
@@ -1315,14 +1318,6 @@ impl ChatContext {
                 // Otherwise continue with normal chat on 'n' or other responses
                 self.tool_use_status = ToolUseStatus::Idle;
 
-                if self.interactive {
-                    queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
-                    queue!(self.output, style::SetForegroundColor(Color::Reset))?;
-                    queue!(self.output, cursor::Hide)?;
-                    execute!(self.output, style::Print("\n"))?;
-                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
-                }
-
                 if pending_tool_index.is_some() {
                     self.conversation_state.abandon_tool_use(tool_uses, user_input);
                 } else {
@@ -1331,6 +1326,14 @@ impl ChatContext {
 
                 let conv_state = self.conversation_state.as_sendable_conversation_state(true).await;
                 self.send_tool_use_telemetry(telemetry).await;
+
+                if self.interactive {
+                    queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
+                    queue!(self.output, style::SetForegroundColor(Color::Reset))?;
+                    queue!(self.output, cursor::Hide)?;
+                    execute!(self.output, style::Print("\n"))?;
+                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+                }
 
                 ChatState::HandleResponseStream(self.client.send_message(conv_state).await?)
             },
@@ -2808,9 +2811,11 @@ impl ChatContext {
                 }
 
                 let contents = tri!(self.ctx.fs().read_to_string(&path).await);
-                let new_state: ConversationState = tri!(serde_json::from_str(&contents));
+                let mut new_state: ConversationState = tri!(serde_json::from_str(&contents));
+                new_state
+                    .reload_serialized_state(Arc::clone(&self.ctx), Some(self.output.clone()))
+                    .await;
                 self.conversation_state = new_state;
-                self.conversation_state.updates = Some(self.output.clone());
 
                 execute!(
                     self.output,
