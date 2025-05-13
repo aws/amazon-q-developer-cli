@@ -124,8 +124,8 @@ importers:
         specifier: workspace:^
         version: link:../../proto
       '@bufbuild/protobuf':
-        specifier: 2.2.5
-        version: 2.2.5
+        specifier: 2.4.0
+        version: 2.4.0
     devDependencies:
       '@amzn/eslint-config':
         specifier: workspace:^
@@ -213,8 +213,8 @@ importers:
         specifier: workspace:^
         version: link:../shell-parser
       '@bufbuild/protobuf':
-        specifier: 2.2.5
-        version: 2.2.5
+        specifier: 2.4.0
+        version: 2.4.0
       '@fig/autocomplete-helpers':
         specifier: ^2.0.0
         version: 2.0.0
@@ -337,8 +337,8 @@ importers:
         specifier: workspace:^
         version: link:../shell-parser
       '@bufbuild/protobuf':
-        specifier: 2.2.5
-        version: 2.2.5
+        specifier: 2.4.0
+        version: 2.4.0
       '@fig/autocomplete-helpers':
         specifier: ^2.0.0
         version: 2.0.0
@@ -739,8 +739,8 @@ importers:
   proto:
     dependencies:
       '@bufbuild/protobuf':
-        specifier: 2.2.5
-        version: 2.2.5
+        specifier: 2.4.0
+        version: 2.4.0
     devDependencies:
       '@amzn/tsconfig':
         specifier: workspace:^
@@ -750,7 +750,7 @@ importers:
         version: 1.53.0
       '@bufbuild/protoc-gen-es':
         specifier: ^2.2.5
-        version: 2.2.5(@bufbuild/protobuf@2.2.5)
+        version: 2.2.5(@bufbuild/protobuf@2.4.0)
       typescript:
         specifier: ^5.8.3
         version: 5.8.3
@@ -1455,6 +1455,9 @@ packages:
 
   '@bufbuild/protobuf@2.2.5':
     resolution: {integrity: sha512-/g5EzJifw5GF8aren8wZ/G5oMuPoGeS6MQD3ca8ddcvdXR5UELUfdTZITCGNhNXynY/AYl3Z4plmxdj/tRl/hQ==}
+
+  '@bufbuild/protobuf@2.4.0':
+    resolution: {integrity: sha512-RN9M76x7N11QRihKovEglEjjVCQEA9PRBVnDgk9xw8JHLrcUrp4FpAVSPSH91cNbcTft3u2vpLN4GMbiKY9PJw==}
 
   '@bufbuild/protoc-gen-es@2.2.5':
     resolution: {integrity: sha512-81dI1PLMQXUkvCUH1fKJEZsx+G69LvU/0BOFeqxotFpCFEC/jTu1Ka1ViIEGT5U1r51udRs20kHZTlkR9zwfAA==}
@@ -6854,11 +6857,13 @@ snapshots:
 
   '@bufbuild/protobuf@2.2.5': {}
 
-  '@bufbuild/protoc-gen-es@2.2.5(@bufbuild/protobuf@2.2.5)':
+  '@bufbuild/protobuf@2.4.0': {}
+
+  '@bufbuild/protoc-gen-es@2.2.5(@bufbuild/protobuf@2.4.0)':
     dependencies:
       '@bufbuild/protoplugin': 2.2.5
     optionalDependencies:
-      '@bufbuild/protobuf': 2.2.5
+      '@bufbuild/protobuf': 2.4.0
     transitivePeerDependencies:
       - supports-color
 
