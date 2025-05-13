@@ -235,6 +235,7 @@ pub async fn initialize_fig_dir(env: &fig_os_shim::Env) -> anyhow::Result<()> {
         create_launch_agent,
     };
     use fig_util::{
+        CHAT_BINARY_NAME,
         OLD_CLI_BINARY_NAMES,
         OLD_PTY_BINARY_NAMES,
         Shell,
@@ -334,6 +335,17 @@ pub async fn initialize_fig_dir(env: &fig_os_shim::Env) -> anyhow::Result<()> {
             }
         },
         None => error!("Failed to find {CLI_BINARY_NAME} in bundle"),
+    }
+
+    // install chat to ~/.local/bin
+    match get_bundle_path_for_executable(CHAT_BINARY_NAME) {
+        Some(qchat_path) => {
+            let dest = local_bin.join(CHAT_BINARY_NAME);
+            if let Err(err) = symlink(&qchat_path, dest).await {
+                error!(%err, "Failed to symlink {CHAT_BINARY_NAME}");
+            }
+        },
+        None => error!("Failed to find {CHAT_BINARY_NAME} in bundle"),
     }
 
     if let Some(bundle_path) = get_bundle_path() {
@@ -603,6 +615,7 @@ async fn install_autostart_entry(
 #[cfg(target_os = "linux")]
 async fn install_appimage_binaries(ctx: &Context) -> anyhow::Result<()> {
     use fig_util::consts::{
+        CHAT_BINARY_NAME,
         CLI_BINARY_NAME,
         PTY_BINARY_NAME,
     };
@@ -614,7 +627,7 @@ async fn install_appimage_binaries(ctx: &Context) -> anyhow::Result<()> {
     }
 
     // Extract and install the CLI + PTY under home local bin, if required.
-    for binary_name in &[CLI_BINARY_NAME, PTY_BINARY_NAME] {
+    for binary_name in &[CLI_BINARY_NAME, PTY_BINARY_NAME, CHAT_BINARY_NAME] {
         let local_binary_path = home_local_bin_ctx(ctx)?.join(binary_name);
         if local_binary_path.exists() {
             let output = Command::new(&local_binary_path).arg("--version").output().await.ok();
@@ -875,6 +888,7 @@ mod test {
 
         use fig_util::directories::home_local_bin_ctx;
         use fig_util::{
+            CHAT_BINARY_NAME,
             CLI_BINARY_NAME,
             PTY_BINARY_NAME,
         };
@@ -889,7 +903,7 @@ mod test {
             if !fs.exists(&destination) {
                 fs.create_dir_all(&destination).await.unwrap();
             }
-            for binary_name in &[CLI_BINARY_NAME, PTY_BINARY_NAME] {
+            for binary_name in &[CLI_BINARY_NAME, PTY_BINARY_NAME, CHAT_BINARY_NAME] {
                 let path = destination.as_ref().join(binary_name);
                 fs.write(
                     &path,
@@ -906,7 +920,7 @@ echo "{binary_name} {version}"
         }
 
         async fn assert_binaries_installed(ctx: &Context, expected_version: &str) {
-            for binary_name in &[CLI_BINARY_NAME, PTY_BINARY_NAME] {
+            for binary_name in &[CLI_BINARY_NAME, PTY_BINARY_NAME, CHAT_BINARY_NAME] {
                 let binary_path = home_local_bin_ctx(ctx).unwrap().join(binary_name);
                 let stdout = Command::new(ctx.fs().chroot_path(binary_path))
                     .output()

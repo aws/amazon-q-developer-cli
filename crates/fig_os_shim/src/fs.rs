@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::Permissions;
 use std::io;
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::path::{
     Path,
@@ -308,6 +309,52 @@ impl Fs {
     ///
     /// The `link` path will be a symbolic link pointing to the `original` path.
     ///
+    /// This function works for both files and directories on all platforms.
+    /// On Windows, it automatically detects whether the target is a file or directory
+    /// and uses the appropriate system call.
+    ///
+    /// This is a proxy to [`tokio::fs::symlink_file`] or [`tokio::fs::symlink_dir`] on Windows,
+    /// and [`tokio::fs::symlink`] on Unix.
+    #[cfg(windows)]
+    pub async fn symlink(&self, original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
+        use inner::Inner;
+
+        let original_path = original.as_ref();
+
+        // Check if the original path exists and is a directory
+        let is_dir = if let Ok(metadata) = std::fs::metadata(original_path) {
+            metadata.is_dir()
+        } else {
+            // If the path doesn't exist, check if it ends with a path separator
+            // This is a heuristic and not foolproof
+            original_path.to_string_lossy().ends_with(['/', '\\'])
+        };
+
+        match &self.0 {
+            Inner::Real => {
+                if is_dir {
+                    fs::symlink_dir(original_path, link).await
+                } else {
+                    fs::symlink_file(original_path, link).await
+                }
+            },
+            Inner::Chroot(root) => {
+                let original_path = append(root.path(), original_path);
+                let link_path = append(root.path(), link);
+                if is_dir {
+                    fs::symlink_dir(original_path, link_path).await
+                } else {
+                    fs::symlink_file(original_path, link_path).await
+                }
+            },
+            Inner::Fake(_) => panic!("unimplemented"),
+        }
+    }
+
+    /// Creates a new symbolic link on the filesystem.
+    ///
+    /// The `link` path will be a symbolic link pointing to the `original` path.
+    ///
     /// This is a proxy to [`std::os::unix::fs::symlink`].
     #[cfg(unix)]
     pub fn symlink_sync(&self, original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
@@ -315,6 +362,53 @@ impl Fs {
         match &self.0 {
             Inner::Real => std::os::unix::fs::symlink(original, link),
             Inner::Chroot(root) => std::os::unix::fs::symlink(append(root.path(), original), append(root.path(), link)),
+            Inner::Fake(_) => panic!("unimplemented"),
+        }
+    }
+
+    /// Creates a new symbolic link on the filesystem.
+    ///
+    /// The `link` path will be a symbolic link pointing to the `original` path.
+    ///
+    /// This function works for both files and directories on all platforms.
+    /// On Windows, it automatically detects whether the target is a file or directory
+    /// and uses the appropriate system call.
+    ///
+    /// This is a proxy to [`std::os::windows::fs::symlink_file`] or
+    /// [`std::os::windows::fs::symlink_dir`] on Windows, and [`std::os::unix::fs::symlink`] on
+    /// Unix.
+    #[cfg(windows)]
+    pub fn symlink_sync(&self, original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
+        use inner::Inner;
+
+        let original_path = original.as_ref();
+
+        // Check if the original path exists and is a directory
+        let is_dir = if let Ok(metadata) = std::fs::metadata(original_path) {
+            metadata.is_dir()
+        } else {
+            // If the path doesn't exist, check if it ends with a path separator
+            // This is a heuristic and not foolproof
+            original_path.to_string_lossy().ends_with(['/', '\\'])
+        };
+
+        match &self.0 {
+            Inner::Real => {
+                if is_dir {
+                    std::os::windows::fs::symlink_dir(original_path, link)
+                } else {
+                    std::os::windows::fs::symlink_file(original_path, link)
+                }
+            },
+            Inner::Chroot(root) => {
+                let original_path = append(root.path(), original_path);
+                let link_path = append(root.path(), link);
+                if is_dir {
+                    std::os::windows::fs::symlink_dir(original_path, link_path)
+                } else {
+                    std::os::windows::fs::symlink_file(original_path, link_path)
+                }
+            },
             Inner::Fake(_) => panic!("unimplemented"),
         }
     }
@@ -330,7 +424,6 @@ impl Fs {
     ///
     /// * The user lacks permissions to perform `metadata` call on `path`.
     /// * `path` does not exist.
-    #[cfg(unix)]
     pub async fn symlink_metadata(&self, path: impl AsRef<Path>) -> io::Result<std::fs::Metadata> {
         use inner::Inner;
         match &self.0 {
@@ -420,6 +513,7 @@ impl Shim for Fs {
 /// Performs `a.join(b)`, except:
 /// - if `b` is an absolute path, then the resulting path will equal `/a/b`
 /// - if the prefix of `b` contains some `n` copies of a, then the resulting path will equal `/a/b`
+#[cfg(unix)]
 fn append(a: impl AsRef<Path>, b: impl AsRef<Path>) -> PathBuf {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
@@ -435,6 +529,78 @@ fn append(a: impl AsRef<Path>, b: impl AsRef<Path>) -> PathBuf {
         b = b.strip_prefix(b"/").unwrap();
     }
     PathBuf::from(OsString::from_vec(a.to_vec())).join(PathBuf::from(OsString::from_vec(b.to_vec())))
+}
+
+#[cfg(windows)]
+fn append(a: impl AsRef<Path>, b: impl AsRef<Path>) -> PathBuf {
+    let a_path = a.as_ref();
+    let b_path = b.as_ref();
+
+    // Convert paths to string representation with normalized separators
+    let a_str = a_path.to_string_lossy().replace('/', "\\");
+    let b_str = b_path.to_string_lossy().replace('/', "\\");
+
+    // Handle drive letters in Windows paths
+    let (b_drive, b_without_drive) = if b_str.len() >= 2 && b_str.chars().nth(1) == Some(':') {
+        let drive = &b_str[..2];
+        let rest = &b_str[2..];
+        (Some(drive), rest.to_string())
+    } else {
+        (None, b_str)
+    };
+
+    // If b has a drive letter and it's different from a's drive letter (if any),
+    // we need to handle it specially
+    if let Some(b_drive) = b_drive {
+        if a_str.starts_with(b_drive) {
+            // Same drive, continue with normal processing
+            let path_str = b_without_drive;
+
+            // Repeatedly strip the prefix if b starts with a
+            let a_without_drive = if a_str.len() >= 2 && a_str.chars().nth(1) == Some(':') {
+                &a_str[2..]
+            } else {
+                &a_str
+            };
+
+            let mut b_normalized = path_str;
+            while b_normalized.starts_with(a_without_drive) {
+                b_normalized = b_normalized[a_without_drive.len()..].to_string();
+            }
+
+            // Repeatedly strip leading backslashes
+            while b_normalized.starts_with('\\') {
+                b_normalized = b_normalized[1..].to_string();
+            }
+
+            a_path.join(b_normalized)
+        } else {
+            // Different drives, handle specially
+            let mut path_str = b_without_drive;
+
+            // Repeatedly strip leading backslashes
+            while path_str.starts_with('\\') {
+                path_str = path_str[1..].to_string();
+            }
+
+            a_path.join(path_str)
+        }
+    } else {
+        // No drive letter in b, proceed with normal processing
+        let mut b_normalized = b_without_drive;
+
+        // Repeatedly strip the prefix if b starts with a
+        while b_normalized.starts_with(&a_str) {
+            b_normalized = b_normalized[a_str.len()..].to_string();
+        }
+
+        // Repeatedly strip leading backslashes
+        while b_normalized.starts_with('\\') {
+            b_normalized = b_normalized[1..].to_string();
+        }
+
+        a_path.join(b_normalized)
+    }
 }
 
 #[cfg(test)]
@@ -478,10 +644,66 @@ mod tests {
                 assert_eq!(append($a, $b), PathBuf::from($expected));
             };
         }
-        assert_append!("/abc/test", "/test", "/abc/test/test");
-        assert_append!("/tmp/.dir", "/tmp/.dir/home/myuser", "/tmp/.dir/home/myuser");
-        assert_append!("/tmp/.dir", "/tmp/hello", "/tmp/.dir/tmp/hello");
-        assert_append!("/tmp/.dir", "/tmp/.dir/tmp/.dir/home/user", "/tmp/.dir/home/user");
+        #[cfg(unix)]
+        {
+            assert_append!("/abc/test", "/test", "/abc/test/test");
+            assert_append!("/tmp/.dir", "/tmp/.dir/home/myuser", "/tmp/.dir/home/myuser");
+            assert_append!("/tmp/.dir", "/tmp/hello", "/tmp/.dir/tmp/hello");
+            assert_append!("/tmp/.dir", "/tmp/.dir/tmp/.dir/home/user", "/tmp/.dir/home/user");
+        }
+
+        #[cfg(windows)]
+        {
+            // Basic path joining
+            assert_append!("C:\\abc\\test", "test", "C:\\abc\\test\\test");
+
+            // Absolute path handling
+            assert_append!("C:\\abc\\test", "C:\\test", "C:\\abc\\test\\test");
+
+            // Nested path handling
+            assert_append!(
+                "C:\\tmp\\.dir",
+                "C:\\tmp\\.dir\\home\\myuser",
+                "C:\\tmp\\.dir\\home\\myuser"
+            );
+
+            // Similar prefix handling
+            assert_append!("C:\\tmp\\.dir", "C:\\tmp\\hello", "C:\\tmp\\.dir\\tmp\\hello");
+
+            // Multiple prefixes handling
+            assert_append!(
+                "C:\\tmp\\.dir",
+                "C:\\tmp\\.dir\\tmp\\.dir\\home\\user",
+                "C:\\tmp\\.dir\\home\\user"
+            );
+
+            // Different drive handling
+            assert_append!("C:\\tmp", "D:\\data", "C:\\tmp\\data");
+
+            // Forward slash handling in Windows paths
+            assert_append!("C:\\tmp", "C:/data/file.txt", "C:\\tmp\\data\\file.txt");
+
+            // UNC path handling
+            assert_append!(
+                "C:\\tmp",
+                "\\\\server\\share\\file.txt",
+                "C:\\tmp\\server\\share\\file.txt"
+            );
+
+            // Path with spaces
+            assert_append!(
+                "C:\\Program Files",
+                "App Data\\config.ini",
+                "C:\\Program Files\\App Data\\config.ini"
+            );
+
+            // Path with special characters
+            assert_append!(
+                "C:\\Users",
+                "user.name@domain.com\\Documents",
+                "C:\\Users\\user.name@domain.com\\Documents"
+            );
+        }
     }
 
     #[tokio::test]
@@ -607,5 +829,59 @@ mod tests {
         let fs = Fs::new_chroot();
         fs.create_new("my_file.txt").await.unwrap();
         assert!(fs.create_new("my_file.txt").await.is_err());
+    }
+
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn test_unified_symlink_windows() {
+        let dir = tempfile::tempdir().unwrap();
+        let fs = Fs::new();
+
+        // Create a test file
+        let file_path = dir.path().join("test_file.txt");
+        fs.write(&file_path, "test content").await.unwrap();
+
+        // Create a test directory
+        let dir_path = dir.path().join("test_dir");
+        fs.create_dir(&dir_path).await.unwrap();
+
+        // Test symlink to file
+        let file_link_path = dir.path().join("file_link");
+        match fs.symlink(&file_path, &file_link_path).await {
+            Ok(_) => {
+                // If we have permission to create symlinks, run the full test
+                assert_eq!(fs.read_to_string(&file_link_path).await.unwrap(), "test content");
+
+                // Test symlink to directory
+                let dir_link_path = dir.path().join("dir_link");
+                fs.symlink(&dir_path, &dir_link_path).await.unwrap();
+                assert!(fs.try_exists(&dir_link_path).await.unwrap());
+
+                // Test symlink_sync to file
+                let file_link_sync_path = dir.path().join("file_link_sync");
+                fs.symlink_sync(&file_path, &file_link_sync_path).unwrap();
+                assert_eq!(fs.read_to_string(&file_link_sync_path).await.unwrap(), "test content");
+
+                // Test symlink_sync to directory
+                let dir_link_sync_path = dir.path().join("dir_link_sync");
+                fs.symlink_sync(&dir_path, &dir_link_sync_path).unwrap();
+                assert!(fs.try_exists(&dir_link_sync_path).await.unwrap());
+
+                // Clean up
+                fs.remove_file(&file_link_path).await.unwrap();
+                fs.remove_file(&file_link_sync_path).await.unwrap();
+                fs.remove_dir_all(&dir_link_path).await.unwrap();
+                fs.remove_dir_all(&dir_link_sync_path).await.unwrap();
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1314) => {
+                // Error code 1314 is "A required privilege is not held by the client"
+                // Skip the test if we don't have permission to create symlinks
+                println!("Skipping test_unified_symlink_windows: requires admin privileges on Windows");
+            },
+            Err(e) => {
+                // For other errors, fail the test
+                panic!("Unexpected error creating symlink: {}", e);
+            },
+        }
     }
 }

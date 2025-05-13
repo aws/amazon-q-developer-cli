@@ -16,7 +16,7 @@ serde_json.workspace = true
 syn = "2.0.101"
 
 [dependencies]
-amzn-toolkit-telemetry = { path = "../amzn-toolkit-telemetry" }
+amzn-toolkit-telemetry-client = { path = "../amzn-toolkit-telemetry-client" }
 serde.workspace = true
 
 [dev-dependencies]

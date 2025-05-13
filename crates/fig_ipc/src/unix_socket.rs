@@ -157,6 +157,9 @@ mod tests {
                 .unwrap();
         }
 
+        // Wait some time for the socket to start listening.
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+
         let _stream = socket_connect(&socket_path).await.expect("Failed to validate socket");
 
         socket_thread.abort();

@@ -27,6 +27,11 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::*;
 
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+pub use windows::*;
+
 /// Represents the interface to accessing info about the currently running process tree.
 #[derive(Debug, Clone)]
 pub struct ProcessInfo(inner::Inner);

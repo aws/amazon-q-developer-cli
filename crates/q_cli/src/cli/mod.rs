@@ -45,14 +45,19 @@ use eyre::{
     bail,
 };
 use feed::Feed;
+use fig_auth::builder_id::BuilderIdToken;
 use fig_auth::is_logged_in;
+use fig_auth::secret_store::SecretStore;
 use fig_ipc::local::open_ui_element;
 use fig_log::{
     LogArgs,
     initialize_logging,
 };
 use fig_proto::local::UiElement;
+use fig_settings::sqlite::database;
+use fig_util::directories::home_local_bin;
 use fig_util::{
+    CHAT_BINARY_NAME,
     CLI_BINARY_NAME,
     PRODUCT_NAME,
     directories,
@@ -60,10 +65,7 @@ use fig_util::{
     system_info,
 };
 use internal::InternalSubcommand;
-use q_chat::cli::{
-    Chat,
-    Mcp,
-};
+use q_chat::cli::Mcp;
 use serde::Serialize;
 use tracing::{
     Level,
@@ -190,8 +192,11 @@ pub enum CliRootCommands {
     /// Open the dashboard
     Dashboard,
     /// AI assistant in your terminal
-    #[command(alias("q"))]
-    Chat(Chat),
+    Chat {
+        /// Args for the chat command
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Model Context Protocol (MCP)
     #[command(subcommand)]
     Mcp(Mcp),
@@ -340,13 +345,37 @@ impl Cli {
                 CliRootCommands::Telemetry(subcommand) => subcommand.execute().await,
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
-                CliRootCommands::Chat(args) => q_chat::launch_chat(args).await,
+                CliRootCommands::Chat { args } => Self::execute_chat(Some(args)).await,
                 CliRootCommands::Mcp(args) => q_chat::mcp::execute_mcp(args).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
-            None => q_chat::launch_chat(q_chat::cli::Chat::default()).await,
+            None => Self::execute_chat(None).await,
         }
+    }
+
+    async fn execute_chat(args: Option<Vec<String>>) -> Result<ExitCode> {
+        let secret_store = SecretStore::new().await.ok();
+        if let Some(secret_store) = secret_store {
+            if let Ok(database) = database() {
+                if let Ok(token) = BuilderIdToken::load(&secret_store, false).await {
+                    if let Ok(token) = serde_json::to_string(&token) {
+                        database.set_auth_value("codewhisperer:odic:token", token).ok();
+                    }
+                }
+            }
+        }
+
+        let mut cmd = tokio::process::Command::new(home_local_bin()?.join(CHAT_BINARY_NAME));
+        cmd.arg("chat");
+
+        if let Some(args) = args {
+            cmd.args(args);
+        }
+
+        cmd.status().await?;
+
+        Ok(ExitCode::SUCCESS)
     }
 
     async fn send_telemetry(&self) {
@@ -536,19 +565,6 @@ mod test {
             subcommand: None,
             verbose: 0,
             help_all: true,
-        });
-
-        assert_eq!(Cli::parse_from([CLI_BINARY_NAME, "chat", "-vv"]), Cli {
-            subcommand: Some(CliRootCommands::Chat(Chat {
-                accept_all: false,
-                no_interactive: false,
-                input: None,
-                profile: None,
-                trust_all_tools: false,
-                trust_tools: None,
-            })),
-            verbose: 2,
-            help_all: false,
         });
     }
 

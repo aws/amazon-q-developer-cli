@@ -14,6 +14,9 @@ use fig_os_shim::{
 use thiserror::Error;
 use time::OffsetDateTime;
 
+#[cfg(unix)]
+use crate::RUNTIME_DIR_NAME;
+use crate::TAURI_PRODUCT_NAME;
 use crate::env_var::{
     Q_BUNDLE_METADATA_PATH,
     Q_PARENT,
@@ -22,10 +25,6 @@ use crate::linux::PACKAGE_NAME;
 use crate::system_info::{
     in_cloudshell,
     is_remote,
-};
-use crate::{
-    RUNTIME_DIR_NAME,
-    TAURI_PRODUCT_NAME,
 };
 
 macro_rules! utf8_dir {
@@ -130,21 +129,16 @@ pub fn config_dir() -> Result<PathBuf> {
 /// This should be removed at some point in the future, once all our users have migrated
 /// - MacOS: `$HOME/Library/Application Support/codewhisperer`
 pub fn old_fig_data_dir() -> Result<PathBuf> {
-    cfg_if::cfg_if! {
-        if #[cfg(unix)] {
-            Ok(dirs::data_local_dir()
-                .ok_or(DirectoryError::NoHomeDirectory)?
-                .join("codewhisperer"))
-        } else if #[cfg(windows)] {
-            Ok(fig_dir()?.join("userdata"))
-        }
-    }
+    Ok(dirs::data_local_dir()
+        .ok_or(DirectoryError::NoHomeDirectory)?
+        .join("codewhisperer"))
 }
 
 /// The q data directory
 ///
 /// - Linux: `$XDG_DATA_HOME/amazon-q` or `$HOME/.local/share/amazon-q`
 /// - MacOS: `$HOME/Library/Application Support/amazon-q`
+/// - Windows: `%LOCALAPPDATA%\AmazonQ`
 pub fn fig_data_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
@@ -152,7 +146,9 @@ pub fn fig_data_dir() -> Result<PathBuf> {
                 .ok_or(DirectoryError::NoHomeDirectory)?
                 .join("amazon-q"))
         } else if #[cfg(windows)] {
-            Ok(fig_dir()?.join("userdata"))
+            Ok(dirs::data_local_dir()
+            .ok_or(DirectoryError::NoHomeDirectory)?
+            .join("AmazonQ"))
         }
     }
 }
@@ -165,6 +161,7 @@ pub fn fig_data_dir_ctx(fs: &impl FsProvider) -> Result<PathBuf> {
 ///
 /// - Linux: `$XDG_DATA_HOME` or `$HOME/.local/share`
 /// - MacOS: `$HOME/Library/Application Support`
+/// - Windows: `%LOCALAPPDATA%`
 pub fn local_data_dir<Ctx: FsProvider + EnvProvider + PlatformProvider>(ctx: &Ctx) -> Result<PathBuf> {
     let env = ctx.env();
     match ctx.platform().os() {
@@ -175,6 +172,12 @@ pub fn local_data_dir<Ctx: FsProvider + EnvProvider + PlatformProvider>(ctx: &Ct
             Ok(home_dir_ctx(ctx)?.join(".local/share"))
         },
         Os::Mac => Ok(home_dir_ctx(ctx)?.join("Library/Application Support")),
+        Os::Windows => {
+            if let Some(path) = env.get_os("LOCALAPPDATA") {
+                return Ok(path.into());
+            }
+            Ok(home_dir_ctx(ctx)?.join("AppData").join("Local"))
+        },
         os => Err(DirectoryError::UnsupportedOs(os)),
     }
 }
@@ -183,6 +186,7 @@ pub fn local_data_dir<Ctx: FsProvider + EnvProvider + PlatformProvider>(ctx: &Ct
 ///
 /// - Linux: `$XDG_CACHE_HOME/amazon-q` or `$HOME/.cache/amazon-q`
 /// - MacOS: `$HOME/Library/Caches/amazon-q`
+/// - Windows: `%LOCALAPPDATA%\AmazonQ\cache`
 pub fn cache_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
@@ -190,7 +194,9 @@ pub fn cache_dir() -> Result<PathBuf> {
                 .ok_or(DirectoryError::NoHomeDirectory)?
                 .join("amazon-q"))
         } else if #[cfg(windows)] {
-            Ok(fig_dir()?.join("cache"))
+            Ok(dirs::cache_dir()
+            .ok_or(DirectoryError::NoHomeDirectory)?
+            .join("AmazonQ"))
         }
     }
 }
@@ -213,33 +219,40 @@ fn macos_tempdir() -> Result<PathBuf> {
 ///
 /// The XDG_RUNTIME_DIR is set by systemd <https://www.freedesktop.org/software/systemd/man/latest/file-hierarchy.html#/run/user/>,
 /// if this is not set such as on macOS it will fallback to TMPDIR which is secure on macOS
-#[cfg(unix)]
+/// On Windows, it uses the TEMP directory
 pub fn runtime_dir() -> Result<PathBuf> {
-    let mut dir = dirs::runtime_dir();
-    dir = dir.or_else(|| std::env::var_os("TMPDIR").map(PathBuf::from));
-
     cfg_if::cfg_if! {
-        if #[cfg(target_os = "macos")] {
-            let macos_tempdir = macos_tempdir()?;
-            dir = dir.or(Some(macos_tempdir));
-        } else {
-            dir = dir.or_else(|| Some(std::env::temp_dir()));
+        if #[cfg(unix)] {
+            let mut dir = dirs::runtime_dir();
+            dir = dir.or_else(|| std::env::var_os("TMPDIR").map(PathBuf::from));
+
+            cfg_if::cfg_if! {
+                if #[cfg(target_os = "macos")] {
+                    let macos_tempdir = macos_tempdir()?;
+                    dir = dir.or(Some(macos_tempdir));
+                } else {
+                    dir = dir.or_else(|| Some(std::env::temp_dir()));
+                }
+            }
+
+            dir.ok_or(DirectoryError::NoRuntimeDirectory)
+        } else if #[cfg(windows)] {
+            Ok(std::env::temp_dir())
         }
     }
-
-    dir.ok_or(DirectoryError::NoRuntimeDirectory)
 }
 
 /// The q sockets directory of the local q installation
 ///
 /// - Linux: $XDG_RUNTIME_DIR/cwrun
 /// - MacOS: $TMPDIR/cwrun
+/// - Windows: %TEMP%\sockets
 pub fn sockets_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
             Ok(runtime_dir()?.join(RUNTIME_DIR_NAME))
         } else if #[cfg(windows)] {
-            Ok(fig_dir()?.join("sockets"))
+            Ok(runtime_dir()?.join("AmazonQ").join("sockets"))
         }
     }
 }
@@ -251,6 +264,7 @@ pub fn sockets_dir() -> Result<PathBuf> {
 ///
 /// - Linux: $XDG_RUNTIME_DIR/cwrun
 /// - MacOS: $TMPDIR/cwrun
+/// - Windows: %TEMP%\sockets
 pub fn host_sockets_dir() -> Result<PathBuf> {
     // TODO: make this work again
     // #[cfg(target_os = "linux")]
@@ -289,27 +303,24 @@ pub fn autocomplete_specs_dir() -> Result<PathBuf> {
 /// The directory to all the fig logs
 /// - Linux: `/tmp/fig/$USER/logs`
 /// - MacOS: `$TMPDIR/logs`
-/// - Windows: `%TEMP%\fig\logs`
+/// - Windows: `%TEMP%\AmazonQ\logs`
 pub fn logs_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
             use crate::CLI_BINARY_NAME;
             Ok(runtime_dir()?.join(format!("{CLI_BINARY_NAME}log")))
         } else if #[cfg(windows)] {
-            Ok(std::env::temp_dir().join("amazon-q").join("logs"))
+            Ok(std::env::temp_dir().join("AmazonQ").join("logs"))
         }
     }
 }
 
 /// The directory where fig places all data-sensitive backups
+///
+/// - Linux/MacOS: `$HOME/.amazon-q.dotfiles.bak`
+/// - Windows: `%USERPROFILE%\.amazon-q.dotfiles.bak`
 pub fn backups_dir() -> Result<PathBuf> {
-    cfg_if::cfg_if! {
-        if #[cfg(unix)] {
-            Ok(home_dir()?.join(".amazon-q.dotfiles.bak"))
-        } else if #[cfg(windows)] {
-            Ok(fig_data_dir()?.join("backups"))
-        }
-    }
+    Ok(home_dir()?.join(".amazon-q.dotfiles.bak"))
 }
 
 /// The directory for time based data-sensitive backups
@@ -340,7 +351,7 @@ pub fn chat_profiles_dir<Ctx: FsProvider + EnvProvider>(ctx: &Ctx) -> Result<Pat
 ///
 /// - MacOS: `$TMPDIR/cwrun/desktop.sock`
 /// - Linux: `$XDG_RUNTIME_DIR/cwrun/desktop.sock`
-/// - Windows: `%APPDATA%/Fig/desktop.sock`
+/// - Windows: `%TEMP%\sockets\desktop.sock`
 pub fn desktop_socket_path() -> Result<PathBuf> {
     Ok(host_sockets_dir()?.join("desktop.sock"))
 }
@@ -350,8 +361,9 @@ pub fn desktop_socket_path() -> Result<PathBuf> {
 // - Linux/MacOS not on ssh:
 /// - MacOS: `$TMPDIR/cwrun/remote.sock`
 /// - Linux: `$XDG_RUNTIME_DIR/cwrun/remote.sock`
-/// - Windows: `%APPDATA%/Fig/%USER%/remote.sock`
+/// - Windows: `%TEMP%\sockets\remote.sock`
 pub fn remote_socket_path() -> Result<PathBuf> {
+    // Normal implementation for non-test code
     // TODO(grant): This is only enabled on Linux for now to prevent public dist
     if is_remote() && !in_cloudshell() && cfg!(target_os = "linux") {
         if let Some(parent_socket) = std::env::var_os(Q_PARENT) {
@@ -368,7 +380,7 @@ pub fn remote_socket_path() -> Result<PathBuf> {
 ///
 /// - MacOS: `$TMPDIR/cwrun/remote.sock`
 /// - Linux: `$XDG_RUNTIME_DIR/cwrun/remote.sock`
-/// - Windows: `%APPDATA%/Fig/%USER%/remote.sock`
+/// - Windows: `%TEMP%\sockets\remote.sock`
 pub fn local_remote_socket_path() -> Result<PathBuf> {
     Ok(host_sockets_dir()?.join("remote.sock"))
 }
@@ -378,7 +390,7 @@ pub fn local_remote_socket_path() -> Result<PathBuf> {
 /// - Linux/Macos: `/var/tmp/fig/%USERNAME%/figterm/$SESSION_ID.sock`
 /// - MacOS: `$TMPDIR/cwrun/t/$SESSION_ID.sock`
 /// - Linux: `$XDG_RUNTIME_DIR/cwrun/t/$SESSION_ID.sock`
-/// - Windows: `%APPDATA%\Fig\$SESSION_ID.sock`
+/// - Windows: `%TEMP%\sockets\t\$SESSION_ID.sock`
 pub fn figterm_socket_path(session_id: impl Display) -> Result<PathBuf> {
     Ok(sockets_dir()?.join("t").join(format!("{session_id}.sock")))
 }
@@ -387,12 +399,15 @@ pub fn figterm_socket_path(session_id: impl Display) -> Result<PathBuf> {
 ///
 /// - MacOS: "/Applications/Amazon Q.app/Contents/Resources"
 /// - Linux: "/usr/share/fig"
+/// - Windows: "%LOCALAPPDATA%\AmazonQ\resources"
 pub fn resources_path() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(all(unix, not(target_os = "macos")))] {
             Ok(std::path::Path::new("/usr/share/fig").into())
         } else if #[cfg(target_os = "macos")] {
             Ok(crate::app_bundle_path().join(crate::macos::BUNDLE_CONTENTS_RESOURCE_PATH))
+        } else if #[cfg(windows)] {
+            Ok(fig_data_dir()?.join("resources"))
         }
     }
 }
@@ -411,6 +426,7 @@ pub fn resources_path_ctx<Ctx: EnvProvider + PlatformProvider>(ctx: &Ctx) -> Res
                 Ok(format!("/usr/share/{}", PACKAGE_NAME).into())
             }
         },
+        fig_os_shim::Os::Windows => Ok(fig_data_dir()?.join("resources")),
         _ => Err(DirectoryError::UnsupportedOs(os)),
     }
 }
@@ -419,12 +435,13 @@ pub fn resources_path_ctx<Ctx: EnvProvider + PlatformProvider>(ctx: &Ctx) -> Res
 ///
 /// - MacOS: "/Applications/Amazon Q.app/Contents/Resources/manifest.json"
 /// - Linux: "/usr/share/fig/manifest.json"
+/// - Windows: "%LOCALAPPDATA%\AmazonQ\resources\bin\manifest.json"
 pub fn manifest_path() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
             Ok(resources_path()?.join("manifest.json"))
         } else if #[cfg(target_os = "windows")] {
-            Ok(managed_binaries_dir()?.join("manifest.json"))
+            Ok(resources_path()?.join("bin").join("manifest.json"))
         }
     }
 }
@@ -442,11 +459,19 @@ pub fn bundle_metadata_path<Ctx: EnvProvider + PlatformProvider>(ctx: &Ctx) -> R
 }
 
 /// The path to the fig settings file
+///
+/// - Linux: `$HOME/.local/share/amazon-q/settings.json`
+/// - MacOS: `$HOME/Library/Application Support/amazon-q/settings.json`
+/// - Windows: `%LOCALAPPDATA%\AmazonQ\settings.json`
 pub fn settings_path() -> Result<PathBuf> {
     Ok(fig_data_dir()?.join("settings.json"))
 }
 
 /// The path to the lock file used to indicate that the app is updating
+///
+/// - Linux: `$HOME/.local/share/amazon-q/update.lock`
+/// - MacOS: `$HOME/Library/Application Support/amazon-q/update.lock`
+/// - Windows: `%LOCALAPPDATA%\AmazonQ\update.lock`
 pub fn update_lock_path(ctx: &impl FsProvider) -> Result<PathBuf> {
     Ok(fig_data_dir_ctx(ctx)?.join("update.lock"))
 }
@@ -540,12 +565,14 @@ mod linux_tests {
     fn all_paths() {
         let ctx = Context::new();
         assert!(home_dir().is_ok());
+        #[cfg(unix)]
         assert!(home_local_bin().is_ok());
         assert!(fig_data_dir().is_ok());
         assert!(sockets_dir().is_ok());
         assert!(remote_socket_path().is_ok());
         assert!(local_remote_socket_path().is_ok());
         assert!(figterm_socket_path("test").is_ok());
+        assert!(resources_path().is_ok());
         assert!(manifest_path().is_ok());
         assert!(backups_dir().is_ok());
         assert!(logs_dir().is_ok());
@@ -568,10 +595,25 @@ mod tests {
     /// own otherwise we will set permissions of directories we shouldn't
     #[test]
     fn test_socket_paths() {
+        #[cfg(unix)]
         assert_eq!(
             host_sockets_dir().unwrap().file_name().unwrap().to_str().unwrap(),
             format!("cwrun")
         );
+
+        #[cfg(windows)]
+        assert_eq!(
+            host_sockets_dir().unwrap().file_name().unwrap().to_str().unwrap(),
+            format!("sockets")
+        );
+
+        #[cfg(unix)]
+        assert_eq!(
+            figterm_socket_path("").unwrap().parent().unwrap().file_name().unwrap(),
+            "t"
+        );
+
+        #[cfg(windows)]
         assert_eq!(
             figterm_socket_path("").unwrap().parent().unwrap().file_name().unwrap(),
             "t"
@@ -649,7 +691,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn snapshot_home_local_bin() {
+        #[cfg(target_os = "linux")]
         linux!(home_local_bin(), @"$HOME/.local/bin");
+        #[cfg(target_os = "macos")]
         macos!(home_local_bin(), @"$HOME/.local/bin");
     }
 
@@ -657,63 +701,63 @@ mod tests {
     fn snapshot_fig_data_dir() {
         linux!(fig_data_dir(), @"$HOME/.local/share/amazon-q");
         macos!(fig_data_dir(), @"$HOME/Library/Application Support/amazon-q");
-        windows!(fig_data_dir(), @r"C:\Users\$USER\AppData\Local\Fig\userdata");
+        windows!(fig_data_dir(), @r"C:\Users\$USER\AppData\Local\AmazonQ");
     }
 
     #[test]
     fn snapshot_sockets_dir() {
         linux!(sockets_dir(), @"$XDG_RUNTIME_DIR/cwrun");
         macos!(sockets_dir(), @"$TMPDIR/cwrun");
-        windows!(sockets_dir(), @r"C:\Users\$USER\AppData\Local\Fig\sockets");
+        windows!(sockets_dir(), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets");
     }
 
     #[test]
     fn snapshot_themes_dir() {
         linux!(themes_dir(&Context::new()), @"/usr/share/fig/themes");
         macos!(themes_dir(&Context::new()), @"/Applications/Amazon Q.app/Contents/Resources/themes");
-        windows!(themes_dir(&Context::new()), @r"C:\Users\$USER\AppData\Local\Fig\userdata\themes\themes");
+        windows!(themes_dir(&Context::new()), @r"C:\Users\$USER\AppData\Local\AmazonQ\resources\themes");
     }
 
     #[test]
     fn snapshot_backups_dir() {
         linux!(backups_dir(), @"$HOME/.amazon-q.dotfiles.bak");
         macos!(backups_dir(), @"$HOME/.amazon-q.dotfiles.bak");
-        windows!(backups_dir(), @r"C:\Users\$USER\AppData\Local\Fig\userdata\backups");
+        windows!(backups_dir(), @r"C:\Users\$USER\.amazon-q.dotfiles.bak");
     }
 
     #[test]
     fn snapshot_fig_socket_path() {
         linux!(desktop_socket_path(), @"$XDG_RUNTIME_DIR/cwrun/desktop.sock");
         macos!(desktop_socket_path(), @"$TMPDIR/cwrun/desktop.sock");
-        windows!(desktop_socket_path(), @r"C:\Users\$USER\AppData\Local\Fig\sockets\desktop.sock");
+        windows!(desktop_socket_path(), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets\desktop.sock");
     }
 
     #[test]
     fn snapshot_remote_socket_path() {
         linux!(remote_socket_path(), @"$XDG_RUNTIME_DIR/cwrun/remote.sock");
         macos!(remote_socket_path(), @"$TMPDIR/cwrun/remote.sock");
-        windows!(remote_socket_path(), @r"C:\Users\$USER\AppData\Local\Fig\sockets\remote.sock");
+        windows!(remote_socket_path(), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets\remote.sock");
     }
 
     #[test]
     fn snapshot_local_remote_socket_path() {
         linux!(local_remote_socket_path(), @"$XDG_RUNTIME_DIR/cwrun/remote.sock");
         macos!(local_remote_socket_path(), @"$TMPDIR/cwrun/remote.sock");
-        windows!(local_remote_socket_path(), @r"C:\Users\$USER\AppData\Local\Fig\sockets\remote.sock");
+        windows!(local_remote_socket_path(), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets\remote.sock");
     }
 
     #[test]
     fn snapshot_figterm_socket_path() {
         linux!(figterm_socket_path("$SESSION_ID"), @"$XDG_RUNTIME_DIR/cwrun/t/$SESSION_ID.sock");
         macos!(figterm_socket_path("$SESSION_ID"), @"$TMPDIR/cwrun/t/$SESSION_ID.sock");
-        windows!(figterm_socket_path("$SESSION_ID"), @r"C:\Users\$USER\AppData\Local\Fig\sockets\figterm\$SESSION_ID.sock");
+        windows!(figterm_socket_path("$SESSION_ID"), @r"C:\Users\$USER\AppData\Local\Temp\AmazonQ\sockets\t\$SESSION_ID.sock");
     }
 
     #[test]
     fn snapshot_settings_path() {
         linux!(settings_path(), @"$HOME/.local/share/amazon-q/settings.json");
         macos!(settings_path(), @"$HOME/Library/Application Support/amazon-q/settings.json");
-        windows!(settings_path(), @r"C:\Users\$USER\AppData\Lcoal\Fig\settings.json");
+        windows!(settings_path(), @r"C:\Users\$USER\AppData\Local\AmazonQ\settings.json");
     }
 
     #[test]
@@ -721,7 +765,7 @@ mod tests {
         let ctx = Context::new();
         linux!(update_lock_path(&ctx), @"$HOME/.local/share/amazon-q/update.lock");
         macos!(update_lock_path(&ctx), @"$HOME/Library/Application Support/amazon-q/update.lock");
-        windows!(update_lock_path(&ctx), @r"C:\Users\$USER\AppData\Local\Fig\userdata\update.lock");
+        windows!(update_lock_path(&ctx), @r"C:\Users\$USER\AppData\Local\AmazonQ\update.lock");
     }
 
     #[test]
