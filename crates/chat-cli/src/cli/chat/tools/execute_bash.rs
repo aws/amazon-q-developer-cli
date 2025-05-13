@@ -28,8 +28,8 @@ use super::{
 };
 use crate::cli::chat::{
     CONTINUATION_LINE,
-    PURPOSE_ARROW}
-;
+    PURPOSE_ARROW,
+};
 use crate::platform::Context;
 const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 
@@ -131,7 +131,7 @@ impl ExecuteBash {
             queue!(
                 updates,
                 style::Print(CONTINUATION_LINE),
-                style::Print("\n"), 
+                style::Print("\n"),
                 style::Print(PURPOSE_ARROW),
                 style::SetForegroundColor(Color::Blue),
                 style::Print("Purpose: "),
