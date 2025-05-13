@@ -63,6 +63,7 @@ use fig_util::{
 };
 use internal::InternalSubcommand;
 use serde::Serialize;
+use tokio::signal::ctrl_c;
 use tracing::{
     Level,
     debug,
@@ -351,9 +352,20 @@ impl Cli {
             cmd.args(args);
         }
 
-        cmd.status().await?;
+        // Because we are spawning chat as a child process, we need the parent process (this one)
+        // to ignore sigint that are meant for chat (i.e. all of them)
+        tokio::spawn(async move {
+            loop {
+                let _ = ctrl_c().await;
+            }
+        });
 
-        Ok(ExitCode::SUCCESS)
+        let exit_status = cmd.status().await?;
+        let exit_code = exit_status
+            .code()
+            .map_or(ExitCode::FAILURE, |e| ExitCode::from(e as u8));
+
+        Ok(exit_code)
     }
 
     async fn send_telemetry(&self) {
