@@ -26,3 +26,6 @@ pub const MAX_NUMBER_OF_IMAGES_PER_REQUEST: usize = 10;
 
 /// In bytes - 10 MB
 pub const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024;
+
+/// Environment variable containing the pid of the chat session.
+pub const QCHAT_PROCESS_ID: &str = "QCHAT_PROCESS_ID";

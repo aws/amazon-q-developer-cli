@@ -1,6 +1,6 @@
 pub mod cli;
 mod command;
-mod consts;
+pub mod consts;
 mod context;
 mod conversation_state;
 mod hooks;

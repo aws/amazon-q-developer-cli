@@ -17,6 +17,7 @@ use clap::Parser;
 use crossterm::style::Stylize;
 use eyre::Result;
 use logging::get_log_level_max;
+use platform::Context;
 use tracing::metadata::LevelFilter;
 
 #[global_allocator]
@@ -32,6 +33,18 @@ fn main() -> Result<ExitCode> {
             return Ok(ExitCode::from(err.exit_code().try_into().unwrap_or(2)));
         },
     };
+
+    // Set the QCHAT_PROCESS_ID env var if we're launching chat.
+    #[cfg(unix)]
+    match parsed.subcommand {
+        Some(cli::CliRootCommands::Chat(_)) | None => {
+            let ctx = Context::new();
+            let current_pid = nix::unistd::getpid().as_raw().to_string();
+            // SAFETY: This is only executed in a single-threaded context.
+            unsafe { ctx.env().set_var(cli::chat::consts::QCHAT_PROCESS_ID, current_pid) };
+        },
+        _ => (),
+    }
 
     let verbose = parsed.verbose > 0;
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
