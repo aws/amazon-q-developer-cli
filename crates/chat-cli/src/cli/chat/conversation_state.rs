@@ -314,8 +314,9 @@ impl ConversationState {
                     tool_uses.iter().map(|t| t.id.as_str()),
                 );
             }
-            self.enforce_tool_use_history_invariants();
         }
+
+        self.enforce_tool_use_history_invariants(true);
     }
 
     /// Here we also need to make sure that the tool result corresponds to one of the tools
@@ -330,14 +331,14 @@ impl ConversationState {
     ///    intervention here is to substitute the ambiguous, partial name with a dummy.
     /// 3. The model had decided to call a tool that does not exist. The intervention here is to
     ///    substitute the non-existent tool name with a dummy.
-    pub fn enforce_tool_use_history_invariants(&mut self) {
+    pub fn enforce_tool_use_history_invariants(&mut self, last_only: bool) {
         let tool_name_list = self.tool_manager.tn_map.keys().map(String::as_str).collect::<Vec<_>>();
         // We need to first determine what the range of interest is. There are two places where we
         // would call this function:
         // 1. When there are changes to the list of available tools, in which case we comb through the
         //    entire conversation
         // 2. When we send a message, in which case we only examine the most recent entry
-        let (tool_use_results, mut tool_uses) =
+        let (tool_use_results, mut tool_uses) = if last_only {
             if let (Some((_, AssistantMessage::ToolUse { ref mut tool_uses, .. })), Some(user_msg)) = (
                 self.history
                     .range_mut(self.valid_history_range.0..self.valid_history_range.1)
@@ -350,28 +351,37 @@ impl ConversationState {
                 let tool_uses = tool_uses.iter_mut().collect::<Vec<_>>();
                 (tool_use_results, tool_uses)
             } else {
-                self.history
-                    .iter_mut()
-                    .filter_map(|(user_msg, asst_msg)| {
-                        if let (Some(tool_use_results), AssistantMessage::ToolUse { ref mut tool_uses, .. }) =
-                            (user_msg.tool_use_results(), asst_msg)
-                        {
-                            Some((tool_use_results, tool_uses))
-                        } else {
-                            None
-                        }
-                    })
-                    .fold(
-                        (Vec::<&ToolUseResult>::new(), Vec::<&mut AssistantToolUse>::new()),
-                        |(mut tool_use_results, mut tool_uses), (results, uses)| {
-                            let mut results = results.iter().collect::<Vec<_>>();
-                            let mut uses = uses.iter_mut().collect::<Vec<_>>();
-                            tool_use_results.append(&mut results);
-                            tool_uses.append(&mut uses);
-                            (tool_use_results, tool_uses)
-                        },
-                    )
-            };
+                (Vec::new(), Vec::new())
+            }
+        } else {
+            let tool_use_results = self.next_message.as_ref().map_or(Vec::new(), |user_msg| {
+                user_msg
+                    .tool_use_results()
+                    .map_or(Vec::new(), |results| results.iter().collect::<Vec<_>>())
+            });
+            self.history
+                .iter_mut()
+                .filter_map(|(user_msg, asst_msg)| {
+                    if let (Some(tool_use_results), AssistantMessage::ToolUse { ref mut tool_uses, .. }) =
+                        (user_msg.tool_use_results(), asst_msg)
+                    {
+                        Some((tool_use_results, tool_uses))
+                    } else {
+                        None
+                    }
+                })
+                .fold(
+                    (tool_use_results, Vec::<&mut AssistantToolUse>::new()),
+                    |(mut tool_use_results, mut tool_uses), (results, uses)| {
+                        let mut results = results.iter().collect::<Vec<_>>();
+                        let mut uses = uses.iter_mut().collect::<Vec<_>>();
+                        tool_use_results.append(&mut results);
+                        tool_uses.append(&mut uses);
+                        (tool_use_results, tool_uses)
+                    },
+                )
+        };
+
         // Replace tool uses associated with tools that does not exist / no longer exists with
         // dummy (i.e. put them to sleep / dormant)
         for result in tool_use_results {
@@ -401,6 +411,7 @@ impl ConversationState {
                 }
             }
         }
+
         // Revive tools that were previously dormant if they now corresponds to one of the tools in
         // our list of available tools. Note that this check only works because tn_map does NOT
         // contain names of native tools.
@@ -498,7 +509,7 @@ impl ConversationState {
         // We call this in [Self::enforce_conversation_invariants] as well. But we need to call it
         // here as well because when it's being called in [Self::enforce_conversation_invariants]
         // it is only checking the last entry.
-        self.enforce_tool_use_history_invariants();
+        self.enforce_tool_use_history_invariants(false);
     }
 
     /// Returns a conversation state representation which reflects the exact conversation to send
