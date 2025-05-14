@@ -90,7 +90,7 @@ impl StreamingClient {
             .http_client(crate::aws_common::http_client::client())
             .interceptor(OptOutInterceptor::new(database))
             .interceptor(UserAgentOverrideInterceptor::new())
-            .bearer_token_resolver(BearerResolver::new(database).await?)
+            .bearer_token_resolver(BearerResolver)
             .app_name(app_name())
             .endpoint_url(endpoint.url())
             .stalled_stream_protection(stalled_stream_protection_config())
