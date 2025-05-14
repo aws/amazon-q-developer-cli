@@ -60,7 +60,7 @@ pub async fn add_mcp_server(ctx: &Context, output: &mut SharedWriter, args: McpA
 
     if config.mcp_servers.contains_key(&args.name) && !args.force {
         bail!(
-            "MCP server '{}' already exists in {} (scope {}). Use --force to overwrite.",
+            "\nMCP server '{}' already exists in {} (scope {}). Use --force to overwrite.",
             args.name,
             config_path.display(),
             scope
@@ -74,11 +74,16 @@ pub async fn add_mcp_server(ctx: &Context, output: &mut SharedWriter, args: McpA
         "timeout": args.timeout.unwrap_or(default_timeout()),
     }))?;
 
+    writeln!(
+        output,
+        "\nTo learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
+    )?;
+
     config.mcp_servers.insert(args.name.clone(), tool);
     config.save_to_file(ctx, &config_path).await?;
     writeln!(
         output,
-        "✓ Added MCP server '{}' to {}",
+        "✓ Added MCP server '{}' to {}\n",
         args.name,
         scope_display(&scope, &args.profile)
     )?;
@@ -100,7 +105,7 @@ pub async fn remove_mcp_server(ctx: &Context, output: &mut SharedWriter, args: M
             config.save_to_file(ctx, &config_path).await?;
             writeln!(
                 output,
-                "✓ Removed MCP server '{}' from {}",
+                "\n✓ Removed MCP server '{}' from {}\n",
                 args.name,
                 scope_display(&scope, &args.profile)
             )?;
@@ -108,7 +113,7 @@ pub async fn remove_mcp_server(ctx: &Context, output: &mut SharedWriter, args: M
         None => {
             writeln!(
                 output,
-                "No MCP server named '{}' found in {}",
+                "\nNo MCP server named '{}' found in {}\n",
                 args.name,
                 scope_display(&scope, &args.profile)
             )?;
@@ -154,7 +159,7 @@ pub async fn import_mcp_server(ctx: &Context, output: &mut SharedWriter, args: M
     for (name, cfg) in src_cfg.mcp_servers {
         if dst_cfg.mcp_servers.contains_key(&name) && !args.force {
             bail!(
-                "MCP server '{}' already exists in {} (scope {}). Use --force to overwrite.",
+                "MCP server '{}' already exists in {} (scope {}). Use --force to overwrite.\n",
                 name,
                 config_path.display(),
                 scope
@@ -164,10 +169,15 @@ pub async fn import_mcp_server(ctx: &Context, output: &mut SharedWriter, args: M
         added += 1;
     }
 
+    writeln!(
+        output,
+        "\nTo learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
+    )?;
+
     dst_cfg.save_to_file(ctx, &config_path).await?;
     writeln!(
         output,
-        "✓ Imported {added} MCP server(s) into {}",
+        "✓ Imported {added} MCP server(s) into {}\n",
         scope_display(&scope, &args.profile)
     )?;
     Ok(())
@@ -199,7 +209,7 @@ pub async fn get_mcp_server_status(ctx: &Context, output: &mut SharedWriter, nam
     writeln!(output, "\n")?;
 
     if !found {
-        bail!("No MCP server named '{name}' found in any scope/profile");
+        bail!("No MCP server named '{name}' found in any scope/profile\n");
     }
     Ok(())
 }
@@ -297,7 +307,7 @@ async fn ensure_config_file(
             ctx.fs().create_dir_all(parent).await?;
         }
         McpServerConfig::default().save_to_file(ctx, path).await?;
-        writeln!(out, "📁 Created MCP config in '{}'", path.display())?;
+        writeln!(out, "\n📁 Created MCP config in '{}'", path.display())?;
     }
     load_cfg(ctx, path).await
 }

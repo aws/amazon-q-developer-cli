@@ -354,12 +354,15 @@ pub async fn chat(
 
     let mcp_server_configs = match McpServerConfig::load_config(&mut output).await {
         Ok(config) => {
-            execute!(
-                output,
-                style::Print(
-                    "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
-                )
-            )?;
+            if interactive && !database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
+                execute!(
+                    output,
+                    style::Print(
+                        "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
+                    )
+                )?;
+            }
+            database.settings.set(Setting::McpLoadedBefore, true).await?;
             config
         },
         Err(e) => {
