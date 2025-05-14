@@ -514,8 +514,8 @@ impl ConversationState {
             .expect("unable to construct conversation state")
     }
 
-    pub async fn update_state(&mut self) {
-        let needs_update = self.tool_manager.has_new_stuff.load(Ordering::Acquire);
+    pub async fn update_state(&mut self, force_update: bool) {
+        let needs_update = self.tool_manager.has_new_stuff.load(Ordering::Acquire) || force_update;
         if !needs_update {
             return;
         }

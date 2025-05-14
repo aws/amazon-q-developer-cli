@@ -558,7 +558,7 @@ impl ChatContext {
                 cs.reload_serialized_state(Arc::clone(&ctx), Some(output.clone())).await;
                 input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
                 cs.tool_manager = tool_manager;
-                cs.enforce_tool_use_history_invariants(false);
+                cs.update_state(true).await;
                 cs
             } else {
                 ConversationState::new(
@@ -812,7 +812,7 @@ impl ChatContext {
             debug!(?chat_state, "changing to state");
 
             // Update conversation state with new tool information
-            self.conversation_state.update_state().await;
+            self.conversation_state.update_state(false).await;
 
             let result = match chat_state {
                 ChatState::PromptUser {
