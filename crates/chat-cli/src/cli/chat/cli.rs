@@ -17,9 +17,9 @@ pub struct Chat {
     /// prompt requests permissions to use a tool, unless --trust-all-tools is also used.
     #[arg(long)]
     pub no_interactive: bool,
-    /// Start a new conversation and overwrites any previous conversation from this directory.
-    #[arg(long)]
-    pub new: bool,
+    /// Resumes the previous conversation from this directory.
+    #[arg(short, long)]
+    pub resume: bool,
     /// The first question to ask
     pub input: Option<String>,
     /// Context profile to use

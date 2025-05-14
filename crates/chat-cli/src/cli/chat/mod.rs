@@ -203,7 +203,8 @@ const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
 const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
-const ROTATING_TIPS: [&str; 11] = [
+const ROTATING_TIPS: [&str; 12] = [
+    color_print::cstr! {"You can resume the last conversation from your current directory by launching with <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
@@ -263,8 +264,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
   <em>hooks</em>       <black!>View and manage context hooks</black!>
 <em>/usage</em>        <black!>Show current session's context window usage</black!>
-<em>/import</em>       <black!>Import conversation state from a JSON file</black!>
-<em>/export</em>       <black!>Export conversation state to a JSON file</black!>
+<em>/load</em>         <black!>Load conversation state from a JSON file</black!>
+<em>/save</em>         <black!>Save conversation state to a JSON file</black!>
 
 <cyan,em>MCP:</cyan,em>
 <black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/en_us/amazonq/latest/qdeveloper-ug/command-line-mcp.html</black!>
@@ -299,7 +300,7 @@ pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, a
         telemetry,
         args.input,
         args.no_interactive,
-        args.new,
+        args.resume,
         args.accept_all,
         args.profile,
         args.trust_all_tools,
@@ -314,7 +315,7 @@ pub async fn chat(
     telemetry: &TelemetryThread,
     input: Option<String>,
     no_interactive: bool,
-    new_conversation: bool,
+    resume_conversation: bool,
     accept_all: bool,
     profile: Option<String>,
     trust_all_tools: bool,
@@ -443,7 +444,7 @@ pub async fn chat(
         input,
         InputSource::new(database, prompt_request_sender, prompt_response_receiver)?,
         interactive,
-        new_conversation,
+        resume_conversation,
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
         tool_manager,
@@ -530,7 +531,7 @@ impl ChatContext {
         mut input: Option<String>,
         input_source: InputSource,
         interactive: bool,
-        new_conversation: bool,
+        resume_conversation: bool,
         client: StreamingClient,
         terminal_width_provider: fn() -> Option<usize>,
         tool_manager: ToolManager,
@@ -542,22 +543,7 @@ impl ChatContext {
         let output_clone = output.clone();
 
         let mut existing_conversation = false;
-        let conversation_state = if new_conversation {
-            let new_state = ConversationState::new(
-                ctx_clone,
-                conversation_id,
-                tool_config,
-                profile,
-                Some(output_clone),
-                tool_manager,
-            )
-            .await;
-
-            std::env::current_dir()
-                .ok()
-                .and_then(|cwd| database.set_conversation_by_path(cwd, &new_state).ok());
-            new_state
-        } else {
+        let conversation_state = if resume_conversation {
             let prior = std::env::current_dir()
                 .ok()
                 .and_then(|cwd| database.get_conversation_by_path(cwd).ok())
@@ -585,6 +571,16 @@ impl ChatContext {
                 )
                 .await
             }
+        } else {
+            ConversationState::new(
+                ctx_clone,
+                conversation_id,
+                tool_config,
+                profile,
+                Some(output_clone),
+                tool_manager,
+            )
+            .await
         };
 
         Ok(Self {
@@ -2812,7 +2808,7 @@ impl ChatContext {
                     skip_printing_tools: true,
                 }
             },
-            Command::Import { path } => {
+            Command::Load { path } => {
                 macro_rules! tri {
                     ($v:expr) => {
                         match $v {
@@ -2854,7 +2850,7 @@ impl ChatContext {
                     skip_printing_tools: true,
                 }
             },
-            Command::Export { path, force } => {
+            Command::Save { path, force } => {
                 macro_rules! tri {
                     ($v:expr) => {
                         match $v {
