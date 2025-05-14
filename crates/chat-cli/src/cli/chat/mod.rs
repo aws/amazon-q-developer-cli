@@ -545,6 +545,7 @@ impl ChatContext {
                 existing_conversation = true;
                 input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
                 prior.tool_manager = tool_manager;
+                prior.enforce_tool_use_history_invariants();
                 prior
             },
             None => {
