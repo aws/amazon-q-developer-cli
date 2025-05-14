@@ -151,6 +151,7 @@ use crate::api_client::model::{
     Tool as FigTool,
     ToolResultStatus,
 };
+use crate::cli::chat::util::images::format_images_for_terminal;
 use crate::database::Database;
 use crate::database::settings::Setting;
 use crate::mcp_client::{
@@ -3002,6 +3003,12 @@ impl ChatContext {
                     }
 
                     debug!("tool result output: {:#?}", result);
+                    if let OutputKind::Images(ref images) = result.output {
+                        // If our terminal supports it, render the images directly
+                        if let Some(formatted_images) = format_images_for_terminal(images) {
+                            execute!(self.output, style::Print(&formatted_images), style::Print("\n"),)?;
+                        }
+                    }
                     execute!(
                         self.output,
                         style::Print(CONTINUATION_LINE),
