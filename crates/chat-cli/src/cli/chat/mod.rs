@@ -559,6 +559,7 @@ impl ChatContext {
                 input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
                 cs.tool_manager = tool_manager;
                 cs.update_state(true).await;
+                cs.enforce_tool_use_history_invariants();
                 cs
             } else {
                 ConversationState::new(

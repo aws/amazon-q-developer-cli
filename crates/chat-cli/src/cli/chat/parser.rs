@@ -222,9 +222,9 @@ impl ResponseParser {
                     self.tool_uses.push(AssistantToolUse {
                         id: id.clone(),
                         name: name.clone(),
-                        orig_name: Some(name.clone()),
+                        orig_name: name.clone(),
                         args: args.clone(),
-                        orig_args: Some(args.clone()),
+                        orig_args: args.clone(),
                     });
                     let message = Box::new(AssistantMessage::new_tool_use(
                         Some(self.message_id.clone()),

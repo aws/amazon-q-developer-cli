@@ -349,11 +349,11 @@ pub struct AssistantToolUse {
     /// The name for the tool as exposed to the model
     pub name: String,
     /// Original name of the tool
-    pub orig_name: Option<String>,
+    pub orig_name: String,
     /// The input to pass to the tool as exposed to the model
     pub args: serde_json::Value,
     /// Original input passed to the tool
-    pub orig_args: Option<serde_json::Value>,
+    pub orig_args: serde_json::Value,
 }
 
 impl From<AssistantToolUse> for ToolUse {

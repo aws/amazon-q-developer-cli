@@ -1,5 +1,6 @@
 use std::collections::{
     HashMap,
+    HashSet,
     VecDeque,
 };
 use std::sync::Arc;
@@ -32,7 +33,6 @@ use super::hooks::{
 };
 use super::message::{
     AssistantMessage,
-    AssistantToolUse,
     ToolUseResult,
     ToolUseResultBlock,
     UserMessage,
@@ -60,7 +60,6 @@ use crate::api_client::model::{
     ToolInputSchema,
     ToolResult,
     ToolResultContentBlock,
-    ToolResultStatus,
     ToolSpecification,
     ToolUse,
     UserInputMessage,
@@ -347,7 +346,7 @@ impl ConversationState {
             }
         }
 
-        self.enforce_tool_use_history_invariants(true);
+        self.enforce_tool_use_history_invariants();
     }
 
     /// Here we also need to make sure that the tool result corresponds to one of the tools
@@ -362,105 +361,51 @@ impl ConversationState {
     ///    intervention here is to substitute the ambiguous, partial name with a dummy.
     /// 3. The model had decided to call a tool that does not exist. The intervention here is to
     ///    substitute the non-existent tool name with a dummy.
-    pub fn enforce_tool_use_history_invariants(&mut self, last_only: bool) {
-        let tool_name_list = self.tool_manager.tn_map.keys().map(String::as_str).collect::<Vec<_>>();
-        // We need to first determine what the range of interest is. There are two places where we
-        // would call this function:
-        // 1. When there are changes to the list of available tools, in which case we comb through the
-        //    entire conversation
-        // 2. When we send a message, in which case we only examine the most recent entry
-        let (tool_use_results, mut tool_uses) = if last_only {
-            if let (Some((_, AssistantMessage::ToolUse { ref mut tool_uses, .. })), Some(user_msg)) = (
-                self.history
-                    .range_mut(self.valid_history_range.0..self.valid_history_range.1)
-                    .last(),
-                &mut self.next_message,
-            ) {
-                let tool_use_results = user_msg
-                    .tool_use_results()
-                    .map_or(Vec::new(), |results| results.iter().collect::<Vec<_>>());
-                let tool_uses = tool_uses.iter_mut().collect::<Vec<_>>();
-                (tool_use_results, tool_uses)
-            } else {
-                (Vec::new(), Vec::new())
-            }
-        } else {
-            let tool_use_results = self.next_message.as_ref().map_or(Vec::new(), |user_msg| {
-                user_msg
-                    .tool_use_results()
-                    .map_or(Vec::new(), |results| results.iter().collect::<Vec<_>>())
-            });
-            self.history
-                .iter_mut()
-                .filter_map(|(user_msg, asst_msg)| {
-                    if let (Some(tool_use_results), AssistantMessage::ToolUse { ref mut tool_uses, .. }) =
-                        (user_msg.tool_use_results(), asst_msg)
-                    {
-                        Some((tool_use_results, tool_uses))
-                    } else {
-                        None
-                    }
+    pub fn enforce_tool_use_history_invariants(&mut self) {
+        let tool_names: HashSet<_> = self
+            .tools
+            .values()
+            .flat_map(|tools| {
+                tools.iter().map(|tool| match tool {
+                    Tool::ToolSpecification(tool_specification) => tool_specification.name.as_str(),
                 })
-                .fold(
-                    (tool_use_results, Vec::<&mut AssistantToolUse>::new()),
-                    |(mut tool_use_results, mut tool_uses), (results, uses)| {
-                        let mut results = results.iter().collect::<Vec<_>>();
-                        let mut uses = uses.iter_mut().collect::<Vec<_>>();
-                        tool_use_results.append(&mut results);
-                        tool_uses.append(&mut uses);
-                        (tool_use_results, tool_uses)
-                    },
-                )
-        };
+            })
+            .collect();
 
-        // Replace tool uses associated with tools that does not exist / no longer exists with
-        // dummy (i.e. put them to sleep / dormant)
-        for result in tool_use_results {
-            let tool_use_id = result.tool_use_id.as_str();
-            let corresponding_tool_use = tool_uses.iter_mut().find(|tool_use| tool_use_id == tool_use.id);
-            if let Some(tool_use) = corresponding_tool_use {
-                if tool_name_list.contains(&tool_use.name.as_str()) {
-                    // If this tool matches of the tools in our list, this is not our
-                    // concern, error or not.
-                    continue;
-                }
-                if let ToolResultStatus::Error = result.status {
-                    // case 2 and 3
-                    tool_use.name = DUMMY_TOOL_NAME.to_string();
-                    tool_use.args = serde_json::json!({});
-                } else {
-                    // case 1
-                    let full_name = tool_name_list.iter().find(|name| name.ends_with(&tool_use.name));
-                    // We should be able to find a match but if not we'll just treat it as
-                    // a dummy and move on
-                    if let Some(full_name) = full_name {
-                        tool_use.name = (*full_name).to_string();
-                    } else {
-                        tool_use.name = DUMMY_TOOL_NAME.to_string();
-                        tool_use.args = serde_json::json!({});
+        for (_, assistant) in &mut self.history {
+            if let AssistantMessage::ToolUse { ref mut tool_uses, .. } = assistant {
+                for tool_use in tool_uses {
+                    if tool_names.contains(tool_use.name.as_str()) {
+                        continue;
                     }
-                }
-            }
-        }
 
-        // Revive tools that were previously dormant if they now corresponds to one of the tools in
-        // our list of available tools. Note that this check only works because tn_map does NOT
-        // contain names of native tools.
-        for tool_use in tool_uses {
-            if tool_use.name == DUMMY_TOOL_NAME
-                && tool_use
-                    .orig_name
-                    .as_ref()
-                    .is_some_and(|name| tool_name_list.contains(&(*name).as_str()))
-            {
-                tool_use.name = tool_use
-                    .orig_name
-                    .as_ref()
-                    .map_or(DUMMY_TOOL_NAME.to_string(), |name| name.clone());
-                tool_use.args = tool_use
-                    .orig_args
-                    .as_ref()
-                    .map_or(serde_json::json!({}), |args| args.clone());
+                    if tool_names.contains(tool_use.orig_name.as_str()) {
+                        tool_use.name = tool_use.orig_name.clone();
+                        tool_use.args = tool_use.orig_args.clone();
+                        continue;
+                    }
+
+                    let names: Vec<&str> = tool_names
+                        .iter()
+                        .filter_map(|name| {
+                            if name.ends_with(&tool_use.name) {
+                                Some(*name)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    // There's only one tool use matching, so we can just replace it with the
+                    // found name.
+                    if names.len() == 1 {
+                        tool_use.name = (*names.first().unwrap()).to_string();
+                        continue;
+                    }
+
+                    // Otherwise, we have to replace it with a dummy.
+                    tool_use.name = DUMMY_TOOL_NAME.to_string();
+                }
             }
         }
     }
@@ -540,12 +485,13 @@ impl ConversationState {
         // We call this in [Self::enforce_conversation_invariants] as well. But we need to call it
         // here as well because when it's being called in [Self::enforce_conversation_invariants]
         // it is only checking the last entry.
-        self.enforce_tool_use_history_invariants(false);
+        self.enforce_tool_use_history_invariants();
     }
 
     /// Returns a conversation state representation which reflects the exact conversation to send
     /// back to the model.
     pub async fn backend_conversation_state(&mut self, run_hooks: bool, quiet: bool) -> BackendConversationState<'_> {
+        self.update_state(false).await;
         self.enforce_conversation_invariants();
 
         // Run hooks and add to conversation start and next user message.
