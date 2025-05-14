@@ -8,7 +8,10 @@ use std::hash::{
     Hasher,
 };
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::pin::Pin;
 use std::sync::atomic::{
     AtomicBool,
@@ -82,13 +85,30 @@ use crate::mcp_client::{
     JsonRpcResponse,
     PromptGet,
 };
+use crate::platform::Context;
 use crate::telemetry::TelemetryThread;
+use crate::util::directories::{
+    chat_profiles_dir,
+    home_dir,
+};
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name since in the end the tool name as seen by the
 // model is just {server_name}{NAMESPACE_DELIMITER}{tool_name}
 const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+pub fn workspace_mcp_config_path(ctx: &Context) -> eyre::Result<PathBuf> {
+    Ok(ctx.env().current_dir()?.join(".amazonq").join("mcp.json"))
+}
+
+pub fn profile_mcp_config_path(ctx: &Context, profile_name: impl AsRef<str>) -> eyre::Result<PathBuf> {
+    Ok(chat_profiles_dir(ctx)?.join(profile_name.as_ref()).join("mcp.json"))
+}
+
+pub fn global_mcp_config_path(ctx: &Context) -> eyre::Result<PathBuf> {
+    Ok(home_dir(ctx)?.join(".aws").join("amazonq").join("mcp.json"))
+}
 
 #[derive(Debug, Error)]
 pub enum GetPromptError {
@@ -146,7 +166,7 @@ struct StatusLine {
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
-    mcp_servers: HashMap<String, CustomToolConfig>,
+    pub mcp_servers: HashMap<String, CustomToolConfig>,
 }
 
 impl McpServerConfig {
@@ -184,6 +204,17 @@ impl McpServerConfig {
         };
         output.flush()?;
         Ok(conf)
+    }
+
+    pub async fn load_from_file(ctx: &Context, path: impl AsRef<Path>) -> eyre::Result<Self> {
+        let contents = ctx.fs().read_to_string(path.as_ref()).await?;
+        Ok(serde_json::from_str(&contents)?)
+    }
+
+    pub async fn save_to_file(&self, ctx: &Context, path: impl AsRef<Path>) -> eyre::Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        ctx.fs().write(path.as_ref(), json).await?;
+        Ok(())
     }
 
     fn from_slice(slice: &[u8], output: &mut impl Write, location: &str) -> eyre::Result<McpServerConfig> {

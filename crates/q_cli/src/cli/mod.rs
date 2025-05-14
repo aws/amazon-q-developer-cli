@@ -74,10 +74,13 @@ use tracing::{
 
 use self::integrations::IntegrationsSubcommands;
 use self::user::RootUserSubcommand;
-use crate::util::CliContext;
 use crate::util::desktop::{
     LaunchArgs,
     launch_fig_desktop,
+};
+use crate::util::{
+    CliContext,
+    assert_logged_in,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
@@ -350,6 +353,8 @@ impl Cli {
     }
 
     async fn execute_chat(args: Option<Vec<String>>) -> Result<ExitCode> {
+        assert_logged_in().await?;
+
         let secret_store = SecretStore::new().await.ok();
         if let Some(secret_store) = secret_store {
             if let Ok(database) = database() {

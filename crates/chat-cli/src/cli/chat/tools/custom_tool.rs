@@ -44,7 +44,7 @@ pub struct CustomToolConfig {
     pub timeout: u64,
 }
 
-fn default_timeout() -> u64 {
+pub fn default_timeout() -> u64 {
     120 * 1000
 }
 

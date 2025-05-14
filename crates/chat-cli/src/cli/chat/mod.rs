@@ -5,6 +5,7 @@ mod context;
 mod conversation_state;
 mod hooks;
 mod input_source;
+pub mod mcp;
 mod message;
 mod parse;
 mod parser;
@@ -283,6 +284,7 @@ const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trus
 
 const TOOL_BULLET: &str = " ● ";
 const CONTINUATION_LINE: &str = " ⋮ ";
+const PURPOSE_ARROW: &str = " ↳ ";
 
 pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, args: cli::Chat) -> Result<ExitCode> {
     let trust_tools = args.trust_tools.map(|mut tools| {
@@ -297,6 +299,7 @@ pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, a
         telemetry,
         args.input,
         args.no_interactive,
+        args.new,
         args.accept_all,
         args.profile,
         args.trust_all_tools,
@@ -305,12 +308,13 @@ pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, a
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub async fn chat(
     database: &mut Database,
     telemetry: &TelemetryThread,
     input: Option<String>,
     no_interactive: bool,
+    new_conversation: bool,
     accept_all: bool,
     profile: Option<String>,
     trust_all_tools: bool,
@@ -439,6 +443,7 @@ pub async fn chat(
         input,
         InputSource::new(database, prompt_request_sender, prompt_response_receiver)?,
         interactive,
+        new_conversation,
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
         tool_manager,
@@ -525,6 +530,7 @@ impl ChatContext {
         mut input: Option<String>,
         input_source: InputSource,
         interactive: bool,
+        new_conversation: bool,
         client: StreamingClient,
         terminal_width_provider: fn() -> Option<usize>,
         tool_manager: ToolManager,
@@ -536,19 +542,39 @@ impl ChatContext {
         let output_clone = output.clone();
 
         let mut existing_conversation = false;
-        let conversation_state = match std::env::current_dir()
-            .ok()
-            .and_then(|cwd| database.get_conversation_by_path(cwd).ok())
-            .flatten()
-        {
-            Some(mut prior) => {
+        let conversation_state = if new_conversation {
+            let new_state = ConversationState::new(
+                ctx_clone,
+                conversation_id,
+                tool_config,
+                profile,
+                Some(output_clone),
+                tool_manager,
+            )
+            .await;
+
+            std::env::current_dir()
+                .ok()
+                .and_then(|cwd| database.set_conversation_by_path(cwd, &new_state).ok());
+            new_state
+        } else {
+            let prior = std::env::current_dir()
+                .ok()
+                .and_then(|cwd| database.get_conversation_by_path(cwd).ok())
+                .flatten();
+
+            // Only restore conversations where there were actual messages.
+            // Prevents edge case where user clears conversation with --new, then exits without chatting.
+            if prior.as_ref().is_some_and(|cs| !cs.history().is_empty()) {
+                let mut cs = prior.unwrap();
+
                 existing_conversation = true;
+                cs.reload_serialized_state(Arc::clone(&ctx), Some(output.clone())).await;
                 input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
-                prior.tool_manager = tool_manager;
-                prior.enforce_tool_use_history_invariants(false);
-                prior
-            },
-            None => {
+                cs.tool_manager = tool_manager;
+                cs.enforce_tool_use_history_invariants(false);
+                cs
+            } else {
                 ConversationState::new(
                     ctx_clone,
                     conversation_id,
@@ -558,7 +584,7 @@ impl ChatContext {
                     tool_manager,
                 )
                 .await
-            },
+            }
         };
 
         Ok(Self {
@@ -1316,14 +1342,6 @@ impl ChatContext {
                 // Otherwise continue with normal chat on 'n' or other responses
                 self.tool_use_status = ToolUseStatus::Idle;
 
-                if self.interactive {
-                    queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
-                    queue!(self.output, style::SetForegroundColor(Color::Reset))?;
-                    queue!(self.output, cursor::Hide)?;
-                    execute!(self.output, style::Print("\n"))?;
-                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
-                }
-
                 if pending_tool_index.is_some() {
                     self.conversation_state.abandon_tool_use(tool_uses, user_input);
                 } else {
@@ -1332,6 +1350,14 @@ impl ChatContext {
 
                 let conv_state = self.conversation_state.as_sendable_conversation_state(true).await;
                 self.send_tool_use_telemetry(telemetry).await;
+
+                if self.interactive {
+                    queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
+                    queue!(self.output, style::SetForegroundColor(Color::Reset))?;
+                    queue!(self.output, cursor::Hide)?;
+                    execute!(self.output, style::Print("\n"))?;
+                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+                }
 
                 ChatState::HandleResponseStream(self.client.send_message(conv_state).await?)
             },
@@ -2809,9 +2835,11 @@ impl ChatContext {
                 }
 
                 let contents = tri!(self.ctx.fs().read_to_string(&path).await);
-                let new_state: ConversationState = tri!(serde_json::from_str(&contents));
+                let mut new_state: ConversationState = tri!(serde_json::from_str(&contents));
+                new_state
+                    .reload_serialized_state(Arc::clone(&self.ctx), Some(self.output.clone()))
+                    .await;
                 self.conversation_state = new_state;
-                self.conversation_state.updates = Some(self.output.clone());
 
                 execute!(
                     self.output,
@@ -3045,6 +3073,11 @@ impl ChatContext {
         } else {
             self.conversation_state.add_tool_results(tool_results);
         }
+        if self.interactive {
+            execute!(self.output, cursor::Hide)?;
+            execute!(self.output, style::Print("\n"), style::SetAttribute(Attribute::Reset))?;
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
+        }
 
         self.send_tool_use_telemetry(telemetry).await;
         return Ok(ChatState::HandleResponseStream(
@@ -3069,6 +3102,19 @@ impl ChatContext {
 
         let mut tool_uses = Vec::new();
         let mut tool_name_being_recvd: Option<String> = None;
+
+        if self.interactive && self.spinner.is_some() {
+            drop(self.spinner.take());
+            queue!(
+                self.output,
+                style::SetForegroundColor(Color::Reset),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+                cursor::Show,
+                cursor::MoveUp(1),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+            )?;
+        }
 
         loop {
             match parser.recv().await {
@@ -3687,6 +3733,7 @@ mod tests {
                 "exit".to_string(),
             ]),
             true,
+            false,
             test_client,
             || Some(80),
             tool_manager,
@@ -3832,6 +3879,7 @@ mod tests {
                 "exit".to_string(),
             ]),
             true,
+            false,
             test_client,
             || Some(80),
             tool_manager,
@@ -3930,6 +3978,7 @@ mod tests {
                 "exit".to_string(),
             ]),
             true,
+            false,
             test_client,
             || Some(80),
             tool_manager,
@@ -4007,6 +4056,7 @@ mod tests {
                 "exit".to_string(),
             ]),
             true,
+            false,
             test_client,
             || Some(80),
             tool_manager,
