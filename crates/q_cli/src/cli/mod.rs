@@ -200,6 +200,12 @@ pub enum CliRootCommands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Model Context Protocol (MCP)
+    Mcp {
+        /// Args for the MCP subcommand (passed through to `qchat mcp …`)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Inline shell completions
     #[command(subcommand)]
     Inline(inline::InlineSubcommand),
@@ -235,6 +241,7 @@ impl CliRootCommands {
             CliRootCommands::Version { .. } => "version",
             CliRootCommands::Dashboard => "dashboard",
             CliRootCommands::Chat { .. } => "chat",
+            CliRootCommands::Mcp { .. } => "mcp",
             CliRootCommands::Inline(_) => "inline",
         }
     }
@@ -344,15 +351,16 @@ impl Cli {
                 CliRootCommands::Telemetry(subcommand) => subcommand.execute().await,
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
-                CliRootCommands::Chat { args } => Self::execute_chat(Some(args), true).await,
+                CliRootCommands::Chat { args } => Self::execute_chat("chat", Some(args), true).await,
+                CliRootCommands::Mcp { args } => Self::execute_chat("mcp", Some(args), true).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
-            None => Self::execute_chat(None, true).await,
+            None => Self::execute_chat("chat", None, true).await,
         }
     }
 
-    pub async fn execute_chat(args: Option<Vec<String>>, enforce_login: bool) -> Result<ExitCode> {
+    pub async fn execute_chat(subcmd: &str, args: Option<Vec<String>>, enforce_login: bool) -> Result<ExitCode> {
         if enforce_login {
             assert_logged_in().await?;
         }
@@ -369,8 +377,7 @@ impl Cli {
         }
 
         let mut cmd = tokio::process::Command::new(home_local_bin()?.join(CHAT_BINARY_NAME));
-        cmd.arg("chat");
-
+        cmd.arg(subcmd);
         if let Some(args) = args {
             cmd.args(args);
         }

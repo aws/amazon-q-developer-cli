@@ -43,7 +43,7 @@ fn main() -> Result<ExitCode> {
 
     // Hack as clap doesn't expose a custom command help.
     if subcommand.as_deref() == Some("chat") && args.any(|arg| ["--help", "-h"].contains(&arg.as_str())) {
-        runtime.block_on(cli::Cli::execute_chat(Some(vec!["--help".to_owned()]), true))?;
+        runtime.block_on(cli::Cli::execute_chat("chat", Some(vec!["--help".to_owned()]), true))?;
     }
 
     let parsed = match cli::Cli::try_parse() {
