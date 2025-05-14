@@ -370,6 +370,7 @@ impl ConversationState {
                     Tool::ToolSpecification(tool_specification) => tool_specification.name.as_str(),
                 })
             })
+            .filter(|name| *name != DUMMY_TOOL_NAME)
             .collect();
 
         for (_, assistant) in &mut self.history {

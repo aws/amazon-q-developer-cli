@@ -244,11 +244,14 @@ impl ResponseParser {
             // if the tool just does not need any input
             _ => serde_json::json!({}),
         };
+        let orig_name = name.clone();
+        let orig_args = args.clone();
         Ok(AssistantToolUse {
             id,
             name,
+            orig_name,
             args,
-            ..Default::default()
+            orig_args,
         })
     }
 
