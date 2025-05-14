@@ -74,10 +74,13 @@ use tracing::{
 
 use self::integrations::IntegrationsSubcommands;
 use self::user::RootUserSubcommand;
-use crate::util::CliContext;
 use crate::util::desktop::{
     LaunchArgs,
     launch_fig_desktop,
+};
+use crate::util::{
+    CliContext,
+    assert_logged_in,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
@@ -341,15 +344,19 @@ impl Cli {
                 CliRootCommands::Telemetry(subcommand) => subcommand.execute().await,
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
-                CliRootCommands::Chat { args } => Self::execute_chat(Some(args)).await,
+                CliRootCommands::Chat { args } => Self::execute_chat(Some(args), true).await,
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
-            None => Self::execute_chat(None).await,
+            None => Self::execute_chat(None, true).await,
         }
     }
 
-    async fn execute_chat(args: Option<Vec<String>>) -> Result<ExitCode> {
+    pub async fn execute_chat(args: Option<Vec<String>>, enforce_login: bool) -> Result<ExitCode> {
+        if enforce_login {
+            assert_logged_in().await?;
+        }
+
         let secret_store = SecretStore::new().await.ok();
         if let Some(secret_store) = secret_store {
             if let Ok(database) = database() {

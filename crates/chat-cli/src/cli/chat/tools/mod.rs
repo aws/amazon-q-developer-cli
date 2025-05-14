@@ -208,10 +208,36 @@ pub struct ToolSpec {
     pub tool_origin: ToolOrigin,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum ToolOrigin {
     Native,
     McpServer(String),
+}
+
+impl<'de> Deserialize<'de> for ToolOrigin {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if s == "native___" {
+            Ok(ToolOrigin::Native)
+        } else {
+            Ok(ToolOrigin::McpServer(s))
+        }
+    }
+}
+
+impl Serialize for ToolOrigin {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ToolOrigin::Native => serializer.serialize_str("native___"),
+            ToolOrigin::McpServer(server) => serializer.serialize_str(server),
+        }
+    }
 }
 
 impl std::fmt::Display for ToolOrigin {

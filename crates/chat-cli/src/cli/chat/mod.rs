@@ -203,7 +203,8 @@ const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
 const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
-const ROTATING_TIPS: [&str; 11] = [
+const ROTATING_TIPS: [&str; 12] = [
+    color_print::cstr! {"You can resume the last conversation from your current directory by launching with <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
@@ -263,8 +264,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>clear</em>       <black!>Clear all files from current context [--global]</black!>
   <em>hooks</em>       <black!>View and manage context hooks</black!>
 <em>/usage</em>        <black!>Show current session's context window usage</black!>
-<em>/import</em>       <black!>Import conversation state from a JSON file</black!>
-<em>/export</em>       <black!>Export conversation state to a JSON file</black!>
+<em>/load</em>         <black!>Load conversation state from a JSON file</black!>
+<em>/save</em>         <black!>Save conversation state to a JSON file</black!>
 
 <cyan,em>MCP:</cyan,em>
 <black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/en_us/amazonq/latest/qdeveloper-ug/command-line-mcp.html</black!>
@@ -284,6 +285,7 @@ const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trus
 
 const TOOL_BULLET: &str = " ● ";
 const CONTINUATION_LINE: &str = " ⋮ ";
+const PURPOSE_ARROW: &str = " ↳ ";
 
 pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, args: cli::Chat) -> Result<ExitCode> {
     let trust_tools = args.trust_tools.map(|mut tools| {
@@ -298,6 +300,7 @@ pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, a
         telemetry,
         args.input,
         args.no_interactive,
+        args.resume,
         args.accept_all,
         args.profile,
         args.trust_all_tools,
@@ -306,12 +309,13 @@ pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, a
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub async fn chat(
     database: &mut Database,
     telemetry: &TelemetryThread,
     input: Option<String>,
     no_interactive: bool,
+    resume_conversation: bool,
     accept_all: bool,
     profile: Option<String>,
     trust_all_tools: bool,
@@ -440,6 +444,7 @@ pub async fn chat(
         input,
         InputSource::new(database, prompt_request_sender, prompt_response_receiver)?,
         interactive,
+        resume_conversation,
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
         tool_manager,
@@ -526,6 +531,7 @@ impl ChatContext {
         mut input: Option<String>,
         input_source: InputSource,
         interactive: bool,
+        resume_conversation: bool,
         client: StreamingClient,
         terminal_width_provider: fn() -> Option<usize>,
         tool_manager: ToolManager,
@@ -537,18 +543,25 @@ impl ChatContext {
         let output_clone = output.clone();
 
         let mut existing_conversation = false;
-        let conversation_state = match std::env::current_dir()
-            .ok()
-            .and_then(|cwd| database.get_conversation_by_path(cwd).ok())
-            .flatten()
-        {
-            Some(mut prior) => {
+        let conversation_state = if resume_conversation {
+            let prior = std::env::current_dir()
+                .ok()
+                .and_then(|cwd| database.get_conversation_by_path(cwd).ok())
+                .flatten();
+
+            // Only restore conversations where there were actual messages.
+            // Prevents edge case where user clears conversation with --new, then exits without chatting.
+            if prior.as_ref().is_some_and(|cs| !cs.history().is_empty()) {
+                let mut cs = prior.unwrap();
+
                 existing_conversation = true;
+                cs.reload_serialized_state(Arc::clone(&ctx), Some(output.clone())).await;
                 input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
-                prior.tool_manager = tool_manager;
-                prior
-            },
-            None => {
+                cs.tool_manager = tool_manager;
+                cs.update_state(true).await;
+                cs.enforce_tool_use_history_invariants();
+                cs
+            } else {
                 ConversationState::new(
                     ctx_clone,
                     conversation_id,
@@ -558,7 +571,17 @@ impl ChatContext {
                     tool_manager,
                 )
                 .await
-            },
+            }
+        } else {
+            ConversationState::new(
+                ctx_clone,
+                conversation_id,
+                tool_config,
+                profile,
+                Some(output_clone),
+                tool_manager,
+            )
+            .await
         };
 
         Ok(Self {
@@ -790,7 +813,7 @@ impl ChatContext {
             debug!(?chat_state, "changing to state");
 
             // Update conversation state with new tool information
-            self.conversation_state.update_state().await;
+            self.conversation_state.update_state(false).await;
 
             let result = match chat_state {
                 ChatState::PromptUser {
@@ -1316,14 +1339,6 @@ impl ChatContext {
                 // Otherwise continue with normal chat on 'n' or other responses
                 self.tool_use_status = ToolUseStatus::Idle;
 
-                if self.interactive {
-                    queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
-                    queue!(self.output, style::SetForegroundColor(Color::Reset))?;
-                    queue!(self.output, cursor::Hide)?;
-                    execute!(self.output, style::Print("\n"))?;
-                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
-                }
-
                 if pending_tool_index.is_some() {
                     self.conversation_state.abandon_tool_use(tool_uses, user_input);
                 } else {
@@ -1332,6 +1347,14 @@ impl ChatContext {
 
                 let conv_state = self.conversation_state.as_sendable_conversation_state(true).await;
                 self.send_tool_use_telemetry(telemetry).await;
+
+                if self.interactive {
+                    queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
+                    queue!(self.output, style::SetForegroundColor(Color::Reset))?;
+                    queue!(self.output, cursor::Hide)?;
+                    execute!(self.output, style::Print("\n"))?;
+                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+                }
 
                 ChatState::HandleResponseStream(self.client.send_message(conv_state).await?)
             },
@@ -2786,7 +2809,7 @@ impl ChatContext {
                     skip_printing_tools: true,
                 }
             },
-            Command::Import { path } => {
+            Command::Load { path } => {
                 macro_rules! tri {
                     ($v:expr) => {
                         match $v {
@@ -2809,9 +2832,11 @@ impl ChatContext {
                 }
 
                 let contents = tri!(self.ctx.fs().read_to_string(&path).await);
-                let new_state: ConversationState = tri!(serde_json::from_str(&contents));
+                let mut new_state: ConversationState = tri!(serde_json::from_str(&contents));
+                new_state
+                    .reload_serialized_state(Arc::clone(&self.ctx), Some(self.output.clone()))
+                    .await;
                 self.conversation_state = new_state;
-                self.conversation_state.updates = Some(self.output.clone());
 
                 execute!(
                     self.output,
@@ -2826,7 +2851,7 @@ impl ChatContext {
                     skip_printing_tools: true,
                 }
             },
-            Command::Export { path, force } => {
+            Command::Save { path, force } => {
                 macro_rules! tri {
                     ($v:expr) => {
                         match $v {
@@ -3045,6 +3070,11 @@ impl ChatContext {
         } else {
             self.conversation_state.add_tool_results(tool_results);
         }
+        if self.interactive {
+            execute!(self.output, cursor::Hide)?;
+            execute!(self.output, style::Print("\n"), style::SetAttribute(Attribute::Reset))?;
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
+        }
 
         self.send_tool_use_telemetry(telemetry).await;
         return Ok(ChatState::HandleResponseStream(
@@ -3069,6 +3099,19 @@ impl ChatContext {
 
         let mut tool_uses = Vec::new();
         let mut tool_name_being_recvd: Option<String> = None;
+
+        if self.interactive && self.spinner.is_some() {
+            drop(self.spinner.take());
+            queue!(
+                self.output,
+                style::SetForegroundColor(Color::Reset),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+                cursor::Show,
+                cursor::MoveUp(1),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+            )?;
+        }
 
         loop {
             match parser.recv().await {
@@ -3687,6 +3730,7 @@ mod tests {
                 "exit".to_string(),
             ]),
             true,
+            false,
             test_client,
             || Some(80),
             tool_manager,
@@ -3832,6 +3876,7 @@ mod tests {
                 "exit".to_string(),
             ]),
             true,
+            false,
             test_client,
             || Some(80),
             tool_manager,
@@ -3930,6 +3975,7 @@ mod tests {
                 "exit".to_string(),
             ]),
             true,
+            false,
             test_client,
             || Some(80),
             tool_manager,
@@ -4007,6 +4053,7 @@ mod tests {
                 "exit".to_string(),
             ]),
             true,
+            false,
             test_client,
             || Some(80),
             tool_manager,

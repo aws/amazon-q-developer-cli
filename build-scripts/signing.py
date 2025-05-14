@@ -57,7 +57,7 @@ def cd_signer_request(method: str, path: str, data: str | None = None):
         response = requests.request(method=method, url=url, headers=dict(request.headers), data=data)
         info(f"CDSigner Request ({url}): {response.status_code}")
         if response.status_code == 429:
-            warn(f"Too many requests, backing off for {2 ** i} seconds")
+            warn(f"Too many requests, backing off for {2**i} seconds")
             time.sleep(2**i)
             continue
         return response

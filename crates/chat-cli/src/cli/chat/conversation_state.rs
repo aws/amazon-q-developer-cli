@@ -1,5 +1,6 @@
 use std::collections::{
     HashMap,
+    HashSet,
     VecDeque,
 };
 use std::sync::Arc;
@@ -59,7 +60,6 @@ use crate::api_client::model::{
     ToolInputSchema,
     ToolResult,
     ToolResultContentBlock,
-    ToolResultStatus,
     ToolSpecification,
     ToolUse,
     UserInputMessage,
@@ -153,6 +153,37 @@ impl ConversationState {
             context_message_length: None,
             latest_summary: None,
             updates,
+        }
+    }
+
+    /// Reloads necessary fields after being deserialized. This should be called after
+    /// deserialization.
+    pub async fn reload_serialized_state(&mut self, ctx: Arc<Context>, updates: Option<SharedWriter>) {
+        self.updates = updates;
+
+        // Try to reload ContextManager, but do not return an error if we fail.
+        // TODO: Currently the failure modes around ContextManager is unclear, and we don't return
+        // errors in most cases. Thus, we try to preserve the same behavior here and simply have
+        // self.context_manager equal to None if any errors are encountered. This needs to be
+        // refactored.
+        let mut failed = false;
+        if let Some(context_manager) = self.context_manager.as_mut() {
+            match context_manager.reload_config().await {
+                Ok(_) => (),
+                Err(err) => {
+                    error!(?err, "failed to reload context config");
+                    match ContextManager::new(ctx, None).await {
+                        Ok(v) => *context_manager = v,
+                        Err(err) => {
+                            failed = true;
+                            error!(?err, "failed to construct context manager");
+                        },
+                    }
+                },
+            }
+        }
+        if failed {
+            self.context_manager.take();
         }
     }
 
@@ -313,52 +344,68 @@ impl ConversationState {
                     tool_uses.iter().map(|t| t.id.as_str()),
                 );
             }
+        }
 
-            // Here we also need to make sure that the tool result corresponds to one of the tools
-            // in the list. Otherwise we will see validation error from the backend. There are three
-            // such circumstances where intervention would be needed:
-            // 1. The model had decided to call a tool with its partial name AND there is only one such tool, in
-            //    which case we would automatically resolve this tool call to its correct name. This will NOT
-            //    result in an error in its tool result. The intervention here is to substitute the partial name
-            //    with its full name.
-            // 2. The model had decided to call a tool with its partial name AND there are multiple tools it
-            //    could be referring to, in which case we WILL return an error in the tool result. The
-            //    intervention here is to substitute the ambiguous, partial name with a dummy.
-            // 3. The model had decided to call a tool that does not exist. The intervention here is to
-            //    substitute the non-existent tool name with a dummy.
-            let tool_use_results = user_msg.tool_use_results();
-            if let Some(tool_use_results) = tool_use_results {
-                // Note that we need to use the keys in tool manager's tn_map as the keys are the
-                // actual tool names as exposed to the model and the backend. If we use the actual
-                // names as they are recognized by their respective servers, we risk concluding
-                // with false positives.
-                let tool_name_list = self.tool_manager.tn_map.keys().map(String::as_str).collect::<Vec<_>>();
-                for result in tool_use_results {
-                    let tool_use_id = result.tool_use_id.as_str();
-                    let corresponding_tool_use = tool_uses.iter_mut().find(|tool_use| tool_use_id == tool_use.id);
-                    if let Some(tool_use) = corresponding_tool_use {
-                        if tool_name_list.contains(&tool_use.name.as_str()) {
-                            // If this tool matches of the tools in our list, this is not our
-                            // concern, error or not.
-                            continue;
-                        }
-                        if let ToolResultStatus::Error = result.status {
-                            // case 2 and 3
-                            tool_use.name = DUMMY_TOOL_NAME.to_string();
-                            tool_use.args = serde_json::json!({});
-                        } else {
-                            // case 1
-                            let full_name = tool_name_list.iter().find(|name| name.ends_with(&tool_use.name));
-                            // We should be able to find a match but if not we'll just treat it as
-                            // a dummy and move on
-                            if let Some(full_name) = full_name {
-                                tool_use.name = (*full_name).to_string();
-                            } else {
-                                tool_use.name = DUMMY_TOOL_NAME.to_string();
-                                tool_use.args = serde_json::json!({});
-                            }
-                        }
+        self.enforce_tool_use_history_invariants();
+    }
+
+    /// Here we also need to make sure that the tool result corresponds to one of the tools
+    /// in the list. Otherwise we will see validation error from the backend. There are three
+    /// such circumstances where intervention would be needed:
+    /// 1. The model had decided to call a tool with its partial name AND there is only one such
+    ///    tool, in which case we would automatically resolve this tool call to its correct name.
+    ///    This will NOT result in an error in its tool result. The intervention here is to
+    ///    substitute the partial name with its full name.
+    /// 2. The model had decided to call a tool with its partial name AND there are multiple tools
+    ///    it could be referring to, in which case we WILL return an error in the tool result. The
+    ///    intervention here is to substitute the ambiguous, partial name with a dummy.
+    /// 3. The model had decided to call a tool that does not exist. The intervention here is to
+    ///    substitute the non-existent tool name with a dummy.
+    pub fn enforce_tool_use_history_invariants(&mut self) {
+        let tool_names: HashSet<_> = self
+            .tools
+            .values()
+            .flat_map(|tools| {
+                tools.iter().map(|tool| match tool {
+                    Tool::ToolSpecification(tool_specification) => tool_specification.name.as_str(),
+                })
+            })
+            .filter(|name| *name != DUMMY_TOOL_NAME)
+            .collect();
+
+        for (_, assistant) in &mut self.history {
+            if let AssistantMessage::ToolUse { ref mut tool_uses, .. } = assistant {
+                for tool_use in tool_uses {
+                    if tool_names.contains(tool_use.name.as_str()) {
+                        continue;
                     }
+
+                    if tool_names.contains(tool_use.orig_name.as_str()) {
+                        tool_use.name = tool_use.orig_name.clone();
+                        tool_use.args = tool_use.orig_args.clone();
+                        continue;
+                    }
+
+                    let names: Vec<&str> = tool_names
+                        .iter()
+                        .filter_map(|name| {
+                            if name.ends_with(&tool_use.name) {
+                                Some(*name)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    // There's only one tool use matching, so we can just replace it with the
+                    // found name.
+                    if names.len() == 1 {
+                        tool_use.name = (*names.first().unwrap()).to_string();
+                        continue;
+                    }
+
+                    // Otherwise, we have to replace it with a dummy.
+                    tool_use.name = DUMMY_TOOL_NAME.to_string();
                 }
             }
         }
@@ -388,7 +435,6 @@ impl ConversationState {
     /// - `run_hooks` - whether hooks should be executed and included as context
     pub async fn as_sendable_conversation_state(&mut self, run_hooks: bool) -> FigConversationState {
         debug_assert!(self.next_message.is_some());
-        self.update_state().await;
         self.enforce_conversation_invariants();
         self.history.drain(self.valid_history_range.1..);
         self.history.drain(..self.valid_history_range.0);
@@ -414,12 +460,13 @@ impl ConversationState {
             .expect("unable to construct conversation state")
     }
 
-    pub async fn update_state(&mut self) {
-        let needs_update = self.tool_manager.has_new_stuff.load(Ordering::Acquire);
+    pub async fn update_state(&mut self, force_update: bool) {
+        let needs_update = self.tool_manager.has_new_stuff.load(Ordering::Acquire) || force_update;
         if !needs_update {
             return;
         }
         self.tool_manager.update().await;
+        // TODO: make this more targeted so we don't have to clone the entire list of tools
         self.tools = self
             .tool_manager
             .schema
@@ -436,11 +483,16 @@ impl ConversationState {
                 acc
             });
         self.tool_manager.has_new_stuff.store(false, Ordering::Release);
+        // We call this in [Self::enforce_conversation_invariants] as well. But we need to call it
+        // here as well because when it's being called in [Self::enforce_conversation_invariants]
+        // it is only checking the last entry.
+        self.enforce_tool_use_history_invariants();
     }
 
     /// Returns a conversation state representation which reflects the exact conversation to send
     /// back to the model.
     pub async fn backend_conversation_state(&mut self, run_hooks: bool, quiet: bool) -> BackendConversationState<'_> {
+        self.update_state(false).await;
         self.enforce_conversation_invariants();
 
         // Run hooks and add to conversation start and next user message.
@@ -1035,6 +1087,7 @@ mod tests {
                     id: "tool_id".to_string(),
                     name: "tool name".to_string(),
                     args: serde_json::Value::Null,
+                    ..Default::default()
                 }]),
                 &mut database,
             );
@@ -1065,6 +1118,7 @@ mod tests {
                         id: "tool_id".to_string(),
                         name: "tool name".to_string(),
                         args: serde_json::Value::Null,
+                        ..Default::default()
                     }]),
                     &mut database,
                 );

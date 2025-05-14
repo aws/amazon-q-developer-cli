@@ -12,13 +12,49 @@
     },
     {
       "type": "release",
-      "date": "2025-04-30",
+      "date": "2025-05-15",
       "version": "1.10.0",
       "title": "Version 1.10.0",
       "changes": [
         {
           "type": "added",
-          "description": "Multi-region support for pro users"
+          "description": "Support for FRA (region `eu-central-1`) for pro users - [#1333](https://github.com/aws/amazon-q-developer-cli/pull/1333)"
+        },
+        {
+          "type": "added",
+          "description": "Persistent conversations by working directory in `q chat` - [#1767](https://github.com/aws/amazon-q-developer-cli/pull/1767)"
+        },
+        {
+          "type": "added",
+          "description": "Background MCP server loading in `q chat` - [#1775](https://github.com/aws/amazon-q-developer-cli/pull/1775)"
+        },
+        {
+          "type": "added",
+          "description": "Image support in `q chat` - [#1489](https://github.com/aws/amazon-q-developer-cli/pull/1489)"
+        },
+        {
+          "type": "added",
+          "description": "Git-aware file selection in the `q chat` fuzzy finder - [#1649](https://github.com/aws/amazon-q-developer-cli/pull/1649)"
+        },
+        {
+          "type": "added",
+          "description": "Commands `/import` and `/export` for saving and importing conversation state in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+        },
+        {
+          "type": "added",
+          "description": "An improved `/context show --expand` in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+        },
+        {
+          "type": "added",
+          "description": "A new flag `--changelog` to `q version` for displaying the change log from the CLI - [#1375](https://github.com/aws/amazon-q-developer-cli/pull/1375)"
+        },
+        {
+          "type": "fixed",
+          "description": "Context files causing overflow in `q chat` - [#1331](https://github.com/aws/amazon-q-developer-cli/pull/1331)"
+        },
+        {
+          "type": "fixed",
+          "description": "An issue with token overflow in the `/usage` command in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
         },
         {
           "type": "fixed",
@@ -30,7 +66,11 @@
         },
         {
           "type": "fixed",
-          "description": "Preferred default of fuzzy find to `ctrl+s` - [#1442](https://github.com/aws/amazon-q-developer-cli/pull/1442)"
+          "description": "Preferred default of fuzzy find to `ctrl+s` in `q chat` - [#1442](https://github.com/aws/amazon-q-developer-cli/pull/1442)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues in `q chat`"
         }
       ]
     },
