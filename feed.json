@@ -38,7 +38,7 @@
         },
         {
           "type": "added",
-          "description": "Commands `/import` and `/export` for saving and importing conversation state - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+          "description": "Commands `/import` and `/export` for saving and importing conversation state in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
         },
         {
           "type": "added",
@@ -66,7 +66,7 @@
         },
         {
           "type": "fixed",
-          "description": "Preferred default of fuzzy find to `ctrl+s` - [#1442](https://github.com/aws/amazon-q-developer-cli/pull/1442)"
+          "description": "Preferred default of fuzzy find to `ctrl+s` in `q chat` - [#1442](https://github.com/aws/amazon-q-developer-cli/pull/1442)"
         },
         {
           "type": "fixed",
