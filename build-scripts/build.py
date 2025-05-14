@@ -248,7 +248,9 @@ def build_macos_desktop_app(
 
     info("Building tauri config")
     tauri_config_path = pathlib.Path(DESKTOP_PACKAGE_PATH) / "build-config.json"
-    tauri_config_path.write_text(macos_tauri_config(cli_path=cli_path, chat_path=chat_path, pty_path=pty_path, target=target))
+    tauri_config_path.write_text(
+        macos_tauri_config(cli_path=cli_path, chat_path=chat_path, pty_path=pty_path, target=target)
+    )
 
     info("Building", DESKTOP_PACKAGE_NAME)
 
@@ -394,13 +396,14 @@ def sign_and_rebundle_macos(app_path: pathlib.Path, dmg_path: pathlib.Path, sign
     info("Done signing!!")
 
 
-def build_linux_minimal(cli_path: pathlib.Path, pty_path: pathlib.Path):
+def build_linux_minimal(cli_path: pathlib.Path, pty_path: pathlib.Path, chat_path: pathlib.Path):
     """
     Creates tar.gz, tar.xz, tar.zst, and zip archives under `BUILD_DIR`.
 
     Each archive has the following structure:
     - archive/bin/q
     - archive/bin/qterm
+    - archive/bin/qchat
     - archive/install.sh
     - archive/README
     - archive/BUILD-INFO
@@ -431,6 +434,7 @@ def build_linux_minimal(cli_path: pathlib.Path, pty_path: pathlib.Path):
 
     shutil.copy2(cli_path, archive_bin_path / CLI_BINARY_NAME)
     shutil.copy2(pty_path, archive_bin_path / PTY_BINARY_NAME)
+    shutil.copy2(chat_path, archive_bin_path / CHAT_BINARY_NAME)
 
     signer = load_gpg_signer()
 
@@ -708,7 +712,7 @@ def build_linux_full(
         cwd=DESKTOP_PACKAGE_PATH,
         env={**os.environ, **rust_env(release=release, variant=Variant.FULL), "BUILD_DIR": BUILD_DIR},
     )
-    desktop_path = pathlib.Path(f'target/{target}/{"release" if release else "debug"}/{DESKTOP_BINARY_NAME}')
+    desktop_path = pathlib.Path(f"target/{target}/{'release' if release else 'debug'}/{DESKTOP_BINARY_NAME}")
 
     deb_resources = LinuxDebResources(
         cli_path=cli_path,
@@ -732,7 +736,7 @@ def build_linux_full(
     # Determine architecture suffix based on the target triple
     arch_suffix = "aarch64" if "aarch64" in target else "amd64"
     info(f"Using architecture suffix: {arch_suffix} for target: {target}")
-    
+
     bundle_name = f"{tauri_product_name()}_{version()}_{arch_suffix}"
     target_subdir = "release" if release else "debug"
     bundle_grandparent_path = f"target/{target}/{target_subdir}/bundle"
@@ -917,7 +921,7 @@ def build(
                 )
                 build_output[variant] = BinaryPaths(cli_path=cli_path, pty_path=pty_path)
             else:
-                build_linux_minimal(cli_path=cli_path, pty_path=pty_path)
+                build_linux_minimal(cli_path=cli_path, pty_path=pty_path, chat_path=chat_path)
                 build_output[variant] = BinaryPaths(cli_path=cli_path, pty_path=pty_path)
 
     return build_output
