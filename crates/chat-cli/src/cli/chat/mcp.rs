@@ -344,11 +344,7 @@ mod tests {
 
         // profile
         let p = resolve_scope_profile(&ctx, Some(Scope::Profile), Some(&"qa")).unwrap();
-        assert_eq!(
-            p,
-            profile_mcp_config_path(&ctx, &"qa").unwrap(),
-            "profile path mismatch"
-        );
+        assert_eq!(p, profile_mcp_config_path(&ctx, "qa").unwrap(), "profile path mismatch");
     }
 
     #[ignore = "TODO: fix in CI"]
