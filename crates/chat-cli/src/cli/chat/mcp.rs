@@ -159,7 +159,7 @@ pub async fn import_mcp_server(ctx: &Context, output: &mut SharedWriter, args: M
     for (name, cfg) in src_cfg.mcp_servers {
         if dst_cfg.mcp_servers.contains_key(&name) && !args.force {
             bail!(
-                "MCP server '{}' already exists in {} (scope {}). Use --force to overwrite.\n",
+                "\nMCP server '{}' already exists in {} (scope {}). Use --force to overwrite.\n",
                 name,
                 config_path.display(),
                 scope

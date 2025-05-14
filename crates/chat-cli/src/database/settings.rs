@@ -193,10 +193,12 @@ mod test {
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
+        assert_eq!(settings.get(Setting::McpLoadedBefore), None);
 
         settings.set(Setting::TelemetryEnabled, true).await.unwrap();
         settings.set(Setting::OldClientId, "test").await.unwrap();
         settings.set(Setting::ShareCodeWhispererContent, false).await.unwrap();
+        settings.set(Setting::McpLoadedBefore, true).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), Some(&Value::Bool(true)));
         assert_eq!(
@@ -207,13 +209,16 @@ mod test {
             settings.get(Setting::ShareCodeWhispererContent),
             Some(&Value::Bool(false))
         );
+        assert_eq!(settings.get(Setting::McpLoadedBefore),Some(&Value::Bool(true)));
 
         settings.remove(Setting::TelemetryEnabled).await.unwrap();
         settings.remove(Setting::OldClientId).await.unwrap();
         settings.remove(Setting::ShareCodeWhispererContent).await.unwrap();
+        settings.remove(Setting::McpLoadedBefore).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
+        assert_eq!(settings.get(Setting::McpLoadedBefore), None);
     }
 }
