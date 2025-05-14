@@ -201,6 +201,7 @@ pub enum CliRootCommands {
         args: Vec<String>,
     },
     /// Model Context Protocol (MCP)
+    #[command(disable_help_flag = true)]
     Mcp {
         /// Args for the MCP subcommand (passed through to `qchat mcp …`)
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -352,7 +353,12 @@ impl Cli {
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
                 CliRootCommands::Chat { args } => Self::execute_chat("chat", Some(args), true).await,
-                CliRootCommands::Mcp { args } => Self::execute_chat("mcp", Some(args), true).await,
+                CliRootCommands::Mcp { mut args } => {
+                    if args.is_empty() || matches!(args.get(0).map(|s| s.as_str()), Some("--help" | "-h")) {
+                        args = vec!["--help".into()];
+                    }
+                    Self::execute_chat("mcp", Some(args), true).await
+                },
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
