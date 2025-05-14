@@ -342,14 +342,18 @@ impl From<AssistantMessage> for AssistantResponseMessage {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct AssistantToolUse {
     /// The ID for the tool request.
     pub id: String,
-    /// The name for the tool.
+    /// The name for the tool as exposed to the model
     pub name: String,
-    /// The input to pass to the tool.
+    /// Original name of the tool
+    pub orig_name: String,
+    /// The input to pass to the tool as exposed to the model
     pub args: serde_json::Value,
+    /// Original input passed to the tool
+    pub orig_args: serde_json::Value,
 }
 
 impl From<AssistantToolUse> for ToolUse {
@@ -368,6 +372,7 @@ impl From<ToolUse> for AssistantToolUse {
             id: value.tool_use_id,
             name: value.name,
             args: document_to_serde_value(value.input.into()),
+            ..Default::default()
         }
     }
 }
