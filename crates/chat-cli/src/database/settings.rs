@@ -209,7 +209,7 @@ mod test {
             settings.get(Setting::ShareCodeWhispererContent),
             Some(&Value::Bool(false))
         );
-        assert_eq!(settings.get(Setting::McpLoadedBefore),Some(&Value::Bool(true)));
+        assert_eq!(settings.get(Setting::McpLoadedBefore), Some(&Value::Bool(true)));
 
         settings.remove(Setting::TelemetryEnabled).await.unwrap();
         settings.remove(Setting::OldClientId).await.unwrap();
