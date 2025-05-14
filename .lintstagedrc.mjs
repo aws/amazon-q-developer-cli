@@ -8,5 +8,5 @@ export default {
   ],
   "*.py": ["ruff format --check", "ruff check"],
   "*.{ts,js,tsx,jsx,mjs}": "prettier --check",
-  "!(*test*)*": "typos --config .typos.toml",
+  "!(*test*)*": "typos",
 };
