@@ -38,7 +38,7 @@
         },
         {
           "type": "added",
-          "description": "Commands `/import` and `/export` for saving and importing conversation state in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+          "description": "Commands `/save` and `/load` for saving and loading conversation state in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
         },
         {
           "type": "added",
