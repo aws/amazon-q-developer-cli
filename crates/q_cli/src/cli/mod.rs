@@ -353,11 +353,10 @@ impl Cli {
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
                 CliRootCommands::Chat { args } => Self::execute_chat("chat", Some(args), true).await,
-                CliRootCommands::Mcp {args } => {
+                CliRootCommands::Mcp { args } => {
                     if args.iter().any(|arg| ["--help", "-h"].contains(&arg.as_str())) {
                         return Self::execute_chat("mcp", Some(vec!["--help".to_owned()]), false).await;
                     }
-
                     Self::execute_chat("mcp", Some(args), true).await
                 },
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
