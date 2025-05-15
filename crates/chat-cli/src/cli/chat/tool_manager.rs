@@ -400,8 +400,8 @@ impl ToolManagerBuilder {
                                 let msg = eyre::eyre!(msg);
                                 let total = loading_servers.len();
                                 queue_incomplete_load_message(complete, total, &msg, &mut output)?;
-                                output.flush()?;
                             }
+                            execute!(output, style::Print("\n"),)?;
                             break;
                         },
                     },

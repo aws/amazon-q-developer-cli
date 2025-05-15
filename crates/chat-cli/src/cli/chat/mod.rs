@@ -958,25 +958,35 @@ impl ChatContext {
                         // Errors from attempting to send too large of a conversation history. In
                         // this case, attempt to automatically compact the history for the user.
                         crate::api_client::ApiClientError::ContextWindowOverflow => {
-                            let history_too_small = self
-                                .conversation_state
-                                .backend_conversation_state(false, true)
-                                .await
-                                .history
-                                .len()
-                                < 2;
-                            if history_too_small {
-                                print_err!(
-                                    "Your conversation is too large - try reducing the size of
-                                the context being passed",
-                                    err
-                                );
+                            if !self.conversation_state.can_create_summary_request().await {
+                                execute!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print("Your conversation is too large to continue.\n"),
+                                    style::SetForegroundColor(Color::Reset),
+                                    style::Print(format!("• Run {} to analyze your context usage\n", "/usage".green())),
+                                    style::Print(format!(
+                                        "• Run {} to reset your conversation state\n",
+                                        "/clear".green()
+                                    )),
+                                    style::SetAttribute(Attribute::Reset),
+                                    style::Print("\n\n"),
+                                )?;
+                                self.conversation_state.reset_next_user_message();
                                 return Ok(ChatState::PromptUser {
                                     tool_uses: None,
                                     pending_tool_index: None,
                                     skip_printing_tools: false,
                                 });
                             }
+
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print("The context window has overflowed, summarizing the history..."),
+                                style::SetAttribute(Attribute::Reset),
+                                style::Print("\n\n"),
+                            )?;
 
                             return Ok(ChatState::CompactHistory {
                                 tool_uses: None,
@@ -1223,8 +1233,10 @@ impl ChatContext {
         // Check token usage and display warnings if needed
         if pending_tool_index.is_none() {
             // Only display warnings when not waiting for tool approval
-            if let Err(e) = self.display_char_warnings().await {
-                warn!("Failed to display character limit warnings: {}", e);
+            if self.conversation_state.can_create_summary_request().await {
+                if let Err(e) = self.display_char_warnings().await {
+                    warn!("Failed to display character limit warnings: {}", e);
+                }
             }
         }
 
