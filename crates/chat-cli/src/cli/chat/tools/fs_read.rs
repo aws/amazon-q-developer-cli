@@ -52,39 +52,307 @@ use crate::cli::chat::util::images::{
 use crate::platform::Context;
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "mode")]
+#[serde(untagged)]
 pub enum FsRead {
+    #[serde(tag = "mode")]
+    Mode(FsReadMode),
+    Operations(FsReadOperations),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "mode")]
+pub enum FsReadMode {
     Line(FsLine),
     Directory(FsDirectory),
     Search(FsSearch),
     Image(FsImage),
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct FsReadOperations {
+    pub operations: Vec<FsReadOperation>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "mode")]
+pub enum FsReadOperation {
+    Line(FsLineOperation),
+    Directory(FsDirectoryOperation),
+    Search(FsSearchOperation),
+    Image(FsImage),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FsLineOperation {
+    pub path: String,
+    pub start_line: Option<i32>,
+    pub end_line: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FsDirectoryOperation {
+    pub path: String,
+    pub depth: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FsSearchOperation {
+    pub path: String,
+    pub pattern: String,
+    pub context_lines: Option<usize>,
+}
+
 impl FsRead {
     pub async fn validate(&mut self, ctx: &Context) -> Result<()> {
         match self {
-            FsRead::Line(fs_line) => fs_line.validate(ctx).await,
-            FsRead::Directory(fs_directory) => fs_directory.validate(ctx).await,
-            FsRead::Search(fs_search) => fs_search.validate(ctx).await,
-            FsRead::Image(fs_image) => fs_image.validate(ctx).await,
+            FsRead::Mode(mode) => match mode {
+                FsReadMode::Line(fs_line) => fs_line.validate(ctx).await,
+                FsReadMode::Directory(fs_directory) => fs_directory.validate(ctx).await,
+                FsReadMode::Search(fs_search) => fs_search.validate(ctx).await,
+                FsReadMode::Image(fs_image) => fs_image.validate(ctx).await,
+            },
+            FsRead::Operations(ops) => {
+                if ops.operations.is_empty() {
+                    bail!("At least one operation must be specified");
+                }
+                
+                // Validate each operation
+                for operation in &ops.operations {
+                    match operation {
+                        FsReadOperation::Line(op) => {
+                            let path = sanitize_path_tool_arg(ctx, &op.path);
+                            if !path.exists() {
+                                bail!("'{}' does not exist", op.path);
+                            }
+                            let is_file = ctx.fs().symlink_metadata(&path).await?.is_file();
+                            if !is_file {
+                                bail!("'{}' is not a file", op.path);
+                            }
+                        },
+                        FsReadOperation::Directory(op) => {
+                            let path = sanitize_path_tool_arg(ctx, &op.path);
+                            let relative_path = format_path(ctx.env().current_dir()?, &path);
+                            if !path.exists() {
+                                bail!("Directory not found: {}", relative_path);
+                            }
+                            if !ctx.fs().symlink_metadata(path).await?.is_dir() {
+                                bail!("Path is not a directory: {}", relative_path);
+                            }
+                        },
+                        FsReadOperation::Search(op) => {
+                            let path = sanitize_path_tool_arg(ctx, &op.path);
+                            let relative_path = format_path(ctx.env().current_dir()?, &path);
+                            if !path.exists() {
+                                bail!("File not found: {}", relative_path);
+                            }
+                            if !ctx.fs().symlink_metadata(path).await?.is_file() {
+                                bail!("Path is not a file: {}", relative_path);
+                            }
+                            
+                            if op.pattern.is_empty() {
+                                bail!("Search pattern cannot be empty");
+                            }
+                        },
+                        FsReadOperation::Image(fs_image) => fs_image.validate(ctx).await?,
+                    }
+                }
+                
+                Ok(())
+            }
         }
     }
 
     pub async fn queue_description(&self, ctx: &Context, updates: &mut impl Write) -> Result<()> {
         match self {
-            FsRead::Line(fs_line) => fs_line.queue_description(ctx, updates).await,
-            FsRead::Directory(fs_directory) => fs_directory.queue_description(updates),
-            FsRead::Search(fs_search) => fs_search.queue_description(updates),
-            FsRead::Image(fs_image) => fs_image.queue_description(updates),
+            FsRead::Mode(mode) => match mode {
+                FsReadMode::Line(fs_line) => fs_line.queue_description(ctx, updates).await,
+                FsReadMode::Directory(fs_directory) => fs_directory.queue_description(updates),
+                FsReadMode::Search(fs_search) => fs_search.queue_description(updates),
+                FsReadMode::Image(fs_image) => fs_image.queue_description(updates),
+            },
+            FsRead::Operations(ops) => {
+                // Show description for each operation
+                for (i, operation) in ops.operations.iter().enumerate() {
+                    if i > 0 {
+                        writeln!(updates, "\n")?;
+                    }
+                    
+                    writeln!(updates, "Operation {}:", i + 1)?;
+                    match operation {
+                        FsReadOperation::Line(op) => {
+                            queue!(
+                                updates,
+                                style::Print("Reading file: "),
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(&op.path),
+                                style::ResetColor,
+                                style::Print(", "),
+                            )?;
+                            
+                            let path = sanitize_path_tool_arg(ctx, &op.path);
+                            let line_count = ctx.fs().read_to_string(&path).await?.lines().count();
+                            
+                            let start = convert_negative_index(line_count, op.start_line.unwrap_or(FsLine::DEFAULT_START_LINE)) + 1;
+                            let end = convert_negative_index(line_count, op.end_line.unwrap_or(FsLine::DEFAULT_END_LINE)) + 1;
+                            
+                            match (start, end) {
+                                _ if start == 1 && end == line_count => queue!(updates, style::Print("all lines".to_string()))?,
+                                _ if end == line_count => queue!(
+                                    updates,
+                                    style::Print("from line "),
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(start),
+                                    style::ResetColor,
+                                    style::Print(" to end of file"),
+                                )?,
+                                _ => queue!(
+                                    updates,
+                                    style::Print("from line "),
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(start),
+                                    style::ResetColor,
+                                    style::Print(" to "),
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(end),
+                                    style::ResetColor,
+                                )?,
+                            };
+                        },
+                        FsReadOperation::Directory(op) => {
+                            queue!(
+                                updates,
+                                style::Print("Reading directory: "),
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(&op.path),
+                                style::ResetColor,
+                                style::Print(" "),
+                            )?;
+                            
+                            let depth = op.depth.unwrap_or(FsDirectory::DEFAULT_DEPTH);
+                            queue!(
+                                updates,
+                                style::Print(format!("with maximum depth of {}", depth))
+                            )?;
+                        },
+                        FsReadOperation::Search(op) => {
+                            queue!(
+                                updates,
+                                style::Print("Searching: "),
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(&op.path),
+                                style::ResetColor,
+                                style::Print(" for pattern: "),
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(&op.pattern.to_lowercase()),
+                                style::ResetColor,
+                            )?;
+                        },
+                        FsReadOperation::Image(fs_image) => fs_image.queue_description(updates)?,
+                    }
+                }
+                
+                Ok(())
+            }
         }
     }
 
     pub async fn invoke(&self, ctx: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
         match self {
-            FsRead::Line(fs_line) => fs_line.invoke(ctx, updates).await,
-            FsRead::Directory(fs_directory) => fs_directory.invoke(ctx, updates).await,
-            FsRead::Search(fs_search) => fs_search.invoke(ctx, updates).await,
-            FsRead::Image(fs_image) => fs_image.invoke(ctx, updates).await,
+            FsRead::Mode(mode) => match mode {
+                FsReadMode::Line(fs_line) => fs_line.invoke(ctx, updates).await,
+                FsReadMode::Directory(fs_directory) => fs_directory.invoke(ctx, updates).await,
+                FsReadMode::Search(fs_search) => fs_search.invoke(ctx, updates).await,
+                FsReadMode::Image(fs_image) => fs_image.invoke(ctx, updates).await,
+            },
+            FsRead::Operations(ops) => {
+                debug!("Executing {} operations", ops.operations.len());
+                
+                // Execute each operation and collect results
+                let mut results = Vec::with_capacity(ops.operations.len());
+                
+                for operation in &ops.operations {
+                    match operation {
+                        FsReadOperation::Line(op) => {
+                            let path_str = &op.path;
+                            let path = sanitize_path_tool_arg(ctx, path_str);
+                            
+                            // Read the file with the specified line range
+                            let result = read_file_with_lines(ctx, path_str, op.start_line, op.end_line).await;
+                            match result {
+                                Ok(content) => {
+                                    // Get file metadata for hash and last modified timestamp
+                                    let metadata = ctx.fs().symlink_metadata(&path).await.ok();
+                                    results.push(FileReadResult::success(path_str.clone(), content, metadata.as_ref()));
+                                },
+                                Err(err) => {
+                                    results.push(FileReadResult::error(path_str.clone(), err.to_string()));
+                                },
+                            }
+                        },
+                        FsReadOperation::Directory(op) => {
+                            let path_str = &op.path;
+                            let path = sanitize_path_tool_arg(ctx, path_str);
+                            
+                            // Read the directory with the specified depth
+                            let result = read_directory(ctx, path_str, op.depth, updates).await;
+                            match result {
+                                Ok(content) => {
+                                    // Get directory metadata for last modified timestamp
+                                    let metadata = ctx.fs().symlink_metadata(&path).await.ok();
+                                    results.push(FileReadResult::success(path_str.clone(), content, metadata.as_ref()));
+                                },
+                                Err(err) => {
+                                    results.push(FileReadResult::error(path_str.clone(), err.to_string()));
+                                },
+                            }
+                        },
+                        FsReadOperation::Search(op) => {
+                            let path_str = &op.path;
+                            let path = sanitize_path_tool_arg(ctx, path_str);
+                            
+                            // Search the file with the specified pattern
+                            let result = search_file(ctx, path_str, &op.pattern, op.context_lines, updates).await;
+                            match result {
+                                Ok(content) => {
+                                    // Get file metadata for hash and last modified timestamp
+                                    let metadata = ctx.fs().symlink_metadata(&path).await.ok();
+                                    results.push(FileReadResult::success(path_str.clone(), content, metadata.as_ref()));
+                                },
+                                Err(err) => {
+                                    results.push(FileReadResult::error(path_str.clone(), err.to_string()));
+                                },
+                            }
+                        },
+                        FsReadOperation::Image(fs_image) => {
+                            // For image operations, we use the existing implementation
+                            let result = fs_image.invoke(ctx, updates).await?;
+                            if let OutputKind::Images(images) = result.output {
+                                // For images, we return a special result
+                                return Ok(InvokeOutput {
+                                    output: OutputKind::Images(images),
+                                });
+                            }
+                        },
+                    }
+                }
+                
+                // If there's only one operation and it's not an image, return its result directly
+                if results.len() == 1 {
+                    let result = &results[0];
+                    if result.success {
+                        if let Some(content) = &result.content {
+                            return Ok(InvokeOutput {
+                                output: OutputKind::Text(content.clone()),
+                            });
+                        }
+                    }
+                }
+                
+                // For multiple operations, return array of results
+                Ok(InvokeOutput {
+                    output: OutputKind::Text(serde_json::to_string(&results)?),
+                })
+            }
         }
     }
 }
@@ -1385,4 +1653,198 @@ fn format_timestamp(time: SystemTime) -> String {
         .unwrap();
 
     datetime.format(&time::format_description::well_known::Rfc3339).unwrap()
+}
+/// Helper function to read a file with specified line range
+async fn read_file_with_lines(ctx: &Context, path_str: &str, start_line: Option<i32>, end_line: Option<i32>) -> Result<String> {
+    let path = sanitize_path_tool_arg(ctx, path_str);
+    debug!(?path, "Reading");
+    let file = ctx.fs().read_to_string(&path).await?;
+    let line_count = file.lines().count();
+    
+    let start = convert_negative_index(line_count, start_line.unwrap_or(FsLine::DEFAULT_START_LINE));
+    let end = convert_negative_index(line_count, end_line.unwrap_or(FsLine::DEFAULT_END_LINE));
+
+    // safety check to ensure end is always greater than start
+    let end = end.max(start);
+
+    if start >= line_count {
+        bail!(
+            "starting index: {} is outside of the allowed range: ({}, {})",
+            start_line.unwrap_or(FsLine::DEFAULT_START_LINE),
+            -(line_count as i64),
+            line_count
+        );
+    }
+
+    // The range should be inclusive on both ends.
+    let file_contents = file
+        .lines()
+        .skip(start)
+        .take(end - start + 1)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let byte_count = file_contents.len();
+    if byte_count > MAX_TOOL_RESPONSE_SIZE {
+        bail!(
+            "This tool only supports reading {MAX_TOOL_RESPONSE_SIZE} bytes at a
+time. You tried to read {byte_count} bytes. Try executing with fewer lines specified."
+        );
+    }
+
+    Ok(file_contents)
+}
+
+/// Helper function to read a directory with specified depth
+async fn read_directory(ctx: &Context, path_str: &str, depth: Option<usize>, updates: &mut impl Write) -> Result<String> {
+    let path = sanitize_path_tool_arg(ctx, path_str);
+    let cwd = ctx.env().current_dir()?;
+    let max_depth = depth.unwrap_or(FsDirectory::DEFAULT_DEPTH);
+    debug!(?path, max_depth, "Reading directory at path with depth");
+    let mut result = Vec::new();
+    let mut dir_queue = VecDeque::new();
+    dir_queue.push_back((path, 0));
+    while let Some((path, depth)) = dir_queue.pop_front() {
+        if depth > max_depth {
+            break;
+        }
+        let relative_path = format_path(&cwd, &path);
+        if !relative_path.is_empty() {
+            queue!(
+                updates,
+                style::Print("Reading: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(&relative_path),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+        }
+        let mut read_dir = ctx.fs().read_dir(path).await?;
+
+        #[cfg(windows)]
+        while let Some(ent) = read_dir.next_entry().await? {
+            let md = ent.metadata().await?;
+
+            let modified_timestamp = md.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs();
+            let datetime = time::OffsetDateTime::from_unix_timestamp(modified_timestamp as i64).unwrap();
+            let formatted_date = datetime
+                .format(time::macros::format_description!(
+                    "[month repr:short] [day] [hour]:[minute]"
+                ))
+                .unwrap();
+
+            result.push(format!(
+                "{} {} {} {}",
+                format_ftype(&md),
+                String::from_utf8_lossy(ent.file_name().as_encoded_bytes()),
+                formatted_date,
+                ent.path().to_string_lossy()
+            ));
+
+            if md.is_dir() {
+                if md.is_dir() {
+                    dir_queue.push_back((ent.path(), depth + 1));
+                }
+            }
+        }
+
+        #[cfg(unix)]
+        while let Some(ent) = read_dir.next_entry().await? {
+            use std::os::unix::fs::{
+                MetadataExt,
+                PermissionsExt,
+            };
+
+            let md = ent.metadata().await?;
+            let formatted_mode = format_mode(md.permissions().mode()).into_iter().collect::<String>();
+
+            let modified_timestamp = md.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs();
+            let datetime = time::OffsetDateTime::from_unix_timestamp(modified_timestamp as i64).unwrap();
+            let formatted_date = datetime
+                .format(time::macros::format_description!(
+                    "[month repr:short] [day] [hour]:[minute]"
+                ))
+                .unwrap();
+
+            // Mostly copying "The Long Format" from `man ls`.
+            // TODO: query user/group database to convert uid/gid to names?
+            result.push(format!(
+                "{}{} {} {} {} {} {} {}",
+                format_ftype(&md),
+                formatted_mode,
+                md.nlink(),
+                md.uid(),
+                md.gid(),
+                md.size(),
+                formatted_date,
+                ent.path().to_string_lossy()
+            ));
+            if md.is_dir() {
+                dir_queue.push_back((ent.path(), depth + 1));
+            }
+        }
+    }
+
+    let file_count = result.len();
+    let result = result.join("\n");
+    let byte_count = result.len();
+    if byte_count > MAX_TOOL_RESPONSE_SIZE {
+        bail!(
+            "This tool only supports reading up to {MAX_TOOL_RESPONSE_SIZE} bytes at a time. You tried to read {byte_count} bytes ({file_count} files). Try executing with fewer lines specified."
+        );
+    }
+
+    Ok(result)
+}
+
+/// Helper function to search a file with specified pattern
+async fn search_file(ctx: &Context, path_str: &str, pattern: &str, context_lines: Option<usize>, updates: &mut impl Write) -> Result<String> {
+    let file_path = sanitize_path_tool_arg(ctx, path_str);
+    let relative_path = format_path(ctx.env().current_dir()?, &file_path);
+    let context_lines = context_lines.unwrap_or(FsSearch::DEFAULT_CONTEXT_LINES);
+
+    let file_content = ctx.fs().read_to_string(&file_path).await?;
+    let lines: Vec<&str> = LinesWithEndings::from(&file_content).collect();
+
+    let mut results = Vec::new();
+    let mut total_matches = 0;
+
+    // Case insensitive search
+    let pattern_lower = pattern.to_lowercase();
+    for (line_num, line) in lines.iter().enumerate() {
+        if line.to_lowercase().contains(&pattern_lower) {
+            total_matches += 1;
+            let start = line_num.saturating_sub(context_lines);
+            let end = lines.len().min(line_num + context_lines + 1);
+            let mut context_text = Vec::new();
+            (start..end).for_each(|i| {
+                let prefix = if i == line_num {
+                    FsSearch::MATCHING_LINE_PREFIX
+                } else {
+                    FsSearch::CONTEXT_LINE_PREFIX
+                };
+                let line_text = lines[i].to_string();
+                context_text.push(format!("{}{}: {}", prefix, i + 1, line_text));
+            });
+            let match_text = context_text.join("");
+            results.push(SearchMatch {
+                line_number: line_num + 1,
+                context: match_text,
+            });
+        }
+    }
+
+    queue!(
+        updates,
+        style::SetForegroundColor(Color::Yellow),
+        style::ResetColor,
+        style::Print(format!(
+            "Found {} matches for pattern '{}' in {}\n",
+            total_matches, pattern, relative_path
+        )),
+        style::Print("\n"),
+        style::ResetColor,
+    )?;
+
+    Ok(serde_json::to_string(&results)?)
 }
