@@ -1,13 +1,23 @@
-use std::fs;
-use std::io::Write;
+use std::io::{
+    Cursor,
+    Write,
+};
 use std::path::Path;
 use std::str::FromStr;
+use std::{
+    env,
+    fs,
+};
 
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use crossterm::execute;
 use crossterm::style::{
     self,
     Color,
 };
+use fig_util::Terminal;
+use fig_util::terminal::current_terminal;
 use serde::{
     Deserialize,
     Serialize,
@@ -186,10 +196,301 @@ pub fn get_image_block_from_file_path(maybe_file_path: &str) -> Option<ImageBloc
     Some(image_block)
 }
 
+/// Formats image blocks for terminal display using the iTerm2 inline image protocol
+pub fn format_images_for_terminal(images: &RichImageBlocks) -> Option<String> {
+    let terminal = current_terminal()?;
+    let mut output = String::new();
+    for image in images {
+        render_terminal_image(terminal, image, &mut output);
+    }
+    if output.is_empty() {
+        return None;
+    }
+    Some(output)
+}
+/// render_terminal_image renders the given RichImageBlock to the output string, provided that the
+/// terminal supports it
+fn render_terminal_image(terminal: &Terminal, rib: &RichImageBlock, output: &mut String) {
+    if let ImageSource::Bytes(bytes) = &rib.0.source {
+        match terminal {
+            Terminal::Iterm => {
+                let base64_content = BASE64_STANDARD.encode(bytes);
+                output.push_str(print_osc());
+                output.push_str("1337;MultipartFile=inline=1;");
+                output.push_str(&format!("size={};", bytes.len()));
+                if !rib.1.filename.is_empty() {
+                    output.push_str(&format!("name={};", rib.1.filename));
+                }
+                output.push_str(print_st());
+                let mut start = 0;
+                while start < base64_content.len() {
+                    let end = std::cmp::min(start + 200, base64_content.len());
+                    let part = &base64_content[start..end];
+
+                    output.push_str(print_osc());
+                    output.push_str(&format!("1337;FilePart={}", part));
+                    output.push_str(print_st());
+                    start = end;
+                }
+
+                output.push_str(print_osc());
+                output.push_str("1337;FileEnd");
+                output.push_str(print_st());
+            },
+            Terminal::Kitty => {
+                // kitty can only display PNG, so we always convert
+                if let Some(bytes) = convert_to_png(&rib.0.format, bytes) {
+                    let base64_content = BASE64_STANDARD.encode(bytes);
+                    let mut remaining_data = base64_content.as_str();
+                    while !remaining_data.is_empty() {
+                        let (chunk, rest) = if remaining_data.len() > 4096 {
+                            (&remaining_data[..4096], &remaining_data[4096..])
+                        } else {
+                            (remaining_data, "")
+                        };
+                        serialize_kitty_gr_command(Some(chunk), rest.is_empty(), output);
+                        remaining_data = rest;
+                    }
+                }
+            },
+            _ => {},
+        }
+    }
+}
+
+/// convert_to_png converts the given image to a PNG
+fn convert_to_png(src: &ImageFormat, data: &[u8]) -> Option<Vec<u8>> {
+    if *src == ImageFormat::Png {
+        return Some(Vec::from(data));
+    }
+    let mut output = Vec::new();
+    let img = image::load_from_memory(data).ok()?;
+    img.write_to(&mut Cursor::new(&mut output), image::ImageFormat::Png)
+        .ok()?;
+    Some(output)
+}
+
+/// map_mime_type maps from an image mime type to the corresponding ImageFormat
+pub fn map_mime_type(mt: &String) -> eyre::Result<ImageFormat> {
+    match mt.as_str() {
+        "image/png" => Ok(ImageFormat::Png),
+        "image/jpg" => Ok(ImageFormat::Jpeg),
+        "image/jpeg" => Ok(ImageFormat::Jpeg),
+        "image/webp" => Ok(ImageFormat::Webp),
+        _ => Err(eyre::eyre!("unsupported mime type: {}", mt)),
+    }
+}
+
+/// Serializes a command with the specified parameters and payload, see https://sw.kovidgoyal.net/kitty/graphics-protocol/
+fn serialize_kitty_gr_command(payload: Option<&str>, last_chunk: bool, output: &mut String) {
+    // m flag indicates if this is chunked data. m=1 => chunked, m=0 => last chunk
+    let mut cmd_str = "m=1";
+    if last_chunk {
+        cmd_str = "m=0";
+    }
+    if output.is_empty() {
+        // a=T => transmit data
+        // f=100 => PNG format
+        cmd_str = "a=T,f=100,m=1";
+    }
+
+    // Build the command
+    output.push_str("\u{001B}_G");
+    output.push_str(cmd_str);
+
+    if let Some(payload_data) = payload {
+        if !payload_data.is_empty() {
+            output.push(';');
+            output.push_str(payload_data);
+        }
+    }
+
+    output.push_str("\u{001B}\\");
+}
+
+/// print_osc returns the OSC sequence appropriately wrapped for screen/tmux. See https://iterm2.com/utilities/imgcat
+fn print_osc() -> &'static str {
+    let term = env::var("TERM").unwrap_or_default();
+    if term.starts_with("screen") || term.starts_with("tmux") {
+        "\u{001B}Ptmux;\u{001B}\u{001B}]"
+    } else {
+        "\u{001B}]"
+    }
+}
+
+fn print_st() -> &'static str {
+    let term = env::var("TERM").unwrap_or_default();
+    if term.starts_with("screen") || term.starts_with("tmux") {
+        "\u{0007}\u{001B}\\"
+    } else {
+        "\u{0007}"
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use fig_util::Terminal;
 
-    use std::str::FromStr;
+    use crate::api_client::model::{
+        ImageBlock,
+        ImageFormat,
+        ImageSource,
+    };
+
+    #[test]
+    fn test_print_osc() {
+        // Test standard terminal
+        std::env::remove_var("TERM");
+        assert_eq!(print_osc(), "\u{001B}]");
+
+        // Test screen terminal
+        std::env::set_var("TERM", "screen");
+        assert_eq!(print_osc(), "\u{001B}Ptmux;\u{001B}\u{001B}]");
+
+        // Test tmux terminal
+        std::env::set_var("TERM", "tmux-256color");
+        assert_eq!(print_osc(), "\u{001B}Ptmux;\u{001B}\u{001B}]");
+
+        // Reset for other tests
+        std::env::remove_var("TERM");
+    }
+
+    #[test]
+    fn test_print_st() {
+        // Test standard terminal
+        std::env::remove_var("TERM");
+        assert_eq!(print_st(), "\u{0007}");
+
+        // Test screen terminal
+        std::env::set_var("TERM", "screen");
+        assert_eq!(print_st(), "\u{0007}\u{001B}\\");
+
+        // Test tmux terminal
+        std::env::set_var("TERM", "tmux-256color");
+        assert_eq!(print_st(), "\u{0007}\u{001B}\\");
+
+        // Reset for other tests
+        std::env::remove_var("TERM");
+    }
+
+    #[test]
+    fn test_serialize_kitty_gr_command() {
+        // Test initial command with no payload
+        let mut output = String::new();
+        serialize_kitty_gr_command(None, false, &mut output);
+        assert_eq!(output, "\u{001B}_Ga=T,f=100,m=1\u{001B}\\");
+
+        // Test middle chunk
+        output.clear();
+        output.push_str("existing");
+        serialize_kitty_gr_command(Some("payload"), false, &mut output);
+        assert_eq!(output, "existing\u{001B}_Gm=1;payload\u{001B}\\");
+
+        // Test final chunk
+        output.clear();
+        output.push_str("existing");
+        serialize_kitty_gr_command(Some("final"), true, &mut output);
+        assert_eq!(output, "existing\u{001B}_Gm=0;final\u{001B}\\");
+
+        // Test empty payload
+        output.clear();
+        output.push_str("existing");
+        serialize_kitty_gr_command(Some(""), false, &mut output);
+        assert_eq!(output, "existing\u{001B}_Gm=1\u{001B}\\");
+    }
+
+    #[test]
+    fn test_convert_to_png() {
+        // Test PNG passthrough
+        let result = convert_to_png(&ImageFormat::Png, ONE_PIXEL_PNG);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), ONE_PIXEL_PNG);
+
+        // Test invalid image data
+        let invalid_data = vec![1, 2, 3, 4];
+        let result = convert_to_png(&ImageFormat::Jpeg, &invalid_data);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_render_terminal_image_iterm() {
+        let image_block = test_image_block();
+        let mut output = String::new();
+
+        // Test iTerm rendering
+        render_terminal_image(&Terminal::Iterm, &image_block, &mut output);
+
+        // Verify output contains expected iTerm protocol elements
+        assert!(output.contains("1337;MultipartFile=inline=1"));
+        assert!(output.contains(&format!("size={};", ONE_PIXEL_PNG.len())));
+        assert!(output.contains("name=test.png;"));
+        assert!(output.contains("1337;FilePart="));
+        assert!(output.contains("1337;FileEnd"));
+    }
+
+    #[test]
+    fn test_render_terminal_image_kitty() {
+        let image_block = test_image_block();
+        let mut output = String::new();
+
+        // Test Kitty rendering
+        render_terminal_image(&Terminal::Kitty, &image_block, &mut output);
+
+        // Verify output contains expected Kitty protocol elements
+        assert!(output.contains("\u{001B}_G"));
+        assert!(output.contains("a=T,f=100,m=1"));
+        assert!(output.contains("\u{001B}\\"));
+    }
+
+    fn create_test_image_block(format: ImageFormat, data: Vec<u8>) -> RichImageBlock {
+        (
+            ImageBlock {
+                format,
+                source: ImageSource::Bytes(data.clone()),
+            },
+            ImageMetadata {
+                filepath: "".to_string(),
+                size: data.len() as u64,
+                filename: "test.png".to_string(),
+            },
+        )
+    }
+    #[test]
+    fn test_render_terminal_image_unsupported() {
+        let test_data = vec![1, 2, 3, 4];
+        let image_block = create_test_image_block(ImageFormat::Png, test_data);
+        let mut output = String::new();
+
+        // Test unsupported terminal
+        render_terminal_image(&Terminal::VSCode, &image_block, &mut output);
+
+        // Output should remain empty for unsupported terminals
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_render_terminal_image_with_non_bytes_source() {
+        // Create an image block with Unknown source
+        let image_block = (
+            ImageBlock {
+                format: ImageFormat::Png,
+                source: ImageSource::Unknown,
+            },
+            ImageMetadata {
+                filepath: "".to_string(),
+                size: 0,
+                filename: "test.png".to_string(),
+            },
+        );
+
+        let mut output = String::new();
+
+        // Test rendering with non-bytes source
+        render_terminal_image(&Terminal::Iterm, &image_block, &mut output);
+
+        // Output should remain empty for non-bytes sources
+        assert!(output.is_empty());
+    }
     use std::sync::Arc;
 
     use bstr::ByteSlice;
@@ -297,5 +598,72 @@ mod tests {
         let images = handle_images_from_paths(&mut output, &paths);
 
         assert_eq!(images.len(), MAX_NUMBER_OF_IMAGES_PER_REQUEST);
+    }
+
+    // 1x1 pixel PNG image
+    pub const ONE_PIXEL_PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03, 0x00, 0x00, 0x00, 0x25, 0xdb, 0x56, 0xca, 0x00, 0x00, 0x00,
+        0x03, 0x50, 0x4c, 0x54, 0x45, 0x00, 0x00, 0x00, 0xa7, 0x7a, 0x3d, 0xda, 0x00, 0x00, 0x00, 0x01, 0x74, 0x52,
+        0x4e, 0x53, 0x00, 0x40, 0xe6, 0xd8, 0x66, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63,
+        0x60, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+        0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+
+    #[test]
+    fn test_format_images_for_terminal_iterm() {
+        // Mock the current_terminal function to return iTerm
+        let terminal = Terminal::Iterm;
+
+        // Call the function under test
+        let mut output = String::new();
+        render_terminal_image(&terminal, &test_image_block(), &mut output);
+
+        // Verify output contains expected iTerm protocol elements
+        assert!(output.contains("1337;MultipartFile=inline=1"));
+        assert!(output.contains(&format!("size={};", ONE_PIXEL_PNG.len())));
+        assert!(output.contains("name=test.png;"));
+        assert!(output.contains("1337;FilePart="));
+        assert!(output.contains("1337;FileEnd"));
+    }
+
+    fn test_image_block() -> (ImageBlock, ImageMetadata) {
+        (
+            ImageBlock {
+                format: ImageFormat::Png,
+                source: ImageSource::Bytes(Vec::from(ONE_PIXEL_PNG)),
+            },
+            ImageMetadata {
+                filepath: "".to_string(),
+                size: ONE_PIXEL_PNG.len() as u64,
+                filename: "test.png".to_string(),
+            },
+        )
+    }
+
+    #[test]
+    fn test_format_images_for_terminal_kitty() {
+        // Mock the current_terminal function to return Kitty
+        let terminal = Terminal::Kitty;
+
+        // Call the function under test
+        let mut output = String::new();
+        render_terminal_image(&terminal, &test_image_block(), &mut output);
+
+        // Verify output contains expected Kitty protocol elements
+        assert!(output.contains("\u{001B}_G"));
+        assert!(output.contains("a=T,f=100,m=1"));
+        assert!(output.contains("\u{001B}\\"));
+    }
+
+    #[test]
+    fn test_format_images_for_terminal_unsupported() {
+        let terminal = Terminal::VSCode;
+
+        let mut output = String::new();
+        render_terminal_image(&terminal, &test_image_block(), &mut output);
+
+        // output should be empty if the terminal is unsupported
+        assert!(output.is_empty());
     }
 }

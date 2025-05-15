@@ -3,6 +3,8 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use crossterm::{
     queue,
     style,
@@ -16,8 +18,16 @@ use tokio::sync::RwLock;
 use tracing::warn;
 
 use super::InvokeOutput;
+use crate::api_client::model::{
+    ImageBlock,
+    ImageSource,
+};
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
+use crate::cli::chat::util::images::{
+    ImageMetadata,
+    map_mime_type,
+};
 use crate::mcp_client::{
     Client as McpClient,
     ClientConfig as McpClientConfig,
@@ -185,8 +195,24 @@ impl CustomTool {
         match serde_json::from_value::<ToolCallResult>(result.clone()) {
             Ok(mut de_result) => {
                 for content in &mut de_result.content {
-                    if let MessageContent::Image { data, .. } = content {
-                        *data = format!("Redacted base64 encoded string of an image of size {}", data.len());
+                    if let MessageContent::Image { data, mime_type } = content {
+                        let decoded = BASE64_STANDARD.decode(data)?;
+                        if let Ok(fmt) = map_mime_type(mime_type) {
+                            let size = decoded.len() as u64;
+                            return Ok(InvokeOutput {
+                                output: super::OutputKind::Images(vec![(
+                                    ImageBlock {
+                                        format: fmt,
+                                        source: ImageSource::Bytes(decoded),
+                                    },
+                                    ImageMetadata {
+                                        filepath: "".to_string(),
+                                        size,
+                                        filename: "".to_string(),
+                                    },
+                                )]),
+                            });
+                        }
                     }
                 }
                 Ok(InvokeOutput {
