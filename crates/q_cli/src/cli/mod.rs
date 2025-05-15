@@ -65,6 +65,7 @@ use fig_util::{
     system_info,
 };
 use internal::InternalSubcommand;
+use macos_utils::bundle::get_bundle_path_for_executable;
 use serde::Serialize;
 use tokio::signal::ctrl_c;
 use tracing::{
@@ -195,14 +196,16 @@ pub enum CliRootCommands {
     /// Open the dashboard
     Dashboard,
     /// AI assistant in your terminal
+    #[command(disable_help_flag = true)]
     Chat {
-        /// Args for the chat command
+        /// Args for the chat subcommand
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
     /// Model Context Protocol (MCP)
+    #[command(disable_help_flag = true)]
     Mcp {
-        /// Args for the MCP subcommand (passed through to `qchat mcp …`)
+        /// Args for the MCP subcommand
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -351,8 +354,20 @@ impl Cli {
                 CliRootCommands::Telemetry(subcommand) => subcommand.execute().await,
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
-                CliRootCommands::Chat { args } => Self::execute_chat("chat", Some(args), true).await,
-                CliRootCommands::Mcp { args } => Self::execute_chat("mcp", Some(args), true).await,
+                CliRootCommands::Chat { args } => {
+                    if args.iter().any(|arg| ["--help", "-h"].contains(&arg.as_str())) {
+                        return Self::execute_chat("chat", Some(vec!["--help".to_owned()]), false).await;
+                    }
+
+                    Self::execute_chat("chat", Some(args), true).await
+                },
+                CliRootCommands::Mcp { args } => {
+                    if args.iter().any(|arg| ["--help", "-h"].contains(&arg.as_str())) {
+                        return Self::execute_chat("mcp", Some(vec!["--help".to_owned()]), false).await;
+                    }
+
+                    Self::execute_chat("mcp", Some(args), true).await
+                },
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
@@ -361,6 +376,14 @@ impl Cli {
     }
 
     pub async fn execute_chat(subcmd: &str, args: Option<Vec<String>>, enforce_login: bool) -> Result<ExitCode> {
+        cfg_if::cfg_if! {
+            if #[cfg(target_os = "macos")] {
+                let path = get_bundle_path_for_executable(CHAT_BINARY_NAME).unwrap_or(home_local_bin()?.join(CHAT_BINARY_NAME));
+            } else {
+                let path = home_local_bin()?.join(CHAT_BINARY_NAME);
+            }
+        }
+
         if enforce_login {
             assert_logged_in().await?;
         }
@@ -376,7 +399,7 @@ impl Cli {
             }
         }
 
-        let mut cmd = tokio::process::Command::new(home_local_bin()?.join(CHAT_BINARY_NAME));
+        let mut cmd = tokio::process::Command::new(&path);
         cmd.arg(subcmd);
         if let Some(args) = args {
             cmd.args(args);
