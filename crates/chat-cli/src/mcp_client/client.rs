@@ -394,8 +394,11 @@ where
         let mut resp = time::timeout(Duration::from_millis(self.timeout), async {
             // we want to ignore all other messages sent by the server at this point and let the
             // background loop handle them
+            // We also want to ignore all messages emitted by the server to its stdout that does
+            // not deserialize into a valid JsonRpcMessage (they are not supposed to do this but
+            // too many people complained about this so we are adding this safeguard in)
             loop {
-                if let JsonRpcMessage::Response(resp) = listener.recv().await? {
+                if let Ok(JsonRpcMessage::Response(resp)) = listener.recv().await {
                     if resp.id == id {
                         break Ok::<JsonRpcResponse, TransportError>(resp);
                     }
@@ -461,10 +464,8 @@ where
                         .await
                         .map_err(send_map_err)??;
                     let resp = time::timeout(Duration::from_millis(self.timeout), async {
-                        // we want to ignore all other messages sent by the server at this point and let the
-                        // background loop handle them
                         loop {
-                            if let JsonRpcMessage::Response(resp) = listener.recv().await? {
+                            if let Ok(JsonRpcMessage::Response(resp)) = listener.recv().await {
                                 if resp.id == id {
                                     break Ok::<JsonRpcResponse, TransportError>(resp);
                                 }
@@ -630,6 +631,8 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    // For some reason this test is quite flakey when ran in the CI but not on developer's
+    // machines. As a result it is hard to debug, hence we are ignoring it for now.
     #[ignore]
     async fn test_client_stdio() {
         std::process::Command::new("cargo")
