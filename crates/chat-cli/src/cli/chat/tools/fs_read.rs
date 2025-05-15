@@ -54,7 +54,6 @@ use crate::platform::Context;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum FsRead {
-    #[serde(tag = "mode")]
     Mode(FsReadMode),
     Operations(FsReadOperations),
 }
@@ -153,7 +152,10 @@ impl FsRead {
                                 bail!("Search pattern cannot be empty");
                             }
                         },
-                        FsReadOperation::Image(fs_image) => fs_image.validate(ctx).await?,
+                        FsReadOperation::Image(fs_image) => {
+                            let mut image = fs_image.clone();
+                            image.validate(ctx).await?
+                        },
                     }
                 }
                 
