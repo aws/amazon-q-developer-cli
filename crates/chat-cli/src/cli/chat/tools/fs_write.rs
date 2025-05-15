@@ -13,7 +13,7 @@ use eyre::{
     bail,
     eyre,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use similar::DiffableStr;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
@@ -63,6 +63,21 @@ pub enum FsWrite {
     },
     #[serde(rename = "append")]
     Append { path: String, new_str: String },
+    #[serde(rename = "replace_lines")]
+    ReplaceLines {
+        path: String,
+        start_line: usize,
+        end_line: usize,
+        new_str: String,
+    },
+    #[serde(rename = "pattern_replace")]
+    PatternReplace {
+        path: String,
+        pattern: String,
+        replacement: String,
+        glob: Option<String>,
+        recursive: Option<bool>,
+    },
 }
 
 impl FsWrite {
@@ -82,7 +97,7 @@ impl FsWrite {
                     updates,
                     style::Print(invoke_description),
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
+                    style::Print(format_path(&cwd, &path)),
                     style::ResetColor,
                     style::Print("\n"),
                 )?;
@@ -98,7 +113,7 @@ impl FsWrite {
                     updates,
                     style::Print("Updating: "),
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
+                    style::Print(format_path(&cwd, &path)),
                     style::ResetColor,
                     style::Print("\n"),
                 )?;
@@ -123,7 +138,7 @@ impl FsWrite {
                     updates,
                     style::Print("Updating: "),
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
+                    style::Print(format_path(&cwd, &path)),
                     style::ResetColor,
                     style::Print("\n"),
                 )?;
@@ -147,7 +162,7 @@ impl FsWrite {
                     updates,
                     style::Print("Appending to: "),
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
+                    style::Print(format_path(&cwd, &path)),
                     style::ResetColor,
                     style::Print("\n"),
                 )?;
@@ -158,6 +173,178 @@ impl FsWrite {
                 }
                 file.push_str(new_str);
                 write_to_file(ctx, path, file).await?;
+                Ok(Default::default())
+            },
+            FsWrite::ReplaceLines { path, start_line, end_line, new_str } => {
+                let path = sanitize_path_tool_arg(ctx, path);
+                let file = fs.read_to_string(&path).await?;
+                
+                queue!(
+                    updates,
+                    style::Print("Replacing lines: "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("{} to {}", start_line, end_line)),
+                    style::ResetColor,
+                    style::Print(" in "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format_path(&cwd, &path)),
+                    style::ResetColor,
+                    style::Print("\n"),
+                )?;
+                
+                // Convert to 0-based indexing
+                let start_idx = start_line.saturating_sub(1);
+                let end_idx = end_line.saturating_sub(1);
+                
+                // Split the file into lines
+                let lines: Vec<&str> = file.lines().collect();
+                
+                // Validate line numbers
+                if start_idx >= lines.len() {
+                    bail!("start_line is beyond the end of the file");
+                }
+                
+                // Build the new file content
+                let mut new_content = String::new();
+                
+                // Add lines before the replacement
+                for i in 0..start_idx {
+                    new_content.push_str(lines[i]);
+                    new_content.push('\n');
+                }
+                
+                // Add the replacement content
+                new_content.push_str(new_str);
+                if !new_str.ends_with('\n') {
+                    new_content.push('\n');
+                }
+                
+                // Add lines after the replacement
+                let end_idx = end_idx.min(lines.len() - 1);
+                for i in (end_idx + 1)..lines.len() {
+                    new_content.push_str(lines[i]);
+                    new_content.push('\n');
+                }
+                
+                // Write the new content to the file
+                write_to_file(ctx, path, new_content).await?;
+                Ok(Default::default())
+            },
+            FsWrite::PatternReplace { path, pattern, replacement, glob, recursive } => {
+                let path = sanitize_path_tool_arg(ctx, path);
+                
+                queue!(
+                    updates,
+                    style::Print("Pattern replacing: "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("'{}' with '{}'", pattern, replacement)),
+                    style::ResetColor,
+                    style::Print(" in "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format_path(&cwd, &path)),
+                    style::ResetColor,
+                    style::Print("\n"),
+                )?;
+                
+                // If a glob pattern is provided, find all matching files
+                let files_to_process = if let Some(_glob_pattern) = glob {
+                    let _is_recursive = recursive.unwrap_or(false);
+                    
+                    // TODO: Implement glob pattern matching with globset
+                    // For now, just process the single file
+                    vec![path.clone()]
+                } else {
+                    vec![path.clone()]
+                };
+                
+                // Process each file
+                let mut success_count = 0;
+                let mut failure_count = 0;
+                
+                for file_path in files_to_process {
+                    if !file_path.exists() {
+                        queue!(
+                            updates,
+                            style::Print("File not found: "),
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format_path(&cwd, &file_path)),
+                            style::ResetColor,
+                            style::Print("\n"),
+                        )?;
+                        failure_count += 1;
+                        continue;
+                    }
+                    
+                    if !file_path.is_file() {
+                        queue!(
+                            updates,
+                            style::Print("Not a file: "),
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format_path(&cwd, &file_path)),
+                            style::ResetColor,
+                            style::Print("\n"),
+                        )?;
+                        failure_count += 1;
+                        continue;
+                    }
+                    
+                    // Read the file content
+                    let file_content = match fs.read_to_string(&file_path).await {
+                        Ok(content) => content,
+                        Err(err) => {
+                            queue!(
+                                updates,
+                                style::Print("Error reading file: "),
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!("{}: {}", format_path(&cwd, &file_path), err)),
+                                style::ResetColor,
+                                style::Print("\n"),
+                            )?;
+                            failure_count += 1;
+                            continue;
+                        }
+                    };
+                    
+                    // Replace the pattern
+                    // TODO: Use the sd crate for more powerful replacements
+                    let new_content = file_content.replace(pattern, replacement);
+                    
+                    // Write the new content back to the file
+                    if let Err(err) = write_to_file(ctx, &file_path, new_content).await {
+                        queue!(
+                            updates,
+                            style::Print("Error writing file: "),
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!("{}: {}", format_path(&cwd, &file_path), err)),
+                            style::ResetColor,
+                            style::Print("\n"),
+                        )?;
+                        failure_count += 1;
+                    } else {
+                        success_count += 1;
+                    }
+                }
+                
+                queue!(
+                    updates,
+                    style::Print("Pattern replacement complete: "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("{} files updated", success_count)),
+                    style::ResetColor,
+                )?;
+                
+                if failure_count > 0 {
+                    queue!(
+                        updates,
+                        style::Print(", "),
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("{} files failed", failure_count)),
+                        style::ResetColor,
+                    )?;
+                }
+                
+                queue!(updates, style::Print("\n"))?;
+                
                 Ok(Default::default())
             },
         }
@@ -223,6 +410,56 @@ impl FsWrite {
                 print_diff(updates, &Default::default(), &file, start_line)?;
                 Ok(())
             },
+            FsWrite::ReplaceLines { path, start_line, end_line, new_str } => {
+                let relative_path = format_path(cwd, path);
+                let file = ctx.fs().read_to_string_sync(&relative_path)?;
+                
+                // Get the content of the lines to be replaced
+                let lines: Vec<&str> = file.lines().collect();
+                let start_idx = start_line.saturating_sub(1).min(lines.len().saturating_sub(1));
+                let end_idx = end_line.saturating_sub(1).min(lines.len().saturating_sub(1));
+                
+                let old_content = lines[start_idx..=end_idx].join("\n");
+                let old_str = stylize_output_if_able(ctx, &relative_path, &old_content);
+                let new_str = stylize_output_if_able(ctx, &relative_path, new_str);
+                
+                print_diff(updates, &old_str, &new_str, *start_line)?;
+                Ok(())
+            },
+            FsWrite::PatternReplace { path, pattern, replacement, glob, recursive } => {
+                queue!(
+                    updates,
+                    style::Print("Pattern replace: "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("'{}' → '{}'", pattern, replacement)),
+                    style::ResetColor,
+                    style::Print("\n"),
+                )?;
+                
+                if let Some(glob_pattern) = glob {
+                    queue!(
+                        updates,
+                        style::Print("Glob pattern: "),
+                        style::SetForegroundColor(Color::Green),
+                        style::Print(glob_pattern),
+                        style::ResetColor,
+                        style::Print("\n"),
+                    )?;
+                }
+                
+                if let Some(true) = recursive {
+                    queue!(
+                        updates,
+                        style::Print("Recursive: "),
+                        style::SetForegroundColor(Color::Green),
+                        style::Print("true"),
+                        style::ResetColor,
+                        style::Print("\n"),
+                    )?;
+                }
+                
+                Ok(())
+            },
         }
     }
 
@@ -247,6 +484,27 @@ impl FsWrite {
                     bail!("Content to append must not be empty")
                 };
             },
+            FsWrite::ReplaceLines { path, start_line, end_line, new_str } => {
+                let path = sanitize_path_tool_arg(ctx, path);
+                if !path.exists() {
+                    bail!("The provided path must exist in order to replace lines in it")
+                }
+                if start_line > end_line {
+                    bail!("start_line must be less than or equal to end_line")
+                }
+                if new_str.is_empty() {
+                    bail!("Content to replace with must not be empty")
+                }
+            },
+            FsWrite::PatternReplace { path, pattern, replacement, .. } => {
+                if path.is_empty() {
+                    bail!("Path must not be empty")
+                }
+                if pattern.is_empty() {
+                    bail!("Pattern must not be empty")
+                }
+                // replacement can be empty as it might be intentional to remove matches
+            },
         }
 
         Ok(())
@@ -259,8 +517,10 @@ impl FsWrite {
             FsWrite::StrReplace { path, .. } => path,
             FsWrite::Insert { path, .. } => path,
             FsWrite::Append { path, .. } => path,
+            FsWrite::ReplaceLines { path, .. } => path,
+            FsWrite::PatternReplace { path, .. } => path,
         };
-        let relative_path = format_path(cwd, path);
+        let relative_path = format_path(&cwd, path);
         queue!(
             updates,
             style::Print("Path: "),
@@ -950,4 +1210,112 @@ mod tests {
         assert_eq!(terminal_width_required_for_line_count(100), 3);
         assert_eq!(terminal_width_required_for_line_count(999), 3);
     }
+}
+/// Response for a single file write operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileWriteResult {
+    pub path: String,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edits_applied: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edits_failed: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_edits: Option<Vec<FailedEdit>>,
+}
+
+impl FileWriteResult {
+    /// Create a new successful FileWriteResult
+    pub fn success(path: String, edits_applied: usize) -> Self {
+        Self {
+            path,
+            success: true,
+            error: None,
+            edits_applied: Some(edits_applied),
+            edits_failed: Some(0),
+            failed_edits: None,
+        }
+    }
+
+    /// Create a new error FileWriteResult
+    pub fn error(path: String, error: String) -> Self {
+        Self {
+            path,
+            success: false,
+            error: Some(error),
+            edits_applied: Some(0),
+            edits_failed: None,
+            failed_edits: None,
+        }
+    }
+
+    /// Add a failed edit to the result
+    pub fn add_failed_edit(&mut self, command: String, error: String) {
+        let failed_edit = FailedEdit { command, error };
+        
+        if let Some(failed_edits) = &mut self.failed_edits {
+            failed_edits.push(failed_edit);
+        } else {
+            self.failed_edits = Some(vec![failed_edit]);
+        }
+        
+        if let Some(edits_failed) = &mut self.edits_failed {
+            *edits_failed += 1;
+        } else {
+            self.edits_failed = Some(1);
+        }
+    }
+}
+
+/// Represents a failed edit operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailedEdit {
+    pub command: String,
+    pub error: String,
+}
+
+/// Represents a single edit operation in a batch
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "command")]
+pub enum FileEdit {
+    #[serde(rename = "create")]
+    Create {
+        file_text: Option<String>,
+        new_str: Option<String>,
+    },
+    #[serde(rename = "str_replace")]
+    StrReplace {
+        old_str: String,
+        new_str: String,
+    },
+    #[serde(rename = "insert")]
+    Insert {
+        insert_line: usize,
+        new_str: String,
+    },
+    #[serde(rename = "append")]
+    Append {
+        new_str: String,
+    },
+    #[serde(rename = "replace_lines")]
+    ReplaceLines {
+        start_line: usize,
+        end_line: usize,
+        new_str: String,
+    },
+}
+
+/// Represents a file with multiple edits
+#[derive(Debug, Clone, Deserialize)]
+pub struct FileWithEdits {
+    pub path: String,
+    pub edits: Vec<FileEdit>,
+}
+
+/// Batch file write operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatchFileWrite {
+    pub fileEdits: Vec<FileWithEdits>,
 }
