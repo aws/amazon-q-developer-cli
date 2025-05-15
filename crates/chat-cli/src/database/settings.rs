@@ -28,6 +28,8 @@ pub enum Setting {
     ChatEnableNotifications,
     ApiCodeWhispererService,
     ApiQService,
+    McpInitTimeout,
+    McpLoadedBefore,
 }
 
 impl AsRef<str> for Setting {
@@ -44,6 +46,8 @@ impl AsRef<str> for Setting {
             Self::ChatEnableNotifications => "chat.enableNotifications",
             Self::ApiCodeWhispererService => "api.codewhisperer.service",
             Self::ApiQService => "api.q.service",
+            Self::McpInitTimeout => "mcp.initTimeout",
+            Self::McpLoadedBefore => "mcp.loadedBefore",
         }
     }
 }
@@ -70,6 +74,8 @@ impl TryFrom<&str> for Setting {
             "chat.enableNotifications" => Ok(Self::ChatEnableNotifications),
             "api.codewhisperer.service" => Ok(Self::ApiCodeWhispererService),
             "api.q.service" => Ok(Self::ApiQService),
+            "mcp.initTimeout" => Ok(Self::McpInitTimeout),
+            "mcp.loadedBefore" => Ok(Self::McpLoadedBefore),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -187,10 +193,12 @@ mod test {
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
+        assert_eq!(settings.get(Setting::McpLoadedBefore), None);
 
         settings.set(Setting::TelemetryEnabled, true).await.unwrap();
         settings.set(Setting::OldClientId, "test").await.unwrap();
         settings.set(Setting::ShareCodeWhispererContent, false).await.unwrap();
+        settings.set(Setting::McpLoadedBefore, true).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), Some(&Value::Bool(true)));
         assert_eq!(
@@ -201,13 +209,16 @@ mod test {
             settings.get(Setting::ShareCodeWhispererContent),
             Some(&Value::Bool(false))
         );
+        assert_eq!(settings.get(Setting::McpLoadedBefore), Some(&Value::Bool(true)));
 
         settings.remove(Setting::TelemetryEnabled).await.unwrap();
         settings.remove(Setting::OldClientId).await.unwrap();
         settings.remove(Setting::ShareCodeWhispererContent).await.unwrap();
+        settings.remove(Setting::McpLoadedBefore).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
+        assert_eq!(settings.get(Setting::McpLoadedBefore), None);
     }
 }

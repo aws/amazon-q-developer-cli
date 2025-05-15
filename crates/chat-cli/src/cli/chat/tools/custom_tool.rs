@@ -15,10 +15,7 @@ use serde::{
 use tokio::sync::RwLock;
 use tracing::warn;
 
-use super::{
-    InvokeOutput,
-    ToolSpec,
-};
+use super::InvokeOutput;
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::mcp_client::{
@@ -27,6 +24,7 @@ use crate::mcp_client::{
     JsonRpcResponse,
     JsonRpcStdioTransport,
     MessageContent,
+    Messenger,
     PromptGet,
     ServerCapabilities,
     StdioTransport,
@@ -46,7 +44,7 @@ pub struct CustomToolConfig {
     pub timeout: u64,
 }
 
-fn default_timeout() -> u64 {
+pub fn default_timeout() -> u64 {
     120 * 1000
 }
 
@@ -87,34 +85,31 @@ impl CustomToolClient {
         })
     }
 
-    pub async fn init(&self) -> Result<(String, Vec<ToolSpec>)> {
+    pub async fn init(&self) -> Result<()> {
         match self {
             CustomToolClient::Stdio {
                 client,
-                server_name,
                 server_capabilities,
+                ..
             } => {
+                if let Some(messenger) = &client.messenger {
+                    let _ = messenger.send_init_msg().await;
+                }
                 // We'll need to first initialize. This is the handshake every client and server
                 // needs to do before proceeding to anything else
-                let init_resp = client.init().await?;
+                let cap = client.init().await?;
                 // We'll be scrapping this for background server load: https://github.com/aws/amazon-q-developer-cli/issues/1466
                 // So don't worry about the tidiness for now
-                let is_tool_supported = init_resp
-                    .get("result")
-                    .is_some_and(|r| r.get("capabilities").is_some_and(|cap| cap.get("tools").is_some()));
-                server_capabilities.write().await.replace(init_resp);
-                // Assuming a shape of return as per https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#listing-tools
-                let tools = if is_tool_supported {
-                    // And now we make the server tell us what tools they have
-                    let resp = client.request("tools/list", None).await?;
-                    match resp.result.and_then(|r| r.get("tools").cloned()) {
-                        Some(value) => serde_json::from_value::<Vec<ToolSpec>>(value)?,
-                        None => Default::default(),
-                    }
-                } else {
-                    Default::default()
-                };
-                Ok((server_name.clone(), tools))
+                server_capabilities.write().await.replace(cap);
+                Ok(())
+            },
+        }
+    }
+
+    pub fn assign_messenger(&mut self, messenger: Box<dyn Messenger>) {
+        match self {
+            CustomToolClient::Stdio { client, .. } => {
+                client.messenger = Some(messenger);
             },
         }
     }
@@ -177,9 +172,15 @@ impl CustomTool {
     pub async fn invoke(&self, _ctx: &Context, _updates: &mut impl Write) -> Result<InvokeOutput> {
         // Assuming a response shape as per https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#calling-tools
         let resp = self.client.request(self.method.as_str(), self.params.clone()).await?;
-        let result = resp
-            .result
-            .ok_or(eyre::eyre!("{} invocation failed to produce a result", self.name))?;
+        let result = match resp.result {
+            Some(result) => result,
+            None => {
+                let failure = resp.error.map_or("Unknown error encountered".to_string(), |err| {
+                    serde_json::to_string(&err).unwrap_or_default()
+                });
+                return Err(eyre::eyre!(failure));
+            },
+        };
 
         match serde_json::from_value::<ToolCallResult>(result.clone()) {
             Ok(mut de_result) => {

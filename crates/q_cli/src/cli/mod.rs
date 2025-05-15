@@ -25,6 +25,7 @@ use std::io::{
     Write as _,
     stdout,
 };
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anstream::{
@@ -57,7 +58,6 @@ use fig_proto::local::UiElement;
 use fig_settings::sqlite::database;
 use fig_util::directories::home_local_bin;
 use fig_util::{
-    CHAT_BINARY_NAME,
     CLI_BINARY_NAME,
     PRODUCT_NAME,
     directories,
@@ -66,6 +66,7 @@ use fig_util::{
 };
 use internal::InternalSubcommand;
 use serde::Serialize;
+use tokio::signal::ctrl_c;
 use tracing::{
     Level,
     debug,
@@ -73,10 +74,13 @@ use tracing::{
 
 use self::integrations::IntegrationsSubcommands;
 use self::user::RootUserSubcommand;
-use crate::util::CliContext;
 use crate::util::desktop::{
     LaunchArgs,
     launch_fig_desktop,
+};
+use crate::util::{
+    CliContext,
+    assert_logged_in,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
@@ -191,8 +195,16 @@ pub enum CliRootCommands {
     /// Open the dashboard
     Dashboard,
     /// AI assistant in your terminal
+    #[command(disable_help_flag = true)]
     Chat {
-        /// Args for the chat command
+        /// Args for the chat subcommand
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Model Context Protocol (MCP)
+    #[command(disable_help_flag = true)]
+    Mcp {
+        /// Args for the MCP subcommand
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -231,6 +243,7 @@ impl CliRootCommands {
             CliRootCommands::Version { .. } => "version",
             CliRootCommands::Dashboard => "dashboard",
             CliRootCommands::Chat { .. } => "chat",
+            CliRootCommands::Mcp { .. } => "mcp",
             CliRootCommands::Inline(_) => "inline",
         }
     }
@@ -340,15 +353,32 @@ impl Cli {
                 CliRootCommands::Telemetry(subcommand) => subcommand.execute().await,
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
-                CliRootCommands::Chat { args } => Self::execute_chat(Some(args)).await,
+                CliRootCommands::Chat { args } => {
+                    if args.iter().any(|arg| ["--help", "-h"].contains(&arg.as_str())) {
+                        return Self::execute_chat("chat", Some(vec!["--help".to_owned()]), false).await;
+                    }
+
+                    Self::execute_chat("chat", Some(args), true).await
+                },
+                CliRootCommands::Mcp { args } => {
+                    if args.iter().any(|arg| ["--help", "-h"].contains(&arg.as_str())) {
+                        return Self::execute_chat("mcp", Some(vec!["--help".to_owned()]), false).await;
+                    }
+
+                    Self::execute_chat("mcp", Some(args), true).await
+                },
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
-            None => Self::execute_chat(None).await,
+            None => Self::execute_chat("chat", None, true).await,
         }
     }
 
-    async fn execute_chat(args: Option<Vec<String>>) -> Result<ExitCode> {
+    pub async fn execute_chat(subcmd: &str, args: Option<Vec<String>>, enforce_login: bool) -> Result<ExitCode> {
+        if enforce_login {
+            assert_logged_in().await?;
+        }
+
         let secret_store = SecretStore::new().await.ok();
         if let Some(secret_store) = secret_store {
             if let Ok(database) = database() {
@@ -360,16 +390,26 @@ impl Cli {
             }
         }
 
-        let mut cmd = tokio::process::Command::new(home_local_bin()?.join(CHAT_BINARY_NAME));
-        cmd.arg("chat");
-
+        let mut cmd = tokio::process::Command::new(qchat_path()?);
+        cmd.arg(subcmd);
         if let Some(args) = args {
             cmd.args(args);
         }
 
-        cmd.status().await?;
+        // Because we are spawning chat as a child process, we need the parent process (this one)
+        // to ignore sigint that are meant for chat (i.e. all of them)
+        tokio::spawn(async move {
+            loop {
+                let _ = ctrl_c().await;
+            }
+        });
 
-        Ok(ExitCode::SUCCESS)
+        let exit_status = cmd.status().await?;
+        let exit_code = exit_status
+            .code()
+            .map_or(ExitCode::FAILURE, |e| ExitCode::from(e as u8));
+
+        Ok(exit_code)
     }
 
     async fn send_telemetry(&self) {
@@ -506,6 +546,29 @@ async fn launch_dashboard(help_fallback: bool) -> Result<ExitCode> {
         .context("Failed to open dashboard")?;
 
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(target_os = "linux")]
+fn qchat_path() -> Result<PathBuf> {
+    use fig_os_shim::Context;
+    use fig_util::consts::CHAT_BINARY_NAME;
+
+    let ctx = Context::new();
+    if let Some(path) = ctx.process_info().current_pid().exe() {
+        // This is required for deb installations.
+        if path.starts_with("/usr/bin") {
+            return Ok(PathBuf::from("/usr/bin").join(CHAT_BINARY_NAME));
+        }
+    }
+    Ok(home_local_bin()?.join(CHAT_BINARY_NAME))
+}
+
+#[cfg(target_os = "macos")]
+fn qchat_path() -> Result<PathBuf> {
+    use fig_util::consts::CHAT_BINARY_NAME;
+    use macos_utils::bundle::get_bundle_path_for_executable;
+
+    Ok(get_bundle_path_for_executable(CHAT_BINARY_NAME).unwrap_or(home_local_bin()?.join(CHAT_BINARY_NAME)))
 }
 
 #[cfg(test)]

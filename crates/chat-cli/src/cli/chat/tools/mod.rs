@@ -122,30 +122,33 @@ pub struct ToolPermission {
 /// Tools that do not have an associated ToolPermission should use
 /// their default logic to determine to permission.
 pub struct ToolPermissions {
+    // We need this field for any stragglers
+    pub trust_all: bool,
     pub permissions: HashMap<String, ToolPermission>,
 }
 
 impl ToolPermissions {
     pub fn new(capacity: usize) -> Self {
         Self {
+            trust_all: false,
             permissions: HashMap::with_capacity(capacity),
         }
     }
 
     pub fn is_trusted(&self, tool_name: &str) -> bool {
-        self.permissions.get(tool_name).is_some_and(|perm| perm.trusted)
+        self.trust_all || self.permissions.get(tool_name).is_some_and(|perm| perm.trusted)
     }
 
     /// Returns a label to describe the permission status for a given tool.
     pub fn display_label(&self, tool_name: &str) -> String {
-        if self.has(tool_name) {
+        if self.has(tool_name) || self.trust_all {
             if self.is_trusted(tool_name) {
                 format!("  {}", "trusted".dark_green().bold())
             } else {
                 format!("  {}", "not trusted".dark_grey())
             }
         } else {
-            Self::default_permission_label(tool_name)
+            self.default_permission_label(tool_name)
         }
     }
 
@@ -155,15 +158,18 @@ impl ToolPermissions {
     }
 
     pub fn untrust_tool(&mut self, tool_name: &str) {
+        self.trust_all = false;
         self.permissions
             .insert(tool_name.to_string(), ToolPermission { trusted: false });
     }
 
     pub fn reset(&mut self) {
+        self.trust_all = false;
         self.permissions.clear();
     }
 
     pub fn reset_tool(&mut self, tool_name: &str) {
+        self.trust_all = false;
         self.permissions.remove(tool_name);
     }
 
@@ -174,7 +180,7 @@ impl ToolPermissions {
     /// Provide default permission labels for the built-in set of tools.
     /// Unknown tools are assumed to be "Per-request"
     // This "static" way avoids needing to construct a tool instance.
-    fn default_permission_label(tool_name: &str) -> String {
+    fn default_permission_label(&self, tool_name: &str) -> String {
         let label = match tool_name {
             "fs_read" => "trusted".dark_green().bold(),
             "fs_write" => "not trusted".dark_grey(),
@@ -182,6 +188,7 @@ impl ToolPermissions {
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
             "thinking" => "trusted (prerelease)".dark_green().bold(),
+            _ if self.trust_all => "trusted".dark_grey().bold(),
             _ => "not trusted".dark_grey(),
         };
 
@@ -201,10 +208,36 @@ pub struct ToolSpec {
     pub tool_origin: ToolOrigin,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum ToolOrigin {
     Native,
     McpServer(String),
+}
+
+impl<'de> Deserialize<'de> for ToolOrigin {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if s == "native___" {
+            Ok(ToolOrigin::Native)
+        } else {
+            Ok(ToolOrigin::McpServer(s))
+        }
+    }
+}
+
+impl Serialize for ToolOrigin {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ToolOrigin::Native => serializer.serialize_str("native___"),
+            ToolOrigin::McpServer(server) => serializer.serialize_str(server),
+        }
+    }
 }
 
 impl std::fmt::Display for ToolOrigin {

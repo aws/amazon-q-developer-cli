@@ -26,8 +26,10 @@ fn main() -> Result<ExitCode> {
     fig_telemetry::set_dispatch_mode(fig_telemetry::DispatchMode::On);
     fig_telemetry::init_global_telemetry_emitter();
 
+    let mut args = std::env::args();
+    let subcommand = args.nth(1);
     let multithread = matches!(
-        std::env::args().nth(1).as_deref(),
+        subcommand.as_deref(),
         Some("init" | "_" | "internal" | "completion" | "hook" | "chat")
     );
 

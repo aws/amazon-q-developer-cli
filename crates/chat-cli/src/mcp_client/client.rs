@@ -11,9 +11,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
-#[cfg(unix)]
 use nix::sys::signal::Signal;
-#[cfg(unix)]
 use nix::unistd::Pid;
 use serde::{
     Deserialize,
@@ -23,31 +21,32 @@ use thiserror::Error;
 use tokio::time;
 use tokio::time::error::Elapsed;
 
-use crate::mcp_client::transport::base_protocol::{
+use super::transport::base_protocol::{
     JsonRpcMessage,
     JsonRpcNotification,
     JsonRpcRequest,
     JsonRpcVersion,
 };
-use crate::mcp_client::transport::stdio::JsonRpcStdioTransport;
-use crate::mcp_client::transport::{
+use super::transport::stdio::JsonRpcStdioTransport;
+use super::transport::{
     self,
     Transport,
     TransportError,
 };
-use crate::mcp_client::{
+use super::{
     JsonRpcResponse,
     Listener as _,
     LogListener,
+    Messenger,
     PaginationSupportedOps,
     PromptGet,
     PromptsListResult,
     ResourceTemplatesListResult,
     ResourcesListResult,
+    ServerCapabilities,
     ToolsListResult,
 };
 
-pub type ServerCapabilities = serde_json::Value;
 pub type ClientInfo = serde_json::Value;
 pub type StdioTransport = JsonRpcStdioTransport;
 
@@ -83,6 +82,7 @@ pub struct ClientConfig {
     pub env: Option<HashMap<String, String>>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum ClientError {
     #[error(transparent)]
@@ -97,10 +97,18 @@ pub enum ClientError {
         source: tokio::time::error::Elapsed,
         context: String,
     },
+    #[error("Unexpected msg type encountered")]
+    UnexpectedMsgType,
     #[error("{0}")]
     NegotiationError(String),
     #[error("Failed to obtain process id")]
     MissingProcessId,
+    #[error("Invalid path received")]
+    InvalidPath,
+    #[error("{0}")]
+    ProcessKillError(String),
+    #[error("{0}")]
+    PoisonError(String),
 }
 
 impl From<(tokio::time::error::Elapsed, String)> for ClientError {
@@ -114,10 +122,11 @@ pub struct Client<T: Transport> {
     server_name: String,
     transport: Arc<T>,
     timeout: u64,
-    #[cfg(unix)]
     server_process_id: Option<Pid>,
     client_info: serde_json::Value,
     current_id: Arc<AtomicU64>,
+    pub messenger: Option<Box<dyn Messenger>>,
+    // TODO: move this to tool manager that way all the assets are treated equally
     pub prompt_gets: Arc<SyncRwLock<HashMap<String, PromptGet>>>,
     pub is_prompts_out_of_date: Arc<AtomicBool>,
 }
@@ -130,10 +139,10 @@ impl<T: Transport> Clone for Client<T> {
             timeout: self.timeout,
             // Note that we cannot have an id for the clone because we would kill the original
             // process when we drop the clone
-            #[cfg(unix)]
             server_process_id: None,
             client_info: self.client_info.clone(),
             current_id: self.current_id.clone(),
+            messenger: None,
             prompt_gets: self.prompt_gets.clone(),
             is_prompts_out_of_date: self.is_prompts_out_of_date.clone(),
         }
@@ -156,11 +165,8 @@ impl Client<StdioTransport> {
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
+                .process_group(0)
                 .envs(std::env::vars());
-
-            #[cfg(unix)]
-            command.process_group(0);
-
             if let Some(env) = env {
                 for (env_name, env_value) in env {
                     command.env(env_name, env_value);
@@ -168,32 +174,29 @@ impl Client<StdioTransport> {
             }
             command.args(args).spawn()?
         };
-
-        #[cfg(unix)]
-        let server_process_id = Some(Pid::from_raw(
-            child
-                .id()
-                .ok_or(ClientError::MissingProcessId)?
+        let server_process_id = child.id().ok_or(ClientError::MissingProcessId)?;
+        #[allow(clippy::map_err_ignore)]
+        let server_process_id = Pid::from_raw(
+            server_process_id
                 .try_into()
-                .map_err(|_err| ClientError::MissingProcessId)?,
-        ));
-
+                .map_err(|_| ClientError::MissingProcessId)?,
+        );
+        let server_process_id = Some(server_process_id);
         let transport = Arc::new(transport::stdio::JsonRpcStdioTransport::client(child)?);
         Ok(Self {
             server_name,
             transport,
             timeout,
-            #[cfg(unix)]
             server_process_id,
             client_info,
             current_id: Arc::new(AtomicU64::new(0)),
+            messenger: None,
             prompt_gets: Arc::new(SyncRwLock::new(HashMap::new())),
             is_prompts_out_of_date: Arc::new(AtomicBool::new(false)),
         })
     }
 }
 
-#[cfg(unix)]
 impl<T> Drop for Client<T>
 where
     T: Transport,
@@ -213,63 +216,11 @@ where
 {
     /// Exchange of information specified as per https://spec.modelcontextprotocol.io/specification/2024-11-05/basic/lifecycle/#initialization
     ///
-    /// Also done is the spawn of a background task that constantly listens for incoming messages
-    /// from the server.
+    /// Also done are the following:
+    /// - Spawns task for listening to server driven workflows
+    /// - Spawns tasks to ask for relevant info such as tools and prompts in accordance to server
+    ///   capabilities received
     pub async fn init(&self) -> Result<ServerCapabilities, ClientError> {
-        let transport_ref = self.transport.clone();
-        let server_name = self.server_name.clone();
-
-        tokio::spawn(async move {
-            let mut listener = transport_ref.get_listener();
-            loop {
-                match listener.recv().await {
-                    Ok(msg) => {
-                        match msg {
-                            JsonRpcMessage::Request(_req) => {},
-                            JsonRpcMessage::Notification(notif) => {
-                                let JsonRpcNotification { method, params, .. } = notif;
-                                if method.as_str() == "notifications/message" || method.as_str() == "message" {
-                                    let level = params
-                                        .as_ref()
-                                        .and_then(|p| p.get("level"))
-                                        .and_then(|v| serde_json::to_string(v).ok());
-                                    let data = params
-                                        .as_ref()
-                                        .and_then(|p| p.get("data"))
-                                        .and_then(|v| serde_json::to_string(v).ok());
-                                    if let (Some(level), Some(data)) = (level, data) {
-                                        match level.to_lowercase().as_str() {
-                                            "error" => {
-                                                tracing::error!(target: "mcp", "{}: {}", server_name, data);
-                                            },
-                                            "warn" => {
-                                                tracing::warn!(target: "mcp", "{}: {}", server_name, data);
-                                            },
-                                            "info" => {
-                                                tracing::info!(target: "mcp", "{}: {}", server_name, data);
-                                            },
-                                            "debug" => {
-                                                tracing::debug!(target: "mcp", "{}: {}", server_name, data);
-                                            },
-                                            "trace" => {
-                                                tracing::trace!(target: "mcp", "{}: {}", server_name, data);
-                                            },
-                                            _ => {},
-                                        }
-                                    }
-                                }
-                            },
-                            JsonRpcMessage::Response(_resp) => { /* noop since direct response is handled inside the request api */
-                            },
-                        }
-                    },
-                    Err(e) => {
-                        tracing::error!("Background listening thread for client {}: {:?}", server_name, e);
-                    },
-                }
-            }
-        });
-
         let transport_ref = self.transport.clone();
         let server_name = self.server_name.clone();
 
@@ -296,63 +247,126 @@ where
             let client_cap = ClientCapabilities::from(self.client_info.clone());
             serde_json::json!(client_cap)
         });
-        let server_capabilities = self.request("initialize", init_params).await?;
-        if let Err(e) = examine_server_capabilities(&server_capabilities) {
+        let init_resp = self.request("initialize", init_params).await?;
+        if let Err(e) = examine_server_capabilities(&init_resp) {
             return Err(ClientError::NegotiationError(format!(
                 "Client {} has failed to negotiate server capabilities with server: {:?}",
                 self.server_name, e
             )));
         }
+        let cap = {
+            let result = init_resp.result.ok_or(ClientError::NegotiationError(format!(
+                "Server {} init resp is missing result",
+                self.server_name
+            )))?;
+            let cap = result
+                .get("capabilities")
+                .ok_or(ClientError::NegotiationError(format!(
+                    "Server {} init resp result is missing capabilities",
+                    self.server_name
+                )))?
+                .clone();
+            serde_json::from_value::<ServerCapabilities>(cap)?
+        };
         self.notify("initialized", None).await?;
 
         // TODO: group this into examine_server_capabilities
         // Prefetch prompts in the background. We should only do this after the server has been
         // initialized
-        if let Some(res) = &server_capabilities.result {
-            if let Some(cap) = res.get("capabilities") {
-                if cap.get("prompts").is_some() {
-                    self.is_prompts_out_of_date.store(true, Ordering::Relaxed);
-                    let client_ref = (*self).clone();
-                    tokio::spawn(async move {
-                        let Ok(resp) = client_ref.request("prompts/list", None).await else {
-                            tracing::error!("Prompt list query failed for {0}", client_ref.server_name);
-                            return;
-                        };
-                        let Some(result) = resp.result else {
-                            tracing::warn!("Prompt list query returned no result for {0}", client_ref.server_name);
-                            return;
-                        };
-                        let Some(prompts) = result.get("prompts") else {
-                            tracing::warn!(
-                                "Prompt list query result contained no field named prompts for {0}",
-                                client_ref.server_name
-                            );
-                            return;
-                        };
-                        let Ok(prompts) = serde_json::from_value::<Vec<PromptGet>>(prompts.clone()) else {
-                            tracing::error!(
-                                "Prompt list query deserialization failed for {0}",
-                                client_ref.server_name
-                            );
-                            return;
-                        };
-                        let Ok(mut lock) = client_ref.prompt_gets.write() else {
-                            tracing::error!(
-                                "Failed to obtain write lock for prompt list query for {0}",
-                                client_ref.server_name
-                            );
-                            return;
-                        };
-                        for prompt in prompts {
-                            let name = prompt.name.clone();
-                            lock.insert(name, prompt);
-                        }
-                    });
-                }
-            }
+        if cap.prompts.is_some() {
+            self.is_prompts_out_of_date.store(true, Ordering::Relaxed);
+            let client_ref = (*self).clone();
+            let messenger_ref = self.messenger.as_ref().map(|m| m.duplicate());
+            tokio::spawn(async move {
+                fetch_prompts_and_notify_with_messenger(&client_ref, messenger_ref.as_ref()).await;
+            });
+        }
+        if cap.tools.is_some() {
+            let client_ref = (*self).clone();
+            let messenger_ref = self.messenger.as_ref().map(|m| m.duplicate());
+            tokio::spawn(async move {
+                fetch_tools_and_notify_with_messenger(&client_ref, messenger_ref.as_ref()).await;
+            });
         }
 
-        Ok(serde_json::to_value(server_capabilities)?)
+        let transport_ref = self.transport.clone();
+        let server_name = self.server_name.clone();
+        let messenger_ref = self.messenger.as_ref().map(|m| m.duplicate());
+        let client_ref = (*self).clone();
+
+        let prompts_list_changed_supported = cap.prompts.as_ref().is_some_and(|p| p.get("listChanged").is_some());
+        let tools_list_changed_supported = cap.tools.as_ref().is_some_and(|t| t.get("listChanged").is_some());
+        tokio::spawn(async move {
+            let mut listener = transport_ref.get_listener();
+            loop {
+                match listener.recv().await {
+                    Ok(msg) => {
+                        match msg {
+                            JsonRpcMessage::Request(_req) => {},
+                            JsonRpcMessage::Notification(notif) => {
+                                let JsonRpcNotification { method, params, .. } = notif;
+                                match method.as_str() {
+                                    "notifications/message" | "message" => {
+                                        let level = params
+                                            .as_ref()
+                                            .and_then(|p| p.get("level"))
+                                            .and_then(|v| serde_json::to_string(v).ok());
+                                        let data = params
+                                            .as_ref()
+                                            .and_then(|p| p.get("data"))
+                                            .and_then(|v| serde_json::to_string(v).ok());
+                                        if let (Some(level), Some(data)) = (level, data) {
+                                            match level.to_lowercase().as_str() {
+                                                "error" => {
+                                                    tracing::error!(target: "mcp", "{}: {}", server_name, data);
+                                                },
+                                                "warn" => {
+                                                    tracing::warn!(target: "mcp", "{}: {}", server_name, data);
+                                                },
+                                                "info" => {
+                                                    tracing::info!(target: "mcp", "{}: {}", server_name, data);
+                                                },
+                                                "debug" => {
+                                                    tracing::debug!(target: "mcp", "{}: {}", server_name, data);
+                                                },
+                                                "trace" => {
+                                                    tracing::trace!(target: "mcp", "{}: {}", server_name, data);
+                                                },
+                                                _ => {},
+                                            }
+                                        }
+                                    },
+                                    "notifications/prompts/list_changed" | "prompts/list_changed"
+                                        if prompts_list_changed_supported =>
+                                    {
+                                        // TODO: after we have moved the prompts to the tool
+                                        // manager we follow the same workflow as the list changed
+                                        // for tools
+                                        fetch_prompts_and_notify_with_messenger(&client_ref, messenger_ref.as_ref())
+                                            .await;
+                                        client_ref.is_prompts_out_of_date.store(true, Ordering::Release);
+                                    },
+                                    "notifications/tools/list_changed" | "tools/list_changed"
+                                        if tools_list_changed_supported =>
+                                    {
+                                        fetch_tools_and_notify_with_messenger(&client_ref, messenger_ref.as_ref())
+                                            .await;
+                                    },
+                                    _ => {},
+                                }
+                            },
+                            JsonRpcMessage::Response(_resp) => { /* noop since direct response is handled inside the request api */
+                            },
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!("Background listening thread for client {}: {:?}", server_name, e);
+                    },
+                }
+            }
+        });
+
+        Ok(cap)
     }
 
     /// Sends a request to the server associated.
@@ -403,13 +417,13 @@ where
                 loop {
                     let result = current_resp.result.as_ref().cloned().unwrap();
                     let mut list: Vec<serde_json::Value> = match ops {
-                        PaginationSupportedOps::Resources => {
+                        PaginationSupportedOps::ResourcesList => {
                             let ResourcesListResult { resources: list, .. } =
                                 serde_json::from_value::<ResourcesListResult>(result)
                                     .map_err(ClientError::Serialization)?;
                             list
                         },
-                        PaginationSupportedOps::ResourceTemplates => {
+                        PaginationSupportedOps::ResourceTemplatesList => {
                             let ResourceTemplatesListResult {
                                 resource_templates: list,
                                 ..
@@ -417,13 +431,13 @@ where
                                 .map_err(ClientError::Serialization)?;
                             list
                         },
-                        PaginationSupportedOps::Prompts => {
+                        PaginationSupportedOps::PromptsList => {
                             let PromptsListResult { prompts: list, .. } =
                                 serde_json::from_value::<PromptsListResult>(result)
                                     .map_err(ClientError::Serialization)?;
                             list
                         },
-                        PaginationSupportedOps::Tools => {
+                        PaginationSupportedOps::ToolsList => {
                             let ToolsListResult { tools: list, .. } = serde_json::from_value::<ToolsListResult>(result)
                                 .map_err(ClientError::Serialization)?;
                             list
@@ -490,10 +504,6 @@ where
         )
     }
 
-    pub async fn shutdown(&self) -> Result<(), ClientError> {
-        Ok(self.transport.shutdown().await?)
-    }
-
     fn get_id(&self) -> u64 {
         self.current_id.fetch_add(1, Ordering::SeqCst)
     }
@@ -512,6 +522,85 @@ fn examine_server_capabilities(ser_cap: &JsonRpcResponse) -> Result<(), ClientEr
         }
     }
     Ok(())
+}
+
+// TODO: after we move prompts to tool manager, use the messenger to notify the listener spawned by
+// tool manager to update its own field. Currently this function does not make use of the
+// messesnger.
+#[allow(clippy::borrowed_box)]
+async fn fetch_prompts_and_notify_with_messenger<T>(client: &Client<T>, _messenger: Option<&Box<dyn Messenger>>)
+where
+    T: Transport,
+{
+    let Ok(resp) = client.request("prompts/list", None).await else {
+        tracing::error!("Prompt list query failed for {0}", client.server_name);
+        return;
+    };
+    let Some(result) = resp.result else {
+        tracing::warn!("Prompt list query returned no result for {0}", client.server_name);
+        return;
+    };
+    let Some(prompts) = result.get("prompts") else {
+        tracing::warn!(
+            "Prompt list query result contained no field named prompts for {0}",
+            client.server_name
+        );
+        return;
+    };
+    let Ok(prompts) = serde_json::from_value::<Vec<PromptGet>>(prompts.clone()) else {
+        tracing::error!("Prompt list query deserialization failed for {0}", client.server_name);
+        return;
+    };
+    let Ok(mut lock) = client.prompt_gets.write() else {
+        tracing::error!(
+            "Failed to obtain write lock for prompt list query for {0}",
+            client.server_name
+        );
+        return;
+    };
+    lock.clear();
+    for prompt in prompts {
+        let name = prompt.name.clone();
+        lock.insert(name, prompt);
+    }
+}
+
+#[allow(clippy::borrowed_box)]
+async fn fetch_tools_and_notify_with_messenger<T>(client: &Client<T>, messenger: Option<&Box<dyn Messenger>>)
+where
+    T: Transport,
+{
+    // TODO: decouple pagination logic from request and have page fetching logic here
+    // instead
+    let resp = match client.request("tools/list", None).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            tracing::error!("Failed to retrieve tool list from {}: {:?}", client.server_name, e);
+            return;
+        },
+    };
+    if let Some(error) = resp.error {
+        let msg = format!("Failed to retrieve tool list for {}: {:?}", client.server_name, error);
+        tracing::error!("{}", &msg);
+        return;
+    }
+    let Some(result) = resp.result else {
+        tracing::error!("Tool list response from {} is missing result", client.server_name);
+        return;
+    };
+    let tool_list_result = match serde_json::from_value::<ToolsListResult>(result) {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::error!("Failed to deserialize tool result from {}: {:?}", client.server_name, e);
+            return;
+        },
+    };
+    if let Some(messenger) = messenger {
+        let _ = messenger
+            .send_tools_list_result(tool_list_result)
+            .await
+            .map_err(|e| tracing::error!("Failed to send tool result through messenger {:?}", e));
+    }
 }
 
 #[cfg(test)]
@@ -593,11 +682,11 @@ mod tests {
 
         let (res_one, res_two) = tokio::join!(
             time::timeout(
-                time::Duration::from_secs(5),
+                time::Duration::from_secs(10),
                 test_client_routine(&mut client_one, serde_json::json!(client_one_cap))
             ),
             time::timeout(
-                time::Duration::from_secs(5),
+                time::Duration::from_secs(10),
                 test_client_routine(&mut client_two, serde_json::json!(client_two_cap))
             )
         );
@@ -607,6 +696,7 @@ mod tests {
         assert!(res_two.is_ok());
     }
 
+    #[allow(clippy::await_holding_lock)]
     async fn test_client_routine<T: Transport>(
         client: &mut Client<T>,
         cap_sent: serde_json::Value,
@@ -682,6 +772,7 @@ mod tests {
             .await
             .expect("Mock prompt prep failed");
         let prompts_recvd = client.request("prompts/list", None).await.expect("List prompts failed");
+        client.is_prompts_out_of_date.store(false, Ordering::Release);
         assert!(are_json_values_equal(
             prompts_recvd
                 .result
@@ -690,6 +781,41 @@ mod tests {
                 .expect("Failed to retrieve prompts from results received"),
             &mock_prompts_for_verify
         ));
+
+        // Test prompts list changed
+        let fake_prompt_names = ["code_review_four", "code_review_five", "code_review_six"];
+        let mock_result_prompts = fake_prompt_names.map(create_fake_prompts);
+        let mock_prompts_prep_param = mock_result_prompts
+            .iter()
+            .zip(fake_prompt_names.iter())
+            .map(|(v, n)| {
+                serde_json::json!({
+                    "key": (*n).to_string(),
+                    "value": v
+                })
+            })
+            .collect::<Vec<serde_json::Value>>();
+        let mock_prompts_prep_param =
+            serde_json::to_value(mock_prompts_prep_param).expect("Failed to create mock prompts prep param");
+        let _ = client
+            .request("store_mock_prompts", Some(mock_prompts_prep_param))
+            .await
+            .expect("Mock new prompt request failed");
+        // After we send the signal for the server to clear prompts, we should be receiving signal
+        // to fetch for new prompts, after which we should be getting no prompts.
+        let is_prompts_out_of_date = client.is_prompts_out_of_date.clone();
+        let wait_for_new_prompts = async move {
+            while !is_prompts_out_of_date.load(Ordering::Acquire) {
+                tokio::time::sleep(time::Duration::from_millis(100)).await;
+            }
+        };
+        time::timeout(time::Duration::from_secs(5), wait_for_new_prompts)
+            .await
+            .expect("Timed out while waiting for new prompts");
+        let new_prompts = client.prompt_gets.read().expect("Failed to read new prompts");
+        for k in new_prompts.keys() {
+            assert!(fake_prompt_names.contains(&k.as_str()));
+        }
 
         // Test env var inclusion
         let env_vars = client.request("get_env_vars", None).await.expect("Get env vars failed");
@@ -710,8 +836,6 @@ mod tests {
         assert_eq!(env_one_as_str, "\"1\"".to_string());
         assert_eq!(env_two_as_str, "\"2\"".to_string());
 
-        let shutdown_result = client.shutdown().await;
-        assert!(shutdown_result.is_ok());
         Ok(())
     }
 

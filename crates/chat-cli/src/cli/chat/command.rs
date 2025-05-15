@@ -51,10 +51,10 @@ pub enum Command {
         subcommand: Option<PromptsSubcommand>,
     },
     Usage,
-    Import {
+    Load {
         path: String,
     },
-    Export {
+    Save {
         path: String,
         force: bool,
     },
@@ -818,15 +818,15 @@ impl Command {
                     }
                 },
                 "usage" => Self::Usage,
-                "import" => {
+                "load" => {
                     let Some(path) = parts.get(1) else {
                         return Err("path is required".to_string());
                     };
-                    Self::Import {
+                    Self::Load {
                         path: (*path).to_string(),
                     }
                 },
-                "export" => {
+                "save" => {
                     let force = parts.contains(&"-f") || parts.contains(&"--force");
                     let Some(path) = parts.get(1) else {
                         return Err("path is required".to_string());
@@ -835,7 +835,7 @@ impl Command {
                     if !path.ends_with(".json") {
                         path.push_str(".json");
                     }
-                    Self::Export { path, force }
+                    Self::Save { path, force }
                 },
                 unknown_command => {
                     let looks_like_path = {

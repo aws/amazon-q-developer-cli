@@ -1,8 +1,10 @@
 use std::collections::{
     HashMap,
+    HashSet,
     VecDeque,
 };
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use crossterm::style::Color;
 use crossterm::{
@@ -23,6 +25,7 @@ use super::consts::{
     DUMMY_TOOL_NAME,
     MAX_CHARS,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
+    MAX_USER_MESSAGE_SIZE,
 };
 use super::context::ContextManager;
 use super::hooks::{
@@ -41,13 +44,17 @@ use super::token_counter::{
     CharCount,
     CharCounter,
 };
+use super::tool_manager::ToolManager;
 use super::tools::{
     InputSchema,
     QueuedTool,
     ToolOrigin,
     ToolSpec,
 };
-use super::util::serde_value_to_document;
+use super::util::{
+    serde_value_to_document,
+    truncate_safe,
+};
 use crate::api_client::model::{
     AssistantResponseMessage,
     ChatMessage,
@@ -57,7 +64,6 @@ use crate::api_client::model::{
     ToolInputSchema,
     ToolResult,
     ToolResultContentBlock,
-    ToolResultStatus,
     ToolSpecification,
     ToolUse,
     UserInputMessage,
@@ -90,6 +96,9 @@ pub struct ConversationState {
     pub tools: HashMap<ToolOrigin, Vec<Tool>>,
     /// Context manager for handling sticky context files
     pub context_manager: Option<ContextManager>,
+    /// Tool manager for handling tool and mcp related activities
+    #[serde(skip)]
+    pub tool_manager: ToolManager,
     /// Cached value representing the length of the user context message.
     context_message_length: Option<usize>,
     /// Stores the latest conversation summary created by /compact
@@ -105,6 +114,7 @@ impl ConversationState {
         tool_config: HashMap<String, ToolSpec>,
         profile: Option<String>,
         updates: Option<SharedWriter>,
+        tool_manager: ToolManager,
     ) -> Self {
         // Initialize context manager
         let context_manager = match ContextManager::new(ctx, None).await {
@@ -143,9 +153,41 @@ impl ConversationState {
                     acc
                 }),
             context_manager,
+            tool_manager,
             context_message_length: None,
             latest_summary: None,
             updates,
+        }
+    }
+
+    /// Reloads necessary fields after being deserialized. This should be called after
+    /// deserialization.
+    pub async fn reload_serialized_state(&mut self, ctx: Arc<Context>, updates: Option<SharedWriter>) {
+        self.updates = updates;
+
+        // Try to reload ContextManager, but do not return an error if we fail.
+        // TODO: Currently the failure modes around ContextManager is unclear, and we don't return
+        // errors in most cases. Thus, we try to preserve the same behavior here and simply have
+        // self.context_manager equal to None if any errors are encountered. This needs to be
+        // refactored.
+        let mut failed = false;
+        if let Some(context_manager) = self.context_manager.as_mut() {
+            match context_manager.reload_config().await {
+                Ok(_) => (),
+                Err(err) => {
+                    error!(?err, "failed to reload context config");
+                    match ContextManager::new(ctx, None).await {
+                        Ok(v) => *context_manager = v,
+                        Err(err) => {
+                            failed = true;
+                            error!(?err, "failed to construct context manager");
+                        },
+                    }
+                },
+            }
+        }
+        if failed {
+            self.context_manager.take();
         }
     }
 
@@ -213,9 +255,7 @@ impl ConversationState {
             warn!("input must not be empty when adding new messages");
             "Empty prompt".to_string()
         } else {
-            let now = chrono::Utc::now();
-            let formatted_time = now.format("%Y-%m-%d %H:%M:%S").to_string();
-            format!("{}\n\n<currentTimeUTC>\n{}\n</currentTimeUTC>", input, formatted_time)
+            input
         };
 
         let msg = UserMessage::new_prompt(input);
@@ -308,32 +348,68 @@ impl ConversationState {
                     tool_uses.iter().map(|t| t.id.as_str()),
                 );
             }
+        }
 
-            // Here we also need to make sure that the tool result corresponds to one of the tools
-            // in the list. Otherwise we will see validation error from the backend. We would only
-            // do this if the last message is a tool call that has failed.
-            let tool_use_results = user_msg.tool_use_results();
-            if let Some(tool_use_results) = tool_use_results {
-                let tool_name_list = self
-                    .tools
-                    .values()
-                    .flatten()
-                    .map(|Tool::ToolSpecification(spec)| spec.name.as_str())
-                    .collect::<Vec<_>>();
-                for result in tool_use_results {
-                    if let ToolResultStatus::Error = result.status {
-                        let tool_use_id = result.tool_use_id.as_str();
-                        let _ = tool_uses
-                            .iter_mut()
-                            .filter(|tool_use| tool_use.id == tool_use_id)
-                            .map(|tool_use| {
-                                let tool_name = tool_use.name.as_str();
-                                if !tool_name_list.contains(&tool_name) {
-                                    tool_use.name = DUMMY_TOOL_NAME.to_string();
-                                }
-                            })
-                            .collect::<Vec<_>>();
+        self.enforce_tool_use_history_invariants();
+    }
+
+    /// Here we also need to make sure that the tool result corresponds to one of the tools
+    /// in the list. Otherwise we will see validation error from the backend. There are three
+    /// such circumstances where intervention would be needed:
+    /// 1. The model had decided to call a tool with its partial name AND there is only one such
+    ///    tool, in which case we would automatically resolve this tool call to its correct name.
+    ///    This will NOT result in an error in its tool result. The intervention here is to
+    ///    substitute the partial name with its full name.
+    /// 2. The model had decided to call a tool with its partial name AND there are multiple tools
+    ///    it could be referring to, in which case we WILL return an error in the tool result. The
+    ///    intervention here is to substitute the ambiguous, partial name with a dummy.
+    /// 3. The model had decided to call a tool that does not exist. The intervention here is to
+    ///    substitute the non-existent tool name with a dummy.
+    pub fn enforce_tool_use_history_invariants(&mut self) {
+        let tool_names: HashSet<_> = self
+            .tools
+            .values()
+            .flat_map(|tools| {
+                tools.iter().map(|tool| match tool {
+                    Tool::ToolSpecification(tool_specification) => tool_specification.name.as_str(),
+                })
+            })
+            .filter(|name| *name != DUMMY_TOOL_NAME)
+            .collect();
+
+        for (_, assistant) in &mut self.history {
+            if let AssistantMessage::ToolUse { ref mut tool_uses, .. } = assistant {
+                for tool_use in tool_uses {
+                    if tool_names.contains(tool_use.name.as_str()) {
+                        continue;
                     }
+
+                    if tool_names.contains(tool_use.orig_name.as_str()) {
+                        tool_use.name = tool_use.orig_name.clone();
+                        tool_use.args = tool_use.orig_args.clone();
+                        continue;
+                    }
+
+                    let names: Vec<&str> = tool_names
+                        .iter()
+                        .filter_map(|name| {
+                            if name.ends_with(&tool_use.name) {
+                                Some(*name)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    // There's only one tool use matching, so we can just replace it with the
+                    // found name.
+                    if names.len() == 1 {
+                        tool_use.name = (*names.first().unwrap()).to_string();
+                        continue;
+                    }
+
+                    // Otherwise, we have to replace it with a dummy.
+                    tool_use.name = DUMMY_TOOL_NAME.to_string();
                 }
             }
         }
@@ -388,9 +464,39 @@ impl ConversationState {
             .expect("unable to construct conversation state")
     }
 
+    pub async fn update_state(&mut self, force_update: bool) {
+        let needs_update = self.tool_manager.has_new_stuff.load(Ordering::Acquire) || force_update;
+        if !needs_update {
+            return;
+        }
+        self.tool_manager.update().await;
+        // TODO: make this more targeted so we don't have to clone the entire list of tools
+        self.tools = self
+            .tool_manager
+            .schema
+            .values()
+            .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+                let tool = Tool::ToolSpecification(ToolSpecification {
+                    name: v.name.clone(),
+                    description: v.description.clone(),
+                    input_schema: v.input_schema.clone().into(),
+                });
+                acc.entry(v.tool_origin.clone())
+                    .and_modify(|tools| tools.push(tool.clone()))
+                    .or_insert(vec![tool]);
+                acc
+            });
+        self.tool_manager.has_new_stuff.store(false, Ordering::Release);
+        // We call this in [Self::enforce_conversation_invariants] as well. But we need to call it
+        // here as well because when it's being called in [Self::enforce_conversation_invariants]
+        // it is only checking the last entry.
+        self.enforce_tool_use_history_invariants();
+    }
+
     /// Returns a conversation state representation which reflects the exact conversation to send
     /// back to the model.
     pub async fn backend_conversation_state(&mut self, run_hooks: bool, quiet: bool) -> BackendConversationState<'_> {
+        self.update_state(false).await;
         self.enforce_conversation_invariants();
 
         // Run hooks and add to conversation start and next user message.
@@ -423,6 +529,13 @@ impl ConversationState {
             dropped_context_files,
             tools: &self.tools,
         }
+    }
+
+    /// Whether or not it is possible to create a summary out of this conversation state.
+    ///
+    /// Currently only checks if we have enough messages in the history to create a summary out of.
+    pub async fn can_create_summary_request(&mut self) -> bool {
+        self.backend_conversation_state(false, true).await.history.len() >= 2
     }
 
     /// Returns a [FigConversationState] capable of replacing the history of the current
@@ -531,7 +644,8 @@ impl ConversationState {
                     // something is set.
                     tool_content.push_str("<tool result redacted>");
                 }
-                user.content = UserMessageContent::Prompt { prompt: tool_content };
+                let prompt = truncate_safe(&tool_content, MAX_USER_MESSAGE_SIZE).to_string();
+                user.content = UserMessageContent::Prompt { prompt };
             }
         }
     }
@@ -843,8 +957,6 @@ mod tests {
     };
     use crate::cli::chat::tool_manager::ToolManager;
     use crate::database::Database;
-    use crate::platform::Env;
-    use crate::telemetry::TelemetryThread;
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
@@ -936,17 +1048,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
-        let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let mut tool_manager = ToolManager::default();
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_manager.load_tools(&database).await.unwrap(),
             None,
             None,
+            tool_manager,
         )
         .await;
 
@@ -964,18 +1075,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
-        let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         // Build a long conversation history of tool use results.
         let mut tool_manager = ToolManager::default();
+        let tool_config = tool_manager.load_tools(&database).await.unwrap();
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_config.clone(),
             None,
             None,
+            tool_manager.clone(),
         )
         .await;
         conversation_state.set_next_user_message("start".to_string()).await;
@@ -988,6 +1099,7 @@ mod tests {
                     id: "tool_id".to_string(),
                     name: "tool name".to_string(),
                     args: serde_json::Value::Null,
+                    ..Default::default()
                 }]),
                 &mut database,
             );
@@ -1002,9 +1114,10 @@ mod tests {
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_config.clone(),
             None,
             None,
+            tool_manager.clone(),
         )
         .await;
         conversation_state.set_next_user_message("start".to_string()).await;
@@ -1017,6 +1130,7 @@ mod tests {
                         id: "tool_id".to_string(),
                         name: "tool name".to_string(),
                         args: serde_json::Value::Null,
+                        ..Default::default()
                     }]),
                     &mut database,
                 );
@@ -1035,9 +1149,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_state_with_context_files() {
-        let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         ctx.fs().write(AMAZONQ_FILENAME, "test context").await.unwrap();
@@ -1046,9 +1158,10 @@ mod tests {
         let mut conversation_state = ConversationState::new(
             ctx,
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_manager.load_tools(&database).await.unwrap(),
             None,
             None,
+            tool_manager,
         )
         .await;
 
@@ -1085,9 +1198,7 @@ mod tests {
     async fn test_conversation_state_additional_context() {
         // tracing_subscriber::fmt::try_init().ok();
 
-        let env = Env::new();
         let mut database = Database::new().await.unwrap();
-        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
 
         let mut tool_manager = ToolManager::default();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
@@ -1116,9 +1227,10 @@ mod tests {
         let mut conversation_state = ConversationState::new(
             ctx,
             "fake_conv_id",
-            tool_manager.load_tools(&database, &telemetry).await.unwrap(),
+            tool_manager.load_tools(&database).await.unwrap(),
             None,
             Some(SharedWriter::stdout()),
+            tool_manager,
         )
         .await;
 
