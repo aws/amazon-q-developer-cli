@@ -354,7 +354,7 @@ impl Cli {
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
                 CliRootCommands::Chat { args } => Self::execute_chat("chat", Some(args), true).await,
                 CliRootCommands::Mcp { mut args } => {
-                    if args.is_empty() || matches!(args.get(0).map(|s| s.as_str()), Some("--help" | "-h")) {
+                    if args.is_empty() || matches!(args.first().map(|s| s.as_str()), Some("--help" | "-h")) {
                         args = vec!["--help".into()];
                     }
                     Self::execute_chat("mcp", Some(args), true).await
