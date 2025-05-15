@@ -87,10 +87,7 @@ use crate::mcp_client::{
 };
 use crate::platform::Context;
 use crate::telemetry::TelemetryThread;
-use crate::util::directories::{
-    chat_profiles_dir,
-    home_dir,
-};
+use crate::util::directories::home_dir;
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name since in the end the tool name as seen by the
@@ -100,10 +97,6 @@ const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '�
 
 pub fn workspace_mcp_config_path(ctx: &Context) -> eyre::Result<PathBuf> {
     Ok(ctx.env().current_dir()?.join(".amazonq").join("mcp.json"))
-}
-
-pub fn profile_mcp_config_path(ctx: &Context, profile_name: impl AsRef<str>) -> eyre::Result<PathBuf> {
-    Ok(chat_profiles_dir(ctx)?.join(profile_name.as_ref()).join("mcp.json"))
 }
 
 pub fn global_mcp_config_path(ctx: &Context) -> eyre::Result<PathBuf> {

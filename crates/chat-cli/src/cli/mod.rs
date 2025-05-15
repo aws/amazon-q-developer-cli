@@ -534,8 +534,6 @@ mod test {
                 "test_server",
                 "--command",
                 "test_command",
-                "--profile",
-                "my_profile",
                 "--env",
                 "key1=value1,key2=value2"
             ],
@@ -543,7 +541,6 @@ mod test {
                 name: "test_server".to_string(),
                 command: "test_command".to_string(),
                 scope: None,
-                profile: Some("my_profile".to_string()),
                 env: vec![
                     [
                         ("key1".to_string(), "value1".to_string()),
@@ -565,27 +562,16 @@ mod test {
             CliRootCommands::Mcp(Mcp::Remove(McpRemove {
                 name: "old".into(),
                 scope: None,
-                profile: None,
             }))
         );
     }
     #[test]
     fn test_mcp_subcomman_import_profile_force() {
         assert_parse!(
-            [
-                "mcp",
-                "import",
-                "--file",
-                "servers.json",
-                "profile",
-                "--profile",
-                "qa",
-                "--force"
-            ],
+            ["mcp", "import", "--file", "servers.json", "--force"],
             CliRootCommands::Mcp(Mcp::Import(McpImport {
                 file: "servers.json".into(),
-                scope: Some(Scope::Profile),
-                profile: Some("qa".into()),
+                scope: None,
                 force: true,
             }))
         );
