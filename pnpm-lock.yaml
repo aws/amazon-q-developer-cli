@@ -249,8 +249,8 @@ importers:
         specifier: ^0.12.5
         version: 0.12.5
       zustand:
-        specifier: ^4.5.6
-        version: 4.5.6(@types/react@18.3.18)(react@18.3.1)
+        specifier: ^4.5.7
+        version: 4.5.7(@types/react@18.3.18)(react@18.3.1)
     devDependencies:
       '@amzn/eslint-config':
         specifier: workspace:^
@@ -373,8 +373,8 @@ importers:
         specifier: ^0.12.5
         version: 0.12.5
       zustand:
-        specifier: ^4.5.6
-        version: 4.5.6(@types/react@18.3.18)(react@18.3.1)
+        specifier: ^4.5.7
+        version: 4.5.7(@types/react@18.3.18)(react@18.3.1)
     devDependencies:
       '@amzn/eslint-config':
         specifier: workspace:^
@@ -561,8 +561,8 @@ importers:
         specifier: ^3.24.3
         version: 3.24.3
       zustand:
-        specifier: ^4.5.6
-        version: 4.5.6(@types/react@18.3.18)(react@18.3.1)
+        specifier: ^4.5.7
+        version: 4.5.7(@types/react@18.3.18)(react@18.3.1)
     devDependencies:
       '@amzn/types':
         specifier: workspace:^
@@ -5690,8 +5690,8 @@ packages:
       '@types/react':
         optional: true
 
-  use-sync-external-store@1.4.0:
-    resolution: {integrity: sha512-9WXSPC5fMv61vaupRkCKCxsPxBocVnwakBEkMIHHpkTTg6icbJtg6jzgtLDm4bl3cSHAca52rYWih0k4K3PfHw==}
+  use-sync-external-store@1.5.0:
+    resolution: {integrity: sha512-Rb46I4cGGVBmjamjphe8L/UnvJD+uPPtTkNvX5mZgqdbavhI4EbgIWJiIHXJ8bc/i9EQGPRh4DwEURJ552Do0A==}
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -5949,8 +5949,8 @@ packages:
   zod@3.24.3:
     resolution: {integrity: sha512-HhY1oqzWCQWuUqvBFnsyrtZRhyPeR7SUGv+C4+MsisMuVfSPx8HpwWqH8tRahSlt6M3PiFAcoeFhZAqIXTxoSg==}
 
-  zustand@4.5.6:
-    resolution: {integrity: sha512-ibr/n1hBzLLj5Y+yUcU7dYw8p6WnIVzdJbnX+1YpaScvZVF2ziugqHs+LAmHw4lWO9c/zRj+K1ncgWDQuthEdQ==}
+  zustand@4.5.7:
+    resolution: {integrity: sha512-CHOUy7mu3lbD6o6LJLfllpjkzhHXSBlX8B9+qPddUsIfeF5S/UZ5q0kmCsnRqT1UHFQZchNFDDzMbQsuesHWlw==}
     engines: {node: '>=12.7.0'}
     peerDependencies:
       '@types/react': '>=16.8'
@@ -12071,7 +12071,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 18.3.18
 
-  use-sync-external-store@1.4.0(react@18.3.1):
+  use-sync-external-store@1.5.0(react@18.3.1):
     dependencies:
       react: 18.3.1
 
@@ -12362,9 +12362,9 @@ snapshots:
 
   zod@3.24.3: {}
 
-  zustand@4.5.6(@types/react@18.3.18)(react@18.3.1):
+  zustand@4.5.7(@types/react@18.3.18)(react@18.3.1):
     dependencies:
-      use-sync-external-store: 1.4.0(react@18.3.1)
+      use-sync-external-store: 1.5.0(react@18.3.1)
     optionalDependencies:
       '@types/react': 18.3.18
       react: 18.3.1
