@@ -22,7 +22,7 @@
         },
         {
           "type": "added",
-          "description": "Persistent conversations by working directory in `q chat` - [#1767](https://github.com/aws/amazon-q-developer-cli/pull/1767)"
+          "description": "Persistent conversations by working directory with `q chat --resume` - [#1767](https://github.com/aws/amazon-q-developer-cli/pull/1767)"
         },
         {
           "type": "added",
@@ -39,6 +39,10 @@
         {
           "type": "added",
           "description": "Commands `/save` and `/load` for saving and loading conversation state in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+        },
+        {
+          "type": "added",
+          "description": "A new subcommand `q mcp` for updating MCP server configuration - [#1836](https://github.com/aws/amazon-q-developer-cli/pull/1836)"
         },
         {
           "type": "added",
