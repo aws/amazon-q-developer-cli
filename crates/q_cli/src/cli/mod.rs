@@ -25,6 +25,7 @@ use std::io::{
     Write as _,
     stdout,
 };
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anstream::{
@@ -57,7 +58,6 @@ use fig_proto::local::UiElement;
 use fig_settings::sqlite::database;
 use fig_util::directories::home_local_bin;
 use fig_util::{
-    CHAT_BINARY_NAME,
     CLI_BINARY_NAME,
     PRODUCT_NAME,
     directories,
@@ -65,7 +65,6 @@ use fig_util::{
     system_info,
 };
 use internal::InternalSubcommand;
-use macos_utils::bundle::get_bundle_path_for_executable;
 use serde::Serialize;
 use tokio::signal::ctrl_c;
 use tracing::{
@@ -376,14 +375,6 @@ impl Cli {
     }
 
     pub async fn execute_chat(subcmd: &str, args: Option<Vec<String>>, enforce_login: bool) -> Result<ExitCode> {
-        cfg_if::cfg_if! {
-            if #[cfg(target_os = "macos")] {
-                let path = get_bundle_path_for_executable(CHAT_BINARY_NAME).unwrap_or(home_local_bin()?.join(CHAT_BINARY_NAME));
-            } else {
-                let path = home_local_bin()?.join(CHAT_BINARY_NAME);
-            }
-        }
-
         if enforce_login {
             assert_logged_in().await?;
         }
@@ -399,7 +390,7 @@ impl Cli {
             }
         }
 
-        let mut cmd = tokio::process::Command::new(&path);
+        let mut cmd = tokio::process::Command::new(qchat_path()?);
         cmd.arg(subcmd);
         if let Some(args) = args {
             cmd.args(args);
@@ -555,6 +546,28 @@ async fn launch_dashboard(help_fallback: bool) -> Result<ExitCode> {
         .context("Failed to open dashboard")?;
 
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(target_os = "linux")]
+fn qchat_path() -> Result<PathBuf> {
+    use fig_os_shim::Context;
+    use fig_util::consts::CHAT_BINARY_NAME;
+
+    let ctx = Context::new();
+    if let Some(path) = ctx.process_info().current_pid().exe() {
+        // This is required for deb installations.
+        if path.starts_with("/usr/bin") {
+            return Ok(PathBuf::from("/usr/bin").join(CHAT_BINARY_NAME));
+        }
+    }
+    Ok(home_local_bin()?.join(CHAT_BINARY_NAME))
+}
+
+#[cfg(target_os = "macos")]
+fn qchat_path() -> Result<PathBuf> {
+    use macos_utils::bundle::get_bundle_path_for_executable;
+
+    Ok(get_bundle_path_for_executable(CHAT_BINARY_NAME).unwrap_or(home_local_bin()?.join(CHAT_BINARY_NAME)))
 }
 
 #[cfg(test)]
