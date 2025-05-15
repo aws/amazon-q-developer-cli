@@ -266,13 +266,13 @@ impl Database {
     /// Get the client ID used for telemetry requests.
     pub fn get_client_id(&mut self) -> Result<Option<Uuid>, DatabaseError> {
         Ok(self
-            .get_entry::<String>(Table::State, CLIENT_ID_KEY)?
+            .get_json_entry::<String>(Table::State, CLIENT_ID_KEY)?
             .and_then(|s| Uuid::from_str(&s).ok()))
     }
 
     /// Set the client ID used for telemetry requests.
     pub fn set_client_id(&mut self, client_id: Uuid) -> Result<usize, DatabaseError> {
-        self.set_entry(Table::State, CLIENT_ID_KEY, client_id.to_string())
+        self.set_json_entry(Table::State, CLIENT_ID_KEY, client_id.to_string())
     }
 
     /// Get the start URL used for IdC login.
@@ -331,6 +331,19 @@ impl Database {
         };
 
         self.set_json_entry(Table::Conversations, path, state)
+    }
+
+    pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
+        Ok(self.get_entry::<String>(Table::Auth, key)?.map(Into::into))
+    }
+
+    pub async fn set_secret(&self, key: &str, value: &str) -> Result<(), DatabaseError> {
+        self.set_entry(Table::Auth, key, value)?;
+        Ok(())
+    }
+
+    pub async fn delete_secret(&self, key: &str) -> Result<(), DatabaseError> {
+        self.delete_entry(Table::Auth, key)
     }
 
     // Private functions. Do not expose.
@@ -427,19 +440,6 @@ impl Database {
         }
 
         Ok(map)
-    }
-
-    pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
-        Ok(self.get_entry::<String>(Table::Auth, key)?.map(Into::into))
-    }
-
-    pub async fn set_secret(&self, key: &str, value: &str) -> Result<(), DatabaseError> {
-        self.set_entry(Table::Auth, key, value)?;
-        Ok(())
-    }
-
-    pub async fn delete_secret(&self, key: &str) -> Result<(), DatabaseError> {
-        self.delete_entry(Table::Auth, key)
     }
 }
 
