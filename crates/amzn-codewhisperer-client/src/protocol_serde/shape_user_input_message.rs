@@ -30,5 +30,8 @@ pub fn ser_user_input_message(
         }
         array_6.finish();
     }
+    if let Some(var_9) = &input.model_id {
+        object.key("modelId").string(var_9.as_str());
+    }
     Ok(())
 }
