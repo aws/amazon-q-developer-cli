@@ -294,6 +294,12 @@ pub fn rl(
         EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
     );
 
+    // Add custom keybinding for Shift+Enter to insert a newline
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Enter, Modifiers::SHIFT),
+        EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
+    );
+
     // Add custom keybinding for Ctrl+J to insert a newline
     rl.bind_sequence(
         KeyEvent(KeyCode::Char('j'), Modifiers::CTRL),
