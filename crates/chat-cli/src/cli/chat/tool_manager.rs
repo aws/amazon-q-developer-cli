@@ -17,11 +17,11 @@ use std::sync::atomic::{
     AtomicBool,
     Ordering,
 };
-use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{
     Arc,
     RwLock as SyncRwLock,
 };
+use std::time::Duration;
 
 use convert_case::Casing;
 use crossterm::{
@@ -290,122 +290,124 @@ impl ToolManagerBuilder {
         }
         let total = loading_servers.len();
 
-        // Send up task to update user on server loading status
-        let (tx, rx) = std::sync::mpsc::channel::<LoadingMsg>();
-        // TODO: rather than using it as an "anchor" to determine the progress of server loads, we
-        // should make this task optional (and it is defined as an optional right now. There is
-        // just no code path with it being None). When ran with no-interactive mode, we really do
-        // not have a need to run this task.
-        let loading_display_task = tokio::task::spawn_blocking(move || {
-            if total == 0 {
-                return Ok::<_, eyre::Report>(());
-            }
-            let mut spinner_logo_idx: usize = 0;
-            let mut complete: usize = 0;
-            let mut failed: usize = 0;
-            queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
-            loop {
-                match rx.recv_timeout(std::time::Duration::from_millis(50)) {
-                    Ok(recv_result) => match recv_result {
-                        LoadingMsg::Done(name) => {
-                            if let Some(status_line) = loading_servers.get_mut(&name) {
-                                status_line.is_done = true;
-                                complete += 1;
-                                let time_taken =
-                                    (std::time::Instant::now() - status_line.init_time).as_secs_f64().abs();
-                                let time_taken = format!("{:.2}", time_taken);
+        // Spawn a task for displaying the mcp loading statuses.
+        // This is only necessary when we are in interactive mode AND there are servers to load.
+        // Otherwise we do not need to be spawning this.
+        let (loading_display_task, loading_status_sender) = if is_interactive && total > 0 {
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<LoadingMsg>(50);
+            (
+                Some(tokio::task::spawn(async move {
+                    let mut spinner_logo_idx: usize = 0;
+                    let mut complete: usize = 0;
+                    let mut failed: usize = 0;
+                    queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
+                    loop {
+                        match tokio::time::timeout(Duration::from_millis(50), rx.recv()).await {
+                            Ok(Some(recv_result)) => match recv_result {
+                                LoadingMsg::Done(name) => {
+                                    if let Some(status_line) = loading_servers.get_mut(&name) {
+                                        status_line.is_done = true;
+                                        complete += 1;
+                                        let time_taken =
+                                            (std::time::Instant::now() - status_line.init_time).as_secs_f64().abs();
+                                        let time_taken = format!("{:.2}", time_taken);
+                                        execute!(
+                                            output,
+                                            cursor::MoveToColumn(0),
+                                            cursor::MoveUp(1),
+                                            terminal::Clear(terminal::ClearType::CurrentLine),
+                                        )?;
+                                        queue_success_message(&name, &time_taken, &mut output)?;
+                                        queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
+                                        output.flush()?;
+                                    }
+                                    if loading_servers.iter().all(|(_, status)| status.is_done) {
+                                        break;
+                                    }
+                                },
+                                LoadingMsg::Error { name, msg } => {
+                                    if let Some(status_line) = loading_servers.get_mut(&name) {
+                                        status_line.is_done = true;
+                                        failed += 1;
+                                        execute!(
+                                            output,
+                                            cursor::MoveToColumn(0),
+                                            cursor::MoveUp(1),
+                                            terminal::Clear(terminal::ClearType::CurrentLine),
+                                        )?;
+                                        queue_failure_message(&name, &msg, &mut output)?;
+                                        queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
+                                    }
+                                    if loading_servers.iter().all(|(_, status)| status.is_done) {
+                                        break;
+                                    }
+                                },
+                                LoadingMsg::Warn { name, msg } => {
+                                    if let Some(status_line) = loading_servers.get_mut(&name) {
+                                        status_line.is_done = true;
+                                        complete += 1;
+                                        execute!(
+                                            output,
+                                            cursor::MoveToColumn(0),
+                                            cursor::MoveUp(1),
+                                            terminal::Clear(terminal::ClearType::CurrentLine),
+                                        )?;
+                                        let msg = eyre::eyre!(msg.to_string());
+                                        queue_warn_message(&name, &msg, &mut output)?;
+                                        queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
+                                        output.flush()?;
+                                    }
+                                    if loading_servers.iter().all(|(_, status)| status.is_done) {
+                                        break;
+                                    }
+                                },
+                                LoadingMsg::Terminate => {
+                                    if loading_servers.iter().any(|(_, status)| !status.is_done) {
+                                        execute!(
+                                            output,
+                                            cursor::MoveToColumn(0),
+                                            cursor::MoveUp(1),
+                                            terminal::Clear(terminal::ClearType::CurrentLine),
+                                        )?;
+                                        let msg = loading_servers.iter().fold(
+                                            String::new(),
+                                            |mut acc, (server_name, status)| {
+                                                if !status.is_done {
+                                                    acc.push_str(format!("\n - {server_name}").as_str());
+                                                }
+                                                acc
+                                            },
+                                        );
+                                        let msg = eyre::eyre!(msg);
+                                        queue_incomplete_load_message(complete, total, &msg, &mut output)?;
+                                    }
+                                    execute!(output, style::Print("\n"),)?;
+                                    break;
+                                },
+                            },
+                            Err(_e) => {
+                                spinner_logo_idx = (spinner_logo_idx + 1) % SPINNER_CHARS.len();
                                 execute!(
                                     output,
+                                    cursor::SavePosition,
                                     cursor::MoveToColumn(0),
                                     cursor::MoveUp(1),
-                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                    style::Print(SPINNER_CHARS[spinner_logo_idx]),
+                                    cursor::RestorePosition
                                 )?;
-                                queue_success_message(&name, &time_taken, &mut output)?;
-                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
-                                output.flush()?;
-                            }
-                            if loading_servers.iter().all(|(_, status)| status.is_done) {
-                                break;
-                            }
-                        },
-                        LoadingMsg::Error { name, msg } => {
-                            if let Some(status_line) = loading_servers.get_mut(&name) {
-                                status_line.is_done = true;
-                                failed += 1;
-                                execute!(
-                                    output,
-                                    cursor::MoveToColumn(0),
-                                    cursor::MoveUp(1),
-                                    terminal::Clear(terminal::ClearType::CurrentLine),
-                                )?;
-                                queue_failure_message(&name, &msg, &mut output)?;
-                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
-                            }
-                            if loading_servers.iter().all(|(_, status)| status.is_done) {
-                                break;
-                            }
-                        },
-                        LoadingMsg::Warn { name, msg } => {
-                            if let Some(status_line) = loading_servers.get_mut(&name) {
-                                status_line.is_done = true;
-                                complete += 1;
-                                execute!(
-                                    output,
-                                    cursor::MoveToColumn(0),
-                                    cursor::MoveUp(1),
-                                    terminal::Clear(terminal::ClearType::CurrentLine),
-                                )?;
-                                let msg = eyre::eyre!(msg.to_string());
-                                queue_warn_message(&name, &msg, &mut output)?;
-                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
-                                output.flush()?;
-                            }
-                            if loading_servers.iter().all(|(_, status)| status.is_done) {
-                                break;
-                            }
-                        },
-                        LoadingMsg::Terminate => {
-                            if loading_servers.iter().any(|(_, status)| !status.is_done) {
-                                execute!(
-                                    output,
-                                    cursor::MoveToColumn(0),
-                                    cursor::MoveUp(1),
-                                    terminal::Clear(terminal::ClearType::CurrentLine),
-                                )?;
-                                let msg =
-                                    loading_servers
-                                        .iter()
-                                        .fold(String::new(), |mut acc, (server_name, status)| {
-                                            if !status.is_done {
-                                                acc.push_str(format!("\n - {server_name}").as_str());
-                                            }
-                                            acc
-                                        });
-                                let msg = eyre::eyre!(msg);
-                                queue_incomplete_load_message(complete, total, &msg, &mut output)?;
-                            }
-                            execute!(output, style::Print("\n"),)?;
-                            break;
-                        },
-                    },
-                    Err(RecvTimeoutError::Timeout) => {
-                        spinner_logo_idx = (spinner_logo_idx + 1) % SPINNER_CHARS.len();
-                        execute!(
-                            output,
-                            cursor::SavePosition,
-                            cursor::MoveToColumn(0),
-                            cursor::MoveUp(1),
-                            style::Print(SPINNER_CHARS[spinner_logo_idx]),
-                            cursor::RestorePosition
-                        )?;
-                    },
-                    _ => break,
-                }
-            }
-            Ok::<_, eyre::Report>(())
-        });
+                            },
+                            _ => break,
+                        }
+                    }
+                    Ok::<_, eyre::Report>(())
+                })),
+                Some(tx),
+            )
+        } else {
+            (None, None)
+        };
         let mut clients = HashMap::<String, Arc<CustomToolClient>>::new();
-        let mut load_msg_sender = Some(tx.clone());
+        let mut loading_status_sender_clone = loading_status_sender.clone();
         let conv_id_clone = conversation_id.clone();
         let regex = Arc::new(Regex::new(VALID_TOOL_NAME)?);
         let new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
@@ -434,15 +436,15 @@ impl ToolManagerBuilder {
                         if let Some(load_msg) = process_tool_specs(
                             conv_id_clone.as_str(),
                             &server_name,
-                            load_msg_sender.is_some(),
+                            loading_status_sender_clone.is_some(),
                             &mut specs,
                             &mut sanitized_mapping,
                             &regex,
                             &telemetry_clone,
                         ) {
                             let mut has_errored = false;
-                            if let Some(sender) = &load_msg_sender {
-                                if let Err(e) = sender.send(load_msg) {
+                            if let Some(sender) = &loading_status_sender_clone {
+                                if let Err(e) = sender.send(load_msg).await {
                                     warn!(
                                         "Error sending update message to display task: {:?}\nAssume display task has completed",
                                         e
@@ -451,7 +453,7 @@ impl ToolManagerBuilder {
                                 }
                             }
                             if has_errored {
-                                load_msg_sender.take();
+                                loading_status_sender_clone.take();
                             }
                         }
                         new_tool_specs_clone
@@ -459,7 +461,7 @@ impl ToolManagerBuilder {
                             .await
                             .insert(server_name, (sanitized_mapping, specs));
                         // We only want to set this flag when the display task has ended
-                        if load_msg_sender.is_none() {
+                        if loading_status_sender_clone.is_none() {
                             has_new_stuff_clone.store(true, Ordering::Release);
                         }
                     },
@@ -499,16 +501,17 @@ impl ToolManagerBuilder {
                     telemetry
                         .send_mcp_server_init(conversation_id.clone(), Some(e.to_string()), 0)
                         .ok();
-
-                    let _ = tx.send(LoadingMsg::Error {
-                        name: name.clone(),
-                        msg: e,
-                    });
+                    if let Some(tx) = &loading_status_sender {
+                        let _ = tx
+                            .send(LoadingMsg::Error {
+                                name: name.clone(),
+                                msg: e,
+                            })
+                            .await;
+                    }
                 },
             }
         }
-        let loading_display_task = Some(loading_display_task);
-        let loading_status_sender = Some(tx);
 
         // Set up task to handle prompt requests
         let sender = self.prompt_list_sender.take();
@@ -678,7 +681,7 @@ pub struct ToolManager {
 
     /// Channel sender for communicating with the loading display thread.
     /// Used to send status updates about tool initialization progress.
-    loading_status_sender: Option<std::sync::mpsc::Sender<LoadingMsg>>,
+    loading_status_sender: Option<tokio::sync::mpsc::Sender<LoadingMsg>>,
 
     /// Mapping from sanitized tool names to original tool names.
     /// This is used to handle tool name transformations that may occur during initialization
@@ -764,13 +767,13 @@ impl ToolManager {
             _ = display_fut => {},
             _ = timeout_fut => {
                 if let Some(tx) = tx {
-                    let _ = tx.send(LoadingMsg::Terminate);
+                    let _ = tx.send(LoadingMsg::Terminate).await;
                 }
             },
             _ = ctrl_c() => {
                 if self.is_interactive {
                     if let Some(tx) = tx {
-                        let _ = tx.send(LoadingMsg::Terminate);
+                        let _ = tx.send(LoadingMsg::Terminate).await;
                     }
                 } else {
                     return Err(eyre::eyre!("User interrupted mcp server loading in non-interactive mode. Ending."));
