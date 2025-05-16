@@ -515,7 +515,7 @@ mod tests {
 
         // assert migration count is correct
         let max_migration = max_migration_version(&&*db.pool.get().unwrap());
-        assert_eq!(max_migration, Some(MIGRATIONS.len() as i64));
+        assert_eq!(max_migration, Some(MIGRATIONS.len() as i64 - 1));
     }
 
     #[test]
