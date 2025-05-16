@@ -178,7 +178,6 @@ impl ToolPermissions {
     }
 
     /// Provide default permission labels for the built-in set of tools.
-    /// Unknown tools are assumed to be "Per-request"
     // This "static" way avoids needing to construct a tool instance.
     fn default_permission_label(&self, tool_name: &str) -> String {
         let label = match tool_name {
