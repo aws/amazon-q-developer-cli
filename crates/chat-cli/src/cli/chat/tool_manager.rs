@@ -125,9 +125,6 @@ pub enum GetPromptError {
 /// display thread. These messages control the visual loading indicators shown to
 /// the user during tool initialization.
 enum LoadingMsg {
-    /// Indicates a new tool is being initialized and should be added to the loading
-    /// display. The String parameter is the name of the tool being initialized.
-    Add(String),
     /// Indicates a tool has finished initializing successfully and should be removed from
     /// the loading display. The String parameter is the name of the tool that
     /// completed initialization.
@@ -283,6 +280,15 @@ impl ToolManagerBuilder {
                 (sanitized_server_name, custom_tool_client)
             })
             .collect::<Vec<(String, _)>>();
+        let mut loading_servers = HashMap::<String, StatusLine>::new();
+        for (server_name, _) in &pre_initialized {
+            let init_time = std::time::Instant::now();
+            let is_done = false;
+            let status_line = StatusLine { init_time, is_done };
+            loading_servers.insert(server_name.clone(), status_line);
+            output.flush()?;
+        }
+        let total = loading_servers.len();
 
         // Send up task to update user on server loading status
         let (tx, rx) = std::sync::mpsc::channel::<LoadingMsg>();
@@ -291,28 +297,16 @@ impl ToolManagerBuilder {
         // just no code path with it being None). When ran with no-interactive mode, we really do
         // not have a need to run this task.
         let loading_display_task = tokio::task::spawn_blocking(move || {
-            let mut loading_servers = HashMap::<String, StatusLine>::new();
+            if total == 0 {
+                return Ok::<_, eyre::Report>(());
+            }
             let mut spinner_logo_idx: usize = 0;
             let mut complete: usize = 0;
             let mut failed: usize = 0;
+            queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
             loop {
                 match rx.recv_timeout(std::time::Duration::from_millis(50)) {
                     Ok(recv_result) => match recv_result {
-                        LoadingMsg::Add(name) => {
-                            let init_time = std::time::Instant::now();
-                            let is_done = false;
-                            let status_line = StatusLine { init_time, is_done };
-                            execute!(output, cursor::MoveToColumn(0))?;
-                            if !loading_servers.is_empty() {
-                                // TODO: account for terminal width
-                                execute!(output, cursor::MoveUp(1))?;
-                            }
-                            loading_servers.insert(name.clone(), status_line);
-                            let total = loading_servers.len();
-                            execute!(output, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                            queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
-                            output.flush()?;
-                        },
                         LoadingMsg::Done(name) => {
                             if let Some(status_line) = loading_servers.get_mut(&name) {
                                 status_line.is_done = true;
@@ -327,7 +321,6 @@ impl ToolManagerBuilder {
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
                                 queue_success_message(&name, &time_taken, &mut output)?;
-                                let total = loading_servers.len();
                                 queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 output.flush()?;
                             }
@@ -346,7 +339,6 @@ impl ToolManagerBuilder {
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
                                 queue_failure_message(&name, &msg, &mut output)?;
-                                let total = loading_servers.len();
                                 queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                             }
                             if loading_servers.iter().all(|(_, status)| status.is_done) {
@@ -365,7 +357,6 @@ impl ToolManagerBuilder {
                                 )?;
                                 let msg = eyre::eyre!(msg.to_string());
                                 queue_warn_message(&name, &msg, &mut output)?;
-                                let total = loading_servers.len();
                                 queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 output.flush()?;
                             }
@@ -391,7 +382,6 @@ impl ToolManagerBuilder {
                                             acc
                                         });
                                 let msg = eyre::eyre!(msg);
-                                let total = loading_servers.len();
                                 queue_incomplete_load_message(complete, total, &msg, &mut output)?;
                             }
                             execute!(output, style::Print("\n"),)?;
@@ -487,9 +477,6 @@ impl ToolManagerBuilder {
                     } => {},
                     UpdateEventMessage::InitStart { server_name } => {
                         pending_clone.write().await.insert(server_name.clone());
-                        if let Some(sender) = &load_msg_sender {
-                            let _ = sender.send(LoadingMsg::Add(server_name));
-                        }
                     },
                 }
             }
@@ -1174,7 +1161,7 @@ fn process_tool_specs(
                         (tool_name.as_str(), "tool schema contains empty description")
                     },
                 };
-                acc.push_str(format!("  - {} ({})\n", tool_name, msg).as_str());
+                acc.push_str(format!(" - {} ({})\n", tool_name, msg).as_str());
                 acc
             },
         );
@@ -1312,11 +1299,11 @@ fn queue_failure_message(name: &str, fail_load_msg: &eyre::Report, output: &mut 
         style::SetForegroundColor(style::Color::Blue),
         style::Print(name),
         style::ResetColor,
-        style::Print(" has failed to load:\n- "),
+        style::Print(" has failed to load:\n - "),
         style::Print(fail_load_msg),
         style::Print("\n"),
         style::Print(format!(
-            "- run with Q_LOG_LEVEL=trace and see $TMPDIR/{CHAT_BINARY_NAME} for detail\n"
+            " - run with Q_LOG_LEVEL=trace and see $TMPDIR/{CHAT_BINARY_NAME} for detail\n"
         )),
         style::ResetColor,
     )?)
