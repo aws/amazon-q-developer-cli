@@ -31,6 +31,7 @@ type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 /// - Linux: /home/Alice
 /// - MacOS: /Users/Alice
 /// - Windows: C:\Users\Alice
+#[allow(unused_variables)]
 pub fn home_dir(ctx: &Context) -> Result<PathBuf> {
     #[cfg(unix)]
     match cfg!(test) {

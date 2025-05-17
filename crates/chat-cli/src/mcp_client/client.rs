@@ -11,10 +11,6 @@ use std::sync::{
 };
 use std::time::Duration;
 
-#[cfg(unix)]
-use nix::sys::signal::Signal;
-#[cfg(unix)]
-use nix::unistd::Pid;
 use serde::{
     Deserialize,
     Serialize,
@@ -45,6 +41,10 @@ use crate::mcp_client::{
     ResourceTemplatesListResult,
     ResourcesListResult,
     ToolsListResult,
+};
+use crate::util::process::{
+    Pid,
+    terminate_process,
 };
 
 pub type ServerCapabilities = serde_json::Value;
@@ -114,7 +114,6 @@ pub struct Client<T: Transport> {
     server_name: String,
     transport: Arc<T>,
     timeout: u64,
-    #[cfg(unix)]
     server_process_id: Option<Pid>,
     client_info: serde_json::Value,
     current_id: Arc<AtomicU64>,
@@ -130,7 +129,6 @@ impl<T: Transport> Clone for Client<T> {
             timeout: self.timeout,
             // Note that we cannot have an id for the clone because we would kill the original
             // process when we drop the clone
-            #[cfg(unix)]
             server_process_id: None,
             client_info: self.client_info.clone(),
             current_id: self.current_id.clone(),
@@ -158,7 +156,7 @@ impl Client<StdioTransport> {
                 .stderr(Stdio::piped())
                 .envs(std::env::vars());
 
-            #[cfg(unix)]
+            #[cfg(not(windows))]
             command.process_group(0);
 
             if let Some(env) = env {
@@ -169,11 +167,13 @@ impl Client<StdioTransport> {
             command.args(args).spawn()?
         };
 
-        #[cfg(unix)]
-        let server_process_id = Some(Pid::from_raw(
-            child
-                .id()
-                .ok_or(ClientError::MissingProcessId)?
+        let server_process_id = child.id().ok_or(ClientError::MissingProcessId)?;
+
+        #[cfg(windows)]
+        let server_process_id = Some(Pid::from_u32(server_process_id));
+        #[cfg(not(windows))]
+        let server_process_id = Some(Pid::from_u32(
+            server_process_id
                 .try_into()
                 .map_err(|_err| ClientError::MissingProcessId)?,
         ));
@@ -183,7 +183,6 @@ impl Client<StdioTransport> {
             server_name,
             transport,
             timeout,
-            #[cfg(unix)]
             server_process_id,
             client_info,
             current_id: Arc::new(AtomicU64::new(0)),
@@ -193,7 +192,6 @@ impl Client<StdioTransport> {
     }
 }
 
-#[cfg(unix)]
 impl<T> Drop for Client<T>
 where
     T: Transport,
@@ -202,7 +200,7 @@ where
     // This drop trait is here as a fail safe to ensure we don't leave behind any orphans.
     fn drop(&mut self) {
         if let Some(process_id) = self.server_process_id {
-            let _ = nix::sys::signal::kill(process_id, Signal::SIGTERM);
+            let _ = terminate_process(process_id);
         }
     }
 }
