@@ -128,7 +128,7 @@ strip-ansi-escapes = "0.2.1"
 strum = { version = "0.27.1", features = ["derive"] }
 syntect = "5.2.0"
 sysinfo = "0.33.1"
-tempfile = "3.18.0"
+tempfile = "3.20.0"
 thiserror = "2.0.12"
 time = { version = "0.3.39", features = [
     "parsing",
