@@ -14,6 +14,8 @@ pub struct UserInputMessage {
     pub origin: ::std::option::Option<crate::types::Origin>,
     /// Images associated with the Chat Message.
     pub images: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>,
+    /// Unique identifier for the model used in this conversation
+    pub model_id: ::std::option::Option<::std::string::String>,
 }
 impl UserInputMessage {
     /// The content of the chat message.
@@ -44,6 +46,11 @@ impl UserInputMessage {
     pub fn images(&self) -> &[crate::types::ImageBlock] {
         self.images.as_deref().unwrap_or_default()
     }
+
+    /// Unique identifier for the model used in this conversation
+    pub fn model_id(&self) -> ::std::option::Option<&str> {
+        self.model_id.as_deref()
+    }
 }
 impl ::std::fmt::Debug for UserInputMessage {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -53,6 +60,7 @@ impl ::std::fmt::Debug for UserInputMessage {
         formatter.field("user_intent", &self.user_intent);
         formatter.field("origin", &self.origin);
         formatter.field("images", &self.images);
+        formatter.field("model_id", &self.model_id);
         formatter.finish()
     }
 }
@@ -73,6 +81,7 @@ pub struct UserInputMessageBuilder {
     pub(crate) user_intent: ::std::option::Option<crate::types::UserIntent>,
     pub(crate) origin: ::std::option::Option<crate::types::Origin>,
     pub(crate) images: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>,
+    pub(crate) model_id: ::std::option::Option<::std::string::String>,
 }
 impl UserInputMessageBuilder {
     /// The content of the chat message.
@@ -170,6 +179,23 @@ impl UserInputMessageBuilder {
         &self.images
     }
 
+    /// Unique identifier for the model used in this conversation
+    pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.model_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unique identifier for the model used in this conversation
+    pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.model_id = input;
+        self
+    }
+
+    /// Unique identifier for the model used in this conversation
+    pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.model_id
+    }
+
     /// Consumes the builder and constructs a [`UserInputMessage`](crate::types::UserInputMessage).
     /// This method will fail if any of the following fields are not set:
     /// - [`content`](crate::types::builders::UserInputMessageBuilder::content)
@@ -187,6 +213,7 @@ impl UserInputMessageBuilder {
             user_intent: self.user_intent,
             origin: self.origin,
             images: self.images,
+            model_id: self.model_id,
         })
     }
 }
@@ -198,6 +225,7 @@ impl ::std::fmt::Debug for UserInputMessageBuilder {
         formatter.field("user_intent", &self.user_intent);
         formatter.field("origin", &self.origin);
         formatter.field("images", &self.images);
+        formatter.field("model_id", &self.model_id);
         formatter.finish()
     }
 }
