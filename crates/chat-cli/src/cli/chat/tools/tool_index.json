@@ -28,92 +28,182 @@
   },
   "fs_read": {
     "name": "fs_read",
-    "description": "Tool for reading files (for example, `cat -n`),  directories (for example, `ls -la`) and images. If user has supplied paths that appear to be leading to images, you should use this tool right away using Image mode. The behavior of this tool is determined by the `mode` parameter. The available modes are:\n- line: Show lines in a file, given by an optional `start_line` and optional `end_line`.\n- directory: List directory contents. Content is returned in the \"long format\" of ls (that is, `ls -la`).\n- search: Search for a pattern in a file. The pattern is a string. The matching is case insensitive.\n\nExample Usage:\n1. Read all lines from a file: command=\"line\", path=\"/path/to/file.txt\"\n2. Read the last 5 lines from a file: command=\"line\", path=\"/path/to/file.txt\", start_line=-5\n3. List the files in the home directory: command=\"line\", path=\"~\"\n4. Recursively list files in a directory to a max depth of 2: command=\"line\", path=\"/path/to/directory\", depth=2\n5. Search for all instances of \"test\" in a file: command=\"search\", path=\"/path/to/file.txt\", pattern=\"test\"\n",
+    "description": "Tool for reading files, directories, and images with support for multiple operations in a single call. Each operation can have its own mode and parameters.\n\nAvailable modes for operations:\n- Line: Show lines in a file, given by an optional `start_line` and optional `end_line`\n- Directory: List directory contents in the \"long format\" of ls (that is, `ls -la`)\n- Search: Search for a pattern in a file (case insensitive)\n- Image: Display images from the specified paths\n\nExample Usage:\n```json\n{\n  \"operations\": [\n    {\n      \"mode\": \"Line\",\n      \"path\": \"/path/to/file1.txt\",\n      \"start_line\": 10,\n      \"end_line\": 20\n    },\n    {\n      \"mode\": \"Search\",\n      \"path\": \"/path/to/file2.txt\",\n      \"pattern\": \"important term\"\n    },\n    {\n      \"mode\": \"Directory\",\n      \"path\": \"/path/to/directory\",\n      \"depth\": 1\n    },\n    {\n      \"mode\": \"Image\",\n      \"image_paths\": [\"/path/to/image1.png\", \"/path/to/image2.jpg\"]\n    }\n  ]\n}\n```\n\nResponse format:\n- For a single operation, returns the content directly\n- For multiple operations, returns an array of results with path, success status, content, content_hash, and last_modified timestamp\n",
     "input_schema": {
       "type": "object",
       "properties": {
-        "path": {
-          "description": "Path to the file or directory. The path should be absolute, or otherwise start with ~ for the user's home.",
-          "type": "string"
-        },
-        "image_paths": {
-          "description": "List of paths to the images. This is currently supported by the Image mode.",
+        "operations": {
+          "description": "Array of operations to perform in a single call.",
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "Line",
+                  "Directory",
+                  "Search",
+                  "Image"
+                ],
+                "description": "The mode for this operation: `Line`, `Directory`, `Search`, or `Image`."
+              },
+              "path": {
+                "description": "Path to the file or directory for this operation.",
+                "type": "string"
+              },
+              "image_paths": {
+                "description": "List of paths to the images for Image mode.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "start_line": {
+                "type": "integer",
+                "description": "Starting line number for Line mode.",
+                "default": 1
+              },
+              "end_line": {
+                "type": "integer",
+                "description": "Ending line number for Line mode.",
+                "default": -1
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Pattern to search for in Search mode."
+              },
+              "context_lines": {
+                "type": "integer",
+                "description": "Number of context lines around search results in Search mode.",
+                "default": 2
+              },
+              "depth": {
+                "type": "integer",
+                "description": "Depth of a recursive directory listing in Directory mode.",
+                "default": 0
+              }
+            },
+            "required": ["mode"],
+            "oneOf": [
+              { 
+                "properties": { "mode": { "enum": ["Line", "Directory", "Search"] } },
+                "required": ["path"]
+              },
+              { 
+                "properties": { "mode": { "enum": ["Image"] } },
+                "required": ["image_paths"]
+              }
+            ]
           }
-        },
-        "mode": {
-          "type": "string",
-          "enum": [
-            "Line",
-            "Directory",
-            "Search",
-            "Image"
-          ],
-          "description": "The mode to run in: `Line`, `Directory`, `Search`. `Line` and `Search` are only for text files, and `Directory` is only for directories. `Image` is for image files, in this mode `image_paths` is required."
-        },
-        "start_line": {
-          "type": "integer",
-          "description": "Starting line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
-          "default": 1
-        },
-        "end_line": {
-          "type": "integer",
-          "description": "Ending line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
-          "default": -1
-        },
-        "pattern": {
-          "type": "string",
-          "description": "Pattern to search for (required, for Search mode). Case insensitive. The pattern matching is performed per line."
-        },
-        "context_lines": {
-          "type": "integer",
-          "description": "Number of context lines around search results (optional, for Search mode)",
-          "default": 2
-        },
-        "depth": {
-          "type": "integer",
-          "description": "Depth of a recursive directory listing (optional, for Directory mode)",
-          "default": 0
         }
       },
-      "required": ["path", "mode"]
+      "required": ["operations"]
     }
   },
   "fs_write": {
     "name": "fs_write",
-    "description": "A tool for creating and editing files\n * The `create` command will override the file at `path` if it already exists as a file, and otherwise create a new file\n * The `append` command will add content to the end of an existing file, automatically adding a newline if the file doesn't end with one. The file must exist.\n Notes for using the `str_replace` command:\n * The `old_str` parameter should match EXACTLY one or more consecutive lines from the original file. Be mindful of whitespaces!\n * If the `old_str` parameter is not unique in the file, the replacement will not be performed. Make sure to include enough context in `old_str` to make it unique\n * The `new_str` parameter should contain the edited lines that should replace the `old_str`.",
+    "description": "A tool for creating and editing files with batch operations support.\n\nSupports multiple edits per file using the `file_edits` parameter, with edits applied from the end of the file to the beginning to avoid line number issues.\n\nAvailable commands for each edit:\n* `create`: Create a new file or override an existing file\n* `str_replace`: Replace a specific string in a file\n* `insert`: Insert content after a specific line\n* `append`: Add content to the end of a file\n* `replace_lines`: Replace a range of lines in a file\n\nNotes for using the `str_replace` command:\n* The `old_str` parameter should match EXACTLY one or more consecutive lines from the original file\n* If the `old_str` parameter is not unique in the file, the replacement will not be performed\n* The `new_str` parameter should contain the edited lines that should replace the `old_str`\n\nExample Usage:\n```json\n{\n  \"file_edits\": [\n    {\n      \"path\": \"/path/to/file1.txt\",\n      \"edits\": [\n        {\n          \"command\": \"str_replace\",\n          \"old_str\": \"function hello() {\\n  console.log('Hello');\\n}\",\n          \"new_str\": \"function hello() {\\n  console.log('Hello World');\\n}\"\n        },\n        {\n          \"command\": \"replace_lines\",\n          \"start_line\": 10,\n          \"end_line\": 15,\n          \"new_str\": \"// These lines were replaced\"\n        }\n      ]\n    },\n    {\n      \"path\": \"/path/to/file2.txt\",\n      \"edits\": [\n        {\n          \"command\": \"append\",\n          \"new_str\": \"// Appended content\"\n        }\n      ]\n    }\n  ]\n}\n```\n\nResponse format:\n- Returns an array of results with path, success status, edits applied, and any errors",
     "input_schema": {
       "type": "object",
       "properties": {
-        "command": {
-          "type": "string",
-          "enum": ["create", "str_replace", "insert", "append"],
-          "description": "The commands to run. Allowed options are: `create`, `str_replace`, `insert`, `append`."
-        },
-        "file_text": {
-          "description": "Required parameter of `create` command, with the content of the file to be created.",
-          "type": "string"
-        },
-        "insert_line": {
-          "description": "Required parameter of `insert` command. The `new_str` will be inserted AFTER the line `insert_line` of `path`.",
-          "type": "integer"
-        },
-        "new_str": {
-          "description": "Required parameter of `str_replace` command containing the new string. Required parameter of `insert` command containing the string to insert. Required parameter of `append` command containing the content to append to the file.",
-          "type": "string"
-        },
-        "old_str": {
-          "description": "Required parameter of `str_replace` command containing the string in `path` to replace.",
-          "type": "string"
-        },
-        "path": {
-          "description": "Absolute path to file or directory, e.g. `/repo/file.py` or `/repo`.",
-          "type": "string"
+        "file_edits": {
+          "description": "Array of file edit operations to perform in batch. Each object must include path and an array of edits to apply to that file.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "description": "Absolute path to file, e.g. `/repo/file.py`.",
+                "type": "string"
+              },
+              "edits": {
+                "description": "Array of edit operations to apply to this file. Edits will be applied from the end of the file to the beginning to avoid line number issues.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "description": "The command for this edit.",
+                      "enum": ["create", "str_replace", "insert", "append", "replace_lines"],
+                      "type": "string"
+                    },
+                    "file_text": {
+                      "description": "Required parameter of `create` command, with the content of the file to be created.",
+                      "type": "string"
+                    },
+                    "old_str": {
+                      "description": "Required parameter of `str_replace` command containing the string in `path` to replace.",
+                      "type": "string"
+                    },
+                    "new_str": {
+                      "description": "Required parameter of `str_replace`, `insert`, `append`, and `replace_lines` commands containing the new content.",
+                      "type": "string"
+                    },
+                    "insert_line": {
+                      "description": "Required parameter of `insert` command. The `new_str` will be inserted AFTER the line `insert_line` of `path`.",
+                      "type": "integer"
+                    },
+                    "start_line": {
+                      "description": "Required parameter of `replace_lines` command. The starting line number to replace (inclusive).",
+                      "type": "integer"
+                    },
+                    "end_line": {
+                      "description": "Required parameter of `replace_lines` command. The ending line number to replace (inclusive).",
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["command"],
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": { "command": { "enum": ["create"] } }
+                      },
+                      "then": {
+                        "required": ["file_text"]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": { "command": { "enum": ["str_replace"] } }
+                      },
+                      "then": {
+                        "required": ["old_str", "new_str"]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": { "command": { "enum": ["insert"] } }
+                      },
+                      "then": {
+                        "required": ["insert_line", "new_str"]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": { "command": { "enum": ["append"] } }
+                      },
+                      "then": {
+                        "required": ["new_str"]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": { "command": { "enum": ["replace_lines"] } }
+                      },
+                      "then": {
+                        "required": ["start_line", "end_line", "new_str"]
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "required": ["path", "edits"]
+          }
         }
       },
-      "required": ["command", "path"]
+      "required": ["file_edits"]
     }
   },
   "use_aws": {

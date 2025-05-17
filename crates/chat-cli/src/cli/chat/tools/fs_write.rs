@@ -13,8 +13,11 @@ use eyre::{
     bail,
     eyre,
 };
-use serde::Deserialize;
-use similar::DiffableStr;
+use serde::{
+    Deserialize,
+    Serialize,
+};
+// Removed unused import: similar::DiffableStr
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -22,13 +25,11 @@ use syntect::util::{
     LinesWithEndings,
     as_24_bit_terminal_escaped,
 };
-use tracing::{
-    error,
-    warn,
-};
+use tracing::error;
 
 use super::{
     InvokeOutput,
+    OutputKind,
     format_path,
     sanitize_path_tool_arg,
     supports_truecolor,
@@ -38,257 +39,620 @@ use crate::platform::Context;
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
+/// File system write operations with batch support
+#[derive(Debug, Clone, Deserialize)]
+pub struct FsWrite {
+    pub file_edits: Vec<FileWithEdits>,
+}
+
+/// Represents a file with multiple edits
+#[derive(Debug, Clone, Deserialize)]
+pub struct FileWithEdits {
+    pub path: String,
+    pub edits: Vec<FileEdit>,
+}
+
+/// Represents a single edit operation in a batch
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "command")]
-pub enum FsWrite {
-    /// The tool spec should only require `file_text`, but the model sometimes doesn't want to
-    /// provide it. Thus, including `new_str` as a fallback check, if it's available.
+pub enum FileEdit {
     #[serde(rename = "create")]
     Create {
-        path: String,
         file_text: Option<String>,
         new_str: Option<String>,
     },
     #[serde(rename = "str_replace")]
-    StrReplace {
-        path: String,
-        old_str: String,
-        new_str: String,
-    },
+    StrReplace { old_str: String, new_str: String },
     #[serde(rename = "insert")]
-    Insert {
-        path: String,
-        insert_line: usize,
+    Insert { insert_line: usize, new_str: String },
+    #[serde(rename = "append")]
+    Append { new_str: String },
+    #[serde(rename = "replace_lines")]
+    ReplaceLines {
+        start_line: usize,
+        end_line: usize,
         new_str: String,
     },
-    #[serde(rename = "append")]
-    Append { path: String, new_str: String },
+}
+
+/// Response for a single file write operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileWriteResult {
+    pub path: String,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edits_applied: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edits_failed: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub successful_edits: Option<Vec<EditResult>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_edits: Option<Vec<FailedEdit>>,
+}
+
+/// Represents a failed edit operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailedEdit {
+    pub command: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditResult {
+    pub command: String,
+    pub details: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchWriteResult {
+    pub total_files: usize,
+    pub files_modified: usize,
+    pub files_failed: usize,
+    pub total_edits_applied: usize,
+    pub total_edits_failed: usize,
+    pub file_results: Vec<FileWriteResult>,
+}
+
+impl FileWriteResult {
+
+    /// Create a new error FileWriteResult
+    pub fn error(path: String, error: String) -> Self {
+        Self {
+            path,
+            success: false,
+            error: Some(error),
+            edits_applied: Some(0),
+            edits_failed: None,
+            successful_edits: Some(Vec::new()),
+            failed_edits: None,
+        }
+    }
+
+    /// Add a failed edit to the result
+    pub fn add_failed_edit(&mut self, command: String, error: String) {
+        let failed_edit = FailedEdit { command, error };
+
+        if let Some(failed_edits) = &mut self.failed_edits {
+            failed_edits.push(failed_edit);
+        } else {
+            self.failed_edits = Some(vec![failed_edit]);
+        }
+
+        if let Some(edits_failed) = &mut self.edits_failed {
+            *edits_failed += 1;
+        } else {
+            self.edits_failed = Some(1);
+        }
+    }
 }
 
 impl FsWrite {
     pub async fn invoke(&self, ctx: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
-        let fs = ctx.fs();
+        let _fs = ctx.fs();
         let cwd = ctx.env().current_dir()?;
-        match self {
-            FsWrite::Create { path, .. } => {
-                let file_text = self.canonical_create_command_text();
-                let path = sanitize_path_tool_arg(ctx, path);
-                if let Some(parent) = path.parent() {
-                    fs.create_dir_all(parent).await?;
+
+        let mut file_results = Vec::new();
+        let mut total_edits_applied = 0;
+        let mut total_edits_failed = 0;
+        let mut files_modified = 0;
+        let mut files_failed = 0;
+
+        // Process each file with its edits
+        for file_with_edits in &self.file_edits {
+            let path = sanitize_path_tool_arg(ctx, &file_with_edits.path);
+            let path_str = file_with_edits.path.clone();
+            let relative_path = format_path(&cwd, &path);
+
+            // Check if file exists (except for create operations)
+            if !path.exists()
+                && !file_with_edits
+                    .edits
+                    .iter()
+                    .any(|e| matches!(e, FileEdit::Create { .. }))
+            {
+                queue!(
+                    updates,
+                    style::Print("File not found: "),
+                    style::SetForegroundColor(Color::Red),
+                    style::Print(&relative_path),
+                    style::ResetColor,
+                    style::Print("\n"),
+                )?;
+                file_results.push(FileWriteResult::error(path_str, "File not found".to_string()));
+                files_failed += 1;
+                continue;
+            }
+
+            // Sort edits to apply them from the end of the file to the beginning
+            // This prevents line number changes from affecting subsequent edits
+            let mut edits = file_with_edits.edits.clone();
+            edits.sort_by(|a, b| {
+                let a_line = match a {
+                    FileEdit::Insert { insert_line, .. } => Some(*insert_line),
+                    FileEdit::ReplaceLines { start_line, .. } => Some(*start_line),
+                    _ => None,
+                };
+
+                let b_line = match b {
+                    FileEdit::Insert { insert_line, .. } => Some(*insert_line),
+                    FileEdit::ReplaceLines { start_line, .. } => Some(*start_line),
+                    _ => None,
+                };
+
+                match (a_line, b_line) {
+                    (Some(a), Some(b)) => b.cmp(&a), // Reverse order (highest line number first)
+                    _ => std::cmp::Ordering::Equal,
                 }
+            });
 
-                let invoke_description = if fs.exists(&path) { "Replacing: " } else { "Creating: " };
-                queue!(
-                    updates,
-                    style::Print(invoke_description),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
+            // Apply each edit
+            let mut success_count = 0;
+            let mut result = FileWriteResult {
+                path: path_str,
+                success: true,
+                error: None,
+                edits_applied: Some(0),
+                edits_failed: Some(0),
+                successful_edits: Some(Vec::new()),
+                failed_edits: None,
+            };
 
-                write_to_file(ctx, path, file_text).await?;
-                Ok(Default::default())
-            },
-            FsWrite::StrReplace { path, old_str, new_str } => {
-                let path = sanitize_path_tool_arg(ctx, path);
-                let file = fs.read_to_string(&path).await?;
-                let matches = file.match_indices(old_str).collect::<Vec<_>>();
-                queue!(
-                    updates,
-                    style::Print("Updating: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
-                match matches.len() {
-                    0 => Err(eyre!("no occurrences of \"{old_str}\" were found")),
-                    1 => {
-                        let file = file.replacen(old_str, new_str, 1);
-                        fs.write(path, file).await?;
-                        Ok(Default::default())
+            for edit in edits {
+                match apply_edit_with_diff(ctx, &path, &edit, &relative_path, updates).await {
+                    Ok(details) => {
+                        success_count += 1;
+                        if let Some(count) = &mut result.edits_applied {
+                            *count += 1;
+                        }
+
+                        let command = match &edit {
+                            FileEdit::Create { .. } => "create",
+                            FileEdit::StrReplace { .. } => "str_replace",
+                            FileEdit::Insert { .. } => "insert",
+                            FileEdit::Append { .. } => "append",
+                            FileEdit::ReplaceLines { .. } => "replace_lines",
+                        };
+
+                        if let Some(successful_edits) = &mut result.successful_edits {
+                            successful_edits.push(EditResult {
+                                command: command.to_string(),
+                                details,
+                            });
+                        }
                     },
-                    x => Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
-                }
-            },
-            FsWrite::Insert {
-                path,
-                insert_line,
-                new_str,
-            } => {
-                let path = sanitize_path_tool_arg(ctx, path);
-                let mut file = fs.read_to_string(&path).await?;
-                queue!(
-                    updates,
-                    style::Print("Updating: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
+                    Err(e) => {
+                        let command = match &edit {
+                            FileEdit::Create { .. } => "create",
+                            FileEdit::StrReplace { .. } => "str_replace",
+                            FileEdit::Insert { .. } => "insert",
+                            FileEdit::Append { .. } => "append",
+                            FileEdit::ReplaceLines { .. } => "replace_lines",
+                        };
 
-                // Get the index of the start of the line to insert at.
-                let num_lines = file.lines().enumerate().map(|(i, _)| i + 1).last().unwrap_or(1);
-                let insert_line = insert_line.clamp(&0, &num_lines);
-                let mut i = 0;
-                for _ in 0..*insert_line {
-                    let line_len = &file[i..].find("\n").map_or(file[i..].len(), |i| i + 1);
-                    i += line_len;
-                }
-                file.insert_str(i, new_str);
-                write_to_file(ctx, &path, file).await?;
-                Ok(Default::default())
-            },
-            FsWrite::Append { path, new_str } => {
-                let path = sanitize_path_tool_arg(ctx, path);
+                        result.success = false;
+                        result.add_failed_edit(command.to_string(), e.to_string());
 
-                queue!(
-                    updates,
-                    style::Print("Appending to: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
-
-                let mut file = fs.read_to_string(&path).await?;
-                if !file.ends_with_newline() {
-                    file.push('\n');
+                        queue!(
+                            updates,
+                            style::Print("Error applying edit: "),
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!("{}: {}", command, e)),
+                            style::ResetColor,
+                            style::Print("\n"),
+                        )?;
+                    },
                 }
-                file.push_str(new_str);
-                write_to_file(ctx, path, file).await?;
-                Ok(Default::default())
-            },
+            }
+
+            // If any edits succeeded, count as modified; if all failed, count as failed
+            if success_count > 0 {
+                files_modified += 1;
+                // Still mark the file as successful overall if at least one edit worked
+                result.success = true;
+            } else if result.edits_failed.unwrap_or(0) > 0 {
+                result.error = Some("All edits failed".to_string());
+                files_failed += 1;
+                result.success = false;
+            }
+
+            total_edits_applied += result.edits_applied.unwrap_or(0);
+            total_edits_failed += result.edits_failed.unwrap_or(0);
+
+            file_results.push(result);
         }
+
+        // Add summary at the end
+        queue!(
+            updates,
+            style::Print("\nOperation Summary:\n"),
+            style::Print(format!(
+                "Files modified: {}/{}\n",
+                files_modified,
+                self.file_edits.len()
+            )),
+            style::Print(format!("Edits applied: {}\n", total_edits_applied)),
+        )?;
+
+        if total_edits_failed > 0 {
+            queue!(
+                updates,
+                style::SetForegroundColor(Color::Red),
+                style::Print(format!("Files with errors: {}\n", files_failed)),
+                style::Print(format!("Edits failed: {}\n", total_edits_failed)),
+                style::ResetColor,
+            )?;
+        }
+
+        // Create a single result object instead of a vector
+        let batch_result = BatchWriteResult {
+            total_files: self.file_edits.len(),
+            files_modified,
+            files_failed,
+            total_edits_applied,
+            total_edits_failed,
+            file_results,
+        };
+
+        // Return the results as JSON
+        let json_result = serde_json::to_string(&batch_result)?;
+        Ok(InvokeOutput {
+            output: OutputKind::Json(serde_json::from_str(&json_result)?),
+        })
+    }
+
+    pub async fn validate(&mut self, _ctx: &Context) -> Result<()> {
+        if self.file_edits.is_empty() {
+            bail!("file_edits must not be empty");
+        }
+
+        for file_with_edits in &self.file_edits {
+            if file_with_edits.edits.is_empty() {
+                bail!("Each file must have at least one edit");
+            }
+
+            // Validate each edit
+            for edit in &file_with_edits.edits {
+                match edit {
+                    FileEdit::Create { file_text, new_str } => {
+                        if file_text.is_none() && new_str.is_none() {
+                            bail!("Create operation must provide either file_text or new_str");
+                        }
+                    },
+                    FileEdit::StrReplace { old_str, .. } => {
+                        if old_str.is_empty() {
+                            bail!("old_str must not be empty for str_replace operation");
+                        }
+                    },
+                    FileEdit::ReplaceLines {
+                        start_line,
+                        end_line,
+                        new_str,
+                    } => {
+                        if start_line > end_line {
+                            bail!("start_line must be less than or equal to end_line");
+                        }
+                        if new_str.is_empty() {
+                            bail!("new_str must not be empty for replace_lines operation");
+                        }
+                    },
+                    FileEdit::Append { new_str } => {
+                        if new_str.is_empty() {
+                            bail!("new_str must not be empty for append operation");
+                        }
+                    },
+                    FileEdit::Insert { new_str, .. } => {
+                        if new_str.is_empty() {
+                            bail!("new_str must not be empty for insert operation");
+                        }
+                    },
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub fn queue_description(&self, ctx: &Context, updates: &mut impl Write) -> Result<()> {
         let cwd = ctx.env().current_dir()?;
-        self.print_relative_path(ctx, updates)?;
-        match self {
-            FsWrite::Create { path, .. } => {
-                let file_text = self.canonical_create_command_text();
-                let relative_path = format_path(cwd, path);
-                let prev = if ctx.fs().exists(path) {
-                    let file = ctx.fs().read_to_string_sync(path)?;
-                    stylize_output_if_able(ctx, path, &file)
-                } else {
-                    Default::default()
-                };
-                let new = stylize_output_if_able(ctx, &relative_path, &file_text);
-                print_diff(updates, &prev, &new, 1)?;
-                Ok(())
-            },
-            FsWrite::Insert {
-                path,
-                insert_line,
-                new_str,
-            } => {
-                let relative_path = format_path(cwd, path);
-                let file = ctx.fs().read_to_string_sync(&relative_path)?;
 
-                // Diff the old with the new by adding extra context around the line being inserted
-                // at.
-                let (prefix, start_line, suffix, _) = get_lines_with_context(&file, *insert_line, *insert_line, 3);
-                let insert_line_content = LinesWithEndings::from(&file)
-                    // don't include any content if insert_line is 0
-                    .nth(insert_line.checked_sub(1).unwrap_or(usize::MAX))
-                    .unwrap_or_default();
-                let old = [prefix, insert_line_content, suffix].join("");
-                let new = [prefix, insert_line_content, new_str, suffix].join("");
-
-                let old = stylize_output_if_able(ctx, &relative_path, &old);
-                let new = stylize_output_if_able(ctx, &relative_path, &new);
-                print_diff(updates, &old, &new, start_line)?;
-                Ok(())
-            },
-            FsWrite::StrReplace { path, old_str, new_str } => {
-                let relative_path = format_path(cwd, path);
-                let file = ctx.fs().read_to_string_sync(&relative_path)?;
-                let (start_line, _) = match line_number_at(&file, old_str) {
-                    Some((start_line, end_line)) => (start_line, end_line),
-                    _ => (0, 0),
-                };
-                let old_str = stylize_output_if_able(ctx, &relative_path, old_str);
-                let new_str = stylize_output_if_able(ctx, &relative_path, new_str);
-                print_diff(updates, &old_str, &new_str, start_line)?;
-
-                Ok(())
-            },
-            FsWrite::Append { path, new_str } => {
-                let relative_path = format_path(cwd, path);
-                let start_line = ctx.fs().read_to_string_sync(&relative_path)?.lines().count() + 1;
-                let file = stylize_output_if_able(ctx, &relative_path, new_str);
-                print_diff(updates, &Default::default(), &file, start_line)?;
-                Ok(())
-            },
-        }
-    }
-
-    pub async fn validate(&mut self, ctx: &Context) -> Result<()> {
-        match self {
-            FsWrite::Create { path, .. } => {
-                if path.is_empty() {
-                    bail!("Path must not be empty")
-                };
-            },
-            FsWrite::StrReplace { path, .. } | FsWrite::Insert { path, .. } => {
-                let path = sanitize_path_tool_arg(ctx, path);
-                if !path.exists() {
-                    bail!("The provided path must exist in order to replace or insert contents into it")
-                }
-            },
-            FsWrite::Append { path, new_str } => {
-                if path.is_empty() {
-                    bail!("Path must not be empty")
-                };
-                if new_str.is_empty() {
-                    bail!("Content to append must not be empty")
-                };
-            },
-        }
-
-        Ok(())
-    }
-
-    fn print_relative_path(&self, ctx: &Context, updates: &mut impl Write) -> Result<()> {
-        let cwd = ctx.env().current_dir()?;
-        let path = match self {
-            FsWrite::Create { path, .. } => path,
-            FsWrite::StrReplace { path, .. } => path,
-            FsWrite::Insert { path, .. } => path,
-            FsWrite::Append { path, .. } => path,
-        };
-        let relative_path = format_path(cwd, path);
         queue!(
             updates,
-            style::Print("Path: "),
+            style::Print("Batch file operation: "),
             style::SetForegroundColor(Color::Green),
-            style::Print(&relative_path),
+            style::Print(format!("{} files", self.file_edits.len())),
             style::ResetColor,
             style::Print("\n\n"),
         )?;
+
+        // Display a summary of each file and its edits with diffs
+        for file_with_edits in &self.file_edits {
+            let path_str = &file_with_edits.path;
+            let path = sanitize_path_tool_arg(ctx, path_str);
+            let relative_path = format_path(&cwd, &path);
+
+            queue!(
+                updates,
+                style::Print("File: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(&relative_path),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+
+            // Display each edit with diff
+            for (i, edit) in file_with_edits.edits.iter().enumerate() {
+                queue!(updates, style::Print(format!("  Edit {}: ", i + 1)),)?;
+
+                match edit {
+                    FileEdit::Create { file_text, new_str } => {
+                        queue!(updates, style::Print("Create file\n"),)?;
+
+                        let content = match (file_text, new_str) {
+                            (Some(text), _) => text.clone(),
+                            (None, Some(text)) => text.clone(),
+                            _ => String::new(),
+                        };
+
+                        let stylized = stylize_output_if_able(ctx, &path, &content);
+                        print_diff(updates, &StylizedFile::default(), &stylized, 1)?;
+                    },
+                    FileEdit::StrReplace { old_str, new_str } => {
+                        queue!(updates, style::Print("Replace text\n"),)?;
+
+                        if path.exists() {
+                            let file = ctx.fs().read_to_string_sync(&path)?;
+                            let (start_line, _) = line_number_at(&file, old_str).unwrap_or((1, 1));
+
+                            let old_stylized = stylize_output_if_able(ctx, &path, old_str);
+                            let new_stylized = stylize_output_if_able(ctx, &path, new_str);
+                            print_diff(updates, &old_stylized, &new_stylized, start_line)?;
+                        }
+                    },
+                    FileEdit::Insert { insert_line, new_str } => {
+                        queue!(updates, style::Print(format!("Insert at line {}\n", insert_line)),)?;
+
+                        if path.exists() {
+                            let file = ctx.fs().read_to_string_sync(&path)?;
+                            let (prefix, start_line, suffix, _) =
+                                get_lines_with_context(&file, *insert_line, *insert_line, 3);
+                            let insert_line_content = LinesWithEndings::from(&file)
+                                .nth(insert_line.checked_sub(1).unwrap_or(usize::MAX))
+                                .unwrap_or_default();
+
+                            let old = [prefix, insert_line_content, suffix].join("");
+                            let new = [prefix, insert_line_content, new_str, suffix].join("");
+
+                            let old_stylized = stylize_output_if_able(ctx, &path, &old);
+                            let new_stylized = stylize_output_if_able(ctx, &path, &new);
+                            print_diff(updates, &old_stylized, &new_stylized, start_line)?;
+                        }
+                    },
+                    FileEdit::Append { new_str } => {
+                        queue!(updates, style::Print("Append to file\n"),)?;
+
+                        if path.exists() {
+                            let file = ctx.fs().read_to_string_sync(&path)?;
+                            let start_line = file.lines().count() + 1;
+                            let new_stylized = stylize_output_if_able(ctx, &path, new_str);
+                            print_diff(updates, &StylizedFile::default(), &new_stylized, start_line)?;
+                        }
+                    },
+                    FileEdit::ReplaceLines {
+                        start_line,
+                        end_line,
+                        new_str,
+                    } => {
+                        queue!(
+                            updates,
+                            style::Print(format!("Replace lines {} to {}\n", start_line, end_line)),
+                        )?;
+
+                        if path.exists() {
+                            let file = ctx.fs().read_to_string_sync(&path)?;
+                            let lines: Vec<&str> = file.lines().collect();
+
+                            if *start_line <= lines.len() {
+                                let mut old_content = String::new();
+                                for i in (*start_line - 1)..std::cmp::min(*end_line, lines.len()) {
+                                    old_content.push_str(lines[i]);
+                                    old_content.push('\n');
+                                }
+
+                                let old_stylized = stylize_output_if_able(ctx, &path, &old_content);
+                                let new_stylized = stylize_output_if_able(ctx, &path, new_str);
+                                print_diff(updates, &old_stylized, &new_stylized, *start_line)?;
+                            }
+                        }
+                    },
+                }
+
+                queue!(updates, style::Print("\n"))?;
+            }
+
+            queue!(updates, style::Print("\n"))?;
+        }
+
         Ok(())
     }
+}
 
-    /// Returns the text to use for the [FsWrite::Create] command. This is required since we can't
-    /// rely on the model always providing `file_text`.
-    fn canonical_create_command_text(&self) -> String {
-        match self {
-            FsWrite::Create { file_text, new_str, .. } => match (file_text, new_str) {
-                (Some(file_text), _) => file_text.clone(),
-                (None, Some(new_str)) => {
-                    warn!("required field `file_text` is missing, using the provided `new_str` instead");
-                    new_str.clone()
+/// Helper function to apply a single edit to a file
+#[allow(dead_code)]
+async fn apply_edit(ctx: &Context, path: &Path, edit: &FileEdit, updates: &mut impl Write) -> Result<()> {
+    let fs = ctx.fs();
+    let cwd = ctx.env().current_dir()?;
+
+    match edit {
+        FileEdit::Create { file_text, new_str } => {
+            let content = match (file_text, new_str) {
+                (Some(text), _) => text.clone(),
+                (None, Some(text)) => text.clone(),
+                _ => String::new(),
+            };
+
+            if let Some(parent) = path.parent() {
+                fs.create_dir_all(parent).await?;
+            }
+
+            let invoke_description = if fs.exists(path) { "Replacing: " } else { "Creating: " };
+            queue!(
+                updates,
+                style::Print(invoke_description),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format_path(&cwd, path)),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+
+            write_to_file(ctx, path, content).await?;
+            Ok(())
+        },
+        FileEdit::StrReplace { old_str, new_str } => {
+            let file = fs.read_to_string(path).await?;
+            let matches = file.match_indices(old_str).collect::<Vec<_>>();
+
+            queue!(
+                updates,
+                style::Print("Updating: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format_path(&cwd, path)),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+
+            match matches.len() {
+                0 => Err(eyre!("no occurrences of \"{old_str}\" were found")),
+                1 => {
+                    let file = file.replacen(old_str, new_str, 1);
+                    fs.write(path, file).await?;
+                    Ok(())
                 },
-                _ => {
-                    warn!("no content provided for the create command");
-                    String::new()
-                },
-            },
-            _ => String::new(),
-        }
+                x => Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
+            }
+        },
+        FileEdit::Insert { insert_line, new_str } => {
+            let mut file = fs.read_to_string(path).await?;
+
+            queue!(
+                updates,
+                style::Print("Inserting at line: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format!("{}", insert_line)),
+                style::ResetColor,
+                style::Print(" in "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format_path(&cwd, path)),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+
+            // Get the index of the start of the line to insert at
+            let num_lines = file.lines().enumerate().map(|(i, _)| i + 1).last().unwrap_or(1);
+            let insert_line = insert_line.clamp(&0, &num_lines);
+            let mut i = 0;
+            for _ in 0..*insert_line {
+                let line_len = file[i..].find('\n').map_or(file[i..].len(), |j| j + 1);
+                i += line_len;
+            }
+            file.insert_str(i, new_str);
+            write_to_file(ctx, path, file).await
+        },
+        FileEdit::Append { new_str } => {
+            queue!(
+                updates,
+                style::Print("Appending to: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format_path(&cwd, path)),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+
+            let mut file = fs.read_to_string(path).await?;
+            if !file.ends_with_newline() {
+                file.push('\n');
+            }
+            file.push_str(new_str);
+            write_to_file(ctx, path, file).await
+        },
+        FileEdit::ReplaceLines {
+            start_line,
+            end_line,
+            new_str,
+        } => {
+            let file = fs.read_to_string(path).await?;
+
+            queue!(
+                updates,
+                style::Print("Replacing lines: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format!("{} to {}", start_line, end_line)),
+                style::ResetColor,
+                style::Print(" in "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format_path(&cwd, path)),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+
+            // Convert to 0-based indexing
+            let start_idx = start_line.saturating_sub(1);
+            let end_idx = end_line.saturating_sub(1);
+
+            // Split the file into lines
+            let lines: Vec<&str> = file.lines().collect();
+
+            // Validate line numbers
+            if start_idx >= lines.len() {
+                bail!("start_line is beyond the end of the file");
+            }
+
+            // Build the new file content
+            let mut new_content = String::new();
+
+            // Add lines before the replacement
+            for i in 0..start_idx {
+                new_content.push_str(lines[i]);
+                new_content.push('\n');
+            }
+
+            // Add the replacement content
+            new_content.push_str(new_str);
+            if !new_str.ends_with_newline() {
+                new_content.push('\n');
+            }
+
+            // Add lines after the replacement
+            let end_idx = end_idx.min(lines.len() - 1);
+            for i in (end_idx + 1)..lines.len() {
+                new_content.push_str(lines[i]);
+                new_content.push('\n');
+            }
+
+            // Write the new content to the file
+            write_to_file(ctx, path, new_content).await
+        },
     }
 }
 
@@ -301,64 +665,188 @@ async fn write_to_file(ctx: &Context, path: impl AsRef<Path>, mut content: Strin
     Ok(())
 }
 
-/// Returns a prefix/suffix pair before and after the content dictated by `[start_line, end_line]`
-/// within `content`. The updated start and end lines containing the original context along with
-/// the suffix and prefix are returned.
-///
-/// Params:
-/// - `start_line` - 1-indexed starting line of the content.
-/// - `end_line` - 1-indexed ending line of the content.
-/// - `context_lines` - number of lines to include before the start and end.
-///
-/// Returns `(prefix, new_start_line, suffix, new_end_line)`
-fn get_lines_with_context(
-    content: &str,
-    start_line: usize,
-    end_line: usize,
-    context_lines: usize,
-) -> (&str, usize, &str, usize) {
-    let line_count = content.lines().count();
-    // We want to support end_line being 0, in which case we should be able to set the first line
-    // as the suffix.
-    let zero_check_inc = if end_line == 0 { 0 } else { 1 };
-
-    // Convert to 0-indexing.
-    let (start_line, end_line) = (
-        start_line.saturating_sub(1).clamp(0, line_count - 1),
-        end_line.saturating_sub(1).clamp(0, line_count - 1),
-    );
-    let new_start_line = 0.max(start_line.saturating_sub(context_lines));
-    let new_end_line = (line_count - 1).min(end_line + context_lines);
-
-    // Build prefix
-    let mut prefix_start = 0;
-    for line in LinesWithEndings::from(content).take(new_start_line) {
-        prefix_start += line.len();
-    }
-    let mut prefix_end = prefix_start;
-    for line in LinesWithEndings::from(&content[prefix_start..]).take(start_line - new_start_line) {
-        prefix_end += line.len();
-    }
-
-    // Build suffix
-    let mut suffix_start = 0;
-    for line in LinesWithEndings::from(content).take(end_line + zero_check_inc) {
-        suffix_start += line.len();
-    }
-    let mut suffix_end = suffix_start;
-    for line in LinesWithEndings::from(&content[suffix_start..]).take(new_end_line - end_line) {
-        suffix_end += line.len();
-    }
-
-    (
-        &content[prefix_start..prefix_end],
-        new_start_line + 1,
-        &content[suffix_start..suffix_end],
-        new_end_line + zero_check_inc,
-    )
+/// Returns true if the string ends with a newline character.
+trait EndsWithNewline {
+    fn ends_with_newline(&self) -> bool;
 }
 
-/// Prints a git-diff style comparison between `old_str` and `new_str`.
+impl EndsWithNewline for str {
+    fn ends_with_newline(&self) -> bool {
+        self.ends_with('\n')
+    }
+}
+
+impl EndsWithNewline for String {
+    fn ends_with_newline(&self) -> bool {
+        self.ends_with('\n')
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    const TEST_FILE_CONTENTS: &str = "\
+1: Hello world!
+2: This is line 2
+3: asdf
+4: Hello world!
+";
+
+    const TEST_FILE_PATH: &str = "/test_file.txt";
+    const TEST_HIDDEN_FILE_PATH: &str = "/aaaa2/.hidden";
+
+    /// Sets up the following filesystem structure:
+    /// ```text
+    /// test_file.txt
+    /// /home/testuser/
+    /// /aaaa1/
+    ///     /bbbb1/
+    ///         /cccc1/
+    /// /aaaa2/
+    ///     .hidden
+    /// ```
+    async fn setup_test_directory() -> Arc<Context> {
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        let fs = ctx.fs();
+        fs.write(TEST_FILE_PATH, TEST_FILE_CONTENTS).await.unwrap();
+        fs.create_dir_all("/aaaa1/bbbb1/cccc1").await.unwrap();
+        fs.create_dir_all("/aaaa2").await.unwrap();
+        fs.write(TEST_HIDDEN_FILE_PATH, "this is a hidden file").await.unwrap();
+        ctx
+    }
+
+    #[tokio::test]
+    async fn test_fs_write_batch_operations() {
+        let ctx = setup_test_directory().await;
+        let mut stdout = std::io::stdout();
+
+        // Create a batch operation with multiple files and edits
+        let fs_write = FsWrite {
+            file_edits: vec![
+                FileWithEdits {
+                    path: TEST_FILE_PATH.to_string(),
+                    edits: vec![
+                        FileEdit::StrReplace {
+                            old_str: "1: Hello world!".to_string(),
+                            new_str: "1: Batch replaced!".to_string(),
+                        },
+                        FileEdit::Append {
+                            new_str: "5: Appended by batch".to_string(),
+                        },
+                    ],
+                },
+                FileWithEdits {
+                    path: "/batch_test.txt".to_string(),
+                    edits: vec![FileEdit::Create {
+                        file_text: Some("This is a new file created by batch operation".to_string()),
+                        new_str: None,
+                    }],
+                },
+            ],
+        };
+
+        // Invoke the batch operation
+        let result = fs_write.invoke(&ctx, &mut stdout).await.unwrap();
+
+        // Verify the results
+        let batch_result: BatchWriteResult = match &result.output {
+            OutputKind::Json(json) => serde_json::from_value(json.clone()).unwrap(),
+            _ => panic!("Expected JSON output"),
+        };
+        assert_eq!(batch_result.file_results.len(), 2);
+        assert_eq!(batch_result.total_files, 2);
+        assert_eq!(batch_result.files_modified, 2);
+        assert_eq!(batch_result.files_failed, 0);
+        assert_eq!(batch_result.total_edits_applied, 3);
+        assert_eq!(batch_result.total_edits_failed, 0);
+
+        // Check first file results
+        let file_results = &batch_result.file_results;
+        assert!(file_results[0].success);
+        assert_eq!(file_results[0].edits_applied, Some(2));
+
+        // Check second file results
+        assert_eq!(file_results[1].path, "/batch_test.txt");
+        assert!(file_results[1].success);
+        assert_eq!(file_results[1].edits_applied, Some(1));
+
+        // Verify file contents
+        let file1_content = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
+        assert!(file1_content.contains("1: Batch replaced!"));
+        assert!(file1_content.contains("5: Appended by batch"));
+
+        let file2_content = ctx.fs().read_to_string("/batch_test.txt").await.unwrap();
+        assert!(file2_content.contains("This is a new file created by batch operation"));
+    }
+
+    #[tokio::test]
+    async fn test_fs_write_batch_with_errors() {
+        let ctx = setup_test_directory().await;
+        let mut stdout = std::io::stdout();
+
+        // Create a batch operation with some errors
+        let fs_write = FsWrite {
+            file_edits: vec![
+                FileWithEdits {
+                    path: TEST_FILE_PATH.to_string(),
+                    edits: vec![
+                        FileEdit::StrReplace {
+                            old_str: "non-existent text".to_string(),
+                            new_str: "This won't work".to_string(),
+                        },
+                        FileEdit::Append {
+                            new_str: "This should still work".to_string(),
+                        },
+                    ],
+                },
+                FileWithEdits {
+                    path: "/non-existent-file.txt".to_string(),
+                    edits: vec![FileEdit::StrReplace {
+                        old_str: "some text".to_string(),
+                        new_str: "This won't work either".to_string(),
+                    }],
+                },
+            ],
+        };
+
+        // Invoke the batch operation
+        let result = fs_write.invoke(&ctx, &mut stdout).await.unwrap();
+
+        // Verify the results
+        let batch_result: BatchWriteResult = match &result.output {
+            OutputKind::Json(json) => serde_json::from_value(json.clone()).unwrap(),
+            _ => panic!("Expected JSON output"),
+        };
+        
+        assert_eq!(batch_result.total_files, 2);
+        assert_eq!(batch_result.files_modified, 1);
+        assert_eq!(batch_result.files_failed, 1);
+        assert_eq!(batch_result.total_edits_applied, 1);
+        assert_eq!(batch_result.total_edits_failed, 1);
+
+        // Check first file results - should have one success and one failure
+        let file_results = &batch_result.file_results;
+        assert_eq!(file_results[0].path, TEST_FILE_PATH);
+        assert!(file_results[0].success); // Overall success because at least one edit succeeded
+        assert_eq!(file_results[0].edits_applied, Some(1));
+        assert_eq!(file_results[0].edits_failed, Some(1));
+        assert!(file_results[0].failed_edits.is_some());
+        assert_eq!(file_results[0].failed_edits.as_ref().unwrap().len(), 1);
+
+        // Check second file results - should be a complete failure
+        assert_eq!(file_results[1].path, "/non-existent-file.txt");
+        assert!(!file_results[1].success);
+        assert!(file_results[1].error.is_some());
+
+        // Verify file contents - the append should have worked
+        let file1_content = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
+        assert!(file1_content.contains("This should still work"));
+    }
+}
+/// Returns a git-diff style comparison between `old_str` and `new_str`.
 /// - `start_line` - 1-indexed line number that `old_str` and `new_str` start at.
 fn print_diff(
     updates: &mut impl Write,
@@ -471,8 +959,8 @@ fn line_number_at(file: impl AsRef<str>, needle: impl AsRef<str>) -> Option<(usi
     let file = file.as_ref();
     let needle = needle.as_ref();
     if let Some((i, _)) = file.match_indices(needle).next() {
-        let start = file[..i].matches("\n").count();
-        let end = needle.matches("\n").count();
+        let start = file[..i].matches('\n').count();
+        let end = needle.matches('\n').count();
         Some((start + 1, start + end + 1))
     } else {
         None
@@ -486,23 +974,6 @@ fn line_number_at(file: impl AsRef<str>, needle: impl AsRef<str>) -> Option<(usi
 /// For example, `10` and `99` both take 2 cells, whereas `100` and `999` take 3.
 fn terminal_width_required_for_line_count(line_count: usize) -> usize {
     line_count.to_string().chars().count()
-}
-
-fn stylize_output_if_able(ctx: &Context, path: impl AsRef<Path>, file_text: &str) -> StylizedFile {
-    if supports_truecolor(ctx) {
-        match stylized_file(path, file_text) {
-            Ok(s) => return s,
-            Err(err) => {
-                error!(?err, "unable to syntax highlight the output");
-            },
-        }
-    }
-    StylizedFile {
-        truecolor: false,
-        content: file_text.to_string(),
-        gutter_bg: style::Color::Reset,
-        line_bg: style::Color::Reset,
-    }
 }
 
 /// Represents a [String] that is potentially stylized with truecolor escape codes.
@@ -527,6 +998,23 @@ impl Default for StylizedFile {
             gutter_bg: style::Color::Reset,
             line_bg: style::Color::Reset,
         }
+    }
+}
+
+fn stylize_output_if_able(ctx: &Context, path: impl AsRef<Path>, file_text: &str) -> StylizedFile {
+    if supports_truecolor(ctx) {
+        match stylized_file(path, file_text) {
+            Ok(s) => return s,
+            Err(err) => {
+                error!(?err, "unable to syntax highlight the output");
+            },
+        }
+    }
+    StylizedFile {
+        truecolor: false,
+        content: file_text.to_string(),
+        gutter_bg: style::Color::Reset,
+        line_bg: style::Color::Reset,
     }
 }
 
@@ -583,371 +1071,246 @@ fn syntect_to_crossterm_color(syntect: syntect::highlighting::Color) -> style::C
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
+/// Returns a prefix/suffix pair before and after the content dictated by `[start_line, end_line]`
+/// within `content`. The updated start and end lines containing the original context along with
+/// the suffix and prefix are returned.
+///
+/// Params:
+/// - `start_line` - 1-indexed starting line of the content.
+/// - `end_line` - 1-indexed ending line of the content.
+/// - `context_lines` - number of lines to include before the start and end.
+///
+/// Returns `(prefix, new_start_line, suffix, new_end_line)`
+fn get_lines_with_context(
+    content: &str,
+    start_line: usize,
+    end_line: usize,
+    context_lines: usize,
+) -> (&str, usize, &str, usize) {
+    let line_count = content.lines().count();
+    // We want to support end_line being 0, in which case we should be able to set the first line
+    // as the suffix.
+    let zero_check_inc = if end_line == 0 { 0 } else { 1 };
 
-    use super::*;
+    // Convert to 0-indexing.
+    let (start_line, end_line) = (
+        start_line.saturating_sub(1).clamp(0, line_count - 1),
+        end_line.saturating_sub(1).clamp(0, line_count - 1),
+    );
+    let new_start_line = 0.max(start_line.saturating_sub(context_lines));
+    let new_end_line = (line_count - 1).min(end_line + context_lines);
 
-    const TEST_FILE_CONTENTS: &str = "\
-1: Hello world!
-2: This is line 2
-3: asdf
-4: Hello world!
-";
-
-    const TEST_FILE_PATH: &str = "/test_file.txt";
-    const TEST_HIDDEN_FILE_PATH: &str = "/aaaa2/.hidden";
-
-    /// Sets up the following filesystem structure:
-    /// ```text
-    /// test_file.txt
-    /// /home/testuser/
-    /// /aaaa1/
-    ///     /bbbb1/
-    ///         /cccc1/
-    /// /aaaa2/
-    ///     .hidden
-    /// ```
-    async fn setup_test_directory() -> Arc<Context> {
-        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
-        let fs = ctx.fs();
-        fs.write(TEST_FILE_PATH, TEST_FILE_CONTENTS).await.unwrap();
-        fs.create_dir_all("/aaaa1/bbbb1/cccc1").await.unwrap();
-        fs.create_dir_all("/aaaa2").await.unwrap();
-        fs.write(TEST_HIDDEN_FILE_PATH, "this is a hidden file").await.unwrap();
-        ctx
+    // Build prefix
+    let mut prefix_start = 0;
+    for line in LinesWithEndings::from(content).take(new_start_line) {
+        prefix_start += line.len();
+    }
+    let mut prefix_end = prefix_start;
+    for line in LinesWithEndings::from(&content[prefix_start..]).take(start_line - new_start_line) {
+        prefix_end += line.len();
     }
 
-    #[test]
-    fn test_fs_write_deserialize() {
-        let path = "/my-file";
-        let file_text = "hello world";
-
-        // create
-        let v = serde_json::json!({
-            "path": path,
-            "command": "create",
-            "file_text": file_text
-        });
-        let fw = serde_json::from_value::<FsWrite>(v).unwrap();
-        assert!(matches!(fw, FsWrite::Create { .. }));
-
-        // str_replace
-        let v = serde_json::json!({
-            "path": path,
-            "command": "str_replace",
-            "old_str": "prev string",
-            "new_str": "new string",
-        });
-        let fw = serde_json::from_value::<FsWrite>(v).unwrap();
-        assert!(matches!(fw, FsWrite::StrReplace { .. }));
-
-        // insert
-        let v = serde_json::json!({
-            "path": path,
-            "command": "insert",
-            "insert_line": 3,
-            "new_str": "new string",
-        });
-        let fw = serde_json::from_value::<FsWrite>(v).unwrap();
-        assert!(matches!(fw, FsWrite::Insert { .. }));
-
-        // append
-        let v = serde_json::json!({
-            "path": path,
-            "command": "append",
-            "new_str": "appended content",
-        });
-        let fw = serde_json::from_value::<FsWrite>(v).unwrap();
-        assert!(matches!(fw, FsWrite::Append { .. }));
+    // Build suffix
+    let mut suffix_start = 0;
+    for line in LinesWithEndings::from(content).take(end_line + zero_check_inc) {
+        suffix_start += line.len();
+    }
+    let mut suffix_end = suffix_start;
+    for line in LinesWithEndings::from(&content[suffix_start..]).take(new_end_line - end_line) {
+        suffix_end += line.len();
     }
 
-    #[tokio::test]
-    async fn test_fs_write_tool_create() {
-        let ctx = setup_test_directory().await;
-        let mut stdout = std::io::stdout();
+    (
+        &content[prefix_start..prefix_end],
+        new_start_line + 1,
+        &content[suffix_start..suffix_end],
+        new_end_line + zero_check_inc,
+    )
+}
+async fn apply_edit_with_diff(
+    ctx: &Context,
+    path: &Path,
+    edit: &FileEdit,
+    relative_path: &str,
+    updates: &mut impl Write,
+) -> Result<String> {
+    let fs = ctx.fs();
 
-        let file_text = "Hello, world!";
-        let v = serde_json::json!({
-            "path": "/my-file",
-            "command": "create",
-            "file_text": file_text
-        });
-        serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await
-            .unwrap();
+    match edit {
+        FileEdit::Create { file_text, new_str } => {
+            let _cwd = ctx.env().current_dir()?;
 
-        assert_eq!(
-            ctx.fs().read_to_string("/my-file").await.unwrap(),
-            format!("{}\n", file_text)
-        );
+            if let Some(parent) = path.parent() {
+                fs.create_dir_all(parent).await?;
+            }
 
-        let file_text = "Goodbye, world!\nSee you later";
-        let v = serde_json::json!({
-            "path": "/my-file",
-            "command": "create",
-            "file_text": file_text
-        });
-        serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await
-            .unwrap();
+            let invoke_description = if fs.exists(path) { "Replacing: " } else { "Creating: " };
+            queue!(
+                updates,
+                style::Print(invoke_description),
+                style::SetForegroundColor(Color::Green),
+                style::Print(relative_path),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
 
-        // File should end with a newline
-        assert_eq!(
-            ctx.fs().read_to_string("/my-file").await.unwrap(),
-            format!("{}\n", file_text)
-        );
+            // Get the content to write
+            let content = match (file_text, new_str) {
+                (Some(text), _) => text.clone(),
+                (None, Some(text)) => text.clone(),
+                _ => String::new(),
+            };
 
-        let file_text = "This is a new string";
-        let v = serde_json::json!({
-            "path": "/my-file",
-            "command": "create",
-            "new_str": file_text
-        });
-        serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await
-            .unwrap();
+            // Display the content being created
+            let stylized = stylize_output_if_able(ctx, path, &content);
+            print_diff(updates, &StylizedFile::default(), &stylized, 1)?;
 
-        assert_eq!(
-            ctx.fs().read_to_string("/my-file").await.unwrap(),
-            format!("{}\n", file_text)
-        );
-    }
+            write_to_file(ctx, path, content).await?;
+            Ok(format!(
+                "{} file {}",
+                invoke_description.trim_end_matches(":"),
+                relative_path
+            ))
+        },
+        FileEdit::StrReplace { old_str, new_str } => {
+            let file = fs.read_to_string(path).await?;
+            let matches = file.match_indices(old_str).collect::<Vec<_>>();
 
-    #[tokio::test]
-    async fn test_fs_write_tool_str_replace() {
-        let ctx = setup_test_directory().await;
-        let mut stdout = std::io::stdout();
+            queue!(
+                updates,
+                style::Print("Updating: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(relative_path),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
 
-        // No instances found
-        let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
-            "command": "str_replace",
-            "old_str": "asjidfopjaieopr",
-            "new_str": "1623749",
-        });
-        assert!(
-            serde_json::from_value::<FsWrite>(v)
-                .unwrap()
-                .invoke(&ctx, &mut stdout)
-                .await
-                .is_err()
-        );
+            match matches.len() {
+                0 => Err(eyre!("no occurrences of \"{old_str}\" were found")),
+                1 => {
+                    // Get line number for display
+                    let (_start_line, _) = line_number_at(&file, old_str).unwrap_or((1, 1));
 
-        // Multiple instances found
-        let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
-            "command": "str_replace",
-            "old_str": "Hello world!",
-            "new_str": "Goodbye world!",
-        });
-        assert!(
-            serde_json::from_value::<FsWrite>(v)
-                .unwrap()
-                .invoke(&ctx, &mut stdout)
-                .await
-                .is_err()
-        );
+                    // Apply the change
+                    let file = file.replacen(old_str, new_str, 1);
+                    fs.write(path, file).await?;
+                    Ok(format!("Replaced text in {}", relative_path))
+                },
+                x => Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
+            }
+        },
+        FileEdit::Insert { insert_line, new_str: _ } => {
+            let file = fs.read_to_string(path).await?;
 
-        // Single instance found and replaced
-        let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
-            "command": "str_replace",
-            "old_str": "1: Hello world!",
-            "new_str": "1: Goodbye world!",
-        });
-        serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await
-            .unwrap();
-        assert_eq!(
-            ctx.fs()
-                .read_to_string(TEST_FILE_PATH)
-                .await
-                .unwrap()
-                .lines()
-                .next()
-                .unwrap(),
-            "1: Goodbye world!",
-            "expected the only occurrence to be replaced"
-        );
-    }
+            queue!(
+                updates,
+                style::Print("Inserting at line: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format!("{}", insert_line)),
+                style::ResetColor,
+                style::Print(" in "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(relative_path),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
 
-    #[tokio::test]
-    async fn test_fs_write_tool_insert_at_beginning() {
-        let ctx = setup_test_directory().await;
-        let mut stdout = std::io::stdout();
+            // Get the index of the start of the line to insert at
+            let num_lines = file.lines().enumerate().map(|(i, _)| i + 1).last().unwrap_or(1);
+            let insert_line = insert_line.clamp(&0, &num_lines);
 
-        let new_str = "1: New first line!\n";
-        let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
-            "command": "insert",
-            "insert_line": 0,
-            "new_str": new_str,
-        });
-        serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await
-            .unwrap();
-        let actual = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
-        assert_eq!(
-            format!("{}\n", actual.lines().next().unwrap()),
+            // Apply the change
+            let mut i = 0;
+            for _ in 0..*insert_line {
+                let line_len = file[i..].find('\n').map_or(file[i..].len(), |j| j + 1);
+                i += line_len;
+            }
+            write_to_file(ctx, path, file).await?;
+            Ok(format!("Inserted text at line {} in {}", insert_line, relative_path))
+        },
+        FileEdit::Append { new_str } => {
+            queue!(
+                updates,
+                style::Print("Appending to: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(relative_path),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+
+            // Read the file once
+            let mut file_content = fs.read_to_string(path).await?;
+            
+            // Check if file ends with newline and add one if needed
+            if !file_content.ends_with_newline() {
+                file_content.push('\n');
+            }
+            
+            // Append the new content
+            file_content.push_str(new_str);
+            
+            // Write the updated content back to the file
+            write_to_file(ctx, path, file_content).await?;
+            Ok(format!("Appended text to {}", relative_path))
+        },
+        FileEdit::ReplaceLines {
+            start_line,
+            end_line,
             new_str,
-            "expected the first line to be updated to '{}'",
-            new_str
-        );
-        assert_eq!(
-            actual.lines().skip(1).collect::<Vec<_>>(),
-            TEST_FILE_CONTENTS.lines().collect::<Vec<_>>(),
-            "the rest of the file should not have been updated"
-        );
-    }
+        } => {
+            let file = fs.read_to_string(path).await?;
 
-    #[tokio::test]
-    async fn test_fs_write_tool_insert_after_first_line() {
-        let ctx = setup_test_directory().await;
-        let mut stdout = std::io::stdout();
+            queue!(
+                updates,
+                style::Print("Replacing lines: "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format!("{} to {}", start_line, end_line)),
+                style::ResetColor,
+                style::Print(" in "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(relative_path),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
 
-        let new_str = "2: New second line!\n";
-        let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
-            "command": "insert",
-            "insert_line": 1,
-            "new_str": new_str,
-        });
+            // Convert to 0-based indexing
+            let start_idx = start_line.saturating_sub(1);
+            let end_idx = end_line.saturating_sub(1);
 
-        serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await
-            .unwrap();
-        let actual = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
-        assert_eq!(
-            format!("{}\n", actual.lines().nth(1).unwrap()),
-            new_str,
-            "expected the second line to be updated to '{}'",
-            new_str
-        );
-        assert_eq!(
-            actual.lines().skip(2).collect::<Vec<_>>(),
-            TEST_FILE_CONTENTS.lines().skip(1).collect::<Vec<_>>(),
-            "the rest of the file should not have been updated"
-        );
-    }
+            // Split the file into lines
+            let lines: Vec<&str> = file.lines().collect();
 
-    #[tokio::test]
-    async fn test_fs_write_tool_insert_when_no_newlines_in_file() {
-        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
-        let mut stdout = std::io::stdout();
+            // Validate line numbers
+            if start_idx >= lines.len() {
+                bail!("start_line is beyond the end of the file");
+            }
 
-        let test_file_path = "/file.txt";
-        let test_file_contents = "hello there";
-        ctx.fs().write(test_file_path, test_file_contents).await.unwrap();
+            // Build the new file content
+            let mut new_content = String::new();
+            // Build the new file content
+            // Add lines before the replacement
+            for i in 0..start_idx {
+                new_content.push_str(lines[i]);
+                new_content.push('\n');
+            }
 
-        let new_str = "test";
+            // Add the replacement content
+            new_content.push_str(new_str);
+            if !new_str.ends_with_newline() {
+                new_content.push('\n');
+            }
 
-        // First, test appending
-        let v = serde_json::json!({
-            "path": test_file_path,
-            "command": "insert",
-            "insert_line": 1,
-            "new_str": new_str,
-        });
-        serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await
-            .unwrap();
-        let actual = ctx.fs().read_to_string(test_file_path).await.unwrap();
-        assert_eq!(actual, format!("{}{}\n", test_file_contents, new_str));
-
-        // Then, test prepending
-        let v = serde_json::json!({
-            "path": test_file_path,
-            "command": "insert",
-            "insert_line": 0,
-            "new_str": new_str,
-        });
-        serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await
-            .unwrap();
-        let actual = ctx.fs().read_to_string(test_file_path).await.unwrap();
-        assert_eq!(actual, format!("{}{}{}\n", new_str, test_file_contents, new_str));
-    }
-
-    #[tokio::test]
-    async fn test_fs_write_tool_append() {
-        let ctx = setup_test_directory().await;
-        let mut stdout = std::io::stdout();
-
-        // Test appending to existing file
-        let content_to_append = "5: Appended line";
-        let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
-            "command": "append",
-            "new_str": content_to_append,
-        });
-
-        serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await
-            .unwrap();
-
-        let actual = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
-        assert_eq!(
-            actual,
-            format!("{}{}\n", TEST_FILE_CONTENTS, content_to_append),
-            "Content should be appended to the end of the file with a newline added"
-        );
-
-        // Test appending to non-existent file (should fail)
-        let new_file_path = "/new_append_file.txt";
-        let content = "This is a new file created by append";
-        let v = serde_json::json!({
-            "path": new_file_path,
-            "command": "append",
-            "new_str": content,
-        });
-
-        let result = serde_json::from_value::<FsWrite>(v)
-            .unwrap()
-            .invoke(&ctx, &mut stdout)
-            .await;
-
-        assert!(result.is_err(), "Appending to non-existent file should fail");
-    }
-
-    #[test]
-    fn test_lines_with_context() {
-        let content = "Hello\nWorld!\nhow\nare\nyou\ntoday?";
-        assert_eq!(get_lines_with_context(content, 1, 1, 1), ("", 1, "World!\n", 2));
-        assert_eq!(get_lines_with_context(content, 0, 0, 2), ("", 1, "Hello\nWorld!\n", 2));
-        assert_eq!(
-            get_lines_with_context(content, 2, 4, 50),
-            ("Hello\n", 1, "you\ntoday?", 6)
-        );
-        assert_eq!(get_lines_with_context(content, 4, 100, 2), ("World!\nhow\n", 2, "", 6));
-    }
-
-    #[test]
-    fn test_gutter_width() {
-        assert_eq!(terminal_width_required_for_line_count(1), 1);
-        assert_eq!(terminal_width_required_for_line_count(9), 1);
-        assert_eq!(terminal_width_required_for_line_count(10), 2);
-        assert_eq!(terminal_width_required_for_line_count(99), 2);
-        assert_eq!(terminal_width_required_for_line_count(100), 3);
-        assert_eq!(terminal_width_required_for_line_count(999), 3);
+            // Add lines after the replacement
+            let end_idx = end_idx.min(lines.len() - 1);
+            for i in (end_idx + 1)..lines.len() {
+                new_content.push_str(lines[i]);
+                new_content.push('\n');
+            }
+            write_to_file(ctx, path, new_content).await?;
+            Ok(format!(
+                "Replaced lines {}-{} in {}",
+                start_line, end_line, relative_path
+            ))
+        },
     }
 }
