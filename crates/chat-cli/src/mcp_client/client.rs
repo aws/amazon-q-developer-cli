@@ -573,28 +573,27 @@ where
 {
     // TODO: decouple pagination logic from request and have page fetching logic here
     // instead
-    let resp = match client.request("tools/list", None).await {
-        Ok(resp) => resp,
-        Err(e) => {
-            tracing::error!("Failed to retrieve tool list from {}: {:?}", client.server_name, e);
-            return;
-        },
-    };
-    if let Some(error) = resp.error {
-        let msg = format!("Failed to retrieve tool list for {}: {:?}", client.server_name, error);
-        tracing::error!("{}", &msg);
-        return;
-    }
-    let Some(result) = resp.result else {
-        tracing::error!("Tool list response from {} is missing result", client.server_name);
-        return;
-    };
-    let tool_list_result = match serde_json::from_value::<ToolsListResult>(result) {
-        Ok(result) => result,
-        Err(e) => {
-            tracing::error!("Failed to deserialize tool result from {}: {:?}", client.server_name, e);
-            return;
-        },
+    let tool_list_result = 'tool_list_result: {
+        let resp = match client.request("tools/list", None).await {
+            Ok(resp) => resp,
+            Err(e) => break 'tool_list_result Err(e.into()),
+        };
+        if let Some(error) = resp.error {
+            let msg = format!("Failed to retrieve tool list for {}: {:?}", client.server_name, error);
+            break 'tool_list_result Err(eyre::eyre!(msg));
+        }
+        let Some(result) = resp.result else {
+            let msg = format!("Tool list response from {} is missing result", client.server_name);
+            break 'tool_list_result Err(eyre::eyre!(msg));
+        };
+        let tool_list_result = match serde_json::from_value::<ToolsListResult>(result) {
+            Ok(result) => result,
+            Err(e) => {
+                let msg = format!("Failed to deserialize tool result from {}: {:?}", client.server_name, e);
+                break 'tool_list_result Err(eyre::eyre!(msg));
+            },
+        };
+        Ok::<ToolsListResult, eyre::Report>(tool_list_result)
     };
     if let Some(messenger) = messenger {
         let _ = messenger

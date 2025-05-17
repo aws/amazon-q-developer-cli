@@ -14,23 +14,23 @@ use crate::mcp_client::{
 };
 
 #[allow(dead_code)]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum UpdateEventMessage {
     ToolsListResult {
         server_name: String,
-        result: ToolsListResult,
+        result: eyre::Result<ToolsListResult>,
     },
     PromptsListResult {
         server_name: String,
-        result: PromptsListResult,
+        result: eyre::Result<PromptsListResult>,
     },
     ResourcesListResult {
         server_name: String,
-        result: ResourcesListResult,
+        result: eyre::Result<ResourcesListResult>,
     },
     ResourceTemplatesListResult {
         server_name: String,
-        result: ResourceTemplatesListResult,
+        result: eyre::Result<ResourceTemplatesListResult>,
     },
     InitStart {
         server_name: String,
@@ -67,7 +67,7 @@ pub struct ServerMessenger {
 
 #[async_trait::async_trait]
 impl Messenger for ServerMessenger {
-    async fn send_tools_list_result(&self, result: ToolsListResult) -> Result<(), MessengerError> {
+    async fn send_tools_list_result(&self, result: eyre::Result<ToolsListResult>) -> Result<(), MessengerError> {
         Ok(self
             .update_event_sender
             .send(UpdateEventMessage::ToolsListResult {
@@ -78,7 +78,7 @@ impl Messenger for ServerMessenger {
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
     }
 
-    async fn send_prompts_list_result(&self, result: PromptsListResult) -> Result<(), MessengerError> {
+    async fn send_prompts_list_result(&self, result: eyre::Result<PromptsListResult>) -> Result<(), MessengerError> {
         Ok(self
             .update_event_sender
             .send(UpdateEventMessage::PromptsListResult {
@@ -89,7 +89,10 @@ impl Messenger for ServerMessenger {
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
     }
 
-    async fn send_resources_list_result(&self, result: ResourcesListResult) -> Result<(), MessengerError> {
+    async fn send_resources_list_result(
+        &self,
+        result: eyre::Result<ResourcesListResult>,
+    ) -> Result<(), MessengerError> {
         Ok(self
             .update_event_sender
             .send(UpdateEventMessage::ResourcesListResult {
@@ -102,7 +105,7 @@ impl Messenger for ServerMessenger {
 
     async fn send_resource_templates_list_result(
         &self,
-        result: ResourceTemplatesListResult,
+        result: eyre::Result<ResourceTemplatesListResult>,
     ) -> Result<(), MessengerError> {
         Ok(self
             .update_event_sender

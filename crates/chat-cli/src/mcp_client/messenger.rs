@@ -16,21 +16,22 @@ use super::{
 pub trait Messenger: std::fmt::Debug + Send + Sync + 'static {
     /// Sends the result of a tools list operation to the consumer
     /// This function is used to deliver information about available tools
-    async fn send_tools_list_result(&self, result: ToolsListResult) -> Result<(), MessengerError>;
+    async fn send_tools_list_result(&self, result: eyre::Result<ToolsListResult>) -> Result<(), MessengerError>;
 
     /// Sends the result of a prompts list operation to the consumer
     /// This function is used to deliver information about available prompts
-    async fn send_prompts_list_result(&self, result: PromptsListResult) -> Result<(), MessengerError>;
+    async fn send_prompts_list_result(&self, result: eyre::Result<PromptsListResult>) -> Result<(), MessengerError>;
 
     /// Sends the result of a resources list operation to the consumer
     /// This function is used to deliver information about available resources
-    async fn send_resources_list_result(&self, result: ResourcesListResult) -> Result<(), MessengerError>;
+    async fn send_resources_list_result(&self, result: eyre::Result<ResourcesListResult>)
+    -> Result<(), MessengerError>;
 
     /// Sends the result of a resource templates list operation to the consumer
     /// This function is used to deliver information about available resource templates
     async fn send_resource_templates_list_result(
         &self,
-        result: ResourceTemplatesListResult,
+        result: eyre::Result<ResourceTemplatesListResult>,
     ) -> Result<(), MessengerError>;
 
     /// Signals to the orchestrator that a server has started initializing
@@ -52,21 +53,24 @@ pub struct NullMessenger;
 
 #[async_trait::async_trait]
 impl Messenger for NullMessenger {
-    async fn send_tools_list_result(&self, _result: ToolsListResult) -> Result<(), MessengerError> {
+    async fn send_tools_list_result(&self, _result: eyre::Result<ToolsListResult>) -> Result<(), MessengerError> {
         Ok(())
     }
 
-    async fn send_prompts_list_result(&self, _result: PromptsListResult) -> Result<(), MessengerError> {
+    async fn send_prompts_list_result(&self, _result: eyre::Result<PromptsListResult>) -> Result<(), MessengerError> {
         Ok(())
     }
 
-    async fn send_resources_list_result(&self, _result: ResourcesListResult) -> Result<(), MessengerError> {
+    async fn send_resources_list_result(
+        &self,
+        _result: eyre::Result<ResourcesListResult>,
+    ) -> Result<(), MessengerError> {
         Ok(())
     }
 
     async fn send_resource_templates_list_result(
         &self,
-        _result: ResourceTemplatesListResult,
+        _result: eyre::Result<ResourceTemplatesListResult>,
     ) -> Result<(), MessengerError> {
         Ok(())
     }

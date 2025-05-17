@@ -15,13 +15,17 @@ use std::path::{
 use std::pin::Pin;
 use std::sync::atomic::{
     AtomicBool,
+    AtomicU32,
     Ordering,
 };
 use std::sync::{
     Arc,
     RwLock as SyncRwLock,
 };
-use std::time::Duration;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use convert_case::Casing;
 use crossterm::{
@@ -45,6 +49,7 @@ use thiserror::Error;
 use tokio::signal::ctrl_c;
 use tokio::sync::{
     Mutex,
+    Notify,
     RwLock,
 };
 use tracing::{
@@ -128,28 +133,25 @@ enum LoadingMsg {
     /// Indicates a tool has finished initializing successfully and should be removed from
     /// the loading display. The String parameter is the name of the tool that
     /// completed initialization.
-    Done(String),
+    Done { name: String, time: String },
     /// Represents an error that occurred during tool initialization.
     /// Contains the name of the server that failed to initialize and the error message.
-    Error { name: String, msg: eyre::Report },
+    Error {
+        name: String,
+        msg: eyre::Report,
+        time: String,
+    },
     /// Represents a warning that occurred during tool initialization.
     /// Contains the name of the server that generated the warning and the warning message.
-    Warn { name: String, msg: eyre::Report },
+    Warn {
+        name: String,
+        msg: eyre::Report,
+        time: String,
+    },
     /// Signals that the loading display thread should terminate.
     /// This is sent when all tool initialization is complete or when the application is shutting
     /// down.
-    Terminate,
-}
-
-/// Represents the state of a loading indicator for a tool being initialized.
-///
-/// This struct tracks timing information for each tool's loading status display in the terminal.
-///
-/// # Fields
-/// * `init_time` - When initialization for this tool began, used to calculate load time
-struct StatusLine {
-    init_time: std::time::Instant,
-    is_done: bool,
+    Terminate { still_loading: Vec<String> },
 }
 
 // This is to mirror claude's config set up
@@ -280,20 +282,18 @@ impl ToolManagerBuilder {
                 (sanitized_server_name, custom_tool_client)
             })
             .collect::<Vec<(String, _)>>();
-        let mut loading_servers = HashMap::<String, StatusLine>::new();
+        let mut loading_servers = HashMap::<String, Instant>::new();
         for (server_name, _) in &pre_initialized {
             let init_time = std::time::Instant::now();
-            let is_done = false;
-            let status_line = StatusLine { init_time, is_done };
-            loading_servers.insert(server_name.clone(), status_line);
-            output.flush()?;
+            loading_servers.insert(server_name.clone(), init_time);
         }
         let total = loading_servers.len();
+        let completed = Arc::new(AtomicU32::new(0));
 
         // Spawn a task for displaying the mcp loading statuses.
         // This is only necessary when we are in interactive mode AND there are servers to load.
         // Otherwise we do not need to be spawning this.
-        let (loading_display_task, loading_status_sender) = if is_interactive && total > 0 {
+        let (_loading_display_task, loading_status_sender) = if is_interactive && total > 0 {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<LoadingMsg>(50);
             (
                 Some(tokio::task::spawn(async move {
@@ -304,80 +304,52 @@ impl ToolManagerBuilder {
                     loop {
                         match tokio::time::timeout(Duration::from_millis(50), rx.recv()).await {
                             Ok(Some(recv_result)) => match recv_result {
-                                LoadingMsg::Done(name) => {
-                                    if let Some(status_line) = loading_servers.get_mut(&name) {
-                                        status_line.is_done = true;
-                                        complete += 1;
-                                        let time_taken =
-                                            (std::time::Instant::now() - status_line.init_time).as_secs_f64().abs();
-                                        let time_taken = format!("{:.2}", time_taken);
-                                        execute!(
-                                            output,
-                                            cursor::MoveToColumn(0),
-                                            cursor::MoveUp(1),
-                                            terminal::Clear(terminal::ClearType::CurrentLine),
-                                        )?;
-                                        queue_success_message(&name, &time_taken, &mut output)?;
-                                        queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
-                                        output.flush()?;
-                                    }
-                                    if loading_servers.iter().all(|(_, status)| status.is_done) {
-                                        break;
-                                    }
+                                LoadingMsg::Done { name, time } => {
+                                    complete += 1;
+                                    execute!(
+                                        output,
+                                        cursor::MoveToColumn(0),
+                                        cursor::MoveUp(1),
+                                        terminal::Clear(terminal::ClearType::CurrentLine),
+                                    )?;
+                                    queue_success_message(&name, &time, &mut output)?;
+                                    queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 },
-                                LoadingMsg::Error { name, msg } => {
-                                    if let Some(status_line) = loading_servers.get_mut(&name) {
-                                        status_line.is_done = true;
-                                        failed += 1;
-                                        execute!(
-                                            output,
-                                            cursor::MoveToColumn(0),
-                                            cursor::MoveUp(1),
-                                            terminal::Clear(terminal::ClearType::CurrentLine),
-                                        )?;
-                                        queue_failure_message(&name, &msg, &mut output)?;
-                                        queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
-                                    }
-                                    if loading_servers.iter().all(|(_, status)| status.is_done) {
-                                        break;
-                                    }
+                                LoadingMsg::Error { name, msg, time: _ } => {
+                                    failed += 1;
+                                    execute!(
+                                        output,
+                                        cursor::MoveToColumn(0),
+                                        cursor::MoveUp(1),
+                                        terminal::Clear(terminal::ClearType::CurrentLine),
+                                    )?;
+                                    queue_failure_message(&name, &msg, &mut output)?;
+                                    queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 },
-                                LoadingMsg::Warn { name, msg } => {
-                                    if let Some(status_line) = loading_servers.get_mut(&name) {
-                                        status_line.is_done = true;
-                                        complete += 1;
-                                        execute!(
-                                            output,
-                                            cursor::MoveToColumn(0),
-                                            cursor::MoveUp(1),
-                                            terminal::Clear(terminal::ClearType::CurrentLine),
-                                        )?;
-                                        let msg = eyre::eyre!(msg.to_string());
-                                        queue_warn_message(&name, &msg, &mut output)?;
-                                        queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
-                                        output.flush()?;
-                                    }
-                                    if loading_servers.iter().all(|(_, status)| status.is_done) {
-                                        break;
-                                    }
+                                LoadingMsg::Warn { name, msg, time: _ } => {
+                                    complete += 1;
+                                    execute!(
+                                        output,
+                                        cursor::MoveToColumn(0),
+                                        cursor::MoveUp(1),
+                                        terminal::Clear(terminal::ClearType::CurrentLine),
+                                    )?;
+                                    let msg = eyre::eyre!(msg.to_string());
+                                    queue_warn_message(&name, &msg, &mut output)?;
+                                    queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 },
-                                LoadingMsg::Terminate => {
-                                    if loading_servers.iter().any(|(_, status)| !status.is_done) {
+                                LoadingMsg::Terminate { still_loading } => {
+                                    if !still_loading.is_empty() {
                                         execute!(
                                             output,
                                             cursor::MoveToColumn(0),
                                             cursor::MoveUp(1),
                                             terminal::Clear(terminal::ClearType::CurrentLine),
                                         )?;
-                                        let msg = loading_servers.iter().fold(
-                                            String::new(),
-                                            |mut acc, (server_name, status)| {
-                                                if !status.is_done {
-                                                    acc.push_str(format!("\n - {server_name}").as_str());
-                                                }
-                                                acc
-                                            },
-                                        );
+                                        let msg = still_loading.iter().fold(String::new(), |mut acc, server_name| {
+                                            acc.push_str(format!("\n - {server_name}").as_str());
+                                            acc
+                                        });
                                         let msg = eyre::eyre!(msg);
                                         queue_incomplete_load_message(complete, total, &msg, &mut output)?;
                                     }
@@ -398,6 +370,7 @@ impl ToolManagerBuilder {
                             },
                             _ => break,
                         }
+                        output.flush()?;
                     }
                     Ok::<_, eyre::Report>(())
                 })),
@@ -409,7 +382,7 @@ impl ToolManagerBuilder {
         let mut clients = HashMap::<String, Arc<CustomToolClient>>::new();
         let mut loading_status_sender_clone = loading_status_sender.clone();
         let conv_id_clone = conversation_id.clone();
-        let regex = Arc::new(Regex::new(VALID_TOOL_NAME)?);
+        let regex = Regex::new(VALID_TOOL_NAME)?;
         let new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
         let new_tool_specs_clone = new_tool_specs.clone();
         let has_new_stuff = Arc::new(AtomicBool::new(false));
@@ -418,6 +391,9 @@ impl ToolManagerBuilder {
         let pending_clone = pending.clone();
         let (mut msg_rx, messenger_builder) = ServerMessengerBuilder::new(20);
         let telemetry_clone = telemetry.clone();
+        let notify = Arc::new(Notify::new());
+        let notify_weak = Arc::downgrade(&notify);
+        let completed_clone = completed.clone();
         tokio::spawn(async move {
             while let Some(msg) = msg_rx.recv().await {
                 // For now we will treat every list result as if they contain the
@@ -426,43 +402,82 @@ impl ToolManagerBuilder {
                 // list calls.
                 match msg {
                     UpdateEventMessage::ToolsListResult { server_name, result } => {
+                        let time_taken = loading_servers
+                            .get(&server_name)
+                            .map(|init_time| {
+                                let time_taken = (std::time::Instant::now() - *init_time).as_secs_f64().abs();
+                                format!("{:.2}", time_taken)
+                            })
+                            .unwrap_or_default();
                         pending_clone.write().await.remove(&server_name);
-                        let mut specs = result
-                            .tools
-                            .into_iter()
-                            .filter_map(|v| serde_json::from_value::<ToolSpec>(v).ok())
-                            .collect::<Vec<_>>();
-                        let mut sanitized_mapping = HashMap::<String, String>::new();
-                        if let Some(load_msg) = process_tool_specs(
-                            conv_id_clone.as_str(),
-                            &server_name,
-                            loading_status_sender_clone.is_some(),
-                            &mut specs,
-                            &mut sanitized_mapping,
-                            &regex,
-                            &telemetry_clone,
-                        ) {
-                            let mut has_errored = false;
-                            if let Some(sender) = &loading_status_sender_clone {
-                                if let Err(e) = sender.send(load_msg).await {
-                                    warn!(
-                                        "Error sending update message to display task: {:?}\nAssume display task has completed",
-                                        e
-                                    );
-                                    has_errored = true;
+                        match result {
+                            Ok(result) => {
+                                let mut specs = result
+                                    .tools
+                                    .into_iter()
+                                    .filter_map(|v| serde_json::from_value::<ToolSpec>(v).ok())
+                                    .collect::<Vec<_>>();
+                                let mut sanitized_mapping = HashMap::<String, String>::new();
+                                let process_result = process_tool_specs(
+                                    conv_id_clone.as_str(),
+                                    &server_name,
+                                    &mut specs,
+                                    &mut sanitized_mapping,
+                                    &regex,
+                                    &telemetry_clone,
+                                );
+                                if let Some(sender) = &loading_status_sender_clone {
+                                    // Anomalies here are not considered fatal, thus we shall give
+                                    // warnings.
+                                    let msg = match process_result {
+                                        Ok(_) => LoadingMsg::Done {
+                                            name: server_name.clone(),
+                                            time: time_taken,
+                                        },
+                                        Err(e) => LoadingMsg::Warn {
+                                            name: server_name.clone(),
+                                            msg: e,
+                                            time: time_taken,
+                                        },
+                                    };
+                                    if let Err(e) = sender.send(msg).await {
+                                        warn!(
+                                            "Error sending update message to display task: {:?}\nAssume display task has completed",
+                                            e
+                                        );
+                                        loading_status_sender_clone.take();
+                                    }
                                 }
-                            }
-                            if has_errored {
-                                loading_status_sender_clone.take();
-                            }
+                                new_tool_specs_clone
+                                    .lock()
+                                    .await
+                                    .insert(server_name, (sanitized_mapping, specs));
+                                has_new_stuff_clone.store(true, Ordering::Release);
+                            },
+                            Err(e) => {
+                                // Errors surfaced at this point (i.e. before [process_tool_specs]
+                                // is called) are fatals and should be considered errors
+                                if let Some(sender) = &loading_status_sender_clone {
+                                    let msg = LoadingMsg::Error {
+                                        name: server_name,
+                                        msg: e,
+                                        time: time_taken,
+                                    };
+                                    if let Err(e) = sender.send(msg).await {
+                                        warn!(
+                                            "Error sending update message to display task: {:?}\nAssume display task has completed",
+                                            e
+                                        );
+                                        loading_status_sender_clone.take();
+                                    }
+                                }
+                            },
                         }
-                        new_tool_specs_clone
-                            .lock()
-                            .await
-                            .insert(server_name, (sanitized_mapping, specs));
-                        // We only want to set this flag when the display task has ended
-                        if loading_status_sender_clone.is_none() {
-                            has_new_stuff_clone.store(true, Ordering::Release);
+                        if let Some(notify) = notify_weak.upgrade() {
+                            let completed = completed_clone.fetch_add(1, Ordering::AcqRel);
+                            if completed + 1 >= (total as u32) {
+                                notify.notify_one();
+                            }
                         }
                     },
                     UpdateEventMessage::PromptsListResult {
@@ -506,9 +521,11 @@ impl ToolManagerBuilder {
                             .send(LoadingMsg::Error {
                                 name: name.clone(),
                                 msg: e,
+                                time: String::new(),
                             })
                             .await;
                     }
+                    completed.fetch_add(1, Ordering::AcqRel);
                 },
             }
         }
@@ -606,8 +623,8 @@ impl ToolManagerBuilder {
             conversation_id,
             clients,
             prompts,
-            loading_display_task,
             pending_clients: pending,
+            notify: Some(notify),
             loading_status_sender,
             new_tool_specs,
             has_new_stuff,
@@ -675,9 +692,9 @@ pub struct ToolManager {
     /// cases where multiple servers offer prompts with the same name.
     pub prompts: Arc<SyncRwLock<HashMap<String, Vec<PromptBundle>>>>,
 
-    /// Handle to the thread that displays loading status for tool initialization.
-    /// This thread provides visual feedback to users during the tool loading process.
-    loading_display_task: Option<tokio::task::JoinHandle<Result<(), eyre::Report>>>,
+    /// A notifier to understand if the initial loading has completed.
+    /// This is only used for initial loading and is discarded after.
+    notify: Option<Arc<Notify>>,
 
     /// Channel sender for communicating with the loading display thread.
     /// Used to send status updates about tool initialization progress.
@@ -715,7 +732,7 @@ impl Clone for ToolManager {
 impl ToolManager {
     pub async fn load_tools(&mut self, database: &Database) -> eyre::Result<HashMap<String, ToolSpec>> {
         let tx = self.loading_status_sender.take();
-        let display_task = self.loading_display_task.take();
+        let notify = self.notify.take();
         self.schema = {
             let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
@@ -740,17 +757,6 @@ impl ToolManager {
         });
         // We need to cast it to erase the type otherwise the compiler will default to static
         // dispatch, which would result in an error of inconsistent match arm return type.
-        let display_fut: Pin<Box<dyn Future<Output = ()>>> = match display_task {
-            Some(display_task) => {
-                let fut = async move {
-                    if let Err(e) = display_task.await {
-                        error!("Error while joining status display task: {:?}", e);
-                    }
-                };
-                Box::pin(fut)
-            },
-            None => Box::pin(future::pending()),
-        };
         let timeout_fut: Pin<Box<dyn Future<Output = ()>>> = if self.clients.is_empty() {
             // If there is no server loaded, we want to resolve immediately
             Box::pin(future::ready(()))
@@ -763,17 +769,29 @@ impl ToolManager {
         } else {
             Box::pin(future::pending())
         };
+        let server_loading_fut: Pin<Box<dyn Future<Output = ()>>> = if let Some(notify) = notify {
+            Box::pin(async move { notify.notified().await })
+        } else {
+            Box::pin(future::ready(()))
+        };
         tokio::select! {
-            _ = display_fut => {},
             _ = timeout_fut => {
                 if let Some(tx) = tx {
-                    let _ = tx.send(LoadingMsg::Terminate).await;
+                    let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
+                    let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                 }
             },
+            _ = server_loading_fut => {
+                if let Some(tx) = tx {
+                    let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
+                    let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
+                }
+            }
             _ = ctrl_c() => {
                 if self.is_interactive {
                     if let Some(tx) = tx {
-                        let _ = tx.send(LoadingMsg::Terminate).await;
+                        let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
+                        let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                     }
                 } else {
                     return Err(eyre::eyre!("User interrupted mcp server loading in non-interactive mode. Ending."));
@@ -1089,12 +1107,11 @@ impl ToolManager {
 fn process_tool_specs(
     conversation_id: &str,
     server_name: &str,
-    is_in_display: bool,
     specs: &mut Vec<ToolSpec>,
     tn_map: &mut HashMap<String, String>,
-    regex: &Arc<Regex>,
+    regex: &Regex,
     telemetry: &TelemetryThread,
-) -> Option<LoadingMsg> {
+) -> eyre::Result<()> {
     // Each mcp server might have multiple tools.
     // To avoid naming conflicts we are going to namespace it.
     // This would also help us locate which mcp server to call the tool from.
@@ -1145,8 +1162,8 @@ fn process_tool_specs(
     // considered a "server load". Reasoning being:
     // - Failures here are not related to server load
     // - There is not a whole lot we can do with this data
-    let loading_msg = if !out_of_spec_tool_names.is_empty() {
-        let msg = out_of_spec_tool_names.iter().fold(
+    if !out_of_spec_tool_names.is_empty() {
+        Err(eyre::eyre!(out_of_spec_tool_names.iter().fold(
             String::from(
                 "The following tools are out of spec. They will be excluded from the list of available tools:\n",
             ),
@@ -1167,43 +1184,20 @@ fn process_tool_specs(
                 acc.push_str(format!(" - {} ({})\n", tool_name, msg).as_str());
                 acc
             },
-        );
-        error!(
-            "Server {} finished loading with the following error: \n{}",
-            server_name, msg
-        );
-        if is_in_display {
-            Some(LoadingMsg::Warn {
-                name: server_name.to_string(),
-                msg: eyre::eyre!(msg),
-            })
-        } else {
-            None
-        }
+        )))
         // TODO: if no tools are valid, we need to offload the server
         // from the fleet (i.e. kill the server)
     } else if !tn_map.is_empty() {
-        let warn = tn_map.iter().fold(
+        Err(eyre::eyre!(tn_map.iter().fold(
             String::from("The following tool names are changed:\n"),
             |mut acc, (k, v)| {
                 acc.push_str(format!(" - {} -> {}\n", v, k).as_str());
                 acc
             },
-        );
-        if is_in_display {
-            Some(LoadingMsg::Warn {
-                name: server_name.to_string(),
-                msg: eyre::eyre!(warn),
-            })
-        } else {
-            None
-        }
-    } else if is_in_display {
-        Some(LoadingMsg::Done(server_name.to_string()))
+        )))
     } else {
-        None
-    };
-    loading_msg
+        Ok(())
+    }
 }
 
 fn sanitize_name(orig: String, regex: &regex::Regex, hasher: &mut impl Hasher) -> String {
