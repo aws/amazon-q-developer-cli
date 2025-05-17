@@ -4,7 +4,7 @@ pub mod stdio;
 use std::fmt::Debug;
 
 pub use base_protocol::*;
-pub use stdio::JsonRpcStdioTransport;
+pub use stdio::*;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error)]
@@ -31,6 +31,7 @@ impl From<std::io::Error> for TransportError {
     }
 }
 
+#[allow(dead_code)]
 #[async_trait::async_trait]
 pub trait Transport: Send + Sync + Debug + 'static {
     /// Sends a message over the transport layer.

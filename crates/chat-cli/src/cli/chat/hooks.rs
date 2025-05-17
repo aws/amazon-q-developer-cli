@@ -119,15 +119,14 @@ pub enum HookTrigger {
     PerPrompt,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct CachedHook {
     output: String,
-    #[serde(skip)]
     expiry: Option<Instant>,
 }
 
 /// Maps a hook name to a [`CachedHook`]
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct HookExecutor {
     pub global_cache: HashMap<String, CachedHook>,
     pub profile_cache: HashMap<String, CachedHook>,

@@ -59,6 +59,7 @@ use crate::util::spinner::{
     SpinnerComponent,
 };
 use crate::util::{
+    assert_logged_in,
     choose,
     input,
 };
@@ -198,12 +199,7 @@ impl RootUserSubcommand {
                 }
             },
             Self::Profile => {
-                if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
-                    bail!(
-                        "You are not logged in, please log in with {}",
-                        format!("{CLI_BINARY_NAME} login",).bold()
-                    );
-                }
+                assert_logged_in().await?;
 
                 if let Ok(Some(token)) = fig_auth::builder_id_token().await {
                     if matches!(token.token_type(), TokenType::BuilderId) {

@@ -204,7 +204,12 @@ mod tests {
     };
     use tokio::process::Command;
 
-    use super::*;
+    use super::{
+        JsonRpcMessage,
+        JsonRpcStdioTransport,
+        Listener,
+        Transport,
+    };
 
     // Helpers for testing
     fn create_test_message() -> JsonRpcMessage {

@@ -119,15 +119,12 @@ impl Db {
         let mut conn = self.pool.get()?;
         let transaction = conn.transaction()?;
 
-        // select the max migration id
-        let max_id = max_migration(&transaction);
+        let max_version = max_migration_version(&transaction);
 
         for (version, migration) in MIGRATIONS.iter().enumerate() {
-            // skip migrations that already exist
-            match max_id {
-                Some(max_id) if max_id >= version as i64 => continue,
-                _ => (),
-            };
+            if has_migration(&transaction, version, max_version)? {
+                continue;
+            }
 
             // execute the migration
             transaction.execute_batch(migration.sql)?;
@@ -289,9 +286,45 @@ impl Db {
     }
 }
 
-fn max_migration<C: Deref<Target = Connection>>(conn: &C) -> Option<i64> {
-    let mut stmt = conn.prepare("SELECT MAX(id) FROM migrations").ok()?;
+fn max_migration_version<C: Deref<Target = Connection>>(conn: &C) -> Option<i64> {
+    let mut stmt = conn.prepare("SELECT MAX(version) FROM migrations").ok()?;
     stmt.query_row([], |row| row.get(0)).ok()
+}
+
+fn has_migration<C: Deref<Target = Connection>>(conn: &C, version: usize, max_version: Option<i64>) -> Result<bool> {
+    // IMPORTANT: Due to a bug with the first 7 migrations, we have to check manually
+    //
+    // Background: the migrations table stores two identifying keys: the sqlite auto-generated
+    // auto-incrementing key `id`, and the `version` which is the index of the `MIGRATIONS`
+    // constant.
+    //
+    // Checking whether a migration exists would compare id with version, but since id is 1-indexed
+    // and version is 0-indexed, we would actually skip the last migration! Therefore, it's
+    // possible users are missing a critical migration (namely, auth_kv table creation) when
+    // upgrading to the qchat build (which includes two new migrations). Hence, we have to check
+    // all migrations until version 7 to make sure that nothing is missed.
+    if version <= 7 {
+        let mut stmt = match conn.prepare("SELECT COUNT(*) FROM migrations WHERE version = ?1") {
+            Ok(stmt) => stmt,
+            // If the migrations table does not exist, then we can reasonably say no migrations
+            // will exist.
+            Err(Error::SqliteFailure(_, Some(msg))) if msg.contains("no such table") => {
+                return Ok(false);
+            },
+            Err(err) => return Err(err.into()),
+        };
+        let count: i32 = stmt.query_row([version], |row| row.get(0))?;
+        return Ok(count >= 1);
+    }
+
+    // Continuing from the previously implemented logic - any migrations after the 7th can have a simple
+    // maximum version check, since we can reasonably assume if any version >=7 will have all
+    // migrations prior to it.
+    #[allow(clippy::match_like_matches_macro)]
+    Ok(match max_version {
+        Some(max_version) if max_version >= version as i64 => true,
+        _ => false,
+    })
 }
 
 #[cfg(test)]
@@ -309,8 +342,8 @@ mod tests {
         let db = mock();
 
         // assert migration count is correct
-        let max_migration = max_migration(&&*db.pool.get().unwrap());
-        assert_eq!(max_migration, Some(MIGRATIONS.len() as i64));
+        let max_migration = max_migration_version(&&*db.pool.get().unwrap());
+        assert_eq!(max_migration, Some(MIGRATIONS.len() as i64 - 1));
     }
 
     #[test]

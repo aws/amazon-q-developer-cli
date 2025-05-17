@@ -26,8 +26,11 @@ use super::{
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
 };
+use crate::cli::chat::{
+    CONTINUATION_LINE,
+    PURPOSE_ARROW,
+};
 use crate::platform::Context;
-
 const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -127,8 +130,11 @@ impl ExecuteBash {
         if let Some(summary) = &self.summary {
             queue!(
                 updates,
+                style::Print(CONTINUATION_LINE),
+                style::Print("\n"),
+                style::Print(PURPOSE_ARROW),
                 style::SetForegroundColor(Color::Blue),
-                style::Print("\nPurpose: "),
+                style::Print("Purpose: "),
                 style::ResetColor,
                 style::Print(summary),
                 style::Print("\n"),

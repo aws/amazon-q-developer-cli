@@ -32,6 +32,7 @@ use dialoguer::theme::ColorfulTheme;
 use eyre::{
     Context,
     ContextCompat,
+    Error,
     Result,
     bail,
 };
@@ -287,6 +288,17 @@ pub fn dialoguer_theme() -> ColorfulTheme {
         prompt_prefix: dialoguer::console::style("?".into()).for_stderr().magenta(),
         ..ColorfulTheme::default()
     }
+}
+
+pub async fn assert_logged_in() -> Result<(), Error> {
+    if !fig_util::system_info::in_cloudshell() && !fig_auth::is_logged_in().await {
+        bail!(
+            "You are not logged in, please log in with {}",
+            format!("{CLI_BINARY_NAME} login",).bold()
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]

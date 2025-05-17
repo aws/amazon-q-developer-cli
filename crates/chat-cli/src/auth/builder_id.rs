@@ -518,17 +518,7 @@ pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
 }
 
 #[derive(Debug, Clone)]
-pub struct BearerResolver {
-    token: Option<BuilderIdToken>,
-}
-
-impl BearerResolver {
-    pub async fn new(database: &mut Database) -> Result<Self, AuthError> {
-        Ok(Self {
-            token: BuilderIdToken::load(database).await?,
-        })
-    }
-}
+pub struct BearerResolver;
 
 impl ResolveIdentity for BearerResolver {
     fn resolve_identity<'a>(
@@ -537,7 +527,8 @@ impl ResolveIdentity for BearerResolver {
         _config_bag: &'a ConfigBag,
     ) -> IdentityFuture<'a> {
         IdentityFuture::new_boxed(Box::pin(async {
-            match &self.token {
+            let database = Database::new().await?;
+            match BuilderIdToken::load(&database).await? {
                 Some(token) => Ok(Identity::new(
                     Token::new(token.access_token.0.clone(), Some(token.expires_at.into())),
                     Some(token.expires_at.into()),

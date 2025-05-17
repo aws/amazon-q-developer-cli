@@ -30,7 +30,7 @@ pub struct Thinking {
 impl Thinking {
     /// Checks if the thinking feature is enabled in settings
     pub fn is_enabled(database: &Database) -> bool {
-        database.settings.get_bool(Setting::EnabledThinking).unwrap_or(true)
+        database.settings.get_bool(Setting::EnabledThinking).unwrap_or(false)
     }
 
     /// Queues up a description of the think tool for the user

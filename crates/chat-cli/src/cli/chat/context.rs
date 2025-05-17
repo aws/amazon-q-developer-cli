@@ -59,6 +59,7 @@ pub struct ContextManager {
     /// Context configuration for the current profile.
     pub profile_config: ContextConfig,
 
+    #[serde(skip)]
     pub hook_executor: HookExecutor,
 }
 
@@ -125,6 +126,13 @@ impl ContextManager {
             self.ctx.fs().write(&profile_path, contents).await?;
         }
 
+        Ok(())
+    }
+
+    /// Reloads the global and profile config from disk.
+    pub async fn reload_config(&mut self) -> Result<()> {
+        self.global_config = load_global_config(&self.ctx).await?;
+        self.profile_config = load_profile_config(&self.ctx, &self.current_profile).await?;
         Ok(())
     }
 

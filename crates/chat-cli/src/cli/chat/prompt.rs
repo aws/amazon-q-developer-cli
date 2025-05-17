@@ -76,8 +76,8 @@ pub const COMMANDS: &[&str] = &[
     "/compact",
     "/compact help",
     "/usage",
-    "/import",
-    "/export",
+    "/save",
+    "/load",
 ];
 
 pub fn generate_prompt(current_profile: Option<&str>, warning: bool) -> String {
@@ -273,7 +273,7 @@ pub fn rl(
 ) -> Result<Editor<ChatHelper, DefaultHistory>> {
     let edit_mode = match database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
-        _ => EditMode::Vi,
+        _ => EditMode::Emacs,
     };
     let config = Config::builder()
         .history_ignore_space(true)

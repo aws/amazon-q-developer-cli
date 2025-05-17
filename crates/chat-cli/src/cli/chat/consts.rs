@@ -7,10 +7,10 @@ pub const MAX_CURRENT_WORKING_DIRECTORY_LEN: usize = 256;
 /// Limit to send the number of messages as part of chat.
 pub const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 250;
 
-pub const MAX_TOOL_RESPONSE_SIZE: usize = 800_000;
+/// Actual service limit is 800_000
+pub const MAX_TOOL_RESPONSE_SIZE: usize = 600_000;
 
-/// TODO: Use this to gracefully handle user message sizes.
-#[allow(dead_code)]
+/// Actual service limit is 600_000
 pub const MAX_USER_MESSAGE_SIZE: usize = 600_000;
 
 /// In tokens

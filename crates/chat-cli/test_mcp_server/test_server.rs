@@ -167,24 +167,17 @@ impl ServerRequestHandler for Handler {
                         return Ok(None);
                     }
                 } else {
-                    let first_key = self
-                        .tool_spec_key_list
-                        .lock()
-                        .await
+                    let tool_spec_key_list = self.tool_spec_key_list.lock().await;
+                    let tool_spec = self.tool_spec.lock().await;
+                    let first_key = tool_spec_key_list
                         .first()
                         .expect("First key missing from tool specs")
                         .clone();
-                    let first_value = self
-                        .tool_spec
-                        .lock()
-                        .await
+                    let first_value = tool_spec
                         .get(&first_key)
                         .expect("First value missing from tool specs")
                         .clone();
-                    let second_key = self
-                        .tool_spec_key_list
-                        .lock()
-                        .await
+                    let second_key = tool_spec_key_list
                         .get(1)
                         .expect("Second key missing from tool specs")
                         .clone();
@@ -241,8 +234,11 @@ impl ServerRequestHandler for Handler {
                     eprintln!("Failed to convert to mock specs from value");
                     return Ok(None);
                 };
-                let self_prompts = self.prompts.lock().await;
+                let mut self_prompts = self.prompts.lock().await;
                 let mut self_prompt_key_list = self.prompt_key_list.lock().await;
+                let is_first_mock = self_prompts.is_empty();
+                self_prompts.clear();
+                self_prompt_key_list.clear();
                 let _ = mock_prompts.iter().fold(self_prompts, |mut acc, spec| {
                     let Some(key) = spec.get("key").cloned() else {
                         return acc;
@@ -255,9 +251,16 @@ impl ServerRequestHandler for Handler {
                     acc.insert(key, spec.get("value").cloned());
                     acc
                 });
+                if !is_first_mock {
+                    if let Some(sender) = &self.send_request {
+                        let _ = sender("notifications/prompts/list_changed", None);
+                    }
+                }
                 Ok(None)
             },
             "prompts/list" => {
+                // We expect this method to be called after the mock prompts have already been
+                // stored.
                 self.prompt_list_call_no.fetch_add(1, Ordering::Relaxed);
                 if let Some(params) = params {
                     if let Some(cursor) = params.get("cursor").cloned() {
@@ -295,27 +298,12 @@ impl ServerRequestHandler for Handler {
                         return Ok(None);
                     }
                 } else {
-                    let first_key = self
-                        .prompt_key_list
-                        .lock()
-                        .await
-                        .first()
-                        .expect("First key missing from prompts")
-                        .clone();
-                    let first_value = self
-                        .prompts
-                        .lock()
-                        .await
-                        .get(&first_key)
-                        .expect("First value missing from prompts")
-                        .clone();
-                    let second_key = self
-                        .prompt_key_list
-                        .lock()
-                        .await
-                        .get(1)
-                        .expect("Second key missing from prompts")
-                        .clone();
+                    // If there is no parameter, this is the request to retrieve the first page
+                    let prompt_key_list = self.prompt_key_list.lock().await;
+                    let prompts = self.prompts.lock().await;
+                    let first_key = prompt_key_list.first().expect("first key missing");
+                    let first_value = prompts.get(first_key).cloned().unwrap().unwrap();
+                    let second_key = prompt_key_list.get(1).expect("second key missing");
                     return Ok(Some(serde_json::json!({
                         "prompts": [first_value],
                         "nextCursor": second_key
