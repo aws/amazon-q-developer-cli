@@ -8831,7 +8831,7 @@ dependencies = [
 
 [[package]]
 name = "semantic_search_client"
-version = "1.10.0"
+version = "1.10.1"
 dependencies = [
  "anyhow",
  "bm25",
@@ -11892,7 +11892,7 @@ dependencies = [
  "nix 0.29.0",
  "ntest",
  "ordered-stream",
- "rand 0.8.5",
+ "rand 0.9.1",
  "serde",
  "serde_repr",
  "sha1",
