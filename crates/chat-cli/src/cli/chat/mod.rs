@@ -220,9 +220,9 @@ const ROTATING_TIPS: [&str; 12] = [
 
 const GREETING_BREAK_POINT: usize = 80;
 
-const POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search</black!>"};
+const POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> or <green!>shift + enter</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search</black!>"};
 const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands
-<green!>ctrl + j</green!> new lines
+<green!>ctrl + j</green!> or <green!>shift + enter</green!> new lines
 <green!>ctrl + s</green!> fuzzy search
 </black!>"};
 
@@ -272,7 +272,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
-<em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
+<em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎) or Shift + Enter(⏎)]</black!>
 <em>Ctrl(^) + s</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
                       <black!>Change the keybind to ctrl+x with: q settings chat.skimCommandKey x (where x is any key)</black!>
 
