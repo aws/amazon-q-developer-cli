@@ -178,7 +178,10 @@ security-framework = "3.2.0"
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61.1", features = [
     "Foundation",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Kernel",
     "Win32_System_Threading",
+    "Wdk_System_Threading",
 ] }
 winreg = "0.55.0"
 

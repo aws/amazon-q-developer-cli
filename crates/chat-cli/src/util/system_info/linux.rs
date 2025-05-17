@@ -1,11 +1,16 @@
-#[cfg(target_os = "linux")]
 use std::io;
-#[cfg(target_os = "linux")]
 use std::path::Path;
+use std::sync::OnceLock;
 
+use nix::sys::utsname::uname;
 use serde::{
     Deserialize,
     Serialize,
+};
+
+use super::{
+    OSVersion,
+    OsRelease,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,32 +27,21 @@ pub enum DesktopEnvironment {
     Sway,
 }
 
-#[cfg(target_os = "linux")]
 pub fn get_os_release() -> Option<&'static OsRelease> {
-    use std::sync::OnceLock;
-
     static OS_RELEASE: OnceLock<Option<OsRelease>> = OnceLock::new();
     OS_RELEASE.get_or_init(|| OsRelease::load().ok()).as_ref()
 }
 
-/// Fields from <https://www.man7.org/linux/man-pages/man5/os-release.5.html>
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OsRelease {
-    pub id: Option<String>,
+pub fn get_os_version() -> Option<OSVersion> {
+    let kernel_version = uname().ok()?.release().to_string_lossy().into();
+    let os_release = get_os_release().cloned();
 
-    pub name: Option<String>,
-    pub pretty_name: Option<String>,
-
-    pub version_id: Option<String>,
-    pub version: Option<String>,
-
-    pub build_id: Option<String>,
-
-    pub variant_id: Option<String>,
-    pub variant: Option<String>,
+    Some(OSVersion::Linux {
+        kernel_version,
+        os_release,
+    })
 }
 
-#[cfg(target_os = "linux")]
 impl OsRelease {
     fn path() -> &'static Path {
         Path::new("/etc/os-release")
@@ -88,7 +82,6 @@ impl OsRelease {
     }
 }
 
-#[cfg(target_os = "linux")]
 #[cfg(test)]
 mod test {
     use super::*;
