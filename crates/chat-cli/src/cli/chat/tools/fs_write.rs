@@ -116,18 +116,6 @@ pub struct BatchWriteResult {
 }
 
 impl FileWriteResult {
-    /// Create a new successful FileWriteResult
-    pub fn success(path: String, edits_applied: usize) -> Self {
-        Self {
-            path,
-            success: true,
-            error: None,
-            edits_applied: Some(edits_applied),
-            edits_failed: Some(0),
-            successful_edits: Some(Vec::new()),
-            failed_edits: None,
-        }
-    }
 
     /// Create a new error FileWriteResult
     pub fn error(path: String, error: String) -> Self {
@@ -278,14 +266,15 @@ impl FsWrite {
                 }
             }
 
-            // If all edits failed, set the error message
-            if success_count == 0 && result.edits_failed.unwrap_or(0) > 0 {
+            // If any edits succeeded, count as modified; if all failed, count as failed
+            if success_count > 0 {
+                files_modified += 1;
+                // Still mark the file as successful overall if at least one edit worked
+                result.success = true;
+            } else if result.edits_failed.unwrap_or(0) > 0 {
                 result.error = Some("All edits failed".to_string());
                 files_failed += 1;
-            } else if result.success {
-                files_modified += 1;
-            } else {
-                files_failed += 1;
+                result.success = false;
             }
 
             total_edits_applied += result.edits_applied.unwrap_or(0);
@@ -510,6 +499,7 @@ impl FsWrite {
 }
 
 /// Helper function to apply a single edit to a file
+#[allow(dead_code)]
 async fn apply_edit(ctx: &Context, path: &Path, edit: &FileEdit, updates: &mut impl Write) -> Result<()> {
     let fs = ctx.fs();
     let cwd = ctx.env().current_dir()?;
@@ -762,24 +752,26 @@ mod tests {
         let result = fs_write.invoke(&ctx, &mut stdout).await.unwrap();
 
         // Verify the results
-        let results: Vec<FileWriteResult> = match &result.output {
+        let batch_result: BatchWriteResult = match &result.output {
             OutputKind::Json(json) => serde_json::from_value(json.clone()).unwrap(),
             _ => panic!("Expected JSON output"),
         };
-        assert_eq!(results.len(), 2);
+        assert_eq!(batch_result.file_results.len(), 2);
+        assert_eq!(batch_result.total_files, 2);
+        assert_eq!(batch_result.files_modified, 2);
+        assert_eq!(batch_result.files_failed, 0);
+        assert_eq!(batch_result.total_edits_applied, 3);
+        assert_eq!(batch_result.total_edits_failed, 0);
 
         // Check first file results
-        let results: Vec<FileWriteResult> = match &result.output {
-            OutputKind::Json(json) => serde_json::from_value(json.clone()).unwrap(),
-            _ => panic!("Expected JSON output"),
-        };
-        assert!(results[0].success);
-        assert_eq!(results[0].edits_applied, Some(2));
+        let file_results = &batch_result.file_results;
+        assert!(file_results[0].success);
+        assert_eq!(file_results[0].edits_applied, Some(2));
 
         // Check second file results
-        assert_eq!(results[1].path, "/batch_test.txt");
-        assert!(results[1].success);
-        assert_eq!(results[1].edits_applied, Some(1));
+        assert_eq!(file_results[1].path, "/batch_test.txt");
+        assert!(file_results[1].success);
+        assert_eq!(file_results[1].edits_applied, Some(1));
 
         // Verify file contents
         let file1_content = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
@@ -824,23 +816,30 @@ mod tests {
         let result = fs_write.invoke(&ctx, &mut stdout).await.unwrap();
 
         // Verify the results
-        let results: Vec<FileWriteResult> = match &result.output {
+        let batch_result: BatchWriteResult = match &result.output {
             OutputKind::Json(json) => serde_json::from_value(json.clone()).unwrap(),
             _ => panic!("Expected JSON output"),
         };
+        
+        assert_eq!(batch_result.total_files, 2);
+        assert_eq!(batch_result.files_modified, 1);
+        assert_eq!(batch_result.files_failed, 1);
+        assert_eq!(batch_result.total_edits_applied, 1);
+        assert_eq!(batch_result.total_edits_failed, 1);
 
         // Check first file results - should have one success and one failure
-        assert_eq!(results[0].path, TEST_FILE_PATH);
-        assert!(results[0].success); // Overall success because at least one edit succeeded
-        assert_eq!(results[0].edits_applied, Some(1));
-        assert_eq!(results[0].edits_failed, Some(1));
-        assert!(results[0].failed_edits.is_some());
-        assert_eq!(results[0].failed_edits.as_ref().unwrap().len(), 1);
+        let file_results = &batch_result.file_results;
+        assert_eq!(file_results[0].path, TEST_FILE_PATH);
+        assert!(file_results[0].success); // Overall success because at least one edit succeeded
+        assert_eq!(file_results[0].edits_applied, Some(1));
+        assert_eq!(file_results[0].edits_failed, Some(1));
+        assert!(file_results[0].failed_edits.is_some());
+        assert_eq!(file_results[0].failed_edits.as_ref().unwrap().len(), 1);
 
         // Check second file results - should be a complete failure
-        assert_eq!(results[1].path, "/non-existent-file.txt");
-        assert!(!results[1].success);
-        assert!(results[1].error.is_some());
+        assert_eq!(file_results[1].path, "/non-existent-file.txt");
+        assert!(!file_results[1].success);
+        assert!(file_results[1].error.is_some());
 
         // Verify file contents - the append should have worked
         let file1_content = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
