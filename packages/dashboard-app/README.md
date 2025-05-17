@@ -10,4 +10,4 @@ This folder holds the React single-page app for the Amazon Q desktop UI.
 
 1. Run `pnpm build` in the project root.
 1. Run `npm run dev`.
-1. Start the main Fig app according to the instructions in the [Fig Desktop README](../../crates/fig_desktop/README.md).
+1. Start the main Amazon Q Desktop according to the instructions in the [Amazon Q Desktop README](../../crates/fig_desktop/README.md).
