@@ -411,7 +411,7 @@ pub async fn chat(
         .interactive(interactive)
         .build(telemetry, tool_manager_output)
         .await?;
-    let tool_config = tool_manager.load_tools(database).await?;
+    let tool_config = tool_manager.load_tools(database, &mut output).await?;
     let mut tool_permissions = ToolPermissions::new(tool_config.len());
     if accept_all || trust_all_tools {
         tool_permissions.trust_all = true;
