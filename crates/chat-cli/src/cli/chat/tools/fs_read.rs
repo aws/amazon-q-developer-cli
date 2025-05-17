@@ -114,7 +114,7 @@ impl FsRead {
                 if ops.operations.is_empty() {
                     bail!("At least one operation must be specified");
                 }
-                
+
                 // Validate each operation
                 for operation in &ops.operations {
                     match operation {
@@ -147,7 +147,7 @@ impl FsRead {
                             if !ctx.fs().symlink_metadata(path).await?.is_file() {
                                 bail!("Path is not a file: {}", relative_path);
                             }
-                            
+
                             if op.pattern.is_empty() {
                                 bail!("Search pattern cannot be empty");
                             }
@@ -158,9 +158,9 @@ impl FsRead {
                         },
                     }
                 }
-                
+
                 Ok(())
-            }
+            },
         }
     }
 
@@ -178,7 +178,7 @@ impl FsRead {
                     if i > 0 {
                         writeln!(updates, "\n")?;
                     }
-                    
+
                     writeln!(updates, "Operation {}:", i + 1)?;
                     match operation {
                         FsReadOperation::Line(op) => {
@@ -190,15 +190,20 @@ impl FsRead {
                                 style::ResetColor,
                                 style::Print(", "),
                             )?;
-                            
+
                             let path = sanitize_path_tool_arg(ctx, &op.path);
                             let line_count = ctx.fs().read_to_string(&path).await?.lines().count();
-                            
-                            let start = convert_negative_index(line_count, op.start_line.unwrap_or(FsLine::DEFAULT_START_LINE)) + 1;
-                            let end = convert_negative_index(line_count, op.end_line.unwrap_or(FsLine::DEFAULT_END_LINE)) + 1;
-                            
+
+                            let start =
+                                convert_negative_index(line_count, op.start_line.unwrap_or(FsLine::DEFAULT_START_LINE))
+                                    + 1;
+                            let end =
+                                convert_negative_index(line_count, op.end_line.unwrap_or(FsLine::DEFAULT_END_LINE)) + 1;
+
                             match (start, end) {
-                                _ if start == 1 && end == line_count => queue!(updates, style::Print("all lines".to_string()))?,
+                                _ if start == 1 && end == line_count => {
+                                    queue!(updates, style::Print("all lines".to_string()))?
+                                },
                                 _ if end == line_count => queue!(
                                     updates,
                                     style::Print("from line "),
@@ -229,12 +234,9 @@ impl FsRead {
                                 style::ResetColor,
                                 style::Print(" "),
                             )?;
-                            
+
                             let depth = op.depth.unwrap_or(FsDirectory::DEFAULT_DEPTH);
-                            queue!(
-                                updates,
-                                style::Print(format!("with maximum depth of {}", depth))
-                            )?;
+                            queue!(updates, style::Print(format!("with maximum depth of {}", depth)))?;
                         },
                         FsReadOperation::Search(op) => {
                             queue!(
@@ -252,9 +254,9 @@ impl FsRead {
                         FsReadOperation::Image(fs_image) => fs_image.queue_description(updates)?,
                     }
                 }
-                
+
                 Ok(())
-            }
+            },
         }
     }
 
@@ -268,16 +270,16 @@ impl FsRead {
             },
             FsRead::Operations(ops) => {
                 debug!("Executing {} operations", ops.operations.len());
-                
+
                 // Execute each operation and collect results
                 let mut results = Vec::with_capacity(ops.operations.len());
-                
+
                 for operation in &ops.operations {
                     match operation {
                         FsReadOperation::Line(op) => {
                             let path_str = &op.path;
                             let path = sanitize_path_tool_arg(ctx, path_str);
-                            
+
                             // Read the file with the specified line range
                             let result = read_file_with_lines(ctx, path_str, op.start_line, op.end_line).await;
                             match result {
@@ -294,7 +296,7 @@ impl FsRead {
                         FsReadOperation::Directory(op) => {
                             let path_str = &op.path;
                             let path = sanitize_path_tool_arg(ctx, path_str);
-                            
+
                             // Read the directory with the specified depth
                             let result = read_directory(ctx, path_str, op.depth, updates).await;
                             match result {
@@ -311,7 +313,7 @@ impl FsRead {
                         FsReadOperation::Search(op) => {
                             let path_str = &op.path;
                             let path = sanitize_path_tool_arg(ctx, path_str);
-                            
+
                             // Search the file with the specified pattern
                             let result = search_file(ctx, path_str, &op.pattern, op.context_lines, updates).await;
                             match result {
@@ -337,7 +339,7 @@ impl FsRead {
                         },
                     }
                 }
-                
+
                 // If there's only one operation and it's not an image, return its result directly
                 if results.len() == 1 {
                     let result = &results[0];
@@ -349,12 +351,12 @@ impl FsRead {
                         }
                     }
                 }
-                
+
                 // For multiple operations, return array of results
                 Ok(InvokeOutput {
                     output: OutputKind::Text(serde_json::to_string(&results)?),
                 })
-            }
+            },
         }
     }
 }
@@ -1657,12 +1659,17 @@ fn format_timestamp(time: SystemTime) -> String {
     datetime.format(&time::format_description::well_known::Rfc3339).unwrap()
 }
 /// Helper function to read a file with specified line range
-async fn read_file_with_lines(ctx: &Context, path_str: &str, start_line: Option<i32>, end_line: Option<i32>) -> Result<String> {
+async fn read_file_with_lines(
+    ctx: &Context,
+    path_str: &str,
+    start_line: Option<i32>,
+    end_line: Option<i32>,
+) -> Result<String> {
     let path = sanitize_path_tool_arg(ctx, path_str);
     debug!(?path, "Reading");
     let file = ctx.fs().read_to_string(&path).await?;
     let line_count = file.lines().count();
-    
+
     let start = convert_negative_index(line_count, start_line.unwrap_or(FsLine::DEFAULT_START_LINE));
     let end = convert_negative_index(line_count, end_line.unwrap_or(FsLine::DEFAULT_END_LINE));
 
@@ -1698,7 +1705,12 @@ time. You tried to read {byte_count} bytes. Try executing with fewer lines speci
 }
 
 /// Helper function to read a directory with specified depth
-async fn read_directory(ctx: &Context, path_str: &str, depth: Option<usize>, updates: &mut impl Write) -> Result<String> {
+async fn read_directory(
+    ctx: &Context,
+    path_str: &str,
+    depth: Option<usize>,
+    updates: &mut impl Write,
+) -> Result<String> {
     let path = sanitize_path_tool_arg(ctx, path_str);
     let cwd = ctx.env().current_dir()?;
     let max_depth = depth.unwrap_or(FsDirectory::DEFAULT_DEPTH);
@@ -1800,7 +1812,13 @@ async fn read_directory(ctx: &Context, path_str: &str, depth: Option<usize>, upd
 }
 
 /// Helper function to search a file with specified pattern
-async fn search_file(ctx: &Context, path_str: &str, pattern: &str, context_lines: Option<usize>, updates: &mut impl Write) -> Result<String> {
+async fn search_file(
+    ctx: &Context,
+    path_str: &str,
+    pattern: &str,
+    context_lines: Option<usize>,
+    updates: &mut impl Write,
+) -> Result<String> {
     let file_path = sanitize_path_tool_arg(ctx, path_str);
     let relative_path = format_path(ctx.env().current_dir()?, &file_path);
     let context_lines = context_lines.unwrap_or(FsSearch::DEFAULT_CONTEXT_LINES);
