@@ -316,7 +316,7 @@ impl ToolManagerBuilder {
                                     queue_success_message(&name, &time, &mut output)?;
                                     queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 },
-                                LoadingMsg::Error { name, msg, time: _ } => {
+                                LoadingMsg::Error { name, msg, time } => {
                                     failed += 1;
                                     execute!(
                                         output,
@@ -324,10 +324,10 @@ impl ToolManagerBuilder {
                                         cursor::MoveUp(1),
                                         terminal::Clear(terminal::ClearType::CurrentLine),
                                     )?;
-                                    queue_failure_message(&name, &msg, &mut output)?;
+                                    queue_failure_message(&name, &msg, time.as_str(), &mut output)?;
                                     queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 },
-                                LoadingMsg::Warn { name, msg, time: _ } => {
+                                LoadingMsg::Warn { name, msg, time } => {
                                     complete += 1;
                                     execute!(
                                         output,
@@ -336,7 +336,7 @@ impl ToolManagerBuilder {
                                         terminal::Clear(terminal::ClearType::CurrentLine),
                                     )?;
                                     let msg = eyre::eyre!(msg.to_string());
-                                    queue_warn_message(&name, &msg, &mut output)?;
+                                    queue_warn_message(&name, &msg, time.as_str(), &mut output)?;
                                     queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                                 },
                                 LoadingMsg::Terminate { still_loading } => {
@@ -403,13 +403,10 @@ impl ToolManagerBuilder {
                 // list calls.
                 match msg {
                     UpdateEventMessage::ToolsListResult { server_name, result } => {
-                        let time_taken = loading_servers
-                            .get(&server_name)
-                            .map(|init_time| {
-                                let time_taken = (std::time::Instant::now() - *init_time).as_secs_f64().abs();
-                                format!("{:.2}", time_taken)
-                            })
-                            .unwrap_or_default();
+                        let time_taken = loading_servers.get(&server_name).map_or("0.0".to_owned(), |init_time| {
+                            let time_taken = (std::time::Instant::now() - *init_time).as_secs_f64().abs();
+                            format!("{:.2}", time_taken)
+                        });
                         pending_clone.write().await.remove(&server_name);
                         match result {
                             Ok(result) => {
@@ -522,7 +519,7 @@ impl ToolManagerBuilder {
                             .send(LoadingMsg::Error {
                                 name: name.clone(),
                                 msg: e,
-                                time: String::new(),
+                                time: "0.0".to_owned(),
                             })
                             .await;
                     }
@@ -1306,7 +1303,12 @@ fn queue_init_message(
     Ok(queue!(output, style::Print("\n"))?)
 }
 
-fn queue_failure_message(name: &str, fail_load_msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+fn queue_failure_message(
+    name: &str,
+    fail_load_msg: &eyre::Report,
+    time: &str,
+    output: &mut impl Write,
+) -> eyre::Result<()> {
     use crate::util::CHAT_BINARY_NAME;
     Ok(queue!(
         output,
@@ -1315,7 +1317,11 @@ fn queue_failure_message(name: &str, fail_load_msg: &eyre::Report, output: &mut 
         style::SetForegroundColor(style::Color::Blue),
         style::Print(name),
         style::ResetColor,
-        style::Print(" has failed to load:\n - "),
+        style::Print(" has failed to load after"),
+        style::SetForegroundColor(style::Color::Yellow),
+        style::Print(format!(" {time} s")),
+        style::ResetColor,
+        style::Print("\n - "),
         style::Print(fail_load_msg),
         style::Print("\n"),
         style::Print(format!(
@@ -1325,7 +1331,7 @@ fn queue_failure_message(name: &str, fail_load_msg: &eyre::Report, output: &mut 
     )?)
 }
 
-fn queue_warn_message(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+fn queue_warn_message(name: &str, msg: &eyre::Report, time: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
         style::SetForegroundColor(style::Color::Yellow),
@@ -1333,7 +1339,11 @@ fn queue_warn_message(name: &str, msg: &eyre::Report, output: &mut impl Write) -
         style::SetForegroundColor(style::Color::Blue),
         style::Print(name),
         style::ResetColor,
-        style::Print(" has the following warning:\n"),
+        style::Print(" has loaded in"),
+        style::SetForegroundColor(style::Color::Yellow),
+        style::Print(format!(" {time} s")),
+        style::ResetColor,
+        style::Print(" with the following warning:\n"),
         style::Print(msg),
         style::ResetColor,
     )?)
