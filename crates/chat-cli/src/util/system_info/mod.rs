@@ -14,6 +14,7 @@ use serde::{
 use crate::platform::Env;
 
 /// Fields for OS release information
+/// Fields from <https://www.man7.org/linux/man-pages/man5/os-release.5.html>
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OsRelease {
     pub id: Option<String>,

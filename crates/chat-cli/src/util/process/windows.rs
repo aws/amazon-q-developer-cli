@@ -53,7 +53,6 @@ impl Deref for SafeHandle {
 }
 
 #[cfg(test)]
-#[cfg(windows)]
 mod tests {
     use std::process::Command;
     use std::time::Duration;
@@ -63,7 +62,7 @@ mod tests {
     // Helper to create a long-running process for testing
     fn spawn_test_process() -> std::process::Child {
         let mut command = Command::new("cmd");
-        command.args(["/C", "ping 127.0.0.1 -n 30 > nul"]);
+        command.args(["/C", "timeout 30 > nul"]);
         command.spawn().expect("Failed to spawn test process")
     }
 
@@ -111,7 +110,7 @@ mod tests {
     #[test]
     fn test_safe_handle() {
         // Test creating a SafeHandle with an invalid handle
-        let invalid_handle = HANDLE(0);
+        let invalid_handle = HANDLE(std::ptr::null_mut());
         let safe_handle = SafeHandle::new(invalid_handle);
         assert!(safe_handle.is_none(), "SafeHandle should be None for invalid handle");
 
