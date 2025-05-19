@@ -60,14 +60,9 @@ pub struct McpAdd {
     /// The command used to launch the server
     #[arg(long)]
     pub command: String,
-    /// Where to add the server to. For profile scope, the name of the profile must specified with
-    /// --profile.
+    /// Where to add the server to.
     #[arg(long, value_enum)]
     pub scope: Option<Scope>,
-    /// Name of the profile to add the server config to. Not compatible with workspace scope or
-    /// global scope.
-    #[arg(long)]
-    pub profile: Option<String>,
     /// Environment variables to use when launching the server
     #[arg(long, value_parser = parse_env_vars)]
     pub env: Vec<HashMap<String, String>>,
@@ -85,15 +80,13 @@ pub struct McpRemove {
     pub name: String,
     #[arg(long, value_enum)]
     pub scope: Option<Scope>,
-    #[arg(long)]
-    pub profile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub struct McpList {
     #[arg(value_enum)]
     pub scope: Option<Scope>,
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub profile: Option<String>,
 }
 
@@ -103,8 +96,6 @@ pub struct McpImport {
     pub file: String,
     #[arg(value_enum)]
     pub scope: Option<Scope>,
-    #[arg(long)]
-    pub profile: Option<String>,
     /// Overwrite an existing server with the same name
     #[arg(long, default_value_t = false)]
     pub force: bool,
@@ -113,7 +104,6 @@ pub struct McpImport {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]
 pub enum Scope {
     Workspace,
-    Profile,
     Global,
 }
 
@@ -121,7 +111,6 @@ impl std::fmt::Display for Scope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Scope::Workspace => write!(f, "workspace"),
-            Scope::Profile => write!(f, "profile"),
             Scope::Global => write!(f, "global"),
         }
     }

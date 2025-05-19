@@ -29,6 +29,7 @@ pub enum Setting {
     ApiCodeWhispererService,
     ApiQService,
     McpInitTimeout,
+    McpNoInteractiveTimeout,
     McpLoadedBefore,
 }
 
@@ -47,6 +48,7 @@ impl AsRef<str> for Setting {
             Self::ApiCodeWhispererService => "api.codewhisperer.service",
             Self::ApiQService => "api.q.service",
             Self::McpInitTimeout => "mcp.initTimeout",
+            Self::McpNoInteractiveTimeout => "mcp.noInteractiveTimeout",
             Self::McpLoadedBefore => "mcp.loadedBefore",
         }
     }
@@ -75,6 +77,7 @@ impl TryFrom<&str> for Setting {
             "api.codewhisperer.service" => Ok(Self::ApiCodeWhispererService),
             "api.q.service" => Ok(Self::ApiQService),
             "mcp.initTimeout" => Ok(Self::McpInitTimeout),
+            "mcp.noInteractiveTimeout" => Ok(Self::McpNoInteractiveTimeout),
             "mcp.loadedBefore" => Ok(Self::McpLoadedBefore),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }

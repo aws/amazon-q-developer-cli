@@ -49,7 +49,7 @@ use crate::util::spinner::{
 };
 use crate::util::system_info::is_remote;
 use crate::util::{
-    CHAT_BINARY_NAME,
+    CLI_BINARY_NAME,
     PRODUCT_NAME,
     choose,
     input,
@@ -123,7 +123,7 @@ impl UserSubcommand {
                 if crate::auth::is_logged_in(database).await {
                     eyre::bail!(
                         "Already logged in, please logout with {} first",
-                        format!("{CHAT_BINARY_NAME} logout").magenta()
+                        format!("{CLI_BINARY_NAME} logout").magenta()
                     );
                 }
 
@@ -137,7 +137,7 @@ impl UserSubcommand {
                 println!("You are now logged out");
                 println!(
                     "Run {} to log back in to {PRODUCT_NAME}",
-                    format!("{CHAT_BINARY_NAME} login").magenta()
+                    format!("{CLI_BINARY_NAME} login").magenta()
                 );
                 Ok(ExitCode::SUCCESS)
             },
@@ -189,7 +189,7 @@ impl UserSubcommand {
                 if !crate::util::system_info::in_cloudshell() && !crate::auth::is_logged_in(database).await {
                     bail!(
                         "You are not logged in, please log in with {}",
-                        format!("{CHAT_BINARY_NAME} login").bold()
+                        format!("{CLI_BINARY_NAME} login").bold()
                     );
                 }
 

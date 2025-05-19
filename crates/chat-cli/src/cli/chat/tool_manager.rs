@@ -52,6 +52,7 @@ use tracing::{
     warn,
 };
 
+use super::util::shared_writer::SharedWriter;
 use crate::api_client::model::{
     ToolResult,
     ToolResultContentBlock,
@@ -87,10 +88,7 @@ use crate::mcp_client::{
 };
 use crate::platform::Context;
 use crate::telemetry::TelemetryThread;
-use crate::util::directories::{
-    chat_profiles_dir,
-    home_dir,
-};
+use crate::util::directories::home_dir;
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name since in the end the tool name as seen by the
@@ -100,10 +98,6 @@ const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '�
 
 pub fn workspace_mcp_config_path(ctx: &Context) -> eyre::Result<PathBuf> {
     Ok(ctx.env().current_dir()?.join(".amazonq").join("mcp.json"))
-}
-
-pub fn profile_mcp_config_path(ctx: &Context, profile_name: impl AsRef<str>) -> eyre::Result<PathBuf> {
-    Ok(chat_profiles_dir(ctx)?.join(profile_name.as_ref()).join("mcp.json"))
 }
 
 pub fn global_mcp_config_path(ctx: &Context) -> eyre::Result<PathBuf> {
@@ -730,7 +724,11 @@ impl Clone for ToolManager {
 }
 
 impl ToolManager {
-    pub async fn load_tools(&mut self, database: &Database) -> eyre::Result<HashMap<String, ToolSpec>> {
+    pub async fn load_tools(
+        &mut self,
+        database: &Database,
+        output: &mut SharedWriter,
+    ) -> eyre::Result<HashMap<String, ToolSpec>> {
         let tx = self.loading_status_sender.take();
         let display_task = self.loading_display_task.take();
         self.schema = {
@@ -778,7 +776,21 @@ impl ToolManager {
                 .map_or(5000_u64, |s| s as u64);
             Box::pin(tokio::time::sleep(std::time::Duration::from_millis(init_timeout)))
         } else {
-            Box::pin(future::pending())
+            // if it is non-interactive we will want to use the "mcp.noInteractiveTimeout"
+            let init_timeout = database
+                .settings
+                .get_int(Setting::McpNoInteractiveTimeout)
+                .map_or(30_000_u64, |s| s as u64);
+            Box::pin(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(init_timeout)).await;
+                let _ = queue!(
+                    output,
+                    style::Print(
+                        "Not all mcp servers loaded. Configure no-interactive timeout with q settings mcp.noInteractiveTimeout"
+                    ),
+                    style::Print("\n")
+                );
+            })
         };
         tokio::select! {
             _ = display_fut => {},

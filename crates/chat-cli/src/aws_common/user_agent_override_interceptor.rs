@@ -18,13 +18,16 @@ use http::header::{
     InvalidHeaderValue,
     USER_AGENT,
 };
-use tracing::warn;
+use tracing::{
+    trace,
+    warn,
+};
 
 /// The environment variable name of additional user agent metadata we include in the user agent
 /// string. This is used in AWS CloudShell where they want to track usage by version.
 const AWS_TOOLING_USER_AGENT: &str = "AWS_TOOLING_USER_AGENT";
 
-const VERSION_HEADER: &str = "Version";
+const VERSION_HEADER: &str = "appVersion";
 const VERSION_VALUE: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug)]
@@ -91,44 +94,53 @@ impl Intercept for UserAgentOverrideInterceptor {
         // Allow for overriding the user agent by an earlier interceptor (so, for example,
         // tests can use `AwsUserAgent::for_tests()`) by attempting to grab one out of the
         // config bag before creating one.
-        let ua: Cow<'_, AwsUserAgent> = cfg.load::<AwsUserAgent>().map(Cow::Borrowed).map_or_else(
-            || {
+        let ua: Cow<'_, AwsUserAgent> = match cfg.get_mut::<AwsUserAgent>() {
+            Some(ua) => {
+                apply_additional_metadata(&self.env, ua);
+                Cow::Borrowed(ua)
+            },
+            None => {
                 let api_metadata = cfg
                     .load::<ApiMetadata>()
                     .ok_or(UserAgentOverrideInterceptorError::MissingApiMetadata)?;
 
-                let aws_tooling_user_agent = env.get(AWS_TOOLING_USER_AGENT);
-                let mut ua = AwsUserAgent::new_from_environment(env, api_metadata.clone());
-
-                let ver = format!("{VERSION_HEADER}/{VERSION_VALUE}");
-                match AdditionalMetadata::new(clean_metadata(&ver)) {
-                    Ok(md) => {
-                        ua.add_additional_metadata(md);
-                    },
-                    Err(err) => panic!("Failed to parse version: {err}"),
-                };
+                let mut ua = AwsUserAgent::new_from_environment(self.env.clone(), api_metadata.clone());
 
                 let maybe_app_name = cfg.load::<AppName>();
                 if let Some(app_name) = maybe_app_name {
                     ua.set_app_name(app_name.clone());
                 }
-                if let Ok(val) = aws_tooling_user_agent {
-                    match AdditionalMetadata::new(clean_metadata(&val)) {
-                        Ok(md) => {
-                            ua.add_additional_metadata(md);
-                        },
-                        Err(err) => warn!(%err, %val, "Failed to parse {AWS_TOOLING_USER_AGENT}"),
-                    };
-                }
 
-                Ok(Cow::Owned(ua))
+                apply_additional_metadata(&env, &mut ua);
+
+                Cow::Owned(ua)
             },
-            Result::<_, UserAgentOverrideInterceptorError>::Ok,
-        )?;
+        };
+
+        trace!(?ua, "setting user agent");
 
         let headers = context.request_mut().headers_mut();
         headers.insert(USER_AGENT.as_str(), ua.aws_ua_header());
         Ok(())
+    }
+}
+
+fn apply_additional_metadata(env: &Env, ua: &mut AwsUserAgent) {
+    let ver = format!("{VERSION_HEADER}/{VERSION_VALUE}");
+    match AdditionalMetadata::new(clean_metadata(&ver)) {
+        Ok(md) => {
+            ua.add_additional_metadata(md);
+        },
+        Err(err) => panic!("Failed to parse version: {err}"),
+    };
+
+    if let Ok(val) = env.get(AWS_TOOLING_USER_AGENT) {
+        match AdditionalMetadata::new(clean_metadata(&val)) {
+            Ok(md) => {
+                ua.add_additional_metadata(md);
+            },
+            Err(err) => warn!(%err, %val, "Failed to parse {AWS_TOOLING_USER_AGENT}"),
+        };
     }
 }
 

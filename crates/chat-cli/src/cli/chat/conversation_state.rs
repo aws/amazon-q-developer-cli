@@ -1049,12 +1049,13 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
         let mut database = Database::new().await.unwrap();
+        let mut output = SharedWriter::null();
 
         let mut tool_manager = ToolManager::default();
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
-            tool_manager.load_tools(&database).await.unwrap(),
+            tool_manager.load_tools(&database, &mut output).await.unwrap(),
             None,
             None,
             tool_manager,
@@ -1076,10 +1077,11 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
         let mut database = Database::new().await.unwrap();
+        let mut output = SharedWriter::null();
 
         // Build a long conversation history of tool use results.
         let mut tool_manager = ToolManager::default();
-        let tool_config = tool_manager.load_tools(&database).await.unwrap();
+        let tool_config = tool_manager.load_tools(&database, &mut output).await.unwrap();
         let mut conversation_state = ConversationState::new(
             Context::new(),
             "fake_conv_id",
@@ -1150,6 +1152,7 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_with_context_files() {
         let mut database = Database::new().await.unwrap();
+        let mut output = SharedWriter::null();
 
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         ctx.fs().write(AMAZONQ_FILENAME, "test context").await.unwrap();
@@ -1158,7 +1161,7 @@ mod tests {
         let mut conversation_state = ConversationState::new(
             ctx,
             "fake_conv_id",
-            tool_manager.load_tools(&database).await.unwrap(),
+            tool_manager.load_tools(&database, &mut output).await.unwrap(),
             None,
             None,
             tool_manager,
@@ -1199,6 +1202,7 @@ mod tests {
         // tracing_subscriber::fmt::try_init().ok();
 
         let mut database = Database::new().await.unwrap();
+        let mut output = SharedWriter::null();
 
         let mut tool_manager = ToolManager::default();
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
@@ -1227,7 +1231,7 @@ mod tests {
         let mut conversation_state = ConversationState::new(
             ctx,
             "fake_conv_id",
-            tool_manager.load_tools(&database).await.unwrap(),
+            tool_manager.load_tools(&database, &mut output).await.unwrap(),
             None,
             Some(SharedWriter::stdout()),
             tool_manager,

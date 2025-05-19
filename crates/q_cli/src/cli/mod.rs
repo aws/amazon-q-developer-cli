@@ -25,6 +25,7 @@ use std::io::{
     Write as _,
     stdout,
 };
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anstream::{
@@ -57,7 +58,6 @@ use fig_proto::local::UiElement;
 use fig_settings::sqlite::database;
 use fig_util::directories::home_local_bin;
 use fig_util::{
-    CHAT_BINARY_NAME,
     CLI_BINARY_NAME,
     PRODUCT_NAME,
     directories,
@@ -70,6 +70,7 @@ use tokio::signal::ctrl_c;
 use tracing::{
     Level,
     debug,
+    error,
 };
 
 use self::integrations::IntegrationsSubcommands;
@@ -195,14 +196,16 @@ pub enum CliRootCommands {
     /// Open the dashboard
     Dashboard,
     /// AI assistant in your terminal
+    #[command(disable_help_flag = true)]
     Chat {
-        /// Args for the chat command
+        /// Args for the chat subcommand
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
     /// Model Context Protocol (MCP)
+    #[command(disable_help_flag = true)]
     Mcp {
-        /// Args for the MCP subcommand (passed through to `qchat mcp …`)
+        /// Args for the MCP subcommand
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -351,8 +354,20 @@ impl Cli {
                 CliRootCommands::Telemetry(subcommand) => subcommand.execute().await,
                 CliRootCommands::Version { changelog } => Self::print_version(changelog),
                 CliRootCommands::Dashboard => launch_dashboard(false).await,
-                CliRootCommands::Chat { args } => Self::execute_chat("chat", Some(args), true).await,
-                CliRootCommands::Mcp { args } => Self::execute_chat("mcp", Some(args), true).await,
+                CliRootCommands::Chat { args } => {
+                    if args.iter().any(|arg| ["--help", "-h"].contains(&arg.as_str())) {
+                        return Self::execute_chat("chat", Some(vec!["--help".to_owned()]), false).await;
+                    }
+
+                    Self::execute_chat("chat", Some(args), true).await
+                },
+                CliRootCommands::Mcp { args } => {
+                    if args.iter().any(|arg| ["--help", "-h"].contains(&arg.as_str())) {
+                        return Self::execute_chat("mcp", Some(vec!["--help".to_owned()]), false).await;
+                    }
+
+                    Self::execute_chat("mcp", Some(args), true).await
+                },
                 CliRootCommands::Inline(subcommand) => subcommand.execute(&cli_context).await,
             },
             // Root command
@@ -367,16 +382,19 @@ impl Cli {
 
         let secret_store = SecretStore::new().await.ok();
         if let Some(secret_store) = secret_store {
-            if let Ok(database) = database() {
+            if let Ok(database) = database().map_err(|err| error!(?err, "failed to open database")) {
                 if let Ok(token) = BuilderIdToken::load(&secret_store, false).await {
                     if let Ok(token) = serde_json::to_string(&token) {
-                        database.set_auth_value("codewhisperer:odic:token", token).ok();
+                        database
+                            .set_auth_value("codewhisperer:odic:token", token)
+                            .map_err(|err| error!(?err, "failed to write credentials to auth db"))
+                            .ok();
                     }
                 }
             }
         }
 
-        let mut cmd = tokio::process::Command::new(home_local_bin()?.join(CHAT_BINARY_NAME));
+        let mut cmd = tokio::process::Command::new(qchat_path()?);
         cmd.arg(subcmd);
         if let Some(args) = args {
             cmd.args(args);
@@ -532,6 +550,29 @@ async fn launch_dashboard(help_fallback: bool) -> Result<ExitCode> {
         .context("Failed to open dashboard")?;
 
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(target_os = "linux")]
+fn qchat_path() -> Result<PathBuf> {
+    use fig_os_shim::Context;
+    use fig_util::consts::CHAT_BINARY_NAME;
+
+    let ctx = Context::new();
+    if let Some(path) = ctx.process_info().current_pid().exe() {
+        // This is required for deb installations.
+        if path.starts_with("/usr/bin") {
+            return Ok(PathBuf::from("/usr/bin").join(CHAT_BINARY_NAME));
+        }
+    }
+    Ok(home_local_bin()?.join(CHAT_BINARY_NAME))
+}
+
+#[cfg(target_os = "macos")]
+fn qchat_path() -> Result<PathBuf> {
+    use fig_util::consts::CHAT_BINARY_NAME;
+    use macos_utils::bundle::get_bundle_path_for_executable;
+
+    Ok(get_bundle_path_for_executable(CHAT_BINARY_NAME).unwrap_or(home_local_bin()?.join(CHAT_BINARY_NAME)))
 }
 
 #[cfg(test)]

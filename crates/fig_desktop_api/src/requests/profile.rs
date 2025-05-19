@@ -8,6 +8,7 @@ use fig_telemetry_core::{
     QProfileSwitchIntent,
     TelemetryResult,
 };
+use tracing::debug;
 
 use super::{
     RequestResult,
@@ -59,17 +60,15 @@ pub async fn set_profile(request: SetProfileRequest) -> RequestResult {
 }
 
 pub async fn list_available_profiles(_request: ListAvailableProfilesRequest) -> RequestResult {
-    Ok(
-        ServerOriginatedSubMessage::ListAvailableProfilesResponse(ListAvailableProfilesResponse {
-            profiles: fig_api_client::profile::list_available_profiles()
-                .await
-                .iter()
-                .map(|profile| fig_proto::fig::Profile {
-                    arn: profile.arn.clone(),
-                    profile_name: profile.profile_name.clone(),
-                })
-                .collect(),
+    debug!("listing available profiles");
+    let profiles = fig_api_client::profile::list_available_profiles()
+        .await
+        .iter()
+        .map(|profile| fig_proto::fig::Profile {
+            arn: profile.arn.clone(),
+            profile_name: profile.profile_name.clone(),
         })
-        .into(),
-    )
+        .collect();
+    debug!(?profiles, "fetched profiles");
+    Ok(ServerOriginatedSubMessage::ListAvailableProfilesResponse(ListAvailableProfilesResponse { profiles }).into())
 }

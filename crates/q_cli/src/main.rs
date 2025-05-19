@@ -33,19 +33,6 @@ fn main() -> Result<ExitCode> {
         Some("init" | "_" | "internal" | "completion" | "hook" | "chat")
     );
 
-    let runtime = if multithread {
-        tokio::runtime::Builder::new_multi_thread()
-    } else {
-        tokio::runtime::Builder::new_current_thread()
-    }
-    .enable_all()
-    .build()?;
-
-    // Hack as clap doesn't expose a custom command help.
-    if subcommand.as_deref() == Some("chat") && args.any(|arg| ["--help", "-h"].contains(&arg.as_str())) {
-        runtime.block_on(cli::Cli::execute_chat("chat", Some(vec!["--help".to_owned()]), true))?;
-    }
-
     let parsed = match cli::Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => {
@@ -72,6 +59,14 @@ fn main() -> Result<ExitCode> {
     };
 
     let verbose = parsed.verbose > 0;
+
+    let runtime = if multithread {
+        tokio::runtime::Builder::new_multi_thread()
+    } else {
+        tokio::runtime::Builder::new_current_thread()
+    }
+    .enable_all()
+    .build()?;
 
     let result = runtime.block_on(async {
         let result = parsed.execute().await;
