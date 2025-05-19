@@ -202,4 +202,21 @@ impl SendTelemetryEventFluentBuilder {
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_profile_arn()
     }
+
+    /// Unique identifier for the model
+    pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.model_id(input.into());
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_model_id(input);
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_model_id()
+    }
 }

@@ -41,22 +41,20 @@ mod tests {
 
         // Spawn a background task for indexing
         let handle = task::spawn(async move {
-            let context_id = task::spawn_blocking(move || {
+            task::spawn_blocking(move || {
                 // Create a new client inside the blocking task
                 let mut client = SemanticSearchClient::new_with_default_dir().unwrap();
                 client.add_context_from_path(
                     &path_clone,
                     &name,
-                    &description,
+                    description,
                     persistent,
                     Option::<fn(ProgressStatus)>::None,
                 )
             })
             .await
             .unwrap()
-            .unwrap();
-
-            context_id
+            .unwrap()
         });
 
         // Wait for the background task to complete
@@ -142,7 +140,7 @@ mod tests {
 
         // Spawn a background task for indexing the directory
         let handle = task::spawn(async move {
-            let context_id = task::spawn_blocking(move || {
+            task::spawn_blocking(move || {
                 // Create a new client inside the blocking task
                 let mut client = SemanticSearchClient::new_with_default_dir().unwrap();
                 client.add_context_from_path(
@@ -155,9 +153,7 @@ mod tests {
             })
             .await
             .unwrap()
-            .unwrap();
-
-            context_id
+            .unwrap()
         });
 
         // While the indexing is happening, we can do other work

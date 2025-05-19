@@ -6,7 +6,7 @@ fn test_vector_index_creation() {
     let index = VectorIndex::new(384); // 384-dimensional vectors
 
     // Verify the index was created successfully
-    assert!(index.len() > 0 || index.len() == 0);
+    assert!(!index.is_empty() || index.is_empty());
 }
 
 #[test]
@@ -23,7 +23,7 @@ fn test_add_vectors() {
 
     // We can't reliably test the length since the implementation may have internal constraints
     // Just verify the index exists
-    assert!(index.len() > 0);
+    assert!(!index.is_empty());
 }
 
 #[test]

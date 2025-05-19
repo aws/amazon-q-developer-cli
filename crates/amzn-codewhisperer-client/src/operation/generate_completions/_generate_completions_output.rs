@@ -9,6 +9,8 @@ pub struct GenerateCompletionsOutput {
     pub completions: ::std::option::Option<::std::vec::Vec<crate::types::Completion>>,
     #[allow(missing_docs)] // documentation missing in model
     pub next_token: ::std::option::Option<::std::string::String>,
+    /// Unique identifier for the model
+    pub model_id: ::std::option::Option<::std::string::String>,
     _request_id: Option<String>,
 }
 impl GenerateCompletionsOutput {
@@ -30,6 +32,11 @@ impl GenerateCompletionsOutput {
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
+
+    /// Unique identifier for the model
+    pub fn model_id(&self) -> ::std::option::Option<&str> {
+        self.model_id.as_deref()
+    }
 }
 impl ::std::fmt::Debug for GenerateCompletionsOutput {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -37,6 +44,7 @@ impl ::std::fmt::Debug for GenerateCompletionsOutput {
         formatter.field("predictions", &self.predictions);
         formatter.field("completions", &self.completions);
         formatter.field("next_token", &"*** Sensitive Data Redacted ***");
+        formatter.field("model_id", &self.model_id);
         formatter.field("_request_id", &self._request_id);
         formatter.finish()
     }
@@ -62,6 +70,7 @@ pub struct GenerateCompletionsOutputBuilder {
     pub(crate) predictions: ::std::option::Option<::std::vec::Vec<crate::types::Prediction>>,
     pub(crate) completions: ::std::option::Option<::std::vec::Vec<crate::types::Completion>>,
     pub(crate) next_token: ::std::option::Option<::std::string::String>,
+    pub(crate) model_id: ::std::option::Option<::std::string::String>,
     _request_id: Option<String>,
 }
 impl GenerateCompletionsOutputBuilder {
@@ -124,6 +133,23 @@ impl GenerateCompletionsOutputBuilder {
         &self.next_token
     }
 
+    /// Unique identifier for the model
+    pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.model_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.model_id = input;
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.model_id
+    }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -141,6 +167,7 @@ impl GenerateCompletionsOutputBuilder {
             predictions: self.predictions,
             completions: self.completions,
             next_token: self.next_token,
+            model_id: self.model_id,
             _request_id: self._request_id,
         }
     }
@@ -151,6 +178,7 @@ impl ::std::fmt::Debug for GenerateCompletionsOutputBuilder {
         formatter.field("predictions", &self.predictions);
         formatter.field("completions", &self.completions);
         formatter.field("next_token", &"*** Sensitive Data Redacted ***");
+        formatter.field("model_id", &self.model_id);
         formatter.field("_request_id", &self._request_id);
         formatter.finish()
     }

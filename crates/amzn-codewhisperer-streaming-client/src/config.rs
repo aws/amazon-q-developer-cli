@@ -591,6 +591,7 @@ impl Builder {
     /// # Examples
     ///
     /// Disabling identity caching:
+    ///
     /// ```no_run
     /// use amzn_codewhisperer_streaming_client::config::IdentityCache;
     ///
@@ -602,6 +603,7 @@ impl Builder {
     /// ```
     ///
     /// Customizing lazy caching:
+    ///
     /// ```no_run
     /// use std::time::Duration;
     ///
@@ -638,6 +640,7 @@ impl Builder {
     /// # Examples
     ///
     /// Disabling identity caching:
+    ///
     /// ```no_run
     /// use amzn_codewhisperer_streaming_client::config::IdentityCache;
     ///
@@ -649,6 +652,7 @@ impl Builder {
     /// ```
     ///
     /// Customizing lazy caching:
+    ///
     /// ```no_run
     /// use std::time::Duration;
     ///

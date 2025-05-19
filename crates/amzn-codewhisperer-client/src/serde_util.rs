@@ -47,6 +47,30 @@ pub(crate) fn create_artifact_upload_url_output_output_correct_errors(
     builder
 }
 
+pub(crate) fn conflict_exception_correct_errors(
+    mut builder: crate::types::error::builders::ConflictErrorBuilder,
+) -> crate::types::error::builders::ConflictErrorBuilder {
+    if builder.message.is_none() {
+        builder.message = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn create_subscription_token_output_output_correct_errors(
+    mut builder: crate::operation::create_subscription_token::builders::CreateSubscriptionTokenOutputBuilder,
+) -> crate::operation::create_subscription_token::builders::CreateSubscriptionTokenOutputBuilder {
+    if builder.encoded_verification_url.is_none() {
+        builder.encoded_verification_url = Some(Default::default())
+    }
+    if builder.token.is_none() {
+        builder.token = Some(Default::default())
+    }
+    if builder.status.is_none() {
+        builder.status = "no value was set".parse::<crate::types::SubscriptionStatus>().ok()
+    }
+    builder
+}
+
 pub(crate) fn service_quota_exceeded_exception_correct_errors(
     mut builder: crate::types::error::builders::ServiceQuotaExceededErrorBuilder,
 ) -> crate::types::error::builders::ServiceQuotaExceededErrorBuilder {
@@ -68,15 +92,6 @@ pub(crate) fn create_task_assist_conversation_output_output_correct_errors(
 pub(crate) fn resource_not_found_exception_correct_errors(
     mut builder: crate::types::error::builders::ResourceNotFoundErrorBuilder,
 ) -> crate::types::error::builders::ResourceNotFoundErrorBuilder {
-    if builder.message.is_none() {
-        builder.message = Some(Default::default())
-    }
-    builder
-}
-
-pub(crate) fn conflict_exception_correct_errors(
-    mut builder: crate::types::error::builders::ConflictErrorBuilder,
-) -> crate::types::error::builders::ConflictErrorBuilder {
     if builder.message.is_none() {
         builder.message = Some(Default::default())
     }
@@ -178,6 +193,18 @@ pub(crate) fn get_transformation_plan_output_output_correct_errors(
                 .build()
                 .ok()
         }
+    }
+    builder
+}
+
+pub(crate) fn get_usage_limits_output_output_correct_errors(
+    mut builder: crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder,
+) -> crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder {
+    if builder.limits.is_none() {
+        builder.limits = Some(Default::default())
+    }
+    if builder.days_until_reset.is_none() {
+        builder.days_until_reset = Some(Default::default())
     }
     builder
 }
@@ -295,6 +322,26 @@ pub(crate) fn stop_transformation_output_output_correct_errors(
 ) -> crate::operation::stop_transformation::builders::StopTransformationOutputBuilder {
     if builder.transformation_status.is_none() {
         builder.transformation_status = "no value was set".parse::<crate::types::TransformationStatus>().ok()
+    }
+    builder
+}
+
+pub(crate) fn update_usage_limit_quota_exceeded_exception_correct_errors(
+    mut builder: crate::types::error::builders::UpdateUsageLimitQuotaExceededErrorBuilder,
+) -> crate::types::error::builders::UpdateUsageLimitQuotaExceededErrorBuilder {
+    if builder.message.is_none() {
+        builder.message = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn update_usage_limits_output_output_correct_errors(
+    mut builder: crate::operation::update_usage_limits::builders::UpdateUsageLimitsOutputBuilder,
+) -> crate::operation::update_usage_limits::builders::UpdateUsageLimitsOutputBuilder {
+    if builder.status.is_none() {
+        builder.status = "no value was set"
+            .parse::<crate::types::UsageLimitUpdateRequestStatus>()
+            .ok()
     }
     builder
 }
@@ -451,6 +498,18 @@ pub(crate) fn profile_correct_errors(
     }
     if builder.profile_name.is_none() {
         builder.profile_name = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn usage_limit_list_correct_errors(
+    mut builder: crate::types::builders::UsageLimitListBuilder,
+) -> crate::types::builders::UsageLimitListBuilder {
+    if builder.r#type.is_none() {
+        builder.r#type = "no value was set".parse::<crate::types::UsageLimitType>().ok()
+    }
+    if builder.value.is_none() {
+        builder.value = Some(Default::default())
     }
     builder
 }

@@ -78,6 +78,8 @@ impl Client {
 
 mod create_artifact_upload_url;
 
+mod create_subscription_token;
+
 mod create_task_assist_conversation;
 
 mod create_upload_url;
@@ -108,6 +110,8 @@ mod get_test_generation;
 mod get_transformation;
 
 mod get_transformation_plan;
+
+mod get_usage_limits;
 
 mod list_available_customizations;
 
@@ -140,3 +144,5 @@ mod start_test_generation;
 mod start_transformation;
 
 mod stop_transformation;
+
+mod update_usage_limits;

@@ -113,6 +113,6 @@ mod tests {
         let chunks = chunk_text(&text, None, None);
 
         // Should use the config values (50, 10) set in setup()
-        assert!(chunks.len() > 0);
+        assert!(!chunks.is_empty());
     }
 }

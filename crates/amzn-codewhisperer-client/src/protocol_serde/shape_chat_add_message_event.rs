@@ -75,5 +75,8 @@ pub fn ser_chat_add_message_event(
     if let Some(var_15) = &input.has_project_level_context {
         object.key("hasProjectLevelContext").boolean(*var_15);
     }
+    if let Some(var_16) = &input.result {
+        object.key("result").string(var_16.as_str());
+    }
     Ok(())
 }

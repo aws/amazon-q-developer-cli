@@ -136,37 +136,20 @@ impl PushTelemetryEventFluentBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
-        self.inner = self.inner.timestamp(input);
+    pub fn event_type(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.event_type(input.into());
         self
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
-        self.inner = self.inner.set_timestamp(input);
+    pub fn set_event_type(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_event_type(input);
         self
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
-        self.inner.get_timestamp()
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn event_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
-        self.inner = self.inner.event_id(input.into());
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn set_event_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
-        self.inner = self.inner.set_event_id(input);
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn get_event_id(&self) -> &::std::option::Option<::std::string::String> {
-        self.inner.get_event_id()
+    pub fn get_event_type(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_event_type()
     }
 
     #[allow(missing_docs)] // documentation missing in model

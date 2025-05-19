@@ -614,6 +614,7 @@ impl Builder {
     /// # Examples
     ///
     /// Disabling identity caching:
+    ///
     /// ```no_run
     /// use amzn_consolas_client::config::IdentityCache;
     ///
@@ -625,6 +626,7 @@ impl Builder {
     /// ```
     ///
     /// Customizing lazy caching:
+    ///
     /// ```no_run
     /// use std::time::Duration;
     ///
@@ -661,6 +663,7 @@ impl Builder {
     /// # Examples
     ///
     /// Disabling identity caching:
+    ///
     /// ```no_run
     /// use amzn_consolas_client::config::IdentityCache;
     ///
@@ -672,6 +675,7 @@ impl Builder {
     /// ```
     ///
     /// Customizing lazy caching:
+    ///
     /// ```no_run
     /// use std::time::Duration;
     ///
@@ -1157,7 +1161,7 @@ impl Builder {
     ///
     /// Customizing behavior major version:
     ///
-    ///  ```no_run
+    /// ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
     /// let config = amzn_consolas_client::Config::builder()
@@ -1182,7 +1186,7 @@ impl Builder {
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
     /// `behavior-version-latest` cargo feature.
-    //
+    ///
     /// ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
@@ -1195,7 +1199,7 @@ impl Builder {
     ///
     /// Customizing behavior major version:
     ///
-    ///  ```no_run
+    /// ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
     ///
     /// let config = amzn_consolas_client::Config::builder()

@@ -35,6 +35,12 @@ pub struct UserTriggerDecisionEvent {
     pub added_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
     /// List of IDE Diagnostics
     pub removed_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub added_character_count: i32,
+    #[allow(missing_docs)] // documentation missing in model
+    pub deleted_character_count: i32,
+    #[allow(missing_docs)] // documentation missing in model
+    pub streak_length: i32,
 }
 impl UserTriggerDecisionEvent {
     #[allow(missing_docs)] // documentation missing in model
@@ -124,6 +130,21 @@ impl UserTriggerDecisionEvent {
     pub fn removed_ide_diagnostics(&self) -> &[crate::types::IdeDiagnostic] {
         self.removed_ide_diagnostics.as_deref().unwrap_or_default()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn added_character_count(&self) -> i32 {
+        self.added_character_count
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn deleted_character_count(&self) -> i32 {
+        self.deleted_character_count
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn streak_length(&self) -> i32 {
+        self.streak_length
+    }
 }
 impl UserTriggerDecisionEvent {
     /// Creates a new builder-style object to manufacture
@@ -153,6 +174,9 @@ pub struct UserTriggerDecisionEventBuilder {
     pub(crate) accepted_character_count: ::std::option::Option<i32>,
     pub(crate) added_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
     pub(crate) removed_ide_diagnostics: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    pub(crate) added_character_count: ::std::option::Option<i32>,
+    pub(crate) deleted_character_count: ::std::option::Option<i32>,
+    pub(crate) streak_length: ::std::option::Option<i32>,
 }
 impl UserTriggerDecisionEventBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -454,6 +478,57 @@ impl UserTriggerDecisionEventBuilder {
         &self.removed_ide_diagnostics
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn added_character_count(mut self, input: i32) -> Self {
+        self.added_character_count = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_added_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
+        self.added_character_count = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_added_character_count(&self) -> &::std::option::Option<i32> {
+        &self.added_character_count
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn deleted_character_count(mut self, input: i32) -> Self {
+        self.deleted_character_count = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_deleted_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
+        self.deleted_character_count = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_deleted_character_count(&self) -> &::std::option::Option<i32> {
+        &self.deleted_character_count
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn streak_length(mut self, input: i32) -> Self {
+        self.streak_length = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_streak_length(mut self, input: ::std::option::Option<i32>) -> Self {
+        self.streak_length = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_streak_length(&self) -> &::std::option::Option<i32> {
+        &self.streak_length
+    }
+
     /// Consumes the builder and constructs a
     /// [`UserTriggerDecisionEvent`](crate::types::UserTriggerDecisionEvent). This method will
     /// fail if any of the following fields are not set:
@@ -520,6 +595,9 @@ impl UserTriggerDecisionEventBuilder {
             accepted_character_count: self.accepted_character_count.unwrap_or_default(),
             added_ide_diagnostics: self.added_ide_diagnostics,
             removed_ide_diagnostics: self.removed_ide_diagnostics,
+            added_character_count: self.added_character_count.unwrap_or_default(),
+            deleted_character_count: self.deleted_character_count.unwrap_or_default(),
+            streak_length: self.streak_length.unwrap_or_default(),
         })
     }
 }

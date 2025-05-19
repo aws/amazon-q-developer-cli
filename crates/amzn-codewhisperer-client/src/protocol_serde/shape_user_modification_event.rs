@@ -44,5 +44,17 @@ pub fn ser_user_modification_event(
             ::aws_smithy_types::Number::NegInt((input.unmodified_accepted_character_count).into()),
         );
     }
+    if input.added_character_count != 0 {
+        object.key("addedCharacterCount").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((input.added_character_count).into()),
+        );
+    }
+    if input.unmodified_added_character_count != 0 {
+        object.key("unmodifiedAddedCharacterCount").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((input.unmodified_added_character_count).into()),
+        );
+    }
     Ok(())
 }

@@ -30,6 +30,8 @@ pub fn parse_http_error_metadata(
 
 pub(crate) mod shape_create_artifact_upload_url;
 
+pub(crate) mod shape_create_subscription_token;
+
 pub(crate) mod shape_create_task_assist_conversation;
 
 pub(crate) mod shape_create_upload_url;
@@ -57,6 +59,8 @@ pub(crate) mod shape_get_test_generation;
 pub(crate) mod shape_get_transformation;
 
 pub(crate) mod shape_get_transformation_plan;
+
+pub(crate) mod shape_get_usage_limits;
 
 pub(crate) mod shape_list_available_customizations;
 
@@ -90,6 +94,8 @@ pub(crate) mod shape_start_transformation;
 
 pub(crate) mod shape_stop_transformation;
 
+pub(crate) mod shape_update_usage_limits;
+
 pub(crate) fn or_empty_doc(data: &[u8]) -> &[u8] {
     if data.is_empty() { b"{}" } else { data }
 }
@@ -99,6 +105,8 @@ pub(crate) mod shape_access_denied_exception;
 pub(crate) mod shape_conflict_exception;
 
 pub(crate) mod shape_create_artifact_upload_url_input;
+
+pub(crate) mod shape_create_subscription_token_input;
 
 pub(crate) mod shape_create_task_assist_conversation_input;
 
@@ -127,6 +135,8 @@ pub(crate) mod shape_get_test_generation_input;
 pub(crate) mod shape_get_transformation_input;
 
 pub(crate) mod shape_get_transformation_plan_input;
+
+pub(crate) mod shape_get_usage_limits_input;
 
 pub(crate) mod shape_internal_server_exception;
 
@@ -167,6 +177,10 @@ pub(crate) mod shape_start_transformation_input;
 pub(crate) mod shape_stop_transformation_input;
 
 pub(crate) mod shape_throttling_exception;
+
+pub(crate) mod shape_update_usage_limit_quota_exceeded_exception;
+
+pub(crate) mod shape_update_usage_limits_input;
 
 pub(crate) mod shape_validation_exception;
 
@@ -223,6 +237,8 @@ pub(crate) mod shape_transformation_plan;
 pub(crate) mod shape_transformation_spec;
 
 pub(crate) mod shape_upload_context;
+
+pub(crate) mod shape_usage_limits;
 
 pub(crate) mod shape_user_context;
 
@@ -317,6 +333,8 @@ pub(crate) mod shape_transformation_project_state;
 pub(crate) mod shape_transformation_steps;
 
 pub(crate) mod shape_transformation_upload_context;
+
+pub(crate) mod shape_usage_limit_list;
 
 pub(crate) mod shape_user_modification_event;
 

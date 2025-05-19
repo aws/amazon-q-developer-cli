@@ -97,6 +97,7 @@ pub use crate::types::_transformation_source_code_artifact_descriptor::Transform
 pub use crate::types::_transformation_spec::TransformationSpecBuilder;
 pub use crate::types::_transformation_step::TransformationStepBuilder;
 pub use crate::types::_transformation_upload_context::TransformationUploadContextBuilder;
+pub use crate::types::_usage_limit_list::UsageLimitListBuilder;
 pub use crate::types::_user_context::UserContextBuilder;
 pub use crate::types::_user_input_message::UserInputMessageBuilder;
 pub use crate::types::_user_input_message_context::UserInputMessageContextBuilder;

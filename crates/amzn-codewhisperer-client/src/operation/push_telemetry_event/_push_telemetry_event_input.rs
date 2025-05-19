@@ -6,9 +6,7 @@ pub struct PushTelemetryEventInput {
     #[allow(missing_docs)] // documentation missing in model
     pub client_token: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
-    pub timestamp: ::std::option::Option<::aws_smithy_types::DateTime>,
-    #[allow(missing_docs)] // documentation missing in model
-    pub event_id: ::std::option::Option<::std::string::String>,
+    pub event_type: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub event: ::std::option::Option<::aws_smithy_types::Document>,
 }
@@ -19,13 +17,8 @@ impl PushTelemetryEventInput {
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn timestamp(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
-        self.timestamp.as_ref()
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn event_id(&self) -> ::std::option::Option<&str> {
-        self.event_id.as_deref()
+    pub fn event_type(&self) -> ::std::option::Option<&str> {
+        self.event_type.as_deref()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -47,8 +40,7 @@ impl PushTelemetryEventInput {
 #[non_exhaustive]
 pub struct PushTelemetryEventInputBuilder {
     pub(crate) client_token: ::std::option::Option<::std::string::String>,
-    pub(crate) timestamp: ::std::option::Option<::aws_smithy_types::DateTime>,
-    pub(crate) event_id: ::std::option::Option<::std::string::String>,
+    pub(crate) event_type: ::std::option::Option<::std::string::String>,
     pub(crate) event: ::std::option::Option<::aws_smithy_types::Document>,
 }
 impl PushTelemetryEventInputBuilder {
@@ -71,38 +63,20 @@ impl PushTelemetryEventInputBuilder {
 
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
-    pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
-        self.timestamp = ::std::option::Option::Some(input);
+    pub fn event_type(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.event_type = ::std::option::Option::Some(input.into());
         self
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
-        self.timestamp = input;
+    pub fn set_event_type(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.event_type = input;
         self
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
-        &self.timestamp
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    /// This field is required.
-    pub fn event_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
-        self.event_id = ::std::option::Option::Some(input.into());
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn set_event_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
-        self.event_id = input;
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn get_event_id(&self) -> &::std::option::Option<::std::string::String> {
-        &self.event_id
+    pub fn get_event_type(&self) -> &::std::option::Option<::std::string::String> {
+        &self.event_type
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -133,8 +107,7 @@ impl PushTelemetryEventInputBuilder {
     > {
         ::std::result::Result::Ok(crate::operation::push_telemetry_event::PushTelemetryEventInput {
             client_token: self.client_token,
-            timestamp: self.timestamp,
-            event_id: self.event_id,
+            event_type: self.event_type,
             event: self.event,
         })
     }

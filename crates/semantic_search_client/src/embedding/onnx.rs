@@ -148,6 +148,23 @@ fn initialize_model(model_type: OnnxModelType, models_dir: &std::path::Path) -> 
         },
     }
 }
+impl crate::embedding::BenchmarkableEmbedder for TextEmbedder {
+    fn model_name(&self) -> String {
+        format!("ONNX-{}", self.model_type().get_model_name())
+    }
+
+    fn embedding_dim(&self) -> usize {
+        self.model_type().get_embedding_dim()
+    }
+
+    fn embed_single(&self, text: &str) -> Vec<f32> {
+        self.embed(text).unwrap()
+    }
+
+    fn embed_batch(&self, texts: &[String]) -> Vec<Vec<f32>> {
+        self.embed_batch(texts).unwrap()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -348,22 +365,5 @@ mod tests {
                 // Don't fail the test if a model can't be loaded, just report it
             },
         }
-    }
-}
-impl crate::embedding::BenchmarkableEmbedder for TextEmbedder {
-    fn model_name(&self) -> String {
-        format!("ONNX-{}", self.model_type().get_model_name())
-    }
-
-    fn embedding_dim(&self) -> usize {
-        self.model_type().get_embedding_dim()
-    }
-
-    fn embed_single(&self, text: &str) -> Vec<f32> {
-        self.embed(text).unwrap()
-    }
-
-    fn embed_batch(&self, texts: &[String]) -> Vec<Vec<f32>> {
-        self.embed_batch(texts).unwrap()
     }
 }
