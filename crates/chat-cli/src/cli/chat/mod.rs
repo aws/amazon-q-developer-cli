@@ -117,6 +117,7 @@ use tools::{
     OutputKind,
     QueuedTool,
     Tool,
+    ToolOrigin,
     ToolPermissions,
     ToolSpec,
 };
@@ -411,7 +412,7 @@ pub async fn chat(
         .interactive(interactive)
         .build(telemetry, tool_manager_output)
         .await?;
-    let tool_config = tool_manager.load_tools(database).await?;
+    let tool_config = tool_manager.load_tools(database, &mut output).await?;
     let mut tool_permissions = ToolPermissions::new(tool_config.len());
     if accept_all || trust_all_tools {
         tool_permissions.trust_all = true;
@@ -2399,24 +2400,43 @@ impl ChatContext {
                             style::Print("▔".repeat(terminal_width)),
                         )?;
 
-                        self.conversation_state.tools.iter().for_each(|(origin, tools)| {
-                            let to_display = tools
+                        let mut origin_tools: Vec<_> = self.conversation_state.tools.iter().collect();
+
+                        // Built in tools always appear first.
+                        origin_tools.sort_by(|(origin_a, _), (origin_b, _)| match (origin_a, origin_b) {
+                            (ToolOrigin::Native, _) => std::cmp::Ordering::Less,
+                            (_, ToolOrigin::Native) => std::cmp::Ordering::Greater,
+                            (ToolOrigin::McpServer(name_a), ToolOrigin::McpServer(name_b)) => name_a.cmp(name_b),
+                        });
+
+                        for (origin, tools) in origin_tools.iter() {
+                            let mut sorted_tools: Vec<_> = tools
                                 .iter()
                                 .filter(|FigTool::ToolSpecification(spec)| spec.name != DUMMY_TOOL_NAME)
-                                .fold(String::new(), |mut acc, FigTool::ToolSpecification(spec)| {
-                                    let width = longest - spec.name.len() + 4;
-                                    acc.push_str(
-                                        format!(
-                                            "- {}{:>width$}{}\n",
-                                            spec.name,
-                                            "",
-                                            self.tool_permissions.display_label(&spec.name),
-                                            width = width
-                                        )
-                                        .as_str(),
-                                    );
-                                    acc
-                                });
+                                .collect();
+
+                            sorted_tools.sort_by_key(|t| match t {
+                                FigTool::ToolSpecification(spec) => &spec.name,
+                            });
+
+                            let to_display =
+                                sorted_tools
+                                    .iter()
+                                    .fold(String::new(), |mut acc, FigTool::ToolSpecification(spec)| {
+                                        let width = longest - spec.name.len() + 4;
+                                        acc.push_str(
+                                            format!(
+                                                "- {}{:>width$}{}\n",
+                                                spec.name,
+                                                "",
+                                                self.tool_permissions.display_label(&spec.name),
+                                                width = width
+                                            )
+                                            .as_str(),
+                                        );
+                                        acc
+                                    });
+
                             let _ = queue!(
                                 self.output,
                                 style::SetAttribute(Attribute::Bold),
@@ -2425,7 +2445,7 @@ impl ChatContext {
                                 style::Print(to_display),
                                 style::Print("\n")
                             );
-                        });
+                        }
 
                         let loading = self.conversation_state.tool_manager.pending_clients().await;
                         if !loading.is_empty() {
@@ -2444,7 +2464,7 @@ impl ChatContext {
 
                         queue!(
                             self.output,
-                            style::Print("\nTrusted tools can be run without confirmation\n"),
+                            style::Print("\nTrusted tools will run without confirmation."),
                             style::SetForegroundColor(Color::DarkGrey),
                             style::Print(format!("\n{}\n", "* Default settings")),
                             style::Print("\n💡 Use "),
@@ -2452,7 +2472,7 @@ impl ChatContext {
                             style::Print("/tools help"),
                             style::SetForegroundColor(Color::Reset),
                             style::SetForegroundColor(Color::DarkGrey),
-                            style::Print(" to edit permissions."),
+                            style::Print(" to edit permissions.\n\n"),
                             style::SetForegroundColor(Color::Reset),
                         )?;
                     },
@@ -2594,23 +2614,31 @@ impl ChatContext {
                             style::Print("\n"),
                             style::Print(format!("{}\n", "▔".repeat(terminal_width))),
                         )?;
-                        let prompts_by_server = prompts_wl.iter().fold(
-                            HashMap::<&String, Vec<&PromptBundle>>::new(),
-                            |mut acc, (prompt_name, bundles)| {
-                                if prompt_name.contains(search_word.as_deref().unwrap_or("")) {
-                                    if prompt_name.len() > longest_name.len() {
-                                        longest_name = prompt_name.as_str();
+                        let mut prompts_by_server: Vec<_> = prompts_wl
+                            .iter()
+                            .fold(
+                                HashMap::<&String, Vec<&PromptBundle>>::new(),
+                                |mut acc, (prompt_name, bundles)| {
+                                    if prompt_name.contains(search_word.as_deref().unwrap_or("")) {
+                                        if prompt_name.len() > longest_name.len() {
+                                            longest_name = prompt_name.as_str();
+                                        }
+                                        for bundle in bundles {
+                                            acc.entry(&bundle.server_name)
+                                                .and_modify(|b| b.push(bundle))
+                                                .or_insert(vec![bundle]);
+                                        }
                                     }
-                                    for bundle in bundles {
-                                        acc.entry(&bundle.server_name)
-                                            .and_modify(|b| b.push(bundle))
-                                            .or_insert(vec![bundle]);
-                                    }
-                                }
-                                acc
-                            },
-                        );
-                        for (i, (server_name, bundles)) in prompts_by_server.iter().enumerate() {
+                                    acc
+                                },
+                            )
+                            .into_iter()
+                            .collect();
+                        prompts_by_server.sort_by_key(|(server_name, _)| server_name.as_str());
+
+                        for (i, (server_name, bundles)) in prompts_by_server.iter_mut().enumerate() {
+                            bundles.sort_by_key(|bundle| &bundle.prompt_get.name);
+
                             if i > 0 {
                                 queue!(self.output, style::Print("\n"))?;
                             }

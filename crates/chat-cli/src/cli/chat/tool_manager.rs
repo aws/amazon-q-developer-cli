@@ -57,6 +57,7 @@ use tracing::{
     warn,
 };
 
+use super::util::shared_writer::SharedWriter;
 use crate::api_client::model::{
     ToolResult,
     ToolResultContentBlock,
@@ -730,7 +731,11 @@ impl Clone for ToolManager {
 }
 
 impl ToolManager {
-    pub async fn load_tools(&mut self, database: &Database) -> eyre::Result<HashMap<String, ToolSpec>> {
+    pub async fn load_tools(
+        &mut self,
+        database: &Database,
+        output: &mut SharedWriter,
+    ) -> eyre::Result<HashMap<String, ToolSpec>> {
         let tx = self.loading_status_sender.take();
         let notify = self.notify.take();
         self.schema = {
@@ -767,7 +772,21 @@ impl ToolManager {
                 .map_or(5000_u64, |s| s as u64);
             Box::pin(tokio::time::sleep(std::time::Duration::from_millis(init_timeout)))
         } else {
-            Box::pin(future::pending())
+            // if it is non-interactive we will want to use the "mcp.noInteractiveTimeout"
+            let init_timeout = database
+                .settings
+                .get_int(Setting::McpNoInteractiveTimeout)
+                .map_or(30_000_u64, |s| s as u64);
+            Box::pin(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(init_timeout)).await;
+                let _ = queue!(
+                    output,
+                    style::Print(
+                        "Not all mcp servers loaded. Configure no-interactive timeout with q settings mcp.noInteractiveTimeout"
+                    ),
+                    style::Print("\n")
+                );
+            })
         };
         let server_loading_fut: Pin<Box<dyn Future<Output = ()>>> = if let Some(notify) = notify {
             Box::pin(async move { notify.notified().await })
