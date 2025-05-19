@@ -104,7 +104,7 @@ impl GenerateSshArgs {
               StreamLocalBindMask 600
               StreamLocalBindUnlink yes
               PermitLocalCommand yes
-              LocalCommand {exe_path} _ ssh-local-command '%r@%n' '{uuid}' 1>&2
+              LocalCommand '{exe_path}' _ ssh-local-command '%r@%n' '{uuid}' 1>&2
         "}
     }
 }
