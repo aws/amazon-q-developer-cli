@@ -7,7 +7,10 @@ use std::hash::{
     DefaultHasher,
     Hasher,
 };
-use std::io::Write;
+use std::io::{
+    BufWriter,
+    Write,
+};
 use std::path::{
     Path,
     PathBuf,
@@ -395,18 +398,24 @@ impl ToolManagerBuilder {
         let notify = Arc::new(Notify::new());
         let notify_weak = Arc::downgrade(&notify);
         let completed_clone = completed.clone();
+        let load_record = Arc::new(Mutex::new(HashMap::<String, String>::new()));
+        let load_record_clone = load_record.clone();
         tokio::spawn(async move {
+            let mut record_temp_buf = Vec::<u8>::new();
             while let Some(msg) = msg_rx.recv().await {
+                record_temp_buf.clear();
                 // For now we will treat every list result as if they contain the
                 // complete set of tools. This is not necessarily true in the future when
                 // request method on the mcp client no longer buffers all the pages from
                 // list calls.
                 match msg {
                     UpdateEventMessage::ToolsListResult { server_name, result } => {
-                        let time_taken = loading_servers.get(&server_name).map_or("0.0".to_owned(), |init_time| {
-                            let time_taken = (std::time::Instant::now() - *init_time).as_secs_f64().abs();
-                            format!("{:.2}", time_taken)
-                        });
+                        let time_taken = loading_servers
+                            .remove(&server_name)
+                            .map_or("0.0".to_owned(), |init_time| {
+                                let time_taken = (std::time::Instant::now() - init_time).as_secs_f64().abs();
+                                format!("{:.2}", time_taken)
+                            });
                         pending_clone.write().await.remove(&server_name);
                         match result {
                             Ok(result) => {
@@ -430,12 +439,12 @@ impl ToolManagerBuilder {
                                     let msg = match process_result {
                                         Ok(_) => LoadingMsg::Done {
                                             name: server_name.clone(),
-                                            time: time_taken,
+                                            time: time_taken.clone(),
                                         },
-                                        Err(e) => LoadingMsg::Warn {
+                                        Err(ref e) => LoadingMsg::Warn {
                                             name: server_name.clone(),
-                                            msg: e,
-                                            time: time_taken,
+                                            msg: eyre::eyre!(e.to_string()),
+                                            time: time_taken.clone(),
                                         },
                                     };
                                     if let Err(e) = sender.send(msg).await {
@@ -449,10 +458,53 @@ impl ToolManagerBuilder {
                                 new_tool_specs_clone
                                     .lock()
                                     .await
-                                    .insert(server_name, (sanitized_mapping, specs));
+                                    .insert(server_name.clone(), (sanitized_mapping, specs));
                                 has_new_stuff_clone.store(true, Ordering::Release);
+                                // Maintain a record of the server load:
+                                let mut buf_writer = BufWriter::new(&mut record_temp_buf);
+                                if let Err(e) = process_result {
+                                    let _ = queue_warn_message(
+                                        server_name.as_str(),
+                                        &e,
+                                        time_taken.as_str(),
+                                        &mut buf_writer,
+                                    );
+                                } else {
+                                    let _ = queue_success_message(
+                                        server_name.as_str(),
+                                        time_taken.as_str(),
+                                        &mut buf_writer,
+                                    );
+                                }
+                                let _ = buf_writer.flush();
+                                drop(buf_writer);
+                                let record = String::from_utf8_lossy(&record_temp_buf).to_string();
+                                load_record_clone
+                                    .lock()
+                                    .await
+                                    .entry(server_name)
+                                    .and_modify(|load_record| {
+                                        load_record.push_str("\n--- tools refreshed ---\n");
+                                        load_record.push_str(record.as_str());
+                                    })
+                                    .or_insert(record);
                             },
                             Err(e) => {
+                                // Maintain a record of the server load:
+                                let mut buf_writer = BufWriter::new(&mut record_temp_buf);
+                                let _ = queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer);
+                                let _ = buf_writer.flush();
+                                drop(buf_writer);
+                                let record = String::from_utf8_lossy(&record_temp_buf).to_string();
+                                load_record_clone
+                                    .lock()
+                                    .await
+                                    .entry(server_name.clone())
+                                    .and_modify(|load_record| {
+                                        load_record.push_str("\n--- tools refreshed ---\n");
+                                        load_record.push_str(record.as_str());
+                                    })
+                                    .or_insert(record);
                                 // Errors surfaced at this point (i.e. before [process_tool_specs]
                                 // is called) are fatals and should be considered errors
                                 if let Some(sender) = &loading_status_sender_clone {
@@ -492,6 +544,7 @@ impl ToolManagerBuilder {
                     } => {},
                     UpdateEventMessage::InitStart { server_name } => {
                         pending_clone.write().await.insert(server_name.clone());
+                        loading_servers.insert(server_name, std::time::Instant::now());
                     },
                 }
             }
@@ -627,6 +680,7 @@ impl ToolManagerBuilder {
             new_tool_specs,
             has_new_stuff,
             is_interactive,
+            mcp_load_record: load_record,
             ..Default::default()
         })
     }
@@ -709,6 +763,13 @@ pub struct ToolManager {
     pub schema: HashMap<String, ToolSpec>,
 
     is_interactive: bool,
+
+    /// This serves as a record of the loading of mcp servers.
+    /// The key of which is the server name as they are recognized by the current instance of chat
+    /// (which may be different than how it is written in the config, depending of the presence of
+    /// invalid characters).
+    /// The value is the load message (i.e. load time, warnings, and errors)
+    pub mcp_load_record: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl Clone for ToolManager {
@@ -722,6 +783,7 @@ impl Clone for ToolManager {
             tn_map: self.tn_map.clone(),
             schema: self.schema.clone(),
             is_interactive: self.is_interactive,
+            mcp_load_record: self.mcp_load_record.clone(),
             ..Default::default()
         }
     }
@@ -1253,6 +1315,7 @@ fn queue_success_message(name: &str, time_taken: &str, output: &mut impl Write) 
         style::Print(" loaded in "),
         style::SetForegroundColor(style::Color::Yellow),
         style::Print(format!("{time_taken} s\n")),
+        style::ResetColor,
     )?)
 }
 

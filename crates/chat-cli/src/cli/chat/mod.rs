@@ -2948,6 +2948,44 @@ impl ChatContext {
                     skip_printing_tools: true,
                 }
             },
+            Command::Mcp => {
+                let terminal_width = self.terminal_width();
+                let loaded_servers = self.conversation_state.tool_manager.mcp_load_record.lock().await;
+                let still_loading = self
+                    .conversation_state
+                    .tool_manager
+                    .pending_clients()
+                    .await
+                    .into_iter()
+                    .map(|name| format!(" - {name}\n"))
+                    .collect::<Vec<_>>()
+                    .join("");
+                for (server_name, msg) in loaded_servers.iter() {
+                    queue!(
+                        self.output,
+                        style::Print(server_name),
+                        style::Print("\n"),
+                        style::Print(format!("{}\n", "▔".repeat(terminal_width))),
+                        style::Print(msg),
+                        style::Print("\n")
+                    )?;
+                }
+                if !still_loading.is_empty() {
+                    queue!(
+                        self.output,
+                        style::Print("Still loading:\n"),
+                        style::Print(format!("{}\n", "▔".repeat(terminal_width))),
+                        style::Print(still_loading),
+                        style::Print("\n")
+                    )?;
+                }
+                self.output.flush()?;
+                ChatState::PromptUser {
+                    tool_uses: None,
+                    pending_tool_index: None,
+                    skip_printing_tools: true,
+                }
+            },
         })
     }
 
