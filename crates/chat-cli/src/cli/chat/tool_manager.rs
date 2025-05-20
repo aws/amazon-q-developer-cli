@@ -855,8 +855,7 @@ impl ToolManager {
                     let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                 }
-                error!("## timeout: timed out");
-                if !self.clients.is_empty() {
+                if !self.clients.is_empty() && !self.is_interactive {
                     let _ = queue!(
                         output,
                         style::Print(
@@ -867,14 +866,12 @@ impl ToolManager {
                 }
             },
             _ = server_loading_fut => {
-                error!("## timeout: server load finish");
                 if let Some(tx) = tx {
                     let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                 }
             }
             _ = ctrl_c() => {
-                error!("## timeout: ctrl c");
                 if self.is_interactive {
                     if let Some(tx) = tx {
                         let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
