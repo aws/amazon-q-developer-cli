@@ -107,6 +107,7 @@ use token_counter::{
 use tokio::signal::ctrl_c;
 use tool_manager::{
     GetPromptError,
+    LoadingRecord,
     McpServerConfig,
     PromptBundle,
     ToolManager,
@@ -2961,6 +2962,15 @@ impl ChatContext {
                     .collect::<Vec<_>>()
                     .join("");
                 for (server_name, msg) in loaded_servers.iter() {
+                    let msg = msg
+                        .iter()
+                        .map(|record| match record {
+                            LoadingRecord::Err(content)
+                            | LoadingRecord::Warn(content)
+                            | LoadingRecord::Success(content) => content.clone(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n--- tools refreshed ---\n");
                     queue!(
                         self.output,
                         style::Print(server_name),

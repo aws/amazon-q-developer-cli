@@ -159,6 +159,16 @@ enum LoadingMsg {
     Terminate { still_loading: Vec<String> },
 }
 
+/// Used to denote the loading outcome associated with a server.
+/// This is mainly used in the non-interactive mode to determine if there is any fatal errors to
+/// surface (since we would only want to surface fatal errors in non-interactive mode).
+#[derive(Clone, Debug)]
+pub enum LoadingRecord {
+    Success(String),
+    Warn(String),
+    Err(String),
+}
+
 // This is to mirror claude's config set up
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
@@ -399,7 +409,7 @@ impl ToolManagerBuilder {
         let notify = Arc::new(Notify::new());
         let notify_weak = Arc::downgrade(&notify);
         let completed_clone = completed.clone();
-        let load_record = Arc::new(Mutex::new(HashMap::<String, String>::new()));
+        let load_record = Arc::new(Mutex::new(HashMap::<String, Vec<LoadingRecord>>::new()));
         let load_record_clone = load_record.clone();
         tokio::spawn(async move {
             let mut record_temp_buf = Vec::<u8>::new();
@@ -463,10 +473,10 @@ impl ToolManagerBuilder {
                                 has_new_stuff_clone.store(true, Ordering::Release);
                                 // Maintain a record of the server load:
                                 let mut buf_writer = BufWriter::new(&mut record_temp_buf);
-                                if let Err(e) = process_result {
+                                if let Err(e) = &process_result {
                                     let _ = queue_warn_message(
                                         server_name.as_str(),
-                                        &e,
+                                        e,
                                         time_taken.as_str(),
                                         &mut buf_writer,
                                     );
@@ -480,32 +490,38 @@ impl ToolManagerBuilder {
                                 let _ = buf_writer.flush();
                                 drop(buf_writer);
                                 let record = String::from_utf8_lossy(&record_temp_buf).to_string();
+                                let record = if process_result.is_err() {
+                                    LoadingRecord::Warn(record)
+                                } else {
+                                    LoadingRecord::Success(record)
+                                };
                                 load_record_clone
                                     .lock()
                                     .await
                                     .entry(server_name)
                                     .and_modify(|load_record| {
-                                        load_record.push_str("\n--- tools refreshed ---\n");
-                                        load_record.push_str(record.as_str());
+                                        load_record.push(record.clone());
                                     })
-                                    .or_insert(record);
+                                    .or_insert(vec![record]);
                             },
                             Err(e) => {
+                                // Log error to chat Log
+                                error!("Error loading server {server_name}: {:?}", e);
                                 // Maintain a record of the server load:
                                 let mut buf_writer = BufWriter::new(&mut record_temp_buf);
                                 let _ = queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer);
                                 let _ = buf_writer.flush();
                                 drop(buf_writer);
                                 let record = String::from_utf8_lossy(&record_temp_buf).to_string();
+                                let record = LoadingRecord::Err(record);
                                 load_record_clone
                                     .lock()
                                     .await
                                     .entry(server_name.clone())
                                     .and_modify(|load_record| {
-                                        load_record.push_str("\n--- tools refreshed ---\n");
-                                        load_record.push_str(record.as_str());
+                                        load_record.push(record.clone());
                                     })
-                                    .or_insert(record);
+                                    .or_insert(vec![record]);
                                 // Errors surfaced at this point (i.e. before [process_tool_specs]
                                 // is called) are fatals and should be considered errors
                                 if let Some(sender) = &loading_status_sender_clone {
@@ -762,7 +778,7 @@ pub struct ToolManager {
     /// (which may be different than how it is written in the config, depending of the presence of
     /// invalid characters).
     /// The value is the load message (i.e. load time, warnings, and errors)
-    pub mcp_load_record: Arc<Mutex<HashMap<String, String>>>,
+    pub mcp_load_record: Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
 }
 
 impl Clone for ToolManager {
@@ -829,16 +845,7 @@ impl ToolManager {
                 .settings
                 .get_int(Setting::McpNoInteractiveTimeout)
                 .map_or(30_000_u64, |s| s as u64);
-            Box::pin(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(init_timeout)).await;
-                let _ = queue!(
-                    output,
-                    style::Print(
-                        "Not all mcp servers loaded. Configure no-interactive timeout with q settings mcp.noInteractiveTimeout"
-                    ),
-                    style::Print("\n")
-                );
-            })
+            Box::pin(tokio::time::sleep(std::time::Duration::from_millis(init_timeout)))
         };
         let server_loading_fut: Pin<Box<dyn Future<Output = ()>>> = if let Some(notify) = notify {
             Box::pin(async move { notify.notified().await })
@@ -851,6 +858,13 @@ impl ToolManager {
                     let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                 }
+                let _ = queue!(
+                    output,
+                    style::Print(
+                        "Not all mcp servers loaded. Configure no-interactive timeout with q settings mcp.noInteractiveTimeout"
+                    ),
+                    style::Print("\n------\n")
+                );
             },
             _ = server_loading_fut => {
                 if let Some(tx) = tx {
@@ -868,6 +882,22 @@ impl ToolManager {
                     return Err(eyre::eyre!("User interrupted mcp server loading in non-interactive mode. Ending."));
                 }
             }
+        }
+        if !self.is_interactive
+            && self
+                .mcp_load_record
+                .lock()
+                .await
+                .iter()
+                .any(|(_, records)| records.iter().any(|record| matches!(record, LoadingRecord::Err(_))))
+        {
+            queue!(
+                output,
+                style::Print(
+                    "One or more mcp server did not load correctly. See $TMPDIR/qlog/chat.log for more details."
+                ),
+                style::Print("\n------\n")
+            )?;
         }
         self.update().await;
         Ok(self.schema.clone())
