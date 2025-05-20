@@ -92,6 +92,7 @@ use crate::database::Database;
 use crate::database::settings::Setting;
 use crate::mcp_client::{
     JsonRpcResponse,
+    Messenger,
     PromptGet,
 };
 use crate::platform::Context;
@@ -550,9 +551,9 @@ impl ToolManagerBuilder {
             }
         });
         for (mut name, init_res) in pre_initialized {
+            let messenger = messenger_builder.build_with_name(name.clone());
             match init_res {
                 Ok(mut client) => {
-                    let messenger = messenger_builder.build_with_name(client.get_server_name().to_owned());
                     client.assign_messenger(Box::new(messenger));
                     let mut client = Arc::new(client);
                     while let Some(collided_client) = clients.insert(name.clone(), client) {
@@ -567,15 +568,7 @@ impl ToolManagerBuilder {
                     telemetry
                         .send_mcp_server_init(conversation_id.clone(), Some(e.to_string()), 0)
                         .ok();
-                    if let Some(tx) = &loading_status_sender {
-                        let _ = tx
-                            .send(LoadingMsg::Error {
-                                name: name.clone(),
-                                msg: e,
-                                time: "0.0".to_owned(),
-                            })
-                            .await;
-                    }
+                    let _ = messenger.send_tools_list_result(Err(e)).await;
                     completed.fetch_add(1, Ordering::AcqRel);
                 },
             }
