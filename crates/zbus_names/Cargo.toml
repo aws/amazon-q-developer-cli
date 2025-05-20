@@ -14,7 +14,7 @@ readme = "README.md"
 
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
-zvariant = { version = "4.0.0", default-features = false, features = [
+zvariant = { version = "5.5.3", default-features = false, features = [
     "enumflags2",
 ] }
 static_assertions = "1.1.0"
