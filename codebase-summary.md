@@ -6,26 +6,34 @@ The **Amazon Q Developer CLI** is part of a monorepo that houses the core code f
 
 ## Key Components
 
-1. **q_cli**: The main CLI tool that allows users to interact with Amazon Q Developer from the command line
+1. **chat_cli**: The main CLI tool that allows users to interact with Amazon Q Developer from the command line
 2. **fig_desktop**: The Rust desktop application that uses tao/wry for windowing and webviews
 3. **Web Applications**: React apps for autocomplete functionality and dashboard interface
 4. **IDE Extensions**: VSCode, JetBrains, and GNOME extensions
+5. **MCP Client**: Model Context Protocol client for extending capabilities through external servers
 
 ## Project Structure
 
 - `crates/` - Contains all internal Rust crates
+  - `chat-cli/` - The main CLI implementation for Amazon Q chat
+  - `fig_desktop/` - Desktop application implementation
+  - `figterm/` - Terminal/pseudoterminal implementation
+  - `semantic_search_client/` - Client for semantic search capabilities
 - `packages/` - Contains all internal npm packages
+  - `autocomplete/` - Autocomplete functionality
+  - `dashboard-app/` - Dashboard interface
 - `proto/` - Protocol buffer message specifications for inter-process communication
-- `extensions/` - IDE extensions
+- `extensions/` - IDE extensions for VSCode, JetBrains, and GNOME
 - `build-scripts/` - Python scripts for building, signing, and testing
 - `tests/` - Integration tests
+- `rfcs/` - Request for Comments documents for feature proposals
 
 ## Amazon Q Chat Implementation
 
 ### Core Components
 
 1. **Chat Module Structure**
-   - The chat functionality is implemented in the `q_cli/src/cli/chat` directory
+   - The chat functionality is implemented in the `chat-cli/src/cli/chat` directory
    - Main components include conversation state management, input handling, response parsing, and tool execution
 
 2. **User Interface**
@@ -72,6 +80,23 @@ The chat implementation includes a robust tool system that allows Amazon Q to in
    - The `/acceptall` command can toggle automatic acceptance for the session
    - Tool responses are limited to prevent excessive output (30KB limit)
 
+### MCP (Model Context Protocol) Integration
+
+1. **MCP Client**:
+   - Implements the Model Context Protocol for extending Amazon Q's capabilities
+   - Allows communication with external MCP servers that provide additional tools
+   - Supports different transport mechanisms (stdio, websocket)
+
+2. **MCP Server Discovery**:
+   - Automatically discovers and connects to available MCP servers
+   - Registers server-provided tools with the tool manager
+   - Handles tool invocation routing to appropriate servers
+
+3. **Custom Tool Integration**:
+   - Enables third-party developers to extend Amazon Q with custom tools
+   - Standardizes tool registration and invocation patterns
+   - Provides error handling and response formatting
+
 ### Technical Implementation
 
 1. **API Communication**:
@@ -93,5 +118,18 @@ The chat implementation includes a robust tool system that allows Amazon Q to in
    - Respects user settings for editor mode (vi/emacs)
    - Region checking for service availability
    - Telemetry for usage tracking
+
+## Recent Developments
+
+1. **Batch File Operations**:
+   - RFC for enhancing fs_read and fs_write tools to support batch operations
+   - Multi-file reading and writing in a single operation
+   - Multiple edits per file with proper ordering to maintain line number integrity
+   - Search/replace operations across files with wildcard patterns
+
+2. **MCP Improvements**:
+   - Enhanced Model Context Protocol implementation
+   - Better support for external tool providers
+   - Standardized tool registration and invocation
 
 The implementation provides a seamless interface between the user and Amazon Q's AI capabilities, with powerful tools that allow the assistant to help with file operations, command execution, and AWS service interactions, all within a terminal-based chat interface.

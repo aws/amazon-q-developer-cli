@@ -26,10 +26,6 @@ use super::{
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
 };
-use crate::cli::chat::{
-    CONTINUATION_LINE,
-    PURPOSE_ARROW,
-};
 use crate::platform::Context;
 const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 
@@ -39,6 +35,7 @@ pub struct ExecuteBash {
     pub summary: Option<String>,
 }
 
+// Direct access to summary field
 impl ExecuteBash {
     pub fn requires_acceptance(&self) -> bool {
         let Some(args) = shlex::split(&self.command) else {
@@ -127,21 +124,7 @@ impl ExecuteBash {
         )?;
 
         // Add the summary if available
-        if let Some(summary) = &self.summary {
-            queue!(
-                updates,
-                style::Print(CONTINUATION_LINE),
-                style::Print("\n"),
-                style::Print(PURPOSE_ARROW),
-                style::SetForegroundColor(Color::Blue),
-                style::Print("Purpose: "),
-                style::ResetColor,
-                style::Print(summary),
-                style::Print("\n"),
-            )?;
-        }
-
-        queue!(updates, style::Print("\n"))?;
+        super::queue_summary(self.summary.as_deref(), updates, Some(2))?;
 
         Ok(())
     }
