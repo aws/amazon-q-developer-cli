@@ -36,7 +36,7 @@
     "tailwind-merge": "^3.2.0",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.25.7",
-    "zustand": "^4.5.6"
+    "zustand": "^5.0.4"
   },
   "devDependencies": {
     "@amzn/types": "workspace:^",
