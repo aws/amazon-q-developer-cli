@@ -858,13 +858,15 @@ impl ToolManager {
                     let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                 }
-                let _ = queue!(
-                    output,
-                    style::Print(
-                        "Not all mcp servers loaded. Configure no-interactive timeout with q settings mcp.noInteractiveTimeout"
-                    ),
-                    style::Print("\n------\n")
-                );
+                if !self.clients.is_empty() {
+                    let _ = queue!(
+                        output,
+                        style::Print(
+                            "Not all mcp servers loaded. Configure no-interactive timeout with q settings mcp.noInteractiveTimeout"
+                        ),
+                        style::Print("\n------\n")
+                    );
+                }
             },
             _ = server_loading_fut => {
                 if let Some(tx) = tx {
