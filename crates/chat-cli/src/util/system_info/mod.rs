@@ -1,4 +1,7 @@
+#[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "windows")]
+pub mod windows;
 
 use std::sync::OnceLock;
 
@@ -9,6 +12,24 @@ use serde::{
 };
 
 use crate::platform::Env;
+
+/// Fields for OS release information
+/// Fields from <https://www.man7.org/linux/man-pages/man5/os-release.5.html>
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OsRelease {
+    pub id: Option<String>,
+
+    pub name: Option<String>,
+    pub pretty_name: Option<String>,
+
+    pub version_id: Option<String>,
+    pub version: Option<String>,
+
+    pub build_id: Option<String>,
+
+    pub variant_id: Option<String>,
+    pub variant: Option<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -22,7 +43,7 @@ pub enum OSVersion {
     Linux {
         kernel_version: String,
         #[serde(flatten)]
-        os_release: Option<linux::OsRelease>,
+        os_release: Option<OsRelease>,
     },
     Windows {
         name: String,
@@ -63,83 +84,67 @@ impl std::fmt::Display for OSVersion {
 
 pub fn os_version() -> Option<&'static OSVersion> {
     static OS_VERSION: OnceLock<Option<OSVersion>> = OnceLock::new();
-    OS_VERSION.get_or_init(|| {
-        cfg_if! {
-            if #[cfg(target_os = "macos")] {
-                use std::process::Command;
-                use regex::Regex;
+    OS_VERSION
+        .get_or_init(|| {
+            cfg_if! {
+                if #[cfg(target_os = "macos")] {
+                    use std::process::Command;
+                    use regex::Regex;
 
-                let version_info = Command::new("sw_vers")
-                    .output()
-                    .ok()?;
+                    let version_info = Command::new("sw_vers")
+                        .output()
+                        .ok()?;
 
-                let version_info: String = String::from_utf8_lossy(&version_info.stdout).trim().into();
+                    let version_info: String = String::from_utf8_lossy(&version_info.stdout).trim().into();
 
-                let version_regex = Regex::new(r"ProductVersion:\s*(\S+)").unwrap();
-                let build_regex = Regex::new(r"BuildVersion:\s*(\S+)").unwrap();
+                    let version_regex = Regex::new(r"ProductVersion:\s*(\S+)").unwrap();
+                    let build_regex = Regex::new(r"BuildVersion:\s*(\S+)").unwrap();
 
-                let version: String = version_regex
-                    .captures(&version_info)
-                    .and_then(|c| c.get(1))
-                    .map(|v| v.as_str().into())?;
+                    let version: String = version_regex
+                        .captures(&version_info)
+                        .and_then(|c| c.get(1))
+                        .map(|v| v.as_str().into())?;
 
-                let major = version
-                    .split('.')
-                    .next()?
-                    .parse().ok()?;
+                    let major = version
+                        .split('.')
+                        .next()?
+                        .parse().ok()?;
 
-                let minor = version
-                    .split('.')
-                    .nth(1)?
-                    .parse().ok()?;
+                    let minor = version
+                        .split('.')
+                        .nth(1)?
+                        .parse().ok()?;
 
-                let patch = version.split('.').nth(2).and_then(|p| p.parse().ok());
+                    let patch = version.split('.').nth(2).and_then(|p| p.parse().ok());
 
-                let build = build_regex
-                    .captures(&version_info)
-                    .and_then(|c| c.get(1))?
-                    .as_str()
-                    .into();
+                    let build = build_regex
+                        .captures(&version_info)
+                        .and_then(|c| c.get(1))?
+                        .as_str()
+                        .into();
 
-                Some(OSVersion::MacOS {
-                    major,
-                    minor,
-                    patch,
-                    build,
-                })
-            } else if #[cfg(target_os = "linux")] {
-                use nix::sys::utsname::uname;
+                    Some(OSVersion::MacOS {
+                        major,
+                        minor,
+                        patch,
+                        build,
+                    })
+                } else if #[cfg(target_os = "linux")] {
+                    linux::get_os_version()
+                } else if #[cfg(target_os = "windows")] {
+                    windows::get_os_version()
+                } else if #[cfg(target_os = "freebsd")] {
+                    use nix::sys::utsname::uname;
 
-                let kernel_version = uname().ok()?.release().to_string_lossy().into();
-                let os_release = linux::get_os_release().cloned();
+                    let version = uname().ok()?.release().to_string_lossy().into();
 
-                Some(OSVersion::Linux {
-                    kernel_version,
-                    os_release,
-                })
-            } else if #[cfg(target_os = "windows")] {
-                use winreg::enums::HKEY_LOCAL_MACHINE;
-                use winreg::RegKey;
-
-                let rkey = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion").ok()?;
-                let build: String = rkey.get_value("CurrentBuild").ok()?;
-
-                Some(OSVersion::Windows {
-                    name: rkey.get_value("ProductName").ok()?,
-                    build: build.parse::<u32>().ok()?,
-                })
-            } else if #[cfg(target_os = "freebsd")] {
-                use nix::sys::utsname::uname;
-
-                let version = uname().ok()?.release().to_string_lossy().into();
-
-                Some(OSVersion::FreeBsd {
-                    version,
-                })
-
+                    Some(OSVersion::FreeBsd {
+                        version,
+                    })
+                }
             }
-        }
-    }).as_ref()
+        })
+        .as_ref()
 }
 
 pub fn in_ssh() -> bool {
