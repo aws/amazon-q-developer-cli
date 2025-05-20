@@ -205,7 +205,7 @@ const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
 const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
-const ROTATING_TIPS: [&str; 12] = [
+const ROTATING_TIPS: [&str; 13] = [
     color_print::cstr! {"You can resume the last conversation from your current directory by launching with <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
@@ -218,6 +218,7 @@ const ROTATING_TIPS: [&str; 12] = [
     color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
     color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with /help"},
     color_print::cstr! {"You can specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use /tools to see pending servers."},
+    color_print::cstr! {"You can see the server load status as well as any warnings or errors associated with <green!>/mcp</green!>"},
 ];
 
 const GREETING_BREAK_POINT: usize = 80;
@@ -247,6 +248,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>untrust</em>     <black!>Revert a tool or tools to per-request confirmation</black!>
   <em>trustall</em>    <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
   <em>reset</em>       <black!>Reset all tools to default permission levels</black!>
+<em>/mcp</em>          <black!>See mcp server loaded</black!>
 <em>/profile</em>      <black!>Manage profiles</black!>
   <em>help</em>        <black!>Show profile help</black!>
   <em>list</em>        <black!>List profiles</black!>
