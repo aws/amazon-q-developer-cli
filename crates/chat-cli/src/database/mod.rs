@@ -27,7 +27,10 @@ use serde_json::{
 };
 use settings::Settings;
 use thiserror::Error;
-use tracing::info;
+use tracing::{
+    info,
+    trace,
+};
 use uuid::Uuid;
 
 use crate::cli::ConversationState;
@@ -334,15 +337,18 @@ impl Database {
     }
 
     pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
+        trace!(key, "getting secret");
         Ok(self.get_entry::<String>(Table::Auth, key)?.map(Into::into))
     }
 
     pub async fn set_secret(&self, key: &str, value: &str) -> Result<(), DatabaseError> {
+        trace!(key, "setting secret");
         self.set_entry(Table::Auth, key, value)?;
         Ok(())
     }
 
     pub async fn delete_secret(&self, key: &str) -> Result<(), DatabaseError> {
+        trace!(key, "deleting secret");
         self.delete_entry(Table::Auth, key)
     }
 

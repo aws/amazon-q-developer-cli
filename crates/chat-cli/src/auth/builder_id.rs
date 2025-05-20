@@ -45,6 +45,7 @@ use time::OffsetDateTime;
 use tracing::{
     debug,
     error,
+    trace,
     warn,
 };
 
@@ -123,6 +124,7 @@ impl DeviceRegistration {
 
     /// Loads the OIDC registered client from the secret store, deleting it if it is expired.
     async fn load_from_secret_store(database: &Database, region: &Region) -> Result<Option<Self>, AuthError> {
+        trace!(?region, "loading device registration from secret store");
         let device_registration = database.get_secret(Self::SECRET_KEY).await?;
 
         if let Some(device_registration) = device_registration {
@@ -130,9 +132,18 @@ impl DeviceRegistration {
             let device_registration: Self = serde_json::from_str(&device_registration.0)?;
 
             if let Some(client_secret_expires_at) = device_registration.client_secret_expires_at {
-                if !is_expired(&client_secret_expires_at) && device_registration.region == region.as_ref() {
+                let is_expired = is_expired(&client_secret_expires_at);
+                let registration_region_is_valid = device_registration.region == region.as_ref();
+                trace!(
+                    ?is_expired,
+                    ?registration_region_is_valid,
+                    "checking if device registration is valid"
+                );
+                if !is_expired && registration_region_is_valid {
                     return Ok(Some(device_registration));
                 }
+            } else {
+                warn!("no expiration time found for the client secret");
             }
         }
 
@@ -291,19 +302,25 @@ impl BuilderIdToken {
                 match token {
                     Some(token) => {
                         let region = token.region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-
                         let client = client(region.clone());
-                        // if token is expired try to refresh
+
                         if token.is_expired() {
+                            trace!("token is expired, refreshing");
                             token.refresh_token(&client, database, &region).await
                         } else {
                             Ok(Some(token))
                         }
                     },
-                    None => Ok(None),
+                    None => {
+                        debug!("secret stored in the database was empty");
+                        Ok(None)
+                    },
                 }
             },
-            Ok(None) => Ok(None),
+            Ok(None) => {
+                debug!("no secret found in the database");
+                Ok(None)
+            },
             Err(err) => {
                 error!(%err, "Error getting builder id token from keychain");
                 Err(err)?
