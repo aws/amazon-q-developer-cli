@@ -12,6 +12,7 @@ use rustyline::highlight::{
     CmdKind,
     Highlighter,
 };
+use rustyline::hint::Hinter as RustylineHinter;
 use rustyline::history::DefaultHistory;
 use rustyline::validate::{
     ValidationContext,
@@ -216,6 +217,62 @@ impl Completer for ChatCompleter {
     }
 }
 
+/// Custom hinter that provides shadowtext suggestions
+pub struct ChatHinter {
+    /// Command history for providing suggestions based on past commands
+    history: Vec<String>,
+}
+
+impl ChatHinter {
+    /// Creates a new ChatHinter instance
+    pub fn new() -> Self {
+        Self { history: Vec::new() }
+    }
+
+    /// Updates the history with a new command
+    pub fn update_history(&mut self, command: &str) {
+        if !command.trim().is_empty() {
+            self.history.push(command.to_string());
+        }
+    }
+
+    /// Finds the best hint for the current input
+    fn find_hint(&self, line: &str) -> Option<String> {
+        // If line is empty, no hint
+        if line.is_empty() {
+            return None;
+        }
+
+        // If line starts with a slash, try to find a command hint
+        if line.starts_with('/') {
+            return COMMANDS
+                .iter()
+                .find(|cmd| cmd.starts_with(line))
+                .map(|cmd| cmd[line.len()..].to_string());
+        }
+
+        // Try to find a hint from history
+        self.history
+            .iter()
+            .rev() // Start from most recent
+            .find(|cmd| cmd.starts_with(line) && cmd.len() > line.len())
+            .map(|cmd| cmd[line.len()..].to_string())
+    }
+}
+
+impl RustylineHinter for ChatHinter {
+    type Hint = String;
+
+    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<Self::Hint> {
+        // Only provide hints when cursor is at the end of the line
+        if pos < line.len() {
+            return None;
+        }
+
+        self.find_hint(line)
+    }
+}
+
 /// Custom validator for multi-line input
 pub struct MultiLineValidator;
 
@@ -242,8 +299,15 @@ pub struct ChatHelper {
     #[rustyline(Completer)]
     completer: ChatCompleter,
     #[rustyline(Hinter)]
-    hinter: (),
+    hinter: ChatHinter,
     validator: MultiLineValidator,
+}
+
+impl ChatHelper {
+    /// Updates the history of the ChatHinter with a new command
+    pub fn update_hinter_history(&mut self, command: &str) {
+        self.hinter.update_history(command);
+    }
 }
 
 impl Validator for ChatHelper {
@@ -254,7 +318,7 @@ impl Validator for ChatHelper {
 
 impl Highlighter for ChatHelper {
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
-        Cow::Owned(format!("\x1b[1m{hint}\x1b[m"))
+        Cow::Owned(format!("\x1b[38;5;240m{hint}\x1b[m"))
     }
 
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
@@ -282,7 +346,7 @@ pub fn rl(
         .build();
     let h = ChatHelper {
         completer: ChatCompleter::new(sender, receiver),
-        hinter: (),
+        hinter: ChatHinter::new(),
         validator: MultiLineValidator,
     };
     let mut rl = Editor::with_config(config)?;
@@ -366,5 +430,47 @@ mod tests {
 
         // Verify no completions are returned for regular text
         assert!(completions.is_empty());
+    }
+
+    #[test]
+    fn test_chat_hinter_command_hint() {
+        let hinter = ChatHinter::new();
+
+        // Test hint for a command
+        let line = "/he";
+        let pos = line.len();
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, Some("lp".to_string()));
+
+        // Test hint when cursor is not at the end
+        let hint = hinter.hint(line, 1, &ctx);
+        assert_eq!(hint, None);
+
+        // Test hint for a non-existent command
+        let line = "/xyz";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, None);
+    }
+
+    #[test]
+    fn test_chat_hinter_history_hint() {
+        let mut hinter = ChatHinter::new();
+
+        // Add some history
+        hinter.update_history("Hello, world!");
+        hinter.update_history("How are you?");
+
+        // Test hint from history
+        let line = "How";
+        let pos = line.len();
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, Some(" are you?".to_string()));
     }
 }
