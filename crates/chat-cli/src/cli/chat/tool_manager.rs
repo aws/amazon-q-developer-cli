@@ -18,7 +18,6 @@ use std::path::{
 use std::pin::Pin;
 use std::sync::atomic::{
     AtomicBool,
-    AtomicU32,
     Ordering,
 };
 use std::sync::{
@@ -303,7 +302,6 @@ impl ToolManagerBuilder {
             loading_servers.insert(server_name.clone(), init_time);
         }
         let total = loading_servers.len();
-        let completed = Arc::new(AtomicU32::new(0));
 
         // Spawn a task for displaying the mcp loading statuses.
         // This is only necessary when we are in interactive mode AND there are servers to load.
@@ -408,11 +406,11 @@ impl ToolManagerBuilder {
         let telemetry_clone = telemetry.clone();
         let notify = Arc::new(Notify::new());
         let notify_weak = Arc::downgrade(&notify);
-        let completed_clone = completed.clone();
         let load_record = Arc::new(Mutex::new(HashMap::<String, Vec<LoadingRecord>>::new()));
         let load_record_clone = load_record.clone();
         tokio::spawn(async move {
             let mut record_temp_buf = Vec::<u8>::new();
+            let mut initialized = HashSet::<String>::new();
             while let Some(msg) = msg_rx.recv().await {
                 record_temp_buf.clear();
                 // For now we will treat every list result as if they contain the
@@ -498,7 +496,7 @@ impl ToolManagerBuilder {
                                 load_record_clone
                                     .lock()
                                     .await
-                                    .entry(server_name)
+                                    .entry(server_name.clone())
                                     .and_modify(|load_record| {
                                         load_record.push(record.clone());
                                     })
@@ -526,7 +524,7 @@ impl ToolManagerBuilder {
                                 // is called) are fatals and should be considered errors
                                 if let Some(sender) = &loading_status_sender_clone {
                                     let msg = LoadingMsg::Error {
-                                        name: server_name,
+                                        name: server_name.clone(),
                                         msg: e,
                                         time: time_taken,
                                     };
@@ -541,8 +539,8 @@ impl ToolManagerBuilder {
                             },
                         }
                         if let Some(notify) = notify_weak.upgrade() {
-                            let completed = completed_clone.fetch_add(1, Ordering::AcqRel);
-                            if completed + 1 >= (total as u32) {
+                            initialized.insert(server_name);
+                            if initialized.len() >= total {
                                 notify.notify_one();
                             }
                         }
@@ -585,7 +583,6 @@ impl ToolManagerBuilder {
                         .send_mcp_server_init(conversation_id.clone(), Some(e.to_string()), 0)
                         .ok();
                     let _ = messenger.send_tools_list_result(Err(e)).await;
-                    completed.fetch_add(1, Ordering::AcqRel);
                 },
             }
         }
@@ -858,6 +855,7 @@ impl ToolManager {
                     let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                 }
+                error!("## timeout: timed out");
                 if !self.clients.is_empty() {
                     let _ = queue!(
                         output,
@@ -869,12 +867,14 @@ impl ToolManager {
                 }
             },
             _ = server_loading_fut => {
+                error!("## timeout: server load finish");
                 if let Some(tx) = tx {
                     let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                 }
             }
             _ = ctrl_c() => {
+                error!("## timeout: ctrl c");
                 if self.is_interactive {
                     if let Some(tx) = tx {
                         let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
