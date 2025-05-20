@@ -11,8 +11,6 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use nix::sys::signal::Signal;
-use nix::unistd::Pid;
 use serde::{
     Deserialize,
     Serialize,
@@ -45,6 +43,10 @@ use super::{
     ResourcesListResult,
     ServerCapabilities,
     ToolsListResult,
+};
+use crate::util::process::{
+    Pid,
+    terminate_process,
 };
 
 pub type ClientInfo = serde_json::Value;
@@ -165,8 +167,11 @@ impl Client<StdioTransport> {
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .process_group(0)
                 .envs(std::env::vars());
+
+            #[cfg(not(windows))]
+            command.process_group(0);
+
             if let Some(env) = env {
                 for (env_name, env_value) in env {
                     command.env(env_name, env_value);
@@ -174,14 +179,10 @@ impl Client<StdioTransport> {
             }
             command.args(args).spawn()?
         };
+
         let server_process_id = child.id().ok_or(ClientError::MissingProcessId)?;
-        #[allow(clippy::map_err_ignore)]
-        let server_process_id = Pid::from_raw(
-            server_process_id
-                .try_into()
-                .map_err(|_| ClientError::MissingProcessId)?,
-        );
-        let server_process_id = Some(server_process_id);
+        let server_process_id = Some(Pid::from_u32(server_process_id));
+
         let transport = Arc::new(transport::stdio::JsonRpcStdioTransport::client(child)?);
         Ok(Self {
             server_name,
@@ -205,7 +206,7 @@ where
     // This drop trait is here as a fail safe to ensure we don't leave behind any orphans.
     fn drop(&mut self) {
         if let Some(process_id) = self.server_process_id {
-            let _ = nix::sys::signal::kill(process_id, Signal::SIGTERM);
+            let _ = terminate_process(process_id);
         }
     }
 }

@@ -1,10 +1,10 @@
 mod cli_context;
+pub mod consts;
 pub mod directories;
 pub mod open;
+pub mod process;
 pub mod spinner;
 pub mod system_info;
-
-pub mod consts;
 
 use std::fmt::Display;
 use std::io::{
