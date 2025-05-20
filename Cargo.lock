@@ -1698,6 +1698,7 @@ dependencies = [
  "indicatif",
  "indoc",
  "insta",
+ "lazy_static",
  "libc",
  "mimalloc",
  "mockito",

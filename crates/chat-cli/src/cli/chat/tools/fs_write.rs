@@ -585,7 +585,10 @@ fn syntect_to_crossterm_color(syntect: syntect::highlighting::Color) -> style::C
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::Arc;
+
+    use lazy_static::lazy_static;
 
     use super::*;
 
@@ -596,8 +599,12 @@ mod tests {
 4: Hello world!
 ";
 
-    const TEST_FILE_PATH: &str = "/test_file.txt";
-    const TEST_HIDDEN_FILE_PATH: &str = "/aaaa2/.hidden";
+    // Use platform-agnostic paths with lazy_static
+    lazy_static! {
+        // Use relative paths without leading slashes for cross-platform compatibility
+        static ref TEST_FILE_PATH: PathBuf = PathBuf::from("test_file.txt");
+        static ref TEST_HIDDEN_FILE_PATH: PathBuf = PathBuf::from("aaaa2").join(".hidden");
+    }
 
     /// Sets up the following filesystem structure:
     /// ```text
@@ -612,10 +619,17 @@ mod tests {
     async fn setup_test_directory() -> Arc<Context> {
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let fs = ctx.fs();
-        fs.write(TEST_FILE_PATH, TEST_FILE_CONTENTS).await.unwrap();
-        fs.create_dir_all("/aaaa1/bbbb1/cccc1").await.unwrap();
-        fs.create_dir_all("/aaaa2").await.unwrap();
-        fs.write(TEST_HIDDEN_FILE_PATH, "this is a hidden file").await.unwrap();
+
+        // Use platform-agnostic paths
+        fs.write(TEST_FILE_PATH.as_path(), TEST_FILE_CONTENTS).await.unwrap();
+        fs.create_dir_all(PathBuf::from("aaaa1").join("bbbb1").join("cccc1"))
+            .await
+            .unwrap();
+        fs.create_dir_all(PathBuf::from("aaaa2")).await.unwrap();
+        fs.write(TEST_HIDDEN_FILE_PATH.as_path(), "this is a hidden file")
+            .await
+            .unwrap();
+
         ctx
     }
 
@@ -670,7 +684,7 @@ mod tests {
 
         let file_text = "Hello, world!";
         let v = serde_json::json!({
-            "path": "/my-file",
+            "path": "my-file",
             "command": "create",
             "file_text": file_text
         });
@@ -681,13 +695,13 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            ctx.fs().read_to_string("/my-file").await.unwrap(),
+            ctx.fs().read_to_string("my-file").await.unwrap(),
             format!("{}\n", file_text)
         );
 
         let file_text = "Goodbye, world!\nSee you later";
         let v = serde_json::json!({
-            "path": "/my-file",
+            "path": "my-file",
             "command": "create",
             "file_text": file_text
         });
@@ -699,13 +713,13 @@ mod tests {
 
         // File should end with a newline
         assert_eq!(
-            ctx.fs().read_to_string("/my-file").await.unwrap(),
+            ctx.fs().read_to_string("my-file").await.unwrap(),
             format!("{}\n", file_text)
         );
 
         let file_text = "This is a new string";
         let v = serde_json::json!({
-            "path": "/my-file",
+            "path": "my-file",
             "command": "create",
             "new_str": file_text
         });
@@ -716,7 +730,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            ctx.fs().read_to_string("/my-file").await.unwrap(),
+            ctx.fs().read_to_string("my-file").await.unwrap(),
             format!("{}\n", file_text)
         );
     }
@@ -728,7 +742,7 @@ mod tests {
 
         // No instances found
         let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
+            "path": TEST_FILE_PATH.to_str().unwrap_or_default(),
             "command": "str_replace",
             "old_str": "asjidfopjaieopr",
             "new_str": "1623749",
@@ -743,7 +757,7 @@ mod tests {
 
         // Multiple instances found
         let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
+            "path": TEST_FILE_PATH.to_str().unwrap_or_default(),
             "command": "str_replace",
             "old_str": "Hello world!",
             "new_str": "Goodbye world!",
@@ -758,7 +772,7 @@ mod tests {
 
         // Single instance found and replaced
         let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
+            "path": TEST_FILE_PATH.to_str().unwrap_or_default(),
             "command": "str_replace",
             "old_str": "1: Hello world!",
             "new_str": "1: Goodbye world!",
@@ -770,7 +784,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             ctx.fs()
-                .read_to_string(TEST_FILE_PATH)
+                .read_to_string(TEST_FILE_PATH.as_path())
                 .await
                 .unwrap()
                 .lines()
@@ -788,7 +802,7 @@ mod tests {
 
         let new_str = "1: New first line!\n";
         let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
+            "path": TEST_FILE_PATH.to_str().unwrap_or_default(),
             "command": "insert",
             "insert_line": 0,
             "new_str": new_str,
@@ -798,7 +812,7 @@ mod tests {
             .invoke(&ctx, &mut stdout)
             .await
             .unwrap();
-        let actual = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
+        let actual = ctx.fs().read_to_string(TEST_FILE_PATH.as_path()).await.unwrap();
         assert_eq!(
             format!("{}\n", actual.lines().next().unwrap()),
             new_str,
@@ -819,7 +833,7 @@ mod tests {
 
         let new_str = "2: New second line!\n";
         let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
+            "path": TEST_FILE_PATH.to_str().unwrap_or_default(),
             "command": "insert",
             "insert_line": 1,
             "new_str": new_str,
@@ -830,7 +844,7 @@ mod tests {
             .invoke(&ctx, &mut stdout)
             .await
             .unwrap();
-        let actual = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
+        let actual = ctx.fs().read_to_string(TEST_FILE_PATH.as_path()).await.unwrap();
         assert_eq!(
             format!("{}\n", actual.lines().nth(1).unwrap()),
             new_str,
@@ -849,7 +863,7 @@ mod tests {
         let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
         let mut stdout = std::io::stdout();
 
-        let test_file_path = "/file.txt";
+        let test_file_path = "file.txt";
         let test_file_contents = "hello there";
         ctx.fs().write(test_file_path, test_file_contents).await.unwrap();
 
@@ -894,7 +908,7 @@ mod tests {
         // Test appending to existing file
         let content_to_append = "5: Appended line";
         let v = serde_json::json!({
-            "path": TEST_FILE_PATH,
+            "path": TEST_FILE_PATH.to_str().unwrap_or_default(),
             "command": "append",
             "new_str": content_to_append,
         });
@@ -905,7 +919,7 @@ mod tests {
             .await
             .unwrap();
 
-        let actual = ctx.fs().read_to_string(TEST_FILE_PATH).await.unwrap();
+        let actual = ctx.fs().read_to_string(TEST_FILE_PATH.as_path()).await.unwrap();
         assert_eq!(
             actual,
             format!("{}{}\n", TEST_FILE_CONTENTS, content_to_append),
@@ -913,7 +927,7 @@ mod tests {
         );
 
         // Test appending to non-existent file (should fail)
-        let new_file_path = "/new_append_file.txt";
+        let new_file_path = "new_append_file.txt";
         let content = "This is a new file created by append";
         let v = serde_json::json!({
             "path": new_file_path,

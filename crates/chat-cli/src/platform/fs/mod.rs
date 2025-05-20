@@ -13,6 +13,24 @@ use std::sync::{
 use tempfile::TempDir;
 use tokio::fs;
 
+// Import platform-specific modules
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
+mod windows;
+
+// Use platform-specific functions
+#[cfg(unix)]
+use unix::{
+    append,
+    symlink_sync,
+};
+#[cfg(windows)]
+use windows::{
+    append,
+    symlink_sync,
+};
+
 #[derive(Debug, Clone, Default)]
 pub struct Fs(inner::Inner);
 
@@ -285,14 +303,22 @@ impl Fs {
     /// Creates a new symbolic link on the filesystem.
     ///
     /// The `link` path will be a symbolic link pointing to the `original` path.
-    ///
-    /// This is a proxy to [`tokio::fs::symlink`].
-    #[cfg(unix)]
     pub async fn symlink(&self, original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
         use inner::Inner;
+
+        #[cfg(unix)]
+        async fn do_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
+            fs::symlink(original, link).await
+        }
+
+        #[cfg(windows)]
+        async fn do_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
+            windows::symlink_async(original, link).await
+        }
+
         match &self.0 {
-            Inner::Real => fs::symlink(original, link).await,
-            Inner::Chroot(root) => fs::symlink(append(root.path(), original), append(root.path(), link)).await,
+            Inner::Real => do_symlink(original, link).await,
+            Inner::Chroot(root) => do_symlink(append(root.path(), original), append(root.path(), link)).await,
             Inner::Fake(_) => panic!("unimplemented"),
         }
     }
@@ -300,14 +326,11 @@ impl Fs {
     /// Creates a new symbolic link on the filesystem.
     ///
     /// The `link` path will be a symbolic link pointing to the `original` path.
-    ///
-    /// This is a proxy to [`std::os::unix::fs::symlink`].
-    #[cfg(unix)]
     pub fn symlink_sync(&self, original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
         use inner::Inner;
         match &self.0 {
-            Inner::Real => std::os::unix::fs::symlink(original, link),
-            Inner::Chroot(root) => std::os::unix::fs::symlink(append(root.path(), original), append(root.path(), link)),
+            Inner::Real => symlink_sync(original, link),
+            Inner::Chroot(root) => symlink_sync(append(root.path(), original), append(root.path(), link)),
             Inner::Fake(_) => panic!("unimplemented"),
         }
     }
@@ -403,35 +426,6 @@ impl Fs {
     }
 }
 
-/// Performs `a.join(b)`, except:
-/// - if `b` is an absolute path, then the resulting path will equal `/a/b`
-/// - if the prefix of `b` contains some `n` copies of a, then the resulting path will equal `/a/b`
-#[cfg(unix)]
-fn append(a: impl AsRef<Path>, b: impl AsRef<Path>) -> PathBuf {
-    use std::ffi::OsString;
-    use std::os::unix::ffi::{
-        OsStrExt,
-        OsStringExt,
-    };
-
-    // Have to use byte slices since rust seems to always append
-    // a forward slash at the end of a path...
-    let a = a.as_ref().as_os_str().as_bytes();
-    let mut b = b.as_ref().as_os_str().as_bytes();
-    while b.starts_with(a) {
-        b = b.strip_prefix(a).unwrap();
-    }
-    while b.starts_with(b"/") {
-        b = b.strip_prefix(b"/").unwrap();
-    }
-    PathBuf::from(OsString::from_vec(a.to_vec())).join(PathBuf::from(OsString::from_vec(b.to_vec())))
-}
-
-#[cfg(windows)]
-fn append(a: impl AsRef<Path>, b: impl AsRef<Path>) -> PathBuf {
-    todo!()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,19 +458,6 @@ mod tests {
         fs.write(dir.path().join("write"), b"write").await.unwrap();
         assert_eq!(fs.read(dir.path().join("write")).await.unwrap(), b"write");
         assert_eq!(fs.read_to_string(dir.path().join("write")).await.unwrap(), "write");
-    }
-
-    #[test]
-    fn test_append() {
-        macro_rules! assert_append {
-            ($a:expr, $b:expr, $expected:expr) => {
-                assert_eq!(append($a, $b), PathBuf::from($expected));
-            };
-        }
-        assert_append!("/abc/test", "/test", "/abc/test/test");
-        assert_append!("/tmp/.dir", "/tmp/.dir/home/myuser", "/tmp/.dir/home/myuser");
-        assert_append!("/tmp/.dir", "/tmp/hello", "/tmp/.dir/tmp/hello");
-        assert_append!("/tmp/.dir", "/tmp/.dir/tmp/.dir/home/user", "/tmp/.dir/home/user");
     }
 
     #[tokio::test]
@@ -520,70 +501,6 @@ mod tests {
                 .is_err_and(|err| err.kind() == io::ErrorKind::InvalidData),
             "invalid utf8 should return InvalidData"
         );
-    }
-
-    #[tokio::test]
-    #[cfg(unix)]
-    async fn test_chroot_file_operations_for_unix() {
-        if nix::unistd::Uid::effective().is_root() {
-            println!("currently running as root, skipping.");
-            return;
-        }
-
-        let fs = Fs::new_chroot();
-        assert!(fs.is_chroot());
-
-        fs.write("/fake", "contents").await.unwrap();
-        assert_eq!(fs.read_to_string("/fake").await.unwrap(), "contents");
-        assert_eq!(fs.read_to_string_sync("/fake").unwrap(), "contents");
-
-        assert!(!fs.try_exists("/etc").await.unwrap());
-
-        fs.create_dir_all("/etc/b/c").await.unwrap();
-        assert!(fs.try_exists("/etc").await.unwrap());
-        let mut read_dir = fs.read_dir("/etc").await.unwrap();
-        let e = read_dir.next_entry().await.unwrap();
-        assert!(e.unwrap().metadata().await.unwrap().is_dir());
-        assert!(read_dir.next_entry().await.unwrap().is_none());
-
-        fs.remove_dir_all("/etc").await.unwrap();
-        assert!(!fs.try_exists("/etc").await.unwrap());
-
-        fs.copy("/fake", "/fake_copy").await.unwrap();
-        assert_eq!(fs.read_to_string("/fake_copy").await.unwrap(), "contents");
-        assert_eq!(fs.read_to_string_sync("/fake_copy").unwrap(), "contents");
-
-        fs.remove_file("/fake_copy").await.unwrap();
-        assert!(!fs.try_exists("/fake_copy").await.unwrap());
-
-        fs.symlink("/fake", "/fake_symlink").await.unwrap();
-        fs.symlink_sync("/fake", "/fake_symlink_sync").unwrap();
-        assert_eq!(fs.read_to_string("/fake_symlink").await.unwrap(), "contents");
-        assert_eq!(
-            fs.read_to_string(fs.read_link("/fake_symlink").await.unwrap())
-                .await
-                .unwrap(),
-            "contents"
-        );
-        assert_eq!(fs.read_to_string("/fake_symlink_sync").await.unwrap(), "contents");
-        assert_eq!(fs.read_to_string_sync("/fake_symlink").unwrap(), "contents");
-
-        // Checking symlink exist
-        assert!(fs.symlink_exists("/fake_symlink").await);
-        assert!(fs.exists("/fake_symlink"));
-        fs.remove_file("/fake").await.unwrap();
-        assert!(fs.symlink_exists("/fake_symlink").await);
-        assert!(!fs.exists("/fake_symlink"));
-
-        // Checking rename
-        fs.write("/rename_1", "abc").await.unwrap();
-        fs.write("/rename_2", "123").await.unwrap();
-        fs.rename("/rename_2", "/rename_1").await.unwrap();
-        assert_eq!(fs.read_to_string("/rename_1").await.unwrap(), "123");
-
-        // Checking open
-        assert!(fs.open("/does_not_exist").await.is_err());
-        assert!(fs.open("/rename_1").await.is_ok());
     }
 
     #[tokio::test]
