@@ -27,6 +27,7 @@ amzn-codewhisperer-streaming-client = { path = "../amzn-codewhisperer-streaming-
 amzn-consolas-client = { path = "../amzn-consolas-client" }
 amzn-qdeveloper-streaming-client = { path = "../amzn-qdeveloper-streaming-client" }
 amzn-toolkit-telemetry-client = { path = "../amzn-toolkit-telemetry-client" }
+fig_util.workspace = true
 anstream = "0.6.13"
 arboard = { version = "3.5.0", default-features = false }
 async-trait = "0.1.87"
@@ -72,6 +73,7 @@ http = "1.2.0"
 http-body-util = "0.1.3"
 hyper = { version = "1.6.0", features = ["server"] }
 hyper-util = { version = "0.1.11", features = ["tokio"] }
+image = "0.25.6"
 indicatif = "0.17.11"
 indoc = "2.0.6"
 insta = "1.43.1"
