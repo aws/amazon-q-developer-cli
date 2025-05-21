@@ -1,0 +1,5 @@
+[book]
+authors = ["Michael Bennett Cohn"]
+language = "en"
+src = "src"
+title = "Amazon Q Developer CLI Documentation"

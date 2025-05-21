@@ -77,6 +77,7 @@ export const useAutocompleteKeypressCallback = (
       suggestions.length,
       scrollWrapAround,
       setHistoryModeEnabled,
+      scrollToIndex,
     ],
   );
 
@@ -207,6 +208,10 @@ export const useAutocompleteKeypressCallback = (
       changeSize,
       figState,
       setFigState,
+      suggestions,
+      setUserFuzzySearchEnabled,
+      shake,
+      scrollToIndex,
     ],
   );
 };

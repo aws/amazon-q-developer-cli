@@ -1,0 +1,4 @@
+# inline
+
+Inline shell completions
+

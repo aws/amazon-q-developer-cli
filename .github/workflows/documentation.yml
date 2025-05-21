@@ -1,0 +1,149 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install markdown pyyaml
+          
+      - name: Generate documentation
+        run: |
+          mkdir -p docs/generated
+          python scripts/extract_docs.py
+          
+      # Add the documentation enhancement steps
+      - name: Install documentation enhancement dependencies
+        run: python -m pip install boto3
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+          
+      - name: Enhance documentation with Bedrock
+        run: |
+          mkdir -p docs/enhanced
+          python scripts/enhance_docs_bedrock.py --input-dir docs/generated --code-dir . --output-dir docs/enhanced --model anthropic.claude-3-5-sonnet-20240620-v1:0
+          
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          
+      - name: Install mdBook
+        run: |
+          cargo install mdbook
+          
+      - name: Setup mdBook structure
+        run: |
+          mkdir -p docs/src
+          # Use enhanced docs instead of generated docs
+          cp -r docs/enhanced/* docs/src/
+          
+          # Create book.toml
+          cat > docs/book.toml << EOF
+          [book]
+          title = "Amazon Q Developer CLI Documentation"
+          authors = ["AWS"]
+          description = "Documentation for the Amazon Q Developer CLI"
+          src = "src"
+          
+          [output.html]
+          git-repository-url = "https://github.com/aws/amazon-q-developer-cli"
+          git-repository-icon = "fa-github"
+          site-url = "/"
+          EOF
+          
+          # Create SUMMARY.md
+          echo "# Summary" > docs/src/SUMMARY.md
+          echo "" >> docs/src/SUMMARY.md
+          echo "[Introduction](README.md)" >> docs/src/SUMMARY.md
+          echo "" >> docs/src/SUMMARY.md
+          echo "# Commands" >> docs/src/SUMMARY.md
+          
+          # Add all command files to SUMMARY.md
+          find docs/src -name "*.md" -not -path "*/\.*" -not -name "SUMMARY.md" -not -name "README.md" | sort | while read -r file; do
+            filename=$(basename "$file")
+            title=$(head -n 1 "$file" | sed 's/^# //')
+            if [ "$filename" != "index.md" ]; then
+              echo "- [$title]($filename)" >> docs/src/SUMMARY.md
+            fi
+          done
+          
+          # Create README.md if it doesn't exist
+          if [ ! -f "docs/src/README.md" ]; then
+            if [ -f "docs/src/index.md" ]; then
+              cp docs/src/index.md docs/src/README.md
+            else
+              cat > docs/src/README.md << EOF
+          # Amazon Q Developer CLI Documentation
+          
+          Welcome to the Amazon Q Developer CLI documentation. This site contains reference documentation for all Amazon Q CLI commands.
+          
+          ## Available Commands
+          
+          See the sidebar for a complete list of available commands.
+          EOF
+            fi
+          fi
+          
+      - name: Build mdBook
+        run: |
+          cd docs && mdbook build
+          
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: documentation
+          path: docs/book
+          
+  deploy-infrastructure:
+    needs: build-docs
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Download documentation artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: documentation
+          path: docs/book
+          
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          
+      - name: Install CDK dependencies
+        run: |
+          cd infrastructure
+          npm install
+          
+      - name: Deploy CDK stack
+        run: |
+          cd infrastructure
+          npm run cdk deploy -- --require-approval never
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-west-2

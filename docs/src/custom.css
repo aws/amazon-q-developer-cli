@@ -1,0 +1,16 @@
+:root {
+    --sidebar-width: 300px;
+    --page-padding: 15px;
+    --content-max-width: 850px;
+}
+
+.menu-title {
+    font-weight: bold;
+}
+
+.command-name {
+    font-family: monospace;
+    background-color: #f5f5f5;
+    padding: 2px 4px;
+    border-radius: 3px;
+}

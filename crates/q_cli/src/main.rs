@@ -86,3 +86,4 @@ fn main() -> Result<ExitCode> {
         },
     }
 }
+// Test comment to trigger documentation pipeline

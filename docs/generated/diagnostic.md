@@ -1,0 +1,4 @@
+# diagnostic
+
+Run diagnostic tests
+

@@ -1,0 +1,4 @@
+# uninstall
+
+Uninstall Amazon Q
+

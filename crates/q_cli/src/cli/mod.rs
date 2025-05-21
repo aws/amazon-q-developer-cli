@@ -201,7 +201,7 @@ pub enum CliRootCommands {
     },
     /// Open the dashboard
     Dashboard,
-    /// AI assistant in your terminal
+    /// AI assistant in your terminal with enhanced documentation
     #[command(disable_help_flag = true)]
     Chat {
         /// Args for the chat subcommand
@@ -790,3 +790,4 @@ mod test {
         });
     }
 }
+// Documentation test - adding a comment to trigger GitHub Actions

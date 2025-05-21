@@ -75,5 +75,5 @@ export const useParseArgumentsEffect = (
     return () => {
       isMostRecentEffect = false;
     };
-  }, [command, setParserResult, onError, context, setVisibleState]);
+  }, [command, setParserResult, onError, context, setVisibleState, oldCommand?.originalTree.text, oldCommand?.tokens, setLoading]);
 };

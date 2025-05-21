@@ -1,0 +1,4 @@
+# telemetry
+
+Enable/disable telemetry
+
