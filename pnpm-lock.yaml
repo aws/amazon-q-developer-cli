@@ -470,8 +470,8 @@ importers:
         specifier: ^7.7.2
         version: 7.7.2
       zod:
-        specifier: ^3.25.7
-        version: 3.25.7
+        specifier: ^3.25.13
+        version: 3.25.13
     devDependencies:
       '@amzn/eslint-config':
         specifier: workspace:^
@@ -558,8 +558,8 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@22.15.20)(typescript@5.8.3)))
       zod:
-        specifier: ^3.25.7
-        version: 3.25.7
+        specifier: ^3.25.13
+        version: 3.25.13
       zustand:
         specifier: ^4.5.6
         version: 4.5.6(@types/react@18.3.18)(react@18.3.1)
@@ -5967,8 +5967,8 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
-  zod@3.25.7:
-    resolution: {integrity: sha512-YGdT1cVRmKkOg6Sq7vY7IkxdphySKnXhaUmFI4r4FcuFVNgpCb9tZfNwXbT6BPjD5oz0nubFsoo9pIqKrDcCvg==}
+  zod@3.25.13:
+    resolution: {integrity: sha512-Q8mvk2iWi7rTDfpQBsu4ziE7A6AxgzJ5hzRyRYQkoV3A3niYsXVwDaP1Kbz3nWav6S+VZ6k2OznFn8ZyDHvIrg==}
 
   zustand@4.5.6:
     resolution: {integrity: sha512-ibr/n1hBzLLj5Y+yUcU7dYw8p6WnIVzdJbnX+1YpaScvZVF2ziugqHs+LAmHw4lWO9c/zRj+K1ncgWDQuthEdQ==}
@@ -12393,7 +12393,7 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod@3.25.7: {}
+  zod@3.25.13: {}
 
   zustand@4.5.6(@types/react@18.3.18)(react@18.3.1):
     dependencies:
