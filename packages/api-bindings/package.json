@@ -23,18 +23,18 @@
   },
   "dependencies": {
     "@aws/amazon-q-developer-cli-proto": "workspace:^",
-    "@bufbuild/protobuf": "2.2.5"
+    "@bufbuild/protobuf": "2.4.0"
   },
   "devDependencies": {
     "@amzn/eslint-config": "workspace:^",
     "@amzn/tsconfig": "workspace:^",
     "@tsconfig/recommended": "^1.0.8",
-    "@types/node": "^22.15.17",
+    "@types/node": "^22.15.20",
     "@typescript/analyze-trace": "^0.10.1",
     "eslint": "^9.18.0",
     "lint-staged": "^15.5.1",
     "prettier": "^3.4.2",
-    "ts-morph": "^25.0.1",
+    "ts-morph": "^26.0.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   },
