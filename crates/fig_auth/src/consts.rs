@@ -2,7 +2,7 @@ use aws_types::region::Region;
 
 pub(crate) const CLIENT_NAME: &str = "Amazon Q Developer for command line";
 
-pub(crate) const OIDC_BUILDER_ID_REGION: Region = Region::from_static("us-east-1");
+pub const OIDC_BUILDER_ID_REGION: Region = Region::from_static("us-east-1");
 
 /// The scopes requested for OIDC
 ///

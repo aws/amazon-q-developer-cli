@@ -1,5 +1,5 @@
 pub mod builder_id;
-mod consts;
+pub mod consts;
 mod error;
 pub mod pkce;
 mod scope;
