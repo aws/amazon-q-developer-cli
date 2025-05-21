@@ -3,6 +3,7 @@ pub mod execute_bash;
 pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
+pub mod knowledge;
 pub mod thinking;
 pub mod use_aws;
 
@@ -20,6 +21,7 @@ use eyre::Result;
 use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
+use knowledge::Knowledge;
 use serde::{
     Deserialize,
     Serialize,
@@ -42,6 +44,7 @@ pub enum Tool {
     Custom(CustomTool),
     GhIssue(GhIssue),
     Thinking(Thinking),
+    Knowledge(Knowledge),
 }
 
 impl Tool {
@@ -55,6 +58,7 @@ impl Tool {
             Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => "gh_issue",
             Tool::Thinking(_) => "thinking (prerelease)",
+            Tool::Knowledge(_) => "knowledge",
         }
         .to_owned()
     }
@@ -69,6 +73,7 @@ impl Tool {
             Tool::Custom(_) => true,
             Tool::GhIssue(_) => false,
             Tool::Thinking(_) => false,
+            Tool::Knowledge(_) => false,
         }
     }
 
@@ -82,6 +87,7 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.invoke(context, updates).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(updates).await,
             Tool::Thinking(think) => think.invoke(updates).await,
+            Tool::Knowledge(knowledge) => knowledge.invoke(context, updates).await,
         }
     }
 
@@ -95,6 +101,7 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.queue_description(updates),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(updates),
             Tool::Thinking(thinking) => thinking.queue_description(updates),
+            Tool::Knowledge(knowledge) => knowledge.queue_description(ctx, updates).await,
         }
     }
 
@@ -108,6 +115,7 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
             Tool::Thinking(think) => think.validate(ctx).await,
+            Tool::Knowledge(knowledge) => knowledge.validate(ctx).await,
         }
     }
 }
@@ -187,6 +195,7 @@ impl ToolPermissions {
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
             "thinking" => "trusted (prerelease)".dark_green().bold(),
+            "knowledge" => "trusted (prerelease)".dark_green().bold(),
             _ if self.trust_all => "trusted".dark_grey().bold(),
             _ => "not trusted".dark_grey(),
         };

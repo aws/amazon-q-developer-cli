@@ -189,5 +189,44 @@
       },
       "required": ["thought"]
     }
+  },
+  "knowledge": {
+      "name": "knowledge",
+      "description": "Store and retrieve information in knowledge base across chat sessions",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": ["show", "add", "remove", "clear", "search", "update"],
+            "description": "The knowledge operation to perform"
+          },
+          "name": {
+            "type": "string",
+            "description": "A descriptive name for the knowledge context (for add and remove operations)"
+          },
+          "value": {
+            "type": "string",
+            "description": "The value to store in knowledge base (for add operation) - can be text or a file/directory path"
+          },
+          "context_id": {
+            "type": "string",
+            "description": "The context identifier of the knowledge bank for a targeted change. Obtained from Show command."
+          },
+          "path": {
+            "type": "string",
+            "description": "The absolute path of an entry to be removed. Used in remove operations."
+          },
+          "query": {
+            "type": "string",
+            "description": "The search query to find entries in knowledge base (for search operation)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirmation flag for destructive operations like clear"
+          }
+        },
+        "required": ["command"]
+      }
   }
 }

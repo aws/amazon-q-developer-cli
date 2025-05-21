@@ -42,6 +42,7 @@ use std::{
 
 use command::{
     Command,
+    KnowledgeSubcommand,
     PromptsSubcommand,
     ToolsSubcommand,
 };
@@ -1334,6 +1335,272 @@ impl ChatContext {
         let mut tool_uses: Vec<QueuedTool> = tool_uses.unwrap_or_default();
 
         Ok(match command {
+            Command::Knowledge { subcommand } => {
+                // Handle knowledge commands
+                match subcommand {
+                    KnowledgeSubcommand::Show => {
+                        let knowledge_store = tools::knowledge::KnowledgeStore::get_instance();
+                        let store = knowledge_store.lock().await;
+                        let contexts = store.get_all().unwrap_or_default();
+
+                        if contexts.is_empty() {
+                            queue!(self.output, style::Print("\nNo knowledge base entries found.\n\n"))?;
+                        } else {
+                            queue!(
+                                self.output,
+                                style::Print("\n📚 Knowledge Base Contexts:\n"),
+                                style::Print(format!("{}\n", "━".repeat(50)))
+                            )?;
+
+                            for context in contexts {
+                                // Display context header with ID and name
+                                queue!(
+                                    self.output,
+                                    style::SetAttribute(Attribute::Bold),
+                                    style::SetForegroundColor(Color::Cyan),
+                                    style::Print(format!("📂 {}: ", context.id)),
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(&context.name),
+                                    style::SetAttribute(Attribute::Reset),
+                                    style::Print("\n")
+                                )?;
+
+                                // Display metadata
+                                queue!(
+                                    self.output,
+                                    style::Print(format!("   Description: {}\n", context.description)),
+                                    style::Print(format!(
+                                        "   Created: {}\n",
+                                        context.created_at.format("%Y-%m-%d %H:%M:%S")
+                                    )),
+                                    style::Print(format!(
+                                        "   Updated: {}\n",
+                                        context.updated_at.format("%Y-%m-%d %H:%M:%S")
+                                    ))
+                                )?;
+
+                                if let Some(path) = &context.source_path {
+                                    queue!(self.output, style::Print(format!("   Source: {}\n", path)))?;
+                                }
+
+                                queue!(
+                                    self.output,
+                                    style::Print("   Items: "),
+                                    style::SetForegroundColor(Color::Yellow),
+                                    style::Print(format!("{}", context.item_count)),
+                                    style::SetForegroundColor(Color::Reset),
+                                    style::Print(" | Persistent: ")
+                                )?;
+
+                                if context.persistent {
+                                    queue!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Green),
+                                        style::Print("Yes"),
+                                        style::SetForegroundColor(Color::Reset),
+                                        style::Print("\n")
+                                    )?;
+                                } else {
+                                    queue!(
+                                        self.output,
+                                        style::SetForegroundColor(Color::Yellow),
+                                        style::Print("No"),
+                                        style::SetForegroundColor(Color::Reset),
+                                        style::Print("\n")
+                                    )?;
+                                }
+                                queue!(self.output, style::Print(format!("{}\n", "━".repeat(50))))?;
+                            }
+                            queue!(self.output, style::Print("\n"))?;
+                        }
+
+                        ChatState::PromptUser {
+                            tool_uses: Some(tool_uses),
+                            pending_tool_index,
+                            skip_printing_tools: true,
+                        }
+                    },
+                    KnowledgeSubcommand::Add { path } => {
+                        // Implementation for adding knowledge entries
+                        let knowledge_store = tools::knowledge::KnowledgeStore::get_instance();
+                        let mut store = knowledge_store.lock().await;
+
+                        // Sanitize the path before using it
+                        let sanitized_path = if !path.contains('\n') {
+                            let ctx_path = crate::cli::chat::tools::sanitize_path_tool_arg(&self.ctx, &path);
+                            if !ctx_path.exists() {
+                                queue!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nError: Path '{}' does not exist\n\n", path)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                                return Ok(ChatState::PromptUser {
+                                    tool_uses: Some(tool_uses),
+                                    pending_tool_index,
+                                    skip_printing_tools: true,
+                                });
+                            }
+                            ctx_path.to_string_lossy().to_string()
+                        } else {
+                            path.clone()
+                        };
+
+                        // Use the path as both name and value for simplicity
+                        store.add(&path, &sanitized_path).unwrap_or_else(|e| {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!("\nError adding to knowledge base: {}\n\n", e)),
+                                style::SetForegroundColor(Color::Reset)
+                            )
+                            .unwrap();
+                            String::new()
+                        });
+
+                        queue!(
+                            self.output,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(format!("\nAdded to knowledge base: {}\n\n", path)),
+                            style::SetForegroundColor(Color::Reset)
+                        )?;
+
+                        ChatState::PromptUser {
+                            tool_uses: Some(tool_uses),
+                            pending_tool_index,
+                            skip_printing_tools: true,
+                        }
+                    },
+                    KnowledgeSubcommand::Remove { path } => {
+                        // Implementation for removing knowledge entries
+                        let knowledge_store = tools::knowledge::KnowledgeStore::get_instance();
+                        let mut store = knowledge_store.lock().await;
+
+                        // Sanitize the path before using it
+                        let sanitized_path = crate::cli::chat::tools::sanitize_path_tool_arg(&self.ctx, &path);
+
+                        // Try to remove by path first
+                        if store.remove_by_path(&sanitized_path.to_string_lossy()).is_ok() {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!(
+                                    "\nRemoved context with path '{}' from knowledge base\n\n",
+                                    path
+                                )),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+                        }
+                        // If path removal fails, try by name
+                        else if store.remove_by_name(&path).is_ok() {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!(
+                                    "\nRemoved context with name '{}' from knowledge base\n\n",
+                                    path
+                                )),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+                        } else {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!("\nEntry not found in knowledge base: {}\n\n", path)),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+                        }
+
+                        ChatState::PromptUser {
+                            tool_uses: Some(tool_uses),
+                            pending_tool_index,
+                            skip_printing_tools: true,
+                        }
+                    },
+                    KnowledgeSubcommand::Clear => {
+                        // Implementation for clearing knowledge
+                        let knowledge_store = tools::knowledge::KnowledgeStore::get_instance();
+                        let mut store = knowledge_store.lock().await;
+                        let count = store.clear().unwrap_or_default();
+
+                        queue!(
+                            self.output,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(format!("\nCleared {} entries from knowledge base\n\n", count)),
+                            style::SetForegroundColor(Color::Reset)
+                        )?;
+
+                        ChatState::PromptUser {
+                            tool_uses: Some(tool_uses),
+                            pending_tool_index,
+                            skip_printing_tools: true,
+                        }
+                    },
+                    KnowledgeSubcommand::Help => {
+                        queue!(
+                            self.output,
+                            style::Print("\n"),
+                            style::Print(KnowledgeSubcommand::help_text()),
+                            style::Print("\n")
+                        )?;
+
+                        ChatState::PromptUser {
+                            tool_uses: Some(tool_uses),
+                            pending_tool_index,
+                            skip_printing_tools: true,
+                        }
+                    },
+                    KnowledgeSubcommand::Update { path } => {
+                        // Implementation for updating knowledge entries
+                        let knowledge_store = tools::knowledge::KnowledgeStore::get_instance();
+                        let mut store = knowledge_store.lock().await;
+
+                        // Sanitize the path before using it
+                        let sanitized_path = if !path.contains('\n') {
+                            let ctx_path = crate::cli::chat::tools::sanitize_path_tool_arg(&self.ctx, &path);
+                            if !ctx_path.exists() {
+                                queue!(
+                                    self.output,
+                                    style::SetForegroundColor(Color::Red),
+                                    style::Print(format!("\nError: Path '{}' does not exist\n\n", path)),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
+                                return Ok(ChatState::PromptUser {
+                                    tool_uses: Some(tool_uses),
+                                    pending_tool_index,
+                                    skip_printing_tools: true,
+                                });
+                            }
+                            ctx_path.to_string_lossy().to_string()
+                        } else {
+                            path.clone()
+                        };
+
+                        // Try to update by path directly
+                        if let Err(e) = store.update_by_path(&sanitized_path) {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!("\nError updating knowledge base: {}\n\n", e)),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+                        } else {
+                            queue!(
+                                self.output,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!("\nUpdated in knowledge base: {}\n\n", path)),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+                        }
+
+                        ChatState::PromptUser {
+                            tool_uses: Some(tool_uses),
+                            pending_tool_index,
+                            skip_printing_tools: true,
+                        }
+                    },
+                }
+            },
             Command::Ask { prompt } => {
                 // Check for a pending tool approval
                 if let Some(index) = pending_tool_index {

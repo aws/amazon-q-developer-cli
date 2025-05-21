@@ -36,6 +36,9 @@ pub enum Command {
     Context {
         subcommand: ContextSubcommand,
     },
+    Knowledge {
+        subcommand: KnowledgeSubcommand,
+    },
     PromptEditor {
         initial_text: Option<String>,
     },
@@ -179,6 +182,16 @@ pub enum ContextSubcommand {
     Hooks {
         subcommand: Option<HooksSubcommand>,
     },
+    Help,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KnowledgeSubcommand {
+    Show,
+    Add { path: String },
+    Remove { path: String },
+    Update { path: String },
+    Clear,
     Help,
 }
 
@@ -447,6 +460,113 @@ impl Command {
             return Ok(match parts[0].to_lowercase().as_str() {
                 "clear" => Self::Clear,
                 "help" => Self::Help,
+                "knowledge" => {
+                    if parts.len() < 2 {
+                        return Ok(Self::Knowledge {
+                            subcommand: KnowledgeSubcommand::Help,
+                        });
+                    }
+
+                    match parts[1].to_lowercase().as_str() {
+                        "show" => Self::Knowledge {
+                            subcommand: KnowledgeSubcommand::Show,
+                        },
+                        "add" => {
+                            // Parse add command with path
+                            let mut path = None;
+
+                            let args = match shlex::split(&parts[2..].join(" ")) {
+                                Some(args) => args,
+                                None => return Err("Failed to parse quoted arguments".to_string()),
+                            };
+
+                            for arg in &args {
+                                if path.is_none() {
+                                    path = Some(arg.to_string());
+                                } else {
+                                    return Err(format!("Only a single path is allowed. Found extra path: {}", arg));
+                                }
+                            }
+
+                            let path = path.ok_or_else(|| {
+                                format!(
+                                    "Invalid /knowledge arguments.\n\nUsage:\n  {}",
+                                    KnowledgeSubcommand::ADD_USAGE
+                                )
+                            })?;
+
+                            Self::Knowledge {
+                                subcommand: KnowledgeSubcommand::Add { path },
+                            }
+                        },
+                        "update" => {
+                            // Parse update command with path
+                            let mut path = None;
+
+                            let args = match shlex::split(&parts[2..].join(" ")) {
+                                Some(args) => args,
+                                None => return Err("Failed to parse quoted arguments".to_string()),
+                            };
+
+                            for arg in &args {
+                                if path.is_none() {
+                                    path = Some(arg.to_string());
+                                } else {
+                                    return Err(format!("Only a single path is allowed. Found extra path: {}", arg));
+                                }
+                            }
+
+                            let path = path.ok_or_else(|| {
+                                format!(
+                                    "Invalid /knowledge arguments.\n\nUsage:\n  {}",
+                                    KnowledgeSubcommand::UPDATE_USAGE
+                                )
+                            })?;
+
+                            Self::Knowledge {
+                                subcommand: KnowledgeSubcommand::Update { path },
+                            }
+                        },
+                        "rm" => {
+                            // Parse rm command with path
+                            let mut path = None;
+                            let args = match shlex::split(&parts[2..].join(" ")) {
+                                Some(args) => args,
+                                None => return Err("Failed to parse quoted arguments".to_string()),
+                            };
+
+                            for arg in &args {
+                                if path.is_none() {
+                                    path = Some(arg.to_string());
+                                } else {
+                                    return Err(format!("Only a single path is allowed. Found extra path: {}", arg));
+                                }
+                            }
+
+                            let path = path.ok_or_else(|| {
+                                format!(
+                                    "Invalid /knowledge arguments.\n\nUsage:\n  {}",
+                                    KnowledgeSubcommand::REMOVE_USAGE
+                                )
+                            })?;
+                            Self::Knowledge {
+                                subcommand: KnowledgeSubcommand::Remove { path },
+                            }
+                        },
+                        "clear" => Self::Knowledge {
+                            subcommand: KnowledgeSubcommand::Clear,
+                        },
+                        "help" => Self::Knowledge {
+                            subcommand: KnowledgeSubcommand::Help,
+                        },
+                        other => {
+                            return Err(KnowledgeSubcommand::usage_msg(format!(
+                                "Unknown subcommand '{}'.",
+                                other
+                            )));
+                        },
+                    }
+                },
                 "compact" => {
                     let mut prompt = None;
                     let show_summary = true;
@@ -1131,5 +1251,48 @@ mod tests {
             assert!(result.is_err(), "Expected error for input: {}", input);
             assert_eq!(result.unwrap_err(), expected_message);
         }
+    }
+}
+impl KnowledgeSubcommand {
+    const ADD_USAGE: &str = "/knowledge add <path>";
+    const AVAILABLE_COMMANDS: &str = color_print::cstr! {"<cyan!>Available commands</cyan!>
+  <em>help</em>                           <black!>Show an explanation for the knowledge command</black!>
+  <em>show</em>                           <black!>Display the knowledge base contents</black!>
+  <em>add <<path>></em>                   <black!>Add a file or directory to knowledge base</black!>
+  <em>update <<path>></em>                <black!>Update a file or directory in knowledge base</black!>
+  <em>rm <<path>></em>                    <black!>Remove specified knowledge context by path</black!>
+  <em>clear</em>                          <black!>Remove all knowledge contexts</black!>"};
+    const BASE_COMMAND: &str = color_print::cstr! {"<cyan!>Usage: /knowledge [SUBCOMMAND]</cyan!>
+
+<cyan!>Description</cyan!>
+  Manage knowledge base for semantic search and retrieval.
+  Knowledge base is used to store and search information across chat sessions."};
+    const REMOVE_USAGE: &str = "/knowledge rm <path>";
+    const UPDATE_USAGE: &str = "/knowledge update <path>";
+
+    fn usage_msg(header: impl AsRef<str>) -> String {
+        format!(
+            "{}\n\n{}\n\n{}",
+            header.as_ref(),
+            Self::BASE_COMMAND,
+            Self::AVAILABLE_COMMANDS
+        )
+    }
+
+    pub fn help_text() -> String {
+        color_print::cformat!(
+            r#"
+<magenta,em>(Beta) Knowledge Base Management</magenta,em>
+
+Knowledge base allows you to store and search information across chat sessions.
+Files and directories added to the knowledge base are indexed for semantic search,
+enabling more relevant and contextual responses.
+
+{}
+
+{}"#,
+            Self::BASE_COMMAND,
+            Self::AVAILABLE_COMMANDS
+        )
     }
 }
