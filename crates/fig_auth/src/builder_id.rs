@@ -42,6 +42,7 @@ use aws_smithy_runtime_api::client::identity::{
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_types::region::Region;
 use aws_types::request_id::RequestId;
+use aws_types::sdk_config::StalledStreamProtectionConfig;
 use fig_aws_common::app_name;
 use fig_telemetry_core::{
     Event,
@@ -101,6 +102,11 @@ pub(crate) fn client(region: Region) -> Client {
         .region(region)
         .retry_config(retry_config)
         .sleep_impl(SharedAsyncSleep::new(TokioSleep::new()))
+        .stalled_stream_protection(
+            StalledStreamProtectionConfig::enabled()
+                .grace_period(std::time::Duration::from_secs(60))
+                .build(),
+        )
         .app_name(app_name())
         .build();
     Client::new(&sdk_config)

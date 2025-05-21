@@ -49,6 +49,7 @@ use tracing::{
     warn,
 };
 
+use crate::api_client::clients::shared::stalled_stream_protection_config;
 use crate::auth::AuthError;
 use crate::auth::consts::*;
 use crate::auth::scope::is_scopes;
@@ -86,6 +87,7 @@ pub fn client(region: Region) -> Client {
             .region(region)
             .retry_config(RetryConfig::standard().with_max_attempts(3))
             .sleep_impl(SharedAsyncSleep::new(TokioSleep::new()))
+            .stalled_stream_protection(stalled_stream_protection_config())
             .app_name(app_name())
             .build(),
     )
