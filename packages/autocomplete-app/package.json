@@ -62,7 +62,7 @@
     "terser": "^5.39.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.4",
-    "vitest": "^3.0.8"
+    "vitest": "^3.1.4"
   },
   "bundledDependencies": [
     "@aws/amazon-q-developer-cli-fuzzysort",
