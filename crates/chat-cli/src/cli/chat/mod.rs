@@ -2878,7 +2878,22 @@ impl ChatContext {
                     };
                 }
 
-                let contents = tri!(self.ctx.fs().read_to_string(&path).await);
+                // Try the original path first
+                let original_result = self.ctx.fs().read_to_string(&path).await;
+
+                // If the original path fails and doesn't end with .json, try with .json appended
+                let contents = if original_result.is_err() && !path.ends_with(".json") {
+                    let json_path = format!("{}.json", path);
+                    match self.ctx.fs().read_to_string(&json_path).await {
+                        Ok(content) => content,
+                        Err(_) => {
+                            // If both paths fail, return the original error for better user experience
+                            tri!(original_result)
+                        },
+                    }
+                } else {
+                    tri!(original_result)
+                };
                 let mut new_state: ConversationState = tri!(serde_json::from_str(&contents));
                 new_state
                     .reload_serialized_state(Arc::clone(&self.ctx), Some(self.output.clone()))
