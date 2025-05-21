@@ -13,7 +13,7 @@ workspace = true
 [dependencies]
 async-trait.workspace = true
 aws-credential-types = "1.1.6"
-aws-sdk-ssooidc = "1.51.0"
+aws-sdk-ssooidc = "1.70.0"
 aws-smithy-async = "1.2.2"
 aws-smithy-runtime-api = { version = "1.1.7", features = ["http-auth"] }
 aws-smithy-types = "1.2.10"
