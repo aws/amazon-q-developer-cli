@@ -6,7 +6,7 @@ use std::sync::atomic::{
     Ordering,
 };
 
-use chat_cli::{
+use cli::{
     self,
     JsonRpcRequest,
     JsonRpcResponse,

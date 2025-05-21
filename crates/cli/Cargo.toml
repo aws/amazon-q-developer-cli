@@ -1,12 +1,11 @@
 [package]
-name = "chat_cli"
+name = "cli"
 authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
 publish.workspace = true
 version.workspace = true
 license.workspace = true
-default-run = "chat_cli"
 
 [lints]
 workspace = true
