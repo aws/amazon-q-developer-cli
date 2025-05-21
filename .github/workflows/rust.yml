@@ -76,17 +76,16 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: cargo-test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
-      # TODO: Coverage fails with `error: unnecessary transmute` in `appkit-nsworkspace-bindings`
-      # - name: Generate code coverage
-      #   run: cargo +nightly llvm-cov --locked --workspace --codecov --output-path lcov.info
-      # - name: Upload coverage to Codecov
-      #   uses: codecov/codecov-action@v5
-      #   if: github.event.repository.fork == false
-      #   with:
-      #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     files: lcov.info
-      #     fail_ci_if_error: true
-      #     env_vars: OS
+      - name: Generate code coverage
+        run: cargo +nightly llvm-cov --locked --workspace --codecov --output-path lcov.info
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        if: github.event.repository.fork == false
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: lcov.info
+          fail_ci_if_error: true
+          env_vars: OS
       - name: Run tests
         run: cargo test --locked --workspace --lib --bins --test '*' --exclude fig_desktop-fuzz
 
