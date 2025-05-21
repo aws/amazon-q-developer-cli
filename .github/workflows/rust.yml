@@ -87,7 +87,7 @@ jobs:
           fail_ci_if_error: true
           env_vars: OS
       - name: Run tests
-        run: cargo test --locked --workspace --lib --bins --test '*' --exclude fig_desktop-fuzz
+        run: cargo test --locked --workspace --lib --bins --tests --exclude fig_desktop-fuzz
 
   cargo-fmt:
     name: Fmt

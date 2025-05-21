@@ -4,7 +4,14 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 
-ignore = ["RUSTSEC-2024-0436"]
+ignore = [
+  # Unmaintained but complete,
+  "RUSTSEC-2024-0436",
+  # Generated smithy clients use an out of date proc-macro-error crate but probably safe
+  "RUSTSEC-2024-0370",
+  # TODO: Remove this during Chat UX sprint
+  "RUSTSEC-2024-0320",
+]
 
 [licenses]
 version = 2
