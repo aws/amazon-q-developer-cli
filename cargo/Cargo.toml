@@ -1,0 +1,108 @@
+[workspace]
+resolver = "2"
+members = [
+    "amzn-codewhisperer-client",
+    "amzn-codewhisperer-streaming-client",
+    "amzn-consolas-client",
+    "amzn-qdeveloper-streaming-client",
+    "amzn-toolkit-telemetry-client",
+    "cli",
+]
+
+[workspace.package]
+authors = [
+    "Amazon Q CLI Team (q-cli@amazon.com)",
+    "Chay Nabors (nabochay@amazon.com)",
+    "Brandon Kiser (bskiser@amazon.com)",
+]
+edition = "2021"
+homepage = "https://aws.amazon.com/q/"
+publish = false
+version = "1.10.1"
+license = "MIT OR Apache-2.0"
+
+[workspace.lints.rust]
+future_incompatible = "warn"
+nonstandard_style = "warn"
+rust_2018_idioms = "warn"
+
+[workspace.lints.clippy]
+await_holding_lock = "warn"
+char_lit_as_u8 = "warn"
+checked_conversions = "warn"
+dbg_macro = "warn"
+debug_assert_with_mut_call = "warn"
+# doc_markdown = "warn"
+empty_enum = "warn"
+enum_glob_use = "warn"
+exit = "warn"
+expl_impl_clone_on_copy = "warn"
+explicit_deref_methods = "warn"
+explicit_into_iter_loop = "warn"
+fallible_impl_from = "warn"
+filter_map_next = "warn"
+flat_map_option = "warn"
+float_cmp_const = "warn"
+fn_params_excessive_bools = "warn"
+from_iter_instead_of_collect = "warn"
+if_let_mutex = "warn"
+implicit_clone = "warn"
+imprecise_flops = "warn"
+inefficient_to_string = "warn"
+invalid_upcast_comparisons = "warn"
+large_digit_groups = "warn"
+large_stack_arrays = "warn"
+large_types_passed_by_value = "warn"
+let_unit_value = "warn"
+linkedlist = "warn"
+lossy_float_literal = "warn"
+macro_use_imports = "warn"
+manual_ok_or = "warn"
+map_err_ignore = "warn"
+map_flatten = "warn"
+map_unwrap_or = "warn"
+match_on_vec_items = "warn"
+# match_same_arms = "warn"
+match_wild_err_arm = "warn"
+match_wildcard_for_single_variants = "warn"
+mem_forget = "warn"
+missing_enforced_import_renames = "warn"
+mut_mut = "warn"
+mutex_integer = "warn"
+needless_borrow = "warn"
+needless_continue = "warn"
+needless_for_each = "warn"
+option_option = "warn"
+path_buf_push_overwrite = "warn"
+ptr_as_ptr = "warn"
+rc_mutex = "warn"
+ref_option_ref = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+same_functions_in_if_condition = "warn"
+semicolon_if_nothing_returned = "warn"
+string_add_assign = "warn"
+string_add = "warn"
+string_lit_as_bytes = "warn"
+string_to_string = "warn"
+todo = "warn"
+trait_duplication_in_bounds = "warn"
+unimplemented = "warn"
+unnested_or_patterns = "warn"
+unused_self = "warn"
+useless_transmute = "warn"
+verbose_file_reads = "warn"
+zero_sized_map_values = "warn"
+
+[profile.release]
+debug = 1
+incremental = true
+lto = "off"
+
+[profile.dev.package.insta]
+opt-level = 3
+
+[profile.dev.package.similar]
+opt-level = 3
+
+[profile.dev.package.backtrace]
+opt-level = 3
