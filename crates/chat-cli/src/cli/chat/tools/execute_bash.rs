@@ -31,8 +31,52 @@ use crate::cli::chat::{
     PURPOSE_ARROW,
 };
 use crate::platform::Context;
-const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
+const READONLY_COMMANDS: &[&str] = &[
+    // File‑examination commands
+    "ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep",
+    "file", "stat", "readlink", "du", "df", "wc",
+    "diff", "cmp", "tree", "locate", "strings",
 
+    // Mathematical / calculation tools
+    "bc", "dc", "factor", "units",
+
+    // Text processing (read‑only)
+    "cut", "tr", "column", "fold", "uniq", "rev", "expand", "unexpand",
+    "look", "col", "colrm", "tac", "fmt", "comm", "join",
+
+    // System information
+    "uname", "whoami", "id", "groups", "who", "w", "last",
+    "cal", "ncal", "uptime", "printenv", "logname", "users",
+    "getconf", "locale", "arch", "hostid",
+
+    // Process information
+    "ps", "pgrep", "lsof",
+
+    // Network information
+    "netstat", "ss", "host", "dig", "nslookup", "whois",
+
+    // Hardware / filesystem information
+    "lspci", "lsusb", "lsblk", "lscpu", "free", "vmstat",
+    "findmnt", "mountpoint", "lsattr", "getfacl",
+    "namei", "lsipc", "lslogins", "lsns",
+
+    // Programming / development tools
+    "nm", "c++filt", "objdump", "readelf", "size", "addr2line",
+
+    // Documentation
+    "help", "type", "whatis",
+
+    // Checksums and verification
+    "md5sum", "sha1sum", "sha256sum", "cksum",
+
+    // Viewing compressed files
+    "zcat",
+
+    // Other utilities
+    "tty", "nl", "od", "hexdump", "dirname", "basename", "nproc",
+    "numfmt", "printf", "seq"
+];
+	    
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecuteBash {
     pub command: String,
@@ -378,6 +422,134 @@ mod tests {
             ("find . -name '*.c' -execdir gcc -o '{}.out' '{}' \\;", true),
             ("find important-dir/ -delete", true),
             ("find important-dir/ -name '*.txt'", false),
+            
+            // Test cases for each command in READONLY_COMMANDS
+            // File‑examination commands
+            ("ls", false),
+            ("cat README.md", false),
+            ("echo hello", false),
+            ("pwd", false),
+            ("which python", false),
+            ("head -n 10 file.txt", false),
+            ("tail -n 10 file.txt", false),
+            ("find . -name '*.rs'", false),
+            ("grep pattern file.txt", false),
+            ("file document.pdf", false),
+            ("stat file.txt", false),
+            ("readlink symlink", false),
+            ("du -h directory", false),
+            ("df -h", false),
+            ("wc -l file.txt", false),
+            ("diff file1.txt file2.txt", false),
+            ("cmp file1.txt file2.txt", false),
+            ("tree .", false),
+            ("locate filename", false),
+            ("strings binary_file", false),
+            
+            // Mathematical / calculation tools
+            ("bc <<< '2+2'", false),
+            ("dc -e '2 2 + p'", false),
+            ("factor 42", false),
+            ("units '1 meter' 'inch'", false),
+            
+            // Text processing (read‑only)
+            ("cut -d, -f1 file.csv", false),
+            ("tr 'a-z' 'A-Z' < file.txt", false),
+            ("column -t data.txt", false),
+            ("fold -w 80 file.txt", false),
+            ("uniq sorted_file.txt", false),
+            ("rev file.txt", false),
+            ("expand file.txt", false),
+            ("unexpand file.txt", false),
+            ("look prefix", false),
+            ("col < file.txt", false),
+            ("colrm 1 10 < file.txt", false),
+            ("tac file.txt", false),
+            ("fmt file.txt", false),
+            ("comm file1.txt file2.txt", false),
+            ("join file1.txt file2.txt", false),
+            
+            // System information
+            ("uname -a", false),
+            ("whoami", false),
+            ("id", false),
+            ("groups", false),
+            ("who", false),
+            ("w", false),
+            ("last", false),
+            ("cal", false),
+            ("ncal", false),
+            ("uptime", false),
+            ("printenv", false),
+            ("logname", false),
+            ("users", false),
+            ("getconf PATH", false),
+            ("locale", false),
+            ("arch", false),
+            ("hostid", false),
+            
+            // Process information
+            ("ps aux", false),
+            ("pgrep bash", false),
+            ("lsof -i :8080", false),
+            
+            // Network information
+            ("netstat -tuln", false),
+            ("ss -tuln", false),
+            ("host example.com", false),
+            ("dig example.com", false),
+            ("nslookup example.com", false),
+            ("whois example.com", false),
+            
+            // Hardware / filesystem information
+            ("lspci", false),
+            ("lsusb", false),
+            ("lsblk", false),
+            ("lscpu", false),
+            ("free -h", false),
+            ("vmstat", false),
+            ("findmnt", false),
+            ("mountpoint /mnt", false),
+            ("lsattr file.txt", false),
+            ("getfacl file.txt", false),
+            ("namei /path/to/file", false),
+            ("lsipc", false),
+            ("lslogins", false),
+            ("lsns", false),
+            
+            // Programming / development tools
+            ("nm binary_file", false),
+            ("c++filt _Z3foov", false),
+            ("objdump -d binary_file", false),
+            ("readelf -h binary_file", false),
+            ("size binary_file", false),
+            ("addr2line -e binary_file 0x123", false),
+            
+            // Documentation
+            ("help cd", false),
+            ("type ls", false),
+            ("whatis ls", false),
+            
+            // Checksums and verification
+            ("md5sum file.txt", false),
+            ("sha1sum file.txt", false),
+            ("sha256sum file.txt", false),
+            ("cksum file.txt", false),
+            
+            // Viewing compressed files
+            ("zcat file.gz", false),
+            
+            // Other utilities
+            ("tty", false),
+            ("nl file.txt", false),
+            ("od -c file.txt", false),
+            ("hexdump -C file.txt", false),
+            ("dirname /path/to/file", false),
+            ("basename /path/to/file", false),
+            ("nproc", false),
+            ("numfmt --grouping 1000", false),
+            ("printf 'Hello %s\n' World", false),
+            ("seq 1 10", false),
         ];
         for (cmd, expected) in cmds {
             let tool = serde_json::from_value::<ExecuteBash>(serde_json::json!({
