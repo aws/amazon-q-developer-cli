@@ -2894,6 +2894,7 @@ impl ChatContext {
                 } else {
                     tri!(original_result)
                 };
+              
                 let mut new_state: ConversationState = tri!(serde_json::from_str(&contents));
                 new_state
                     .reload_serialized_state(Arc::clone(&self.ctx), Some(self.output.clone()))
