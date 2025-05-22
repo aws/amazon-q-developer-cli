@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "amzn-codewhisperer-client",
-    "amzn-codewhisperer-streaming-client",
-    "amzn-consolas-client",
-    "amzn-qdeveloper-streaming-client",
-    "amzn-toolkit-telemetry-client",
-    "cli",
+    "crates/amzn-codewhisperer-client",
+    "crates/amzn-codewhisperer-streaming-client",
+    "crates/amzn-consolas-client",
+    "crates/amzn-qdeveloper-streaming-client",
+    "crates/amzn-toolkit-telemetry-client",
+    "crates/cli",
 ]
 
 [workspace.package]
