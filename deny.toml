@@ -5,31 +5,12 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 
 ignore = [
-  # yaml-rust is required for syntect
-  "RUSTSEC-2024-0320",
-  # proc-macro-error is a transitive dependency of a number of dependencies, 
-  # this is allowed for now til the ecosystem migrates away
-  "RUSTSEC-2024-0370",
-  # instant is dependency of notify and tao, until those remove instant this
-  # will be allowed
-  "RUSTSEC-2024-0384",
-  # blocked on portable-pty migrating away from serial
-  "RUSTSEC-2017-0008",
-  # gtk3-rs is used by tao/wry, we can not remove these til the migrate
-  "RUSTSEC-2024-0411",
-  "RUSTSEC-2024-0412",
-  "RUSTSEC-2024-0413",
-  "RUSTSEC-2024-0414",
-  "RUSTSEC-2024-0415",
-  "RUSTSEC-2024-0416",
-  "RUSTSEC-2024-0417",
-  "RUSTSEC-2024-0418",
-  "RUSTSEC-2024-0419",
-  "RUSTSEC-2024-0420",
-  # glib is required by gtk via tao, depends on upgrading those dependencies
-  "RUSTSEC-2024-0429",
-  # paste is used in core deps
+  # Unmaintained but complete,
   "RUSTSEC-2024-0436",
+  # Generated smithy clients use an out of date proc-macro-error crate but probably safe
+  "RUSTSEC-2024-0370",
+  # TODO: Remove this during Chat UX sprint
+  "RUSTSEC-2024-0320",
 ]
 
 [licenses]
@@ -49,7 +30,6 @@ allow = [
   "ISC",
   "MIT",
   "MPL-2.0",
-  "NCSA",
   "OpenSSL",
   "Unicode-3.0",
   "Zlib",
