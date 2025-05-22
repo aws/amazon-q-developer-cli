@@ -1,0 +1,1 @@
+{"version":3,"file":"codewhisperer.js","sourceRoot":"","sources":["../src/codewhisperer.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,yCAAyC,EAAE,MAAM,eAAe,CAAC;AAE1E,MAAM,kBAAkB,GAAG,KAAK,IAAI,EAAE,CACpC,CAAC,MAAM,yCAAyC,CAAC,EAAE,CAAC,CAAC,CAAC,cAAc,CAAC;AAEvE,OAAO,EAAE,kBAAkB,EAAiB,CAAC"}
