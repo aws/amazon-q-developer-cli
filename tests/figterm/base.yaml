@@ -1,9 +1,0 @@
-services:
-  dotenv-base:
-    image: dotenv-base
-    build:
-      context: ../../
-      dockerfile: ./tests/figterm/Dockerfile
-    volumes:
-      - ./:/usr/home/app/
-      - /usr/home/app/node_modules

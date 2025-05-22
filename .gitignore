@@ -36,16 +36,3 @@ book/
 .vscode/
 .fleet/
 .idea/
-
-# yarn v2
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
-
-.env*
-
-run-build.sh
