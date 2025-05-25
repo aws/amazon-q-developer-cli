@@ -69,11 +69,18 @@ impl ConditionalEventHandler for SkimCommandSelector {
 pub fn get_available_commands() -> Vec<String> {
     // Import the COMMANDS array directly from prompt.rs
     // This is the single source of truth for available commands
-    let commands_array = super::prompt::COMMANDS;
-
     let mut commands = Vec::new();
-    for &cmd in commands_array {
+
+    // Add main commands
+    for &cmd in super::prompt::COMMANDS {
         commands.push(cmd.to_string());
+    }
+
+    // Add subcommands
+    for &(main_cmd, sub_cmds) in super::prompt::SUB_COMMANDS {
+        for &sub_cmd in sub_cmds {
+            commands.push(format!("{} {}", main_cmd, sub_cmd));
+        }
     }
 
     commands

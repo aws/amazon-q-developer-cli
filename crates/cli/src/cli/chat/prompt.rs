@@ -39,45 +39,33 @@ use crate::database::Database;
 use crate::database::settings::Setting;
 
 pub const COMMANDS: &[&str] = &[
-    "/clear",
-    "/help",
-    "/editor",
-    "/issue",
+    "/clear", "/editor", "/help", "/issue",
     // "/acceptall", /// Functional, but deprecated in favor of /tools trustall
-    "/quit",
-    "/tools",
-    "/tools trust",
-    "/tools untrust",
-    "/tools trustall",
-    "/tools reset",
-    "/profile",
-    "/profile help",
-    "/profile list",
-    "/profile create",
-    "/profile delete",
-    "/profile rename",
-    "/profile set",
-    "/context help",
-    "/context show",
-    "/context show --expand",
-    "/context add",
-    "/context add --global",
-    "/context rm",
-    "/context rm --global",
-    "/context clear",
-    "/context clear --global",
-    "/context hooks help",
-    "/context hooks add",
-    "/context hooks rm",
-    "/context hooks enable",
-    "/context hooks disable",
-    "/context hooks enable-all",
-    "/context hooks disable-all",
-    "/compact",
-    "/compact help",
-    "/usage",
-    "/save",
-    "/load",
+    "/quit", "/tools", "/profile", "/context", "/compact", "/usage", "/import", "/export",
+];
+
+pub const SUB_COMMANDS: &[(&str, &[&str])] = &[
+    ("/tools", &["trust", "untrust", "trustall", "reset", "help"]),
+    ("/profile", &["help", "list", "create", "delete", "rename", "set"]),
+    ("/context", &[
+        "help",
+        "show",
+        "show --expand",
+        "add",
+        "add --global",
+        "rm",
+        "rm --global",
+        "clear",
+        "clear --global",
+        "hooks help",
+        "hooks add",
+        "hooks rm",
+        "hooks enable",
+        "hooks disable",
+        "hooks enable-all",
+        "hooks disable-all",
+    ]),
+    ("/compact", &["help"]),
 ];
 
 pub fn generate_prompt(current_profile: Option<&str>, warning: bool) -> String {
@@ -92,6 +80,26 @@ pub fn generate_prompt(current_profile: Option<&str>, warning: bool) -> String {
 
 /// Complete commands that start with a slash
 fn complete_command(word: &str, start: usize) -> (usize, Vec<String>) {
+    // If the word contains a space, it's a sub-command
+    if word.contains(' ') {
+        let parts: Vec<&str> = word.splitn(2, ' ').collect();
+        let main_cmd = parts[0];
+        let sub_cmd_prefix = parts[1];
+
+        for &(cmd, sub_cmds) in SUB_COMMANDS {
+            if cmd == main_cmd {
+                return (
+                    start,
+                    sub_cmds
+                        .iter()
+                        .filter(|s| s.starts_with(sub_cmd_prefix))
+                        .map(|s| format!("{} {}", main_cmd, s))
+                        .collect(),
+                );
+            }
+        }
+    }
+    // If the word doesn't contain a space, it's a main command
     (
         start,
         COMMANDS
