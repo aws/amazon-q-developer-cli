@@ -4,6 +4,9 @@ pub use ::aws_types::request_id::RequestId;
 /// Types for the `CreateArtifactUploadUrl` operation.
 pub mod create_artifact_upload_url;
 
+/// Types for the `CreateSubscriptionToken` operation.
+pub mod create_subscription_token;
+
 /// Types for the `CreateTaskAssistConversation` operation.
 pub mod create_task_assist_conversation;
 
@@ -45,6 +48,9 @@ pub mod get_transformation;
 
 /// Types for the `GetTransformationPlan` operation.
 pub mod get_transformation_plan;
+
+/// Types for the `GetUsageLimits` operation.
+pub mod get_usage_limits;
 
 /// Types for the `ListAvailableCustomizations` operation.
 pub mod list_available_customizations;
@@ -93,3 +99,6 @@ pub mod start_transformation;
 
 /// Types for the `StopTransformation` operation.
 pub mod stop_transformation;
+
+/// Types for the `UpdateUsageLimits` operation.
+pub mod update_usage_limits;

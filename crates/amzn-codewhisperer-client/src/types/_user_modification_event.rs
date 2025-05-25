@@ -19,6 +19,10 @@ pub struct UserModificationEvent {
     pub accepted_character_count: i32,
     #[allow(missing_docs)] // documentation missing in model
     pub unmodified_accepted_character_count: i32,
+    #[allow(missing_docs)] // documentation missing in model
+    pub added_character_count: i32,
+    #[allow(missing_docs)] // documentation missing in model
+    pub unmodified_added_character_count: i32,
 }
 impl UserModificationEvent {
     #[allow(missing_docs)] // documentation missing in model
@@ -62,6 +66,16 @@ impl UserModificationEvent {
     pub fn unmodified_accepted_character_count(&self) -> i32 {
         self.unmodified_accepted_character_count
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn added_character_count(&self) -> i32 {
+        self.added_character_count
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn unmodified_added_character_count(&self) -> i32 {
+        self.unmodified_added_character_count
+    }
 }
 impl UserModificationEvent {
     /// Creates a new builder-style object to manufacture
@@ -83,6 +97,8 @@ pub struct UserModificationEventBuilder {
     pub(crate) timestamp: ::std::option::Option<::aws_smithy_types::DateTime>,
     pub(crate) accepted_character_count: ::std::option::Option<i32>,
     pub(crate) unmodified_accepted_character_count: ::std::option::Option<i32>,
+    pub(crate) added_character_count: ::std::option::Option<i32>,
+    pub(crate) unmodified_added_character_count: ::std::option::Option<i32>,
 }
 impl UserModificationEventBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -228,6 +244,40 @@ impl UserModificationEventBuilder {
         &self.unmodified_accepted_character_count
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn added_character_count(mut self, input: i32) -> Self {
+        self.added_character_count = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_added_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
+        self.added_character_count = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_added_character_count(&self) -> &::std::option::Option<i32> {
+        &self.added_character_count
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn unmodified_added_character_count(mut self, input: i32) -> Self {
+        self.unmodified_added_character_count = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_unmodified_added_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
+        self.unmodified_added_character_count = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_unmodified_added_character_count(&self) -> &::std::option::Option<i32> {
+        &self.unmodified_added_character_count
+    }
+
     /// Consumes the builder and constructs a
     /// [`UserModificationEvent`](crate::types::UserModificationEvent). This method will fail if
     /// any of the following fields are not set:
@@ -274,6 +324,8 @@ impl UserModificationEventBuilder {
             })?,
             accepted_character_count: self.accepted_character_count.unwrap_or_default(),
             unmodified_accepted_character_count: self.unmodified_accepted_character_count.unwrap_or_default(),
+            added_character_count: self.added_character_count.unwrap_or_default(),
+            unmodified_added_character_count: self.unmodified_added_character_count.unwrap_or_default(),
         })
     }
 }

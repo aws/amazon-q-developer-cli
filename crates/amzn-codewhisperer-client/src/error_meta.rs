@@ -18,6 +18,9 @@ pub enum Error {
     ServiceQuotaExceededError(crate::types::error::ServiceQuotaExceededError),
     /// This exception is thrown when request was denied due to request throttling.
     ThrottlingError(crate::types::error::ThrottlingError),
+    /// Exception thrown when the number of usage limit update requests exceeds the monthly quota
+    /// (default 3 requests per month)
+    UpdateUsageLimitQuotaExceededError(crate::types::error::UpdateUsageLimitQuotaExceededError),
     /// This exception is thrown when the input fails to satisfy the constraints specified by the
     /// service.
     ValidationError(crate::types::error::ValidationError),
@@ -42,6 +45,7 @@ impl ::std::fmt::Display for Error {
             Error::ResourceNotFoundError(inner) => inner.fmt(f),
             Error::ServiceQuotaExceededError(inner) => inner.fmt(f),
             Error::ThrottlingError(inner) => inner.fmt(f),
+            Error::UpdateUsageLimitQuotaExceededError(inner) => inner.fmt(f),
             Error::ValidationError(inner) => inner.fmt(f),
             Error::Unhandled(_) => {
                 if let ::std::option::Option::Some(code) =
@@ -72,6 +76,7 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for Error {
             Self::ResourceNotFoundError(inner) => inner.meta(),
             Self::ServiceQuotaExceededError(inner) => inner.meta(),
             Self::ThrottlingError(inner) => inner.meta(),
+            Self::UpdateUsageLimitQuotaExceededError(inner) => inner.meta(),
             Self::ValidationError(inner) => inner.meta(),
             Self::Unhandled(inner) => &inner.meta,
         }
@@ -118,6 +123,55 @@ impl From<crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlE
                 Error::InternalServerError(inner)
             },
             crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlError::Unhandled(inner) => {
+                Error::Unhandled(inner)
+            },
+        }
+    }
+}
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::create_subscription_token::CreateSubscriptionTokenError,
+            R,
+        >,
+    > for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::create_subscription_token::CreateSubscriptionTokenError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::create_subscription_token::CreateSubscriptionTokenError> for Error {
+    fn from(err: crate::operation::create_subscription_token::CreateSubscriptionTokenError) -> Self {
+        match err {
+            crate::operation::create_subscription_token::CreateSubscriptionTokenError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::create_subscription_token::CreateSubscriptionTokenError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::create_subscription_token::CreateSubscriptionTokenError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::create_subscription_token::CreateSubscriptionTokenError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::create_subscription_token::CreateSubscriptionTokenError::ConflictError(inner) => {
+                Error::ConflictError(inner)
+            },
+            crate::operation::create_subscription_token::CreateSubscriptionTokenError::Unhandled(inner) => {
                 Error::Unhandled(inner)
             },
         }
@@ -780,6 +834,46 @@ impl From<crate::operation::get_transformation_plan::GetTransformationPlanError>
             crate::operation::get_transformation_plan::GetTransformationPlanError::Unhandled(inner) => {
                 Error::Unhandled(inner)
             },
+        }
+    }
+}
+impl<R>
+    From<::aws_smithy_runtime_api::client::result::SdkError<crate::operation::get_usage_limits::GetUsageLimitsError, R>>
+    for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::get_usage_limits::GetUsageLimitsError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::get_usage_limits::GetUsageLimitsError> for Error {
+    fn from(err: crate::operation::get_usage_limits::GetUsageLimitsError) -> Self {
+        match err {
+            crate::operation::get_usage_limits::GetUsageLimitsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::get_usage_limits::GetUsageLimitsError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::get_usage_limits::GetUsageLimitsError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::get_usage_limits::GetUsageLimitsError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::get_usage_limits::GetUsageLimitsError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
 }
@@ -1528,6 +1622,53 @@ impl From<crate::operation::stop_transformation::StopTransformationError> for Er
         }
     }
 }
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::update_usage_limits::UpdateUsageLimitsError,
+            R,
+        >,
+    > for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::update_usage_limits::UpdateUsageLimitsError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::update_usage_limits::UpdateUsageLimitsError> for Error {
+    fn from(err: crate::operation::update_usage_limits::UpdateUsageLimitsError) -> Self {
+        match err {
+            crate::operation::update_usage_limits::UpdateUsageLimitsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::update_usage_limits::UpdateUsageLimitsError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::update_usage_limits::UpdateUsageLimitsError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::update_usage_limits::UpdateUsageLimitsError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::update_usage_limits::UpdateUsageLimitsError::UpdateUsageLimitQuotaExceededError(
+                inner,
+            ) => Error::UpdateUsageLimitQuotaExceededError(inner),
+            crate::operation::update_usage_limits::UpdateUsageLimitsError::Unhandled(inner) => Error::Unhandled(inner),
+        }
+    }
+}
 impl ::std::error::Error for Error {
     fn source(&self) -> std::option::Option<&(dyn ::std::error::Error + 'static)> {
         match self {
@@ -1537,6 +1678,7 @@ impl ::std::error::Error for Error {
             Error::ResourceNotFoundError(inner) => inner.source(),
             Error::ServiceQuotaExceededError(inner) => inner.source(),
             Error::ThrottlingError(inner) => inner.source(),
+            Error::UpdateUsageLimitQuotaExceededError(inner) => inner.source(),
             Error::ValidationError(inner) => inner.source(),
             Error::Unhandled(inner) => ::std::option::Option::Some(&*inner.source),
         }
@@ -1551,6 +1693,7 @@ impl ::aws_types::request_id::RequestId for Error {
             Self::ResourceNotFoundError(e) => e.request_id(),
             Self::ServiceQuotaExceededError(e) => e.request_id(),
             Self::ThrottlingError(e) => e.request_id(),
+            Self::UpdateUsageLimitQuotaExceededError(e) => e.request_id(),
             Self::ValidationError(e) => e.request_id(),
             Self::Unhandled(e) => e.meta.request_id(),
         }

@@ -31,6 +31,8 @@ pub struct ChatAddMessageEvent {
     pub number_of_code_blocks: ::std::option::Option<i32>,
     #[allow(missing_docs)] // documentation missing in model
     pub has_project_level_context: ::std::option::Option<bool>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub result: ::std::option::Option<crate::types::AgenticChatEventStatus>,
 }
 impl ChatAddMessageEvent {
     /// ID which represents a multi-turn conversation
@@ -106,6 +108,11 @@ impl ChatAddMessageEvent {
     pub fn has_project_level_context(&self) -> ::std::option::Option<bool> {
         self.has_project_level_context
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn result(&self) -> ::std::option::Option<&crate::types::AgenticChatEventStatus> {
+        self.result.as_ref()
+    }
 }
 impl ChatAddMessageEvent {
     /// Creates a new builder-style object to manufacture
@@ -133,6 +140,7 @@ pub struct ChatAddMessageEventBuilder {
     pub(crate) response_length: ::std::option::Option<i32>,
     pub(crate) number_of_code_blocks: ::std::option::Option<i32>,
     pub(crate) has_project_level_context: ::std::option::Option<bool>,
+    pub(crate) result: ::std::option::Option<crate::types::AgenticChatEventStatus>,
 }
 impl ChatAddMessageEventBuilder {
     /// ID which represents a multi-turn conversation
@@ -380,6 +388,23 @@ impl ChatAddMessageEventBuilder {
         &self.has_project_level_context
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn result(mut self, input: crate::types::AgenticChatEventStatus) -> Self {
+        self.result = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_result(mut self, input: ::std::option::Option<crate::types::AgenticChatEventStatus>) -> Self {
+        self.result = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_result(&self) -> &::std::option::Option<crate::types::AgenticChatEventStatus> {
+        &self.result
+    }
+
     /// Consumes the builder and constructs a
     /// [`ChatAddMessageEvent`](crate::types::ChatAddMessageEvent). This method will fail if any
     /// of the following fields are not set:
@@ -414,6 +439,7 @@ impl ChatAddMessageEventBuilder {
             response_length: self.response_length,
             number_of_code_blocks: self.number_of_code_blocks,
             has_project_level_context: self.has_project_level_context,
+            result: self.result,
         })
     }
 }

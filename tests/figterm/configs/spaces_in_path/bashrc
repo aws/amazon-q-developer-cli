@@ -1,1 +1,0 @@
-export PATH="/usr/local/Fake\ Path:$PATH"

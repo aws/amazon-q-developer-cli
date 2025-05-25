@@ -1,8 +1,0 @@
-{
-  "extends": ["@amzn/tsconfig/base.json", "@amzn/tsconfig/dom.json"],
-  "compilerOptions": {
-    "outDir": "dist",
-    "types": ["@withfig/autocomplete-types", "@amzn/types"]
-  },
-  "include": ["src"]
-}

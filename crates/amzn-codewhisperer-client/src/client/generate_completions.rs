@@ -19,12 +19,14 @@ impl super::Client {
     ///   - [`user_context(UserContext)`](crate::operation::generate_completions::builders::GenerateCompletionsFluentBuilder::user_context) / [`set_user_context(Option<UserContext>)`](crate::operation::generate_completions::builders::GenerateCompletionsFluentBuilder::set_user_context):<br>required: **false**<br>(undocumented)<br>
     ///   - [`profile_arn(impl Into<String>)`](crate::operation::generate_completions::builders::GenerateCompletionsFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::generate_completions::builders::GenerateCompletionsFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     ///   - [`workspace_id(impl Into<String>)`](crate::operation::generate_completions::builders::GenerateCompletionsFluentBuilder::workspace_id) / [`set_workspace_id(Option<String>)`](crate::operation::generate_completions::builders::GenerateCompletionsFluentBuilder::set_workspace_id):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`model_id(impl Into<String>)`](crate::operation::generate_completions::builders::GenerateCompletionsFluentBuilder::model_id) / [`set_model_id(Option<String>)`](crate::operation::generate_completions::builders::GenerateCompletionsFluentBuilder::set_model_id):<br>required: **false**<br>Unique identifier for the model<br>
     /// - On success, responds with
     ///   [`GenerateCompletionsOutput`](crate::operation::generate_completions::GenerateCompletionsOutput)
     ///   with field(s):
     ///   - [`predictions(Option<Vec::<Prediction>>)`](crate::operation::generate_completions::GenerateCompletionsOutput::predictions): (undocumented)
     ///   - [`completions(Option<Vec::<Completion>>)`](crate::operation::generate_completions::GenerateCompletionsOutput::completions): (undocumented)
     ///   - [`next_token(Option<String>)`](crate::operation::generate_completions::GenerateCompletionsOutput::next_token): (undocumented)
+    ///   - [`model_id(Option<String>)`](crate::operation::generate_completions::GenerateCompletionsOutput::model_id): Unique identifier for the model
     /// - On failure, responds with
     ///   [`SdkError<GenerateCompletionsError>`](crate::operation::generate_completions::GenerateCompletionsError)
     pub fn generate_completions(

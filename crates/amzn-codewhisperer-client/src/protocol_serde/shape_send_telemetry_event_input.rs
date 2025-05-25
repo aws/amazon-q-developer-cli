@@ -24,5 +24,8 @@ pub fn ser_send_telemetry_event_input_input(
     if let Some(var_7) = &input.profile_arn {
         object.key("profileArn").string(var_7.as_str());
     }
+    if let Some(var_8) = &input.model_id {
+        object.key("modelId").string(var_8.as_str());
+    }
     Ok(())
 }

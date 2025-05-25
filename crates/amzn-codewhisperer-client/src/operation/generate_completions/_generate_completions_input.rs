@@ -27,6 +27,8 @@ pub struct GenerateCompletionsInput {
     pub profile_arn: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub workspace_id: ::std::option::Option<::std::string::String>,
+    /// Unique identifier for the model
+    pub model_id: ::std::option::Option<::std::string::String>,
 }
 impl GenerateCompletionsInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -94,6 +96,11 @@ impl GenerateCompletionsInput {
     pub fn workspace_id(&self) -> ::std::option::Option<&str> {
         self.workspace_id.as_deref()
     }
+
+    /// Unique identifier for the model
+    pub fn model_id(&self) -> ::std::option::Option<&str> {
+        self.model_id.as_deref()
+    }
 }
 impl ::std::fmt::Debug for GenerateCompletionsInput {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -110,6 +117,7 @@ impl ::std::fmt::Debug for GenerateCompletionsInput {
         formatter.field("user_context", &self.user_context);
         formatter.field("profile_arn", &self.profile_arn);
         formatter.field("workspace_id", &self.workspace_id);
+        formatter.field("model_id", &self.model_id);
         formatter.finish()
     }
 }
@@ -138,6 +146,7 @@ pub struct GenerateCompletionsInputBuilder {
     pub(crate) user_context: ::std::option::Option<crate::types::UserContext>,
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
     pub(crate) workspace_id: ::std::option::Option<::std::string::String>,
+    pub(crate) model_id: ::std::option::Option<::std::string::String>,
 }
 impl GenerateCompletionsInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -368,6 +377,23 @@ impl GenerateCompletionsInputBuilder {
         &self.workspace_id
     }
 
+    /// Unique identifier for the model
+    pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.model_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.model_id = input;
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.model_id
+    }
+
     /// Consumes the builder and constructs a
     /// [`GenerateCompletionsInput`](crate::operation::generate_completions::GenerateCompletionsInput).
     pub fn build(
@@ -389,6 +415,7 @@ impl GenerateCompletionsInputBuilder {
             user_context: self.user_context,
             profile_arn: self.profile_arn,
             workspace_id: self.workspace_id,
+            model_id: self.model_id,
         })
     }
 }
@@ -407,6 +434,7 @@ impl ::std::fmt::Debug for GenerateCompletionsInputBuilder {
         formatter.field("user_context", &self.user_context);
         formatter.field("profile_arn", &self.profile_arn);
         formatter.field("workspace_id", &self.workspace_id);
+        formatter.field("model_id", &self.model_id);
         formatter.finish()
     }
 }

@@ -62,5 +62,11 @@ pub fn ser_code_coverage_event(
             ::aws_smithy_types::Number::NegInt((input.user_written_code_line_count).into()),
         );
     }
+    if input.added_character_count != 0 {
+        object.key("addedCharacterCount").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((input.added_character_count).into()),
+        );
+    }
     Ok(())
 }

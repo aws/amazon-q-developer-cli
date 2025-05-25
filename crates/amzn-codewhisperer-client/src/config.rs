@@ -609,6 +609,7 @@ impl Builder {
     /// # Examples
     ///
     /// Disabling identity caching:
+    ///
     /// ```no_run
     /// use amzn_codewhisperer_client::config::IdentityCache;
     ///
@@ -620,6 +621,7 @@ impl Builder {
     /// ```
     ///
     /// Customizing lazy caching:
+    ///
     /// ```no_run
     /// use std::time::Duration;
     ///
@@ -656,6 +658,7 @@ impl Builder {
     /// # Examples
     ///
     /// Disabling identity caching:
+    ///
     /// ```no_run
     /// use amzn_codewhisperer_client::config::IdentityCache;
     ///
@@ -667,6 +670,7 @@ impl Builder {
     /// ```
     ///
     /// Customizing lazy caching:
+    ///
     /// ```no_run
     /// use std::time::Duration;
     ///
@@ -1167,6 +1171,7 @@ impl Builder {
     ///
     /// Set the behavior major version to `latest`. This is equivalent to enabling the
     /// `behavior-version-latest` cargo feature.
+    ///
     /// ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
     ///
@@ -1178,6 +1183,7 @@ impl Builder {
     /// ```
     ///
     /// Customizing behavior major version:
+    ///
     /// ```no_run
     /// use amzn_codewhisperer_client::config::BehaviorVersion;
     ///

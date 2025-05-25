@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2025-05-16",
+      "version": "1.10.1",
+      "title": "Version 1.10.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "An issue where `q chat` would prompt for login while already logged in - [#1862](https://github.com/aws/amazon-q-developer-cli/pull/1862)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-05-15",
       "version": "1.10.0",
       "title": "Version 1.10.0",
@@ -22,7 +34,7 @@
         },
         {
           "type": "added",
-          "description": "Persistent conversations by working directory in `q chat` - [#1767](https://github.com/aws/amazon-q-developer-cli/pull/1767)"
+          "description": "Persistent conversations by working directory with `q chat --resume` - [#1767](https://github.com/aws/amazon-q-developer-cli/pull/1767)"
         },
         {
           "type": "added",
@@ -38,7 +50,11 @@
         },
         {
           "type": "added",
-          "description": "Commands `/import` and `/export` for saving and importing conversation state in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+          "description": "Commands `/save` and `/load` for saving and loading conversation state in `q chat` - [#1762](https://github.com/aws/amazon-q-developer-cli/pull/1762)"
+        },
+        {
+          "type": "added",
+          "description": "A new subcommand `q mcp` for updating MCP server configuration - [#1836](https://github.com/aws/amazon-q-developer-cli/pull/1836)"
         },
         {
           "type": "added",

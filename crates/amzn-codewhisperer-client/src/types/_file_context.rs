@@ -9,6 +9,8 @@ pub struct FileContext {
     pub right_file_content: ::std::string::String,
     #[allow(missing_docs)] // documentation missing in model
     pub filename: ::std::string::String,
+    #[allow(missing_docs)] // documentation missing in model
+    pub file_uri: ::std::option::Option<::std::string::String>,
     /// Programming Languages supported by CodeWhisperer
     pub programming_language: crate::types::ProgrammingLanguage,
 }
@@ -31,6 +33,11 @@ impl FileContext {
         self.filename.deref()
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn file_uri(&self) -> ::std::option::Option<&str> {
+        self.file_uri.as_deref()
+    }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> &crate::types::ProgrammingLanguage {
         &self.programming_language
@@ -42,6 +49,7 @@ impl ::std::fmt::Debug for FileContext {
         formatter.field("left_file_content", &"*** Sensitive Data Redacted ***");
         formatter.field("right_file_content", &"*** Sensitive Data Redacted ***");
         formatter.field("filename", &"*** Sensitive Data Redacted ***");
+        formatter.field("file_uri", &"*** Sensitive Data Redacted ***");
         formatter.field("programming_language", &self.programming_language);
         formatter.finish()
     }
@@ -61,6 +69,7 @@ pub struct FileContextBuilder {
     pub(crate) left_file_content: ::std::option::Option<::std::string::String>,
     pub(crate) right_file_content: ::std::option::Option<::std::string::String>,
     pub(crate) filename: ::std::option::Option<::std::string::String>,
+    pub(crate) file_uri: ::std::option::Option<::std::string::String>,
     pub(crate) programming_language: ::std::option::Option<crate::types::ProgrammingLanguage>,
 }
 impl FileContextBuilder {
@@ -118,6 +127,23 @@ impl FileContextBuilder {
         &self.filename
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn file_uri(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.file_uri = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_file_uri(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.file_uri = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_file_uri(&self) -> &::std::option::Option<::std::string::String> {
+        &self.file_uri
+    }
+
     /// Programming Languages supported by CodeWhisperer
     /// This field is required.
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
@@ -164,6 +190,7 @@ impl FileContextBuilder {
                     "filename was not specified but it is required when building FileContext",
                 )
             })?,
+            file_uri: self.file_uri,
             programming_language: self.programming_language.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
                     "programming_language",
@@ -179,6 +206,7 @@ impl ::std::fmt::Debug for FileContextBuilder {
         formatter.field("left_file_content", &"*** Sensitive Data Redacted ***");
         formatter.field("right_file_content", &"*** Sensitive Data Redacted ***");
         formatter.field("filename", &"*** Sensitive Data Redacted ***");
+        formatter.field("file_uri", &"*** Sensitive Data Redacted ***");
         formatter.field("programming_language", &self.programming_language);
         formatter.finish()
     }

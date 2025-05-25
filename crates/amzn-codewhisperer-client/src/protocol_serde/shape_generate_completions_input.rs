@@ -72,5 +72,8 @@ pub fn ser_generate_completions_input_input(
     if let Some(var_21) = &input.workspace_id {
         object.key("workspaceId").string(var_21.as_str());
     }
+    if let Some(var_22) = &input.model_id {
+        object.key("modelId").string(var_22.as_str());
+    }
     Ok(())
 }

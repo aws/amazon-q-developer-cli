@@ -98,5 +98,23 @@ pub fn ser_user_trigger_decision_event(
         }
         array_10.finish();
     }
+    if input.added_character_count != 0 {
+        object.key("addedCharacterCount").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((input.added_character_count).into()),
+        );
+    }
+    if input.deleted_character_count != 0 {
+        object.key("deletedCharacterCount").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((input.deleted_character_count).into()),
+        );
+    }
+    if input.streak_length != 0 {
+        object.key("streakLength").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((input.streak_length).into()),
+        );
+    }
     Ok(())
 }

@@ -12,14 +12,17 @@ pub fn ser_file_context(
     {
         object.key("filename").string(input.filename.as_str());
     }
+    if let Some(var_1) = &input.file_uri {
+        object.key("fileUri").string(var_1.as_str());
+    }
     {
         #[allow(unused_mut)]
-        let mut object_1 = object.key("programmingLanguage").start_object();
+        let mut object_2 = object.key("programmingLanguage").start_object();
         crate::protocol_serde::shape_programming_language::ser_programming_language(
-            &mut object_1,
+            &mut object_2,
             &input.programming_language,
         )?;
-        object_1.finish();
+        object_2.finish();
     }
     Ok(())
 }

@@ -6,8 +6,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`client_token(impl Into<String>)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::client_token) / [`set_client_token(Option<String>)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::set_client_token):<br>required: **false**<br>(undocumented)<br>
-    ///   - [`timestamp(DateTime)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::timestamp) / [`set_timestamp(Option<DateTime>)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::set_timestamp):<br>required: **true**<br>(undocumented)<br>
-    ///   - [`event_id(impl Into<String>)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::event_id) / [`set_event_id(Option<String>)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::set_event_id):<br>required: **true**<br>(undocumented)<br>
+    ///   - [`event_type(impl Into<String>)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::event_type) / [`set_event_type(Option<String>)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::set_event_type):<br>required: **true**<br>(undocumented)<br>
     ///   - [`event(Document)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::event) / [`set_event(Option<Document>)`](crate::operation::push_telemetry_event::builders::PushTelemetryEventFluentBuilder::set_event):<br>required: **true**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`PushTelemetryEventOutput`](crate::operation::push_telemetry_event::PushTelemetryEventOutput)

@@ -13,6 +13,8 @@ pub struct SendTelemetryEventInput {
     pub user_context: ::std::option::Option<crate::types::UserContext>,
     #[allow(missing_docs)] // documentation missing in model
     pub profile_arn: ::std::option::Option<::std::string::String>,
+    /// Unique identifier for the model
+    pub model_id: ::std::option::Option<::std::string::String>,
 }
 impl SendTelemetryEventInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -39,6 +41,11 @@ impl SendTelemetryEventInput {
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
+
+    /// Unique identifier for the model
+    pub fn model_id(&self) -> ::std::option::Option<&str> {
+        self.model_id.as_deref()
+    }
 }
 impl SendTelemetryEventInput {
     /// Creates a new builder-style object to manufacture
@@ -58,6 +65,7 @@ pub struct SendTelemetryEventInputBuilder {
     pub(crate) opt_out_preference: ::std::option::Option<crate::types::OptOutPreference>,
     pub(crate) user_context: ::std::option::Option<crate::types::UserContext>,
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) model_id: ::std::option::Option<::std::string::String>,
 }
 impl SendTelemetryEventInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -146,6 +154,23 @@ impl SendTelemetryEventInputBuilder {
         &self.profile_arn
     }
 
+    /// Unique identifier for the model
+    pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.model_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.model_id = input;
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.model_id
+    }
+
     /// Consumes the builder and constructs a
     /// [`SendTelemetryEventInput`](crate::operation::send_telemetry_event::SendTelemetryEventInput).
     pub fn build(
@@ -160,6 +185,7 @@ impl SendTelemetryEventInputBuilder {
             opt_out_preference: self.opt_out_preference,
             user_context: self.user_context,
             profile_arn: self.profile_arn,
+            model_id: self.model_id,
         })
     }
 }

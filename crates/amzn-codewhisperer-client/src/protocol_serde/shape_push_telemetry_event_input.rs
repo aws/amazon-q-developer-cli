@@ -6,16 +6,11 @@ pub fn ser_push_telemetry_event_input_input(
     if let Some(var_1) = &input.client_token {
         object.key("clientToken").string(var_1.as_str());
     }
-    if let Some(var_2) = &input.timestamp {
-        object
-            .key("timestamp")
-            .date_time(var_2, ::aws_smithy_types::date_time::Format::EpochSeconds)?;
+    if let Some(var_2) = &input.event_type {
+        object.key("eventType").string(var_2.as_str());
     }
-    if let Some(var_3) = &input.event_id {
-        object.key("eventId").string(var_3.as_str());
-    }
-    if let Some(var_4) = &input.event {
-        object.key("event").document(var_4);
+    if let Some(var_3) = &input.event {
+        object.key("event").document(var_3);
     }
     Ok(())
 }
