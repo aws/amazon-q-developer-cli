@@ -1369,10 +1369,9 @@ impl ChatContext {
                 self.send_tool_use_telemetry(telemetry).await;
 
                 if self.interactive {
-                    queue!(self.output, style::SetForegroundColor(Color::Magenta))?;
-                    queue!(self.output, style::SetForegroundColor(Color::Reset))?;
-                    queue!(self.output, cursor::Hide)?;
+                    // Print a newline before starting the assistant response
                     execute!(self.output, style::Print("\n"))?;
+                    queue!(self.output, cursor::Hide)?;
                     self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
                 }
 
@@ -3204,6 +3203,18 @@ impl ChatContext {
                 cursor::Show,
                 cursor::MoveUp(1),
                 terminal::Clear(terminal::ClearType::CurrentLine),
+            )?;
+        }
+
+        // Add assistant indicator at the beginning of the response
+        if self.interactive {
+            queue!(
+                self.output,
+                style::SetForegroundColor(Color::Yellow),
+                style::SetAttribute(Attribute::Bold),
+                style::Print("Amazon Q > "),
+                style::SetAttribute(Attribute::Reset),
+                style::SetForegroundColor(Color::Reset),
             )?;
         }
 
