@@ -312,9 +312,15 @@ mod tests {
         // Test default prompt (no profile)
         assert_eq!(generate_prompt(None, false), "You > ".cyan().bold().to_string());
         // Test default prompt with warning
-        assert_eq!(generate_prompt(None, true), format!("{}{}", "!".red(), "You > ".cyan().bold()));
+        assert_eq!(
+            generate_prompt(None, true),
+            format!("{}{}", "!".red(), "You > ".cyan().bold())
+        );
         // Test default profile (should be same as no profile)
-        assert_eq!(generate_prompt(Some("default"), false), "You > ".cyan().bold().to_string());
+        assert_eq!(
+            generate_prompt(Some("default"), false),
+            "You > ".cyan().bold().to_string()
+        );
         // Test custom profile
         assert_eq!(
             generate_prompt(Some("test-profile"), false),
