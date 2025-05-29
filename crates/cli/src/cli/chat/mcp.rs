@@ -32,6 +32,7 @@ use crate::cli::chat::tools::custom_tool::{
 };
 use crate::cli::chat::util::shared_writer::SharedWriter;
 use crate::platform::Context;
+use crate::mcp_client::TransportType;
 
 pub async fn execute_mcp(args: Mcp) -> Result<ExitCode> {
     let ctx = Context::new();
@@ -53,6 +54,16 @@ pub async fn add_mcp_server(ctx: &Context, output: &mut SharedWriter, args: McpA
     let scope = args.scope.unwrap_or(Scope::Workspace);
     let config_path = resolve_scope_profile(ctx, args.scope)?;
 
+    match args.transport {
+        TransportType::Stdio if args.command.is_none() => {
+            bail!("--command is required for STDIO transport");
+        }
+        TransportType::Sse if args.url.is_none() => {
+            bail!("--url is required for SSE transport");
+        }
+        _ => {}
+    }
+
     let mut config: McpServerConfig = ensure_config_file(ctx, &config_path, output).await?;
 
     if config.mcp_servers.contains_key(&args.name) && !args.force {
@@ -65,11 +76,14 @@ pub async fn add_mcp_server(ctx: &Context, output: &mut SharedWriter, args: McpA
     }
 
     let merged_env = args.env.into_iter().flatten().collect::<HashMap<_, _>>();
-    let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
-        "command": args.command,
-        "env": merged_env,
-        "timeout": args.timeout.unwrap_or(default_timeout()),
-    }))?;
+    let tool = CustomToolConfig {
+        command: args.command,
+        url: args.url,
+        transport: args.transport,
+        args: vec![],
+        env: if merged_env.is_empty() { None } else { Some(merged_env) },
+        timeout: args.timeout.unwrap_or(default_timeout()),
+    };
 
     writeln!(
         output,
@@ -132,7 +146,12 @@ pub async fn list_mcp_server(ctx: &Context, output: &mut SharedWriter, args: Mcp
         match cfg_opt {
             Some(cfg) if !cfg.mcp_servers.is_empty() => {
                 for (name, tool_cfg) in &cfg.mcp_servers {
-                    writeln!(output, "    • {name:<12} {}", tool_cfg.command)?;
+                    let endpoint = match &tool_cfg.transport {
+                        TransportType::Stdio => tool_cfg.command.as_deref().unwrap_or("(no command)"),
+                        TransportType::Sse => tool_cfg.url.as_deref().unwrap_or("(no url)"),
+                        _ => "(unknown)",
+                    };
+                    writeln!(output, "    • {name:<12} [{:?}] {}", tool_cfg.transport, endpoint)?;
                 }
             },
             _ => {
@@ -190,12 +209,32 @@ pub async fn get_mcp_server_status(ctx: &Context, output: &mut SharedWriter, nam
             execute!(
                 output,
                 style::Print("\n─────────────\n"),
-                style::Print(format!("Scope   : {}\n", scope_display(&sc))),
-                style::Print(format!("File    : {}\n", path.display())),
-                style::Print(format!("Command : {}\n", cfg.command)),
-                style::Print(format!("Timeout : {} ms\n", cfg.timeout)),
+                style::Print(format!("Scope     : {}\n", scope_display(&sc))),
+                style::Print(format!("File      : {}\n", path.display())),
+                style::Print(format!("Transport : {:?}\n", cfg.transport)),
+            )?;
+            
+            match cfg.transport {
+                TransportType::Stdio => {
+                    execute!(
+                        output,
+                        style::Print(format!("Command   : {}\n", cfg.command.as_deref().unwrap_or("(not set)"))),
+                    )?;
+                }
+                TransportType::Sse => {
+                    execute!(
+                        output,
+                        style::Print(format!("URL       : {}\n", cfg.url.as_deref().unwrap_or("(not set)"))),
+                    )?;
+                }
+                _ => {}
+            }
+            
+            execute!(
+                output,
+                style::Print(format!("Timeout   : {} ms\n", cfg.timeout)),
                 style::Print(format!(
-                    "Env Vars: {}\n",
+                    "Env Vars  : {}\n",
                     cfg.env
                         .as_ref()
                         .map_or_else(|| "(none)".into(), |e| e.keys().cloned().collect::<Vec<_>>().join(", "))
@@ -335,7 +374,9 @@ mod tests {
         // 1. add
         let add_args = McpAdd {
             name: "local".into(),
-            command: "echo hi".into(),
+            command: Some("echo hi".into()),
+            url: None,
+            transport: TransportType::Stdio,
             env: vec![],
             timeout: None,
             scope: None,

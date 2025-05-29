@@ -10,7 +10,7 @@ use cli::{
     self,
     JsonRpcRequest,
     JsonRpcResponse,
-    JsonRpcStdioTransport,
+    mcp_client::transport::stdio::JsonRpcStdioTransport,
     PreServerRequestHandler,
     Response,
     Server,
