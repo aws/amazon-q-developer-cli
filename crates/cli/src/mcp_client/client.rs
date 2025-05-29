@@ -26,10 +26,12 @@ use super::transport::base_protocol::{
     JsonRpcVersion,
 };
 use super::transport::stdio::JsonRpcStdioTransport;
+use super::transport::sse::JsonRpcSseTransport;
 use super::transport::{
     self,
     Transport,
     TransportError,
+    TransportType,
 };
 use super::{
     JsonRpcResponse,
@@ -51,6 +53,7 @@ use crate::util::process::{
 
 pub type ClientInfo = serde_json::Value;
 pub type StdioTransport = JsonRpcStdioTransport;
+pub type SseTransport = JsonRpcSseTransport;
 
 /// Represents the capabilities of a client in the Model Context Protocol.
 /// This structure is sent to the server during initialization to communicate
@@ -77,7 +80,10 @@ impl From<ClientInfo> for ClientCapabilities {
 #[derive(Debug, Deserialize)]
 pub struct ClientConfig {
     pub server_name: String,
-    pub bin_path: String,
+    pub bin_path: Option<String>,
+    pub server_url: Option<String>,
+    #[allow(dead_code)]
+    pub transport_type: Option<TransportType>,
     pub args: Vec<String>,
     pub timeout: u64,
     pub client_info: serde_json::Value,
@@ -160,7 +166,9 @@ impl Client<StdioTransport> {
             timeout,
             client_info,
             env,
+            ..
         } = config;
+        let bin_path = bin_path.ok_or_else(|| ClientError::NegotiationError("bin_path required for STDIO transport".to_string()))?;
         let child = {
             let mut command = tokio::process::Command::new(bin_path);
             command
@@ -189,6 +197,32 @@ impl Client<StdioTransport> {
             transport,
             timeout,
             server_process_id,
+            client_info,
+            current_id: Arc::new(AtomicU64::new(0)),
+            messenger: None,
+            prompt_gets: Arc::new(SyncRwLock::new(HashMap::new())),
+            is_prompts_out_of_date: Arc::new(AtomicBool::new(false)),
+        })
+    }
+}
+
+impl Client<SseTransport> {
+    pub async fn from_config(config: ClientConfig) -> Result<Self, ClientError> {
+        let ClientConfig {
+            server_name,
+            server_url,
+            timeout,
+            client_info,
+            ..
+        } = config;
+        let server_url = server_url.ok_or_else(|| ClientError::NegotiationError("server_url required for SSE transport".to_string()))?;
+        
+        let transport = Arc::new(transport::sse::JsonRpcSseTransport::new(server_url).await?);
+        Ok(Self {
+            server_name,
+            transport,
+            timeout,
+            server_process_id: None,
             client_info,
             current_id: Arc::new(AtomicU64::new(0)),
             messenger: None,
@@ -650,16 +684,16 @@ mod tests {
         });
         let client_config_one = ClientConfig {
             server_name: "test_tool".to_owned(),
-            bin_path: bin_path.to_str().unwrap().to_string(),
+            bin_path: Some(bin_path.to_str().unwrap().to_string()),
+            server_url: None,
+            transport_type: Some(TransportType::Stdio),
             args: ["1".to_owned()].to_vec(),
             timeout: 120 * 1000,
-            client_info: client_info_one.clone(),
-            env: {
-                let mut map = HashMap::<String, String>::new();
-                map.insert("ENV_ONE".to_owned(), "1".to_owned());
-                map.insert("ENV_TWO".to_owned(), "2".to_owned());
-                Some(map)
-            },
+            client_info: serde_json::json!({
+               "name": "Q CLI Chat",
+               "version": "1.0.0"
+            }),
+            env: None,
         };
         let client_info_two = serde_json::json!({
           "name": "TestClientTwo",
@@ -667,16 +701,16 @@ mod tests {
         });
         let client_config_two = ClientConfig {
             server_name: "test_tool".to_owned(),
-            bin_path: bin_path.to_str().unwrap().to_string(),
+            bin_path: Some(bin_path.to_str().unwrap().to_string()),
+            server_url: None,
+            transport_type: Some(TransportType::Stdio),
             args: ["2".to_owned()].to_vec(),
             timeout: 120 * 1000,
-            client_info: client_info_two.clone(),
-            env: {
-                let mut map = HashMap::<String, String>::new();
-                map.insert("ENV_ONE".to_owned(), "1".to_owned());
-                map.insert("ENV_TWO".to_owned(), "2".to_owned());
-                Some(map)
-            },
+            client_info: serde_json::json!({
+               "name": "Q CLI Chat",
+               "version": "1.0.0"
+            }),
+            env: None,
         };
         let mut client_one = Client::<StdioTransport>::from_config(client_config_one).expect("Failed to create client");
         let mut client_two = Client::<StdioTransport>::from_config(client_config_two).expect("Failed to create client");

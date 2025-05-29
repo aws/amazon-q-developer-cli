@@ -7,6 +7,8 @@ use clap::{
     ValueEnum,
 };
 
+use crate::mcp_client::TransportType;
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Parser)]
 pub struct Chat {
     /// (Deprecated, use --trust-all-tools) Enabling this flag allows the model to execute
@@ -57,9 +59,15 @@ pub struct McpAdd {
     /// Name for the server
     #[arg(long)]
     pub name: String,
-    /// The command used to launch the server
+    /// The command used to launch the server (for STDIO transport)
     #[arg(long)]
-    pub command: String,
+    pub command: Option<String>,
+    /// The URL for the server (for SSE transport)
+    #[arg(long)]
+    pub url: Option<String>,
+    /// Transport type to use
+    #[arg(long, value_enum, default_value = "stdio")]
+    pub transport: TransportType,
     /// Where to add the server to.
     #[arg(long, value_enum)]
     pub scope: Option<Scope>,

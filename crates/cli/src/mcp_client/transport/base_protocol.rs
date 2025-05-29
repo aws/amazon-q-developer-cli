@@ -100,9 +100,10 @@ pub struct JsonRpcError {
     pub data: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum TransportType {
     #[default]
     Stdio,
+    Sse,
     Websocket,
 }

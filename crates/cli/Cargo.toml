@@ -88,7 +88,9 @@ reqwest = { version = "0.12.14", default-features = false, features = [
     "json",
     "socks",
     "cookies",
+    "stream",
 ] }
+reqwest-eventsource = "0.6.0"
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
 rustls = "0.23.23"
 rustls-native-certs = "0.8.1"
@@ -120,6 +122,7 @@ time = { version = "0.3.39", features = [
     "serde",
 ] }
 tokio = { version = "1.45.0", features = ["full"] }
+tokio-stream = "0.1.17"
 toml = "0.8.12"
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-appender = "0.2.2"
