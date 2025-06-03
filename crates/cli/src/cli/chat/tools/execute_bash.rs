@@ -1,35 +1,19 @@
 use std::collections::VecDeque;
 use std::io::Write;
-use std::process::{
-    ExitStatus,
-    Stdio,
-};
+use std::process::{ExitStatus, Stdio};
 use std::str::from_utf8;
 
 use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
-};
-use eyre::{
-    Context as EyreContext,
-    Result,
-};
+use crossterm::style::{self, Color};
+use eyre::{Context as EyreContext, Result};
 use serde::Deserialize;
 use tokio::io::AsyncBufReadExt;
 use tokio::select;
 use tracing::error;
 
 use super::super::util::truncate_safe;
-use super::{
-    InvokeOutput,
-    MAX_TOOL_RESPONSE_SIZE,
-    OutputKind,
-};
-use crate::cli::chat::{
-    CONTINUATION_LINE,
-    PURPOSE_ARROW,
-};
+use super::{InvokeOutput, MAX_TOOL_RESPONSE_SIZE, OutputKind};
+use crate::cli::chat::{CONTINUATION_LINE, PURPOSE_ARROW};
 use crate::platform::Context;
 const READONLY_COMMANDS: &[&str] = &["ls", "cat", "echo", "pwd", "which", "head", "tail", "find", "grep"];
 
@@ -40,7 +24,16 @@ pub struct ExecuteBash {
 }
 
 impl ExecuteBash {
-    pub fn requires_acceptance(&self) -> bool {
+    pub fn should_untrust(&self) -> bool {
+        // check for custom untrusted patterns from environment variable
+        // ie: export Q_EXECUTE_BASH_UNTRUSTED_PATTERNS = "git push,delete,rm"
+        let env = crate::platform::Env::new();
+        if let Ok(untrusted_patterns) = env.get("Q_EXECUTE_BASH_UNTRUSTED_PATTERNS") {
+            let patterns: Vec<&str> = untrusted_patterns.split(',').map(|s| s.trim()).collect();
+            if patterns.iter().any(|pattern| self.command.contains(pattern)) {
+                return true;
+            }
+        }
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
@@ -95,6 +88,10 @@ impl ExecuteBash {
         }
 
         false
+    }
+    
+    pub fn requires_acceptance(&self) -> bool {
+        self.should_untrust()
     }
 
     pub async fn invoke(&self, updates: impl Write) -> Result<InvokeOutput> {
@@ -391,6 +388,86 @@ mod tests {
                 cmd,
                 expected
             );
+        }
+    }
+
+    #[test]
+    fn test_requires_acceptance_for_custom_untrusted_patterns() {
+        use std::env;
+
+        // Save original environment variable if it exists
+        let original_value = env::var("Q_EXECUTE_BASH_UNTRUSTED_PATTERNS").ok();
+
+        // Test with single pattern
+        env::set_var("Q_EXECUTE_BASH_UNTRUSTED_PATTERNS", "custom_pattern");
+
+        let safe_cmd = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "echo hello world",
+        }))
+        .unwrap();
+        assert_eq!(
+            safe_cmd.requires_acceptance(),
+            false,
+            "Safe command should not require acceptance"
+        );
+
+        let unsafe_cmd = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "echo custom_pattern",
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe_cmd.requires_acceptance(),
+            true,
+            "Command with custom untrusted pattern should require acceptance"
+        );
+
+        // Test with multiple patterns
+        env::set_var("Q_EXECUTE_BASH_UNTRUSTED_PATTERNS", "pattern1,pattern2, pattern3");
+
+        let safe_cmd = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "echo safe command",
+        }))
+        .unwrap();
+        assert_eq!(
+            safe_cmd.requires_acceptance(),
+            false,
+            "Safe command should not require acceptance"
+        );
+
+        let unsafe_cmd1 = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "echo pattern1 is unsafe",
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe_cmd1.requires_acceptance(),
+            true,
+            "Command with first pattern should require acceptance"
+        );
+
+        let unsafe_cmd2 = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "echo pattern2 is also unsafe",
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe_cmd2.requires_acceptance(),
+            true,
+            "Command with second pattern should require acceptance"
+        );
+
+        let unsafe_cmd3 = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "echo pattern3 is unsafe too",
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe_cmd3.requires_acceptance(),
+            true,
+            "Command with third pattern should require acceptance"
+        );
+
+        // Restore original environment variable or remove it
+        match original_value {
+            Some(value) => env::set_var("Q_EXECUTE_BASH_UNTRUSTED_PATTERNS", value),
+            None => env::remove_var("Q_EXECUTE_BASH_UNTRUSTED_PATTERNS"),
         }
     }
 }
