@@ -6,6 +6,7 @@ use std::str::from_utf8;
 use crossterm::queue;
 use crossterm::style::{self, Color};
 use eyre::{Context as EyreContext, Result};
+use regex::Regex;
 use serde::Deserialize;
 use tokio::io::AsyncBufReadExt;
 use tokio::select;
@@ -26,12 +27,24 @@ pub struct ExecuteBash {
 impl ExecuteBash {
     pub fn should_untrust(&self) -> bool {
         // check for custom untrusted patterns from environment variable
-        // ie: export Q_EXECUTE_BASH_UNTRUSTED_PATTERNS = "git push,delete,rm"
+        // ie: export Q_EXECUTE_BASH_UNTRUSTED_PATTERNS = "git push,delete,/^\s*rm.*/"
         let env = crate::platform::Env::new();
         if let Ok(untrusted_patterns) = env.get("Q_EXECUTE_BASH_UNTRUSTED_PATTERNS") {
             let patterns: Vec<&str> = untrusted_patterns.split(',').map(|s| s.trim()).collect();
-            if patterns.iter().any(|pattern| self.command.contains(pattern)) {
-                return true;
+            for pattern in patterns {
+                // Check if pattern is wrapped in slashes (regex convention)
+                if pattern.starts_with('/') && pattern.ends_with('/') && pattern.len() > 2 {
+                    // Extract the regex pattern between slashes
+                    let regex_pattern = &pattern[1..pattern.len()-1];
+                    if let Ok(regex) = Regex::new(regex_pattern) {
+                        if regex.is_match(&self.command) {
+                            return true;
+                        }
+                    }
+                } else if self.command.contains(pattern) {
+                    // Fall back to simple string matching for non-regex patterns
+                    return true;
+                }
             }
         }
         let Some(args) = shlex::split(&self.command) else {
@@ -419,6 +432,49 @@ mod tests {
             unsafe_cmd.requires_acceptance(),
             true,
             "Command with custom untrusted pattern should require acceptance"
+        );
+        
+        // Test with regex patterns using slash convention
+        env::set_var("Q_EXECUTE_BASH_UNTRUSTED_PATTERNS", "/^\\s*rm.*/,/.*sudo.*/");
+        
+        let safe_cmd1 = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "echo rm is safe here",
+        }))
+        .unwrap();
+        assert_eq!(
+            safe_cmd1.requires_acceptance(),
+            false,
+            "Command with rm in the middle should be safe"
+        );
+        
+        let unsafe_cmd1 = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "rm -rf /tmp/test",
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe_cmd1.requires_acceptance(),
+            true,
+            "Command starting with rm should require acceptance"
+        );
+        
+        let unsafe_cmd2 = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "  rm -rf /tmp/test",
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe_cmd2.requires_acceptance(),
+            true,
+            "Command with leading whitespace before rm should require acceptance"
+        );
+        
+        let unsafe_cmd3 = serde_json::from_value::<ExecuteBash>(serde_json::json!({
+            "command": "echo hello | sudo rm -rf",
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe_cmd3.requires_acceptance(),
+            true,
+            "Command containing sudo should require acceptance"
         );
 
         // Test with multiple patterns
