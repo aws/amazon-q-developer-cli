@@ -3016,9 +3016,16 @@ impl ChatContext {
             }
 
             // If there is an override, we will use it. Otherwise fall back to Tool's default.
-            let allowed = self.tool_permissions.trust_all
+            let mut allowed = self.tool_permissions.trust_all
                 || (self.tool_permissions.has(&tool.name) && self.tool_permissions.is_trusted(&tool.name))
                 || !tool.tool.requires_acceptance(&self.ctx);
+                
+            // Check if the tool has a should_untrust method and if it returns true
+            if let Tool::ExecuteBash(execute_bash) = &tool.tool {
+                if execute_bash.should_untrust() {
+                    allowed = false;
+                }
+            }
 
             if database
                 .settings
