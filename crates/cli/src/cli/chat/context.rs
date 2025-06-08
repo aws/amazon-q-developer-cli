@@ -637,6 +637,7 @@ async fn load_global_config(ctx: &Context) -> Result<ContextConfig> {
         // Return default global configuration with predefined paths
         Ok(ContextConfig {
             paths: vec![
+                "~/.amazonq/rules/**/*.md".to_string(),
                 ".amazonq/rules/**/*.md".to_string(),
                 "README.md".to_string(),
                 AMAZONQ_FILENAME.to_string(),
