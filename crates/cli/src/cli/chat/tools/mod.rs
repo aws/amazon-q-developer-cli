@@ -29,6 +29,8 @@ use use_aws::UseAws;
 
 use super::consts::MAX_TOOL_RESPONSE_SIZE;
 use super::util::images::RichImageBlocks;
+use crate::database::Database;
+use crate::database::settings::Setting;
 use crate::platform::Context;
 
 /// Represents an executable tool use.
@@ -133,6 +135,43 @@ impl ToolPermissions {
             trust_all: false,
             permissions: HashMap::with_capacity(capacity),
         }
+    }
+
+    pub fn from_database(database: &Database) -> Self {
+        let trust_all = database.settings.get_bool(Setting::TrustAllTools).unwrap_or(false);
+
+        let trusted_tools = database.settings.get_string_array(Setting::TrustedTools);
+
+        let mut permissions = Self::new(trusted_tools.len());
+        permissions.trust_all = trust_all;
+
+        trusted_tools.iter().for_each(|tool| permissions.trust_tool(&tool));
+
+        permissions
+    }
+
+    /// Apply CLI overrides to existing permissions
+    pub fn with_cli_overrides(mut self, trust_all_cli: Option<bool>, trust_tools_cli: Option<Vec<String>>) -> Self {
+        if let Some(true) = trust_all_cli {
+            self.trust_all = true;
+            // Mark all tools as trusted when trust_all is enabled
+            for (_, permission) in self.permissions.iter_mut() {
+                permission.trusted = true;
+            }
+            return self;
+        }
+
+        if let Some(tools) = trust_tools_cli {
+            // Clear existing and trust only specified tools
+            self.trust_all = false;
+            for (_, permission) in self.permissions.iter_mut() {
+                permission.trusted = false;
+            }
+            for tool in tools {
+                self.trust_tool(&tool);
+            }
+        }
+        self
     }
 
     pub fn is_trusted(&self, tool_name: &str) -> bool {
@@ -371,6 +410,7 @@ fn supports_truecolor(ctx: &Context) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::{Database, settings::Setting};
     use crate::platform::EnvProvider;
 
     #[tokio::test]
@@ -417,5 +457,75 @@ mod tests {
             "/Volumes/projects/MyProject/src",
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn test_tool_permissions_from_database() {
+        let mut database = Database::new().await.unwrap();
+
+        // Test default state (no persistent settings)
+        let permissions = ToolPermissions::from_database(&database);
+        assert!(!permissions.trust_all);
+        assert!(!permissions.is_trusted("fs_write"));
+        assert!(!permissions.is_trusted("execute_bash"));
+        assert!(!permissions.is_trusted("my_mcp_tool"));
+
+        // Test trust all setting
+        database.settings.set(Setting::TrustAllTools, true).await.unwrap();
+        let permissions = ToolPermissions::from_database(&database);
+        assert!(permissions.trust_all);
+        assert!(permissions.is_trusted("fs_write"));
+        assert!(permissions.is_trusted("execute_bash"));
+        assert!(permissions.is_trusted("my_mcp_tool"));
+
+        // Test specific trusted tools
+        database.settings.set(Setting::TrustAllTools, false).await.unwrap();
+        let trusted_tools = vec!["fs_write".to_string(), "my_mcp_tool".to_string()];
+        database
+            .settings
+            .set(Setting::TrustedTools, serde_json::json!(trusted_tools))
+            .await
+            .unwrap();
+
+        let permissions = ToolPermissions::from_database(&database);
+        assert!(!permissions.trust_all);
+        assert!(permissions.is_trusted("fs_write"));
+        assert!(!permissions.is_trusted("execute_bash"));
+        assert!(permissions.is_trusted("my_mcp_tool"));
+    }
+
+    #[tokio::test]
+    async fn test_tool_permissions_cli_overrides() {
+        let mut database = Database::new().await.unwrap();
+
+        // Set persistent settings
+        let trusted_tools = vec!["fs_write".to_string()];
+        database
+            .settings
+            .set(Setting::TrustedTools, serde_json::json!(trusted_tools))
+            .await
+            .unwrap();
+
+        let base_permissions = ToolPermissions::from_database(&database);
+        assert!(base_permissions.is_trusted("fs_write"));
+        assert!(!base_permissions.is_trusted("execute_bash"));
+
+        // Test CLI override: trust all
+        let permissions = base_permissions.clone().with_cli_overrides(Some(true), None);
+        assert!(permissions.trust_all);
+        assert!(permissions.is_trusted("fs_write"));
+        assert!(permissions.is_trusted("execute_bash"));
+
+        // Test CLI override: specific tools
+        let cli_tools = vec!["execute_bash".to_string()];
+        let permissions = base_permissions.clone().with_cli_overrides(None, Some(cli_tools));
+        assert!(!permissions.trust_all);
+        assert!(!permissions.is_trusted("fs_write")); // Overridden by CLI
+        assert!(permissions.is_trusted("execute_bash"));
+
+        // Test no CLI overrides (should match base)
+        let permissions = base_permissions.clone().with_cli_overrides(None, None);
+        assert!(permissions.is_trusted("fs_write"));
+        assert!(!permissions.is_trusted("execute_bash"));
     }
 }

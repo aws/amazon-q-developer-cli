@@ -417,31 +417,19 @@ pub async fn chat(
         .build(telemetry, tool_manager_output)
         .await?;
     let tool_config = tool_manager.load_tools(database, &mut output).await?;
-    let mut tool_permissions = ToolPermissions::new(tool_config.len());
-    if accept_all || trust_all_tools {
-        tool_permissions.trust_all = true;
-        for tool in tool_config.values() {
-            tool_permissions.trust_tool(&tool.name);
-        }
 
-        // Deprecation notice for --accept-all users
-        if accept_all && interactive {
-            queue!(
-                output,
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("\n--accept-all, -a is deprecated. Use --trust-all-tools instead."),
-                style::SetForegroundColor(Color::Reset),
-            )?;
-        }
-    } else if let Some(trusted) = trust_tools.map(|vec| vec.into_iter().collect::<HashSet<_>>()) {
-        // --trust-all-tools takes precedence over --trust-tools=...
-        for tool in tool_config.values() {
-            if trusted.contains(&tool.name) {
-                tool_permissions.trust_tool(&tool.name);
-            } else {
-                tool_permissions.untrust_tool(&tool.name);
-            }
-        }
+    // Load permissions: persistent settings + CLI overrides
+    let tool_permissions = ToolPermissions::from_database(database)
+        .with_cli_overrides((accept_all || trust_all_tools).then_some(true), trust_tools);
+
+    // Deprecation notice for --accept-all users
+    if accept_all && interactive {
+        queue!(
+            output,
+            style::SetForegroundColor(Color::Yellow),
+            style::Print("\n--accept-all, -a is deprecated. Use --trust-all-tools instead."),
+            style::SetForegroundColor(Color::Reset),
+        )?;
     }
 
     let mut chat = ChatContext::new(

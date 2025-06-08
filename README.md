@@ -61,7 +61,7 @@
 ### 1. Clone repo
 
 ```shell
-git clone https://github.com/aws/amazon-q-for-command-line.git
+git clone https://github.com/aws/amazon-q-developer-cli.git
 ```
 
 ### 2. Setup
@@ -146,14 +146,14 @@ pnpm install --ignore-scripts
 ### 3. Start Local Development
 To compile and view changes made to `q chat`:
 ```shell
-cargo run --bin chat_cli
+cargo run --bin cli
 ```
 
-> If you are working on other q commands, just append `-- <command name>`. For example, to run `q login`, you can run `cargo run --bin chat_cli -- login`
+> If you are working on other q commands, just append `-- <command name>`. For example, to run `q login`, you can run `cargo run --bin cli -- login`
 
 To run tests for the Q CLI crate:
 ```shell
-cargo test -p chat_cli
+cargo test -p cli
 ```
 
 To format Rust files:

@@ -31,6 +31,8 @@ pub enum Setting {
     McpInitTimeout,
     McpNoInteractiveTimeout,
     McpLoadedBefore,
+    TrustedTools,
+    TrustAllTools,
 }
 
 impl AsRef<str> for Setting {
@@ -50,6 +52,8 @@ impl AsRef<str> for Setting {
             Self::McpInitTimeout => "mcp.initTimeout",
             Self::McpNoInteractiveTimeout => "mcp.noInteractiveTimeout",
             Self::McpLoadedBefore => "mcp.loadedBefore",
+            Self::TrustedTools => "tools.trusted",
+            Self::TrustAllTools => "tools.trustAll",
         }
     }
 }
@@ -79,6 +83,8 @@ impl TryFrom<&str> for Setting {
             "mcp.initTimeout" => Ok(Self::McpInitTimeout),
             "mcp.noInteractiveTimeout" => Ok(Self::McpNoInteractiveTimeout),
             "mcp.loadedBefore" => Ok(Self::McpLoadedBefore),
+            "tools.trusted" => Ok(Self::TrustedTools),
+            "tools.trustAll" => Ok(Self::TrustAllTools),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -146,6 +152,18 @@ impl Settings {
 
     pub fn get_int(&self, key: Setting) -> Option<i64> {
         self.get(key).and_then(|value| value.as_i64())
+    }
+
+    pub fn get_string_array(&self, key: Setting) -> Vec<String> {
+        self.get(key)
+            .and_then(|value| value.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     async fn save_to_file(&self) -> Result<(), DatabaseError> {
@@ -223,5 +241,38 @@ mod test {
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
+    }
+
+    /// Test for trusted tools settings
+    #[tokio::test]
+    async fn test_trusted_tools_settings() {
+        let mut settings = Settings::new().await.unwrap();
+
+        // Test initial state
+        assert_eq!(settings.get(Setting::TrustedTools), None);
+        assert_eq!(settings.get(Setting::TrustAllTools), None);
+        assert_eq!(settings.get_string_array(Setting::TrustedTools), Vec::<String>::new());
+        assert_eq!(settings.get_bool(Setting::TrustAllTools), None);
+
+        // Test setting trusted tools array
+        let trusted_tools = vec!["fs_write".to_string(), "execute_bash".to_string(), "my_mcp_tool".to_string()];
+        settings.set(Setting::TrustedTools, serde_json::json!(trusted_tools)).await.unwrap();
+        settings.set(Setting::TrustAllTools, true).await.unwrap();
+
+        // Test reading back
+        assert_eq!(settings.get_string_array(Setting::TrustedTools), trusted_tools);
+        assert_eq!(settings.get_bool(Setting::TrustAllTools), Some(true));
+
+        // Test updating trust all to false
+        settings.set(Setting::TrustAllTools, false).await.unwrap();
+        assert_eq!(settings.get_bool(Setting::TrustAllTools), Some(false));
+
+        // Test clearing trusted tools
+        settings.remove(Setting::TrustedTools).await.unwrap();
+        settings.remove(Setting::TrustAllTools).await.unwrap();
+        
+        assert_eq!(settings.get(Setting::TrustedTools), None);
+        assert_eq!(settings.get(Setting::TrustAllTools), None);
+        assert_eq!(settings.get_string_array(Setting::TrustedTools), Vec::<String>::new());
     }
 }
