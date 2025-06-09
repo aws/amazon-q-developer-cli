@@ -2,96 +2,157 @@
 
 ## Overview
 
-The **Amazon Q Developer CLI** is part of a monorepo that houses the core code for the Amazon Q Developer desktop application and command-line interface. Amazon Q Developer is an AI assistant built by AWS to help developers with various tasks.
+The **Amazon Q Developer CLI** is a command-line interface that provides AI-powered assistance to developers through natural language chat and tool execution capabilities. The project is built primarily in Rust and integrates with AWS services including CodeWhisperer and Q Developer.
 
 ## Key Components
 
-1. **q_cli**: The main CLI tool that allows users to interact with Amazon Q Developer from the command line
-2. **fig_desktop**: The Rust desktop application that uses tao/wry for windowing and webviews
-3. **Web Applications**: React apps for autocomplete functionality and dashboard interface
-4. **IDE Extensions**: VSCode, JetBrains, and GNOME extensions
+1. **CLI Application** (`crates/cli/`): The main command-line interface implementation
+2. **AWS Service Clients** (`crates/amzn-*`): Client libraries for various AWS services
+3. **Model Context Protocol (MCP)**: Extensibility framework for custom tools and integrations
+4. **Build Scripts** (`scripts/`): Python scripts for building, signing, and testing
 
 ## Project Structure
 
-- `crates/` - Contains all internal Rust crates
-- `packages/` - Contains all internal npm packages
-- `proto/` - Protocol buffer message specifications for inter-process communication
-- `extensions/` - IDE extensions
-- `build-scripts/` - Python scripts for building, signing, and testing
-- `tests/` - Integration tests
+### Core Crates
+
+- `crates/cli/` - Main CLI application with the following modules:
+  - `api_client/` - Handles communication with AWS services
+  - `auth/` - Authentication and authorization (Builder ID, SSO)
+  - `cli/` - Command implementations (chat, settings, diagnostics, etc.)
+  - `database/` - Local SQLite database for settings and state
+  - `mcp_client/` - Model Context Protocol client
+  - `platform/` - Platform-specific implementations
+  - `telemetry/` - Usage tracking and analytics
+  - `util/` - Common utilities
+
+### AWS Service Clients
+
+- `amzn-codewhisperer-client/` - AWS CodeWhisperer service client
+- `amzn-codewhisperer-streaming-client/` - Streaming client for CodeWhisperer
+- `amzn-consolas-client/` - Client for Consolas service
+- `amzn-qdeveloper-streaming-client/` - Streaming client for Q Developer
+- `amzn-toolkit-telemetry-client/` - Telemetry client
+
+### Build and Scripts
+
+- `scripts/` - Python scripts for:
+  - `build.py` - Build orchestration
+  - `signing.py` - Code signing
+  - `test.py` - Test execution
+  - `doc.py` - Documentation generation
+  - `manifest.py` - Manifest management
+  - `setup.sh` - Development environment setup
 
 ## Amazon Q Chat Implementation
 
 ### Core Components
 
-1. **Chat Module Structure**
-   - The chat functionality is implemented in the `q_cli/src/cli/chat` directory
-   - Main components include conversation state management, input handling, response parsing, and tool execution
+1. **Chat Module** (`crates/cli/src/cli/chat/`)
+   - Interactive terminal-based chat interface
+   - Command parsing and execution
+   - Response streaming and rendering
+   - Tool management and execution
 
-2. **User Interface**
-   - Provides an interactive terminal-based chat interface
-   - Uses `rustyline` for command-line input with features like history, completion, and highlighting
-   - Displays a welcome message with usage suggestions and available commands
-   - Supports special commands like `/help`, `/quit`, `/clear`, and `/acceptall`
+2. **Conversation Management**
+   - `ConversationState` maintains chat history and context
+   - Supports multi-turn conversations with context preservation
+   - Tracks environmental state (working directory, shell environment)
 
-3. **Conversation Management**
-   - `ConversationState` class maintains the chat history and context
-   - Tracks user messages, assistant responses, and tool executions
-   - Manages conversation history with a maximum limit (100 messages)
-   - Preserves environmental context like working directory and shell state
+3. **Tool System**
+   - Built-in tools:
+     - `fs_read`: Read files and list directories
+     - `fs_write`: Create or modify files
+     - `execute_bash`: Execute shell commands
+     - `use_aws`: Execute AWS CLI commands
+     - `gh_issue`: Create GitHub issues
+     - `thinking`: Internal reasoning display
+   - User confirmation required for system-modifying operations
+   - Tool trust system for skipping confirmations
 
-4. **Input Handling**
-   - `InputSource` handles reading user input with support for multi-line inputs
-   - `Command` parser interprets user input as questions, commands, or special commands
-   - Supports command completion for special commands like `/help` and `/clear`
+### Model Context Protocol (MCP)
 
-5. **Response Parsing**
-   - `ResponseParser` processes streaming responses from the Amazon Q service
-   - Handles markdown formatting and syntax highlighting
-   - Manages tool use requests from the assistant
+MCP enables extensibility by allowing external programs to provide tools to Amazon Q:
 
-### Tool Integration
+1. **MCP Commands** (`q mcp`)
+   - `add`: Add MCP server configurations
+   - `remove`: Remove MCP servers
+   - `list`: List configured servers
+   - `import`: Import server configurations
+   - `status`: Check server status
 
-The chat implementation includes a robust tool system that allows Amazon Q to interact with the user's environment:
+2. **Configuration**
+   - Workspace-level: `.amazonq/mcp.json`
+   - Global-level: `~/.aws/amazonq/mcp.json`
 
-1. **Available Tools**:
-   - `fs_read`: Reads files or lists directories (similar to `cat` or `ls`)
-   - `fs_write`: Creates or modifies files with various operations (create, append, replace)
-   - `execute_bash`: Executes shell commands in the user's environment
-   - `use_aws`: Makes AWS CLI API calls with specified services and operations
+3. **Integration**
+   - MCP servers expose tools via JSON-RPC protocol
+   - Communication over stdio or websocket
+   - Tools are namespaced as `{server_name}____{tool_name}`
+   - Dynamic tool discovery during chat initialization
 
-2. **Tool Execution Flow**:
-   - Amazon Q requests to use a tool via the API
-   - The CLI parses the request and validates parameters
-   - The tool is executed with appropriate permissions checks
-   - Results are returned to Amazon Q for further processing
-   - The conversation continues with the tool results incorporated
-
-3. **Security Considerations**:
-   - Tools that modify the system (like `fs_write` and `execute_bash`) require user confirmation
-   - The `/acceptall` command can toggle automatic acceptance for the session
-   - Tool responses are limited to prevent excessive output (30KB limit)
+4. **Features**
+   - Environment variable support
+   - Timeout controls
+   - Process lifecycle management
+   - Tool trust integration
 
 ### Technical Implementation
 
-1. **API Communication**:
-   - Uses a streaming client to communicate with the Amazon Q service
-   - Handles asynchronous responses and tool requests
-   - Manages timeouts and connection errors
+1. **API Communication**
+   - Uses AWS SDK clients for service communication
+   - Streaming responses for real-time interaction
+   - Supports both CodeWhisperer and Q Developer backends
 
-2. **Display Formatting**:
-   - Uses `crossterm` for terminal control and styling
-   - Implements markdown parsing and syntax highlighting
-   - Displays spinners during processing
+2. **User Interface**
+   - Built with `rustyline` for readline-like editing
+   - `crossterm` for terminal control
+   - Syntax highlighting with `syntect`
+   - Markdown rendering in terminal
 
-3. **Error Handling**:
-   - Comprehensive error types and handling for various failure scenarios
-   - Graceful degradation when services are unavailable
-   - Signal handling for user interruptions
+3. **Authentication**
+   - Builder ID authentication flow
+   - SSO support for enterprise users
+   - Token refresh and management
 
-4. **Configuration**:
-   - Respects user settings for editor mode (vi/emacs)
-   - Region checking for service availability
-   - Telemetry for usage tracking
+4. **Platform Support**
+   - Cross-platform: macOS, Linux, Windows (via WSL)
+   - Platform-specific code in `platform/` module
+   - SSH support for remote development
 
-The implementation provides a seamless interface between the user and Amazon Q's AI capabilities, with powerful tools that allow the assistant to help with file operations, command execution, and AWS service interactions, all within a terminal-based chat interface.
+## CLI Commands
+
+The main binary is `q` with the following subcommands:
+
+- `chat` (default): Interactive AI chat with tool execution
+- `login`: Authenticate with AWS
+- `logout`: Sign out
+- `whoami`: Display current user
+- `profile`: Manage context profiles
+- `settings`: Configure appearance and behavior
+- `diagnostic`: Run diagnostic tests
+- `issue`: Create GitHub issues
+- `mcp`: Manage Model Context Protocol servers
+- `version`: Display version information
+
+## Development Workflow
+
+1. **Prerequisites**
+   - Rust toolchain (stable + nightly for formatting)
+   - Python 3.8+ (for build scripts)
+   - Node.js 18+ (for some tooling)
+   - Platform-specific dependencies
+
+2. **Build and Test**
+   - `cargo build`: Build the project
+   - `cargo run --bin cli`: Run the CLI
+   - `cargo run --bin cli -- chat`: Run the chat interface
+   - `cargo test -p cli`: Run tests
+   - `cargo +nightly fmt`: Format code
+   - `cargo clippy`: Run linter
+
+3. **Configuration**
+   - Uses `mise` for managing Python/Node versions
+   - Pre-commit hooks via `pnpm install`
+   - Telemetry definitions in `telemetry_definitions.json`
+
+The project has evolved from a multi-component desktop application to a focused CLI tool that provides AI-powered assistance directly in the terminal, with extensibility through the Model Context Protocol.
