@@ -33,6 +33,17 @@
 -   🧠 [**Contextual Awareness**](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat.html#command-line-chat-context-integration): Integrates context from your local development environment, so answers are tailored to your specific code and setup.
 -   🤖 [**Agentic Execution**](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-autocomplete.html): Let Amazon Q take action: generate code, edit files, automate Git workflows, resolve merge conflicts, and more — with your permission.
 
+## ♊️ Using Gemini Models
+
+You can interact with Google's Gemini models directly through the Amazon Q CLI. To do so, prefix your chat messages with `/gemini `.
+
+For example:
+```
+/gemini Tell me a fun fact about the Rust programming language.
+```
+
+**Note**: This feature currently utilizes a mock response. Actual integration with the Gemini API is in progress.
+
 ## ⚡️ Installation
 
 - **macOS**:
