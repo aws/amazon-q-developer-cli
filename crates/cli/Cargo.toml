@@ -17,6 +17,7 @@ test = true
 doc = false
 
 [dependencies]
+gemini-rust-sdk = "0.1.0"
 amzn-codewhisperer-client = { path = "../amzn-codewhisperer-client" }
 amzn-codewhisperer-streaming-client = { path = "../amzn-codewhisperer-streaming-client" }
 amzn-consolas-client = { path = "../amzn-consolas-client" }
