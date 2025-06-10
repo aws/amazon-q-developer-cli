@@ -129,7 +129,7 @@ tracing-subscriber = { version = "0.3.19", features = [
     "parking_lot",
     "time",
 ] }
-unicode-width = "0.2.0"
+unicode-width = "0.2.1"
 url = "2.5.4"
 uuid = { version = "1.15.1", features = ["v4", "serde"] }
 webpki-roots = "=0.26.8"
