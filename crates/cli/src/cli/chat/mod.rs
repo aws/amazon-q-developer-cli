@@ -435,6 +435,14 @@ pub async fn chat(
         }
     } else if let Some(trusted) = trust_tools.map(|vec| vec.into_iter().collect::<HashSet<_>>()) {
         // --trust-all-tools takes precedence over --trust-tools=...
+        for tool_name in &trusted {
+            if !tool_name.is_empty() {
+                // Store the original trust settings for later use with MCP tools
+                tool_permissions.add_pending_trust_pattern(tool_name.clone());
+            }
+        }
+
+        // Apply to currently known tools
         for tool in tool_config.values() {
             if trusted.contains(&tool.name) {
                 tool_permissions.trust_tool(&tool.name);
@@ -1292,7 +1300,8 @@ impl ChatContext {
             style::SetForegroundColor(Color::Reset),
             style::SetAttribute(Attribute::Reset)
         )?;
-        let user_input = match self.read_user_input(&self.generate_tool_trust_prompt(), false) {
+        let prompt = self.generate_tool_trust_prompt();
+        let user_input = match self.read_user_input(&prompt, false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
         };
@@ -2428,12 +2437,14 @@ impl ChatContext {
                                     .iter()
                                     .fold(String::new(), |mut acc, FigTool::ToolSpecification(spec)| {
                                         let width = longest - spec.name.len() + 4;
+                                        let trust_status = self.tool_permissions.display_label(&spec.name);
+
                                         acc.push_str(
                                             format!(
                                                 "- {}{:>width$}{}\n",
                                                 spec.name,
                                                 "",
-                                                self.tool_permissions.display_label(&spec.name),
+                                                trust_status,
                                                 width = width
                                             )
                                             .as_str(),
@@ -3628,8 +3639,10 @@ impl ChatContext {
     }
 
     /// Helper function to generate a prompt based on the current context
-    fn generate_tool_trust_prompt(&self) -> String {
-        prompt::generate_prompt(self.conversation_state.current_profile(), self.all_tools_trusted())
+    fn generate_tool_trust_prompt(&mut self) -> String {
+        let profile = self.conversation_state.current_profile().map(|s| s.to_string());
+        let all_trusted = self.all_tools_trusted();
+        prompt::generate_prompt(profile.as_deref(), all_trusted)
     }
 
     async fn send_tool_use_telemetry(&mut self, telemetry: &TelemetryThread) {
@@ -3648,7 +3661,7 @@ impl ChatContext {
         (self.terminal_width_provider)().unwrap_or(80)
     }
 
-    fn all_tools_trusted(&self) -> bool {
+    fn all_tools_trusted(&mut self) -> bool {
         self.conversation_state.tools.values().flatten().all(|t| match t {
             FigTool::ToolSpecification(t) => self.tool_permissions.is_trusted(&t.name),
         })
