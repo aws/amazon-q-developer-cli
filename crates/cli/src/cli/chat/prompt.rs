@@ -38,6 +38,8 @@ use winnow::stream::AsChar;
 use crate::database::Database;
 use crate::database::settings::Setting;
 
+use super::editor_integration::EditorLauncher;
+
 pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
@@ -298,6 +300,12 @@ pub fn rl(
     rl.bind_sequence(
         KeyEvent(KeyCode::Char('j'), Modifiers::CTRL),
         EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
+    );
+
+    // Add custom keybinding for Ctrl+F to open current content in editor
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char('f'), Modifiers::CTRL),
+        EventHandler::Conditional(Box::new(EditorLauncher::new())),
     );
 
     Ok(rl)
