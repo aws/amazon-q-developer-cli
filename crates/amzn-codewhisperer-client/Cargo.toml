@@ -58,7 +58,7 @@ path = "src/lib.rs"
 version = "1.2.1"
 
 [dependencies.aws-runtime]
-version = "1.5.5"
+version = "1.5.8"
 
 [dependencies.aws-smithy-async]
 version = "1.2.4"
@@ -67,7 +67,7 @@ version = "1.2.4"
 version = "0.62.1"
 
 [dependencies.aws-smithy-json]
-version = "0.61.3"
+version = "0.61.4"
 
 [dependencies.aws-smithy-runtime]
 version = "1.7.8"
