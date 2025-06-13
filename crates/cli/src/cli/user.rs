@@ -233,20 +233,37 @@ pub async fn login_interactive(database: &mut Database, telemetry: &TelemetryThr
             let (start_url, region) = match login_method {
                 AuthMethod::BuilderId => (None, None),
                 AuthMethod::IdentityCenter => {
-                    let default_start_url = match args.identity_provider {
-                        Some(start_url) => Some(start_url),
-                        None => database.get_start_url()?,
-                    };
-                    let default_region = match args.region {
-                        Some(region) => Some(region),
-                        None => database.get_idc_region()?,
+                    // If identity_provider is provided in args, use it directly
+                    // Otherwise, get from database or prompt user
+                    let start_url = match args.identity_provider {
+                        Some(start_url) => {
+                            // Still save to database for future use
+                            let _ = database.set_start_url(start_url.clone());
+                            start_url
+                        },
+                        None => {
+                            let default_start_url = database.get_start_url()?;
+                            let start_url = input("Enter Start URL", default_start_url.as_deref())?;
+                            let _ = database.set_start_url(start_url.clone());
+                            start_url
+                        },
                     };
 
-                    let start_url = input("Enter Start URL", default_start_url.as_deref())?;
-                    let region = input("Enter Region", default_region.as_deref())?;
-
-                    let _ = database.set_start_url(start_url.clone());
-                    let _ = database.set_idc_region(region.clone());
+                    // If region is provided in args, use it directly
+                    // Otherwise, get from database or prompt user
+                    let region = match args.region {
+                        Some(region) => {
+                            // Still save to database for future use
+                            let _ = database.set_idc_region(region.clone());
+                            region
+                        },
+                        None => {
+                            let default_region = database.get_idc_region()?;
+                            let region = input("Enter Region", default_region.as_deref())?;
+                            let _ = database.set_idc_region(region.clone());
+                            region
+                        },
+                    };
 
                     (Some(start_url), Some(region))
                 },
