@@ -73,6 +73,12 @@ pub struct LoginArgs {
     /// redirects cannot be handled.
     #[arg(long)]
     pub use_device_flow: bool,
+    
+    /// Skip interactive prompts and use provided parameters directly.
+    /// When used with --license pro, both --identity-provider and --region must be provided.
+    /// Automatically selects the first available profile for Identity Center authentication.
+    #[arg(long)]
+    pub no_interactive: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -102,7 +108,10 @@ impl Display for AuthMethod {
 
 #[derive(Subcommand, Debug, PartialEq, Eq)]
 pub enum UserSubcommand {
-    /// Login
+    /// Login to Amazon Q
+    /// 
+    /// Supports both interactive and non-interactive authentication.
+    /// Use --no-interactive to skip all prompts and use provided parameters directly.
     Login(LoginArgs),
     /// Logout
     Logout,
@@ -213,9 +222,12 @@ pub async fn login_interactive(database: &mut Database, telemetry: &TelemetryThr
         Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
         None => {
             if args.identity_provider.is_some() && args.region.is_some() {
-                // If license is specified and --identity-provider and --region are specified,
+                // If license is not specified but --identity-provider and --region are specified,
                 // the license is determined to be pro
                 AuthMethod::IdentityCenter
+            } else if args.no_interactive {
+                // In non-interactive mode, we need an explicit license type
+                bail!("When using --no-interactive, you must specify --license (free or pro)");
             } else {
                 // --license is not specified, prompt the user to choose
                 let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
@@ -233,22 +245,39 @@ pub async fn login_interactive(database: &mut Database, telemetry: &TelemetryThr
             let (start_url, region) = match login_method {
                 AuthMethod::BuilderId => (None, None),
                 AuthMethod::IdentityCenter => {
-                    let default_start_url = match args.identity_provider {
+                    // Store the values from args to avoid partial moves
+                    let identity_provider = args.identity_provider.clone();
+                    let region_arg = args.region.clone();
+                    
+                    let default_start_url = match identity_provider {
                         Some(start_url) => Some(start_url),
                         None => database.get_start_url()?,
                     };
-                    let default_region = match args.region {
+                    let default_region = match region_arg {
                         Some(region) => Some(region),
                         None => database.get_idc_region()?,
                     };
 
-                    let start_url = input("Enter Start URL", default_start_url.as_deref())?;
-                    let region = input("Enter Region", default_region.as_deref())?;
+                    // If no_interactive is true and both identity_provider and region are provided,
+                    // use them directly without prompting
+                    if args.no_interactive {
+                        if let (Some(url), Some(reg)) = (&args.identity_provider, &args.region) {
+                            let _ = database.set_start_url(url.clone());
+                            let _ = database.set_idc_region(reg.clone());
+                            (Some(url.clone()), Some(reg.clone()))
+                        } else {
+                            bail!("When using --no-interactive with Identity Center, both --identity-provider and --region must be provided");
+                        }
+                    } else {
+                        // Interactive mode - prompt for input
+                        let start_url = input("Enter Start URL", default_start_url.as_deref())?;
+                        let region = input("Enter Region", default_region.as_deref())?;
 
-                    let _ = database.set_start_url(start_url.clone());
-                    let _ = database.set_idc_region(region.clone());
+                        let _ = database.set_start_url(start_url.clone());
+                        let _ = database.set_idc_region(region.clone());
 
-                    (Some(start_url), Some(region))
+                        (Some(start_url), Some(region))
+                    }
                 },
             };
 
@@ -291,9 +320,49 @@ pub async fn login_interactive(database: &mut Database, telemetry: &TelemetryThr
     };
 
     if login_method == AuthMethod::IdentityCenter {
-        select_profile_interactive(database, telemetry, true).await?;
+        if args.no_interactive {
+            // In non-interactive mode, automatically select the first profile
+            select_profile_non_interactive(database, telemetry).await?;
+        } else {
+            select_profile_interactive(database, telemetry, true).await?;
+        }
     }
 
+    Ok(())
+}
+
+async fn select_profile_non_interactive(database: &mut Database, telemetry: &TelemetryThread) -> Result<()> {
+    let mut spinner = Spinner::new(vec![
+        SpinnerComponent::Spinner,
+        SpinnerComponent::Text(" Fetching profiles...".into()),
+    ]);
+    let profiles = list_available_profiles(database).await?;
+    if profiles.is_empty() {
+        info!("Available profiles was empty");
+        spinner.stop_with_message("No profiles available".into());
+        return Ok(());
+    }
+
+    let sso_region = database.get_idc_region()?;
+    // Use underscore prefix for unused variable
+    let _total_profiles = profiles.len() as i64;
+
+    // Automatically select the first profile
+    if let Some(profile_region) = profiles[0].arn.split(':').nth(3) {
+        telemetry
+            .send_profile_state(
+                QProfileSwitchIntent::Update,
+                profile_region.to_string(),
+                TelemetryResult::Succeeded,
+                sso_region,
+            )
+            .ok();
+    }
+
+    spinner.stop_with_message(String::new());
+    database.set_auth_profile(&profiles[0])?;
+    println!("Profile automatically set to: {} ({})", profiles[0].profile_name, profiles[0].arn);
+    
     Ok(())
 }
 
@@ -447,4 +516,54 @@ async fn select_profile_interactive(database: &mut Database, telemetry: &Telemet
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+    use crate::cli::{Cli, CliRootCommands};
+    use crate::util::CHAT_BINARY_NAME;
+
+    #[test]
+    fn test_login_with_no_interactive_pro() {
+        let args = vec![
+            CHAT_BINARY_NAME,
+            "login",
+            "--license", "pro",
+            "--identity-provider", "https://example.com",
+            "--region", "us-west-2",
+            "--no-interactive"
+        ];
+        
+        let cli = Cli::parse_from(args);
+        
+        if let Some(CliRootCommands::User(UserSubcommand::Login(login_args))) = cli.subcommand {
+            assert_eq!(login_args.license, Some(LicenseType::Pro));
+            assert_eq!(login_args.identity_provider, Some("https://example.com".to_string()));
+            assert_eq!(login_args.region, Some("us-west-2".to_string()));
+            assert!(login_args.no_interactive);
+        } else {
+            panic!("Expected Login subcommand");
+        }
+    }
+
+    #[test]
+    fn test_login_with_no_interactive_free() {
+        let args = vec![
+            CHAT_BINARY_NAME,
+            "login",
+            "--license", "free",
+            "--no-interactive"
+        ];
+        
+        let cli = Cli::parse_from(args);
+        
+        if let Some(CliRootCommands::User(UserSubcommand::Login(login_args))) = cli.subcommand {
+            assert_eq!(login_args.license, Some(LicenseType::Free));
+            assert!(login_args.no_interactive);
+        } else {
+            panic!("Expected Login subcommand");
+        }
+    }
 }
