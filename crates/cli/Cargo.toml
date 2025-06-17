@@ -90,7 +90,7 @@ reqwest = { version = "0.12.14", default-features = false, features = [
     "cookies",
 ] }
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
-rustls = "0.23.23"
+rustls = "0.23.28"
 rustls-native-certs = "0.8.1"
 rustyline = { version = "15.0.0", features = [
     "custom-bindings",
