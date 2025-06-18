@@ -133,7 +133,7 @@ match args.subparser:
             [
                 cargo_cmd_name(),
                 "run",
-                f"--bin={CLI_PACKAGE_NAME}",
+                f"--bin=qqq",
                 *args.args,
             ],
             env={

@@ -163,6 +163,7 @@ use crate::platform::Context;
 use crate::telemetry::TelemetryThread;
 use crate::telemetry::core::ToolUseEventBuilder;
 use crate::util::CLI_BINARY_NAME;
+use gemini_rust_sdk;
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -206,16 +207,16 @@ const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cya
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
 const ROTATING_TIPS: [&str; 13] = [
-    color_print::cstr! {"You can resume the last conversation from your current directory by launching with <green!>q chat --resume</green!>"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
+    color_print::cstr! {"You can resume the last conversation from your current directory by launching with <green!>qqq chat --resume</green!>"},
+    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>qqq settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
+    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>qqq settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
     color_print::cstr! {"Q can use tools without asking for confirmation every time. Give <green!>/tools trust</green!> a try"},
     color_print::cstr! {"You can programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks help</green!>"},
     color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation history with its summary to free up the context space"},
-    color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
+    color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>qqq issue</green!>"},
     color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with /help"},
     color_print::cstr! {"You can specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use /tools to see pending servers."},
     color_print::cstr! {"You can see the server load status as well as any warnings or errors associated with <green!>/mcp</green!>"},
@@ -278,8 +279,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
 <em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
 <em>Ctrl(^) + s</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
-                      <black!>Change the keybind to ctrl+x with: q settings chat.skimCommandKey x (where x is any key)</black!>
-<em>chat.editMode</em>         <black!>Set editing mode (vim or emacs) using: q settings chat.editMode vi/emacs</black!>
+                      <black!>Change the keybind to ctrl+x with: qqq settings chat.skimCommandKey x (where x is any key)</black!>
+<em>chat.editMode</em>         <black!>Set editing mode (vim or emacs) using: qqq settings chat.editMode vi/emacs</black!>
 
 "};
 
@@ -527,6 +528,20 @@ pub struct ChatContext {
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
     pending_prompts: VecDeque<Prompt>,
+    gemini_client: gemini_rust_sdk::Client,
+}
+
+async fn call_gemini_api(message: &str) -> Result<String, ChatError> {
+    // Simulate API call delay
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // Simulate a successful response
+    // Remove the "/gemini " prefix from the message for the response
+    let actual_message = message.strip_prefix("/gemini ").unwrap_or(message);
+    Ok(format!("Gemini API mock response for: '{}'", actual_message))
+
+    // To simulate an error, you could use:
+    // Err(ChatError::Custom("Simulated Gemini API error".into()))
 }
 
 impl ChatContext {
@@ -608,6 +623,7 @@ impl ChatContext {
             tool_use_status: ToolUseStatus::Idle,
             failed_request_ids: Vec::new(),
             pending_prompts: VecDeque::new(),
+            gemini_client: gemini_rust_sdk::Client::new(),
         })
     }
 }
@@ -683,6 +699,80 @@ impl Default for ChatState {
             pending_tool_index: None,
             skip_printing_tools: false,
         }
+    }
+
+    #[tokio::test]
+    async fn test_call_gemini_api_placeholder() {
+        let response = call_gemini_api("/gemini test message").await;
+        assert!(response.is_ok());
+        assert_eq!(response.unwrap(), "Gemini API mock response for: 'test message'");
+
+        let response_no_prefix = call_gemini_api("another message").await;
+        assert!(response_no_prefix.is_ok());
+        // This will also strip "/gemini " if present, but if not, it uses the whole message.
+        // Based on current call_gemini_api, it would be "Gemini API mock response for: 'another message'"
+        assert_eq!(response_no_prefix.unwrap(), "Gemini API mock response for: 'another message'");
+    }
+
+    #[tokio::test]
+    async fn test_gemini_command_flow() {
+        let ctx = Arc::new(Context::builder().with_test_home().await.unwrap().build_fake());
+        let mut database = Database::new().await.unwrap();
+        let env = Env::new();
+        let telemetry = TelemetryThread::new(&env, &mut database).await.unwrap();
+
+        let amazon_q_mock_client = StreamingClient::mock(vec![]);
+        let mock_input_source = InputSource::new_mock(vec![
+            "/gemini hello integration".to_string(),
+            "/quit".to_string(), // To allow try_chat to terminate
+        ]);
+        let output_capture = SharedWriter::capture();
+
+        // ToolManager setup
+        let (tm_prompt_req_sender, _tm_prompt_req_receiver) = std::sync::mpsc::channel::<Option<String>>();
+        let (_tm_prompt_resp_sender, tm_prompt_resp_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let tm_output: Box<dyn Write + Send + Sync + 'static> = Box::new(NullWriter {});
+
+        let mut tool_manager = ToolManagerBuilder::default()
+            .prompt_list_sender(_tm_prompt_resp_sender)
+            .prompt_list_receiver(_tm_prompt_req_receiver)
+            .conversation_id("gemini_test_conv_id")
+            .interactive(true) // Some ToolManager functions might depend on this
+            .build(&telemetry, tm_output)
+            .await
+            .unwrap();
+
+        let tool_config_for_chatcontext: HashMap<String, ToolSpec> = tool_manager.load_tools(&mut database, &mut SharedWriter::null()).await.unwrap();
+        let tool_permissions = ToolPermissions::new(tool_config_for_chatcontext.len());
+
+        let mut chat_context = ChatContext::new(
+            ctx,
+            &mut database,
+            "gemini_test_conv_id",
+            output_capture.clone(),
+            None,
+            mock_input_source,
+            true,
+            false,
+            amazon_q_mock_client,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config_for_chatcontext,
+            tool_permissions,
+        )
+        .await
+        .unwrap();
+
+        let result = chat_context.try_chat(&mut database, &telemetry).await;
+        assert!(result.is_ok(), "Chat loop failed: {:?}", result.err());
+
+        let history = chat_context.conversation_state.history();
+        let last_message_content = history.last().and_then(|msg| msg.content_text());
+        assert!(
+            last_message_content.is_some() && last_message_content.unwrap().contains("Gemini API mock response for: 'hello integration'"),
+            "Conversation history did not contain Gemini response. Last message: {:?}, Full history: {:?}", last_message_content, history
+        );
     }
 }
 
@@ -843,7 +933,7 @@ impl ChatContext {
                 } => {
                     let tool_uses_clone = tool_uses.clone();
                     tokio::select! {
-                        res = self.handle_input(telemetry, input, tool_uses, pending_tool_index) => res,
+                        res = self.handle_input(database, telemetry, input, tool_uses, pending_tool_index) => res,
                         Ok(_) = ctrl_c_stream => Err(ChatError::Interrupted { tool_uses: tool_uses_clone })
                     }
                 },
@@ -1272,8 +1362,8 @@ impl ChatContext {
         }
 
         // Do this here so that the skim integration sees an updated view of the context *during the current
-        // q session*. (e.g., if I add files to context, that won't show up for skim for the current
-        // q session unless we do this in prompt_user... unless you can find a better way)
+        // qqq session*. (e.g., if I add files to context, that won't show up for skim for the current
+        // qqq session unless we do this in prompt_user... unless you can find a better way)
         #[cfg(unix)]
         if let Some(ref context_manager) = self.conversation_state.context_manager {
             let tool_names = self
@@ -1307,11 +1397,25 @@ impl ChatContext {
 
     async fn handle_input(
         &mut self,
+        database: &mut Database,
         telemetry: &TelemetryThread,
         mut user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
         pending_tool_index: Option<usize>,
     ) -> Result<ChatState, ChatError> {
+        if user_input.starts_with("/gemini ") {
+            let gemini_response = call_gemini_api(&user_input).await?;
+            self.conversation_state.push_assistant_message(
+                AssistantMessage::new_response(None, gemini_response),
+                database,
+            );
+            return Ok(ChatState::PromptUser {
+                tool_uses: None,
+                pending_tool_index: None,
+                skip_printing_tools: true,
+            });
+        }
+
         let command_result = Command::parse(&user_input, &mut self.output);
 
         if let Err(error_message) = &command_result {
@@ -3339,7 +3443,7 @@ impl ChatContext {
                 },
             }
 
-            // Fix for the markdown parser copied over from q chat:
+            // Fix for the markdown parser copied over from qqq chat:
             // this is a hack since otherwise the parser might report Incomplete with useful data
             // still left in the buffer. I'm not sure how this is intended to be handled.
             if ended {

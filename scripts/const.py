@@ -2,7 +2,7 @@ import pathlib
 
 
 APP_NAME = "Amazon Q"
-CLI_BINARY_NAME = "q"
+CLI_BINARY_NAME = "qqq"
 CHAT_BINARY_NAME = "qchat"
 PTY_BINARY_NAME = "qterm"
 DESKTOP_BINARY_NAME = "q-desktop"
