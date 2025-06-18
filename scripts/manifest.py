@@ -57,7 +57,7 @@ def app_manifest():
         entitlements=True,
         embedded_requirements=[
             EmbeddedRequirement(
-                path="Contents/MacOS/q",
+                path="Contents/MacOS/qqq",
                 identifier="com.amazon.q",
             ),
             EmbeddedRequirement(

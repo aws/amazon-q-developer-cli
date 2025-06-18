@@ -207,16 +207,16 @@ const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cya
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
 const ROTATING_TIPS: [&str; 13] = [
-    color_print::cstr! {"You can resume the last conversation from your current directory by launching with <green!>q chat --resume</green!>"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
+    color_print::cstr! {"You can resume the last conversation from your current directory by launching with <green!>qqq chat --resume</green!>"},
+    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>qqq settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can use <green!>/editor</green!> to edit your prompt with a vim-like experience"},
     color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings chat.enableNotifications true</green!>"},
+    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>qqq settings chat.enableNotifications true</green!>"},
     color_print::cstr! {"You can execute bash commands by typing <green!>!</green!> followed by the command"},
     color_print::cstr! {"Q can use tools without asking for confirmation every time. Give <green!>/tools trust</green!> a try"},
     color_print::cstr! {"You can programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks help</green!>"},
     color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation history with its summary to free up the context space"},
-    color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
+    color_print::cstr! {"If you want to file an issue to the Q CLI team, just tell me, or run <green!>qqq issue</green!>"},
     color_print::cstr! {"You can enable custom tools with <green!>MCP servers</green!>. Learn more with /help"},
     color_print::cstr! {"You can specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use /tools to see pending servers."},
     color_print::cstr! {"You can see the server load status as well as any warnings or errors associated with <green!>/mcp</green!>"},
@@ -279,8 +279,8 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>!{command}</em>            <black!>Quickly execute a command in your current session</black!>
 <em>Ctrl(^) + j</em>           <black!>Insert new-line to provide multi-line prompt. Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
 <em>Ctrl(^) + s</em>           <black!>Fuzzy search commands and context files. Use Tab to select multiple items.</black!>
-                      <black!>Change the keybind to ctrl+x with: q settings chat.skimCommandKey x (where x is any key)</black!>
-<em>chat.editMode</em>         <black!>Set editing mode (vim or emacs) using: q settings chat.editMode vi/emacs</black!>
+                      <black!>Change the keybind to ctrl+x with: qqq settings chat.skimCommandKey x (where x is any key)</black!>
+<em>chat.editMode</em>         <black!>Set editing mode (vim or emacs) using: qqq settings chat.editMode vi/emacs</black!>
 
 "};
 
@@ -1362,8 +1362,8 @@ impl ChatContext {
         }
 
         // Do this here so that the skim integration sees an updated view of the context *during the current
-        // q session*. (e.g., if I add files to context, that won't show up for skim for the current
-        // q session unless we do this in prompt_user... unless you can find a better way)
+        // qqq session*. (e.g., if I add files to context, that won't show up for skim for the current
+        // qqq session unless we do this in prompt_user... unless you can find a better way)
         #[cfg(unix)]
         if let Some(ref context_manager) = self.conversation_state.context_manager {
             let tool_names = self
@@ -3443,7 +3443,7 @@ impl ChatContext {
                 },
             }
 
-            // Fix for the markdown parser copied over from q chat:
+            // Fix for the markdown parser copied over from qqq chat:
             // this is a hack since otherwise the parser might report Incomplete with useful data
             // still left in the buffer. I'm not sure how this is intended to be handled.
             if ended {

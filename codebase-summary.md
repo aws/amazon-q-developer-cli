@@ -6,7 +6,7 @@ The **Amazon Q Developer CLI** is part of a monorepo that houses the core code f
 
 ## Key Components
 
-1. **q_cli**: The main CLI tool that allows users to interact with Amazon Q Developer from the command line
+1. **cli**: The main CLI tool that allows users to interact with Amazon Q Developer from the command line
 2. **fig_desktop**: The Rust desktop application that uses tao/wry for windowing and webviews
 3. **Web Applications**: React apps for autocomplete functionality and dashboard interface
 4. **IDE Extensions**: VSCode, JetBrains, and GNOME extensions
@@ -25,7 +25,7 @@ The **Amazon Q Developer CLI** is part of a monorepo that houses the core code f
 ### Core Components
 
 1. **Chat Module Structure**
-   - The chat functionality is implemented in the `q_cli/src/cli/chat` directory
+   - The chat functionality is implemented in the `cli/src/cli/chat` directory
    - Main components include conversation state management, input handling, response parsing, and tool execution
 
 2. **User Interface**

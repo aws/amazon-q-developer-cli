@@ -104,7 +104,7 @@ pub enum CliRootCommands {
         changelog: Option<String>,
     },
     /// AI assistant in your terminal
-    #[command(alias("q"))]
+    #[command(alias("qqq"))]
     Chat(Chat),
     /// Model Context Protocol (MCP)
     #[command(subcommand)]
@@ -130,16 +130,16 @@ impl CliRootCommands {
 
 const HELP_TEXT: &str = color_print::cstr! {"
 
-<magenta,em>q</magenta,em> (Amazon Q CLI)
+<magenta,em>qqq</magenta,em> (Amazon Q CLI)
 
-<magenta,em>Popular Subcommands</magenta,em>              <black!><em>Usage:</em> q [subcommand]</black!>
+<magenta,em>Popular Subcommands</magenta,em>              <black!><em>Usage:</em> qqq [subcommand]</black!>
 ╭────────────────────────────────────────────────────╮
 │ <em>chat</em>         <black!>Chat with Amazon Q</black!>                    │
 │ <em>settings</em>     <black!>Customize appearance & behavior</black!>       │
 ╰────────────────────────────────────────────────────╯
 
 <black!>To see all subcommands, use:</black!>
- <black!>❯</black!> q --help-all
+ <black!>❯</black!> qqq --help-all
 ㅤ
 "};
 

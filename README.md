@@ -155,16 +155,16 @@ pnpm install --ignore-scripts
 
 
 ### 3. Start Local Development
-To compile and view changes made to `q chat`:
+To compile and view changes made to `qqq chat`:
 ```shell
-cargo run --bin chat_cli
+cargo run --bin qqq
 ```
 
-> If you are working on other q commands, just append `-- <command name>`. For example, to run `q login`, you can run `cargo run --bin chat_cli -- login`
+> If you are working on other qqq commands, just append `-- <command name>`. For example, to run `qqq login`, you can run `cargo run --bin qqq -- login`
 
 To run tests for the Q CLI crate:
 ```shell
-cargo test -p chat_cli
+cargo test -p cli
 ```
 
 To format Rust files:
@@ -183,13 +183,13 @@ cargo clippy --locked --workspace --color always -- -D warnings
 
 Use Q CLI to help you onboard Q CLI! 
 
-Start a `q chat` session:
+Start a `qqq chat` session:
 
 ```shell
-q chat
+qqq chat
 ```
 
-Once inside `q chat`, you can supply project context by adding the [`codebase-summary.md`](codebase-summary.md) file:
+Once inside `qqq chat`, you can supply project context by adding the [`codebase-summary.md`](codebase-summary.md) file:
 
 ```shell
 /context add codebase-summary.md
@@ -216,7 +216,7 @@ Several projects live here:
 - [`dashboard`](packages/dashboard-app/) - The dashboard react app
 - [`figterm`](crates/figterm/) - figterm, our headless terminal/pseudoterminal that
   intercepts the user’s terminal edit buffer.
-- [`q_cli`](crates/q_cli/) - the `q` CLI, allows users to interface with Amazon Q Developer from
+- [`cli`](crates/cli/) - the `qqq` CLI, allows users to interface with Amazon Q Developer from
   the command line
 - [`fig_desktop`](crates/fig_desktop/) - the Rust desktop app, uses
   [`tao`](https://docs.rs/tao/latest/tao/)/[`wry`](https://docs.rs/wry/latest/wry/)
