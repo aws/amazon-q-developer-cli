@@ -1113,6 +1113,7 @@ dependencies = [
  "hyper-util",
  "indoc",
  "insta",
+ "lazy_static",
  "libc",
  "mimalloc",
  "mockito",

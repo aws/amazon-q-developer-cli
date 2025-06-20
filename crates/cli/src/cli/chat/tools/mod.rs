@@ -4,6 +4,8 @@ pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
 pub mod thinking;
+pub mod trusted_commands;
+pub mod trusted_commands_config;
 pub mod use_aws;
 
 use std::collections::HashMap;
@@ -64,7 +66,18 @@ impl Tool {
         match self {
             Tool::FsRead(_) => false,
             Tool::FsWrite(_) => true,
-            Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
+            Tool::ExecuteBash(execute_bash) => {
+                // First check if the command requires acceptance based on built-in rules
+                if !execute_bash.requires_acceptance() {
+                    return false;
+                }
+                
+                // If it does, we need to check if it's in the trusted commands list
+                // But since this is a synchronous function and checking trusted commands is async,
+                // we'll return true here and let the caller check the trusted commands list
+                // using the check_trusted_command method if needed
+                true
+            },
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
             Tool::Custom(_) => true,
             Tool::GhIssue(_) => false,
@@ -108,6 +121,17 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.validate(ctx).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(ctx).await,
             Tool::Thinking(think) => think.validate(ctx).await,
+        }
+    }
+    
+    /// Checks if a tool is trusted according to user-defined configurations.
+    /// This is an async method that should be called after requires_acceptance
+    /// returns true to check if the tool should still be trusted based on user configuration.
+    pub async fn check_trusted(&self, ctx: &Context) -> bool {
+        match self {
+            Tool::ExecuteBash(execute_bash) => execute_bash.check_trusted_command(ctx).await,
+            // Other tools don't have trusted command configurations yet
+            _ => false,
         }
     }
 }
@@ -419,3 +443,7 @@ mod tests {
         .await;
     }
 }
+
+#[cfg(test)]
+mod trusted_commands_integration_tests;
+

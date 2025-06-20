@@ -7,6 +7,7 @@
   - [Installing on Linux](./installation/linux.md)
   - [Installing on Windows]()
   - [Over SSH](./installation/ssh.md)
+- [Trusted Commands](./trusted-commands.md)
 - [Support and feature requests](./support/mod.md)
 
 # Contributor Guide
