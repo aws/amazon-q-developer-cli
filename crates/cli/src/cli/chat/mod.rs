@@ -3016,9 +3016,13 @@ impl ChatContext {
             }
 
             // If there is an override, we will use it. Otherwise fall back to Tool's default.
+            // Check if the tool is trusted by user configuration
+            let trusted_by_config = tool.tool.requires_acceptance(&self.ctx) && tool.tool.check_trusted(&self.ctx).await;
+            
             let allowed = self.tool_permissions.trust_all
                 || (self.tool_permissions.has(&tool.name) && self.tool_permissions.is_trusted(&tool.name))
-                || !tool.tool.requires_acceptance(&self.ctx);
+                || !tool.tool.requires_acceptance(&self.ctx)
+                || trusted_by_config;
 
             if database
                 .settings
@@ -3028,7 +3032,8 @@ impl ChatContext {
                 play_notification_bell(!allowed);
             }
 
-            self.print_tool_descriptions(tool, allowed).await?;
+            // Pass both the allowed status and whether it's trusted by user configuration
+            self.print_tool_descriptions(tool, allowed, trusted_by_config).await?;
 
             if allowed {
                 tool.accepted = true;
@@ -3560,14 +3565,25 @@ impl ChatContext {
         };
     }
 
-    async fn print_tool_descriptions(&mut self, tool_use: &QueuedTool, trusted: bool) -> Result<(), ChatError> {
+    async fn print_tool_descriptions(&mut self, tool_use: &QueuedTool, trusted: bool, trusted_by_config: bool) -> Result<(), ChatError> {
+        // Determine the trust message based on the type of trust
+        let trust_message = if trusted {
+            if trusted_by_config {
+                " (trusted by user configuration)".dark_green()
+            } else {
+                " (trusted)".dark_green()
+            }
+        } else {
+            "".reset()
+        };
+        
         queue!(
             self.output,
             style::SetForegroundColor(Color::Magenta),
             style::Print(format!(
                 "🛠️  Using tool: {}{}",
                 tool_use.tool.display_name(),
-                if trusted { " (trusted)".dark_green() } else { "".reset() }
+                trust_message
             )),
             style::SetForegroundColor(Color::Reset)
         )?;

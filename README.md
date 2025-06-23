@@ -32,6 +32,7 @@
 -   💬 [**Natural Language Chat**](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat.html): Interact with your terminal using natural language to ask questions, debug issues, or explore the codebase.
 -   🧠 [**Contextual Awareness**](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat.html#command-line-chat-context-integration): Integrates context from your local development environment, so answers are tailored to your specific code and setup.
 -   🤖 [**Agentic Execution**](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-autocomplete.html): Let Amazon Q take action: generate code, edit files, automate Git workflows, resolve merge conflicts, and more — with your permission.
+-   🔒 [**Trusted Commands**](./docs/trusted-commands.md): Define shell commands that can be executed without requiring confirmation each time.
 
 ## ⚡️ Installation
 
