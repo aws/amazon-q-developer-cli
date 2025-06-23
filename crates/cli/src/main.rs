@@ -23,6 +23,9 @@ use tracing::metadata::LevelFilter;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<ExitCode> {
+    #[cfg(target_os = "macos")]
+    embed_plist::embed_info_plist!("Info.plist");
+
     color_eyre::install()?;
 
     let parsed = match cli::Cli::try_parse() {

@@ -21,7 +21,7 @@ LINUX_MODERN_GNOME_EXTENSION_UUID = "amazon-q-for-cli-gnome-integration@aws.amaz
 
 # cargo packages
 CLI_PACKAGE_NAME = "q_cli"
-CHAT_PACKAGE_NAME = "chat_cli"
+CHAT_PACKAGE_NAME = "cli"
 PTY_PACKAGE_NAME = "figterm"
 DESKTOP_PACKAGE_NAME = "fig_desktop"
 DESKTOP_FUZZ_PACKAGE_NAME = "fig_desktop-fuzz"

@@ -7,6 +7,10 @@ use quote::{
     quote,
 };
 
+// TODO(brandonskiser): update bundle identifier for signed builds
+#[cfg(target_os = "macos")]
+const MACOS_BUNDLE_IDENTIFIER: &str = "com.amazon.codewhisperer";
+
 const DEF: &str = include_str!("./telemetry_definitions.json");
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -39,8 +43,48 @@ struct Def {
     metrics: Vec<MetricDef>,
 }
 
+/// Writes a generated Info.plist for the qchat executable under src/.
+///
+/// This is required for signing the executable since we must embed the Info.plist directly within
+/// the binary.
+#[cfg(target_os = "macos")]
+fn write_plist() {
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleIdentifier</key>
+	<string>{}</string>
+	<key>CFBundleName</key>
+	<string>{}</string>
+	<key>CFBundleVersion</key>
+	<string>{}</string>
+	<key>CFBundleShortVersionString</key>
+	<string>{}</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2022 Amazon Q CLI Team (q-cli@amazon.com):Chay Nabors (nabochay@amazon.com):Brandon Kiser (bskiser@amazon.com) All rights reserved.</string>
+</dict>
+</plist>
+"#,
+        MACOS_BUNDLE_IDENTIFIER,
+        option_env!("AMAZON_Q_BUILD_HASH").unwrap_or("unknown"),
+        option_env!("AMAZON_Q_BUILD_DATETIME").unwrap_or("unknown"),
+        env!("CARGO_PKG_VERSION")
+    );
+
+    std::fs::write("src/Info.plist", plist).expect("writing the Info.plist should not fail");
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=def.json");
+
+    #[cfg(target_os = "macos")]
+    write_plist();
 
     let outdir = std::env::var("OUT_DIR").unwrap();
 
