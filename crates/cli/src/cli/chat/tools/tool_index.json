@@ -176,6 +176,58 @@
       "required": ["title"]
     }
   },
+  "fs_search": {
+    "name": "fs_search",
+    "description": "Search for files by name pattern or search file contents using regex patterns. The behavior is determined by the `mode` parameter. Available modes:\n- name: Search file and directory names recursively using glob patterns (requires directory path)\n- content: Search within file contents line by line using regex patterns with optional file filtering (accepts file or directory path)\n\nFeatures:\n- Recursive directory traversal with breadth-first search and depth limits (max 100 levels)\n- Direct file search in content mode - pass a file path to search a single file\n- File filtering in content mode using glob patterns to limit which files are searched\n- Configurable context lines around content matches (0-10 lines before/after)\n- File size limits (default 50MB) to skip large files\n- Response size limits (30KB) with truncation messages\n- Default ignore patterns for common directories (.git, node_modules, target, etc.)\n- UTF-8 validation to skip binary files\n- Pre-compiled patterns for optimal performance\n\nExample usage:\n- Find Python files: mode=\"name\", path=\".\", pattern=\"*.py\"\n- Search single file: mode=\"content\", path=\"/path/to/file.rs\", pattern=\"TODO\"\n- Find TODO comments in Rust files: mode=\"content\", path=\".\", pattern=\"TODO|FIXME\", file_path=\"*.rs\"\n- Find function definitions: mode=\"content\", path=\"/src\", pattern=\"^def \\w+\", context_before=2, context_after=2\n- Search in test files: mode=\"content\", path=\".\", pattern=\"assert\", file_path=\"**/test_*.py\"",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Starting path to search from. For 'name' mode: must be a directory. For 'content' mode: can be either a file (to search single file) or directory (to search recursively). Examples: \".\", \"/home/user/project\", \"src/\", \"/path/to/specific/file.txt\"."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["name", "content"],
+          "description": "Search mode: 'name' for filename/directory search with glob patterns, 'content' for searching within file contents with regex."
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Search pattern. For 'name' mode: glob pattern (*, ?, []). For 'content' mode: regex pattern or plain text."
+        },
+        "include_ignored": {
+          "type": "boolean",
+          "description": "Include normally ignored files/directories (like .git, node_modules). Default: false.",
+          "default": false
+        },
+        "context_before": {
+          "type": "integer",
+          "description": "Number of lines to show before each content match (0-10). Only applies to content mode. Default: 0.",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0
+        },
+        "context_after": {
+          "type": "integer",
+          "description": "Number of lines to show after each content match (0-10). Only applies to content mode. Default: 0.",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0
+        },
+        "max_file_size": {
+          "type": "integer",
+          "description": "Maximum file size in bytes to search in content mode. Default: 52428800 (50MB).",
+          "minimum": 1,
+          "default": 52428800
+        },
+        "file_path": {
+          "type": "string",
+          "description": "Optional glob pattern to filter which files to search within. Use this to search in specific files or file types. Only applies to content mode. Examples: '*.rs' (Rust files), '**/*.py' (Python files recursively), '**/test_*' (test files), 'specific_file.txt' (a specific file)."
+        }
+      },
+      "required": ["path", "mode", "pattern"]
+    }
+  },
   "thinking": {
     "name": "thinking",
     "description": "Thinking is an internal reasoning mechanism improving the quality of complex tasks by breaking their atomic actions down; use it specifically for multi-step problems requiring step-by-step dependencies, reasoning through multiple constraints, synthesizing results from previous tool calls, planning intricate sequences of actions, troubleshooting complex errors, or making decisions involving multiple trade-offs. Avoid using it for straightforward tasks, basic information retrieval, summaries, always clearly define the reasoning challenge, structure thoughts explicitly, consider multiple perspectives, and summarize key insights before important decisions or complex tool interactions.",

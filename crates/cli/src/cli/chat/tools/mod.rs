@@ -1,6 +1,7 @@
 pub mod custom_tool;
 pub mod execute_bash;
 pub mod fs_read;
+pub mod fs_search;
 pub mod fs_write;
 pub mod gh_issue;
 pub mod thinking;
@@ -18,6 +19,7 @@ use custom_tool::CustomTool;
 use execute_bash::ExecuteBash;
 use eyre::Result;
 use fs_read::FsRead;
+use fs_search::FsSearch;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
 use serde::{
@@ -36,6 +38,7 @@ use crate::platform::Context;
 #[derive(Debug, Clone)]
 pub enum Tool {
     FsRead(FsRead),
+    FsSearch(FsSearch),
     FsWrite(FsWrite),
     ExecuteBash(ExecuteBash),
     UseAws(UseAws),
@@ -49,6 +52,7 @@ impl Tool {
     pub fn display_name(&self) -> String {
         match self {
             Tool::FsRead(_) => "fs_read",
+            Tool::FsSearch(_) => "fs_search",
             Tool::FsWrite(_) => "fs_write",
             Tool::ExecuteBash(_) => "execute_bash",
             Tool::UseAws(_) => "use_aws",
@@ -63,6 +67,7 @@ impl Tool {
     pub fn requires_acceptance(&self, _ctx: &Context) -> bool {
         match self {
             Tool::FsRead(_) => false,
+            Tool::FsSearch(_) => false,
             Tool::FsWrite(_) => true,
             Tool::ExecuteBash(execute_bash) => execute_bash.requires_acceptance(),
             Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
@@ -76,6 +81,7 @@ impl Tool {
     pub async fn invoke(&self, context: &Context, updates: &mut impl Write) -> Result<InvokeOutput> {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(context, updates).await,
+            Tool::FsSearch(fs_search) => fs_search.invoke(context, updates).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(context, updates).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.invoke(updates).await,
             Tool::UseAws(use_aws) => use_aws.invoke(context, updates).await,
@@ -89,6 +95,7 @@ impl Tool {
     pub async fn queue_description(&self, ctx: &Context, updates: &mut impl Write) -> Result<()> {
         match self {
             Tool::FsRead(fs_read) => fs_read.queue_description(ctx, updates).await,
+            Tool::FsSearch(fs_search) => fs_search.queue_description(ctx, updates).await,
             Tool::FsWrite(fs_write) => fs_write.queue_description(ctx, updates),
             Tool::ExecuteBash(execute_bash) => execute_bash.queue_description(updates),
             Tool::UseAws(use_aws) => use_aws.queue_description(updates),
@@ -102,6 +109,7 @@ impl Tool {
     pub async fn validate(&mut self, ctx: &Context) -> Result<()> {
         match self {
             Tool::FsRead(fs_read) => fs_read.validate(ctx).await,
+            Tool::FsSearch(fs_search) => fs_search.validate(ctx).await,
             Tool::FsWrite(fs_write) => fs_write.validate(ctx).await,
             Tool::ExecuteBash(execute_bash) => execute_bash.validate(ctx).await,
             Tool::UseAws(use_aws) => use_aws.validate(ctx).await,
@@ -182,6 +190,7 @@ impl ToolPermissions {
     fn default_permission_label(&self, tool_name: &str) -> String {
         let label = match tool_name {
             "fs_read" => "trusted".dark_green().bold(),
+            "fs_search" => "trusted".dark_green().bold(),
             "fs_write" => "not trusted".dark_grey(),
             "execute_bash" => "trust read-only commands".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
