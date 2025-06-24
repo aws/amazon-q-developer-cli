@@ -1,0 +1,25 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist"]
+    },
+    "lint": {
+      "dependsOn": ["@amzn/eslint-config#build"],
+      "cache": false
+    },
+    "lint:fix": {
+      "dependsOn": ["@amzn/eslint-config#build"],
+      "cache": false
+    },
+    "clean": {
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

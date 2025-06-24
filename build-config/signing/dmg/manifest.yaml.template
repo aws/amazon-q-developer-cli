@@ -1,0 +1,11 @@
+type: :app # no need to change this for .pkg, .dmg and executables
+os: :osx
+name: __NAME__
+outputs:
+- label: macos
+  path: __NAME__
+app:
+  :identifier: com.amazon.codewhisperer.installer
+  signing_requirements:
+    certificate_type: :developerIDAppDistribution
+    app_id_prefix: 94KV3E626L # AMZN Mobile LLC

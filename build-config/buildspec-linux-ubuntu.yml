@@ -1,0 +1,63 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    run-as: root
+    commands:
+      - apt-get update
+      - apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zsh zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 protobuf-compiler libfuse2 dpkg-sig
+  pre_build:
+    commands:
+      - export HOME=/home/codebuild-user
+      - export PATH="$HOME/.local/bin:$PATH"
+      - mkdir -p "$HOME/.local/bin"
+      # Create fish config dir to prevent rustup from failing
+      - mkdir -p "$HOME/.config/fish/conf.d"
+      # Install cargo
+      - curl --retry 5 --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      - . "$HOME/.cargo/env"
+      - rustup toolchain install `cat rust-toolchain.toml | grep channel | cut -d '=' -f2 | tr -d ' "'`
+      # Install tauri-cli, required for building and bundling the desktop app
+      - cargo install --version 1.6.2 tauri-cli
+      # Install cross only if the musl env var is set and not null
+      - if [ ! -z "${AMAZON_Q_BUILD_MUSL:+x}" ]; then cargo install cross --git https://github.com/cross-rs/cross; fi
+      # Install python/node via mise (https://mise.jdx.dev/continuous-integration.html)
+      - curl --retry 5 --proto '=https' --tlsv1.2 -sSf https://mise.run | sh
+      - mise install
+      - eval "$(mise activate bash --shims)"
+      # Download version of pnpm configured in package.json.
+      # Note that we download from the pnpm install script instead of corepack
+      # since corepack is broken in codebuild for some reason.
+      - curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=$(jq -r '.packageManager' package.json | cut -d@ -f2 | cut -d+ -f1) SHELL=$(which bash) sh -
+      - . "$HOME/.bashrc"
+      # Install python deps
+      - pip3 install -r build-scripts/requirements.txt
+  build:
+    commands:
+      # Disable tests that need fish/shellcheck
+      - export AMAZON_Q_BUILD_SKIP_FISH_TESTS=1
+      - export AMAZON_Q_BUILD_SKIP_SHELLCHECK_TESTS=1
+      - export GNOME_SHELL_BUILD_RELEASE=1
+      - python3.11 build-scripts/main.py build --variant=full
+
+artifacts:
+  discard-paths: "yes"
+  base-directory: "build"
+  files:
+    # Bundles for desktop builds
+    - ./*.appimage
+    - ./*.deb
+    # Archives for minimal builds
+    - ./*.tar.gz
+    - ./*.tar.xz
+    - ./*.tar.zst
+    - ./*.zip
+    # Hashes
+    - ./*.sha256
+    # Signatures
+    - ./*.asc
+    - ./*.sig
+

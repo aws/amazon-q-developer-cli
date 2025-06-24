@@ -1,0 +1,15 @@
+[package]
+name = "fig_test"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fig_test_macro = { path = "../fig_test_macro" }
+tokio.workspace = true

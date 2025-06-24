@@ -1,0 +1,95 @@
+syntax = "proto3";
+package mux;
+
+import "fig.proto";
+import "figterm.proto";
+import "local.proto";
+import "remote.proto";
+
+message Packet {
+  enum Compression {
+    COMPRESSION_UNKNOWN = 0;
+    COMPRESSION_NONE = 1;
+    COMPRESSION_GZIP = 2;
+  }
+
+  // Version of the packet, currently only 0 is valid
+  uint32 version = 1;
+  // The compression algorithm used for the inner bytes
+  Compression compression = 2;
+  // Variable length nonce to ensure message content and length very
+  bytes nonce = 3;
+  // The inner encoded message
+  bytes inner = 100;
+}
+
+message Ping {
+  // A message id that the pong will contain
+  string message_id = 1;
+}
+
+message Pong {
+  // The message id from the ping
+  string message_id = 1;
+}
+
+message Hostbound {
+  reserved 102;
+  reserved "ping";
+
+  message Request {
+    // The session id of the figterm instance the message originated from
+    string session_id = 1;
+    // A message id that all responses will share
+    string message_id = 2;
+
+    oneof inner {
+      local.EditBufferHook edit_buffer = 100;
+      local.PromptHook prompt = 101;
+      local.PreExecHook pre_exec = 102;
+      local.PostExecHook post_exec = 103;
+      local.InterceptedKeyHook intercepted_key = 104;
+    }
+  }
+
+  message Response {
+    // The session id of the figterm instance the message originated from
+    string session_id = 1;
+    // A message id that all responses will share
+    string message_id = 2;
+
+    oneof inner {
+      fig.RunProcessResponse run_process = 100;
+    }
+  }
+
+  oneof submessage {
+    Request request = 100;
+    Response response = 101;
+    Pong pong = 103;
+  }
+}
+
+message Clientbound {
+  reserved 101, 103;
+  reserved "response", "pong";
+
+  message Request {
+    // The session id of the figterm instance the message will be sent to
+    string session_id = 1;
+    // A message id that all responses will share
+    string message_id = 2;
+
+    oneof inner {
+      figterm.InterceptRequest intercept = 100;
+      figterm.InsertTextRequest insert_text = 101;
+      figterm.SetBufferRequest set_buffer = 102;
+      remote.RunProcessRequest run_process = 103;
+    }
+  }
+
+  oneof submessage {
+    Request request = 100;
+    Ping ping = 102;
+  }
+}

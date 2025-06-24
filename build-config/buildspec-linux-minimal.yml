@@ -1,0 +1,57 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    run-as: root
+    commands:
+      - dnf update -y
+      - dnf install -y python cmake bash zsh unzip zstd xz git jq protobuf
+      - dnf swap -y gnupg2-minimal gnupg2-full
+  pre_build:
+    commands:
+      - export HOME=/home/codebuild-user
+      - export PATH="$HOME/.local/bin:$PATH"
+      - mkdir -p "$HOME/.local/bin"
+      # Create fish config dir to prevent rustup from failing
+      - mkdir -p "$HOME/.config/fish/conf.d"
+      # Install cargo
+      - curl --retry 5 --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      - . "$HOME/.cargo/env"
+      - rustup toolchain install `cat rust-toolchain.toml | grep channel | cut -d '=' -f2 | tr -d ' "'`
+      # Install cross only if the musl env var is set and not null
+      - if [ ! -z "${AMAZON_Q_BUILD_MUSL:+x}" ]; then cargo install cross --git https://github.com/cross-rs/cross; fi
+      # Install python/node via mise (https://mise.jdx.dev/continuous-integration.html)
+      - curl --retry 5 --proto '=https' --tlsv1.2 -sSf https://mise.run | sh
+      - mise install
+      - eval "$(mise activate bash --shims)"
+      # Enable corepack for pnpm
+      - corepack enable
+      # Install python deps
+      - pip3 install -r build-scripts/requirements.txt
+  build:
+    commands:
+      # Disable tests that need fish/shellcheck
+      - export AMAZON_Q_BUILD_SKIP_FISH_TESTS=1
+      - export AMAZON_Q_BUILD_SKIP_SHELLCHECK_TESTS=1
+      - python3.11 build-scripts/main.py build
+
+artifacts:
+  discard-paths: "yes"
+  base-directory: "build"
+  files:
+    # Bundles for desktop builds
+    - ./*.appimage
+    - ./*.deb
+    # Archives for minimal builds
+    - ./*.tar.gz
+    - ./*.tar.xz
+    - ./*.tar.zst
+    - ./*.zip
+    # Hashes
+    - ./*.sha256
+    # Signatures
+    - ./*.asc
+    - ./*.sig

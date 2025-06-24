@@ -1,0 +1,122 @@
+[
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/hello_world.sh",
+                "file_text": "#!/bin/bash\n\necho \"Hello, World!\""
+            }
+        }
+    ],
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/hello_world.py",
+                "file_text": "#!/usr/bin/env python3\n\nprint(\"Hello, World!\")"
+            }
+        }
+    ],
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/hello_world.rs",
+                "file_text": "fn main() {\n    println!(\"Hello, World!\");\n}"
+            }
+        }
+    ],
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/hello_world.js",
+                "file_text": "console.log(\"Hello, World!\");"
+            }
+        }
+    ],
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/hello_world.ts",
+                "file_text": "const greeting: string = \"Hello, World!\";\nconsole.log(greeting);"
+            }
+        }
+    ],
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/hello_world.c",
+                "file_text": "#include <stdio.h>\n\nint main() {\n    printf(\"Hello, World!\\n\");\n    return 0;\n}"
+            }
+        }
+    ],
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/hello_world.cpp",
+                "file_text": "#include <iostream>\n\nint main() {\n    std::cout << \"Hello, World!\" << std::endl;\n    return 0;\n}"
+            }
+        }
+    ],
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/hello_world.java",
+                "file_text": "public class HelloWorld {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, World!\");\n    }\n}"
+            }
+        }
+    ],
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/hello_world.go",
+                "file_text": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, World!\")\n}"
+            }
+        }
+    ],
+    [
+        "I will use the `fs_write` tool.",
+        {
+            "tool_use_id": "1",
+            "name": "fs_write",
+            "args": {
+                "command": "create",
+                "path": "stub_output/unknown",
+                "file_text": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, World!\")\n}"
+            }
+        }
+    ]
+]

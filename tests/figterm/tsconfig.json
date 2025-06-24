@@ -1,0 +1,29 @@
+{
+  "ts-node": {
+    "transpileOnly": true,
+    "files": true,
+    "compilerOptions": {
+      "module": "commonjs"
+    }
+  },
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "strict": true,
+    "jsx": "react",
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "isolatedModules": false,
+    "allowSyntheticDefaultImports": true,
+    "lib": ["esnext", "dom", "dom.Iterable"],
+    "types": ["jest", "node"],
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.d.ts",
+    "**/*.js"
+  ]
+}
+

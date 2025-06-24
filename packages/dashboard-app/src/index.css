@@ -1,0 +1,172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Ember";
+  font-weight: 100;
+  src: url("../assets/fonts/Ember/AmazonEmber_Th.ttf");
+}
+
+@font-face {
+  font-family: "Ember";
+  font-weight: 200 300;
+  src: url("../assets/fonts/Ember/AmazonEmber_Lt.ttf");
+}
+
+@font-face {
+  font-family: "Ember";
+  font-weight: 400;
+  src: url("../assets/fonts/Ember/AmazonEmber_Rg.ttf");
+}
+
+@font-face {
+  font-family: "Ember";
+  font-weight: 500 600;
+  src: url("../assets/fonts/Ember/AmazonEmber_Md.ttf");
+}
+
+@font-face {
+  font-family: "Ember";
+  font-weight: 700;
+  src: url("../assets/fonts/Ember/AmazonEmber_Bd.ttf");
+}
+
+@font-face {
+  font-family: "Ember";
+  font-weight: 800 900;
+  src: url("../assets/fonts/Ember/AmazonEmber_He.ttf");
+}
+
+@layer base {
+  :root {
+    height: 100%;
+    overflow: hidden;
+
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 10% 3.9%;
+
+    --radius: 0.5rem;
+  }
+
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .gradient-q-secondary-light {
+    background: radial-gradient(
+      ellipse farthest-corner at 100% 0%,
+      #a7f8ff 0%,
+      #008dff 40%,
+      #4a00c8 80%,
+      #39127d 100%
+    );
+  }
+
+  .gradient-q-secondary-light-alt {
+    background: radial-gradient(
+      ellipse farthest-corner at 100% 0%,
+      #008dff 0%,
+      #4a00c8 50%,
+      #39127d 100%
+    );
+  }
+
+  .gradient-q-secondary-dark {
+    background: radial-gradient(
+        122.5% 122.5% at 0% 0%,
+        #000000 0%,
+        rgba(0, 0, 0, 0) 100%
+      ),
+      radial-gradient(
+        100% 100% at 0% 100%,
+        rgba(0, 0, 0, 0.7) 0%,
+        rgba(0, 0, 0, 0) 100%
+      ),
+      radial-gradient(
+        100% 100% at 100% 0%,
+        #6e3bf1 7.53%,
+        rgba(110, 59, 241, 0) 100%
+      ),
+      radial-gradient(
+        100% 86.61% at 100% 100%,
+        #538bf7 0%,
+        rgba(83, 139, 247, 0) 100%
+      ),
+      #301673;
+  }
+}
+
+/* Currently an issue with Linux webkit CSS variables */
+/* https://github.com/tailwindlabs/tailwindcss/issues/13844 */
+.backdrop-blur-lg {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}

@@ -1,0 +1,35 @@
+name: npm publish
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install protobuf compiler and libglib2.0
+        run: sudo apt-get update && sudo apt-get install -y -qq protobuf-compiler libglib2.0-dev-bin
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
+      - name: Install npm dependencies
+        run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm publish --recursive --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true

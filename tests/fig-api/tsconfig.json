@@ -1,0 +1,10 @@
+{
+  "extends": ["@amzn/tsconfig/base.json"],
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["@amzn/types", "node"],
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
+}

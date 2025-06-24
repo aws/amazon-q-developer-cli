@@ -1,0 +1,105 @@
+syntax = "proto3";
+package remote;
+
+import "fig.proto";
+import "fig_common.proto";
+import "figterm.proto";
+import "local.proto";
+
+// all endpoints defined in this file are available to remote servers
+// be careful and keep security in mind
+
+message RunProcessRequest {
+  string executable = 1;
+  repeated string arguments = 2;
+  optional string working_directory = 3;
+  repeated fig_common.EnvironmentVariable env = 4;
+  optional fig_common.Duration timeout = 5;
+}
+
+message Clientbound {
+  oneof packet {
+    HandshakeResponse handshake_response = 100;
+    fig_common.Empty ping = 101;
+    Request request = 102;
+    Response response = 103;
+    NotifyChildSessionStarted notify_child_session_started = 104;
+  }
+
+  message HandshakeResponse {
+    bool success = 1;
+  }
+
+  message NotifyChildSessionStarted {
+    string parent_id = 1;
+  }
+
+  message Request {
+    optional uint64 nonce = 1;
+
+    oneof request {
+      figterm.InterceptRequest intercept = 100;
+      figterm.InsertTextRequest insert_text = 101;
+      figterm.SetBufferRequest set_buffer = 102;
+      figterm.DiagnosticsRequest diagnostics = 103;
+      figterm.InsertOnNewCmdRequest insert_on_new_cmd = 107;
+
+      fig.ReadFileRequest read_file = 105;
+
+      RunProcessRequest run_process = 104;
+    }
+  }
+
+  message Response {
+    optional uint64 nonce = 1;
+
+    oneof response {
+      // Empty message to ensure response is valid, oneof can't be empty
+      fig_common.Empty empty = 103;
+    }
+  }
+}
+
+message Hostbound {
+  oneof packet {
+    Handshake handshake = 100;
+    Request request = 101;
+    Response response = 102;
+    fig_common.Empty pong = 103;
+  }
+
+  message Handshake {
+    string id = 1;
+    string secret = 2;
+
+    optional string parent_id = 3;
+  }
+
+  message Request {
+    optional uint64 nonce = 1;
+
+    oneof request {
+      local.EditBufferHook edit_buffer = 101;
+      local.PromptHook prompt = 102;
+      local.PreExecHook pre_exec = 103;
+      local.PostExecHook post_exec = 108;
+      local.InterceptedKeyHook intercepted_key = 104;
+    }
+  }
+
+  message Response {
+    optional uint64 nonce = 1;
+
+    oneof response {
+      string error = 100;
+
+      figterm.DiagnosticsResponse diagnostics = 101;
+      fig.RunProcessResponse run_process = 102;
+      ReadFileResponse read_file = 103;
+    }
+
+    message ReadFileResponse {
+      fig_common.FileData data = 1;
+    }
+  }
+}

@@ -1,0 +1,49 @@
+syntax = "proto3";
+package stress;
+
+import "fig_common.proto";
+
+message Serverbound {
+  oneof inner {
+    Setup setup = 1;
+    fig_common.Empty request_report = 2;
+    IncrementTest increment_test = 3;
+    EchoResponse echo_response = 4;
+  }
+
+  enum StressKind {
+    STRESS_KIND_INCREMENT = 0;
+    STRESS_KIND_ECHO = 1;
+  }
+
+  message Setup {
+    StressKind kind = 1;
+    int64 i = 2;
+    int64 cycles = 3;
+    int64 payload_size = 4;
+  }
+
+  message IncrementTest {
+    int64 number = 1;
+  }
+
+  message EchoResponse {
+    string payload = 1;
+  }
+}
+
+message Clientbound {
+  oneof inner {
+    fig_common.Empty ready = 1;
+    Report report = 2;
+    EchoTest echo_test = 3;
+  }
+
+  message Report {
+    optional string message = 1;
+  }
+
+  message EchoTest {
+    string payload = 1;
+  }
+}

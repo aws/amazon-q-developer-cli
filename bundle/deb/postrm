@@ -1,0 +1,3 @@
+#!/bin/bash
+
+killall q-desktop || true

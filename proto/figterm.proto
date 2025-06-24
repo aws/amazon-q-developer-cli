@@ -1,0 +1,178 @@
+syntax = "proto3";
+package figterm;
+
+import "fig_common.proto";
+
+// A request message to figterm
+message FigtermRequestMessage {
+  oneof request {
+    InterceptRequest intercept = 1;
+    InsertTextRequest insert_text = 2;
+    SetBufferRequest set_buffer = 3;
+    DiagnosticsRequest diagnostics = 4;
+    InsertOnNewCmdRequest insert_on_new_cmd = 5;
+    UpdateShellContextRequest update_shell_context = 6;
+    NotifySSHSessionStartedRequest notify_ssh_session_started = 7;
+    InlineShellCompletionRequest inline_shell_completion = 8;
+    InlineShellCompletionAcceptRequest inline_shell_completion_accept = 9;
+    TelemetryRequest telemtety = 10;
+    InlineShellCompletionSetEnabledRequest inline_shell_completion_set_enabled = 11;
+  }
+}
+
+// A response message back from figterm
+message FigtermResponseMessage {
+  oneof response {
+    DiagnosticsResponse diagnostics = 1;
+    InlineShellCompletionResponse inline_shell_completion = 2;
+  }
+}
+
+message Action {
+  // unique identifier for the action
+  string identifier = 1;
+  // the keys that are bound to the action
+  repeated string bindings = 2;
+}
+
+// Intercept command
+// Used to set which input is intercepted by figterm
+message InterceptRequest {
+  reserved 1 to 5;
+
+  message SetFigjsIntercepts {
+    bool intercept_bound_keystrokes = 1;
+    bool intercept_global_keystrokes = 2;
+    repeated Action actions = 3;
+    // If true then figterm will clear the current action bindings and set the
+    // bindings to the bindings in the actions field, otherwise it will append
+    // if there are any new bindings
+    bool override_actions = 4;
+  }
+
+  message SetFigjsVisible {
+    bool visible = 1;
+  }
+
+  // The intercept command to execute
+  oneof intercept_command {
+    // Set figterm to intercept keys according to the FigJs interface
+    SetFigjsIntercepts set_figjs_intercepts = 6;
+    // Tell figterm if the figjs window is visible
+    SetFigjsVisible set_figjs_visible = 7;
+  }
+}
+
+// Insert text command
+// Used to insert text directly into the terminal
+message InsertTextRequest {
+  // insert str at cursor, accounting for deletions
+  optional string insertion = 1;
+  // delete `n` characters to the left of the cursor
+  optional uint64 deletion = 2;
+  // move cursor `n` characters from current position,
+  // accounting for insertion & deletion
+  optional int64 offset = 3;
+  // execute editbuffer (if true, append \r)
+  optional bool immediate = 4;
+  // client buffer at the time of the insertion request (prior to insertion)
+  optional string insertion_buffer = 5;
+  // if figterm should insert while a command is running, if false and a command
+  // is running the insertion will be ignored
+  optional bool insert_during_command = 6;
+}
+
+// Set buffer command
+// Used to set the line of text in the edit buffer
+message SetBufferRequest {
+  // The text to set
+  string text = 1;
+  // The cursor position to set
+  optional uint64 cursor_position = 2;
+}
+
+message TermColor {
+  message Rgb {
+    int32 r = 1;
+    int32 b = 2;
+    int32 g = 3;
+  }
+
+  oneof color {
+    Rgb rgb = 1;
+    uint32 indexed = 2;
+  }
+}
+
+message TermStyle {
+  // Background color of the terminal style
+  optional TermColor fg = 1;
+  // Foreground color of the terminal style
+  optional TermColor bg = 2;
+}
+
+message DiagnosticsRequest {}
+
+message DiagnosticsResponse {
+  // Current shell context of the figterm instance
+  optional fig_common.ShellContext shell_context = 1;
+  // Current suggestion style for fish
+  optional TermStyle fish_suggestion_style = 2;
+  // Current suggestion style for zsh autosuggestion
+  optional TermStyle zsh_autosuggestion_style = 3;
+  // The current edit buffer
+  optional string edit_buffer = 4;
+  // The current cursor cursor position
+  optional uint32 cursor_position = 5;
+}
+
+message InsertOnNewCmdRequest {
+  // text to insert on new command
+  string text = 1;
+  // if to execute the command immediately
+  bool execute = 2;
+  // if to bracket the text
+  bool bracketed = 3;
+}
+
+// Command to update values in the shell context
+//
+// Each field needs an associated bool that indicates if it should be
+// updated since we want the ability to do partial updates (not all fields)
+// and there is no way to do optional optional fields in proto3
+message UpdateShellContextRequest {
+  bool update_environment_variables = 1;
+  repeated fig_common.EnvironmentVariable environment_variables = 2;
+  bool update_alias = 3;
+  optional string alias = 4;
+}
+
+// Command to notify figterm session that an SSH session has started in the terminal
+message NotifySSHSessionStartedRequest {
+  string uuid = 1;
+  string remote_host = 2;
+}
+
+message InlineShellCompletionRequest {
+  // The text to complete
+  string buffer = 1;
+}
+
+message InlineShellCompletionResponse {
+  // The text to insert
+  optional string insert_text = 1;
+}
+
+message InlineShellCompletionAcceptRequest {
+  string buffer = 1;
+  string suggestion = 2;
+}
+
+message InlineShellCompletionSetEnabledRequest {
+  bool enabled = 1;
+}
+
+message TelemetryRequest {
+  // A json blob containing the event
+  string event_blob = 1;
+}

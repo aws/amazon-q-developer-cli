@@ -1,0 +1,29 @@
+[package]
+name = "alacritty_terminal"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+authors = [
+    "Christian Duerr <contact@christianduerr.com>",
+    "Joe Wilm <joe@jwilm.com>",
+]
+license = "Apache-2.0"
+description = "Library for writing terminal emulators"
+readme = "../README.md"
+homepage = "https://github.com/alacritty/alacritty"
+
+[lints]
+workspace = true
+
+[dependencies]
+bitflags.workspace = true
+camino.workspace = true
+serde.workspace = true
+serde_yaml = "0.9"
+shell-color.workspace = true
+tracing.workspace = true
+unicode-width.workspace = true
+vte = { version = "0.15.0", default-features = false }
+
+[dev-dependencies]
+serde_json.workspace = true
