@@ -67,7 +67,8 @@ git clone https://github.com/aws/amazon-q-for-command-line.git
 ### 2. Setup
 Hassle-free setup:
 ```shell
-npm run setup
+chmod +x scripts/setup.sh
+./scripts/setup.sh
 ```
 
 Or if you'd like to DIY:
@@ -146,14 +147,14 @@ pnpm install --ignore-scripts
 ### 3. Start Local Development
 To compile and view changes made to `q chat`:
 ```shell
-cargo run --bin chat_cli
+cargo run --bin cli
 ```
 
-> If you are working on other q commands, just append `-- <command name>`. For example, to run `q login`, you can run `cargo run --bin chat_cli -- login`
+> If you are working on other q commands, just append `-- <command name>`. For example, to run `q login`, you can run `cargo run --bin cli -- login`
 
 To run tests for the Q CLI crate:
 ```shell
-cargo test -p chat_cli
+cargo test -p cli
 ```
 
 To format Rust files:

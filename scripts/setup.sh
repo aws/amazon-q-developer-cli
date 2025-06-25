@@ -90,8 +90,14 @@ setup_mise() {
 }
 
 setup_precommit() {
-  echo "Installing pre-commit hooks..."
-  pnpm install --ignore-scripts
+  echo "Setting up pre-commit hooks..."
+  if [ -f "package.json" ]; then
+    echo "Installing pre-commit hooks with pnpm..."
+    pnpm install --ignore-scripts
+  else
+    echo "No package.json found, skipping pnpm pre-commit setup"
+    echo "Note: This project appears to be Rust-only and may not require Node.js pre-commit hooks"
+  fi
 }
 
 echo "Setting up project dependencies..."

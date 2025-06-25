@@ -36,3 +36,6 @@ book/
 .vscode/
 .fleet/
 .idea/
+
+# Amazon Q user configuration
+.amazonq/
