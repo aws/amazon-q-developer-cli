@@ -17,6 +17,9 @@ pub struct Chat {
     /// prompt requests permissions to use a tool, unless --trust-all-tools is also used.
     #[arg(long)]
     pub no_interactive: bool,
+    /// Runs the given path as a Q script
+    #[arg(long, conflicts_with = "input")]
+    pub script: Option<String>,
     /// Resumes the previous conversation from this directory.
     #[arg(short, long)]
     pub resume: bool,

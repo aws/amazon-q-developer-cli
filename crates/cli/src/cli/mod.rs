@@ -3,6 +3,7 @@ mod debug;
 mod diagnostics;
 mod feed;
 mod issue;
+mod script;
 mod settings;
 mod user;
 
@@ -369,6 +370,7 @@ mod test {
             subcommand: Some(CliRootCommands::Chat(Chat {
                 accept_all: false,
                 no_interactive: false,
+                script: None,
                 resume: false,
                 input: None,
                 profile: None,
@@ -408,6 +410,7 @@ mod test {
             CliRootCommands::Chat(Chat {
                 accept_all: false,
                 no_interactive: false,
+                script: None,
                 resume: false,
                 input: None,
                 profile: Some("my-profile".to_string()),
@@ -424,6 +427,7 @@ mod test {
             CliRootCommands::Chat(Chat {
                 accept_all: false,
                 no_interactive: false,
+                script: None,
                 resume: false,
                 input: Some("Hello".to_string()),
                 profile: Some("my-profile".to_string()),
@@ -440,6 +444,7 @@ mod test {
             CliRootCommands::Chat(Chat {
                 accept_all: true,
                 no_interactive: false,
+                script: None,
                 resume: false,
                 input: None,
                 profile: Some("my-profile".to_string()),
@@ -456,6 +461,7 @@ mod test {
             CliRootCommands::Chat(Chat {
                 accept_all: false,
                 no_interactive: true,
+                script: None,
                 resume: true,
                 input: None,
                 profile: None,
@@ -468,6 +474,7 @@ mod test {
             CliRootCommands::Chat(Chat {
                 accept_all: false,
                 no_interactive: true,
+                script: None,
                 resume: true,
                 input: None,
                 profile: None,
@@ -484,6 +491,7 @@ mod test {
             CliRootCommands::Chat(Chat {
                 accept_all: false,
                 no_interactive: false,
+                script: None,
                 resume: false,
                 input: None,
                 profile: None,
@@ -500,6 +508,7 @@ mod test {
             CliRootCommands::Chat(Chat {
                 accept_all: false,
                 no_interactive: false,
+                script: None,
                 resume: false,
                 input: None,
                 profile: None,
@@ -516,6 +525,7 @@ mod test {
             CliRootCommands::Chat(Chat {
                 accept_all: false,
                 no_interactive: false,
+                script: None,
                 resume: false,
                 input: None,
                 profile: None,

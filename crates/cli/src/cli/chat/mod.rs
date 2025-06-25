@@ -153,6 +153,7 @@ use crate::api_client::model::{
     Tool as FigTool,
     ToolResultStatus,
 };
+use crate::cli::script::read_q_script;
 use crate::database::Database;
 use crate::database::settings::Setting;
 use crate::mcp_client::{
@@ -300,10 +301,22 @@ pub async fn launch_chat(database: &mut Database, telemetry: &TelemetryThread, a
         tools
     });
 
+    // input and script are mutually exclusive options, so we can just read the script and
+    // pass it as the input here
+    let mut input = args.input.clone();
+    if let Some(script) = args.script {
+        match read_q_script(&script).await {
+            Ok(v) => input = Some(v),
+            Err(e) => {
+                bail!("Unable to read script {}, {}", script, e);
+            },
+        }
+    }
+
     chat(
         database,
         telemetry,
-        args.input,
+        input,
         args.no_interactive,
         args.resume,
         args.accept_all,
