@@ -120,9 +120,9 @@ pub struct McpStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub struct McpUseProfileServersOnly {
-    #[arg(long, help = "Profile name")]
+    #[arg(long)]
     pub profile: String,
-    #[arg(long, default_value_t = false)]
+    #[arg(long, value_name = "BOOLEAN", default_value = "true", action = clap::ArgAction::Set)]
     pub value: bool,
 }
 
