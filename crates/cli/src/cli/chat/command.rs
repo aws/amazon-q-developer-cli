@@ -29,7 +29,9 @@ pub enum Command {
     Issue {
         prompt: Option<String>,
     },
-    Quit,
+    Quit {
+        save_path: Option<String>,
+    },
     Profile {
         subcommand: ProfileSubcommand,
     },
@@ -502,7 +504,18 @@ impl Command {
                         Self::Issue { prompt: None }
                     }
                 },
-                "q" | "exit" | "quit" => Self::Quit,
+                "q" | "exit" | "quit" => {
+                    let mut save_path = None;
+                    let mut i = 1;
+                    while i < parts.len() {
+                        if parts[i] == "--save" {
+                            save_path = parts.get(i + 1).map(|s| s.to_string());
+                            break;
+                        }
+                        i += 1;
+                    }
+                    Self::Quit { save_path }
+                },
                 "profile" => {
                     if parts.len() < 2 {
                         return Ok(Self::Profile {
@@ -1025,6 +1038,8 @@ mod tests {
             ("/issue \"there was an error in the chat\"", Command::Issue {
                 prompt: Some("\"there was an error in the chat\"".to_string()),
             }),
+            ("/quit", Command::Quit { save_path: None }),
+            ("/quit --save conversation", Command::Quit { save_path: Some("conversation".to_string()) }),
             (
                 "/context hooks",
                 context!(ContextSubcommand::Hooks { subcommand: None }),

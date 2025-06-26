@@ -239,6 +239,7 @@ const HELP_TEXT: &str = color_print::cstr! {"
 <em>/editor</em>       <black!>Open $EDITOR (defaults to vi) to compose a prompt</black!>
 <em>/help</em>         <black!>Show this help dialogue</black!>
 <em>/quit</em>         <black!>Quit the application</black!>
+  <em>--save <<path>></em>  <black!>Save conversation before quitting</black!>
 <em>/compact</em>      <black!>Summarize the conversation to free up context space</black!>
   <em>help</em>        <black!>Show help for the compact command</black!>
   <em>[prompt]</em>    <black!>Optional custom prompt to guide summarization</black!>
@@ -1528,7 +1529,43 @@ impl ChatContext {
                     },
                 }
             },
-            Command::Quit => ChatState::Exit,
+            Command::Quit { save_path } => {
+                if let Some(path) = save_path {
+                    // Save before quitting
+                    let mut path = path;
+                    if !path.ends_with(".json") {
+                        path.push_str(".json");
+                    }
+                    let contents = match serde_json::to_string_pretty(&self.conversation_state) {
+                        Ok(contents) => contents,
+                        Err(err) => {
+                            execute!(
+                                self.output,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(format!("\nFailed to serialize conversation: {}\n", err)),
+                                style::SetAttribute(Attribute::Reset)
+                            ).ok();
+                            return Ok(ChatState::Exit);
+                        }
+                    };
+                    if let Err(err) = self.ctx.fs().write(&path, contents).await {
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!("\nFailed to save to {}: {}\n", path, err)),
+                            style::SetAttribute(Attribute::Reset)
+                        ).ok();
+                    } else {
+                        execute!(
+                            self.output,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(format!("\n✔ Saved conversation to {}\n", path)),
+                            style::SetAttribute(Attribute::Reset)
+                        ).ok();
+                    }
+                }
+                ChatState::Exit
+            },
             Command::Profile { subcommand } => {
                 if let Some(context_manager) = &mut self.conversation_state.context_manager {
                     macro_rules! print_err {
