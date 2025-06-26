@@ -321,6 +321,7 @@ mod test {
         McpImport,
         McpList,
         McpRemove,
+        McpStatus,
         Scope,
     };
 
@@ -551,6 +552,7 @@ mod test {
                 ],
                 timeout: None,
                 force: false,
+                profile: None,
             }))
         );
     }
@@ -562,6 +564,7 @@ mod test {
             CliRootCommands::Mcp(Mcp::Remove(McpRemove {
                 name: "old".into(),
                 scope: None,
+                profile: None,
             }))
         );
     }
@@ -573,6 +576,7 @@ mod test {
                 file: "servers.json".into(),
                 scope: None,
                 force: true,
+                profile: None,
             }))
         );
     }
@@ -581,7 +585,10 @@ mod test {
     fn test_mcp_subcommand_status_simple() {
         assert_parse!(
             ["mcp", "status", "--name", "aws"],
-            CliRootCommands::Mcp(Mcp::Status { name: "aws".into() })
+            CliRootCommands::Mcp(Mcp::Status(McpStatus {
+                name: "aws".into(),
+                profile: None
+            }))
         );
     }
 

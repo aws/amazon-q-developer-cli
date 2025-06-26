@@ -46,10 +46,9 @@ pub enum Mcp {
     /// Import a server configuration from another file
     Import(McpImport),
     /// Get the status of a configured server
-    Status {
-        #[arg(long)]
-        name: String,
-    },
+    Status(McpStatus),
+    /// Set whether a profile should exclusively use its own MCP servers
+    UseProfileServersOnly(McpUseProfileServersOnly),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
@@ -63,6 +62,9 @@ pub struct McpAdd {
     /// Where to add the server to.
     #[arg(long, value_enum)]
     pub scope: Option<Scope>,
+    /// Profile to add the MCP server to
+    #[arg(long)]
+    pub profile: Option<String>,
     /// Environment variables to use when launching the server
     #[arg(long, value_parser = parse_env_vars)]
     pub env: Vec<HashMap<String, String>>,
@@ -80,13 +82,17 @@ pub struct McpRemove {
     pub name: String,
     #[arg(long, value_enum)]
     pub scope: Option<Scope>,
+    /// Profile to remove the MCP server from
+    #[arg(long)]
+    pub profile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub struct McpList {
     #[arg(value_enum)]
     pub scope: Option<Scope>,
-    #[arg(long, hide = true)]
+    /// Profile to list MCP servers for
+    #[arg(long)]
     pub profile: Option<String>,
 }
 
@@ -96,15 +102,35 @@ pub struct McpImport {
     pub file: String,
     #[arg(value_enum)]
     pub scope: Option<Scope>,
+    /// Profile to import MCP servers to
+    #[arg(long)]
+    pub profile: Option<String>,
     /// Overwrite an existing server with the same name
     #[arg(long, default_value_t = false)]
     pub force: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+pub struct McpStatus {
+    #[arg(long)]
+    pub name: String,
+    #[arg(long)]
+    pub profile: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+pub struct McpUseProfileServersOnly {
+    #[arg(long, help = "Profile name")]
+    pub profile: String,
+    #[arg(long, default_value_t = false)]
+    pub value: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]
 pub enum Scope {
     Workspace,
     Global,
+    Profile,
 }
 
 impl std::fmt::Display for Scope {
@@ -112,6 +138,7 @@ impl std::fmt::Display for Scope {
         match self {
             Scope::Workspace => write!(f, "workspace"),
             Scope::Global => write!(f, "global"),
+            Scope::Profile => write!(f, "profile"),
         }
     }
 }

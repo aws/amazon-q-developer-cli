@@ -96,7 +96,10 @@ use crate::mcp_client::{
 };
 use crate::platform::Context;
 use crate::telemetry::TelemetryThread;
-use crate::util::directories::home_dir;
+use crate::util::directories::{
+    self,
+    home_dir,
+};
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name since in the end the tool name as seen by the
@@ -110,6 +113,10 @@ pub fn workspace_mcp_config_path(ctx: &Context) -> eyre::Result<PathBuf> {
 
 pub fn global_mcp_config_path(ctx: &Context) -> eyre::Result<PathBuf> {
     Ok(home_dir(ctx)?.join(".aws").join("amazonq").join("mcp.json"))
+}
+
+pub fn profile_mcp_path(ctx: &Context, profile_name: &str) -> eyre::Result<PathBuf> {
+    Ok(directories::chat_profiles_dir(ctx)?.join(profile_name).join("mcp.json"))
 }
 
 #[derive(Debug, Error)]
@@ -173,43 +180,120 @@ pub enum LoadingRecord {
 #[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
     pub mcp_servers: HashMap<String, CustomToolConfig>,
+    #[serde(default = "default_false")]
+    pub use_profile_servers_only: bool,
+}
+
+fn default_false() -> bool {
+    false
+}
+
+/// Holds configurations loaded from different sources
+#[derive(Default)]
+struct ConfigSources {
+    global: Option<McpServerConfig>,
+    workspace: Option<McpServerConfig>,
+    profile: Option<McpServerConfig>,
 }
 
 impl McpServerConfig {
-    pub async fn load_config(output: &mut impl Write) -> eyre::Result<Self> {
-        let mut cwd = std::env::current_dir()?;
-        cwd.push(".amazonq/mcp.json");
-        let expanded_path = shellexpand::tilde("~/.aws/amazonq/mcp.json");
-        let global_path = PathBuf::from(expanded_path.as_ref());
-        let global_buf = tokio::fs::read(global_path).await.ok();
-        let local_buf = tokio::fs::read(cwd).await.ok();
-        let conf = match (global_buf, local_buf) {
-            (Some(global_buf), Some(local_buf)) => {
-                let mut global_conf = Self::from_slice(&global_buf, output, "global")?;
-                let local_conf = Self::from_slice(&local_buf, output, "local")?;
-                for (server_name, config) in local_conf.mcp_servers {
-                    if global_conf.mcp_servers.insert(server_name.clone(), config).is_some() {
-                        queue!(
-                            output,
-                            style::SetForegroundColor(style::Color::Yellow),
-                            style::Print("WARNING: "),
-                            style::ResetColor,
-                            style::Print("MCP config conflict for "),
-                            style::SetForegroundColor(style::Color::Green),
-                            style::Print(server_name),
-                            style::ResetColor,
-                            style::Print(". Using workspace version.\n")
-                        )?;
-                    }
-                }
-                global_conf
-            },
-            (None, Some(local_buf)) => Self::from_slice(&local_buf, output, "local")?,
-            (Some(global_buf), None) => Self::from_slice(&global_buf, output, "global")?,
-            _ => Default::default(),
-        };
+    /// Loads MCP server configuration with the following precedence:
+    /// 1. Profile-specific config (highest priority)
+    /// 2. Workspace config (.amazonq/mcp.json)
+    /// 3. Global config (~/.aws/amazonq/mcp.json)
+    ///
+    /// If profile has `use_profile_servers_only: true`, only profile config is used.
+    pub async fn load_config(ctx: &Context, profile: Option<&str>, output: &mut impl Write) -> eyre::Result<Self> {
+        // Step 1: Load all configuration sources
+        let config_sources = Self::load_config_sources(ctx, profile).await?;
+
+        // Step 2: Apply exclusivity rules
+        if let Some(profile_config) = &config_sources.profile {
+            if profile_config.use_profile_servers_only {
+                queue_profile_exclusive_warning(output)?;
+                return Ok(profile_config.clone());
+            }
+        }
+
+        // Step 3: Merge configurations with conflict reporting
+        let merged_config = Self::merge_configs(config_sources, output)?;
+
         output.flush()?;
-        Ok(conf)
+        Ok(merged_config)
+    }
+
+    /// Loads configuration from all sources (global, workspace, profile)
+    async fn load_config_sources(ctx: &Context, profile: Option<&str>) -> eyre::Result<ConfigSources> {
+        let mut sources = ConfigSources::default();
+
+        // Load profile config if specified
+        if let Some(profile_name) = profile {
+            let profile_path = profile_mcp_path(ctx, profile_name)?;
+            if ctx.fs().exists(&profile_path) {
+                match Self::load_from_file(ctx, &profile_path).await {
+                    Ok(config) => sources.profile = Some(config),
+                    Err(e) => {
+                        warn!("Failed to load profile MCP config: {}", e);
+                    },
+                }
+            }
+        }
+
+        // Load workspace config
+        let workspace_path = workspace_mcp_config_path(ctx)?;
+        if ctx.fs().exists(&workspace_path) {
+            sources.workspace = Self::load_from_file(ctx, &workspace_path).await.ok();
+        }
+
+        // Load global config
+        let global_path = global_mcp_config_path(ctx)?;
+        if ctx.fs().exists(&global_path) {
+            sources.global = Self::load_from_file(ctx, &global_path).await.ok();
+        }
+
+        Ok(sources)
+    }
+
+    /// Merges configurations with precedence: Profile > Workspace > Global
+    fn merge_configs(sources: ConfigSources, output: &mut impl Write) -> eyre::Result<Self> {
+        let mut merged = McpServerConfig::default();
+
+        // Start with global config (lowest precedence)
+        if let Some(global) = sources.global {
+            Self::merge_into(&mut merged, global, "global", output)?;
+        }
+
+        // Merge workspace config (medium precedence)
+        if let Some(workspace) = sources.workspace {
+            Self::merge_into(&mut merged, workspace, "workspace", output)?;
+        }
+
+        // Merge profile config (highest precedence)
+        if let Some(profile) = sources.profile {
+            Self::merge_into(&mut merged, profile, "profile", output)?;
+        }
+
+        Ok(merged)
+    }
+
+    /// Merges a source config into the target, reporting conflicts
+    fn merge_into(target: &mut Self, source: Self, source_name: &str, output: &mut impl Write) -> eyre::Result<()> {
+        for (server_name, server_config) in source.mcp_servers {
+            if target.mcp_servers.insert(server_name.clone(), server_config).is_some() {
+                queue!(
+                    output,
+                    style::SetForegroundColor(style::Color::Yellow),
+                    style::Print("WARNING: "),
+                    style::ResetColor,
+                    style::Print("MCP config conflict for "),
+                    style::SetForegroundColor(style::Color::Green),
+                    style::Print(&server_name),
+                    style::ResetColor,
+                    style::Print(format!(". Using {} version.\n", source_name))
+                )?;
+            }
+        }
+        Ok(())
     }
 
     pub async fn load_from_file(ctx: &Context, path: impl AsRef<Path>) -> eyre::Result<Self> {
@@ -221,23 +305,6 @@ impl McpServerConfig {
         let json = serde_json::to_string_pretty(self)?;
         ctx.fs().write(path.as_ref(), json).await?;
         Ok(())
-    }
-
-    fn from_slice(slice: &[u8], output: &mut impl Write, location: &str) -> eyre::Result<McpServerConfig> {
-        match serde_json::from_slice::<Self>(slice) {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                queue!(
-                    output,
-                    style::SetForegroundColor(style::Color::Yellow),
-                    style::Print("WARNING: "),
-                    style::ResetColor,
-                    style::Print(format!("Error reading {location} mcp config: {e}\n")),
-                    style::Print("Please check to make sure config is correct. Discarding.\n"),
-                )?;
-                Ok(McpServerConfig::default())
-            },
-        }
     }
 }
 
@@ -281,7 +348,10 @@ impl ToolManagerBuilder {
         telemetry: &TelemetryThread,
         mut output: Box<dyn Write + Send + Sync + 'static>,
     ) -> eyre::Result<ToolManager> {
-        let McpServerConfig { mcp_servers } = self.mcp_server_config.ok_or(eyre::eyre!("Missing mcp server config"))?;
+        let McpServerConfig {
+            mcp_servers,
+            use_profile_servers_only: _,
+        } = self.mcp_server_config.ok_or(eyre::eyre!("Missing mcp server config"))?;
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
         let regex = regex::Regex::new(VALID_TOOL_NAME)?;
@@ -1460,6 +1530,16 @@ fn queue_incomplete_load_message(
     )?)
 }
 
+pub fn queue_profile_exclusive_warning(output: &mut impl Write) -> eyre::Result<()> {
+    Ok(queue!(
+        output,
+        style::SetForegroundColor(style::Color::DarkYellow),
+        style::Print("⚠ useProfileServersOnly is set to 'true' for this profile. Other mcp configs will be ignored."),
+        style::SetForegroundColor(style::Color::Reset),
+        style::Print("\n------\n")
+    )?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1483,5 +1563,471 @@ mod tests {
         let with_delim = format!("a{}b{}c", NAMESPACE_DELIMITER, NAMESPACE_DELIMITER);
         let sanitized = sanitize_name(with_delim, &regex, &mut hasher);
         assert_eq!(sanitized, "abc");
+    }
+
+    #[test]
+    fn test_profile_mcp_path() {
+        let ctx = Context::new();
+        let path = profile_mcp_path(&ctx, "test_profile").unwrap();
+        assert!(path.to_string_lossy().contains("test_profile"));
+        assert!(path.to_string_lossy().ends_with("mcp.json"));
+    }
+
+    #[tokio::test]
+    async fn test_load_config_sources() {
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+
+        // Create test directories
+        let profile_dir = directories::chat_profiles_dir(&ctx).unwrap().join("test_profile");
+        ctx.fs().create_dir_all(&profile_dir).await.unwrap();
+        ctx.fs()
+            .create_dir_all(&ctx.env().current_dir().unwrap().join(".amazonq"))
+            .await
+            .unwrap();
+        ctx.fs()
+            .create_dir_all(&home_dir(&ctx).unwrap().join(".aws").join("amazonq"))
+            .await
+            .unwrap();
+
+        // Create test configurations
+        let global_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("global_server".to_string(), CustomToolConfig {
+                    command: "global_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        let workspace_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("workspace_server".to_string(), CustomToolConfig {
+                    command: "workspace_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        let profile_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("profile_server".to_string(), CustomToolConfig {
+                    command: "profile_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        // Save configurations
+        global_config
+            .save_to_file(&ctx, &global_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        workspace_config
+            .save_to_file(&ctx, &workspace_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        profile_config
+            .save_to_file(&ctx, &profile_mcp_path(&ctx, "test_profile").unwrap())
+            .await
+            .unwrap();
+
+        // Test loading all sources
+        let sources = McpServerConfig::load_config_sources(&ctx, Some("test_profile"))
+            .await
+            .unwrap();
+
+        assert!(sources.global.is_some(), "Global config should be loaded");
+        assert!(sources.workspace.is_some(), "Workspace config should be loaded");
+        assert!(sources.profile.is_some(), "Profile config should be loaded");
+
+        assert!(
+            sources
+                .global
+                .as_ref()
+                .unwrap()
+                .mcp_servers
+                .contains_key("global_server")
+        );
+        assert!(
+            sources
+                .workspace
+                .as_ref()
+                .unwrap()
+                .mcp_servers
+                .contains_key("workspace_server")
+        );
+        assert!(
+            sources
+                .profile
+                .as_ref()
+                .unwrap()
+                .mcp_servers
+                .contains_key("profile_server")
+        );
+
+        // Test without profile
+        let sources_no_profile = McpServerConfig::load_config_sources(&ctx, None).await.unwrap();
+        assert!(
+            sources_no_profile.profile.is_none(),
+            "Profile config should not be loaded when no profile specified"
+        );
+
+        // Clean up
+        ctx.fs()
+            .remove_file(&global_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        ctx.fs()
+            .remove_file(&workspace_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        ctx.fs()
+            .remove_file(&profile_mcp_path(&ctx, "test_profile").unwrap())
+            .await
+            .unwrap();
+        ctx.fs().remove_dir_all(&profile_dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_merge_configs() {
+        let mut output = Vec::new();
+
+        // Create test configurations with conflicts
+        let global_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("shared_server".to_string(), CustomToolConfig {
+                    command: "global_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map.insert("global_only".to_string(), CustomToolConfig {
+                    command: "global_only_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        let workspace_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("shared_server".to_string(), CustomToolConfig {
+                    command: "workspace_command".to_string(), // This should override global
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map.insert("workspace_only".to_string(), CustomToolConfig {
+                    command: "workspace_only_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        let profile_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("shared_server".to_string(), CustomToolConfig {
+                    command: "profile_command".to_string(), // This should override workspace and global
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map.insert("profile_only".to_string(), CustomToolConfig {
+                    command: "profile_only_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        let sources = ConfigSources {
+            global: Some(global_config),
+            workspace: Some(workspace_config),
+            profile: Some(profile_config),
+        };
+
+        let merged = McpServerConfig::merge_configs(sources, &mut output).unwrap();
+
+        // Check that all servers are present
+        assert_eq!(merged.mcp_servers.len(), 4, "Should have 4 servers total");
+        assert!(merged.mcp_servers.contains_key("shared_server"));
+        assert!(merged.mcp_servers.contains_key("global_only"));
+        assert!(merged.mcp_servers.contains_key("workspace_only"));
+        assert!(merged.mcp_servers.contains_key("profile_only"));
+
+        // Check precedence - profile should win for shared_server
+        let shared_server = merged.mcp_servers.get("shared_server").unwrap();
+        assert_eq!(
+            shared_server.command, "profile_command",
+            "Profile config should take precedence"
+        );
+
+        // Check that warnings were generated for conflicts
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("WARNING"), "Should contain conflict warnings");
+        assert!(
+            output_str.contains("shared_server"),
+            "Should mention the conflicting server"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_load_config_with_profile_exclusivity() {
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        let mut output = Vec::new();
+
+        // Create test directories
+        let profile_dir = directories::chat_profiles_dir(&ctx).unwrap().join("exclusive_profile");
+        ctx.fs().create_dir_all(&profile_dir).await.unwrap();
+        ctx.fs()
+            .create_dir_all(&ctx.env().current_dir().unwrap().join(".amazonq"))
+            .await
+            .unwrap();
+        ctx.fs()
+            .create_dir_all(&home_dir(&ctx).unwrap().join(".aws").join("amazonq"))
+            .await
+            .unwrap();
+
+        // Create global and workspace configs
+        let global_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("global_server".to_string(), CustomToolConfig {
+                    command: "global_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        let workspace_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("workspace_server".to_string(), CustomToolConfig {
+                    command: "workspace_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        // Create exclusive profile config
+        let profile_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("profile_server".to_string(), CustomToolConfig {
+                    command: "profile_command".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: true, // This is the key - exclusive mode
+        };
+
+        // Save all configurations
+        global_config
+            .save_to_file(&ctx, &global_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        workspace_config
+            .save_to_file(&ctx, &workspace_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        profile_config
+            .save_to_file(&ctx, &profile_mcp_path(&ctx, "exclusive_profile").unwrap())
+            .await
+            .unwrap();
+
+        // Test exclusive profile loading
+        let result = McpServerConfig::load_config(&ctx, Some("exclusive_profile"), &mut output)
+            .await
+            .unwrap();
+
+        // Should only contain profile servers, not global or workspace
+        assert_eq!(result.mcp_servers.len(), 1, "Should only have profile servers");
+        assert!(
+            result.mcp_servers.contains_key("profile_server"),
+            "Should have profile server"
+        );
+        assert!(
+            !result.mcp_servers.contains_key("global_server"),
+            "Should NOT have global server"
+        );
+        assert!(
+            !result.mcp_servers.contains_key("workspace_server"),
+            "Should NOT have workspace server"
+        );
+        assert!(result.use_profile_servers_only, "Should preserve exclusivity flag");
+
+        // Clean up
+        ctx.fs()
+            .remove_file(&global_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        ctx.fs()
+            .remove_file(&workspace_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        ctx.fs()
+            .remove_file(&profile_mcp_path(&ctx, "exclusive_profile").unwrap())
+            .await
+            .unwrap();
+        ctx.fs().remove_dir_all(&profile_dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_load_config_missing_files() {
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        let mut output = Vec::new();
+
+        // Test with no config files present
+        let result = McpServerConfig::load_config(&ctx, None, &mut output).await.unwrap();
+        assert!(result.mcp_servers.is_empty(), "Should be empty when no configs exist");
+        assert!(!result.use_profile_servers_only, "Should default to false");
+
+        // Test with non-existent profile
+        let result = McpServerConfig::load_config(&ctx, Some("nonexistent"), &mut output)
+            .await
+            .unwrap();
+        assert!(
+            result.mcp_servers.is_empty(),
+            "Should be empty when profile doesn't exist"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_load_config_precedence() {
+        let ctx = Context::builder().with_test_home().await.unwrap().build_fake();
+        let mut output = Vec::new();
+
+        // Create test directories
+        let profile_dir = directories::chat_profiles_dir(&ctx).unwrap().join("test_profile");
+        ctx.fs().create_dir_all(&profile_dir).await.unwrap();
+        ctx.fs()
+            .create_dir_all(&ctx.env().current_dir().unwrap().join(".amazonq"))
+            .await
+            .unwrap();
+        ctx.fs()
+            .create_dir_all(&home_dir(&ctx).unwrap().join(".aws").join("amazonq"))
+            .await
+            .unwrap();
+
+        // Create configs with same server name to test precedence
+        let global_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("test_server".to_string(), CustomToolConfig {
+                    command: "global_command".to_string(),
+                    args: vec!["global".to_string()],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        let workspace_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("test_server".to_string(), CustomToolConfig {
+                    command: "workspace_command".to_string(),
+                    args: vec!["workspace".to_string()],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        let profile_config = McpServerConfig {
+            mcp_servers: {
+                let mut map = HashMap::new();
+                map.insert("test_server".to_string(), CustomToolConfig {
+                    command: "profile_command".to_string(),
+                    args: vec!["profile".to_string()],
+                    env: None,
+                    timeout: 60000,
+                });
+                map
+            },
+            use_profile_servers_only: false,
+        };
+
+        // Save all configurations
+        global_config
+            .save_to_file(&ctx, &global_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        workspace_config
+            .save_to_file(&ctx, &workspace_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        profile_config
+            .save_to_file(&ctx, &profile_mcp_path(&ctx, "test_profile").unwrap())
+            .await
+            .unwrap();
+
+        // Test that profile takes precedence
+        let result = McpServerConfig::load_config(&ctx, Some("test_profile"), &mut output)
+            .await
+            .unwrap();
+
+        assert_eq!(result.mcp_servers.len(), 1);
+        let server = result.mcp_servers.get("test_server").unwrap();
+        assert_eq!(server.command, "profile_command", "Profile should take precedence");
+        assert_eq!(server.args, vec!["profile"], "Profile args should be used");
+
+        // Clean up
+        ctx.fs()
+            .remove_file(&global_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        ctx.fs()
+            .remove_file(&workspace_mcp_config_path(&ctx).unwrap())
+            .await
+            .unwrap();
+        ctx.fs()
+            .remove_file(&profile_mcp_path(&ctx, "test_profile").unwrap())
+            .await
+            .unwrap();
+        ctx.fs().remove_dir_all(&profile_dir).await.unwrap();
     }
 }

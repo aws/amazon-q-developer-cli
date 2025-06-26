@@ -152,6 +152,7 @@ use crate::api_client::model::{
     ChatResponseStream,
     Tool as FigTool,
     ToolResultStatus,
+    ToolSpecification,
 };
 use crate::database::Database;
 use crate::database::settings::Setting;
@@ -163,6 +164,116 @@ use crate::platform::Context;
 use crate::telemetry::TelemetryThread;
 use crate::telemetry::core::ToolUseEventBuilder;
 use crate::util::CLI_BINARY_NAME;
+
+/// Result struct for tool setup
+struct ToolSetupResult {
+    tool_manager: ToolManager,
+    tool_config: HashMap<String, ToolSpec>,
+    tool_permissions: ToolPermissions,
+}
+
+/// Load MCP server configuration for a given profile
+async fn load_mcp_server_config(
+    ctx: &Context,
+    profile: Option<&str>,
+    interactive: bool,
+    database: &mut Database,
+    output: &mut SharedWriter,
+) -> Result<McpServerConfig, ChatError> {
+    match McpServerConfig::load_config(ctx, profile, output).await {
+        Ok(config) => {
+            if interactive && !database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
+                execute!(
+                    output,
+                    style::Print(
+                        "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
+                    )
+                )?;
+            }
+            database
+                .settings
+                .set(Setting::McpLoadedBefore, true)
+                .await
+                .map_err(|e| ChatError::Custom(format!("Failed to set McpLoadedBefore setting: {}", e).into()))?;
+            Ok(config)
+        },
+        Err(e) => {
+            warn!("No mcp server config loaded: {}", e);
+            Ok(McpServerConfig::default())
+        },
+    }
+}
+
+/// Set up tools including tool manager, tool config, and tool permissions
+#[allow(clippy::too_many_arguments)]
+async fn setup_tools(
+    database: &mut Database,
+    telemetry: &TelemetryThread,
+    conversation_id: &str,
+    interactive: bool,
+    mcp_server_configs: McpServerConfig,
+    accept_all: bool,
+    trust_all_tools: bool,
+    trust_tools: Option<Vec<String>>,
+    output: &mut SharedWriter,
+    prompt_response_sender: std::sync::mpsc::Sender<Vec<String>>,
+    prompt_request_receiver: std::sync::mpsc::Receiver<Option<String>>,
+) -> Result<ToolSetupResult, ChatError> {
+    // Create tool manager
+    let tool_manager_output: Box<dyn Write + Send + Sync + 'static> = if interactive {
+        Box::new(output.clone())
+    } else {
+        Box::new(NullWriter {})
+    };
+
+    let mut tool_manager = ToolManagerBuilder::default()
+        .mcp_server_config(mcp_server_configs)
+        .prompt_list_sender(prompt_response_sender)
+        .prompt_list_receiver(prompt_request_receiver)
+        .conversation_id(conversation_id)
+        .interactive(interactive)
+        .build(telemetry, tool_manager_output)
+        .await
+        .map_err(|e| ChatError::Custom(format!("Failed to build tool manager: {}", e).into()))?;
+
+    let tool_config = tool_manager
+        .load_tools(database, output)
+        .await
+        .map_err(|e| ChatError::Custom(format!("Failed to load tools: {}", e).into()))?;
+
+    // Set up tool permissions
+    let mut tool_permissions = ToolPermissions::new(tool_config.len());
+    if accept_all || trust_all_tools {
+        tool_permissions.trust_all = true;
+        for tool in tool_config.values() {
+            tool_permissions.trust_tool(&tool.name);
+        }
+
+        // Deprecation notice for --accept-all
+        if accept_all && interactive {
+            queue!(
+                output,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("\n--accept-all, -a is deprecated. Use --trust-all-tools instead."),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+        }
+    } else if let Some(trusted) = trust_tools.map(|vec| vec.into_iter().collect::<HashSet<_>>()) {
+        for tool in tool_config.values() {
+            if trusted.contains(&tool.name) {
+                tool_permissions.trust_tool(&tool.name);
+            } else {
+                tool_permissions.untrust_tool(&tool.name);
+            }
+        }
+    }
+
+    Ok(ToolSetupResult {
+        tool_manager,
+        tool_config,
+        tool_permissions,
+    })
+}
 
 /// Help text for the compact command
 fn compact_help_text() -> String {
@@ -248,7 +359,13 @@ const HELP_TEXT: &str = color_print::cstr! {"
   <em>untrust</em>     <black!>Revert a tool or tools to per-request confirmation</black!>
   <em>trustall</em>    <black!>Trust all tools (equivalent to deprecated /acceptall)</black!>
   <em>reset</em>       <black!>Reset all tools to default permission levels</black!>
-<em>/mcp</em>          <black!>See mcp server loaded</black!>
+<em>/mcp</em>          <black!>Manage MCP servers</black!>
+  <em>add</em>         <black!>Add or replace a configured server [--profile PROFILE]</black!>
+  <em>remove</em>      <black!>Remove a server from the MCP configuration [--profile PROFILE]</black!>
+  <em>list</em>        <black!>List configured servers [--profile PROFILE]</black!>
+  <em>import</em>      <black!>Import a server configuration from another file [--profile PROFILE]</black!>
+  <em>status</em>      <black!>Get the status of a configured server [--profile PROFILE]</black!>
+  <em>use-profile-servers-only</em> <black!>Configure a profile to use only its own MCP servers (ignoring global/workspace)</black!>
 <em>/profile</em>      <black!>Manage profiles</black!>
   <em>help</em>        <black!>Show profile help</black!>
   <em>list</em>        <black!>List profiles</black!>
@@ -359,24 +476,9 @@ pub async fn chat(
         _ => StreamingClient::new(database).await?,
     };
 
-    let mcp_server_configs = match McpServerConfig::load_config(&mut output).await {
-        Ok(config) => {
-            if interactive && !database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
-                execute!(
-                    output,
-                    style::Print(
-                        "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
-                    )
-                )?;
-            }
-            database.settings.set(Setting::McpLoadedBefore, true).await?;
-            config
-        },
-        Err(e) => {
-            warn!("No mcp server config loaded: {}", e);
-            McpServerConfig::default()
-        },
-    };
+    // Load MCP server config using the extracted function
+    let mcp_server_configs =
+        load_mcp_server_config(&ctx, profile.as_deref(), interactive, database, &mut output).await?;
 
     // If profile is specified, verify it exists before starting the chat
     if let Some(ref profile_name) = profile {
@@ -401,48 +503,26 @@ pub async fn chat(
 
     let conversation_id = Alphanumeric.sample_string(&mut rand::rng(), 9);
     info!(?conversation_id, "Generated new conversation id");
+
+    // Set up prompt channels
     let (prompt_request_sender, prompt_request_receiver) = std::sync::mpsc::channel::<Option<String>>();
     let (prompt_response_sender, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
-    let tool_manager_output: Box<dyn Write + Send + Sync + 'static> = if interactive {
-        Box::new(output.clone())
-    } else {
-        Box::new(NullWriter {})
-    };
-    let mut tool_manager = ToolManagerBuilder::default()
-        .mcp_server_config(mcp_server_configs)
-        .prompt_list_sender(prompt_response_sender)
-        .prompt_list_receiver(prompt_request_receiver)
-        .conversation_id(&conversation_id)
-        .interactive(interactive)
-        .build(telemetry, tool_manager_output)
-        .await?;
-    let tool_config = tool_manager.load_tools(database, &mut output).await?;
-    let mut tool_permissions = ToolPermissions::new(tool_config.len());
-    if accept_all || trust_all_tools {
-        tool_permissions.trust_all = true;
-        for tool in tool_config.values() {
-            tool_permissions.trust_tool(&tool.name);
-        }
 
-        // Deprecation notice for --accept-all users
-        if accept_all && interactive {
-            queue!(
-                output,
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("\n--accept-all, -a is deprecated. Use --trust-all-tools instead."),
-                style::SetForegroundColor(Color::Reset),
-            )?;
-        }
-    } else if let Some(trusted) = trust_tools.map(|vec| vec.into_iter().collect::<HashSet<_>>()) {
-        // --trust-all-tools takes precedence over --trust-tools=...
-        for tool in tool_config.values() {
-            if trusted.contains(&tool.name) {
-                tool_permissions.trust_tool(&tool.name);
-            } else {
-                tool_permissions.untrust_tool(&tool.name);
-            }
-        }
-    }
+    // Set up tools using the extracted function
+    let tool_setup = setup_tools(
+        database,
+        telemetry,
+        &conversation_id,
+        interactive,
+        mcp_server_configs,
+        accept_all,
+        trust_all_tools,
+        trust_tools,
+        &mut output,
+        prompt_response_sender,
+        prompt_request_receiver,
+    )
+    .await?;
 
     let mut chat = ChatContext::new(
         ctx,
@@ -455,10 +535,10 @@ pub async fn chat(
         resume_conversation,
         client,
         || terminal::window_size().map(|s| s.columns.into()).ok(),
-        tool_manager,
+        tool_setup.tool_manager,
         profile,
-        tool_config,
-        tool_permissions,
+        tool_setup.tool_config,
+        tool_setup.tool_permissions,
     )
     .await?;
 
@@ -609,6 +689,69 @@ impl ChatContext {
             failed_request_ids: Vec::new(),
             pending_prompts: VecDeque::new(),
         })
+    }
+
+    async fn reload_mcp_servers_for_profile(
+        &mut self,
+        database: &mut Database,
+        telemetry: &TelemetryThread,
+        new_profile: Option<String>,
+    ) -> Result<(), ChatError> {
+        let mcp_server_configs = load_mcp_server_config(
+            &self.ctx,
+            new_profile.as_deref(),
+            self.interactive,
+            database,
+            &mut self.output,
+        )
+        .await?;
+
+        // Extract current trust settings
+        let current_trust_tools = Some(
+            self.tool_permissions
+                .permissions
+                .iter()
+                .filter_map(|(name, perm)| if perm.trusted { Some(name.clone()) } else { None })
+                .collect(),
+        );
+
+        let (_, prompt_request_receiver) = std::sync::mpsc::channel::<Option<String>>();
+        let (prompt_response_sender, _) = std::sync::mpsc::channel::<Vec<String>>();
+        let tool_setup = setup_tools(
+            database,
+            telemetry,
+            self.conversation_state.conversation_id(),
+            self.interactive,
+            mcp_server_configs,
+            false, // accept_all
+            self.tool_permissions.trust_all,
+            current_trust_tools,
+            &mut self.output,
+            prompt_response_sender,
+            prompt_request_receiver,
+        )
+        .await?;
+
+        // Update conversation state
+        self.conversation_state.tool_manager = tool_setup.tool_manager;
+        self.conversation_state.tools =
+            tool_setup
+                .tool_config
+                .into_values()
+                .fold(HashMap::<ToolOrigin, Vec<FigTool>>::new(), |mut acc, v| {
+                    let tool = FigTool::ToolSpecification(ToolSpecification {
+                        name: v.name,
+                        description: v.description,
+                        input_schema: v.input_schema.into(),
+                    });
+                    acc.entry(v.tool_origin)
+                        .and_modify(|tools| tools.push(tool.clone()))
+                        .or_insert(vec![tool]);
+                    acc
+                });
+        self.tool_permissions = tool_setup.tool_permissions;
+
+        Ok(())
     }
 }
 
@@ -843,7 +986,7 @@ impl ChatContext {
                 } => {
                     let tool_uses_clone = tool_uses.clone();
                     tokio::select! {
-                        res = self.handle_input(telemetry, input, tool_uses, pending_tool_index) => res,
+                        res = self.handle_input(database, telemetry, input, tool_uses, pending_tool_index) => res,
                         Ok(_) = ctrl_c_stream => Err(ChatError::Interrupted { tool_uses: tool_uses_clone })
                     }
                 },
@@ -1307,6 +1450,7 @@ impl ChatContext {
 
     async fn handle_input(
         &mut self,
+        database: &mut Database,
         telemetry: &TelemetryThread,
         mut user_input: String,
         tool_uses: Option<Vec<QueuedTool>>,
@@ -1615,9 +1759,32 @@ impl ChatContext {
                                 execute!(
                                     self.output,
                                     style::SetForegroundColor(Color::Green),
-                                    style::Print(format!("\nSwitched to profile: {}\n\n", name)),
+                                    style::Print(format!("\nSwitched to profile: {}\n", name)),
                                     style::SetForegroundColor(Color::Reset)
                                 )?;
+
+                                // Reload MCP servers for the new profile
+                                match self
+                                    .reload_mcp_servers_for_profile(database, telemetry, Some(name.clone()))
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Green),
+                                            style::Print("✓ MCP servers reloaded for new profile\n\n"),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                    Err(e) => {
+                                        execute!(
+                                            self.output,
+                                            style::SetForegroundColor(Color::Yellow),
+                                            style::Print(format!("⚠ Warning: Failed to reload MCP servers: {}\n\n", e)),
+                                            style::SetForegroundColor(Color::Reset)
+                                        )?;
+                                    },
+                                }
                             },
                             Err(e) => print_err!(e),
                         },
