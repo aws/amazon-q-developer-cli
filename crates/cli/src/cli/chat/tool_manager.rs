@@ -78,6 +78,7 @@ use crate::cli::chat::tools::custom_tool::{
 };
 use crate::cli::chat::tools::execute_bash::ExecuteBash;
 use crate::cli::chat::tools::fs_read::FsRead;
+use crate::cli::chat::tools::fs_search::FsSearch;
 use crate::cli::chat::tools::fs_write::FsWrite;
 use crate::cli::chat::tools::gh_issue::GhIssue;
 use crate::cli::chat::tools::thinking::Thinking;
@@ -913,6 +914,7 @@ impl ToolManager {
 
         Ok(match value.name.as_str() {
             "fs_read" => Tool::FsRead(serde_json::from_value::<FsRead>(value.args).map_err(map_err)?),
+            "fs_search" => Tool::FsSearch(serde_json::from_value::<FsSearch>(value.args).map_err(map_err)?),
             "fs_write" => Tool::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?),
             "execute_bash" => Tool::ExecuteBash(serde_json::from_value::<ExecuteBash>(value.args).map_err(map_err)?),
             "use_aws" => Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
