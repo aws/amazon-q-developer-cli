@@ -28,7 +28,7 @@
   "devDependencies": {
     "@amzn/eslint-config": "workspace:^",
     "@amzn/tsconfig": "workspace:^",
-    "@tsconfig/recommended": "^1.0.8",
+    "@tsconfig/recommended": "^1.0.10",
     "@types/node": "^22.15.20",
     "@typescript/analyze-trace": "^0.10.1",
     "eslint": "^9.18.0",
