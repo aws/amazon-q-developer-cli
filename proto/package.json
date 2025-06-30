@@ -29,7 +29,7 @@
   "devDependencies": {
     "@amzn/tsconfig": "workspace:^",
     "@bufbuild/buf": "^1.54.0",
-    "@bufbuild/protoc-gen-es": "^2.2.5",
+    "@bufbuild/protoc-gen-es": "^2.6.0",
     "typescript": "^5.8.3"
   }
 }
