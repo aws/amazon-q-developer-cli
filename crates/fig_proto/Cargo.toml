@@ -16,7 +16,7 @@ bytes.workspace = true
 fig_util.workspace = true
 flate2.workspace = true
 hex.workspace = true
-prost = "0.13.5"
+prost = "0.14.1"
 prost-reflect = { version = "0.15.2", features = ["serde", "derive"] }
 rand.workspace = true
 rmp-serde = "1.3.0"
