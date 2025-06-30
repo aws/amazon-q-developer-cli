@@ -36,7 +36,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^15.5.1",
     "micromatch": "^4.0.8",
-    "prettier": "^3.5.3",
+    "prettier": "^3.6.2",
     "tsx": "^4.19.4",
     "turbo": "^2.5.2",
     "vitest": "^3.0.8"
