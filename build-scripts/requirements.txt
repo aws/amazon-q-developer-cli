@@ -1,4 +1,4 @@
 boto3==1.34.122
 botocore==1.34.122
 dmgbuild==1.6.1; sys_platform == "darwin"
-requests==2.32.3 
+requests==2.32.4 
