@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@amzn/tsconfig": "workspace:^",
-    "@bufbuild/buf": "^1.54.0",
+    "@bufbuild/buf": "^1.55.1",
     "@bufbuild/protoc-gen-es": "^2.2.5",
     "typescript": "^5.8.3"
   }
