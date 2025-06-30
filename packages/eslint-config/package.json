@@ -30,7 +30,7 @@
     "@types/eslint__js": "^8.42.3",
     "@typescript-eslint/utils": "^8.31.1",
     "eslint-config-prettier": "^10.1.3",
-    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
