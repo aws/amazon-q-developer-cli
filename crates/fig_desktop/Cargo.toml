@@ -77,7 +77,7 @@ serde.workspace = true
 serde_json.workspace = true
 shellexpand.workspace = true
 sysinfo.workspace = true
-tao = { version = "0.31.1", features = ["serde"] }
+tao = { version = "0.34.0", features = ["serde"] }
 tempfile.workspace = true
 time.workspace = true
 tokio.workspace = true
