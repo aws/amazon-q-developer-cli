@@ -1,0 +1,41 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - whoami
+      - echo "$HOME"
+      - echo "$SHELL"
+      - pwd
+      - ls
+      - mkdir -p "$HOME/.local/bin"
+      - export PATH="$HOME/.local/bin:$PATH"
+      # Create fish config dir to prevent rustup from failing
+      - mkdir -p "$HOME/.config/fish/conf.d"
+      # Install cargo
+      - export CARGO_HOME="$HOME/.cargo"
+      - curl --retry 5 --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      - . "$HOME/.cargo/env"
+      - rustup toolchain install `cat rust-toolchain.toml | grep channel | cut -d '=' -f2 | tr -d ' "'`
+      # Install cross only if the musl env var is set and not null
+      - if [ ! -z "${AMAZON_Q_BUILD_MUSL:+x}" ]; then cargo install cross --git https://github.com/cross-rs/cross; fi
+      # Install python/node via mise (https://mise.jdx.dev/continuous-integration.html)
+      - curl --retry 5 --proto '=https' --tlsv1.2 -sSf https://mise.run | sh
+      - mise install
+      - eval "$(mise activate zsh --shims)"
+      # Install python deps
+      - python3 -m venv scripts/.env
+      - source build-scripts/.env/bin/activate
+      - pip3 install -r build-scripts/requirements.txt
+  build:
+    commands:
+      - python3 build-scripts/qchatmain.py build --skip-lints --skip-tests --not-release
+
+artifacts:
+  discard-paths: "yes"
+  base-directory: "build"
+  files:
+    - ./*.zip
+    # Hashes
+    - ./*.sha256
+

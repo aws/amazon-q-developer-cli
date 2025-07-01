@@ -10,7 +10,7 @@ import platform
 from typing import List, Mapping, Sequence
 from const import DESKTOP_PACKAGE_NAME, TAURI_PRODUCT_NAME
 
-
+DEBUG = "\033[94;1m"
 INFO = "\033[92;1m"
 WARN = "\033[93;1m"
 FAIL = "\033[91;1m"
@@ -72,6 +72,10 @@ def log(*value: object, title: str, color: str | None):
         print(f"{color}{title}:{ENDC}", *value, flush=True)
 
 
+def debug(*value: object):
+    log(*value, title="DEBUG", color=DEBUG)
+
+
 def info(*value: object):
     log(*value, title="INFO", color=INFO)
 
@@ -100,6 +104,8 @@ def run_cmd_output(
     env: Env | None = None,
     cwd: Cwd | None = None,
 ) -> str:
+    args_str = [str(arg) for arg in args]
+    print(f"+ {shlex.join(args_str)}")
     res = subprocess.run(args, env=env, cwd=cwd, check=True, stdout=subprocess.PIPE)
     return res.stdout.decode("utf-8")
 
