@@ -1,2 +1,5 @@
 build/
 spec.ts
+
+# This is created by the build script for macOS
+src/Info.plist
