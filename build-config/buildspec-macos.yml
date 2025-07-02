@@ -24,7 +24,7 @@ phases:
       - mise install
       - eval "$(mise activate zsh --shims)"
       # Install python deps
-      - python3 -m venv scripts/.env
+      - python3 -m venv build-scripts/.env
       - source build-scripts/.env/bin/activate
       - pip3 install -r build-scripts/requirements.txt
   build:
