@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::io::stdout;
 use std::process::Stdio;
 use std::sync::atomic::{
     AtomicBool,
@@ -12,10 +11,6 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use crossterm::{
-    queue,
-    style,
-};
 use serde::{
     Deserialize,
     Serialize,
@@ -391,18 +386,6 @@ where
                                             _ => serde_json::to_string_pretty(v).unwrap_or_default(),
                                         });
                                         if let (Some(level), Some(data)) = (level, data) {
-                                            let _ = queue!(
-                                                stdout(),
-                                                style::Print("["),
-                                                style::Print(level.to_uppercase().as_str()),
-                                                style::Print("] "),
-                                                style::SetForegroundColor(style::Color::Magenta),
-                                                style::Print(&server_name),
-                                                style::ResetColor,
-                                                style::Print(": "),
-                                                style::Print(&data),
-                                                style::Print("\n"),
-                                            );
                                             match level.to_lowercase().as_str() {
                                                 "error" => {
                                                     tracing::error!(target: "mcp", "{}: {}", server_name, data);
