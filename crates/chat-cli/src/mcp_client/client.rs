@@ -379,11 +379,13 @@ where
                                         let level = params
                                             .as_ref()
                                             .and_then(|p| p.get("level"))
-                                            .and_then(|v| serde_json::to_string(v).ok());
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string());
                                         let data = params
                                             .as_ref()
                                             .and_then(|p| p.get("data"))
-                                            .and_then(|v| serde_json::to_string(v).ok());
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string());
                                         if let (Some(level), Some(data)) = (level, data) {
                                             match level.to_lowercase().as_str() {
                                                 "error" => {
