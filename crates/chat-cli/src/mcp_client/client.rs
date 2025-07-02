@@ -386,11 +386,10 @@ where
                                             .and_then(|p| p.get("level"))
                                             .and_then(|v| v.as_str())
                                             .map(|s| s.to_string());
-                                        let data = params
-                                            .as_ref()
-                                            .and_then(|p| p.get("data"))
-                                            .and_then(|v| v.as_str())
-                                            .map(|s| s.to_string());
+                                        let data = params.as_ref().and_then(|p| p.get("data")).map(|v| match v {
+                                            serde_json::Value::String(s) => s.clone(),
+                                            _ => serde_json::to_string_pretty(v).unwrap_or_default(),
+                                        });
                                         if let (Some(level), Some(data)) = (level, data) {
                                             let _ = queue!(
                                                 stdout(),
