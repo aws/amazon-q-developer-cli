@@ -20,6 +20,7 @@ use crate::client::{
     embedder_factory,
     utils,
 };
+use crate::config;
 use crate::config::SemanticSearchConfig;
 use crate::embedding::{
     EmbeddingType,
@@ -84,7 +85,7 @@ const MAX_CONCURRENT_OPERATIONS: usize = 3;
 impl AsyncSemanticSearchClient {
     /// Create a new async semantic search client
     pub async fn new(base_dir: impl AsRef<Path>) -> Result<Self> {
-        Self::with_config_and_embedding_type(base_dir, SemanticSearchConfig::default(), EmbeddingType::default()).await
+        Self::with_embedding_type(base_dir, EmbeddingType::default()).await
     }
 
     /// Create a new semantic search client with the default base directory
@@ -103,23 +104,19 @@ impl AsyncSemanticSearchClient {
     ///
     /// The default base directory path
     pub fn get_default_base_dir() -> PathBuf {
-        crate::config::get_default_base_dir()
+        config::get_default_base_dir()
     }
 
     /// Create a new async semantic search client with custom configuration and embedding type
-    pub async fn with_config_and_embedding_type(
-        base_dir: impl AsRef<Path>,
-        config: SemanticSearchConfig,
-        embedding_type: EmbeddingType,
-    ) -> Result<Self> {
+    pub async fn with_embedding_type(base_dir: impl AsRef<Path>, embedding_type: EmbeddingType) -> Result<Self> {
         let base_dir = base_dir.as_ref().to_path_buf();
         tokio::fs::create_dir_all(&base_dir).await?;
 
         // Create models directory
-        crate::config::ensure_models_dir(&base_dir)?;
+        config::ensure_models_dir(&base_dir)?;
 
         // Initialize the configuration
-        if let Err(e) = crate::config::init_config(&base_dir) {
+        if let Err(e) = config::init_config(&base_dir) {
             tracing::error!("Failed to initialize semantic search configuration: {}", e);
         }
 
@@ -136,13 +133,15 @@ impl AsyncSemanticSearchClient {
 
         // Start background worker - we'll need to create a new embedder for the worker
         let worker_embedder = embedder_factory::create_embedder(embedding_type)?;
+        // Makes sure it respects configuration even if tweaked by user.
+        let loaded_config = config::get_config().clone();
         let worker = BackgroundWorker {
             job_rx,
             contexts: contexts.clone(),
             volatile_contexts: volatile_contexts.clone(),
             active_operations: active_operations.clone(),
             embedder: worker_embedder,
-            config: config.clone(),
+            config: loaded_config.clone(),
             base_dir: base_dir.clone(),
             indexing_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_OPERATIONS)),
         };
@@ -154,7 +153,7 @@ impl AsyncSemanticSearchClient {
             contexts,
             volatile_contexts,
             embedder,
-            config,
+            config: loaded_config,
             job_tx,
             active_operations,
         };
