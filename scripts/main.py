@@ -1,5 +1,5 @@
 import argparse
-from qchatbuild import build
+from build import build
 
 
 class StoreIfNotEmptyAction(argparse.Action):
