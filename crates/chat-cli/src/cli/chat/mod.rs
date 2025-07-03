@@ -14,6 +14,7 @@ mod server_messenger;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
+mod tool_token_calculator;
 pub mod tool_manager;
 pub mod tools;
 pub mod util;

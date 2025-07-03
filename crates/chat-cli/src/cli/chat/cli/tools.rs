@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
 use clap::{
@@ -16,6 +16,7 @@ use crossterm::{
 
 use crate::api_client::model::Tool as FigTool;
 use crate::cli::chat::consts::DUMMY_TOOL_NAME;
+use crate::cli::chat::token_counter::TokenCount;
 use crate::cli::chat::tools::ToolOrigin;
 use crate::cli::chat::{
     ChatError,
@@ -40,12 +41,31 @@ impl ToolsArgs {
         // No subcommand - print the current tools and their permissions.
         // Determine how to format the output nicely.
         let terminal_width = session.terminal_width();
-        let longest = session
+        
+        // PERFORMANCE OPTIMIZATION: Calculate all tool tokens once
+        // This single calculation covers all tools and avoids duplicate work
+        let token_costs = get_or_calculate_all_tool_costs(session);
+        
+        // Helper function to format token information consistently
+        let get_token_info = |spec: &crate::api_client::model::ToolSpecification| -> String {
+            format_token_info(&token_costs, &spec.name)
+        };
+        
+        // Calculate display width including token information
+        let all_tool_specs: Vec<&crate::api_client::model::ToolSpecification> = session
             .conversation
             .tools
             .values()
             .flatten()
-            .map(|FigTool::ToolSpecification(spec)| spec.name.len())
+            .filter_map(|tool| match tool {
+                FigTool::ToolSpecification(spec) if spec.name != DUMMY_TOOL_NAME => Some(spec),
+                FigTool::ToolSpecification(_) => None,
+            })
+            .collect();
+            
+        let longest = all_tool_specs
+            .iter()
+            .map(|spec| spec.name.len() + get_token_info(spec).len())
             .max()
             .unwrap_or(0);
 
@@ -82,14 +102,32 @@ impl ToolsArgs {
                 FigTool::ToolSpecification(spec) => &spec.name,
             });
 
+            // Create server name with token total
+            let server_display_name = match origin {
+                ToolOrigin::McpServer(server_name) => {
+                    let server_total = calculate_server_token_total(&token_costs, &sorted_tools);
+                    
+                    if server_total > 0 {
+                        format!("{} (MCP) ({} tokens):", server_name, server_total)
+                    } else {
+                        format!("{}:", origin)
+                    }
+                },
+                ToolOrigin::Native => format!("{}:", origin)
+            };
+
             let to_display = sorted_tools
                 .iter()
                 .fold(String::new(), |mut acc, FigTool::ToolSpecification(spec)| {
-                    let width = longest - spec.name.len() + 4;
+                    // Use pre-calculated token info
+                    let token_info = get_token_info(spec);
+                    let tool_name_with_tokens = format!("{}{}", spec.name, token_info);
+                    let width = longest - tool_name_with_tokens.len() + 4;
+                    
                     acc.push_str(
                         format!(
                             "- {}{:>width$}{}\n",
-                            spec.name,
+                            tool_name_with_tokens,
                             "",
                             session.tool_permissions.display_label(&spec.name),
                             width = width
@@ -102,7 +140,7 @@ impl ToolsArgs {
             let _ = queue!(
                 session.stderr,
                 style::SetAttribute(Attribute::Bold),
-                style::Print(format!("{}:\n", origin)),
+                style::Print(format!("{}\n", server_display_name)),
                 style::SetAttribute(Attribute::Reset),
                 style::Print(to_display),
                 style::Print("\n")
@@ -315,4 +353,54 @@ impl ToolsSubcommand {
             skip_printing_tools: true,
         })
     }
+}
+
+/// Helper function to format token information for display
+fn format_token_info(token_costs: &HashMap<String, TokenCount>, tool_name: &str) -> String {
+    match token_costs.get(tool_name) {
+        Some(token_count) if token_count.value() > 0 => {
+            format!(" ({} tokens)", token_count.value())
+        }
+        Some(_) => {
+            tracing::debug!("Token count for tool '{}' is zero", tool_name);
+            " (Unknown tokens)".to_string()
+        }
+        None => {
+            tracing::debug!("No token data available for tool '{}'", tool_name);
+            " (Unknown tokens)".to_string()
+        }
+    }
+}
+
+/// Calculate token costs for all tools with fresh results
+/// This method ensures accurate token costs for current available tools
+fn get_or_calculate_all_tool_costs(session: &ChatSession) -> HashMap<String, TokenCount> {
+    // Collect ALL tools from ALL sources (built-in + MCP servers)
+    let all_tool_specs: Vec<&crate::api_client::model::ToolSpecification> = session
+        .conversation
+        .tools
+        .values()
+        .flatten()
+        .filter_map(|tool| match tool {
+            FigTool::ToolSpecification(spec) if spec.name != DUMMY_TOOL_NAME => Some(spec),
+            FigTool::ToolSpecification(_) => None,
+        })
+        .collect();
+    
+    // Calculate fresh results to ensure accurate information
+    session.conversation.calculate_batch_tool_costs(&all_tool_specs)
+}
+
+fn calculate_server_token_total(
+    token_costs: &HashMap<String, TokenCount>,
+    tools: &[&FigTool]
+) -> usize {
+    tools
+        .iter()
+        .filter_map(|tool| match tool {
+            FigTool::ToolSpecification(spec) => {
+                token_costs.get(&spec.name).map(|tc| tc.value())
+            }
+        })
+        .sum()
 }

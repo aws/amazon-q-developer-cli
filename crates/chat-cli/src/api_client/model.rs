@@ -377,6 +377,12 @@ pub struct ToolInputSchema {
     pub json: Option<FigDocument>,
 }
 
+impl From<ToolInputSchema> for amzn_codewhisperer_client::types::ToolInputSchema {
+    fn from(value: ToolInputSchema) -> Self {
+        Self::builder().set_json(value.json.map(Into::into)).build()
+    }
+}
+
 impl From<ToolInputSchema> for amzn_codewhisperer_streaming_client::types::ToolInputSchema {
     fn from(value: ToolInputSchema) -> Self {
         Self::builder().set_json(value.json.map(Into::into)).build()

@@ -28,6 +28,7 @@ use super::consts::{
     MAX_USER_MESSAGE_SIZE,
 };
 use super::context::ContextManager;
+use super::token_counter::TokenCount;
 use super::message::{
     AssistantMessage,
     ToolUseResult,
@@ -833,6 +834,34 @@ impl ConversationState {
                 };
                 msg.user_input_message_context = Some(user_input_message_context);
             },
+        }
+    }
+
+    /// Calculate token costs for tools efficiently
+    /// 
+    /// This method calculates token costs for tools, handling both single tools
+    /// and multiple tools efficiently. It uses batch processing internally for
+    /// optimal performance.
+    /// 
+    /// Works directly with CLI types - no conversion overhead!
+    /// 
+    /// ## Returns
+    /// HashMap mapping tool names to their token costs. Tools that fail
+    /// calculation are omitted rather than causing the entire operation to fail.
+    #[allow(clippy::unused_self)]
+    pub fn calculate_batch_tool_costs(&self, tools: &[&crate::api_client::model::ToolSpecification]) -> HashMap<String, TokenCount> {
+        // Use the global shared calculator - works directly with CLI types!
+        match crate::cli::chat::tool_token_calculator::ToolTokenCalculator::calculate_batch_cli_tool_tokens(tools) {
+            Ok(results) => {
+                tracing::info!("Batch calculated tokens for {} tools", results.len());
+                results
+            }
+            Err(e) => {
+                tracing::error!("Batch token calculation failed: {}", e);
+                // Return empty map rather than trying individual fallback
+                // If batch calculation fails, individual calculations would likely fail too
+                HashMap::new()
+            }
         }
     }
 }
