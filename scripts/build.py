@@ -7,7 +7,6 @@ import os
 import shutil
 import time
 from typing import Any, Mapping, Sequence, List, Optional
-from build import generate_sha
 from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
 from util import debug, info, isDarwin, isLinux, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets
@@ -488,6 +487,21 @@ def parse_region_from_arn(arn: str) -> str:
         return parts[3]
 
     return ""
+
+
+def generate_sha(path: pathlib.Path) -> pathlib.Path:
+    if isDarwin():
+        shasum_output = run_cmd_output(["shasum", "-a", "256", path])
+    elif isLinux():
+        shasum_output = run_cmd_output(["sha256sum", path])
+    else:
+        raise Exception("Unsupported platform")
+
+    sha = shasum_output.split(" ")[0]
+    path = path.with_name(f"{path.name}.sha256")
+    path.write_text(sha)
+    info(f"Wrote sha256sum to {path}:", sha)
+    return path
 
 
 def build_linux(chat_path: pathlib.Path, signer: GpgSigner | None):
