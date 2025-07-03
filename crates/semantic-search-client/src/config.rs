@@ -9,8 +9,8 @@ use std::path::{
     Path,
     PathBuf,
 };
+use std::sync::OnceLock;
 
-use once_cell::sync::OnceCell;
 use serde::{
     Deserialize,
     Serialize,
@@ -42,7 +42,7 @@ pub struct SemanticSearchConfig {
 }
 
 impl SemanticSearchConfig {
-    /// Create a new configuration with custom max_files limit
+    /// Create a new configuration with custom `max_files` limit
     ///
     /// # Arguments
     ///
@@ -50,7 +50,7 @@ impl SemanticSearchConfig {
     ///
     /// # Returns
     ///
-    /// A new configuration with the specified max_files limit
+    /// A new configuration with the specified `max_files` limit
     pub fn with_max_files(max_files: usize) -> Self {
         Self {
             max_files,
@@ -58,7 +58,7 @@ impl SemanticSearchConfig {
         }
     }
 
-    /// Set the max_files limit for this configuration
+    /// Set the `max_files` limit for this configuration
     ///
     /// # Arguments
     ///
@@ -88,7 +88,7 @@ impl Default for SemanticSearchConfig {
 }
 
 // Global configuration instance using OnceCell for thread-safe initialization
-static CONFIG: OnceCell<SemanticSearchConfig> = OnceCell::new();
+static CONFIG: OnceLock<SemanticSearchConfig> = OnceLock::new();
 
 /// Get the default base directory for semantic search
 ///

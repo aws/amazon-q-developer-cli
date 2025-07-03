@@ -12,26 +12,6 @@ updates:
     open-pull-requests-limit: 100
     commit-message:
       prefix: ci
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    assignees:
-      - "chaynabors"
-    commit-message:
-      prefix: fix
-      prefix-development: chore
-      include: scope
-    open-pull-requests-limit: 100
-    groups:
-      eslint:
-        patterns: ["eslint", "@eslint/*"]
-      typescript-eslint:
-        patterns: ["typescript-eslint", "@typescript-eslint/*"]
-      vitest:
-        patterns: ["vitest", "@vitest/*"]
-      radix-ui:
-        patterns: ["@radix-ui/*"]
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:

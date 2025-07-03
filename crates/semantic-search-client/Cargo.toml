@@ -22,7 +22,6 @@ chrono.workspace = true
 indicatif.workspace = true
 rayon.workspace = true
 tempfile.workspace = true
-once_cell.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 
