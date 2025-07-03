@@ -30,10 +30,10 @@ amzn-toolkit-telemetry-client = { path = "../amzn-toolkit-telemetry-client" }
 anstream = "0.6.13"
 arboard = { version = "3.5.0", default-features = false }
 async-trait = "0.1.87"
-aws-config = "1.0.3"
+aws-config = "1.8.1"
 aws-credential-types = "1.0.3"
 aws-runtime = "1.4.4"
-aws-sdk-cognitoidentity = "1.51.0"
+aws-sdk-cognitoidentity = "1.75.0"
 aws-sdk-ssooidc = "1.51.0"
 aws-smithy-async = "1.2.2"
 aws-smithy-runtime-api = "1.6.1"
