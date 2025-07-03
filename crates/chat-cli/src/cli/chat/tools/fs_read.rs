@@ -286,7 +286,6 @@ impl FsRead {
             let combined_text = combined_results.join("\n\n");
 
             if !all_images.is_empty() && has_non_image_ops {
-                queue!(updates, style::Print("\nherherherherherh"),)?;
                 Ok(InvokeOutput {
                     output: OutputKind::Mixed {
                         text: combined_text,
