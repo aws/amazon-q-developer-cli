@@ -2741,6 +2741,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn test_subscribe_flow() {
         let mut os = Os::new().await.unwrap();
         os.client.set_mock_output(serde_json::Value::Array(vec![]));
