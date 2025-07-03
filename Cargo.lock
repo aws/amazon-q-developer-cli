@@ -926,9 +926,9 @@ dependencies = [
 
 [[package]]
 name = "bm25"
-version = "2.2.1"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9874599901ae2aaa19b1485145be2fa4e9af42d1b127672a03a7099ab6350bac"
+checksum = "1036029224bd72581186b629168952596c4964686dcdd59bccd810a7be1f5843"
 dependencies = [
  "cached",
  "deunicode",
