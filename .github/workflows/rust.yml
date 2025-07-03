@@ -57,10 +57,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler libfuse2 bash fish zsh shellcheck
-      - name: Install dependencies (macOS)
-        if: runner.os == 'Macos'
-        run: brew install protobuf fish shellcheck
+        run: sudo apt-get update && sudo apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler libfuse2 bash zsh
       # this needs to be nightly for code coverage
       - uses: dtolnay/rust-toolchain@nightly
         id: toolchain
@@ -76,17 +73,6 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: cargo-test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
-      # TODO: Coverage fails with `error: unnecessary transmute` in `appkit-nsworkspace-bindings`
-      # - name: Generate code coverage
-      #   run: cargo +nightly llvm-cov --locked --workspace --codecov --output-path lcov.info
-      # - name: Upload coverage to Codecov
-      #   uses: codecov/codecov-action@v5
-      #   if: github.event.repository.fork == false
-      #   with:
-      #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     files: lcov.info
-      #     fail_ci_if_error: true
-      #     env_vars: OS
       - name: Run tests
         run: cargo test --locked --workspace --lib --bins --test '*' --exclude fig_desktop-fuzz
 
