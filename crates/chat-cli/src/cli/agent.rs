@@ -186,7 +186,7 @@ impl Agent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum PermissionEvalResult {
     Allow,
     Ask,
