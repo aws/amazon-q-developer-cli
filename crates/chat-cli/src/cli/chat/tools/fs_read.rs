@@ -99,6 +99,121 @@ impl FsRead {
         }
     }
 
+    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+        #[derive(Debug, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Settings {
+            #[serde(default)]
+            allowed_paths: Vec<String>,
+            #[serde(default)]
+            denied_paths: Vec<String>,
+            #[serde(default = "default_allow_read_only")]
+            allow_read_only: bool,
+        }
+
+        fn default_allow_read_only() -> bool {
+            true
+        }
+
+        let is_in_allowlist = agent.allowed_tools.contains("fs_read");
+        match agent.tools_settings.get("fs_read") {
+            Some(settings) if is_in_allowlist => {
+                let Settings {
+                    allowed_paths,
+                    denied_paths,
+                    allow_read_only,
+                } = match serde_json::from_value::<Settings>(settings.clone()) {
+                    Ok(settings) => settings,
+                    Err(e) => {
+                        error!("Failed to deserialize tool settings for fs_read: {:?}", e);
+                        return PermissionEvalResult::Ask;
+                    },
+                };
+                let allow_set = {
+                    let mut builder = GlobSetBuilder::new();
+                    for path in &allowed_paths {
+                        if let Ok(glob) = Glob::new(path) {
+                            builder.add(glob);
+                        } else {
+                            warn!("Failed to create glob from path given: {path}. Ignoring.");
+                        }
+                    }
+                    builder.build()
+                };
+
+                let deny_set = {
+                    let mut builder = GlobSetBuilder::new();
+                    for path in &denied_paths {
+                        if let Ok(glob) = Glob::new(path) {
+                            builder.add(glob);
+                        } else {
+                            warn!("Failed to create glob from path given: {path}. Ignoring.");
+                        }
+                    }
+                    builder.build()
+                };
+
+                match (allow_set, deny_set) {
+                    (Ok(allow_set), Ok(deny_set)) => {
+                        let eval_res = self
+                            .operations
+                            .iter()
+                            .map(|op| {
+                                match op {
+                                    FsReadOperation::Line(FsLine { path, .. })
+                                    | FsReadOperation::Directory(FsDirectory { path, .. })
+                                    | FsReadOperation::Search(FsSearch { path, .. }) => {
+                                        if deny_set.is_match(path) {
+                                            return PermissionEvalResult::Deny;
+                                        }
+                                        if allow_set.is_match(path) {
+                                            return PermissionEvalResult::Allow;
+                                        }
+                                    },
+                                    FsReadOperation::Image(fs_image) => {
+                                        let paths = &fs_image.image_paths;
+                                        if paths.iter().any(|path| deny_set.is_match(path)) {
+                                            return PermissionEvalResult::Deny;
+                                        }
+                                        if paths.iter().all(|path| allow_set.is_match(path)) {
+                                            return PermissionEvalResult::Allow;
+                                        }
+                                    },
+                                }
+
+                                if allow_read_only {
+                                    PermissionEvalResult::Allow
+                                } else {
+                                    PermissionEvalResult::Ask
+                                }
+                            })
+                            .collect::<Vec<_>>();
+
+                        if eval_res.contains(&PermissionEvalResult::Deny) {
+                            PermissionEvalResult::Deny
+                        } else if eval_res.contains(&PermissionEvalResult::Ask) {
+                            PermissionEvalResult::Ask
+                        } else {
+                            PermissionEvalResult::Allow
+                        }
+                    },
+                    (allow_res, deny_res) => {
+                        if let Err(e) = allow_res {
+                            warn!("fs_read failed to build allow set: {:?}", e);
+                        }
+                        if let Err(e) = deny_res {
+                            warn!("fs_read failed to build deny set: {:?}", e);
+                        }
+                        warn!("One or more detailed args failed to parse, falling back to ask");
+                        PermissionEvalResult::Ask
+                    },
+                }
+            },
+            None if is_in_allowlist => PermissionEvalResult::Allow,
+            _ => PermissionEvalResult::Ask,
+        }
+    }
+
     pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
         if self.operations.len() == 1 {
             // Single operation - return result directly
@@ -216,106 +331,6 @@ impl FsReadOperation {
             FsReadOperation::Directory(fs_directory) => fs_directory.invoke(os, updates).await,
             FsReadOperation::Search(fs_search) => fs_search.invoke(os, updates).await,
             FsReadOperation::Image(fs_image) => fs_image.invoke(updates).await,
-        }
-    }
-
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
-        #[derive(Debug, Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Settings {
-            #[serde(default)]
-            allowed_paths: Vec<String>,
-            #[serde(default)]
-            denied_paths: Vec<String>,
-            #[serde(default = "default_allow_read_only")]
-            allow_read_only: bool,
-        }
-
-        fn default_allow_read_only() -> bool {
-            true
-        }
-
-        let is_in_allowlist = agent.allowed_tools.contains("fs_read");
-        match agent.tools_settings.get("fs_read") {
-            Some(settings) if is_in_allowlist => {
-                let Settings {
-                    allowed_paths,
-                    denied_paths,
-                    allow_read_only,
-                } = match serde_json::from_value::<Settings>(settings.clone()) {
-                    Ok(settings) => settings,
-                    Err(e) => {
-                        error!("Failed to deserialize tool settings for fs_read: {:?}", e);
-                        return PermissionEvalResult::Ask;
-                    },
-                };
-                let allow_set = {
-                    let mut builder = GlobSetBuilder::new();
-                    for path in &allowed_paths {
-                        if let Ok(glob) = Glob::new(path) {
-                            builder.add(glob);
-                        } else {
-                            warn!("Failed to create glob from path given: {path}. Ignoring.");
-                        }
-                    }
-                    builder.build()
-                };
-
-                let deny_set = {
-                    let mut builder = GlobSetBuilder::new();
-                    for path in &denied_paths {
-                        if let Ok(glob) = Glob::new(path) {
-                            builder.add(glob);
-                        } else {
-                            warn!("Failed to create glob from path given: {path}. Ignoring.");
-                        }
-                    }
-                    builder.build()
-                };
-
-                match (allow_set, deny_set) {
-                    (Ok(allow_set), Ok(deny_set)) => {
-                        match self {
-                            Self::Line(FsLine { path, .. })
-                            | Self::Directory(FsDirectory { path, .. })
-                            | Self::Search(FsSearch { path, .. }) => {
-                                if deny_set.is_match(path) {
-                                    return PermissionEvalResult::Deny;
-                                }
-                                if allow_set.is_match(path) {
-                                    return PermissionEvalResult::Allow;
-                                }
-                            },
-                            Self::Image(fs_image) => {
-                                let paths = &fs_image.image_paths;
-                                if paths.iter().any(|path| deny_set.is_match(path)) {
-                                    return PermissionEvalResult::Deny;
-                                }
-                                if paths.iter().all(|path| allow_set.is_match(path)) {
-                                    return PermissionEvalResult::Allow;
-                                }
-                            },
-                        }
-                        if allow_read_only {
-                            PermissionEvalResult::Allow
-                        } else {
-                            PermissionEvalResult::Ask
-                        }
-                    },
-                    (allow_res, deny_res) => {
-                        if let Err(e) = allow_res {
-                            warn!("fs_read failed to build allow set: {:?}", e);
-                        }
-                        if let Err(e) = deny_res {
-                            warn!("fs_read failed to build deny set: {:?}", e);
-                        }
-                        warn!("One or more detailed args failed to parse, falling back to ask");
-                        PermissionEvalResult::Ask
-                    },
-                }
-            },
-            None if is_in_allowlist => PermissionEvalResult::Allow,
-            _ => PermissionEvalResult::Ask,
         }
     }
 }
