@@ -6,7 +6,6 @@ use crossterm::style::{
     Color,
 };
 
-use crate::cli::ConversationState;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -75,33 +74,17 @@ impl PersistSubcommand {
                     style::SetAttribute(Attribute::Reset)
                 )?;
             },
-            Self::Load { path } => {
-                // Try the original path first
-                let original_result = os.fs.read_to_string(&path).await;
-
-                // If the original path fails and doesn't end with .json, try with .json appended
-                let contents = if original_result.is_err() && !path.ends_with(".json") {
-                    let json_path = format!("{}.json", path);
-                    match os.fs.read_to_string(&json_path).await {
-                        Ok(content) => content,
-                        Err(_) => {
-                            // If both paths fail, return the original error for better user experience
-                            tri!(original_result, "import from", &path)
-                        },
-                    }
-                } else {
-                    tri!(original_result, "import from", &path)
-                };
-
-                let mut new_state: ConversationState = tri!(serde_json::from_str(&contents), "import from", &path);
-                new_state.reload_serialized_state(os).await;
-                std::mem::swap(&mut new_state.tool_manager, &mut session.conversation.tool_manager);
-                session.conversation = new_state;
-
+            Self::Load { path: _ } => {
+                // For profile operations that need a profile name, show profile selector
+                // As part of the agent implementation, we are disabling the ability to
+                // switch profile after a session has started.
+                // TODO: perhaps revive this after we have a decision on profile switching
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format!("\n✔ Imported conversation state from {}\n\n", &path)),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(
+                        "Conversation loading has been disabled. To load a conversation. Quit and restart q chat."
+                    ),
                     style::SetAttribute(Attribute::Reset)
                 )?;
             },

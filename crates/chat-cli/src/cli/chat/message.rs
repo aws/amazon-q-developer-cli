@@ -305,6 +305,7 @@ impl From<InvokeOutput> for ToolUseResultBlock {
             OutputKind::Text(text) => Self::Text(text),
             OutputKind::Json(value) => Self::Json(value),
             OutputKind::Images(_) => Self::Text("See images data supplied".to_string()),
+            OutputKind::Mixed { text, .. } => ToolUseResultBlock::Text(text),
         }
     }
 }

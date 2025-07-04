@@ -16,6 +16,10 @@ use tokio::sync::RwLock;
 use tracing::warn;
 
 use super::InvokeOutput;
+use crate::cli::agent::{
+    Agent,
+    PermissionEvalResult,
+};
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::mcp_client::{
@@ -33,7 +37,7 @@ use crate::mcp_client::{
 use crate::os::Os;
 
 // TODO: support http transport type
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct CustomToolConfig {
     pub command: String,
     #[serde(default)]
@@ -53,6 +57,7 @@ pub fn default_timeout() -> u64 {
 #[derive(Debug)]
 pub enum CustomToolClient {
     Stdio {
+        /// This is the server name as recognized by the model (post sanitized)
         server_name: String,
         client: McpClient<StdioTransport>,
         server_capabilities: RwLock<Option<ServerCapabilities>>,
@@ -242,5 +247,25 @@ impl CustomTool {
     pub fn get_input_token_size(&self) -> usize {
         TokenCounter::count_tokens(self.method.as_str())
             + TokenCounter::count_tokens(self.params.as_ref().map_or("", |p| p.as_str().unwrap_or_default()))
+    }
+
+    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+        use crate::util::MCP_SERVER_TOOL_DELIMITER;
+        let Self {
+            name: tool_name,
+            client,
+            ..
+        } = self;
+        let server_name = client.get_server_name();
+
+        if agent.allowed_tools.contains(&format!("@{server_name}"))
+            || agent
+                .allowed_tools
+                .contains(&format!("@{server_name}{MCP_SERVER_TOOL_DELIMITER}{tool_name}"))
+        {
+            PermissionEvalResult::Allow
+        } else {
+            PermissionEvalResult::Ask
+        }
     }
 }

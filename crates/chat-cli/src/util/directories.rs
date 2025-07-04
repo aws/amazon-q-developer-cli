@@ -129,12 +129,35 @@ pub fn logs_dir() -> Result<PathBuf> {
     }
 }
 
+/// Example agent config path
+pub fn example_agent_config(os: &Os) -> Result<PathBuf> {
+    let global_path = chat_global_agent_path(os)?;
+    Ok(global_path.join("agent_config.json.example"))
+}
+
+/// Legacy global MCP server config path
+pub fn chat_legacy_mcp_config(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(".aws").join("amazonq").join("mcp.json"))
+}
+
+/// The directory to the directory containing global agents
+pub fn chat_global_agent_path(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(".aws").join("amazonq").join("agents"))
+}
+
+/// The directory to the directory containing config for the `/context` feature in `q chat`.
+pub fn chat_local_agent_dir() -> Result<PathBuf> {
+    let cwd = std::env::current_dir()?;
+    Ok(cwd.join(".aws").join("amazonq").join("agents"))
+}
+
 /// The directory to the directory containing config for the `/context` feature in `q chat`.
 pub fn chat_global_context_path(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("global_context.json"))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.
+#[allow(dead_code)]
 pub fn chat_profiles_dir(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("profiles"))
 }

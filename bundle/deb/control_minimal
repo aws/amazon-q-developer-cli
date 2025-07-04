@@ -1,7 +1,0 @@
-Package: amazon-q-minimal
-Description: Amazon Q CLI for Linux
-Maintainer: Amazon Q CLI Team <q-cli@amazon.com>
-Homepage: https://github.com/aws/q-cli
-Version: $VERSION
-Architecture: $APT_ARCH
-Conflicts: amazon-q

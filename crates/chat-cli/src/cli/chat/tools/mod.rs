@@ -7,10 +7,7 @@ pub mod knowledge;
 pub mod thinking;
 pub mod use_aws;
 
-use std::collections::{
-    HashMap,
-    HashSet,
-};
+use std::borrow::Borrow;
 use std::io::Write;
 use std::path::{
     Path,
@@ -21,7 +18,6 @@ use crossterm::queue;
 use crossterm::style::{
     self,
     Color,
-    Stylize,
 };
 use custom_tool::CustomTool;
 use execute::ExecuteCommand;
@@ -39,7 +35,25 @@ use use_aws::UseAws;
 
 use super::consts::MAX_TOOL_RESPONSE_SIZE;
 use super::util::images::RichImageBlocks;
+use crate::cli::agent::{
+    Agent,
+    PermissionEvalResult,
+};
 use crate::os::Os;
+
+pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
+pub const NATIVE_TOOLS: [&str; 7] = [
+    "fs_read",
+    "fs_write",
+    #[cfg(windows)]
+    "execute_cmd",
+    #[cfg(not(windows))]
+    "execute_bash",
+    "use_aws",
+    "gh_issue",
+    "knowledge",
+    "thinking",
+];
 
 /// Context for tool execution
 #[derive(Debug, Clone)]
@@ -93,16 +107,16 @@ impl Tool {
     }
 
     /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.
-    pub fn requires_acceptance(&self, _os: &Os) -> bool {
+    pub fn requires_acceptance(&self, agent: &Agent) -> PermissionEvalResult {
         match self {
-            Tool::FsRead(_) => false,
-            Tool::FsWrite(_) => true,
-            Tool::ExecuteCommand(execute_command) => execute_command.requires_acceptance(),
-            Tool::UseAws(use_aws) => use_aws.requires_acceptance(),
-            Tool::Custom(_) => true,
-            Tool::GhIssue(_) => false,
-            Tool::Knowledge(_) => false,
-            Tool::Thinking(_) => false,
+            Tool::FsRead(fs_read) => fs_read.eval_perm(agent),
+            Tool::FsWrite(fs_write) => fs_write.eval_perm(agent),
+            Tool::ExecuteCommand(execute_command) => execute_command.eval_perm(agent),
+            Tool::UseAws(use_aws) => use_aws.eval_perm(agent),
+            Tool::Custom(custom_tool) => custom_tool.eval_perm(agent),
+            Tool::GhIssue(_) => PermissionEvalResult::Allow,
+            Tool::Thinking(_) => PermissionEvalResult::Allow,
+            Tool::Knowledge(_) => PermissionEvalResult::Ask,
         }
     }
 
@@ -149,121 +163,6 @@ impl Tool {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ToolPermission {
-    pub trusted: bool,
-}
-
-#[derive(Debug, Clone)]
-/// Holds overrides for tool permissions.
-/// Tools that do not have an associated ToolPermission should use
-/// their default logic to determine to permission.
-pub struct ToolPermissions {
-    // We need this field for any stragglers
-    pub trust_all: bool,
-    pub permissions: HashMap<String, ToolPermission>,
-    // Store pending trust-tool patterns for MCP tools that may be loaded later
-    pub pending_trusted_tools: HashSet<String>,
-}
-
-impl ToolPermissions {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            trust_all: false,
-            permissions: HashMap::with_capacity(capacity),
-            pending_trusted_tools: HashSet::new(),
-        }
-    }
-
-    pub fn is_trusted(&mut self, tool_name: &str) -> bool {
-        // Check if we should trust from pending patterns first
-        if self.should_trust_from_pending(tool_name) {
-            self.trust_tool(tool_name);
-            self.pending_trusted_tools.remove(tool_name);
-        }
-
-        self.trust_all || self.permissions.get(tool_name).is_some_and(|perm| perm.trusted)
-    }
-
-    /// Returns a label to describe the permission status for a given tool.
-    pub fn display_label(&mut self, tool_name: &str) -> String {
-        let is_trusted = self.is_trusted(tool_name);
-        let has_setting = self.has(tool_name) || self.trust_all;
-
-        match (has_setting, is_trusted) {
-            (true, true) => format!("  {}", "trusted".dark_green().bold()),
-            (true, false) => format!("  {}", "not trusted".dark_grey()),
-            _ => self.default_permission_label(tool_name),
-        }
-    }
-
-    pub fn trust_tool(&mut self, tool_name: &str) {
-        self.permissions
-            .insert(tool_name.to_string(), ToolPermission { trusted: true });
-    }
-
-    pub fn untrust_tool(&mut self, tool_name: &str) {
-        self.trust_all = false;
-        self.pending_trusted_tools.remove(tool_name);
-        self.permissions
-            .insert(tool_name.to_string(), ToolPermission { trusted: false });
-    }
-
-    pub fn reset(&mut self) {
-        self.trust_all = false;
-        self.permissions.clear();
-        self.pending_trusted_tools.clear();
-    }
-
-    pub fn reset_tool(&mut self, tool_name: &str) {
-        self.trust_all = false;
-        self.permissions.remove(tool_name);
-        self.pending_trusted_tools.remove(tool_name);
-    }
-
-    /// Add a pending trust pattern for tools that may be loaded later
-    pub fn add_pending_trust_tool(&mut self, pattern: String) {
-        self.pending_trusted_tools.insert(pattern);
-    }
-
-    /// Check if a tool should be trusted based on preceding trust declarations
-    pub fn should_trust_from_pending(&self, tool_name: &str) -> bool {
-        // Check for exact match
-        self.pending_trusted_tools.contains(tool_name)
-    }
-
-    pub fn has(&mut self, tool_name: &str) -> bool {
-        // Check if we should trust from pending tools first
-        if self.should_trust_from_pending(tool_name) {
-            self.trust_tool(tool_name);
-            self.pending_trusted_tools.remove(tool_name);
-        }
-
-        self.permissions.contains_key(tool_name)
-    }
-
-    /// Provide default permission labels for the built-in set of tools.
-    // This "static" way avoids needing to construct a tool instance.
-    fn default_permission_label(&self, tool_name: &str) -> String {
-        let label = match tool_name {
-            "fs_read" => "trusted".dark_green().bold(),
-            "fs_write" => "not trusted".dark_grey(),
-            #[cfg(not(windows))]
-            "execute_bash" => "trust read-only commands".dark_grey(),
-            #[cfg(windows)]
-            "execute_cmd" => "trust read-only commands".dark_grey(),
-            "use_aws" => "trust read-only commands".dark_grey(),
-            "report_issue" => "trusted".dark_green().bold(),
-            "knowledge" => "trusted".dark_green().bold(),
-            "thinking" => "trusted (prerelease)".dark_green().bold(),
-            _ if self.trust_all => "trusted".dark_grey().bold(),
-            _ => "not trusted".dark_grey(),
-        };
-
-        format!("{} {label}", "*".reset())
-    }
-}
-
 /// A tool specification to be sent to the model as part of a conversation. Maps to
 /// [BedrockToolSpecification].
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -276,10 +175,28 @@ pub struct ToolSpec {
     pub tool_origin: ToolOrigin,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ToolOrigin {
     Native,
     McpServer(String),
+}
+
+impl std::hash::Hash for ToolOrigin {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Native => "native".hash(state),
+            Self::McpServer(name) => name.hash(state),
+        }
+    }
+}
+
+impl Borrow<str> for ToolOrigin {
+    fn borrow(&self) -> &str {
+        match self {
+            Self::McpServer(name) => name.as_str(),
+            Self::Native => "native",
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for ToolOrigin {
@@ -345,6 +262,7 @@ impl InvokeOutput {
             OutputKind::Text(s) => s.as_str(),
             OutputKind::Json(j) => j.as_str().unwrap_or_default(),
             OutputKind::Images(_) => "",
+            OutputKind::Mixed { text, .. } => text.as_str(), // Return the text part
         }
     }
 }
@@ -355,6 +273,7 @@ pub enum OutputKind {
     Text(String),
     Json(serde_json::Value),
     Images(RichImageBlocks),
+    Mixed { text: String, images: RichImageBlocks },
 }
 
 impl Default for OutputKind {
@@ -453,6 +372,50 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
             style::Print("\n"),
         )?;
     }
+    Ok(())
+}
+
+/// Helper function to format function results with consistent styling
+///
+/// # Parameters
+/// * `result` - The result text to display
+/// * `updates` - The output to write to
+/// * `is_error` - Whether this is an error message (changes formatting)
+/// * `use_bullet` - Whether to use a bullet point instead of a tick/exclamation
+pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: bool, use_bullet: bool) -> Result<()> {
+    let lines = result.lines().collect::<Vec<_>>();
+
+    // Determine symbol and color
+    let (symbol, color) = match (is_error, use_bullet) {
+        (true, _) => (super::ERROR_EXCLAMATION, Color::Red),
+        (false, true) => (super::TOOL_BULLET, Color::Reset),
+        (false, false) => (super::SUCCESS_TICK, Color::Green),
+    };
+
+    queue!(updates, style::Print("\n"))?;
+
+    // Print first line with symbol
+    if let Some(first_line) = lines.first() {
+        queue!(
+            updates,
+            style::SetForegroundColor(color),
+            style::Print(symbol),
+            style::ResetColor,
+            style::Print(first_line),
+            style::Print("\n"),
+        )?;
+    }
+
+    // Print remaining lines with indentation
+    for line in lines.iter().skip(1) {
+        queue!(
+            updates,
+            style::Print("   "), // 3 spaces for alignment
+            style::Print(line),
+            style::Print("\n"),
+        )?;
+    }
+
     Ok(())
 }
 

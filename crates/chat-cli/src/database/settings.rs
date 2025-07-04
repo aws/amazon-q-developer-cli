@@ -33,6 +33,7 @@ pub enum Setting {
     McpNoInteractiveTimeout,
     McpLoadedBefore,
     ChatDefaultModel,
+    ChatDefaultAgent,
 }
 
 impl AsRef<str> for Setting {
@@ -54,6 +55,7 @@ impl AsRef<str> for Setting {
             Self::McpNoInteractiveTimeout => "mcp.noInteractiveTimeout",
             Self::McpLoadedBefore => "mcp.loadedBefore",
             Self::ChatDefaultModel => "chat.defaultModel",
+            Self::ChatDefaultAgent => "chat.defaultAgent",
         }
     }
 }
@@ -85,6 +87,7 @@ impl TryFrom<&str> for Setting {
             "mcp.noInteractiveTimeout" => Ok(Self::McpNoInteractiveTimeout),
             "mcp.loadedBefore" => Ok(Self::McpLoadedBefore),
             "chat.defaultModel" => Ok(Self::ChatDefaultModel),
+            "chat.defaultAgent" => Ok(Self::ChatDefaultAgent),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

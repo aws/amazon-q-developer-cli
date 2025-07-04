@@ -197,7 +197,7 @@ mod tests {
                 input,
                 max_bytes
             );
-            let mut in_place = input.to_string();
+            let mut in_place = (*input).to_string();
             truncate_safe_in_place(&mut in_place, *max_bytes);
             assert_eq!(
                 in_place.as_str(),

@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::{
     HashMap,
     HashSet,
@@ -11,10 +12,7 @@ use std::io::{
     BufWriter,
     Write,
 };
-use std::path::{
-    Path,
-    PathBuf,
-};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{
     AtomicBool,
@@ -29,7 +27,6 @@ use std::time::{
     Instant,
 };
 
-use convert_case::Casing;
 use crossterm::{
     cursor,
     execute,
@@ -37,22 +34,20 @@ use crossterm::{
     style,
     terminal,
 };
+use eyre::Report;
 use futures::{
     StreamExt,
     future,
     stream,
 };
 use regex::Regex;
-use serde::{
-    Deserialize,
-    Serialize,
-};
 use tokio::signal::ctrl_c;
 use tokio::sync::{
     Mutex,
     Notify,
     RwLock,
 };
+use tokio::task::JoinHandle;
 use tracing::{
     error,
     warn,
@@ -63,6 +58,10 @@ use crate::api_client::model::{
     ToolResultContentBlock,
     ToolResultStatus,
 };
+use crate::cli::agent::{
+    Agent,
+    McpServerConfig,
+};
 use crate::cli::chat::cli::prompts::GetPromptError;
 use crate::cli::chat::message::AssistantToolUse;
 use crate::cli::chat::server_messenger::{
@@ -72,7 +71,6 @@ use crate::cli::chat::server_messenger::{
 use crate::cli::chat::tools::custom_tool::{
     CustomTool,
     CustomToolClient,
-    CustomToolConfig,
 };
 use crate::cli::chat::tools::execute::ExecuteCommand;
 use crate::cli::chat::tools::fs_read::FsRead;
@@ -94,6 +92,7 @@ use crate::mcp_client::{
 };
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
+use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::directories::home_dir;
 
 const NAMESPACE_DELIMITER: &str = "___";
@@ -148,94 +147,16 @@ pub enum LoadingRecord {
     Err(String),
 }
 
-// This is to mirror claude's config set up
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct McpServerConfig {
-    pub mcp_servers: HashMap<String, CustomToolConfig>,
-}
-
-impl McpServerConfig {
-    pub async fn load_config(stderr: &mut impl Write) -> eyre::Result<Self> {
-        let mut cwd = std::env::current_dir()?;
-        cwd.push(".amazonq/mcp.json");
-        let expanded_path = shellexpand::tilde("~/.aws/amazonq/mcp.json");
-        let global_path = PathBuf::from(expanded_path.as_ref() as &str);
-        let global_buf = tokio::fs::read(global_path).await.ok();
-        let local_buf = tokio::fs::read(cwd).await.ok();
-        let conf = match (global_buf, local_buf) {
-            (Some(global_buf), Some(local_buf)) => {
-                let mut global_conf = Self::from_slice(&global_buf, stderr, "global")?;
-                let local_conf = Self::from_slice(&local_buf, stderr, "local")?;
-                for (server_name, config) in local_conf.mcp_servers {
-                    if global_conf.mcp_servers.insert(server_name.clone(), config).is_some() {
-                        queue!(
-                            stderr,
-                            style::SetForegroundColor(style::Color::Yellow),
-                            style::Print("WARNING: "),
-                            style::ResetColor,
-                            style::Print("MCP config conflict for "),
-                            style::SetForegroundColor(style::Color::Green),
-                            style::Print(server_name),
-                            style::ResetColor,
-                            style::Print(". Using workspace version.\n")
-                        )?;
-                    }
-                }
-                global_conf
-            },
-            (None, Some(local_buf)) => Self::from_slice(&local_buf, stderr, "local")?,
-            (Some(global_buf), None) => Self::from_slice(&global_buf, stderr, "global")?,
-            _ => Default::default(),
-        };
-
-        stderr.flush()?;
-        Ok(conf)
-    }
-
-    pub async fn load_from_file(os: &Os, path: impl AsRef<Path>) -> eyre::Result<Self> {
-        let contents = os.fs.read_to_string(path.as_ref()).await?;
-        Ok(serde_json::from_str(&contents)?)
-    }
-
-    pub async fn save_to_file(&self, os: &Os, path: impl AsRef<Path>) -> eyre::Result<()> {
-        let json = serde_json::to_string_pretty(self)?;
-        os.fs.write(path.as_ref(), json).await?;
-        Ok(())
-    }
-
-    fn from_slice(slice: &[u8], stderr: &mut impl Write, location: &str) -> eyre::Result<McpServerConfig> {
-        match serde_json::from_slice::<Self>(slice) {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                queue!(
-                    stderr,
-                    style::SetForegroundColor(style::Color::Yellow),
-                    style::Print("WARNING: "),
-                    style::ResetColor,
-                    style::Print(format!("Error reading {location} mcp config: {e}\n")),
-                    style::Print("Please check to make sure config is correct. Discarding.\n"),
-                )?;
-                Ok(McpServerConfig::default())
-            },
-        }
-    }
-}
-
 #[derive(Default)]
 pub struct ToolManagerBuilder {
     mcp_server_config: Option<McpServerConfig>,
     prompt_list_sender: Option<std::sync::mpsc::Sender<Vec<String>>>,
     prompt_list_receiver: Option<std::sync::mpsc::Receiver<Option<String>>>,
     conversation_id: Option<String>,
+    agent: Option<Agent>,
 }
 
 impl ToolManagerBuilder {
-    pub fn mcp_server_config(mut self, config: McpServerConfig) -> Self {
-        self.mcp_server_config.replace(config);
-        self
-    }
-
     pub fn prompt_list_sender(mut self, sender: std::sync::mpsc::Sender<Vec<String>>) -> Self {
         self.prompt_list_sender.replace(sender);
         self
@@ -251,6 +172,12 @@ impl ToolManagerBuilder {
         self
     }
 
+    pub fn agent(mut self, agent: Agent) -> Self {
+        self.mcp_server_config.replace(agent.mcp_servers.clone());
+        self.agent.replace(agent);
+        self
+    }
+
     pub async fn build(
         mut self,
         os: &mut Os,
@@ -260,8 +187,6 @@ impl ToolManagerBuilder {
         let McpServerConfig { mcp_servers } = self.mcp_server_config.ok_or(eyre::eyre!("Missing mcp server config"))?;
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
-        let regex = regex::Regex::new(VALID_TOOL_NAME)?;
-        let mut hasher = DefaultHasher::new();
 
         // Separate enabled and disabled servers
         let (enabled_servers, disabled_servers): (Vec<_>, Vec<_>) = mcp_servers
@@ -271,19 +196,24 @@ impl ToolManagerBuilder {
         // Prepare disabled servers for display
         let disabled_servers_display: Vec<String> = disabled_servers
             .iter()
-            .map(|(server_name, _)| {
-                let snaked_cased_name = server_name.to_case(convert_case::Case::Snake);
-                sanitize_name(snaked_cased_name, &regex, &mut hasher)
-            })
+            .map(|(server_name, _)| server_name.clone())
             .collect();
 
         let pre_initialized = enabled_servers
             .into_iter()
-            .map(|(server_name, server_config)| {
-                let snaked_cased_name = server_name.to_case(convert_case::Case::Snake);
-                let sanitized_server_name = sanitize_name(snaked_cased_name, &regex, &mut hasher);
-                let custom_tool_client = CustomToolClient::from_config(sanitized_server_name.clone(), server_config);
-                (sanitized_server_name, custom_tool_client)
+            .filter_map(|(server_name, server_config)| {
+                if server_name.contains(MCP_SERVER_TOOL_DELIMITER) {
+                    let _ = queue!(
+                        output,
+                        style::Print(format!(
+                            "Invalid server name {server_name}. Server name cannot contain {MCP_SERVER_TOOL_DELIMITER}\n"
+                        ))
+                    );
+                    None
+                } else {
+                    let custom_tool_client = CustomToolClient::from_config(server_name.clone(), server_config);
+                    Some((server_name, custom_tool_client))
+                }
             })
             .collect::<Vec<(String, _)>>();
 
@@ -297,8 +227,8 @@ impl ToolManagerBuilder {
         // Spawn a task for displaying the mcp loading statuses.
         // This is only necessary when we are in interactive mode AND there are servers to load.
         // Otherwise we do not need to be spawning this.
-        let (_loading_display_task, loading_status_sender) = if interactive
-            && (total > 0 || !disabled_servers_display.is_empty())
+        let (loading_display_task, loading_status_sender) = if interactive
+            && (total > 0 || !disabled_servers.is_empty())
         {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<LoadingMsg>(50);
             let disabled_servers_display_clone = disabled_servers_display.clone();
@@ -403,6 +333,7 @@ impl ToolManagerBuilder {
         } else {
             (None, None)
         };
+
         let mut clients = HashMap::<String, Arc<CustomToolClient>>::new();
         let mut loading_status_sender_clone = loading_status_sender.clone();
         let conv_id_clone = conversation_id.clone();
@@ -419,9 +350,27 @@ impl ToolManagerBuilder {
         let notify_weak = Arc::downgrade(&notify);
         let load_record = Arc::new(Mutex::new(HashMap::<String, Vec<LoadingRecord>>::new()));
         let load_record_clone = load_record.clone();
+        let agent = Arc::new(Mutex::new(self.agent.unwrap_or_default()));
+        let agent_clone = agent.clone();
+
         tokio::spawn(async move {
             let mut record_temp_buf = Vec::<u8>::new();
             let mut initialized = HashSet::<String>::new();
+
+            enum ToolFilter {
+                All,
+                List(HashSet<String>),
+            }
+
+            impl ToolFilter {
+                pub fn should_include(&self, tool_name: &str) -> bool {
+                    match self {
+                        Self::All => true,
+                        Self::List(set) => set.contains(tool_name),
+                    }
+                }
+            }
+
             while let Some(msg) = msg_rx.recv().await {
                 record_temp_buf.clear();
                 // For now we will treat every list result as if they contain the
@@ -437,19 +386,69 @@ impl ToolManagerBuilder {
                                 format!("{:.2}", time_taken)
                             });
                         pending_clone.write().await.remove(&server_name);
+                        let (tool_filter, alias_list) = {
+                            let agent_lock = agent_clone.lock().await;
+
+                            // We will assume all tools are allowed if the tool list consists of 1
+                            // element and it's a *
+                            let tool_filter = if agent_lock.tools.len() == 1
+                                && agent_lock.tools.first().map(String::as_str).is_some_and(|c| c == "*")
+                            {
+                                ToolFilter::All
+                            } else {
+                                let set = agent_lock
+                                    .tools
+                                    .iter()
+                                    .filter(|tool_name| tool_name.starts_with(&format!("@{server_name}")))
+                                    .map(|full_name| {
+                                        match full_name.split_once(MCP_SERVER_TOOL_DELIMITER) {
+                                            Some((_, tool_name)) if !tool_name.is_empty() => tool_name,
+                                            _ => "*",
+                                        }
+                                        .to_string()
+                                    })
+                                    .collect::<HashSet<_>>();
+
+                                if set.contains("*") {
+                                    ToolFilter::All
+                                } else {
+                                    ToolFilter::List(set)
+                                }
+                            };
+
+                            let server_prefix = format!("@{server_name}");
+                            let alias_list = agent_lock.alias.iter().fold(
+                                HashMap::<HostToolName, ModelToolName>::new(),
+                                |mut acc, (full_path, model_tool_name)| {
+                                    if full_path.starts_with(&server_prefix) {
+                                        if let Some((_, host_tool_name)) =
+                                            full_path.split_once(MCP_SERVER_TOOL_DELIMITER)
+                                        {
+                                            acc.insert(host_tool_name.to_string(), model_tool_name.clone());
+                                        }
+                                    }
+                                    acc
+                                },
+                            );
+
+                            (tool_filter, alias_list)
+                        };
+
                         match result {
                             Ok(result) => {
                                 let mut specs = result
                                     .tools
                                     .into_iter()
                                     .filter_map(|v| serde_json::from_value::<ToolSpec>(v).ok())
+                                    .filter(|spec| tool_filter.should_include(&spec.name))
                                     .collect::<Vec<_>>();
-                                let mut sanitized_mapping = HashMap::<String, String>::new();
+                                let mut sanitized_mapping = HashMap::<ModelToolName, ToolInfo>::new();
                                 let process_result = process_tool_specs(
                                     conv_id_clone.as_str(),
                                     &server_name,
                                     &mut specs,
                                     &mut sanitized_mapping,
+                                    &alias_list,
                                     &regex,
                                     &telemetry_clone,
                                 );
@@ -575,6 +574,7 @@ impl ToolManagerBuilder {
                 }
             }
         });
+
         for (mut name, init_res) in pre_initialized {
             let messenger = messenger_builder.build_with_name(name.clone());
             match init_res {
@@ -694,10 +694,12 @@ impl ToolManagerBuilder {
             pending_clients: pending,
             notify: Some(notify),
             loading_status_sender,
+            loading_display_task,
             new_tool_specs,
             has_new_stuff,
             is_interactive: interactive,
             mcp_load_record: load_record,
+            agent,
             disabled_servers: disabled_servers_display,
             ..Default::default()
         })
@@ -726,7 +728,41 @@ enum OutOfSpecName {
     EmptyDescription(String),
 }
 
-type NewToolSpecs = Arc<Mutex<HashMap<String, (HashMap<String, String>, Vec<ToolSpec>)>>>;
+#[derive(Clone, Default, Debug, Eq, PartialEq)]
+pub struct ToolInfo {
+    pub server_name: String,
+    pub host_tool_name: HostToolName,
+}
+
+impl Borrow<HostToolName> for ToolInfo {
+    fn borrow(&self) -> &HostToolName {
+        &self.host_tool_name
+    }
+}
+
+impl std::hash::Hash for ToolInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.host_tool_name.hash(state);
+    }
+}
+
+/// Tool name as recognized by the model. This is [HostToolName] post sanitization.
+type ModelToolName = String;
+
+/// Tool name as recognized by the host (i.e. Q CLI). This is identical to how each MCP server
+/// exposed them.
+type HostToolName = String;
+
+/// MCP server name as they are defined in the config
+type ServerName = String;
+
+/// A list of new tools to be included in the main chat loop.
+/// The vector of [ToolSpec] is a comprehensive list of all tools exposed by the server.
+/// The hashmap of [ModelToolName]: [HostToolName] are mapping of tool names that have been changed
+/// (which is a subset of the tools that are in the aforementioned vector)
+/// Note that [ToolSpec] is model facing and thus will have names that are model facing (i.e. model
+/// tool name).
+type NewToolSpecs = Arc<Mutex<HashMap<ServerName, (HashMap<ModelToolName, ToolInfo>, Vec<ToolSpec>)>>>;
 
 #[derive(Default, Debug)]
 /// Manages the lifecycle and interactions with tools from various sources, including MCP servers.
@@ -770,15 +806,19 @@ pub struct ToolManager {
     /// Used to send status updates about tool initialization progress.
     loading_status_sender: Option<tokio::sync::mpsc::Sender<LoadingMsg>>,
 
+    /// This is here so we can await it to avoid output buffer from the display task interleaving
+    /// with other buffer displayed by chat.
+    loading_display_task: Option<JoinHandle<Result<(), Report>>>,
+
     /// Mapping from sanitized tool names to original tool names.
     /// This is used to handle tool name transformations that may occur during initialization
     /// to ensure tool names comply with naming requirements.
-    pub tn_map: HashMap<String, String>,
+    pub tn_map: HashMap<ModelToolName, ToolInfo>,
 
     /// A cache of tool's input schema for all of the available tools.
     /// This is mainly used to show the user what the tools look like from the perspective of the
     /// model.
-    pub schema: HashMap<String, ToolSpec>,
+    pub schema: HashMap<ModelToolName, ToolSpec>,
 
     is_interactive: bool,
 
@@ -791,6 +831,10 @@ pub struct ToolManager {
 
     /// List of disabled MCP server names for display purposes
     disabled_servers: Vec<String>,
+
+    /// A collection of preferences that pertains to the conversation.
+    /// As far as tool manager goes, this is relevant for tool and server filters
+    pub agent: Arc<Mutex<Agent>>,
 }
 
 impl Clone for ToolManager {
@@ -820,8 +864,14 @@ impl ToolManager {
         let tx = self.loading_status_sender.take();
         let notify = self.notify.take();
         self.schema = {
+            let tool_list = &self.agent.lock().await.tools;
             let mut tool_specs =
-                serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?;
+                serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?
+                    .into_iter()
+                    .filter(|(name, _)| {
+                        tool_list.len() == 1 && tool_list.first().is_some_and(|n| n == "*") || tool_list.contains(name)
+                    })
+                    .collect::<HashMap<_, _>>();
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled(os) {
                 tool_specs.remove("thinking");
             }
@@ -899,11 +949,18 @@ impl ToolManager {
         } else {
             Box::pin(future::ready(()))
         };
+        let loading_display_task = self.loading_display_task.take();
         tokio::select! {
             _ = timeout_fut => {
                 if let Some(tx) = tx {
                     let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
+                    if let Some(task) = loading_display_task {
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_millis(80),
+                            task
+                        ).await;
+                    }
                 }
                 if !self.clients.is_empty() && !self.is_interactive {
                     let _ = queue!(
@@ -948,6 +1005,7 @@ impl ToolManager {
                 style::Print("\n------\n")
             )?;
         }
+        stderr.flush()?;
         self.update().await;
         Ok(self.schema.clone())
     }
@@ -980,53 +1038,22 @@ impl ToolManager {
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
                 // it is a valid tool name, we should get a hit.
-                let name = match self.tn_map.get(name) {
-                    Some(name) => Ok::<&str, ToolResult>(name.as_str()),
+                let ToolInfo {
+                    server_name,
+                    host_tool_name: tool_name,
+                } = match self.tn_map.get(name) {
+                    Some(tool_info) => Ok::<&ToolInfo, ToolResult>(tool_info),
                     None => {
-                        // There are three possibilities:
-                        // - The tool name supplied is valid, it's just missing the server name
-                        // prefix.
-                        // - The tool name supplied is valid, it's missing the server name prefix
-                        // and there are more than one possible tools that fit this description.
-                        // - No server has a tool with this name.
-                        let candidates = self.tn_map.keys().filter(|n| n.ends_with(name)).collect::<Vec<_>>();
-                        #[allow(clippy::comparison_chain)]
-                        if candidates.len() == 1 {
-                            Ok(candidates.first().map(|s| s.as_str()).unwrap())
-                        } else if candidates.len() > 1 {
-                            let mut content = candidates.iter().fold(
-                                "There are multilple tools with given tool name: ".to_string(),
-                                |mut acc, name| {
-                                    acc.push_str(name);
-                                    acc.push_str(", ");
-                                    acc
-                                },
-                            );
-                            content.push_str("specify a tool with its full name.");
-                            Err(ToolResult {
-                                tool_use_id: value.id.clone(),
-                                content: vec![ToolResultContentBlock::Text(content)],
-                                status: ToolResultStatus::Error,
-                            })
-                        } else {
-                            Err(ToolResult {
-                                tool_use_id: value.id.clone(),
-                                content: vec![ToolResultContentBlock::Text(format!(
-                                    "The tool, \"{name}\" is supplied with incorrect name"
-                                ))],
-                                status: ToolResultStatus::Error,
-                            })
-                        }
+                        // No match, we throw an error
+                        Err(ToolResult {
+                            tool_use_id: value.id.clone(),
+                            content: vec![ToolResultContentBlock::Text(format!(
+                                "No tool with \"{name}\" is found"
+                            ))],
+                            status: ToolResultStatus::Error,
+                        })
                     },
                 }?;
-                let name = self.tn_map.get(name).map_or(name, String::as_str);
-                let (server_name, tool_name) = name.split_once(NAMESPACE_DELIMITER).ok_or(ToolResult {
-                    tool_use_id: value.id.clone(),
-                    content: vec![ToolResultContentBlock::Text(format!(
-                        "The tool, \"{name}\" is supplied with incorrect name"
-                    ))],
-                    status: ToolResultStatus::Error,
-                })?;
                 let Some(client) = self.clients.get(server_name) else {
                     return Err(ToolResult {
                         tool_use_id: value.id,
@@ -1062,37 +1089,68 @@ impl ToolManager {
         let mut tool_specs = HashMap::<String, ToolSpec>::new();
         let new_tools = {
             let mut new_tool_specs = self.new_tool_specs.lock().await;
-            new_tool_specs.drain().fold(HashMap::new(), |mut acc, (k, v)| {
-                acc.insert(k, v);
-                acc
-            })
+            new_tool_specs.drain().fold(
+                HashMap::<ServerName, (HashMap<ModelToolName, ToolInfo>, Vec<ToolSpec>)>::new(),
+                |mut acc, (server_name, v)| {
+                    acc.insert(server_name, v);
+                    acc
+                },
+            )
         };
+
         let mut updated_servers = HashSet::<ToolOrigin>::new();
+        let mut conflicts = HashMap::<ServerName, String>::new();
         for (server_name, (tool_name_map, specs)) in new_tools {
-            let target = format!("{server_name}{NAMESPACE_DELIMITER}");
-            self.tn_map.retain(|k, _| !k.starts_with(&target));
-            for (k, v) in tool_name_map {
-                self.tn_map.insert(k, v);
+            // First we evict the tools that were already in the tn_map
+            self.tn_map.retain(|_, tool_info| tool_info.server_name != server_name);
+
+            // And update them with the new tools queried
+            // valid: tools that do not have conflicts in naming
+            let (valid, invalid) = tool_name_map
+                .into_iter()
+                .partition::<HashMap<ModelToolName, ToolInfo>, _>(|(model_tool_name, _)| {
+                    !self.tn_map.contains_key(model_tool_name)
+                });
+            // We reject tools that are conflicting with the existing tools by not including them
+            // in the tn_map. We would also want to report this error.
+            if !invalid.is_empty() {
+                let msg = invalid.into_iter().fold("The following tools are rejected because they conflict with existing tools in names. Avoid this via setting aliases for them: \n".to_string(), |mut acc, (model_tool_name, tool_info)| {
+                    acc.push_str(&format!(" - {} from {}\n", model_tool_name, tool_info.server_name));
+                    acc
+                });
+                conflicts.insert(server_name, msg);
             }
             if let Some(spec) = specs.first() {
                 updated_servers.insert(spec.tool_origin.clone());
             }
-            for spec in specs {
+            // We want to filter for specs that are valid
+            // Note that [ToolSpec::name] is a model facing name (thus you should be comparing it
+            // with the keys of a tn_map)
+            for spec in specs.into_iter().filter(|spec| valid.contains_key(&spec.name)) {
                 tool_specs.insert(spec.name.clone(), spec);
             }
+
+            self.tn_map.extend(valid);
         }
-        // Caching the tool names for skim operations
-        for tool_name in tool_specs.keys() {
-            if !self.tn_map.contains_key(tool_name) {
-                self.tn_map.insert(tool_name.clone(), tool_name.clone());
-            }
-        }
+
         // Update schema
         // As we are writing over the ensemble of tools in a given server, we will need to first
         // remove everything that it has.
         self.schema
             .retain(|_tool_name, spec| !updated_servers.contains(&spec.tool_origin));
         self.schema.extend(tool_specs);
+
+        // if block here to avoid repeatedly asking for loc
+        if !conflicts.is_empty() {
+            let mut record_lock = self.mcp_load_record.lock().await;
+            for (server_name, msg) in conflicts {
+                let record = LoadingRecord::Err(msg);
+                record_lock
+                    .entry(server_name)
+                    .and_modify(|v| v.push(record.clone()))
+                    .or_insert(vec![record]);
+            }
+        }
     }
 
     #[allow(clippy::await_holding_lock)]
@@ -1270,52 +1328,48 @@ fn process_tool_specs(
     conversation_id: &str,
     server_name: &str,
     specs: &mut Vec<ToolSpec>,
-    tn_map: &mut HashMap<String, String>,
+    tn_map: &mut HashMap<ModelToolName, ToolInfo>,
+    alias_list: &HashMap<HostToolName, ModelToolName>,
     regex: &Regex,
     telemetry: &TelemetryThread,
 ) -> eyre::Result<()> {
-    // Each mcp server might have multiple tools.
-    // To avoid naming conflicts we are going to namespace it.
-    // This would also help us locate which mcp server to call the tool from.
+    // Tools are subjected to the following validations:
+    // 1. ^[a-zA-Z][a-zA-Z0-9_]*$,
+    // 2. less than 64 characters in length
+    // 3. a non-empty description
+    //
+    // For non-compliance due to point 1, we shall change it on behalf of the users.
+    // For the rest, we simply throw a warning and reject the tool.
     let mut out_of_spec_tool_names = Vec::<OutOfSpecName>::new();
     let mut hasher = DefaultHasher::new();
-    let number_of_tools = specs.len();
-    // Sanitize tool names to ensure they comply with the naming requirements:
-    // 1. If the name already matches the regex pattern and doesn't contain the namespace delimiter, use
-    //    it as is
-    // 2. Otherwise, remove invalid characters and handle special cases:
-    //    - Remove namespace delimiters
-    //    - Ensure the name starts with an alphabetic character
-    //    - Generate a hash-based name if the sanitized result is empty
-    // This ensures all tool names are valid identifiers that can be safely used in the system
-    // If after all of the aforementioned modification the combined tool
-    // name we have exceeds a length of 64, we surface it as an error
+    let mut number_of_tools = 0_usize;
+
     for spec in specs.iter_mut() {
-        let sn = if !regex.is_match(&spec.name) {
-            let mut sn = sanitize_name(spec.name.clone(), regex, &mut hasher);
-            while tn_map.contains_key(&sn) {
-                sn.push('1');
+        let model_tool_name = alias_list.get(&spec.name).cloned().unwrap_or({
+            if !regex.is_match(&spec.name) {
+                let mut sn = sanitize_name(spec.name.clone(), regex, &mut hasher);
+                while tn_map.contains_key(&sn) {
+                    sn.push('1');
+                }
+                sn
+            } else {
+                spec.name.clone()
             }
-            sn
-        } else {
-            spec.name.clone()
-        };
-        let full_name = format!("{}{}{}", server_name, NAMESPACE_DELIMITER, sn);
-        if full_name.len() > 64 {
+        });
+        if model_tool_name.len() > 64 {
             out_of_spec_tool_names.push(OutOfSpecName::TooLong(spec.name.clone()));
             continue;
         } else if spec.description.is_empty() {
             out_of_spec_tool_names.push(OutOfSpecName::EmptyDescription(spec.name.clone()));
             continue;
         }
-        if sn != spec.name {
-            tn_map.insert(
-                full_name.clone(),
-                format!("{}{}{}", server_name, NAMESPACE_DELIMITER, spec.name),
-            );
-        }
-        spec.name = full_name;
+        tn_map.insert(model_tool_name.clone(), ToolInfo {
+            server_name: server_name.to_string(),
+            host_tool_name: spec.name.clone(),
+        });
+        spec.name = model_tool_name;
         spec.tool_origin = ToolOrigin::McpServer(server_name.to_string());
+        number_of_tools += 1;
     }
     // Native origin is the default, and since this function never reads native tools, if we still
     // have it, that would indicate a tool that should not be included.
@@ -1347,16 +1401,6 @@ fn process_tool_specs(
                     },
                 };
                 acc.push_str(format!(" - {} ({})\n", tool_name, msg).as_str());
-                acc
-            },
-        )))
-        // TODO: if no tools are valid, we need to offload the server
-        // from the fleet (i.e. kill the server)
-    } else if !tn_map.is_empty() {
-        Err(eyre::eyre!(tn_map.iter().fold(
-            String::from("The following tool names are changed:\n"),
-            |mut acc, (k, v)| {
-                acc.push_str(format!(" - {} -> {}\n", v, k).as_str());
                 acc
             },
         )))

@@ -6,11 +6,14 @@ use crossterm::queue;
 use crossterm::style::{
     self,
     Color,
-    Stylize,
 };
 use eyre::{
     Result,
     bail,
+};
+use globset::{
+    Glob,
+    GlobSetBuilder,
 };
 use serde::{
     Deserialize,
@@ -19,6 +22,7 @@ use serde::{
 use syntect::util::LinesWithEndings;
 use tracing::{
     debug,
+    error,
     warn,
 };
 
@@ -30,7 +34,12 @@ use super::{
     format_path,
     sanitize_path_tool_arg,
 };
+use crate::cli::agent::{
+    Agent,
+    PermissionEvalResult,
+};
 use crate::cli::chat::CONTINUATION_LINE;
+use crate::cli::chat::tools::display_purpose;
 use crate::cli::chat::util::images::{
     handle_images_from_paths,
     is_supported_image_type,
@@ -38,12 +47,16 @@ use crate::cli::chat::util::images::{
 };
 use crate::os::Os;
 
-const CHECKMARK: &str = "✔";
-const CROSS: &str = "✘";
+#[derive(Debug, Clone, Deserialize)]
+pub struct FsRead {
+    // For batch operations
+    pub operations: Vec<FsReadOperation>,
+    pub summary: Option<String>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "mode")]
-pub enum FsRead {
+pub enum FsReadOperation {
     Line(FsLine),
     Directory(FsDirectory),
     Search(FsSearch),
@@ -52,29 +65,272 @@ pub enum FsRead {
 
 impl FsRead {
     pub async fn validate(&mut self, os: &Os) -> Result<()> {
+        if self.operations.is_empty() {
+            bail!("At least one operation must be provided");
+        }
+        for op in &mut self.operations {
+            op.validate(os).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
+        if self.operations.len() == 1 {
+            // Single operation - display without batch prefix
+            self.operations[0].queue_description(os, updates).await
+        } else {
+            // Multiple operations - display as batch
+            queue!(
+                updates,
+                style::Print("Batch fs_read operation with "),
+                style::SetForegroundColor(Color::Green),
+                style::Print(self.operations.len()),
+                style::ResetColor,
+                style::Print(" operations:\n")
+            )?;
+
+            // Display purpose if available for batch operations
+            let _ = display_purpose(self.summary.as_ref(), updates);
+
+            for (i, op) in self.operations.iter().enumerate() {
+                queue!(updates, style::Print(format!("\n↱ Operation {}: ", i + 1)))?;
+                op.queue_description(os, updates).await?;
+            }
+            Ok(())
+        }
+    }
+
+    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+        #[derive(Debug, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Settings {
+            #[serde(default)]
+            allowed_paths: Vec<String>,
+            #[serde(default)]
+            denied_paths: Vec<String>,
+            #[serde(default = "default_allow_read_only")]
+            allow_read_only: bool,
+        }
+
+        fn default_allow_read_only() -> bool {
+            true
+        }
+
+        let is_in_allowlist = agent.allowed_tools.contains("fs_read");
+        match agent.tools_settings.get("fs_read") {
+            Some(settings) if is_in_allowlist => {
+                let Settings {
+                    allowed_paths,
+                    denied_paths,
+                    allow_read_only,
+                } = match serde_json::from_value::<Settings>(settings.clone()) {
+                    Ok(settings) => settings,
+                    Err(e) => {
+                        error!("Failed to deserialize tool settings for fs_read: {:?}", e);
+                        return PermissionEvalResult::Ask;
+                    },
+                };
+                let allow_set = {
+                    let mut builder = GlobSetBuilder::new();
+                    for path in &allowed_paths {
+                        if let Ok(glob) = Glob::new(path) {
+                            builder.add(glob);
+                        } else {
+                            warn!("Failed to create glob from path given: {path}. Ignoring.");
+                        }
+                    }
+                    builder.build()
+                };
+
+                let deny_set = {
+                    let mut builder = GlobSetBuilder::new();
+                    for path in &denied_paths {
+                        if let Ok(glob) = Glob::new(path) {
+                            builder.add(glob);
+                        } else {
+                            warn!("Failed to create glob from path given: {path}. Ignoring.");
+                        }
+                    }
+                    builder.build()
+                };
+
+                match (allow_set, deny_set) {
+                    (Ok(allow_set), Ok(deny_set)) => {
+                        let eval_res = self
+                            .operations
+                            .iter()
+                            .map(|op| {
+                                match op {
+                                    FsReadOperation::Line(FsLine { path, .. })
+                                    | FsReadOperation::Directory(FsDirectory { path, .. })
+                                    | FsReadOperation::Search(FsSearch { path, .. }) => {
+                                        if deny_set.is_match(path) {
+                                            return PermissionEvalResult::Deny;
+                                        }
+                                        if allow_set.is_match(path) {
+                                            return PermissionEvalResult::Allow;
+                                        }
+                                    },
+                                    FsReadOperation::Image(fs_image) => {
+                                        let paths = &fs_image.image_paths;
+                                        if paths.iter().any(|path| deny_set.is_match(path)) {
+                                            return PermissionEvalResult::Deny;
+                                        }
+                                        if paths.iter().all(|path| allow_set.is_match(path)) {
+                                            return PermissionEvalResult::Allow;
+                                        }
+                                    },
+                                }
+
+                                if allow_read_only {
+                                    PermissionEvalResult::Allow
+                                } else {
+                                    PermissionEvalResult::Ask
+                                }
+                            })
+                            .collect::<Vec<_>>();
+
+                        if eval_res.contains(&PermissionEvalResult::Deny) {
+                            PermissionEvalResult::Deny
+                        } else if eval_res.contains(&PermissionEvalResult::Ask) {
+                            PermissionEvalResult::Ask
+                        } else {
+                            PermissionEvalResult::Allow
+                        }
+                    },
+                    (allow_res, deny_res) => {
+                        if let Err(e) = allow_res {
+                            warn!("fs_read failed to build allow set: {:?}", e);
+                        }
+                        if let Err(e) = deny_res {
+                            warn!("fs_read failed to build deny set: {:?}", e);
+                        }
+                        warn!("One or more detailed args failed to parse, falling back to ask");
+                        PermissionEvalResult::Ask
+                    },
+                }
+            },
+            None if is_in_allowlist => PermissionEvalResult::Allow,
+            _ => PermissionEvalResult::Ask,
+        }
+    }
+
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
+        if self.operations.len() == 1 {
+            // Single operation - return result directly
+            self.operations[0].invoke(os, updates, ctx).await
+        } else {
+            // Multiple operations - combine results
+            let mut combined_results = Vec::new();
+            let mut all_images = Vec::new();
+            let mut has_non_image_ops = false;
+            let mut success_ops = 0usize;
+            let mut failed_ops = 0usize;
+
+            for (i, op) in self.operations.iter().enumerate() {
+                match op.invoke(os, updates, ctx).await {
+                    Ok(result) => {
+                        success_ops += 1;
+
+                        match &result.output {
+                            OutputKind::Text(text) => {
+                                combined_results.push(format!("=== Operation {} Result (Text) ===\n{}", i + 1, text));
+                                has_non_image_ops = true;
+                            },
+                            OutputKind::Json(json) => {
+                                combined_results.push(format!(
+                                    "=== Operation {} Result (Json) ===\n{}",
+                                    i + 1,
+                                    serde_json::to_string_pretty(json)?
+                                ));
+                                has_non_image_ops = true;
+                            },
+                            OutputKind::Images(images) => {
+                                all_images.extend(images.clone());
+                                combined_results.push(format!(
+                                    "=== Operation {} Result (Images) ===\n[{} images processed]",
+                                    i + 1,
+                                    images.len()
+                                ));
+                            },
+                            // This branch won't be reached because single operation execution never returns a Mixed
+                            // result
+                            OutputKind::Mixed { text: _, images: _ } => {},
+                        }
+                    },
+
+                    Err(err) => {
+                        failed_ops += 1;
+                        combined_results.push(format!("=== Operation {} Error ===\n{}", i + 1, err));
+                    },
+                }
+            }
+
+            queue!(
+                updates,
+                style::Print("\n"),
+                style::Print(CONTINUATION_LINE),
+                style::Print("\n")
+            )?;
+            super::queue_function_result(
+                &format!(
+                    "Summary: {} operations processed, {} successful, {} failed",
+                    self.operations.len(),
+                    success_ops,
+                    failed_ops
+                ),
+                updates,
+                false,
+                true,
+            )?;
+
+            let combined_text = combined_results.join("\n\n");
+
+            if !all_images.is_empty() && has_non_image_ops {
+                Ok(InvokeOutput {
+                    output: OutputKind::Mixed {
+                        text: combined_text,
+                        images: all_images,
+                    },
+                })
+            } else if !all_images.is_empty() {
+                Ok(InvokeOutput {
+                    output: OutputKind::Images(all_images),
+                })
+            } else {
+                Ok(InvokeOutput {
+                    output: OutputKind::Text(combined_text),
+                })
+            }
+        }
+    }
+}
+
+impl FsReadOperation {
+    pub async fn validate(&mut self, os: &Os) -> Result<()> {
         match self {
-            FsRead::Line(fs_line) => fs_line.validate(os).await,
-            FsRead::Directory(fs_directory) => fs_directory.validate(os).await,
-            FsRead::Search(fs_search) => fs_search.validate(os).await,
-            FsRead::Image(fs_image) => fs_image.validate(os).await,
+            FsReadOperation::Line(fs_line) => fs_line.validate(os).await,
+            FsReadOperation::Directory(fs_directory) => fs_directory.validate(os).await,
+            FsReadOperation::Search(fs_search) => fs_search.validate(os).await,
+            FsReadOperation::Image(fs_image) => fs_image.validate(os).await,
         }
     }
 
     pub async fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
         match self {
-            FsRead::Line(fs_line) => fs_line.queue_description(os, updates).await,
-            FsRead::Directory(fs_directory) => fs_directory.queue_description(updates),
-            FsRead::Search(fs_search) => fs_search.queue_description(updates),
-            FsRead::Image(fs_image) => fs_image.queue_description(updates),
+            FsReadOperation::Line(fs_line) => fs_line.queue_description(os, updates).await,
+            FsReadOperation::Directory(fs_directory) => fs_directory.queue_description(updates),
+            FsReadOperation::Search(fs_search) => fs_search.queue_description(updates),
+            FsReadOperation::Image(fs_image) => fs_image.queue_description(updates),
         }
     }
 
     pub async fn invoke(&self, os: &Os, updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
         match self {
-            FsRead::Line(fs_line) => fs_line.invoke(os, updates, ctx).await,
-            FsRead::Directory(fs_directory) => fs_directory.invoke(os, updates, ctx).await,
-            FsRead::Search(fs_search) => fs_search.invoke(os, updates).await,
-            FsRead::Image(fs_image) => fs_image.invoke(updates).await,
+            FsReadOperation::Line(fs_line) => fs_line.invoke(os, updates, ctx).await,
+            FsReadOperation::Directory(fs_directory) => fs_directory.invoke(os, updates, ctx).await,
+            FsReadOperation::Search(fs_search) => fs_search.invoke(os, updates).await,
+            FsReadOperation::Image(fs_image) => fs_image.invoke(updates).await,
         }
     }
 }
@@ -108,6 +364,7 @@ impl FsImage {
     pub async fn invoke(&self, updates: &mut impl Write) -> Result<InvokeOutput> {
         let pre_processed_paths: Vec<String> = self.image_paths.iter().map(|path| pre_process(path)).collect();
         let valid_images = handle_images_from_paths(updates, &pre_processed_paths);
+        super::queue_function_result("Successfully read image", updates, false, false)?;
         Ok(InvokeOutput {
             output: OutputKind::Images(valid_images),
         })
@@ -116,9 +373,10 @@ impl FsImage {
     pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
         queue!(
             updates,
-            style::Print("Reading images: \n"),
+            style::Print("Reading images: "),
             style::SetForegroundColor(Color::Green),
             style::Print(&self.image_paths.join("\n")),
+            style::Print("\n"),
             style::ResetColor,
         )?;
         Ok(())
@@ -189,7 +447,7 @@ impl FsLine {
         }
     }
 
-    pub async fn invoke(&self, os: &Os, _updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(os, &self.path);
         debug!(?path, "Reading");
         let file_bytes = os.fs.read(&path).await?;
@@ -227,6 +485,17 @@ impl FsLine {
 time. You tried to read {byte_count} bytes. Try executing with fewer lines specified or use --full-context flag."
             );
         }
+
+        super::queue_function_result(
+            &format!(
+                "Successfully read {} bytes from {}",
+                file_contents.len(),
+                &path.display()
+            ),
+            updates,
+            false,
+            false,
+        )?;
 
         Ok(InvokeOutput {
             output: OutputKind::Text(file_contents),
@@ -281,7 +550,6 @@ impl FsSearch {
             style::SetForegroundColor(Color::Green),
             style::Print(&self.pattern.to_lowercase()),
             style::ResetColor,
-            style::Print("\n"),
         )?;
         Ok(())
     }
@@ -321,36 +589,17 @@ impl FsSearch {
                 });
             }
         }
-        let match_text = if total_matches == 1 {
-            "1 match".to_string()
-        } else {
-            format!("{} matches", total_matches)
-        };
 
-        let color = if total_matches == 0 {
-            Color::Yellow
-        } else {
-            Color::Green
-        };
-
-        let result = if total_matches == 0 {
-            CROSS.yellow()
-        } else {
-            CHECKMARK.green()
-        };
-
-        queue!(
+        super::queue_function_result(
+            &format!(
+                "Found {} matches for pattern '{}' in {}",
+                total_matches,
+                pattern,
+                &file_path.display()
+            ),
             updates,
-            style::SetForegroundColor(Color::Yellow),
-            style::ResetColor,
-            style::Print(CONTINUATION_LINE),
-            style::Print("\n"),
-            style::Print(" "),
-            style::Print(result),
-            style::Print(" Found: "),
-            style::SetForegroundColor(color),
-            style::Print(match_text),
-            style::ResetColor,
+            false,
+            false,
         )?;
 
         Ok(InvokeOutput {
@@ -401,13 +650,13 @@ impl FsDirectory {
         )?)
     }
 
-    pub async fn invoke(&self, os: &Os, _updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(os, &self.path);
         let max_depth = self.depth();
         debug!(?path, max_depth, "Reading directory at path with depth");
         let mut result = Vec::new();
         let mut dir_queue = VecDeque::new();
-        dir_queue.push_back((path, 0));
+        dir_queue.push_back((path.clone(), 0));
         while let Some((path, depth)) = dir_queue.pop_front() {
             if depth > max_depth {
                 break;
@@ -484,6 +733,17 @@ impl FsDirectory {
                 "This tool only supports reading up to {MAX_TOOL_RESPONSE_SIZE} bytes at a time. You tried to read {byte_count} bytes ({file_count} files). Try executing with fewer lines specified or use --full-context flag."
             );
         }
+
+        super::queue_function_result(
+            &format!(
+                "Successfully read directory {} ({} entries)",
+                &path.display(),
+                file_count
+            ),
+            updates,
+            false,
+            false,
+        )?;
 
         Ok(InvokeOutput {
             output: OutputKind::Text(result),
@@ -564,27 +824,48 @@ mod tests {
 
     #[test]
     fn test_fs_read_deser() {
-        serde_json::from_value::<FsRead>(serde_json::json!({ "path": "/test_file.txt", "mode": "Line" })).unwrap();
+        // Test single operations (wrapped in operations array)
         serde_json::from_value::<FsRead>(
-            serde_json::json!({ "path": "/test_file.txt", "mode": "Line", "end_line": 5 }),
+            serde_json::json!({ "operations": [{ "path": "/test_file.txt", "mode": "Line" }] }),
         )
         .unwrap();
         serde_json::from_value::<FsRead>(
-            serde_json::json!({ "path": "/test_file.txt", "mode": "Line", "start_line": -1 }),
+            serde_json::json!({ "operations": [{ "path": "/test_file.txt", "mode": "Line", "end_line": 5 }] }),
         )
         .unwrap();
         serde_json::from_value::<FsRead>(
-            serde_json::json!({ "path": "/test_file.txt", "mode": "Line", "start_line": None::<usize> }),
-        )
-        .unwrap();
-        serde_json::from_value::<FsRead>(serde_json::json!({ "path": "/", "mode": "Directory" })).unwrap();
-        serde_json::from_value::<FsRead>(
-            serde_json::json!({ "path": "/test_file.txt", "mode": "Directory", "depth": 2 }),
+            serde_json::json!({ "operations": [{ "path": "/test_file.txt", "mode": "Line", "start_line": -1 }]  }),
         )
         .unwrap();
         serde_json::from_value::<FsRead>(
-            serde_json::json!({ "path": "/test_file.txt", "mode": "Search", "pattern": "hello" }),
+            serde_json::json!({ "operations": [{ "path": "/test_file.txt", "mode": "Line", "start_line": None::<usize> }] }),
         )
+        .unwrap();
+        serde_json::from_value::<FsRead>(serde_json::json!({ "operations": [{ "path": "/", "mode": "Directory" }] }))
+            .unwrap();
+        serde_json::from_value::<FsRead>(
+            serde_json::json!({ "operations": [{ "path": "/test_file.txt", "mode": "Directory", "depth": 2 }] }),
+        )
+        .unwrap();
+        serde_json::from_value::<FsRead>(
+            serde_json::json!({ "operations": [{ "path": "/test_file.txt", "mode": "Search", "pattern": "hello" }] }),
+        )
+        .unwrap();
+        serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [{ "image_paths": ["/img1.png", "/img2.jpg"], "mode": "Image" }]
+        }))
+        .unwrap();
+
+        // Test mixed batch operations
+        serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [
+                { "path": "/file.txt", "mode": "Line" },
+                { "path": "/dir", "mode": "Directory", "depth": 1 },
+                { "path": "/log.txt", "mode": "Search", "pattern": "warning" },
+                { "image_paths": ["/photo.jpg"], "mode": "Image" }
+            ],
+            "purpose": "Comprehensive file analysis"
+        }))
         .unwrap();
     }
 
@@ -598,10 +879,11 @@ mod tests {
         macro_rules! assert_lines {
             ($start_line:expr, $end_line:expr, $expected:expr) => {
                 let v = serde_json::json!({
+                    "operations": [{
                     "path": TEST_FILE_PATH,
                     "mode": "Line",
                     "start_line": $start_line,
-                    "end_line": $end_line,
+                    "end_line": $end_line,}]
                 });
                 let output = serde_json::from_value::<FsRead>(v)
                     .unwrap()
@@ -632,11 +914,11 @@ mod tests {
         let mut stdout = std::io::stdout();
         let ctx = ToolContext::default();
         let v = serde_json::json!({
+            "operations": [{
             "path": TEST_FILE_PATH,
             "mode": "Line",
             "start_line": 100,
-            "end_line": None::<i32>,
-        });
+            "end_line": None::<i32>,}]});
         assert!(
             serde_json::from_value::<FsRead>(v)
                 .unwrap()
@@ -668,9 +950,10 @@ mod tests {
 
         // Testing without depth
         let v = serde_json::json!({
+            "operations": [{
             "mode": "Directory",
             "path": "/",
-        });
+        }]});
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
             .invoke(&os, &mut stdout, &ctx)
@@ -685,9 +968,10 @@ mod tests {
 
         // Testing with depth level 1
         let v = serde_json::json!({
+            "operations": [{
             "mode": "Directory",
             "path": "/",
-            "depth": 1,
+            "depth": 1,}]
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
@@ -731,9 +1015,10 @@ mod tests {
         }
 
         let matches = invoke_search!({
+            "operations": [{
             "mode": "Search",
             "path": TEST_FILE_PATH,
-            "pattern": "hello",
+            "pattern": "hello",}]
         });
         assert_eq!(matches.len(), 2);
         assert_eq!(matches[0].line_number, 1);
@@ -759,8 +1044,9 @@ mod tests {
         os.fs.write(binary_file_path, &binary_data).await.unwrap();
 
         let v = serde_json::json!({
+            "operations": [{
             "path": binary_file_path,
-            "mode": "Line"
+            "mode": "Line"}]
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
@@ -791,8 +1077,9 @@ mod tests {
         os.fs.write(latin1_file_path, &latin1_data).await.unwrap();
 
         let v = serde_json::json!({
+            "operations": [{
             "path": latin1_file_path,
-            "mode": "Line"
+            "mode": "Line"}]
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
@@ -827,11 +1114,11 @@ mod tests {
         os.fs.write(mixed_file_path, &mixed_data).await.unwrap();
 
         let v = serde_json::json!({
+            "operations": [{
             "mode": "Search",
             "path": mixed_file_path,
-            "pattern": "hello"
+            "pattern": "hello"}]
         });
-        let ctx = ToolContext::default();
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
             .invoke(&os, &mut stdout, &ctx)
@@ -851,9 +1138,10 @@ mod tests {
         }
 
         let v = serde_json::json!({
+            "operations": [{
             "mode": "Search",
             "path": mixed_file_path,
-            "pattern": "goodbye"
+            "pattern": "goodbye"}]
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
@@ -889,10 +1177,10 @@ mod tests {
         os.fs.write(windows1252_file_path, &windows1252_data).await.unwrap();
 
         let v = serde_json::json!({
+            "operations": [{
             "path": windows1252_file_path,
-            "mode": "Line"
+            "mode": "Line"}]
         });
-        let ctx = ToolContext::default();
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
             .invoke(&os, &mut stdout, &ctx)
@@ -929,11 +1217,11 @@ mod tests {
             .unwrap();
 
         let v = serde_json::json!({
+            "operations": [{
             "mode": "Search",
             "path": invalid_utf8_file_path,
-            "pattern": "caf"
+            "pattern": "caf"}]
         });
-        let ctx = ToolContext::default();
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
             .invoke(&os, &mut stdout, &ctx)
@@ -961,10 +1249,10 @@ mod tests {
         os.fs.write(invalid_only_file_path, &invalid_only_data).await.unwrap();
 
         let v = serde_json::json!({
+            "operations": [{
             "path": invalid_only_file_path,
-            "mode": "Line"
+            "mode": "Line"}]
         });
-        let ctx = ToolContext::default();
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
             .invoke(&os, &mut stdout, &ctx)
@@ -979,9 +1267,10 @@ mod tests {
         }
 
         let v = serde_json::json!({
+            "operations": [{
             "mode": "Search",
             "path": invalid_only_file_path,
-            "pattern": "test"
+            "pattern": "test"}]
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
@@ -999,5 +1288,66 @@ mod tests {
         } else {
             panic!("expected Text output");
         }
+    }
+
+    #[tokio::test]
+    async fn test_fs_read_batch_mixed_operations() {
+        let os = setup_test_directory().await;
+        let mut stdout = Vec::new();
+        let ctx = ToolContext::default();
+
+        let v = serde_json::json!({
+            "operations": [
+                { "path": TEST_FILE_PATH, "mode": "Line", "start_line": 1, "end_line": 2 },
+                { "path": "/", "mode": "Directory" },
+                { "path": TEST_FILE_PATH, "mode": "Search", "pattern": "hello" }
+            ],
+            "purpose": "Test mixed text operations"
+        });
+
+        let output = serde_json::from_value::<FsRead>(v)
+            .unwrap()
+            .invoke(&os, &mut stdout, &ctx)
+            .await
+            .unwrap();
+        // All text operations should return combined text
+        if let OutputKind::Text(text) = output.output {
+            // Check all operations are included
+            assert!(text.contains("=== Operation 1 Result (Text) ==="));
+            assert!(text.contains("=== Operation 2 Result (Text) ==="));
+            assert!(text.contains("=== Operation 3 Result (Text) ==="));
+
+            // Check operation 1 (Line mode)
+            assert!(text.contains("Hello world!"));
+            assert!(text.contains("This is line 2"));
+
+            // Check operation 2 (Directory mode)
+            assert!(text.contains("test_file.txt"));
+
+            // Check operation 3 (Search mode)
+            assert!(text.contains("\"line_number\":1"));
+        } else {
+            panic!("expected text output for batch operations");
+        }
+    }
+    #[tokio::test]
+    async fn test_fs_read_empty_operations() {
+        let os = Os::new().await.unwrap();
+
+        // Test empty operations array
+        let v = serde_json::json!({
+            "operations": []
+        });
+
+        let mut fs_read = serde_json::from_value::<FsRead>(v).unwrap();
+        let result = fs_read.validate(&os).await;
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("At least one operation must be provided")
+        );
     }
 }
