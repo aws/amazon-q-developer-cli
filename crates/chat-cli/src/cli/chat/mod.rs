@@ -90,6 +90,7 @@ use tools::{
     OutputKind,
     QueuedTool,
     Tool,
+    ToolContext,
     ToolSpec,
 };
 use tracing::{
@@ -175,6 +176,9 @@ pub struct ChatArgs {
     /// Whether the command should run without expecting user input
     #[arg(long, alias = "non-interactive")]
     pub no_interactive: bool,
+    /// Force reading entire file content for complete context analysis
+    #[arg(long)]
+    pub full_context: bool,
     /// The first question to ask
     pub input: Option<String>,
     /// Run migration of legacy profiles to agents if applicable
@@ -185,6 +189,10 @@ pub struct ChatArgs {
 impl ChatArgs {
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
         let mut input = self.input;
+
+        if self.no_interactive && input.is_none() {
+            bail!("Input must be supplied when --non-interactive is set");
+        }
 
         if self.no_interactive && input.is_none() {
             if !std::io::stdin().is_terminal() {
@@ -307,6 +315,7 @@ impl ChatArgs {
             model_id,
             tool_config,
             !self.no_interactive,
+            self.full_context,
         )
         .await?
         .spawn(os)
@@ -489,6 +498,7 @@ pub struct ChatSession {
     /// Pending prompts to be sent
     pending_prompts: VecDeque<Prompt>,
     interactive: bool,
+    full_context: bool,
     inner: Option<ChatState>,
 }
 
@@ -508,6 +518,7 @@ impl ChatSession {
         model_id: Option<String>,
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
+        full_context: bool,
     ) -> Result<Self> {
         let valid_model_id = match model_id {
             Some(id) => id,
@@ -589,6 +600,7 @@ impl ChatSession {
             failed_request_ids: Vec::new(),
             pending_prompts: VecDeque::new(),
             interactive,
+            full_context,
             inner: Some(ChatState::default()),
         })
     }
@@ -1544,12 +1556,15 @@ impl ChatSession {
         let mut tool_results = vec![];
         let mut image_blocks: Vec<RichImageBlock> = Vec::new();
 
+        // Create tool context with full_context flag from ChatArgs
+        let tool_context = ToolContext::new(self.full_context);
+
         for tool in &self.tool_uses {
             let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
             tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_accepted = true);
 
             let tool_start = std::time::Instant::now();
-            let invoke_result = tool.tool.invoke(os, &mut self.stdout).await;
+            let invoke_result = tool.tool.invoke(os, &mut self.stdout, &tool_context).await;
 
             if self.spinner.is_some() {
                 queue!(
@@ -2403,6 +2418,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()
@@ -2544,6 +2560,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()
@@ -2640,6 +2657,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()
@@ -2714,6 +2732,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()
@@ -2764,6 +2783,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()
