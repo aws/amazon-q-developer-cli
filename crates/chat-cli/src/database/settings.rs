@@ -33,6 +33,7 @@ pub enum Setting {
     McpNoInteractiveTimeout,
     McpLoadedBefore,
     ChatDefaultModel,
+    ChatEnableMarkdown,
     ChatDefaultAgent,
 }
 
@@ -55,6 +56,7 @@ impl AsRef<str> for Setting {
             Self::McpNoInteractiveTimeout => "mcp.noInteractiveTimeout",
             Self::McpLoadedBefore => "mcp.loadedBefore",
             Self::ChatDefaultModel => "chat.defaultModel",
+            Self::ChatEnableMarkdown => "chat.enableMarkdown",
             Self::ChatDefaultAgent => "chat.defaultAgent",
         }
     }
@@ -87,6 +89,7 @@ impl TryFrom<&str> for Setting {
             "mcp.noInteractiveTimeout" => Ok(Self::McpNoInteractiveTimeout),
             "mcp.loadedBefore" => Ok(Self::McpLoadedBefore),
             "chat.defaultModel" => Ok(Self::ChatDefaultModel),
+            "chat.enableMarkdown" => Ok(Self::ChatEnableMarkdown),
             "chat.defaultAgent" => Ok(Self::ChatDefaultAgent),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
@@ -207,12 +210,14 @@ mod test {
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
         assert_eq!(settings.get(Setting::ChatDefaultModel), None);
+        assert_eq!(settings.get(Setting::ChatEnableMarkdown), None);
 
         settings.set(Setting::TelemetryEnabled, true).await.unwrap();
         settings.set(Setting::OldClientId, "test").await.unwrap();
         settings.set(Setting::ShareCodeWhispererContent, false).await.unwrap();
         settings.set(Setting::McpLoadedBefore, true).await.unwrap();
         settings.set(Setting::ChatDefaultModel, "model 1").await.unwrap();
+        settings.set(Setting::ChatEnableMarkdown, false).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), Some(&Value::Bool(true)));
         assert_eq!(
@@ -228,15 +233,18 @@ mod test {
             settings.get(Setting::ChatDefaultModel),
             Some(&Value::String("model 1".to_string()))
         );
+        assert_eq!(settings.get(Setting::ChatEnableMarkdown), Some(&Value::Bool(false)));
 
         settings.remove(Setting::TelemetryEnabled).await.unwrap();
         settings.remove(Setting::OldClientId).await.unwrap();
         settings.remove(Setting::ShareCodeWhispererContent).await.unwrap();
         settings.remove(Setting::McpLoadedBefore).await.unwrap();
+        settings.remove(Setting::ChatEnableMarkdown).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
+        assert_eq!(settings.get(Setting::ChatEnableMarkdown), None);
     }
 }

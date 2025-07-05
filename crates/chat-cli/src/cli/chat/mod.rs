@@ -1684,7 +1684,7 @@ impl ChatSession {
         let mut offset = 0;
         let mut ended = false;
         let mut parser = ResponseParser::new(response);
-        let mut state = ParseState::new(Some(self.terminal_width()));
+        let mut state = ParseState::new(Some(self.terminal_width()), os.database.settings.get_bool(Setting::ChatEnableMarkdown));
         let mut response_prefix_printed = false;
 
         let mut tool_uses = Vec::new();
@@ -1714,10 +1714,13 @@ impl ChatSession {
                         },
                         parser::ResponseEvent::AssistantText(text) => {
                             // Add Q response prefix before the first assistant text.
-                            // This must be markdown - using a code tick, which is printed
-                            // as green.
                             if !response_prefix_printed && !text.trim().is_empty() {
-                                buf.push_str("`>` ");
+                                queue!(
+                                    self.stdout,
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print("> "),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
                                 response_prefix_printed = true;
                             }
                             buf.push_str(&text);

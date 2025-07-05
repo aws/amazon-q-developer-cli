@@ -82,6 +82,7 @@ impl<'a> ParserError<Partial<&'a str>> for Error<'a> {
 #[derive(Debug)]
 pub struct ParseState {
     pub terminal_width: Option<usize>,
+    pub markdown_enabled: Option<bool>,
     pub column: usize,
     pub in_codeblock: bool,
     pub bold: bool,
@@ -93,9 +94,10 @@ pub struct ParseState {
 }
 
 impl ParseState {
-    pub fn new(terminal_width: Option<usize>) -> Self {
+    pub fn new(terminal_width: Option<usize>, markdown_enabled: Option<bool>) -> Self {
         Self {
             terminal_width,
+            markdown_enabled,
             column: 0,
             in_codeblock: false,
             bold: false,
@@ -135,8 +137,16 @@ pub fn interpret_markdown<'a, 'b>(
         };
     }
 
-    match state.in_codeblock {
-        false => {
+    match (state.in_codeblock, state.markdown_enabled.unwrap_or(true)) {
+        (_, false) => {
+            // If markdown is disabled, do not include markdown-related parsers
+            stateful_alt!(
+                text,
+                line_ending,
+                fallback
+            );
+        },
+        (false, true) => {
             stateful_alt!(
                 // This pattern acts as a short circuit for alphanumeric plaintext
                 // More importantly, it's needed to support manual wordwrapping
@@ -167,7 +177,7 @@ pub fn interpret_markdown<'a, 'b>(
                 fallback
             );
         },
-        true => {
+        (true, true) => {
             stateful_alt!(
                 codeblock_less_than,
                 codeblock_greater_than,
@@ -646,7 +656,7 @@ mod tests {
     use super::*;
 
     macro_rules! validate {
-        ($test:ident, $input:literal, [$($commands:expr),+ $(,)?]) => {
+        ($test:ident, $input:literal, [$($commands:expr),+ $(,)?], $markdown_enabled:expr) => {
             #[test]
             fn $test() -> eyre::Result<()> {
                 use crossterm::ExecutableCommand;
@@ -655,7 +665,7 @@ mod tests {
                 input.push(' ');
                 input.push(' ');
 
-                let mut state = ParseState::new(Some(80));
+                let mut state = ParseState::new(Some(80), Some($markdown_enabled));
                 let mut presult = vec![];
                 let mut offset = 0;
 
@@ -685,6 +695,10 @@ mod tests {
 
                 Ok(())
             }
+        };
+
+        ($test:ident, $input:literal, [$($commands:expr),+ $(,)?]) => {
+            validate!($test, $input, [$($commands),+], true);
         };
     }
 
@@ -759,4 +773,23 @@ mod tests {
     validate!(square_bracket_url_like_2, "[text](without url part", [style::Print(
         "[text](without url part"
     )]);
+    
+    validate!(markdown_disabled_bold, "**hello**", [style::Print("**hello**")], false);
+    validate!(markdown_disabled_italic, "*hello*", [style::Print("*hello*")], false);
+    validate!(markdown_disabled_code, "`print`", [style::Print("`print`")], false);
+    validate!(markdown_disabled_heading, "# Hello World", [style::Print("# Hello World")], false);
+    validate!(markdown_disabled_bullet, "- bullet", [style::Print("- bullet")], false);
+    validate!(markdown_disabled_number, "1. number", [style::Print("1. number")], false);
+    validate!(markdown_disabled_blockquote, "> hello", [style::Print("> hello")], false);
+    validate!(markdown_disabled_url, "[google](google.com)", [style::Print("[google](google.com)")], false);
+    validate!(markdown_disabled_codeblock, "```java\nhello world!```", [style::Print("```java\nhello world!```")], false);
+    validate!(markdown_disabled_text, "hello world!", [style::Print("hello world!")], false);
+    validate!(markdown_disabled_line_ending, "line one\nline two", [
+        style::Print("line one"),
+        style::ResetColor,
+        style::SetAttribute(style::Attribute::Reset),
+        style::Print("\n"),
+        style::Print("line two")
+    ], false);
+    validate!(markdown_disabled_fallback, "+ % @ . ?", [style::Print("+ % @ . ?")], false);
 }
