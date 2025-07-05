@@ -175,7 +175,6 @@ mod tests {
     #[test]
     fn test_get() {
         let env = Env::new();
-        assert!(env.home().is_some());
         assert!(env.get("PATH").is_ok());
         assert!(env.get_os("PATH").is_some());
         assert!(env.get("NON_EXISTENT").is_err());

@@ -34,6 +34,7 @@ pub enum Setting {
     McpLoadedBefore,
     ChatDefaultModel,
     ChatEnableMarkdown,
+    ChatDefaultAgent,
 }
 
 impl AsRef<str> for Setting {
@@ -56,6 +57,7 @@ impl AsRef<str> for Setting {
             Self::McpLoadedBefore => "mcp.loadedBefore",
             Self::ChatDefaultModel => "chat.defaultModel",
             Self::ChatEnableMarkdown => "chat.enableMarkdown",
+            Self::ChatDefaultAgent => "chat.defaultAgent",
         }
     }
 }
@@ -88,6 +90,7 @@ impl TryFrom<&str> for Setting {
             "mcp.loadedBefore" => Ok(Self::McpLoadedBefore),
             "chat.defaultModel" => Ok(Self::ChatDefaultModel),
             "chat.enableMarkdown" => Ok(Self::ChatEnableMarkdown),
+            "chat.defaultAgent" => Ok(Self::ChatDefaultAgent),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

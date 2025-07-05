@@ -419,27 +419,6 @@ impl HooksArgs {
             session.stderr,
             style::SetAttribute(Attribute::Bold),
             style::SetForegroundColor(Color::Magenta),
-            style::Print("\n🌍 global:\n"),
-            style::SetAttribute(Attribute::Reset),
-        )?;
-
-        print_hook_section(
-            &mut session.stderr,
-            &context_manager.global_config.hooks,
-            HookTrigger::ConversationStart,
-        )
-        .map_err(map_chat_error)?;
-        print_hook_section(
-            &mut session.stderr,
-            &context_manager.global_config.hooks,
-            HookTrigger::PerPrompt,
-        )
-        .map_err(map_chat_error)?;
-
-        queue!(
-            session.stderr,
-            style::SetAttribute(Attribute::Bold),
-            style::SetForegroundColor(Color::Magenta),
             style::Print(format!("\n👤 profile ({}):\n", &context_manager.current_profile)),
             style::SetAttribute(Attribute::Reset),
         )?;
@@ -484,83 +463,53 @@ pub enum HooksSubcommand {
         /// Shell command to execute
         #[arg(long, value_parser = clap::value_parser!(String))]
         command: String,
-        /// Add to global hooks
-        #[arg(long)]
-        global: bool,
     },
     /// Remove an existing context hook
     #[command(name = "rm")]
     Remove {
         /// The name of the hook
         name: String,
-        /// Remove from global hooks
-        #[arg(long)]
-        global: bool,
     },
     /// Enable an existing context hook
     Enable {
         /// The name of the hook
         name: String,
-        /// Enable in global hooks
-        #[arg(long)]
-        global: bool,
     },
     /// Disable an existing context hook
     Disable {
         /// The name of the hook
         name: String,
-        /// Disable in global hooks
-        #[arg(long)]
-        global: bool,
     },
     /// Enable all existing context hooks
-    EnableAll {
-        /// Enable all in global hooks
-        #[arg(long)]
-        global: bool,
-    },
+    EnableAll,
     /// Disable all existing context hooks
-    DisableAll {
-        /// Disable all in global hooks
-        #[arg(long)]
-        global: bool,
-    },
+    DisableAll,
     /// Display the context rule configuration and matched files
     Show,
 }
 
 impl HooksSubcommand {
-    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    pub async fn execute(self, _os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let Some(context_manager) = &mut session.conversation.context_manager else {
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
             });
         };
 
-        let scope = |g: bool| if g { "global" } else { "profile" };
-
         match self {
-            Self::Add {
-                name,
-                trigger,
-                command,
-                global,
-            } => {
+            Self::Add { name, trigger, command } => {
                 let trigger = if trigger == "conversation_start" {
                     HookTrigger::ConversationStart
                 } else {
                     HookTrigger::PerPrompt
                 };
 
-                let result = context_manager
-                    .add_hook(os, name.clone(), Hook::new_inline_hook(trigger, command), global)
-                    .await;
-                match result {
+                match context_manager.add_hook(name.clone(), Hook::new_inline_hook(trigger, command)) {
                     Ok(_) => {
                         execute!(
                             session.stderr,
                             style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nAdded {} hook '{name}'.\n\n", scope(global))),
+                            style::Print(format!("\nAdded hook '{name}'.\n\n")),
                             style::SetForegroundColor(Color::Reset)
                         )?;
                     },
@@ -568,20 +517,20 @@ impl HooksSubcommand {
                         execute!(
                             session.stderr,
                             style::SetForegroundColor(Color::Red),
-                            style::Print(format!("\nCannot add {} hook '{name}': {}\n\n", scope(global), e)),
+                            style::Print(format!("\nCannot add hook '{name}': {}\n\n", e)),
                             style::SetForegroundColor(Color::Reset)
                         )?;
                     },
                 }
             },
-            Self::Remove { name, global } => {
-                let result = context_manager.remove_hook(os, &name, global).await;
+            Self::Remove { name } => {
+                let result = context_manager.remove_hook(&name);
                 match result {
                     Ok(_) => {
                         execute!(
                             session.stderr,
                             style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nRemoved {} hook '{name}'.\n\n", scope(global))),
+                            style::Print(format!("\nRemoved hook '{name}'.\n\n")),
                             style::SetForegroundColor(Color::Reset)
                         )?;
                     },
@@ -589,20 +538,20 @@ impl HooksSubcommand {
                         execute!(
                             session.stderr,
                             style::SetForegroundColor(Color::Red),
-                            style::Print(format!("\nCannot remove {} hook '{name}': {}\n\n", scope(global), e)),
+                            style::Print(format!("\nCannot remove hook '{name}': {}\n\n", e)),
                             style::SetForegroundColor(Color::Reset)
                         )?;
                     },
                 }
             },
-            Self::Enable { name, global } => {
-                let result = context_manager.set_hook_disabled(os, &name, global, false).await;
+            Self::Enable { name } => {
+                let result = context_manager.set_hook_disabled(&name, false);
                 match result {
                     Ok(_) => {
                         execute!(
                             session.stderr,
                             style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nEnabled {} hook '{name}'.\n\n", scope(global))),
+                            style::Print(format!("\nEnabled hook '{name}'.\n\n")),
                             style::SetForegroundColor(Color::Reset)
                         )?;
                     },
@@ -610,20 +559,20 @@ impl HooksSubcommand {
                         execute!(
                             session.stderr,
                             style::SetForegroundColor(Color::Red),
-                            style::Print(format!("\nCannot enable {} hook '{name}': {}\n\n", scope(global), e)),
+                            style::Print(format!("\nCannot enable hook '{name}': {}\n\n", e)),
                             style::SetForegroundColor(Color::Reset)
                         )?;
                     },
                 }
             },
-            Self::Disable { name, global } => {
-                let result = context_manager.set_hook_disabled(os, &name, global, true).await;
+            Self::Disable { name } => {
+                let result = context_manager.set_hook_disabled(&name, true);
                 match result {
                     Ok(_) => {
                         execute!(
                             session.stderr,
                             style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nDisabled {} hook '{name}'.\n\n", scope(global))),
+                            style::Print(format!("\nDisabled hook '{name}'.\n\n")),
                             style::SetForegroundColor(Color::Reset)
                         )?;
                     },
@@ -631,60 +580,31 @@ impl HooksSubcommand {
                         execute!(
                             session.stderr,
                             style::SetForegroundColor(Color::Red),
-                            style::Print(format!("\nCannot disable {} hook '{name}': {}\n\n", scope(global), e)),
+                            style::Print(format!("\nCannot disable hook '{name}': {}\n\n", e)),
                             style::SetForegroundColor(Color::Reset)
                         )?;
                     },
                 }
             },
-            Self::EnableAll { global } => {
-                context_manager
-                    .set_all_hooks_disabled(os, global, false)
-                    .await
-                    .map_err(map_chat_error)?;
+            Self::EnableAll => {
+                context_manager.set_all_hooks_disabled(false);
                 execute!(
                     session.stderr,
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format!("\nEnabled all {} hooks.\n\n", scope(global))),
+                    style::Print("\nEnabled all hooks.\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
             },
-            Self::DisableAll { global } => {
-                context_manager
-                    .set_all_hooks_disabled(os, global, true)
-                    .await
-                    .map_err(map_chat_error)?;
+            Self::DisableAll => {
+                context_manager.set_all_hooks_disabled(true);
                 execute!(
                     session.stderr,
                     style::SetForegroundColor(Color::Green),
-                    style::Print(format!("\nDisabled all {} hooks.\n\n", scope(global))),
+                    style::Print("\nDisabled all hooks.\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
             },
             Self::Show => {
-                // Display global context
-                execute!(
-                    session.stderr,
-                    style::SetAttribute(Attribute::Bold),
-                    style::SetForegroundColor(Color::Magenta),
-                    style::Print("\n🌍 global:\n"),
-                    style::SetAttribute(Attribute::Reset),
-                )?;
-
-                print_hook_section(
-                    &mut session.stderr,
-                    &context_manager.global_config.hooks,
-                    HookTrigger::ConversationStart,
-                )
-                .map_err(map_chat_error)?;
-                print_hook_section(
-                    &mut session.stderr,
-                    &context_manager.global_config.hooks,
-                    HookTrigger::PerPrompt,
-                )
-                .map_err(map_chat_error)?;
-
-                // Display profile hooks
                 execute!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
@@ -769,94 +689,78 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_hook() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
+        let mut manager = create_test_context_manager(None).unwrap();
         let hook = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
 
         // Test adding hook to profile config
-        manager
-            .add_hook(&os, "test_hook".to_string(), hook.clone(), false)
-            .await?;
+        manager.add_hook("test_hook".to_string(), hook.clone())?;
         assert!(manager.profile_config.hooks.contains_key("test_hook"));
 
-        // Test adding hook to global config
-        manager
-            .add_hook(&os, "global_hook".to_string(), hook.clone(), true)
-            .await?;
-        assert!(manager.global_config.hooks.contains_key("global_hook"));
-
         // Test adding duplicate hook name
-        assert!(
-            manager
-                .add_hook(&os, "test_hook".to_string(), hook, false)
-                .await
-                .is_err()
-        );
+        assert!(manager.add_hook("test_hook".to_string(), hook).is_err());
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_remove_hook() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
+        let mut manager = create_test_context_manager(None).unwrap();
         let hook = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
 
-        manager.add_hook(&os, "test_hook".to_string(), hook, false).await?;
+        manager
+            .add_hook("test_hook".to_string(), hook)
+            .expect("Hook addition failed");
 
         // Test removing existing hook
-        manager.remove_hook(&os, "test_hook", false).await?;
+        manager.remove_hook("test_hook").expect("Hook removal failed");
         assert!(!manager.profile_config.hooks.contains_key("test_hook"));
 
         // Test removing non-existent hook
-        assert!(manager.remove_hook(&os, "test_hook", false).await.is_err());
+        assert!(manager.remove_hook("test_hook").is_err());
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_set_hook_disabled() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
+        let mut manager = create_test_context_manager(None).unwrap();
         let hook = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
 
-        manager.add_hook(&os, "test_hook".to_string(), hook, false).await?;
+        manager.add_hook("test_hook".to_string(), hook).unwrap();
 
         // Test disabling hook
-        manager.set_hook_disabled(&os, "test_hook", false, true).await?;
+        manager.set_hook_disabled("test_hook", true).unwrap();
         assert!(manager.profile_config.hooks.get("test_hook").unwrap().disabled);
 
         // Test enabling hook
-        manager.set_hook_disabled(&os, "test_hook", false, false).await?;
+        manager.set_hook_disabled("test_hook", false).unwrap();
         assert!(!manager.profile_config.hooks.get("test_hook").unwrap().disabled);
 
         // Test with non-existent hook
-        assert!(
-            manager
-                .set_hook_disabled(&os, "nonexistent", false, true)
-                .await
-                .is_err()
-        );
+        assert!(manager.set_hook_disabled("nonexistent", true).is_err());
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_set_all_hooks_disabled() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
+        let mut manager = create_test_context_manager(None).unwrap();
         let hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
         let hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
 
-        manager.add_hook(&os, "hook1".to_string(), hook1, false).await?;
-        manager.add_hook(&os, "hook2".to_string(), hook2, false).await?;
+        manager
+            .add_hook("hook1".to_string(), hook1)
+            .expect("Hook addition failed");
+        manager
+            .add_hook("hook2".to_string(), hook2)
+            .expect("Hook addition failed");
 
         // Test disabling all hooks
-        manager.set_all_hooks_disabled(&os, false, true).await?;
+        manager.set_all_hooks_disabled(true);
         assert!(manager.profile_config.hooks.values().all(|h| h.disabled));
 
         // Test enabling all hooks
-        manager.set_all_hooks_disabled(&os, false, false).await?;
+        manager.set_all_hooks_disabled(false);
         assert!(manager.profile_config.hooks.values().all(|h| !h.disabled));
 
         Ok(())
@@ -864,41 +768,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_hooks() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
+        let mut manager = create_test_context_manager(None).unwrap();
         let hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
         let hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
 
-        manager.add_hook(&os, "hook1".to_string(), hook1, false).await?;
-        manager.add_hook(&os, "hook2".to_string(), hook2, false).await?;
+        manager.add_hook("hook1".to_string(), hook1).unwrap();
+        manager.add_hook("hook2".to_string(), hook2).unwrap();
 
         // Run the hooks
         let results = manager.run_hooks(&mut vec![]).await.unwrap();
         assert_eq!(results.len(), 2); // Should include both hooks
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_hooks_across_profiles() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
-        let hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-        let hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-
-        manager.add_hook(&os, "profile_hook".to_string(), hook1, false).await?;
-        manager.add_hook(&os, "global_hook".to_string(), hook2, true).await?;
-
-        let results = manager.run_hooks(&mut vec![]).await.unwrap();
-        assert_eq!(results.len(), 2); // Should include both hooks
-
-        // Create and switch to a new profile
-        manager.create_profile(&os, "test_profile").await?;
-        manager.switch_profile(&os, "test_profile").await?;
-
-        let results = manager.run_hooks(&mut vec![]).await.unwrap();
-        assert_eq!(results.len(), 1); // Should include global hook
-        assert_eq!(results[0].0.name, "global_hook");
 
         Ok(())
     }
