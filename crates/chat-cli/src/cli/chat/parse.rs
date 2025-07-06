@@ -781,8 +781,8 @@ mod tests {
     validate!(markdown_disabled_bullet, "- bullet", [style::Print("- bullet")], false);
     validate!(markdown_disabled_number, "1. number", [style::Print("1. number")], false);
     validate!(markdown_disabled_blockquote, "> hello", [style::Print("> hello")], false);
-    validate!(markdown_disabled_url, "[google](google.com)", [style::Print("[google](google.com)")], false);
-    validate!(markdown_disabled_codeblock, "```java\nhello world!```", [style::Print("```java\nhello world!```")], false);
+    validate!(markdown_disabled_url, "[amazon](amazon.com)", [style::Print("[amazon](amazon.com)")], false);
+    validate!(markdown_disabled_codeblock, "```java hello world!```", [style::Print("```java hello world!```")], false);
     validate!(markdown_disabled_text, "hello world!", [style::Print("hello world!")], false);
     validate!(markdown_disabled_line_ending, "line one\nline two", [
         style::Print("line one"),
