@@ -1,3 +1,0 @@
-export PATH="$HOME/.local/bin:$PATH"
-TTY=$(tty)
-PROMPT_COMMAND="q hook prompt $$ $TTY"

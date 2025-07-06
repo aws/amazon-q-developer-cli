@@ -23,7 +23,7 @@ use knowledge::KnowledgeSubcommand;
 use mcp::McpArgs;
 use model::ModelArgs;
 use persist::PersistSubcommand;
-use profile::ProfileSubcommand;
+use profile::AgentSubcommand;
 use prompts::PromptsArgs;
 use tools::ToolsArgs;
 
@@ -47,9 +47,9 @@ pub enum SlashCommand {
     Quit,
     /// Clear the conversation history
     Clear(ClearArgs),
-    /// Manage profiles
-    #[command(subcommand)]
-    Profile(ProfileSubcommand),
+    /// Manage agents
+    #[command(subcommand, aliases = ["profile"])]
+    Agent(AgentSubcommand),
     /// Manage context files for the chat session
     #[command(subcommand)]
     Context(ContextSubcommand),
@@ -89,7 +89,7 @@ impl SlashCommand {
         match self {
             Self::Quit => Ok(ChatState::Exit),
             Self::Clear(args) => args.execute(session).await,
-            Self::Profile(subcommand) => subcommand.execute(os, session).await,
+            Self::Agent(subcommand) => subcommand.execute(os, session).await,
             Self::Context(args) => args.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
             Self::PromptEditor(args) => args.execute(session).await,

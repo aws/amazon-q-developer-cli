@@ -7,7 +7,12 @@ use crossterm::style::{
 };
 use eyre::Result;
 use serde::Deserialize;
+use tracing::error;
 
+use crate::cli::agent::{
+    Agent,
+    PermissionEvalResult,
+};
 use crate::cli::chat::tools::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
@@ -39,12 +44,14 @@ pub struct ExecuteCommand {
 }
 
 impl ExecuteCommand {
-    pub fn requires_acceptance(&self) -> bool {
+    pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
+        let default_arr = vec![];
+        let allowed_commands = allowed_commands.unwrap_or(&default_arr);
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
-
         const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";"];
+
         if args
             .iter()
             .any(|arg| DANGEROUS_PATTERNS.iter().any(|p| arg.contains(p)))
@@ -87,9 +94,16 @@ impl ExecuteCommand {
                 {
                     return true;
                 },
-                Some(cmd) if !READONLY_COMMANDS.contains(&cmd.as_str()) => return true,
+                Some(cmd) => {
+                    if allowed_commands.contains(cmd) {
+                        continue;
+                    }
+                    let is_cmd_read_only = READONLY_COMMANDS.contains(&cmd.as_str());
+                    if !allow_read_only || !is_cmd_read_only {
+                        return true;
+                    }
+                },
                 None => return true,
-                _ => (),
             }
         }
 
@@ -138,6 +152,60 @@ impl ExecuteCommand {
     pub async fn validate(&mut self, _os: &Os) -> Result<()> {
         // TODO: probably some small amount of PATH checking
         Ok(())
+    }
+
+    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+        #[derive(Debug, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Settings {
+            #[serde(default)]
+            allowed_commands: Vec<String>,
+            #[serde(default)]
+            denied_commands: Vec<String>,
+            #[serde(default = "default_allow_read_only")]
+            allow_read_only: bool,
+        }
+
+        fn default_allow_read_only() -> bool {
+            true
+        }
+
+        let Self { command, .. } = self;
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let is_in_allowlist = agent.allowed_tools.contains("execute_bash");
+        match agent.tools_settings.get(tool_name) {
+            Some(settings) if is_in_allowlist => {
+                let Settings {
+                    allowed_commands,
+                    denied_commands,
+                    allow_read_only,
+                } = match serde_json::from_value::<Settings>(settings.clone()) {
+                    Ok(settings) => settings,
+                    Err(e) => {
+                        error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
+                        return PermissionEvalResult::Ask;
+                    },
+                };
+
+                if denied_commands.iter().any(|dc| command.contains(dc)) {
+                    return PermissionEvalResult::Deny;
+                }
+
+                if self.requires_acceptance(Some(&allowed_commands), allow_read_only) {
+                    PermissionEvalResult::Ask
+                } else {
+                    PermissionEvalResult::Allow
+                }
+            },
+            None if is_in_allowlist => PermissionEvalResult::Allow,
+            _ => {
+                if self.requires_acceptance(None, default_allow_read_only()) {
+                    PermissionEvalResult::Ask
+                } else {
+                    PermissionEvalResult::Allow
+                }
+            },
+        }
     }
 }
 
@@ -191,7 +259,7 @@ mod tests {
             }))
             .unwrap();
             assert_eq!(
-                tool.requires_acceptance(),
+                tool.requires_acceptance(None, true),
                 *expected,
                 "expected command: `{}` to have requires_acceptance: `{}`",
                 cmd,

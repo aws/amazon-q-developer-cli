@@ -29,7 +29,7 @@ jobs:
         if: steps.check-target-branch.outputs.is_main == 'false'
         id: check-conflicts
         run: |
-          
+
           # Set Git identity for the merge operation
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"

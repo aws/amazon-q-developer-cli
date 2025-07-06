@@ -1,1 +1,0 @@
-eval "$(starship init zsh)"

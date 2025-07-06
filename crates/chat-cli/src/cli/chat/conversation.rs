@@ -65,6 +65,7 @@ use crate::api_client::model::{
     UserInputMessage,
     UserInputMessageContext,
 };
+use crate::cli::agent::Agents;
 use crate::cli::chat::ChatError;
 use crate::cli::chat::cli::hooks::{
     Hook,
@@ -102,6 +103,8 @@ pub struct ConversationState {
     context_message_length: Option<usize>,
     /// Stores the latest conversation summary created by /compact
     latest_summary: Option<String>,
+    #[serde(skip)]
+    pub agents: Agents,
     /// Model explicitly selected by the user in this conversation state via `/model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -109,28 +112,16 @@ pub struct ConversationState {
 
 impl ConversationState {
     pub async fn new(
-        os: &mut Os,
         conversation_id: &str,
+        agents: Agents,
         tool_config: HashMap<String, ToolSpec>,
-        profile: Option<String>,
         tool_manager: ToolManager,
         current_model_id: Option<String>,
     ) -> Self {
-        // Initialize context manager
-        let context_manager = match ContextManager::new(os, None).await {
-            Ok(mut manager) => {
-                // Switch to specified profile if provided
-                if let Some(profile_name) = profile {
-                    if let Err(e) = manager.switch_profile(os, &profile_name).await {
-                        warn!("Failed to switch to profile {}: {}", profile_name, e);
-                    }
-                }
-                Some(manager)
-            },
-            Err(e) => {
-                warn!("Failed to initialize context manager: {}", e);
-                None
-            },
+        let context_manager = if let Some(agent) = agents.get_active() {
+            ContextManager::from_agent(agent, None).ok()
+        } else {
+            None
         };
 
         Self {
@@ -156,37 +147,8 @@ impl ConversationState {
             tool_manager,
             context_message_length: None,
             latest_summary: None,
+            agents,
             model: current_model_id,
-        }
-    }
-
-    /// Reloads necessary fields after being deserialized. This should be called after
-    /// deserialization.
-    pub async fn reload_serialized_state(&mut self, os: &Os) {
-        // Try to reload ContextManager, but do not return an error if we fail.
-        // TODO: Currently the failure modes around ContextManager is unclear, and we don't return
-        // errors in most cases. Thus, we try to preserve the same behavior here and simply have
-        // self.context_manager equal to None if any errors are encountered. This needs to be
-        // refactored.
-        let mut failed = false;
-        if let Some(context_manager) = self.context_manager.as_mut() {
-            match context_manager.reload_config(os).await {
-                Ok(_) => (),
-                Err(err) => {
-                    error!(?err, "failed to reload context config");
-                    match ContextManager::new(os, None).await {
-                        Ok(v) => *context_manager = v,
-                        Err(err) => {
-                            failed = true;
-                            error!(?err, "failed to construct context manager");
-                        },
-                    }
-                },
-            }
-        }
-
-        if failed {
-            self.context_manager.take();
         }
     }
 
@@ -962,17 +924,33 @@ fn format_hook_context<'a>(hook_results: impl IntoIterator<Item = &'a (Hook, Str
 
 #[cfg(test)]
 mod tests {
-    use super::super::context::{
-        AMAZONQ_FILENAME,
-        profile_context_path,
-    };
+    use std::io;
+
     use super::super::message::AssistantToolUse;
     use super::*;
     use crate::api_client::model::{
         AssistantResponseMessage,
         ToolResultStatus,
     };
+    use crate::cli::agent::{
+        Agent,
+        Agents,
+    };
     use crate::cli::chat::tool_manager::ToolManager;
+
+    const AMAZONQ_FILENAME: &str = "AmazonQ.md";
+
+    struct NullWriter;
+
+    impl Write for NullWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
@@ -1065,9 +1043,18 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_history_handling_truncation() {
         let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut output = NullWriter;
+
         let mut tool_manager = ToolManager::default();
-        let tools = tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap();
-        let mut conversation = ConversationState::new(&mut os, "fake_conv_id", tools, None, tool_manager, None).await;
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
+            tool_manager,
+            None,
+        )
+        .await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
@@ -1086,15 +1073,15 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_history_handling_with_tool_results() {
         let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
 
         // Build a long conversation history of tool use results.
         let mut tool_manager = ToolManager::default();
         let tool_config = tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap();
         let mut conversation = ConversationState::new(
-            &mut os,
             "fake_conv_id",
+            agents.clone(),
             tool_config.clone(),
-            None,
             tool_manager.clone(),
             None,
         )
@@ -1124,15 +1111,8 @@ mod tests {
         }
 
         // Build a long conversation history of user messages mixed in with tool results.
-        let mut conversation = ConversationState::new(
-            &mut os,
-            "fake_conv_id",
-            tool_config.clone(),
-            None,
-            tool_manager.clone(),
-            None,
-        )
-        .await;
+        let mut conversation =
+            ConversationState::new("fake_conv_id", agents, tool_config.clone(), tool_manager.clone(), None).await;
         conversation.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation
@@ -1165,11 +1145,26 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_with_context_files() {
         let mut os = Os::new().await.unwrap();
+        let agents = {
+            let mut agents = Agents::default();
+            let mut agent = Agent::default();
+            agent.included_files.push(AMAZONQ_FILENAME.to_string());
+            agents.agents.insert("TestAgent".to_string(), agent);
+            agents.switch("TestAgent").expect("Agent switch failed");
+            agents
+        };
         os.fs.write(AMAZONQ_FILENAME, "test context").await.unwrap();
+        let mut output = NullWriter;
 
         let mut tool_manager = ToolManager::default();
-        let tools = tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap();
-        let mut conversation = ConversationState::new(&mut os, "fake_conv_id", tools, None, tool_manager, None).await;
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
+            tool_manager,
+            None,
+        )
+        .await;
 
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
@@ -1205,31 +1200,44 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_state_additional_context() {
         let mut os = Os::new().await.unwrap();
-        let mut tool_manager = ToolManager::default();
         let conversation_start_context = "conversation start context";
         let prompt_context = "prompt context";
-        let config = serde_json::json!({
-            "hooks": {
-                "test_per_prompt": {
-                    "trigger": "per_prompt",
-                    "type": "inline",
-                    "command": format!("echo {}", prompt_context)
-                },
+        let agents = {
+            let mut agents = Agents::default();
+            let create_hooks = serde_json::json!({
                 "test_conversation_start": {
                     "trigger": "conversation_start",
                     "type": "inline",
                     "command": format!("echo {}", conversation_start_context)
                 }
-            }
-        });
-        let config_path = profile_context_path(&os, "default").unwrap();
-        os.fs.create_dir_all(config_path.parent().unwrap()).await.unwrap();
-        os.fs
-            .write(&config_path, serde_json::to_string(&config).unwrap())
-            .await
-            .unwrap();
-        let tools = tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap();
-        let mut conversation = ConversationState::new(&mut os, "fake_conv_id", tools, None, tool_manager, None).await;
+            });
+            let prompt_hooks = serde_json::json!({
+                "test_per_prompt": {
+                    "trigger": "per_prompt",
+                    "type": "inline",
+                    "command": format!("echo {}", prompt_context)
+                }
+            });
+            let agent = Agent {
+                create_hooks,
+                prompt_hooks,
+                ..Default::default()
+            };
+            agents.agents.insert("TestAgent".to_string(), agent);
+            agents.switch("TestAgent").expect("Agent switch failed");
+            agents
+        };
+        let mut output = NullWriter;
+
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
+            tool_manager,
+            None,
+        )
+        .await;
 
         // Simulate conversation flow
         conversation.set_next_user_message("start".to_string()).await;

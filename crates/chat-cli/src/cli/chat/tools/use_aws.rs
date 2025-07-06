@@ -16,11 +16,16 @@ use eyre::{
     WrapErr,
 };
 use serde::Deserialize;
+use tracing::error;
 
 use super::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
+};
+use crate::cli::agent::{
+    Agent,
+    PermissionEvalResult,
 };
 use crate::os::Os;
 
@@ -186,6 +191,44 @@ impl UseAws {
             Some(params)
         } else {
             None
+        }
+    }
+
+    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+        #[derive(Debug, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Settings {
+            allowed_services: Vec<String>,
+            denied_services: Vec<String>,
+        }
+
+        let Self { service_name, .. } = self;
+        let is_in_allowlist = agent.allowed_tools.contains("use_aws");
+        match agent.tools_settings.get("use_aws") {
+            Some(settings) if is_in_allowlist => {
+                let settings = match serde_json::from_value::<Settings>(settings.clone()) {
+                    Ok(settings) => settings,
+                    Err(e) => {
+                        error!("Failed to deserialize tool settings for use_aws: {:?}", e);
+                        return PermissionEvalResult::Ask;
+                    },
+                };
+                if settings.denied_services.contains(service_name) {
+                    return PermissionEvalResult::Deny;
+                }
+                if settings.allowed_services.contains(service_name) {
+                    return PermissionEvalResult::Allow;
+                }
+                PermissionEvalResult::Ask
+            },
+            None if is_in_allowlist => PermissionEvalResult::Allow,
+            _ => {
+                if self.requires_acceptance() {
+                    PermissionEvalResult::Ask
+                } else {
+                    PermissionEvalResult::Allow
+                }
+            },
         }
     }
 }
