@@ -5,7 +5,7 @@
 - [x] Prompt 2: Implement session state management for server enable/disable
 - [x] Prompt 3: Create server reload manager and core lifecycle operations
 - [x] Prompt 4: Implement reload command with server restart functionality
-- [ ] Prompt 5: Add enable and disable commands with session state integration
+- [x] Prompt 5: Add enable and disable commands with session state integration
 - [ ] Prompt 6: Implement status and list commands with enhanced display
 - [ ] Prompt 7: Add comprehensive error handling and user feedback
 - [ ] Prompt 8: Integrate configuration reloading and validation
