@@ -68,6 +68,7 @@ use crate::cli::chat::server_messenger::{
     ServerMessengerBuilder,
     UpdateEventMessage,
 };
+use crate::cli::chat::session_state::SessionServerState;
 use crate::cli::chat::tools::custom_tool::{
     CustomTool,
     CustomToolClient,
@@ -721,6 +722,7 @@ impl ToolManagerBuilder {
             mcp_load_record: load_record,
             agent,
             disabled_servers: disabled_servers_display,
+            session_state: Arc::new(Mutex::new(SessionServerState::new())),
             ..Default::default()
         })
     }
@@ -852,6 +854,10 @@ pub struct ToolManager {
     /// List of disabled MCP server names for display purposes
     disabled_servers: Vec<String>,
 
+    /// Session-only server state management for enable/disable operations.
+    /// This tracks temporary server state changes that don't persist across application restarts.
+    pub session_state: Arc<Mutex<SessionServerState>>,
+
     /// A collection of preferences that pertains to the conversation.
     /// As far as tool manager goes, this is relevant for tool and server filters
     pub agent: Arc<Mutex<Agent>>,
@@ -870,6 +876,7 @@ impl Clone for ToolManager {
             is_interactive: self.is_interactive,
             mcp_load_record: self.mcp_load_record.clone(),
             disabled_servers: self.disabled_servers.clone(),
+            session_state: self.session_state.clone(),
             ..Default::default()
         }
     }
@@ -1345,6 +1352,87 @@ impl ToolManager {
 
     pub async fn pending_clients(&self) -> Vec<String> {
         self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>()
+    }
+
+    /// Session State Management Methods
+    
+    /// Checks if a server should be enabled based on configuration and session overrides.
+    pub async fn is_server_enabled(&self, server_name: &str, config_enabled: bool) -> bool {
+        let session_state = self.session_state.lock().await;
+        session_state.is_server_enabled(server_name, config_enabled)
+    }
+    
+    /// Disables a server for this session only.
+    pub async fn disable_server_for_session(&self, server_name: String) {
+        let mut session_state = self.session_state.lock().await;
+        session_state.disable_server(server_name);
+    }
+    
+    /// Enables a server for this session only.
+    pub async fn enable_server_for_session(&self, server_name: String) {
+        let mut session_state = self.session_state.lock().await;
+        session_state.enable_server(server_name);
+    }
+    
+    /// Removes any session overrides for a server.
+    pub async fn reset_server_session_state(&self, server_name: &str) {
+        let mut session_state = self.session_state.lock().await;
+        session_state.reset_server(server_name);
+    }
+    
+    /// Returns whether a server has been disabled for this session.
+    pub async fn is_session_disabled(&self, server_name: &str) -> bool {
+        let session_state = self.session_state.lock().await;
+        session_state.is_session_disabled(server_name)
+    }
+    
+    /// Returns whether a server has been enabled for this session.
+    pub async fn is_session_enabled(&self, server_name: &str) -> bool {
+        let session_state = self.session_state.lock().await;
+        session_state.is_session_enabled(server_name)
+    }
+    
+    /// Returns whether a server has any session-level overrides.
+    pub async fn has_session_override(&self, server_name: &str) -> bool {
+        let session_state = self.session_state.lock().await;
+        session_state.has_session_override(server_name)
+    }
+    
+    /// Gets all servers that have been disabled for this session.
+    pub async fn get_session_disabled_servers(&self) -> HashSet<String> {
+        let session_state = self.session_state.lock().await;
+        session_state.get_disabled_servers().clone()
+    }
+    
+    /// Gets all servers that have been enabled for this session.
+    pub async fn get_session_enabled_servers(&self) -> HashSet<String> {
+        let session_state = self.session_state.lock().await;
+        session_state.get_enabled_servers().clone()
+    }
+    
+    /// Clears all session overrides.
+    pub async fn clear_all_session_overrides(&self) {
+        let mut session_state = self.session_state.lock().await;
+        session_state.clear_all_overrides();
+    }
+    
+    /// Returns the total number of session overrides.
+    pub async fn session_override_count(&self) -> usize {
+        let session_state = self.session_state.lock().await;
+        session_state.override_count()
+    }
+    
+    /// Gets a list of all configured server names from the agent configuration.
+    /// This is useful for validation and displaying available servers.
+    pub async fn get_configured_server_names(&self) -> Vec<String> {
+        let agent = self.agent.lock().await;
+        agent.mcp_servers.mcp_servers.keys().cloned().collect()
+    }
+    
+    /// Checks if a server exists in the configuration.
+    pub async fn has_server_config(&self, server_name: &str) -> bool {
+        let agent = self.agent.lock().await;
+        agent.mcp_servers.mcp_servers.contains_key(server_name)
     }
 }
 

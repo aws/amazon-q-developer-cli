@@ -2,7 +2,7 @@
 
 ## Checklist
 - [x] Prompt 1: Set up command structure and subcommand infrastructure
-- [ ] Prompt 2: Implement session state management for server enable/disable
+- [x] Prompt 2: Implement session state management for server enable/disable
 - [ ] Prompt 3: Create server reload manager and core lifecycle operations
 - [ ] Prompt 4: Implement reload command with server restart functionality
 - [ ] Prompt 5: Add enable and disable commands with session state integration
