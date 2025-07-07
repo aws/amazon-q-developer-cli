@@ -82,6 +82,9 @@ pub struct ConversationState {
     /// chat.
     pub transcript: VecDeque<String>,
     pub tools: HashMap<ToolOrigin, Vec<Tool>>,
+    /// Filtered tools excluding disabled MCP servers (for model context)
+    #[serde(skip)]
+    filtered_tools: HashMap<ToolOrigin, Vec<Tool>>,
     /// Context manager for handling sticky context files
     pub context_manager: Option<ContextManager>,
     /// Tool manager for handling tool and mcp related activities
@@ -131,6 +134,7 @@ impl ConversationState {
                         .or_insert(vec![tool]);
                     acc
                 }),
+            filtered_tools: HashMap::new(),
             context_manager,
             tool_manager,
             context_message_length: None,
@@ -339,11 +343,38 @@ impl ConversationState {
                     .or_insert(vec![tool]);
                 acc
             });
+        
+        // Update filtered tools for model context (exclude disabled MCP servers)
+        self.update_filtered_tools().await;
+        
         self.tool_manager.has_new_stuff.store(false, Ordering::Release);
         // We call this in [Self::enforce_conversation_invariants] as well. But we need to call it
         // here as well because when it's being called in [Self::enforce_conversation_invariants]
         // it is only checking the last entry.
         self.enforce_tool_use_history_invariants();
+    }
+
+    /// Updates the filtered tools HashMap to exclude disabled MCP servers
+    async fn update_filtered_tools(&mut self) {
+        self.filtered_tools.clear();
+        
+        for (origin, tools) in &self.tools {
+            let should_include = match origin {
+                ToolOrigin::McpServer(server_name) => {
+                    !self.tool_manager.is_session_disabled(server_name).await
+                },
+                _ => true, // Include all non-MCP tools (native tools, etc.)
+            };
+            
+            if should_include {
+                self.filtered_tools.insert(origin.clone(), tools.clone());
+            }
+        }
+    }
+
+    /// Triggers an update of filtered tools (called when session state changes)
+    pub async fn refresh_filtered_tools(&mut self) {
+        self.update_filtered_tools().await;
     }
 
     /// Returns a conversation state representation which reflects the exact conversation to send
@@ -382,7 +413,7 @@ impl ConversationState {
                 .range(self.valid_history_range.0..self.valid_history_range.1),
             context_messages,
             dropped_context_files,
-            tools: &self.tools,
+            tools: &self.filtered_tools,
             model_id: self.model.as_deref(),
         })
     }

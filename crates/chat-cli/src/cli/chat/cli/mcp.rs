@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;
 
@@ -74,9 +75,14 @@ impl McpArgs {
     /// Default behavior when no subcommand is provided - maintains backward compatibility
     async fn execute_default_behavior(&self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let terminal_width = session.terminal_width();
-        let still_loading = session
-            .conversation
-            .tool_manager
+
+        // Get current server states
+        let tool_manager = &session.conversation.tool_manager;
+        let current_clients: HashSet<String> = tool_manager.clients.keys().cloned().collect();
+        let session_disabled = tool_manager.get_session_disabled_servers().await;
+        let session_enabled = tool_manager.get_session_enabled_servers().await;
+
+        let still_loading = tool_manager
             .pending_clients()
             .await
             .into_iter()
@@ -84,21 +90,52 @@ impl McpArgs {
             .collect::<Vec<_>>()
             .join("");
 
-        for (server_name, msg) in session.conversation.tool_manager.mcp_load_record.lock().await.iter() {
-            let msg = msg
+        for (server_name, records) in tool_manager.mcp_load_record.lock().await.iter() {
+            let is_currently_running = current_clients.contains(server_name);
+            let is_session_disabled = session_disabled.contains(server_name);
+            let is_session_enabled = session_enabled.contains(server_name);
+            
+            let msg = records
                 .iter()
                 .map(|record| match record {
                     LoadingRecord::Err(content) | LoadingRecord::Warn(content) | LoadingRecord::Success(content) => {
-                        content.clone()
+                        // Modify the success message to show current status
+                        if let LoadingRecord::Success(content) = record {
+                            if is_session_disabled {
+                                content.replace("✓", "○").replace("loaded", "disabled for session")
+                            } else if !is_currently_running && !is_session_enabled {
+                                content.replace("✓", "○").replace("loaded", "stopped")
+                            } else {
+                                content.clone()
+                            }
+                        } else {
+                            content.clone()
+                        }
                     },
                 })
                 .collect::<Vec<_>>()
                 .join("\n--- tools refreshed ---\n");
 
+            // Show server name with status indication
+            if is_session_disabled {
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(style::Color::DarkGrey),
+                    style::Print(server_name),
+                    style::Print(" (disabled for session)"),
+                    style::ResetColor,
+                    style::Print("\n"),
+                )?;
+            } else {
+                queue!(
+                    session.stderr,
+                    style::Print(server_name),
+                    style::Print("\n"),
+                )?;
+            }
+
             queue!(
                 session.stderr,
-                style::Print(server_name),
-                style::Print("\n"),
                 style::Print(format!("{}\n", "▔".repeat(terminal_width))),
                 style::Print(msg),
                 style::Print("\n")
@@ -316,6 +353,12 @@ impl EnableArgs {
                 session.conversation.tool_manager = updated_tool_manager.clone();
                 drop(updated_tool_manager);
                 
+                // Force update the conversation state to refresh tool list
+                session.conversation.update_state(true).await;
+                
+                // Refresh filtered tools for model context
+                session.conversation.refresh_filtered_tools().await;
+                
                 // Display success message
                 queue!(
                     session.stderr,
@@ -452,10 +495,11 @@ impl DisableArgs {
         // Perform the disable operation
         match reload_manager.disable_server(&self.server_name).await {
             Ok(_) => {
-                // Update the session's tool manager with the updated state
-                let updated_tool_manager = tool_manager_ref.lock().await;
-                session.conversation.tool_manager = updated_tool_manager.clone();
-                drop(updated_tool_manager);
+                // Force update the conversation state to refresh tool list
+                session.conversation.update_state(true).await;
+                
+                // Refresh filtered tools for model context
+                session.conversation.refresh_filtered_tools().await;
                 
                 // Display success message
                 queue!(

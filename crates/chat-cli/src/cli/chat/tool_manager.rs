@@ -410,17 +410,15 @@ impl ToolManagerBuilder {
                         let (tool_filter, alias_list) = {
                             let agent_lock = agent_clone.lock().await;
 
-                            // We will assume all tools are allowed if the tool list consists of 1
-                            // element and it's a *
-                            let tool_filter = if agent_lock.tools.len() == 1
-                                && agent_lock.tools.first().map(String::as_str).is_some_and(|c| c == "*")
-                            {
+                            // We will assume all tools are allowed if the tool list contains "*"
+                            let tool_filter = if agent_lock.tools.contains(&"*".to_string()) {
                                 ToolFilter::All
                             } else {
+                                let server_prefix = format!("@{server_name}");
                                 let set = agent_lock
                                     .tools
                                     .iter()
-                                    .filter(|tool_name| tool_name.starts_with(&format!("@{server_name}")))
+                                    .filter(|tool_name| tool_name.starts_with(&server_prefix))
                                     .map(|full_name| {
                                         match full_name.split_once(MCP_SERVER_TOOL_DELIMITER) {
                                             Some((_, tool_name)) if !tool_name.is_empty() => tool_name,
@@ -1123,8 +1121,8 @@ impl ToolManager {
             let mut new_tool_specs = self.new_tool_specs.lock().await;
             new_tool_specs.drain().fold(
                 HashMap::<ServerName, (HashMap<ModelToolName, ToolInfo>, Vec<ToolSpec>)>::new(),
-                |mut acc, (server_name, v)| {
-                    acc.insert(server_name, v);
+                |mut acc, (server_name, (tool_name_map, specs))| {
+                    acc.insert(server_name, (tool_name_map, specs));
                     acc
                 },
             )
