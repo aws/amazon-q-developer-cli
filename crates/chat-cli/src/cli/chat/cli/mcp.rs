@@ -1,11 +1,14 @@
 use std::io::Write;
+use std::sync::Arc;
 
 use clap::{Args, Subcommand};
 use crossterm::{
     queue,
     style,
 };
+use tokio::sync::Mutex;
 
+use crate::cli::chat::server_reload_manager::{ReloadError, ServerReloadManager};
 use crate::cli::chat::tool_manager::LoadingRecord;
 use crate::cli::chat::{
     ChatError,
@@ -134,9 +137,153 @@ impl McpSubcommand {
 
 // Placeholder implementations for each subcommand
 impl ReloadArgs {
-    pub async fn execute(self, _session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        // TODO: Implement reload functionality
-        Ok(ChatState::PromptUser { skip_printing_tools: true })
+    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Create OS interface - we need this for configuration reloading
+        let os = crate::os::Os::new().await
+            .map_err(|e| ChatError::Custom(format!("Failed to initialize OS interface: {}", e).into()))?;
+        
+        // Show progress indication
+        queue!(
+            session.stderr,
+            style::Print("🔄 Reloading server '"),
+            style::SetForegroundColor(style::Color::Cyan),
+            style::Print(&self.server_name),
+            style::ResetColor,
+            style::Print("'...\n"),
+        )?;
+        session.stderr.flush()?;
+        
+        // Create reload manager with reference to tool manager
+        let tool_manager_ref = Arc::new(Mutex::new(session.conversation.tool_manager.clone()));
+        let reload_manager = ServerReloadManager::new(tool_manager_ref.clone());
+        
+        // Perform the reload operation
+        match reload_manager.reload_server(&os, &self.server_name).await {
+            Ok(_) => {
+                // Update the session's tool manager with the reloaded state
+                let updated_tool_manager = tool_manager_ref.lock().await;
+                session.conversation.tool_manager = updated_tool_manager.clone();
+                drop(updated_tool_manager);
+                
+                // Display success message
+                queue!(
+                    session.stderr,
+                    style::Print("✓ "),
+                    style::SetForegroundColor(style::Color::Green),
+                    style::Print("Server '"),
+                    style::Print(&self.server_name),
+                    style::Print("' reloaded successfully\n"),
+                    style::ResetColor,
+                )?;
+                session.stderr.flush()?;
+                
+                Ok(ChatState::PromptUser { skip_printing_tools: true })
+            },
+            Err(e) => {
+                // Display error message with helpful information
+                self.display_reload_error(&e, session).await?;
+                
+                // Convert to ChatError but continue the session
+                Err(ChatError::Custom(format!("Failed to reload server '{}': {}", 
+                    self.server_name, e).into()))
+            }
+        }
+    }
+    
+    /// Displays a user-friendly error message for reload failures
+    async fn display_reload_error(&self, error: &ReloadError, session: &mut ChatSession) -> Result<(), std::io::Error> {
+        match error {
+            ReloadError::ServerNotFound { server_name } => {
+                // Show available servers to help the user
+                let available_servers = session.conversation.tool_manager
+                    .get_configured_server_names()
+                    .await;
+                
+                queue!(
+                    session.stderr,
+                    style::Print("✗ "),
+                    style::SetForegroundColor(style::Color::Red),
+                    style::Print("Server '"),
+                    style::Print(server_name),
+                    style::Print("' not found in configuration.\n"),
+                    style::ResetColor,
+                )?;
+                
+                if !available_servers.is_empty() {
+                    queue!(
+                        session.stderr,
+                        style::Print("Available servers: "),
+                        style::SetForegroundColor(style::Color::Yellow),
+                        style::Print(available_servers.join(", ")),
+                        style::ResetColor,
+                        style::Print("\n"),
+                    )?;
+                } else {
+                    queue!(
+                        session.stderr,
+                        style::Print("No MCP servers are configured.\n"),
+                    )?;
+                }
+            },
+            ReloadError::ServerStateConflict { server_name, state } => {
+                queue!(
+                    session.stderr,
+                    style::Print("✗ "),
+                    style::SetForegroundColor(style::Color::Red),
+                    style::Print("Server '"),
+                    style::Print(server_name),
+                    style::Print("' is already "),
+                    style::Print(state),
+                    style::Print(".\n"),
+                    style::ResetColor,
+                )?;
+            },
+            ReloadError::ServerStartFailed { server_name, reason } => {
+                queue!(
+                    session.stderr,
+                    style::Print("✗ "),
+                    style::SetForegroundColor(style::Color::Red),
+                    style::Print("Failed to start server '"),
+                    style::Print(server_name),
+                    style::Print("': "),
+                    style::Print(reason),
+                    style::Print("\n"),
+                    style::ResetColor,
+                )?;
+                
+                queue!(
+                    session.stderr,
+                    style::Print("💡 Check server configuration and ensure the command is valid.\n"),
+                )?;
+            },
+            ReloadError::ConfigReloadFailed { server_name, reason } => {
+                queue!(
+                    session.stderr,
+                    style::Print("✗ "),
+                    style::SetForegroundColor(style::Color::Red),
+                    style::Print("Failed to reload configuration for '"),
+                    style::Print(server_name),
+                    style::Print("': "),
+                    style::Print(reason),
+                    style::Print("\n"),
+                    style::ResetColor,
+                )?;
+            },
+            _ => {
+                // Generic error display for other error types
+                queue!(
+                    session.stderr,
+                    style::Print("✗ "),
+                    style::SetForegroundColor(style::Color::Red),
+                    style::Print(error.to_string()),
+                    style::Print("\n"),
+                    style::ResetColor,
+                )?;
+            }
+        }
+        
+        session.stderr.flush()?;
+        Ok(())
     }
 }
 
@@ -261,5 +408,24 @@ mod tests {
             McpSubcommand::List(_) => {}, // Success
             _ => panic!("Expected List variant"),
         }
+    }
+    
+    #[test]
+    fn test_reload_error_handling() {
+        // Test that ReloadArgs can be created with different server names
+        let reload_args1 = ReloadArgs {
+            server_name: "server-with-dashes".to_string(),
+        };
+        assert_eq!(reload_args1.server_name, "server-with-dashes");
+        
+        let reload_args2 = ReloadArgs {
+            server_name: "server_with_underscores".to_string(),
+        };
+        assert_eq!(reload_args2.server_name, "server_with_underscores");
+        
+        let reload_args3 = ReloadArgs {
+            server_name: "ServerWithCamelCase".to_string(),
+        };
+        assert_eq!(reload_args3.server_name, "ServerWithCamelCase");
     }
 }
