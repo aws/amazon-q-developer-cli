@@ -153,9 +153,9 @@ impl ServerReloadManager {
         tool_manager.disable_server_for_session(server_name.to_string()).await;
         drop(tool_manager);
         
-        // If server is currently running, stop it
+        // If server is currently running, stop it (but keep tools in registry)
         if is_currently_enabled {
-            self.stop_server_and_cleanup(server_name).await?;
+            self.stop_server_only(server_name).await?;
         }
         
         info!("Successfully disabled server '{}'", server_name);
@@ -174,6 +174,23 @@ impl ServerReloadManager {
             });
         }
         
+        Ok(())
+    }
+    
+    /// Stops a server process without removing tools from the registry
+    async fn stop_server_only(&self, server_name: &str) -> Result<(), ReloadError> {
+        debug!("Stopping server '{}' (keeping tools in registry)", server_name);
+        
+        let mut tool_manager = self.tool_manager.lock().await;
+        
+        // Remove client (this will trigger the Drop trait to terminate the process)
+        if let Some(client) = tool_manager.clients.remove(server_name) {
+            debug!("Removed client for server '{}'", server_name);
+            // Client will be dropped here, terminating the server process
+            drop(client);
+        }
+        
+        debug!("Successfully stopped server '{}'", server_name);
         Ok(())
     }
     
