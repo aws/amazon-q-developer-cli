@@ -27,15 +27,19 @@ Notes
 • Each agent maintains its own set of context and customizations"
 )]
 pub enum AgentSubcommand {
-    /// List all available profiles
+    /// List all available agents
     List,
-    /// Create a new profile with the specified name
+    /// Create a new agent with the specified name
+    #[command(hide = true)]
     Create { name: String },
-    /// Delete the specified profile
+    /// Delete the specified agent
+    #[command(hide = true)]
     Delete { name: String },
-    /// Switch to the specified profile
+    /// Switch to the specified agent
+    #[command(hide = true)]
     Set { name: String },
-    /// Rename a profile
+    /// Rename an agent
+    #[command(hide = true)]
     Rename { old_name: String, new_name: String },
 }
 
@@ -95,7 +99,7 @@ impl AgentSubcommand {
                     session.stderr,
                     style::SetForegroundColor(Color::Yellow),
                     style::Print(format!(
-                        "Agent / Profile persistence has been disabled. To persist any changes on agent / profile, use the default agent under {} as example",
+                        "To make changes or create agents, please do so via create the corresponding config in {}, where you would also find an example config for your reference.\n\nTo switch agent, launch another instance of q chat with --agent.",
                         global_path
                     )),
                     style::SetAttribute(Attribute::Reset)
