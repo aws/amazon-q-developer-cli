@@ -111,6 +111,17 @@ pub struct ConversationState {
 }
 
 impl ConversationState {
+    fn sanitize_env_value(input: &str) -> String {
+        // Limit the size of input to first 4096 characters
+        let truncated = if input.len() > 4096 {
+            &input[0..4096]
+        } else {
+            input
+        };
+        
+        // Remove any potentially problematic characters
+        return truncated.replace(|c: char| c.is_control() && c != '\n' && c != '\r' && c != '\t' && c != '$', "")
+    }
     pub async fn new(
         conversation_id: &str,
         agents: Agents,
@@ -472,6 +483,18 @@ impl ConversationState {
         // Run hooks and add to conversation start and next user message.
         let mut conversation_start_context = None;
         if let (true, Some(cm)) = (run_hooks, self.context_manager.as_mut()) {
+            // Set USER_PROMPT here if next_message is available
+            if let Some(next_message) = self.next_message.as_ref() {
+                if let Some(prompt) = next_message.prompt() {
+                    unsafe {
+                        // SAFETY: Setting environment variables is inherently unsafe as it modifies global process state.
+                        // We use sanitize_env_value to ensure the string doesn't contain problematic characters
+                        // that could cause issues when used as an environment variable value.
+                        std::env::set_var("USER_PROMPT", ConversationState::sanitize_env_value(prompt));
+                    }
+                }
+            }
+            
             let hook_results = cm.run_hooks(output).await?;
             conversation_start_context = Some(format_hook_context(hook_results.iter(), HookTrigger::ConversationStart));
 
