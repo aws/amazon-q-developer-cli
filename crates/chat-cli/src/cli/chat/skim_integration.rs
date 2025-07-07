@@ -264,14 +264,14 @@ pub fn select_command(_os: &Os, context_manager: &ContextManager, tools: &[Strin
                                                                      * command */
                     }
                 },
-                Some(cmd @ CommandType::Profile(_)) if cmd.needs_profile_selection() => {
+                Some(cmd @ CommandType::Agent(_)) if cmd.needs_agent_selection() => {
                     // For profile operations that need a profile name, show profile selector
                     // As part of the agent implementation, we are disabling the ability to
                     // switch profile after a session has started.
                     // TODO: perhaps revive this after we have a decision on profile switching
                     Ok(Some(selected_command.clone()))
                 },
-                Some(CommandType::Profile(_)) => {
+                Some(CommandType::Agent(_)) => {
                     // For other profile operations (like create), just return the command
                     Ok(Some(selected_command.clone()))
                 },
@@ -290,12 +290,12 @@ enum CommandType {
     ContextAdd(String),
     ContextRemove(String),
     Tools(&'static str),
-    Profile(&'static str),
+    Agent(&'static str),
 }
 
 impl CommandType {
-    fn needs_profile_selection(&self) -> bool {
-        matches!(self, CommandType::Profile("set" | "delete" | "rename"))
+    fn needs_agent_selection(&self) -> bool {
+        matches!(self, CommandType::Agent("set" | "delete" | "rename"))
     }
 
     fn from_str(cmd: &str) -> Option<CommandType> {
@@ -307,10 +307,10 @@ impl CommandType {
             match cmd {
                 "/tools trust" => Some(CommandType::Tools("trust")),
                 "/tools untrust" => Some(CommandType::Tools("untrust")),
-                "/profile set" => Some(CommandType::Profile("set")),
-                "/profile delete" => Some(CommandType::Profile("delete")),
-                "/profile rename" => Some(CommandType::Profile("rename")),
-                "/profile create" => Some(CommandType::Profile("create")),
+                "/agent set" => Some(CommandType::Agent("set")),
+                "/agent delete" => Some(CommandType::Agent("delete")),
+                "/agent rename" => Some(CommandType::Agent("rename")),
+                "/agent create" => Some(CommandType::Agent("create")),
                 _ => None,
             }
         }
@@ -333,15 +333,13 @@ mod tests {
         // List of hardcoded commands used in select_command
         let hardcoded_commands = vec![
             "/context add",
-            "/context add --global",
             "/context rm",
-            "/context rm --global",
             "/tools trust",
             "/tools untrust",
-            "/profile set",
-            "/profile delete",
-            "/profile rename",
-            "/profile create",
+            "/agent set",
+            "/agent delete",
+            "/agent rename",
+            "/agent create",
         ];
 
         // Check that each hardcoded command is in the COMMANDS array
