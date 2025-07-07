@@ -42,6 +42,9 @@ impl ToolsArgs {
             return subcommand.execute(session).await;
         }
 
+        // Force conversation update to ensure we have the latest tools from MCP servers
+        session.conversation.update_state(false).await;
+
         // No subcommand - print the current tools and their permissions.
         // Determine how to format the output nicely.
         let terminal_width = session.terminal_width();

@@ -5,11 +5,10 @@ use std::time::Instant;
 use eyre::Result;
 use thiserror::Error;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
-use crate::cli::agent::Agent;
 use crate::cli::chat::tools::custom_tool::{CustomToolClient, CustomToolConfig};
-use crate::cli::chat::tool_manager::ToolManager;
+use crate::cli::chat::tool_manager::{ToolManager, global_mcp_config_path, workspace_mcp_config_path};
 use crate::os::Os;
 
 /// Errors that can occur during server reload operations
@@ -225,19 +224,71 @@ impl ServerReloadManager {
     async fn reload_server_config(&self, os: &Os, server_name: &str) -> Result<CustomToolConfig, ReloadError> {
         debug!("Reloading configuration for server '{}'", server_name);
         
-        let tool_manager = self.tool_manager.lock().await;
-        let agent = tool_manager.agent.lock().await;
+        // Re-read both workspace and global MCP configurations
+        let workspace_config = self.load_workspace_mcp_config(os).await;
+        let global_config = self.load_global_mcp_config(os).await;
         
-        // Get the server configuration
-        let config = agent.mcp_servers.mcp_servers.get(server_name)
-            .cloned()
-            .ok_or_else(|| ReloadError::ConfigReloadFailed {
-                server_name: server_name.to_string(),
-                reason: "Server not found in agent configuration".to_string(),
+        // Try workspace config first, then global config
+        let config = if let Ok(workspace_config) = workspace_config {
+            workspace_config.mcp_servers.get(server_name).cloned()
+        } else {
+            None
+        }.or_else(|| {
+            if let Ok(global_config) = global_config {
+                global_config.mcp_servers.get(server_name).cloned()
+            } else {
+                None
+            }
+        });
+        
+        config.ok_or_else(|| ReloadError::ConfigReloadFailed {
+            server_name: server_name.to_string(),
+            reason: "Server not found in workspace or global MCP configuration".to_string(),
+        })
+    }
+    
+    /// Loads workspace MCP configuration
+    async fn load_workspace_mcp_config(&self, os: &Os) -> Result<crate::cli::agent::McpServerConfig, ReloadError> {
+        let config_path = workspace_mcp_config_path(os)
+            .map_err(|e| ReloadError::ConfigReloadFailed {
+                server_name: "workspace".to_string(),
+                reason: format!("Failed to get workspace config path: {}", e),
             })?;
         
-        debug!("Successfully reloaded configuration for server '{}'", server_name);
-        Ok(config)
+        if !os.fs.exists(&config_path) {
+            return Err(ReloadError::ConfigReloadFailed {
+                server_name: "workspace".to_string(),
+                reason: "Workspace MCP configuration file does not exist".to_string(),
+            });
+        }
+        
+        crate::cli::agent::McpServerConfig::load_from_file(os, &config_path).await
+            .map_err(|e| ReloadError::ConfigReloadFailed {
+                server_name: "workspace".to_string(),
+                reason: format!("Failed to load workspace config: {}", e),
+            })
+    }
+    
+    /// Loads global MCP configuration
+    async fn load_global_mcp_config(&self, os: &Os) -> Result<crate::cli::agent::McpServerConfig, ReloadError> {
+        let config_path = global_mcp_config_path(os)
+            .map_err(|e| ReloadError::ConfigReloadFailed {
+                server_name: "global".to_string(),
+                reason: format!("Failed to get global config path: {}", e),
+            })?;
+        
+        if !os.fs.exists(&config_path) {
+            return Err(ReloadError::ConfigReloadFailed {
+                server_name: "global".to_string(),
+                reason: "Global MCP configuration file does not exist".to_string(),
+            });
+        }
+        
+        crate::cli::agent::McpServerConfig::load_from_file(os, &config_path).await
+            .map_err(|e| ReloadError::ConfigReloadFailed {
+                server_name: "global".to_string(),
+                reason: format!("Failed to load global config: {}", e),
+            })
     }
     
     /// Starts a server with the given configuration

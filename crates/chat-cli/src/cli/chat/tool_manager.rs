@@ -1425,14 +1425,48 @@ impl ToolManager {
     /// Gets a list of all configured server names from the agent configuration.
     /// This is useful for validation and displaying available servers.
     pub async fn get_configured_server_names(&self) -> Vec<String> {
-        let agent = self.agent.lock().await;
-        agent.mcp_servers.mcp_servers.keys().cloned().collect()
+        // Try to get from agent first (for currently loaded servers)
+        let agent_servers = {
+            let agent = self.agent.lock().await;
+            agent.mcp_servers.mcp_servers.keys().cloned().collect::<Vec<_>>()
+        };
+        
+        // If we have servers from agent, return those
+        if !agent_servers.is_empty() {
+            return agent_servers;
+        }
+        
+        // Otherwise, try to read from config files directly
+        // This is a fallback for when agent doesn't have the config loaded
+        let mut all_servers = std::collections::HashSet::new();
+        
+        // Try workspace config
+        if let Ok(os) = crate::os::Os::new().await {
+            if let Ok(workspace_path) = workspace_mcp_config_path(&os) {
+                if os.fs.exists(&workspace_path) {
+                    if let Ok(workspace_config) = crate::cli::agent::McpServerConfig::load_from_file(&os, &workspace_path).await {
+                        all_servers.extend(workspace_config.mcp_servers.keys().cloned());
+                    }
+                }
+            }
+            
+            // Try global config
+            if let Ok(global_path) = global_mcp_config_path(&os) {
+                if os.fs.exists(&global_path) {
+                    if let Ok(global_config) = crate::cli::agent::McpServerConfig::load_from_file(&os, &global_path).await {
+                        all_servers.extend(global_config.mcp_servers.keys().cloned());
+                    }
+                }
+            }
+        }
+        
+        all_servers.into_iter().collect()
     }
     
     /// Checks if a server exists in the configuration.
     pub async fn has_server_config(&self, server_name: &str) -> bool {
-        let agent = self.agent.lock().await;
-        agent.mcp_servers.mcp_servers.contains_key(server_name)
+        let configured_servers = self.get_configured_server_names().await;
+        configured_servers.contains(&server_name.to_string())
     }
 }
 
