@@ -329,6 +329,16 @@ impl Agents {
         }
 
         let mut local_agents = 'local: {
+            // We could be launching from the home dir, in which case the global and local agents
+            // are the same set of agents. If that is the case, we simply skip this.
+            match (std::env::current_dir(), directories::home_dir(os)) {
+                (Ok(cwd), Ok(home_dir)) if cwd == home_dir => break 'local Vec::<Agent>::new(),
+                _ => {
+                    // noop, we keep going with the extraction of local agents (even if we have an
+                    // error retrieving cwd or home_dir)
+                },
+            }
+
             let Ok(path) = directories::chat_local_agent_dir() else {
                 break 'local Vec::<Agent>::new();
             };
@@ -361,6 +371,7 @@ impl Agents {
 
         // Here we also want to make sure the example config is written to disk if it's not already
         // there.
+        // Note that this config is not what q chat uses. It merely serves as an example.
         'example_config: {
             let Ok(path) = directories::example_agent_config(os) else {
                 error!("Error obtaining example agent path.");
