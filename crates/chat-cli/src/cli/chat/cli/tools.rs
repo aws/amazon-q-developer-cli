@@ -97,6 +97,14 @@ impl ToolsArgs {
         });
 
         for (origin, tools) in origin_tools.iter() {
+            // Check if this is a disabled MCP server
+            let is_server_disabled = match origin {
+                ToolOrigin::McpServer(server_name) => {
+                    session.conversation.tool_manager.is_session_disabled(server_name).await
+                },
+                _ => false,
+            };
+
             // Note that Tool is model facing and thus would have names recognized by model.
             // Here we need to convert them to their host / user facing counter part.
             let tn_map = &session.conversation.tool_manager.tn_map;
@@ -115,12 +123,18 @@ impl ToolsArgs {
 
             let to_display = sorted_tools.iter().fold(String::new(), |mut acc, tool_name| {
                 let width = longest - tool_name.len() + 4;
+                let permission_label = if is_server_disabled {
+                    "* disabled".to_string()
+                } else {
+                    session.conversation.agents.display_label(tool_name, origin)
+                };
+                
                 acc.push_str(
                     format!(
                         "- {}{:>width$}{}\n",
                         tool_name,
                         "",
-                        session.conversation.agents.display_label(tool_name, origin),
+                        permission_label,
                         width = width
                     )
                     .as_str(),
@@ -128,10 +142,20 @@ impl ToolsArgs {
                 acc
             });
 
+            // Display the origin with disabled indicator if applicable
+            let origin_display = if is_server_disabled {
+                match origin {
+                    ToolOrigin::McpServer(server_name) => format!("{} (disabled for session)", server_name),
+                    _ => format!("{}", origin),
+                }
+            } else {
+                format!("{}", origin)
+            };
+
             let _ = queue!(
                 session.stderr,
                 style::SetAttribute(Attribute::Bold),
-                style::Print(format!("{}:\n", origin)),
+                style::Print(format!("{}:\n", origin_display)),
                 style::SetAttribute(Attribute::Reset),
                 style::Print(to_display),
                 style::Print("\n")
