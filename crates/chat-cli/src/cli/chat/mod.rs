@@ -11,6 +11,7 @@ mod parser;
 mod prompt;
 mod prompt_parser;
 mod server_messenger;
+pub mod server_reload_manager;
 pub mod session_state;
 #[cfg(unix)]
 mod skim_integration;
