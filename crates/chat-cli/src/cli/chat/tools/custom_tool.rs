@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -8,6 +9,7 @@ use crossterm::{
     style,
 };
 use eyre::Result;
+use regex::Regex;
 use serde::{
     Deserialize,
     Serialize,
@@ -54,6 +56,26 @@ pub fn default_timeout() -> u64 {
     120 * 1000
 }
 
+/// Substitutes environment variables in the format ${env:VAR_NAME} with their actual values
+fn substitute_env_vars(input: &str) -> String {
+    // Create a regex to match ${env:VAR_NAME} pattern
+    let re = Regex::new(r"\$\{env:([^}]+)\}").unwrap();
+
+    re.replace_all(input, |caps: &regex::Captures<'_>| {
+        let var_name = &caps[1];
+        env::var(var_name).unwrap_or_else(|_| format!("${{{}}}", var_name))
+    })
+    .to_string()
+}
+
+/// Process a HashMap of environment variables, substituting any ${env:VAR_NAME} patterns
+/// with their actual values from the environment
+fn process_env_vars(env_vars: &mut HashMap<String, String>) {
+    for (_, value) in env_vars.iter_mut() {
+        *value = substitute_env_vars(value);
+    }
+}
+
 #[derive(Debug)]
 pub enum CustomToolClient {
     Stdio {
@@ -74,6 +96,13 @@ impl CustomToolClient {
             timeout,
             disabled: _,
         } = config;
+
+        // Process environment variables if present
+        let processed_env = env.map(|mut env_vars| {
+            process_env_vars(&mut env_vars);
+            env_vars
+        });
+
         let mcp_client_config = McpClientConfig {
             server_name: server_name.clone(),
             bin_path: command.clone(),
@@ -83,7 +112,7 @@ impl CustomToolClient {
                "name": "Q CLI Chat",
                "version": "1.0.0"
             }),
-            env,
+            env: processed_env,
         };
         let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
         Ok(CustomToolClient::Stdio {
@@ -267,5 +296,55 @@ impl CustomTool {
         } else {
             PermissionEvalResult::Ask
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_substitute_env_vars() {
+        // Set a test environment variable
+        unsafe { env::set_var("TEST_VAR", "test_value") };
+
+        // Test basic substitution
+        assert_eq!(substitute_env_vars("Value is ${env:TEST_VAR}"), "Value is test_value");
+
+        // Test multiple substitutions
+        assert_eq!(
+            substitute_env_vars("${env:TEST_VAR} and ${env:TEST_VAR}"),
+            "test_value and test_value"
+        );
+
+        // Test non-existent variable
+        assert_eq!(substitute_env_vars("${env:NON_EXISTENT_VAR}"), "${NON_EXISTENT_VAR}");
+
+        // Test mixed content
+        assert_eq!(
+            substitute_env_vars("Prefix ${env:TEST_VAR} suffix"),
+            "Prefix test_value suffix"
+        );
+
+        // Clean up
+        unsafe { env::remove_var("TEST_VAR") };
+    }
+
+    #[test]
+    fn test_process_env_vars() {
+        // Set a test environment variable
+        unsafe { env::set_var("TEST_VAR", "test_value") };
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert("KEY1".to_string(), "Value is ${env:TEST_VAR}".to_string());
+        env_vars.insert("KEY2".to_string(), "No substitution".to_string());
+
+        process_env_vars(&mut env_vars);
+
+        assert_eq!(env_vars.get("KEY1").unwrap(), "Value is test_value");
+        assert_eq!(env_vars.get("KEY2").unwrap(), "No substitution");
+
+        // Clean up
+        unsafe { env::remove_var("TEST_VAR") };
     }
 }
