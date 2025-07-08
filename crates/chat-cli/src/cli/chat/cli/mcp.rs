@@ -600,15 +600,318 @@ impl DisableArgs {
 }
 
 impl StatusArgs {
-    pub async fn execute(self, _session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        // TODO: Implement status functionality
+    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        let terminal_width = session.terminal_width();
+        
+        // Get current server states
+        let tool_manager = &session.conversation.tool_manager;
+        let current_clients: HashSet<String> = tool_manager.clients.keys().cloned().collect();
+        let session_disabled = tool_manager.get_session_disabled_servers().await;
+        let session_enabled = tool_manager.get_session_enabled_servers().await;
+        let configured_servers = tool_manager.get_configured_server_names().await;
+        
+        // If specific server requested, validate it exists
+        if let Some(ref server_name) = self.server_name {
+            if !configured_servers.contains(server_name) {
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(style::Color::Red),
+                    style::Print("✗ Server '"),
+                    style::Print(server_name),
+                    style::Print("' not found. Available servers: "),
+                    style::ResetColor,
+                    style::Print(configured_servers.join(", ")),
+                    style::Print("\n"),
+                )?;
+                session.stderr.flush()?;
+                return Ok(ChatState::PromptUser { skip_printing_tools: true });
+            }
+        }
+        
+        // Filter servers to show
+        let servers_to_show: Vec<String> = if let Some(server_name) = self.server_name {
+            vec![server_name]
+        } else {
+            configured_servers
+        };
+        
+        // Display detailed status for each server
+        for server_name in servers_to_show {
+            let is_currently_running = current_clients.contains(&server_name);
+            let is_session_disabled = session_disabled.contains(&server_name);
+            let is_session_enabled = session_enabled.contains(&server_name);
+            let config_enabled = !tool_manager.is_server_config_disabled(&server_name).await;
+            
+            // Determine effective status
+            let effective_status = if is_session_disabled {
+                "Disabled (session override)"
+            } else if is_session_enabled {
+                "Enabled (session override)"
+            } else if config_enabled && is_currently_running {
+                "Enabled (running)"
+            } else if config_enabled && !is_currently_running {
+                "Enabled (not running)"
+            } else {
+                "Disabled (configuration)"
+            };
+            
+            // Get tool count for this server
+            let tool_count = tool_manager.tn_map
+                .values()
+                .filter(|info| info.server_name == server_name)
+                .count();
+            
+            // Display server header with status
+            queue!(
+                session.stderr,
+                style::SetAttribute(style::Attribute::Bold),
+                style::Print(&server_name),
+                style::SetAttribute(style::Attribute::Reset),
+                style::Print(" - "),
+                match effective_status {
+                    s if s.contains("Disabled") => style::SetForegroundColor(style::Color::Red),
+                    s if s.contains("session override") => style::SetForegroundColor(style::Color::Yellow),
+                    _ => style::SetForegroundColor(style::Color::Green),
+                },
+                style::Print(effective_status),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+            
+            queue!(
+                session.stderr,
+                style::Print("▔".repeat(terminal_width)),
+                style::Print("\n"),
+            )?;
+            
+            // Show configuration status
+            queue!(
+                session.stderr,
+                style::Print("Configuration: "),
+                if config_enabled {
+                    style::SetForegroundColor(style::Color::Green)
+                } else {
+                    style::SetForegroundColor(style::Color::Red)
+                },
+                style::Print(if config_enabled { "Enabled" } else { "Disabled" }),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+            
+            // Show session override if any
+            if is_session_disabled || is_session_enabled {
+                queue!(
+                    session.stderr,
+                    style::Print("Session Override: "),
+                    style::SetForegroundColor(style::Color::Yellow),
+                    style::Print(if is_session_disabled { "Disabled" } else { "Enabled" }),
+                    style::ResetColor,
+                    style::Print("\n"),
+                )?;
+            }
+            
+            // Show runtime status
+            queue!(
+                session.stderr,
+                style::Print("Runtime Status: "),
+                if is_currently_running {
+                    style::SetForegroundColor(style::Color::Green)
+                } else {
+                    style::SetForegroundColor(style::Color::Red)
+                },
+                style::Print(if is_currently_running { "Running" } else { "Stopped" }),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+            
+            // Show tool count
+            queue!(
+                session.stderr,
+                style::Print("Tools Available: "),
+                style::SetForegroundColor(style::Color::Cyan),
+                style::Print(tool_count.to_string()),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+            
+            // Show loading record if available
+            if let Some(records) = tool_manager.mcp_load_record.lock().await.get(&server_name) {
+                if let Some(last_record) = records.last() {
+                    queue!(
+                        session.stderr,
+                        style::Print("Last Status: "),
+                    )?;
+                    
+                    match last_record {
+                        LoadingRecord::Success(msg) => {
+                            queue!(
+                                session.stderr,
+                                style::SetForegroundColor(style::Color::Green),
+                                style::Print("✓ "),
+                                style::Print(msg.split(" in ").next().unwrap_or(msg).replace("✓ ", "")),
+                                style::ResetColor,
+                            )?;
+                            if let Some(timing) = msg.split(" in ").nth(1) {
+                                queue!(
+                                    session.stderr,
+                                    style::Print(" ("),
+                                    style::Print(timing),
+                                    style::Print(")"),
+                                )?;
+                            }
+                        },
+                        LoadingRecord::Err(msg) => {
+                            queue!(
+                                session.stderr,
+                                style::SetForegroundColor(style::Color::Red),
+                                style::Print("✗ "),
+                                style::Print(msg.replace("✗ ", "")),
+                                style::ResetColor,
+                            )?;
+                        },
+                        LoadingRecord::Warn(msg) => {
+                            queue!(
+                                session.stderr,
+                                style::SetForegroundColor(style::Color::Yellow),
+                                style::Print("⚠ "),
+                                style::Print(msg.replace("⚠ ", "")),
+                                style::ResetColor,
+                            )?;
+                        },
+                    }
+                    queue!(session.stderr, style::Print("\n"))?;
+                }
+            }
+            
+            queue!(session.stderr, style::Print("\n"))?;
+        }
+        
+        session.stderr.flush()?;
         Ok(ChatState::PromptUser { skip_printing_tools: true })
     }
 }
 
 impl ListArgs {
-    pub async fn execute(self, _session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        // TODO: Implement list functionality
+    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        let terminal_width = session.terminal_width();
+        
+        // Get current server states
+        let tool_manager = &session.conversation.tool_manager;
+        let current_clients: HashSet<String> = tool_manager.clients.keys().cloned().collect();
+        let session_disabled = tool_manager.get_session_disabled_servers().await;
+        let session_enabled = tool_manager.get_session_enabled_servers().await;
+        let configured_servers = tool_manager.get_configured_server_names().await;
+        
+        if configured_servers.is_empty() {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(style::Color::Yellow),
+                style::Print("No MCP servers configured.\n"),
+                style::ResetColor,
+            )?;
+            session.stderr.flush()?;
+            return Ok(ChatState::PromptUser { skip_printing_tools: true });
+        }
+        
+        // Display header
+        queue!(
+            session.stderr,
+            style::SetAttribute(style::Attribute::Bold),
+            style::Print("MCP Servers"),
+            style::SetAttribute(style::Attribute::Reset),
+            style::Print("\n"),
+            style::Print("▔".repeat(terminal_width)),
+            style::Print("\n"),
+        )?;
+        
+        // Sort servers for consistent display
+        let mut sorted_servers = configured_servers.clone();
+        sorted_servers.sort();
+        
+        for server_name in sorted_servers {
+            let is_currently_running = current_clients.contains(&server_name);
+            let is_session_disabled = session_disabled.contains(&server_name);
+            let is_session_enabled = session_enabled.contains(&server_name);
+            let config_enabled = !tool_manager.is_server_config_disabled(&server_name).await;
+            
+            // Get tool count for this server
+            let tool_count = tool_manager.tn_map
+                .values()
+                .filter(|info| info.server_name == server_name)
+                .count();
+            
+            // Determine status symbol and color
+            let (symbol, color, status_text) = if is_session_disabled {
+                ("○", style::Color::DarkGrey, "disabled for session")
+            } else if is_session_enabled {
+                ("✓", style::Color::Yellow, "enabled for session")
+            } else if config_enabled && is_currently_running {
+                ("✓", style::Color::Green, "running")
+            } else if config_enabled && !is_currently_running {
+                ("⚠", style::Color::Yellow, "configured but not running")
+            } else {
+                ("○", style::Color::Red, "disabled in configuration")
+            };
+            
+            // Display server line
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(color),
+                style::Print(symbol),
+                style::Print(" "),
+                style::SetAttribute(style::Attribute::Bold),
+                style::Print(&server_name),
+                style::SetAttribute(style::Attribute::Reset),
+                style::SetForegroundColor(color),
+                style::Print(" ("),
+                style::Print(status_text),
+                style::Print(")"),
+                style::ResetColor,
+            )?;
+            
+            // Add tool count
+            if tool_count > 0 {
+                queue!(
+                    session.stderr,
+                    style::Print(" - "),
+                    style::SetForegroundColor(style::Color::Cyan),
+                    style::Print(tool_count.to_string()),
+                    style::Print(" tool"),
+                    style::Print(if tool_count == 1 { "" } else { "s" }),
+                    style::ResetColor,
+                )?;
+            }
+            
+            queue!(session.stderr, style::Print("\n"))?;
+        }
+        
+        // Show summary
+        let total_servers = configured_servers.len();
+        let running_servers = current_clients.len();
+        let session_overrides = session_disabled.len() + session_enabled.len();
+        
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(style::Attribute::Bold),
+            style::Print("Summary: "),
+            style::SetAttribute(style::Attribute::Reset),
+            style::Print(format!("{} total, {} running", total_servers, running_servers)),
+        )?;
+        
+        if session_overrides > 0 {
+            queue!(
+                session.stderr,
+                style::Print(", "),
+                style::SetForegroundColor(style::Color::Yellow),
+                style::Print(format!("{} session override{}", session_overrides, if session_overrides == 1 { "" } else { "s" })),
+                style::ResetColor,
+            )?;
+        }
+        
+        queue!(session.stderr, style::Print("\n\n"))?;
+        
+        session.stderr.flush()?;
         Ok(ChatState::PromptUser { skip_printing_tools: true })
     }
 }
