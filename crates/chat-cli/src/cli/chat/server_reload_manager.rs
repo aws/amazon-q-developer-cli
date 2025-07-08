@@ -1,7 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crossterm::{queue, style};
 use eyre::Result;
 use thiserror::Error;
 use tokio::sync::Mutex;
@@ -9,6 +11,7 @@ use tracing::{debug, error, info};
 
 use crate::cli::chat::tools::custom_tool::{CustomToolClient, CustomToolConfig};
 use crate::cli::chat::tool_manager::{ToolManager, global_mcp_config_path, workspace_mcp_config_path};
+use crate::cli::chat::ChatSession;
 use crate::os::Os;
 
 /// Errors that can occur during server reload operations
@@ -34,11 +37,420 @@ pub enum ReloadError {
     
     #[error("Server validation failed: {reason}")]
     ValidationFailed { reason: String },
+    
+    #[error("Server '{server_name}' is not responding")]
+    ServerNotResponding { server_name: String },
+    
+    #[error("Server '{server_name}' configuration is invalid: {reason}")]
+    InvalidConfiguration { server_name: String, reason: String },
+    
+    #[error("Permission denied for server '{server_name}': {reason}")]
+    PermissionDenied { server_name: String, reason: String },
+    
+    #[error("Server '{server_name}' process crashed: {reason}")]
+    ProcessCrashed { server_name: String, reason: String },
+    
+    #[error("Timeout waiting for server '{server_name}' to {operation}")]
+    OperationTimeout { server_name: String, operation: String },
+    
+    #[error("Multiple servers failed: {}", failed_servers.join(", "))]
+    MultipleServerFailures { failed_servers: Vec<String> },
+}
+
+impl ReloadError {
+    /// Returns a user-friendly error message with actionable guidance
+    pub fn user_message(&self) -> String {
+        match self {
+            ReloadError::ServerNotFound { server_name } => {
+                format!("Server '{}' was not found in your configuration.", server_name)
+            },
+            ReloadError::ServerStateConflict { server_name, state } => {
+                format!("Server '{}' is already {}.", server_name, state)
+            },
+            ReloadError::ServerStopFailed { server_name, reason } => {
+                format!("Could not stop server '{}': {}", server_name, reason)
+            },
+            ReloadError::ServerStartFailed { server_name, reason } => {
+                format!("Could not start server '{}': {}", server_name, reason)
+            },
+            ReloadError::ConfigReloadFailed { server_name, reason } => {
+                format!("Configuration for server '{}' could not be reloaded: {}", server_name, reason)
+            },
+            ReloadError::ToolRegistrationFailed { server_name, reason } => {
+                format!("Tools from server '{}' could not be registered: {}", server_name, reason)
+            },
+            ReloadError::ValidationFailed { reason } => {
+                format!("Validation failed: {}", reason)
+            },
+            ReloadError::ServerNotResponding { server_name } => {
+                format!("Server '{}' is not responding to requests.", server_name)
+            },
+            ReloadError::InvalidConfiguration { server_name, reason } => {
+                format!("Server '{}' has invalid configuration: {}", server_name, reason)
+            },
+            ReloadError::PermissionDenied { server_name, reason } => {
+                format!("Permission denied for server '{}': {}", server_name, reason)
+            },
+            ReloadError::ProcessCrashed { server_name, reason } => {
+                format!("Server '{}' process crashed: {}", server_name, reason)
+            },
+            ReloadError::OperationTimeout { server_name, operation } => {
+                format!("Timeout waiting for server '{}' to {}.", server_name, operation)
+            },
+            ReloadError::MultipleServerFailures { failed_servers } => {
+                format!("Multiple servers failed: {}", failed_servers.join(", "))
+            },
+        }
+    }
+    
+    /// Returns suggested actions the user can take to resolve the error
+    pub fn suggested_actions(&self) -> Vec<String> {
+        match self {
+            ReloadError::ServerNotFound { .. } => vec![
+                "Check your MCP configuration files (.amazonq/mcp.json)".to_string(),
+                "Use '/mcp list' to see all configured servers".to_string(),
+                "Verify the server name spelling".to_string(),
+            ],
+            ReloadError::ServerStateConflict { server_name, state } => {
+                if state.contains("disabled") {
+                    vec![
+                        format!("Use '/mcp enable {}' to enable the server first", server_name),
+                        format!("Use '/mcp status {}' to check current state", server_name),
+                    ]
+                } else {
+                    vec![
+                        format!("Use '/mcp disable {}' to disable the server first", server_name),
+                        format!("Use '/mcp status {}' to check current state", server_name),
+                    ]
+                }
+            },
+            ReloadError::ServerStartFailed { server_name, .. } => vec![
+                "Check if the server executable exists and is accessible".to_string(),
+                "Verify the server configuration in your MCP config file".to_string(),
+                format!("Use '/mcp status {}' to see detailed error information", server_name),
+                "Check system logs for additional error details".to_string(),
+            ],
+            ReloadError::ServerStopFailed { .. } => vec![
+                "The server process may have already terminated".to_string(),
+                "Try restarting the entire Q CLI session if the issue persists".to_string(),
+            ],
+            ReloadError::ConfigReloadFailed { .. } => vec![
+                "Check your MCP configuration file syntax".to_string(),
+                "Ensure all required fields are present in the configuration".to_string(),
+                "Verify file permissions for the configuration file".to_string(),
+            ],
+            ReloadError::ToolRegistrationFailed { .. } => vec![
+                "The server may be returning invalid tool specifications".to_string(),
+                "Check server logs for tool registration errors".to_string(),
+                "Try reloading the server to refresh tool definitions".to_string(),
+            ],
+            ReloadError::ValidationFailed { .. } => vec![
+                "Check the server configuration for required fields".to_string(),
+                "Ensure the server executable path is correct".to_string(),
+            ],
+            ReloadError::ServerNotResponding { server_name } => vec![
+                format!("Try reloading the server with '/mcp reload {}'", server_name),
+                "Check if the server process is still running".to_string(),
+                "The server may need more time to initialize".to_string(),
+            ],
+            ReloadError::InvalidConfiguration { .. } => vec![
+                "Review your MCP configuration file for syntax errors".to_string(),
+                "Check that all required configuration fields are present".to_string(),
+                "Validate JSON syntax if using JSON configuration".to_string(),
+            ],
+            ReloadError::PermissionDenied { .. } => vec![
+                "Check file permissions for the server executable".to_string(),
+                "Ensure you have permission to execute the server command".to_string(),
+                "Try running Q CLI with appropriate permissions".to_string(),
+            ],
+            ReloadError::ProcessCrashed { server_name, .. } => vec![
+                format!("Try reloading the server with '/mcp reload {}'", server_name),
+                "Check server logs for crash details".to_string(),
+                "The server may have encountered an internal error".to_string(),
+            ],
+            ReloadError::OperationTimeout { server_name, .. } => vec![
+                format!("Try the operation again with '/mcp reload {}'", server_name),
+                "The server may be slow to respond due to system load".to_string(),
+                "Check if the server process is still running".to_string(),
+            ],
+            ReloadError::MultipleServerFailures { .. } => vec![
+                "Check individual server status with '/mcp status [server-name]'".to_string(),
+                "Try reloading servers individually to isolate issues".to_string(),
+                "Review system resources and server configurations".to_string(),
+            ],
+        }
+    }
+    
+    /// Returns the severity level of the error for display formatting
+    pub fn severity(&self) -> ErrorSeverity {
+        match self {
+            ReloadError::ServerNotFound { .. } => ErrorSeverity::Error,
+            ReloadError::ServerStateConflict { .. } => ErrorSeverity::Warning,
+            ReloadError::ServerStopFailed { .. } => ErrorSeverity::Error,
+            ReloadError::ServerStartFailed { .. } => ErrorSeverity::Error,
+            ReloadError::ConfigReloadFailed { .. } => ErrorSeverity::Error,
+            ReloadError::ToolRegistrationFailed { .. } => ErrorSeverity::Warning,
+            ReloadError::ValidationFailed { .. } => ErrorSeverity::Error,
+            ReloadError::ServerNotResponding { .. } => ErrorSeverity::Warning,
+            ReloadError::InvalidConfiguration { .. } => ErrorSeverity::Error,
+            ReloadError::PermissionDenied { .. } => ErrorSeverity::Error,
+            ReloadError::ProcessCrashed { .. } => ErrorSeverity::Error,
+            ReloadError::OperationTimeout { .. } => ErrorSeverity::Warning,
+            ReloadError::MultipleServerFailures { .. } => ErrorSeverity::Error,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ErrorSeverity {
+    Warning,
+    Error,
+    Critical,
 }
 
 /// Manages the lifecycle of MCP servers including reload, start, and stop operations
 pub struct ServerReloadManager {
     tool_manager: Arc<Mutex<ToolManager>>,
+}
+
+/// Utility for displaying comprehensive error messages with user guidance
+pub struct ErrorDisplayManager;
+
+impl ErrorDisplayManager {
+    /// Displays a comprehensive error message with user guidance
+    pub async fn display_error(
+        error: &ReloadError,
+        context: &str,
+        session: &mut ChatSession,
+    ) -> Result<(), std::io::Error> {
+        let terminal_width = session.terminal_width();
+        let severity = error.severity();
+        
+        // Display error header with appropriate styling
+        let (symbol, color) = match severity {
+            ErrorSeverity::Warning => ("⚠", style::Color::Yellow),
+            ErrorSeverity::Error => ("✗", style::Color::Red),
+            ErrorSeverity::Critical => ("💥", style::Color::Magenta),
+        };
+        
+        queue!(
+            session.stderr,
+            style::Print(symbol),
+            style::Print(" "),
+            style::SetForegroundColor(color),
+            style::SetAttribute(style::Attribute::Bold),
+            style::Print(context),
+            style::SetAttribute(style::Attribute::Reset),
+            style::ResetColor,
+            style::Print("\n"),
+        )?;
+        
+        // Display the main error message
+        queue!(
+            session.stderr,
+            style::Print("   "),
+            style::Print(error.user_message()),
+            style::Print("\n"),
+        )?;
+        
+        // Add separator
+        queue!(
+            session.stderr,
+            style::Print("   "),
+            style::SetForegroundColor(style::Color::DarkGrey),
+            style::Print("─".repeat(std::cmp::min(terminal_width.saturating_sub(3), 77))),
+            style::ResetColor,
+            style::Print("\n"),
+        )?;
+        
+        // Display suggested actions
+        let suggestions = error.suggested_actions();
+        if !suggestions.is_empty() {
+            queue!(
+                session.stderr,
+                style::Print("   "),
+                style::SetForegroundColor(style::Color::Cyan),
+                style::SetAttribute(style::Attribute::Bold),
+                style::Print("💡 Suggested actions:"),
+                style::SetAttribute(style::Attribute::Reset),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+            
+            for (i, suggestion) in suggestions.iter().enumerate() {
+                queue!(
+                    session.stderr,
+                    style::Print("   "),
+                    style::SetForegroundColor(style::Color::DarkGrey),
+                    style::Print(format!("{}. ", i + 1)),
+                    style::ResetColor,
+                    style::Print(suggestion),
+                    style::Print("\n"),
+                )?;
+            }
+        }
+        
+        // Add context-specific help for server not found errors
+        if let ReloadError::ServerNotFound { .. } = error {
+            Self::display_available_servers(session).await?;
+        }
+        
+        queue!(session.stderr, style::Print("\n"))?;
+        session.stderr.flush()?;
+        Ok(())
+    }
+    
+    /// Displays available servers to help with server not found errors
+    async fn display_available_servers(session: &mut ChatSession) -> Result<(), std::io::Error> {
+        let available_servers = session.conversation.tool_manager
+            .get_configured_server_names()
+            .await;
+        
+        if !available_servers.is_empty() {
+            queue!(
+                session.stderr,
+                style::Print("   "),
+                style::SetForegroundColor(style::Color::Green),
+                style::SetAttribute(style::Attribute::Bold),
+                style::Print("📋 Available servers:"),
+                style::SetAttribute(style::Attribute::Reset),
+                style::ResetColor,
+                style::Print("\n"),
+            )?;
+            
+            // Group servers by status for better organization
+            let current_clients: HashSet<String> = session.conversation.tool_manager.clients.keys().cloned().collect();
+            let session_disabled = session.conversation.tool_manager.get_session_disabled_servers().await;
+            
+            let mut running_servers = Vec::new();
+            let mut disabled_servers = Vec::new();
+            let mut stopped_servers = Vec::new();
+            
+            for server_name in available_servers {
+                if session_disabled.contains(&server_name) {
+                    disabled_servers.push(server_name);
+                } else if current_clients.contains(&server_name) {
+                    running_servers.push(server_name);
+                } else {
+                    stopped_servers.push(server_name);
+                }
+            }
+            
+            // Display running servers
+            if !running_servers.is_empty() {
+                queue!(
+                    session.stderr,
+                    style::Print("      "),
+                    style::SetForegroundColor(style::Color::Green),
+                    style::Print("✓ Running: "),
+                    style::ResetColor,
+                    style::Print(running_servers.join(", ")),
+                    style::Print("\n"),
+                )?;
+            }
+            
+            // Display stopped servers
+            if !stopped_servers.is_empty() {
+                queue!(
+                    session.stderr,
+                    style::Print("      "),
+                    style::SetForegroundColor(style::Color::Yellow),
+                    style::Print("○ Stopped: "),
+                    style::ResetColor,
+                    style::Print(stopped_servers.join(", ")),
+                    style::Print("\n"),
+                )?;
+            }
+            
+            // Display disabled servers
+            if !disabled_servers.is_empty() {
+                queue!(
+                    session.stderr,
+                    style::Print("      "),
+                    style::SetForegroundColor(style::Color::DarkGrey),
+                    style::Print("○ Disabled: "),
+                    style::ResetColor,
+                    style::Print(disabled_servers.join(", ")),
+                    style::Print("\n"),
+                )?;
+            }
+        } else {
+            queue!(
+                session.stderr,
+                style::Print("   "),
+                style::SetForegroundColor(style::Color::Yellow),
+                style::Print("⚠ No MCP servers are configured."),
+                style::ResetColor,
+                style::Print("\n"),
+                style::Print("   Use 'q mcp add' to configure MCP servers."),
+                style::Print("\n"),
+            )?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Displays a success message with consistent formatting
+    pub fn display_success(
+        message: &str,
+        details: Option<&str>,
+        session: &mut ChatSession,
+    ) -> Result<(), std::io::Error> {
+        queue!(
+            session.stderr,
+            style::Print("✓ "),
+            style::SetForegroundColor(style::Color::Green),
+            style::SetAttribute(style::Attribute::Bold),
+            style::Print(message),
+            style::SetAttribute(style::Attribute::Reset),
+            style::ResetColor,
+        )?;
+        
+        if let Some(details) = details {
+            queue!(
+                session.stderr,
+                style::Print(" "),
+                style::SetForegroundColor(style::Color::DarkGrey),
+                style::Print(details),
+                style::ResetColor,
+            )?;
+        }
+        
+        queue!(session.stderr, style::Print("\n"))?;
+        session.stderr.flush()?;
+        Ok(())
+    }
+    
+    /// Displays a warning message with consistent formatting
+    pub fn display_warning(
+        message: &str,
+        details: Option<&str>,
+        session: &mut ChatSession,
+    ) -> Result<(), std::io::Error> {
+        queue!(
+            session.stderr,
+            style::Print("⚠ "),
+            style::SetForegroundColor(style::Color::Yellow),
+            style::SetAttribute(style::Attribute::Bold),
+            style::Print(message),
+            style::SetAttribute(style::Attribute::Reset),
+            style::ResetColor,
+        )?;
+        
+        if let Some(details) = details {
+            queue!(
+                session.stderr,
+                style::Print(" "),
+                style::SetForegroundColor(style::Color::DarkGrey),
+                style::Print(details),
+                style::ResetColor,
+            )?;
+        }
+        
+        queue!(session.stderr, style::Print("\n"))?;
+        session.stderr.flush()?;
+        Ok(())
+    }
 }
 
 impl ServerReloadManager {
@@ -168,7 +580,49 @@ impl ServerReloadManager {
         let has_config = tool_manager.has_server_config(server_name).await;
         
         if !has_config {
-            let available_servers = tool_manager.get_configured_server_names().await;
+            return Err(ReloadError::ServerNotFound {
+                server_name: server_name.to_string(),
+            });
+        }
+        
+        Ok(())
+    }
+    
+    /// Validates server configuration before operations
+    async fn validate_server_config(&self, server_name: &str) -> Result<(), ReloadError> {
+        let tool_manager = self.tool_manager.lock().await;
+        let agent = tool_manager.agent.lock().await;
+        
+        if let Some(config) = agent.mcp_servers.mcp_servers.get(server_name) {
+            // Validate command exists
+            if config.command.is_empty() {
+                return Err(ReloadError::InvalidConfiguration {
+                    server_name: server_name.to_string(),
+                    reason: "Server command is empty".to_string(),
+                });
+            }
+            
+            // Check if command is accessible (basic validation)
+            if !std::path::Path::new(&config.command).exists() {
+                // For simple commands, we'll skip PATH checking for now
+                // This is a basic validation - more sophisticated checking could be added later
+                let command_parts: Vec<&str> = config.command.split_whitespace().collect();
+                if let Some(cmd) = command_parts.first() {
+                    if !std::path::Path::new(cmd).exists() && !cmd.contains('/') {
+                        // If it's not an absolute/relative path and doesn't exist, it might be in PATH
+                        // We'll allow it for now but could add more validation later
+                    }
+                }
+            }
+            
+            // Validate timeout
+            if config.timeout == 0 {
+                return Err(ReloadError::InvalidConfiguration {
+                    server_name: server_name.to_string(),
+                    reason: "Server timeout cannot be zero".to_string(),
+                });
+            }
+        } else {
             return Err(ReloadError::ServerNotFound {
                 server_name: server_name.to_string(),
             });
@@ -348,7 +802,7 @@ impl ServerReloadManager {
         
         for server_name in configured_servers {
             let is_running = tool_manager.clients.contains_key(&server_name);
-            let has_session_override = tool_manager.has_session_override(&server_name).await;
+            let _has_session_override = tool_manager.has_session_override(&server_name).await;
             let is_session_enabled = tool_manager.is_session_enabled(&server_name).await;
             let is_session_disabled = tool_manager.is_session_disabled(&server_name).await;
             
