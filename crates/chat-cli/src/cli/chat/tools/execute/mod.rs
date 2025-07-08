@@ -90,7 +90,7 @@ impl ExecuteCommand {
                     if cmd == "find"
                         && cmd_args
                             .iter()
-                            .any(|arg| arg.contains("-exec") || arg.contains("-delete")) =>
+                            .any(|arg| arg.contains("-exec") || arg.contains("-delete") || arg.contains("-ok")) =>
                 {
                     return true;
                 },
