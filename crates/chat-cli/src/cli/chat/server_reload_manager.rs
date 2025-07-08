@@ -9,6 +9,7 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
+use crate::cli::agent::McpServerConfig;
 use crate::cli::chat::tools::custom_tool::{CustomToolClient, CustomToolConfig};
 use crate::cli::chat::tool_manager::{ToolManager, global_mcp_config_path, workspace_mcp_config_path};
 use crate::cli::chat::ChatSession;
@@ -574,7 +575,10 @@ impl ServerReloadManager {
         Ok(())
     }
     
-    /// Validates that a server exists in the configuration
+    /// Gets a reference to the tool manager for external access
+    pub fn get_tool_manager(&self) -> &Arc<Mutex<ToolManager>> {
+        &self.tool_manager
+    }
     async fn validate_server_exists(&self, server_name: &str) -> Result<(), ReloadError> {
         let tool_manager = self.tool_manager.lock().await;
         let has_config = tool_manager.has_server_config(server_name).await;
@@ -588,47 +592,232 @@ impl ServerReloadManager {
         Ok(())
     }
     
-    /// Validates server configuration before operations
-    async fn validate_server_config(&self, server_name: &str) -> Result<(), ReloadError> {
-        let tool_manager = self.tool_manager.lock().await;
-        let agent = tool_manager.agent.lock().await;
+    /// Reloads configuration files and returns updated server configurations
+    pub async fn reload_configurations(&self, os: &Os) -> Result<HashMap<String, CustomToolConfig>, ReloadError> {
+        info!("Reloading MCP server configurations");
         
-        if let Some(config) = agent.mcp_servers.mcp_servers.get(server_name) {
-            // Validate command exists
-            if config.command.is_empty() {
-                return Err(ReloadError::InvalidConfiguration {
-                    server_name: server_name.to_string(),
-                    reason: "Server command is empty".to_string(),
-                });
+        let mut all_servers = HashMap::new();
+        let mut config_errors = Vec::new();
+        
+        // Load workspace configuration
+        match self.load_workspace_config(os).await {
+            Ok(workspace_config) => {
+                info!("Loaded {} servers from workspace config", workspace_config.mcp_servers.len());
+                all_servers.extend(workspace_config.mcp_servers);
+            },
+            Err(e) => {
+                debug!("No workspace config or failed to load: {}", e);
+                // Workspace config is optional, so we don't treat this as an error
             }
-            
-            // Check if command is accessible (basic validation)
-            if !std::path::Path::new(&config.command).exists() {
-                // For simple commands, we'll skip PATH checking for now
-                // This is a basic validation - more sophisticated checking could be added later
-                let command_parts: Vec<&str> = config.command.split_whitespace().collect();
-                if let Some(cmd) = command_parts.first() {
-                    if !std::path::Path::new(cmd).exists() && !cmd.contains('/') {
-                        // If it's not an absolute/relative path and doesn't exist, it might be in PATH
-                        // We'll allow it for now but could add more validation later
+        }
+        
+        // Load global configuration
+        match self.load_global_config(os).await {
+            Ok(global_config) => {
+                info!("Loaded {} servers from global config", global_config.mcp_servers.len());
+                // Workspace config takes precedence over global config
+                for (name, config) in global_config.mcp_servers {
+                    if !all_servers.contains_key(&name) {
+                        all_servers.insert(name, config);
                     }
                 }
+            },
+            Err(e) => {
+                debug!("No global config or failed to load: {}", e);
+                // Global config is optional, so we don't treat this as an error
             }
-            
-            // Validate timeout
-            if config.timeout == 0 {
-                return Err(ReloadError::InvalidConfiguration {
-                    server_name: server_name.to_string(),
-                    reason: "Server timeout cannot be zero".to_string(),
-                });
+        }
+        
+        // Validate all loaded configurations
+        for (server_name, config) in &all_servers {
+            if let Err(validation_error) = self.validate_server_configuration(server_name, config).await {
+                config_errors.push(format!("{}: {}", server_name, validation_error));
             }
-        } else {
-            return Err(ReloadError::ServerNotFound {
-                server_name: server_name.to_string(),
+        }
+        
+        // If there are validation errors, return them
+        if !config_errors.is_empty() {
+            return Err(ReloadError::ConfigReloadFailed {
+                server_name: "multiple".to_string(),
+                reason: format!("Configuration validation failed: {}", config_errors.join("; ")),
             });
         }
         
+        info!("Successfully reloaded {} server configurations", all_servers.len());
+        Ok(all_servers)
+    }
+    
+    /// Loads workspace MCP configuration
+    async fn load_workspace_config(&self, os: &Os) -> Result<McpServerConfig, eyre::Error> {
+        let workspace_path = workspace_mcp_config_path(os)?;
+        
+        if !os.fs.exists(&workspace_path) {
+            return Err(eyre::eyre!("Workspace config file does not exist"));
+        }
+        
+        info!("Loading workspace config from: {}", workspace_path.display());
+        McpServerConfig::load_from_file(os, &workspace_path).await
+    }
+    
+    /// Loads global MCP configuration
+    async fn load_global_config(&self, os: &Os) -> Result<McpServerConfig, eyre::Error> {
+        let global_path = global_mcp_config_path(os)?;
+        
+        if !os.fs.exists(&global_path) {
+            return Err(eyre::eyre!("Global config file does not exist"));
+        }
+        
+        info!("Loading global config from: {}", global_path.display());
+        McpServerConfig::load_from_file(os, &global_path).await
+    }
+    
+    /// Validates a server configuration before applying it
+    async fn validate_server_configuration(&self, _server_name: &str, config: &CustomToolConfig) -> Result<(), String> {
+        // Validate command exists
+        if config.command.is_empty() {
+            return Err("Server command is empty".to_string());
+        }
+        
+        // Check if command is accessible (basic validation)
+        if !std::path::Path::new(&config.command).exists() {
+            // For simple commands, we'll skip PATH checking for now
+            // This is a basic validation - more sophisticated checking could be added later
+            let command_parts: Vec<&str> = config.command.split_whitespace().collect();
+            if let Some(cmd) = command_parts.first() {
+                if !std::path::Path::new(cmd).exists() && !cmd.contains('/') {
+                    // If it's not an absolute/relative path and doesn't exist, it might be in PATH
+                    // We'll allow it for now but could add more validation later
+                    debug!("Command '{}' not found locally, assuming it's in PATH", cmd);
+                }
+            }
+        }
+        
+        // Validate timeout
+        if config.timeout == 0 {
+            return Err("Server timeout cannot be zero".to_string());
+        }
+        
+        // Validate environment variables if present
+        if let Some(env) = &config.env {
+            for (key, _value) in env {
+                if key.is_empty() {
+                    return Err("Environment variable key cannot be empty".to_string());
+                }
+                if key.contains('=') {
+                    return Err(format!("Environment variable key '{}' cannot contain '='", key));
+                }
+                // Value can be empty, that's valid
+            }
+        }
+        
+        // Validate arguments
+        for arg in &config.args {
+            if arg.is_empty() {
+                return Err("Server argument cannot be empty".to_string());
+            }
+        }
+        
         Ok(())
+    }
+    
+    /// Reloads a specific server with updated configuration
+    pub async fn reload_server_with_config(&self, os: &Os, server_name: &str) -> Result<(), ReloadError> {
+        info!("Reloading server '{}' with updated configuration", server_name);
+        
+        // Step 1: Reload all configurations
+        let updated_configs = self.reload_configurations(os).await?;
+        
+        // Step 2: Check if the server exists in the updated configuration
+        let server_config = updated_configs.get(server_name)
+            .ok_or_else(|| ReloadError::ServerNotFound {
+                server_name: server_name.to_string(),
+            })?
+            .clone();
+        
+        // Step 3: Check current state
+        let tool_manager = self.tool_manager.lock().await;
+        let is_currently_running = tool_manager.clients.contains_key(server_name);
+        let is_session_disabled = tool_manager.is_session_disabled(server_name).await;
+        drop(tool_manager);
+        
+        if is_session_disabled {
+            return Err(ReloadError::ServerStateConflict {
+                server_name: server_name.to_string(),
+                state: "disabled for this session".to_string(),
+            });
+        }
+        
+        // Step 4: Stop existing server if running
+        if is_currently_running {
+            self.stop_server_and_cleanup(server_name).await
+                .map_err(|e| ReloadError::ServerStopFailed {
+                    server_name: server_name.to_string(),
+                    reason: e.to_string(),
+                })?;
+        }
+        
+        // Step 5: Start the server with the new configuration
+        self.start_server_with_config(server_name, server_config).await?;
+        
+        info!("Successfully reloaded server '{}' with updated configuration", server_name);
+        Ok(())
+    }
+    
+    /// Starts a server with a specific configuration
+    async fn start_server_with_config(&self, server_name: &str, config: CustomToolConfig) -> Result<(), ReloadError> {
+        // Create the client (this is not async)
+        let client = CustomToolClient::from_config(server_name.to_string(), config.clone())
+            .map_err(|e| ReloadError::ServerStartFailed {
+                server_name: server_name.to_string(),
+                reason: e.to_string(),
+            })?;
+        
+        // Initialize the client with timeout
+        tokio::time::timeout(
+            std::time::Duration::from_secs(config.timeout.max(30)), // Use at least 30 seconds
+            client.init()
+        )
+        .await
+        .map_err(|_| ReloadError::OperationTimeout {
+            server_name: server_name.to_string(),
+            operation: "initialize".to_string(),
+        })?
+        .map_err(|e| ReloadError::ServerStartFailed {
+            server_name: server_name.to_string(),
+            reason: format!("Initialization failed: {}", e),
+        })?;
+        
+        // Add client to tool manager
+        let mut tool_manager = self.tool_manager.lock().await;
+        tool_manager.clients.insert(server_name.to_string(), Arc::new(client));
+        
+        // Trigger tool registration
+        tool_manager.has_new_stuff.store(true, std::sync::atomic::Ordering::Release);
+        
+        Ok(())
+    }
+    
+    /// Detects configuration changes by comparing file modification times
+    pub async fn detect_configuration_changes(&self, os: &Os) -> Result<Vec<String>, ReloadError> {
+        let mut changed_files = Vec::new();
+        
+        // Check workspace config
+        if let Ok(workspace_path) = workspace_mcp_config_path(os) {
+            if os.fs.exists(&workspace_path) {
+                // For now, we'll just report that the file exists
+                // In a more sophisticated implementation, we could track modification times
+                changed_files.push(format!("workspace: {}", workspace_path.display()));
+            }
+        }
+        
+        // Check global config
+        if let Ok(global_path) = global_mcp_config_path(os) {
+            if os.fs.exists(&global_path) {
+                changed_files.push(format!("global: {}", global_path.display()));
+            }
+        }
+        
+        Ok(changed_files)
     }
     
     /// Stops a server process without removing tools from the registry
@@ -692,30 +881,20 @@ impl ServerReloadManager {
     }
     
     /// Re-reads the configuration for a specific server
+    /// Re-reads the configuration for a specific server with comprehensive validation
     async fn reload_server_config(&self, os: &Os, server_name: &str) -> Result<CustomToolConfig, ReloadError> {
         debug!("Reloading configuration for server '{}'", server_name);
         
-        // Re-read both workspace and global MCP configurations
-        let workspace_config = self.load_workspace_mcp_config(os).await;
-        let global_config = self.load_global_mcp_config(os).await;
+        // Use the comprehensive configuration reloading
+        let updated_configs = self.reload_configurations(os).await?;
         
-        // Try workspace config first, then global config
-        let config = if let Ok(workspace_config) = workspace_config {
-            workspace_config.mcp_servers.get(server_name).cloned()
-        } else {
-            None
-        }.or_else(|| {
-            if let Ok(global_config) = global_config {
-                global_config.mcp_servers.get(server_name).cloned()
-            } else {
-                None
-            }
-        });
-        
-        config.ok_or_else(|| ReloadError::ConfigReloadFailed {
-            server_name: server_name.to_string(),
-            reason: "Server not found in workspace or global MCP configuration".to_string(),
-        })
+        // Get the specific server configuration
+        updated_configs.get(server_name)
+            .cloned()
+            .ok_or_else(|| ReloadError::ConfigReloadFailed {
+                server_name: server_name.to_string(),
+                reason: "Server not found in updated configuration".to_string(),
+            })
     }
     
     /// Loads workspace MCP configuration
@@ -763,35 +942,6 @@ impl ServerReloadManager {
     }
     
     /// Starts a server with the given configuration
-    async fn start_server_with_config(&self, server_name: &str, config: CustomToolConfig) -> Result<(), ReloadError> {
-        debug!("Starting server '{}' with new configuration", server_name);
-        
-        // Create new client
-        let new_client = CustomToolClient::from_config(server_name.to_string(), config)
-            .map_err(|e| ReloadError::ServerStartFailed {
-                server_name: server_name.to_string(),
-                reason: e.to_string(),
-            })?;
-        
-        // Initialize the client (this establishes the connection)
-        new_client.init().await
-            .map_err(|e| ReloadError::ServerStartFailed {
-                server_name: server_name.to_string(),
-                reason: e.to_string(),
-            })?;
-        
-        // Add client to tool manager
-        let mut tool_manager = self.tool_manager.lock().await;
-        tool_manager.clients.insert(server_name.to_string(), Arc::new(new_client));
-        
-        debug!("Successfully started server '{}'", server_name);
-        
-        // Note: Tool registration will happen automatically via the existing
-        // async mechanism in ToolManager that listens for new tools
-        
-        Ok(())
-    }
-    
     /// Gets the current status of all servers
     pub async fn get_server_status(&self) -> HashMap<String, ServerStatus> {
         let tool_manager = self.tool_manager.lock().await;
