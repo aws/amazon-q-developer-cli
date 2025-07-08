@@ -35,8 +35,8 @@ pub enum McpSubcommand {
     Disable(DisableArgs),
     /// List all configured MCP servers
     List(ListArgs),
-    /// Reload all MCP server configurations from files
-    ReloadConfig(ReloadConfigArgs),
+    /// Sync running servers with configuration files
+    Sync(SyncArgs),
 }
 
 #[derive(Debug, PartialEq, Args)]
@@ -61,7 +61,7 @@ pub struct DisableArgs {
 pub struct ListArgs;
 
 #[derive(Debug, PartialEq, Args)]
-pub struct ReloadConfigArgs {
+pub struct SyncArgs {
     /// Validate configurations without applying changes
     #[arg(long)]
     pub validate_only: bool,
@@ -174,7 +174,7 @@ impl McpSubcommand {
             McpSubcommand::Enable(args) => args.execute(session).await,
             McpSubcommand::Disable(args) => args.execute(session).await,
             McpSubcommand::List(args) => args.execute(session).await,
-            McpSubcommand::ReloadConfig(args) => args.execute(session).await,
+            McpSubcommand::Sync(args) => args.execute(session).await,
         }
     }
 }
@@ -481,7 +481,7 @@ impl ListArgs {
     }
 }
 
-impl ReloadConfigArgs {
+impl SyncArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // Create OS interface for configuration operations
         let os = crate::os::Os::new().await
@@ -490,7 +490,7 @@ impl ReloadConfigArgs {
         // Show progress indication
         queue!(
             session.stderr,
-            style::Print("🔄 Reloading MCP server configurations..."),
+            style::Print("🔄 Syncing MCP servers with configuration files..."),
             style::Print("\n"),
         )?;
         session.stderr.flush()?;
@@ -534,13 +534,13 @@ impl ReloadConfigArgs {
                         session.conversation.refresh_filtered_tools().await;
                         
                         ErrorDisplayManager::display_success(
-                            "Configuration reload completed",
+                            "Configuration sync completed",
                             Some(&format!("Applied changes to {} servers", changes_applied)),
                             session,
                         )?;
                     } else {
                         ErrorDisplayManager::display_success(
-                            "Configuration reload completed",
+                            "Configuration sync completed",
                             Some("No changes were necessary"),
                             session,
                         )?;
@@ -553,12 +553,12 @@ impl ReloadConfigArgs {
                 // Display comprehensive error with user guidance
                 ErrorDisplayManager::display_error(
                     &e,
-                    "Failed to reload MCP server configurations",
+                    "Failed to sync MCP servers with configuration files",
                     session,
                 ).await?;
                 
                 // Convert to ChatError but continue the session
-                Err(ChatError::Custom(format!("Configuration reload failed: {}", e).into()))
+                Err(ChatError::Custom(format!("Configuration sync failed: {}", e).into()))
             }
         }
     }
