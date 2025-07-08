@@ -7,12 +7,13 @@ use crossterm::{queue, style};
 use eyre::Result;
 use thiserror::Error;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::cli::agent::McpServerConfig;
 use crate::cli::chat::tools::custom_tool::{CustomToolClient, CustomToolConfig};
 use crate::cli::chat::progress_display::{ProgressDisplay, is_interactive_mode};
-use crate::cli::chat::tool_manager::{ToolManager, global_mcp_config_path, workspace_mcp_config_path};
+use crate::cli::chat::tool_manager::{ToolManager, global_mcp_config_path, workspace_mcp_config_path, ToolInfo};
+use crate::cli::chat::tools::{ToolSpec, ToolOrigin};
 use crate::cli::chat::ChatSession;
 use crate::os::Os;
 
@@ -1073,12 +1074,98 @@ impl ServerReloadManager {
             reason: format!("Initialization failed: {}", e),
         })?;
         
-        // Add client to tool manager
+        // Add client to tool manager and register tools
         let mut tool_manager = self.tool_manager.lock().await;
-        tool_manager.clients.insert(server_name.to_string(), Arc::new(client));
+        let client_arc = Arc::new(client);
+        tool_manager.clients.insert(server_name.to_string(), client_arc.clone());
         
-        // Trigger tool registration
-        tool_manager.has_new_stuff.store(true, std::sync::atomic::Ordering::Release);
+        // Manually fetch and register tools (since we don't have access to the messenger system)
+        if let Err(e) = self.register_server_tools(&mut tool_manager, client_arc, server_name).await {
+            // If tool registration fails, remove the client and return error
+            tool_manager.clients.remove(server_name);
+            return Err(e);
+        }
+        
+        Ok(())
+    }
+    
+    /// Manually registers tools for a server (bypassing the messenger system)
+    async fn register_server_tools(
+        &self,
+        tool_manager: &mut crate::cli::chat::tool_manager::ToolManager,
+        client: Arc<CustomToolClient>,
+        server_name: &str,
+    ) -> Result<(), ReloadError> {
+        use crate::cli::chat::tools::custom_tool::CustomToolClient;
+        
+        // Fetch tools from the server
+        let tools_result = match client.as_ref() {
+            CustomToolClient::Stdio { client: mcp_client, .. } => {
+                // Request tools list from the server
+                let resp = mcp_client.request("tools/list", None).await
+                    .map_err(|e| ReloadError::ToolRegistrationFailed {
+                        server_name: server_name.to_string(),
+                        reason: format!("Failed to request tools list: {}", e),
+                    })?;
+                
+                if let Some(error) = resp.error {
+                    return Err(ReloadError::ToolRegistrationFailed {
+                        server_name: server_name.to_string(),
+                        reason: format!("Server returned error: {:?}", error),
+                    });
+                }
+                
+                resp.result.ok_or_else(|| ReloadError::ToolRegistrationFailed {
+                    server_name: server_name.to_string(),
+                    reason: "Tools list response missing result".to_string(),
+                })?
+            }
+        };
+        
+        // Parse the tools list result
+        #[derive(serde::Deserialize)]
+        struct ToolsListResult {
+            tools: Vec<serde_json::Value>,
+        }
+        
+        let tools_list = serde_json::from_value::<ToolsListResult>(tools_result)
+            .map_err(|e| ReloadError::ToolRegistrationFailed {
+                server_name: server_name.to_string(),
+                reason: format!("Failed to parse tools list: {}", e),
+            })?;
+        
+        // Convert tools to ToolSpec format and register them directly
+        let mut specs = Vec::new();
+        for tool_value in tools_list.tools {
+            if let Ok(spec) = serde_json::from_value::<ToolSpec>(tool_value) {
+                specs.push(spec);
+            }
+        }
+        
+        // Register tools directly in the tool manager (similar to what update() does)
+        for spec in specs {
+            let model_tool_name = format!("{}___{}", server_name, spec.name);
+            
+            // Check for conflicts with existing tools
+            if tool_manager.tn_map.contains_key(&model_tool_name) {
+                warn!("Tool name conflict: {} already exists, skipping", model_tool_name);
+                continue;
+            }
+            
+            // Create tool info
+            let tool_info = ToolInfo {
+                host_tool_name: spec.name.clone(),
+                server_name: server_name.to_string(),
+            };
+            
+            // Add to tool name map
+            tool_manager.tn_map.insert(model_tool_name.clone(), tool_info);
+            
+            // Add to schema
+            tool_manager.schema.insert(model_tool_name, spec);
+        }
+        
+        info!("Registered {} tools for server '{}'", tool_manager.schema.len(), server_name);
         
         Ok(())
     }
