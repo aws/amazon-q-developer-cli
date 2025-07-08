@@ -1466,6 +1466,44 @@ impl ToolManager {
         let configured_servers = self.get_configured_server_names().await;
         configured_servers.contains(&server_name.to_string())
     }
+    
+    /// Checks if a server is disabled in its configuration
+    pub async fn is_server_config_disabled(&self, server_name: &str) -> bool {
+        // Check the agent configuration first
+        let agent = self.agent.lock().await;
+        if let Some(server_config) = agent.mcp_servers.mcp_servers.get(server_name) {
+            return server_config.disabled;
+        }
+        drop(agent);
+        
+        // If not found in agent, try to read from config files directly
+        if let Ok(os) = crate::os::Os::new().await {
+            // Try workspace config first
+            if let Ok(workspace_path) = workspace_mcp_config_path(&os) {
+                if os.fs.exists(&workspace_path) {
+                    if let Ok(workspace_config) = crate::cli::agent::McpServerConfig::load_from_file(&os, &workspace_path).await {
+                        if let Some(server_config) = workspace_config.mcp_servers.get(server_name) {
+                            return server_config.disabled;
+                        }
+                    }
+                }
+            }
+            
+            // Try global config
+            if let Ok(global_path) = global_mcp_config_path(&os) {
+                if os.fs.exists(&global_path) {
+                    if let Ok(global_config) = crate::cli::agent::McpServerConfig::load_from_file(&os, &global_path).await {
+                        if let Some(server_config) = global_config.mcp_servers.get(server_name) {
+                            return server_config.disabled;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Default to false if we can't find the server config
+        false
+    }
 }
 
 #[inline]
