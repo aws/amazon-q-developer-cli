@@ -1074,16 +1074,25 @@ impl ServerReloadManager {
             reason: format!("Initialization failed: {}", e),
         })?;
         
-        // Add client to tool manager and register tools
+        // Add client to tool manager
         let mut tool_manager = self.tool_manager.lock().await;
         let client_arc = Arc::new(client);
         tool_manager.clients.insert(server_name.to_string(), client_arc.clone());
         
-        // Manually fetch and register tools (since we don't have access to the messenger system)
-        if let Err(e) = self.register_server_tools(&mut tool_manager, client_arc, server_name).await {
-            // If tool registration fails, remove the client and return error
-            tool_manager.clients.remove(server_name);
-            return Err(e);
+        // Check if tools already exist for this server (from initial startup)
+        let has_existing_tools = tool_manager.schema.values()
+            .any(|spec| matches!(&spec.tool_origin, ToolOrigin::McpServer(name) if name == server_name));
+        
+        if !has_existing_tools {
+            // Server was disabled in config, so we need to register tools manually
+            if let Err(e) = self.register_server_tools(&mut tool_manager, client_arc, server_name).await {
+                // If tool registration fails, remove the client and return error
+                tool_manager.clients.remove(server_name);
+                return Err(e);
+            }
+        } else {
+            // Server was enabled in config but disabled for session - tools already exist
+            debug!("Server '{}' has existing tools, skipping registration", server_name);
         }
         
         Ok(())
@@ -1137,7 +1146,9 @@ impl ServerReloadManager {
         // Convert tools to ToolSpec format and register them directly
         let mut specs = Vec::new();
         for tool_value in tools_list.tools {
-            if let Ok(spec) = serde_json::from_value::<ToolSpec>(tool_value) {
+            if let Ok(mut spec) = serde_json::from_value::<ToolSpec>(tool_value) {
+                // Set the correct tool origin for MCP server tools
+                spec.tool_origin = ToolOrigin::McpServer(server_name.to_string());
                 specs.push(spec);
             }
         }
