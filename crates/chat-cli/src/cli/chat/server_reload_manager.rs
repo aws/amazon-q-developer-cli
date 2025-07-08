@@ -11,6 +11,7 @@ use tracing::{debug, error, info};
 
 use crate::cli::agent::McpServerConfig;
 use crate::cli::chat::tools::custom_tool::{CustomToolClient, CustomToolConfig};
+use crate::cli::chat::progress_display::{ProgressDisplay, is_interactive_mode};
 use crate::cli::chat::tool_manager::{ToolManager, global_mcp_config_path, workspace_mcp_config_path};
 use crate::cli::chat::ChatSession;
 use crate::os::Os;
@@ -478,23 +479,126 @@ impl ServerReloadManager {
     /// * `Ok(())` if reload was successful
     /// * `Err(ReloadError)` if any step failed
     pub async fn reload_server(&self, os: &Os, server_name: &str) -> Result<(), ReloadError> {
+        self.reload_server_with_progress(os, server_name, None).await
+    }
+    
+    /// Reloads a server with optional progress display
+    pub async fn reload_server_with_progress(
+        &self, 
+        os: &Os, 
+        server_name: &str, 
+        progress: Option<&ProgressDisplay>
+    ) -> Result<(), ReloadError> {
         let start_time = Instant::now();
+        let operation_id = format!("reload_{}", server_name);
+        
         info!("Starting reload of server '{}'", server_name);
         
+        // Start progress display
+        if let Some(progress) = progress {
+            progress.start_operation(
+                operation_id.clone(),
+                format!("Reloading server '{}'", server_name)
+            ).await;
+        }
+        
         // 1. Validate server exists in configuration
-        self.validate_server_exists(server_name).await?;
+        if let Some(progress) = progress {
+            progress.update_progress(
+                operation_id.clone(),
+                format!("Validating server '{}'", server_name)
+            ).await;
+        }
+        
+        if let Err(e) = self.validate_server_exists(server_name).await {
+            let duration = start_time.elapsed();
+            if let Some(progress) = progress {
+                progress.error(
+                    operation_id,
+                    format!("Server '{}' validation failed", server_name),
+                    e.to_string(),
+                    duration
+                ).await;
+            }
+            return Err(e);
+        }
         
         // 2. Stop existing server and remove tools
-        self.stop_server_and_cleanup(server_name).await?;
+        if let Some(progress) = progress {
+            progress.update_progress(
+                operation_id.clone(),
+                format!("Stopping server '{}'", server_name)
+            ).await;
+        }
+        
+        if let Err(e) = self.stop_server_and_cleanup(server_name).await {
+            let duration = start_time.elapsed();
+            if let Some(progress) = progress {
+                progress.error(
+                    operation_id,
+                    format!("Failed to stop server '{}'", server_name),
+                    e.to_string(),
+                    duration
+                ).await;
+            }
+            return Err(e);
+        }
         
         // 3. Re-read configuration for this server
-        let config = self.reload_server_config(os, server_name).await?;
+        if let Some(progress) = progress {
+            progress.update_progress(
+                operation_id.clone(),
+                format!("Reloading configuration for '{}'", server_name)
+            ).await;
+        }
+        
+        let config = match self.reload_server_config(os, server_name).await {
+            Ok(config) => config,
+            Err(e) => {
+                let duration = start_time.elapsed();
+                if let Some(progress) = progress {
+                    progress.error(
+                        operation_id,
+                        format!("Configuration reload failed for '{}'", server_name),
+                        e.to_string(),
+                        duration
+                    ).await;
+                }
+                return Err(e);
+            }
+        };
         
         // 4. Start new server with updated configuration
-        self.start_server_with_config(server_name, config).await?;
+        if let Some(progress) = progress {
+            progress.update_progress(
+                operation_id.clone(),
+                format!("Starting server '{}'", server_name)
+            ).await;
+        }
+        
+        if let Err(e) = self.start_server_with_config(server_name, config).await {
+            let duration = start_time.elapsed();
+            if let Some(progress) = progress {
+                progress.error(
+                    operation_id,
+                    format!("Failed to start server '{}'", server_name),
+                    e.to_string(),
+                    duration
+                ).await;
+            }
+            return Err(e);
+        }
         
         let duration = start_time.elapsed();
         info!("Successfully reloaded server '{}' in {:.2}s", server_name, duration.as_secs_f64());
+        
+        if let Some(progress) = progress {
+            progress.success(
+                operation_id,
+                format!("Server '{}' reloaded successfully", server_name),
+                duration
+            ).await;
+        }
         
         Ok(())
     }
@@ -505,10 +609,49 @@ impl ServerReloadManager {
     /// * `os` - Operating system interface for file operations
     /// * `server_name` - Name of the server to enable
     pub async fn enable_server(&self, os: &Os, server_name: &str) -> Result<(), ReloadError> {
+        self.enable_server_with_progress(os, server_name, None).await
+    }
+    
+    /// Enables a server with optional progress display
+    pub async fn enable_server_with_progress(
+        &self, 
+        os: &Os, 
+        server_name: &str, 
+        progress: Option<&ProgressDisplay>
+    ) -> Result<(), ReloadError> {
+        let start_time = Instant::now();
+        let operation_id = format!("enable_{}", server_name);
+        
         info!("Enabling server '{}'", server_name);
         
+        // Start progress display
+        if let Some(progress) = progress {
+            progress.start_operation(
+                operation_id.clone(),
+                format!("Enabling server '{}'", server_name)
+            ).await;
+        }
+        
         // Validate server exists
-        self.validate_server_exists(server_name).await?;
+        if let Some(progress) = progress {
+            progress.update_progress(
+                operation_id.clone(),
+                format!("Validating server '{}'", server_name)
+            ).await;
+        }
+        
+        if let Err(e) = self.validate_server_exists(server_name).await {
+            let duration = start_time.elapsed();
+            if let Some(progress) = progress {
+                progress.error(
+                    operation_id,
+                    format!("Server '{}' validation failed", server_name),
+                    e.to_string(),
+                    duration
+                ).await;
+            }
+            return Err(e);
+        }
         
         // Check current state
         let tool_manager = self.tool_manager.lock().await;
@@ -517,24 +660,84 @@ impl ServerReloadManager {
         drop(tool_manager);
         
         if is_currently_enabled && !has_session_override {
-            return Err(ReloadError::ServerStateConflict {
+            let duration = start_time.elapsed();
+            let error = ReloadError::ServerStateConflict {
                 server_name: server_name.to_string(),
                 state: "enabled".to_string(),
-            });
+            };
+            if let Some(progress) = progress {
+                progress.error(
+                    operation_id,
+                    format!("Server '{}' state conflict", server_name),
+                    error.to_string(),
+                    duration
+                ).await;
+            }
+            return Err(error);
         }
         
         // Enable in session state
+        if let Some(progress) = progress {
+            progress.update_progress(
+                operation_id.clone(),
+                format!("Updating session state for '{}'", server_name)
+            ).await;
+        }
+        
         let tool_manager = self.tool_manager.lock().await;
         tool_manager.enable_server_for_session(server_name.to_string()).await;
         drop(tool_manager);
         
         // If server is not currently running, start it
         if !is_currently_enabled {
-            let config = self.reload_server_config(os, server_name).await?;
-            self.start_server_with_config(server_name, config).await?;
+            if let Some(progress) = progress {
+                progress.update_progress(
+                    operation_id.clone(),
+                    format!("Starting server '{}'", server_name)
+                ).await;
+            }
+            
+            let config = match self.reload_server_config(os, server_name).await {
+                Ok(config) => config,
+                Err(e) => {
+                    let duration = start_time.elapsed();
+                    if let Some(progress) = progress {
+                        progress.error(
+                            operation_id,
+                            format!("Configuration reload failed for '{}'", server_name),
+                            e.to_string(),
+                            duration
+                        ).await;
+                    }
+                    return Err(e);
+                }
+            };
+            
+            if let Err(e) = self.start_server_with_config(server_name, config).await {
+                let duration = start_time.elapsed();
+                if let Some(progress) = progress {
+                    progress.error(
+                        operation_id,
+                        format!("Failed to start server '{}'", server_name),
+                        e.to_string(),
+                        duration
+                    ).await;
+                }
+                return Err(e);
+            }
         }
         
+        let duration = start_time.elapsed();
         info!("Successfully enabled server '{}'", server_name);
+        
+        if let Some(progress) = progress {
+            progress.success(
+                operation_id,
+                format!("Server '{}' enabled successfully", server_name),
+                duration
+            ).await;
+        }
+        
         Ok(())
     }
     
@@ -543,10 +746,48 @@ impl ServerReloadManager {
     /// # Arguments
     /// * `server_name` - Name of the server to disable
     pub async fn disable_server(&self, server_name: &str) -> Result<(), ReloadError> {
+        self.disable_server_with_progress(server_name, None).await
+    }
+    
+    /// Disables a server with optional progress display
+    pub async fn disable_server_with_progress(
+        &self, 
+        server_name: &str, 
+        progress: Option<&ProgressDisplay>
+    ) -> Result<(), ReloadError> {
+        let start_time = Instant::now();
+        let operation_id = format!("disable_{}", server_name);
+        
         info!("Disabling server '{}'", server_name);
         
+        // Start progress display
+        if let Some(progress) = progress {
+            progress.start_operation(
+                operation_id.clone(),
+                format!("Disabling server '{}'", server_name)
+            ).await;
+        }
+        
         // Validate server exists
-        self.validate_server_exists(server_name).await?;
+        if let Some(progress) = progress {
+            progress.update_progress(
+                operation_id.clone(),
+                format!("Validating server '{}'", server_name)
+            ).await;
+        }
+        
+        if let Err(e) = self.validate_server_exists(server_name).await {
+            let duration = start_time.elapsed();
+            if let Some(progress) = progress {
+                progress.error(
+                    operation_id,
+                    format!("Server '{}' validation failed", server_name),
+                    e.to_string(),
+                    duration
+                ).await;
+            }
+            return Err(e);
+        }
         
         // Check current state
         let tool_manager = self.tool_manager.lock().await;
@@ -555,23 +796,68 @@ impl ServerReloadManager {
         drop(tool_manager);
         
         if !is_currently_enabled && !has_session_override {
-            return Err(ReloadError::ServerStateConflict {
+            let duration = start_time.elapsed();
+            let error = ReloadError::ServerStateConflict {
                 server_name: server_name.to_string(),
                 state: "disabled".to_string(),
-            });
+            };
+            if let Some(progress) = progress {
+                progress.error(
+                    operation_id,
+                    format!("Server '{}' state conflict", server_name),
+                    error.to_string(),
+                    duration
+                ).await;
+            }
+            return Err(error);
         }
         
         // Disable in session state
+        if let Some(progress) = progress {
+            progress.update_progress(
+                operation_id.clone(),
+                format!("Updating session state for '{}'", server_name)
+            ).await;
+        }
+        
         let tool_manager = self.tool_manager.lock().await;
         tool_manager.disable_server_for_session(server_name.to_string()).await;
         drop(tool_manager);
         
         // If server is currently running, stop it (but keep tools in registry)
         if is_currently_enabled {
-            self.stop_server_only(server_name).await?;
+            if let Some(progress) = progress {
+                progress.update_progress(
+                    operation_id.clone(),
+                    format!("Stopping server '{}'", server_name)
+                ).await;
+            }
+            
+            if let Err(e) = self.stop_server_only(server_name).await {
+                let duration = start_time.elapsed();
+                if let Some(progress) = progress {
+                    progress.error(
+                        operation_id,
+                        format!("Failed to stop server '{}'", server_name),
+                        e.to_string(),
+                        duration
+                    ).await;
+                }
+                return Err(e);
+            }
         }
         
+        let duration = start_time.elapsed();
         info!("Successfully disabled server '{}'", server_name);
+        
+        if let Some(progress) = progress {
+            progress.success(
+                operation_id,
+                format!("Server '{}' disabled successfully", server_name),
+                duration
+            ).await;
+        }
+        
         Ok(())
     }
     
