@@ -244,9 +244,7 @@ impl ChatArgs {
                                 // Merge global MCP config with agent's MCP config
                                 for (server_name, server_config) in global_mcp_config.mcp_servers {
                                     // Only add if not already present in agent config
-                                    if !active_agent.mcp_servers.mcp_servers.contains_key(&server_name) {
-                                        active_agent.mcp_servers.mcp_servers.insert(server_name, server_config);
-                                    }
+                                    active_agent.mcp_servers.mcp_servers.entry(server_name).or_insert(server_config);
                                 }
                                 info!("Loaded global MCP configuration with {} servers", server_count);
                             },

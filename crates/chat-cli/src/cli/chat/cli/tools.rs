@@ -1,5 +1,6 @@
 use std::collections::{
     BTreeSet,
+    HashMap,
     HashSet,
 };
 use std::io::Write;
@@ -102,7 +103,7 @@ impl ToolsArgs {
                 ToolOrigin::McpServer(server_name) => {
                     session.conversation.tool_manager.is_session_disabled(server_name).await
                 },
-                _ => false,
+                ToolOrigin::Native => false,
             };
 
             // Note that Tool is model facing and thus would have names recognized by model.
@@ -146,7 +147,7 @@ impl ToolsArgs {
             let origin_display = if is_server_disabled {
                 match origin {
                     ToolOrigin::McpServer(server_name) => format!("{} (disabled for session)", server_name),
-                    _ => format!("{}", origin),
+                    ToolOrigin::Native => format!("{}", origin),
                 }
             } else {
                 format!("{}", origin)
@@ -254,7 +255,24 @@ impl ToolsSubcommand {
 
         match self {
             Self::Schema => {
-                let schema_json = serde_json::to_string_pretty(&session.conversation.tool_manager.schema)
+                // Filter out tools from disabled servers to avoid consuming unnecessary context
+                let mut filtered_schema = HashMap::new();
+                
+                for (model_tool_name, tool_spec) in &session.conversation.tool_manager.schema {
+                    let should_include = if let Some(tool_info) = session.conversation.tool_manager.tn_map.get(model_tool_name) {
+                        // This is an MCP server tool - check if the server is disabled
+                        !session.conversation.tool_manager.is_session_disabled(&tool_info.server_name).await
+                    } else {
+                        // This is a native tool - always include it
+                        true
+                    };
+                    
+                    if should_include {
+                        filtered_schema.insert(model_tool_name.clone(), tool_spec.clone());
+                    }
+                }
+                
+                let schema_json = serde_json::to_string_pretty(&filtered_schema)
                     .map_err(|e| ChatError::Custom(format!("Error converting tool schema to string: {e}").into()))?;
                 queue!(session.stderr, style::Print(schema_json), style::Print("\n"))?;
             },

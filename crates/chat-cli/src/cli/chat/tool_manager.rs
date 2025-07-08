@@ -1353,14 +1353,7 @@ impl ToolManager {
     }
 
     /// Session State Management Methods
-    
-    /// Checks if a server should be enabled based on configuration and session overrides.
-    #[allow(dead_code)]
-    pub async fn is_server_enabled(&self, server_name: &str, config_enabled: bool) -> bool {
-        let session_state = self.session_state.lock().await;
-        session_state.is_server_enabled(server_name, config_enabled)
-    }
-    
+    ///
     /// Disables a server for this session only.
     pub async fn disable_server_for_session(&self, server_name: String) {
         let mut session_state = self.session_state.lock().await;
@@ -1373,24 +1366,10 @@ impl ToolManager {
         session_state.enable_server(server_name);
     }
     
-    /// Removes any session overrides for a server.
-    #[allow(dead_code)]
-    pub async fn reset_server_session_state(&self, server_name: &str) {
-        let mut session_state = self.session_state.lock().await;
-        session_state.reset_server(server_name);
-    }
-    
     /// Returns whether a server has been disabled for this session.
     pub async fn is_session_disabled(&self, server_name: &str) -> bool {
         let session_state = self.session_state.lock().await;
         session_state.is_session_disabled(server_name)
-    }
-    
-    /// Returns whether a server has been enabled for this session.
-    #[allow(dead_code)]
-    pub async fn is_session_enabled(&self, server_name: &str) -> bool {
-        let session_state = self.session_state.lock().await;
-        session_state.is_session_enabled(server_name)
     }
     
     /// Returns whether a server has any session-level overrides.
@@ -1409,20 +1388,6 @@ impl ToolManager {
     pub async fn get_session_enabled_servers(&self) -> HashSet<String> {
         let session_state = self.session_state.lock().await;
         session_state.get_enabled_servers().clone()
-    }
-    
-    /// Clears all session overrides.
-    #[allow(dead_code)]
-    pub async fn clear_all_session_overrides(&self) {
-        let mut session_state = self.session_state.lock().await;
-        session_state.clear_all_overrides();
-    }
-    
-    /// Returns the total number of session overrides.
-    #[allow(dead_code)]
-    pub async fn session_override_count(&self) -> usize {
-        let session_state = self.session_state.lock().await;
-        session_state.override_count()
     }
     
     /// Gets a list of all configured server names from the agent configuration.

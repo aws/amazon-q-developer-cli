@@ -15,7 +15,6 @@ const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '�
 
 /// Messages for progress display communication
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum ProgressMsg {
     /// Start a new operation
     Start {
@@ -38,13 +37,6 @@ pub enum ProgressMsg {
         operation_id: String,
         message: String,
         error: String,
-        duration: Duration,
-    },
-    /// Operation completed with warning
-    Warning {
-        operation_id: String,
-        message: String,
-        warning: String,
         duration: Duration,
     },
     /// Terminate the progress display
@@ -129,21 +121,6 @@ impl ProgressDisplay {
     }
     
     /// Marks an operation as completed with warning
-    #[allow(dead_code)]
-    pub async fn warning(&self, operation_id: String, message: String, warning: String, duration: Duration) {
-        if let Some(sender) = &self.sender {
-            let _ = sender.send(ProgressMsg::Warning {
-                operation_id,
-                message,
-                warning,
-                duration,
-            }).await;
-        } else if !self.interactive {
-            // In non-interactive mode, show minimal warning output
-            println!("⚠ {}: {}", message, warning);
-        }
-    }
-    
     /// Terminates the progress display
     pub async fn terminate(mut self) {
         if let Some(sender) = self.sender.take() {
@@ -184,10 +161,6 @@ impl ProgressDisplay {
                         ProgressMsg::Error { operation_id, message, error, duration } => {
                             active_operations.remove(&operation_id);
                             Self::queue_error_message(&operation_id, &message, &error, duration, &mut output)?;
-                        },
-                        ProgressMsg::Warning { operation_id, message, warning, duration } => {
-                            active_operations.remove(&operation_id);
-                            Self::queue_warning_message(&operation_id, &message, &warning, duration, &mut output)?;
                         },
                         ProgressMsg::Terminate => {
                             break;
@@ -304,36 +277,6 @@ impl ProgressDisplay {
         Ok(())
     }
     
-    /// Queues a warning message
-    fn queue_warning_message(_operation_id: &str, message: &str, warning: &str, duration: Duration, output: &mut impl Write) -> Result<(), eyre::Report> {
-        execute!(
-            output,
-            cursor::MoveToColumn(0),
-            cursor::MoveUp(1),
-            terminal::Clear(terminal::ClearType::CurrentLine),
-        )?;
-        
-        queue!(
-            output,
-            style::SetForegroundColor(style::Color::Yellow),
-            style::Print("⚠ "),
-            style::ResetColor,
-            style::SetForegroundColor(style::Color::Cyan),
-            style::Print(message),
-            style::ResetColor,
-            style::Print(" in "),
-            style::SetForegroundColor(style::Color::Yellow),
-            style::Print(format!("{:.2}s", duration.as_secs_f64())),
-            style::ResetColor,
-            style::Print(": "),
-            style::SetForegroundColor(style::Color::Yellow),
-            style::Print(warning),
-            style::ResetColor,
-            style::Print("\n"),
-        )?;
-        Ok(())
-    }
-    
     /// Updates display for active operations
     fn update_active_operations_display(
         active_operations: &std::collections::HashMap<String, (String, Instant)>,
@@ -386,84 +329,4 @@ pub fn is_interactive_mode() -> bool {
     
     // Check if we're connected to a terminal
     stderr().is_terminal() && stdout().is_terminal()
-}
-
-/// Simple progress tracker for non-async contexts
-#[allow(dead_code)]
-pub struct SimpleProgress {
-    start_time: Instant,
-    description: String,
-    interactive: bool,
-}
-
-impl SimpleProgress {
-    #[allow(dead_code)]
-    pub fn new(description: String) -> Self {
-        let interactive = is_interactive_mode();
-        
-        if interactive {
-            eprint!("🔄 {}...", description);
-            std::io::stderr().flush().unwrap_or(());
-        }
-        
-        Self {
-            start_time: Instant::now(),
-            description,
-            interactive,
-        }
-    }
-    
-    #[allow(dead_code)]
-    pub fn success(self, message: Option<&str>) {
-        let duration = self.start_time.elapsed();
-        
-        if self.interactive {
-            eprint!("\r");
-            queue!(
-                std::io::stderr(),
-                terminal::Clear(terminal::ClearType::CurrentLine),
-                style::SetForegroundColor(style::Color::Green),
-                style::Print("✓ "),
-                style::ResetColor,
-                style::Print(message.unwrap_or(&self.description)),
-                style::Print(" in "),
-                style::SetForegroundColor(style::Color::Yellow),
-                style::Print(format!("{:.2}s", duration.as_secs_f64())),
-                style::ResetColor,
-                style::Print("\n"),
-            ).unwrap_or(());
-            std::io::stderr().flush().unwrap_or(());
-        } else {
-            println!("✓ {}", message.unwrap_or(&self.description));
-        }
-    }
-    
-    #[allow(dead_code)]
-    pub fn error(self, error: &str) {
-        let duration = self.start_time.elapsed();
-        
-        if self.interactive {
-            eprint!("\r");
-            queue!(
-                std::io::stderr(),
-                terminal::Clear(terminal::ClearType::CurrentLine),
-                style::SetForegroundColor(style::Color::Red),
-                style::Print("✗ "),
-                style::ResetColor,
-                style::Print(&self.description),
-                style::Print(" failed in "),
-                style::SetForegroundColor(style::Color::Yellow),
-                style::Print(format!("{:.2}s", duration.as_secs_f64())),
-                style::ResetColor,
-                style::Print(": "),
-                style::SetForegroundColor(style::Color::Red),
-                style::Print(error),
-                style::ResetColor,
-                style::Print("\n"),
-            ).unwrap_or(());
-            std::io::stderr().flush().unwrap_or(());
-        } else {
-            eprintln!("✗ {}: {}", self.description, error);
-        }
-    }
 }
