@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Configuration Schema",
+  "description": "Schema for configuring Amazon Q Developer CLI agents",
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string",
+      "description": "A description of the agent's purpose"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "(NOT YET IMPLEMENTED) The system prompt that defines the agent's behavior and capabilities"
+    },
+    "mcpServers": {
+      "type": "object",
+      "description": "Configuration for Model Context Protocol (MCP) servers",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "The command to run the MCP server"
+        },
+        "args": {
+          "type": "array",
+          "description": "Arguments to pass to the MCP server command",
+          "items": {
+            "type": "string"
+          }
+        },
+        "disabled": {
+          "type": "bool",
+          "description": "Whether or not the server will be intialized. This is a legacy field from mcp.json"
+        },
+        "required": ["command"]
+      }
+    },
+    "tools": {
+      "type": "array",
+      "description": "List of tools the agent can see. Use \"@{MCP_SERVER_NAME}/tool_name\" to specify tools from mcp servers. To include all tools from a server, use \"@{MCP_SERVER_NAME}\"",
+      "items": {
+        "type": "string"
+      }
+    },
+    "alias": {
+      "type": "object",
+      "description": "Tool aliases for remapping tool names",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "allowedTools": {
+      "type": "array",
+      "description": "List of tools the agent is explicitly allowed to use",
+      "items": {
+        "type": "string"
+      }
+    },
+    "includedFiles": {
+      "type": "array",
+      "description": "Files to include in the agent's context",
+      "items": {
+        "type": "string"
+      }
+    },
+    "createHooks": {
+      "type": "array",
+      "description": "Commands to run when the agent is created",
+      "items": {
+        "type": "string"
+      }
+    },
+    "promptHooks": {
+      "type": "array",
+      "description": "Commands to run before processing each prompt",
+      "items": {
+        "type": "string"
+      }
+    },
+    "toolsSettings": {
+      "type": "object",
+      "description": "Settings for specific tools",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}
