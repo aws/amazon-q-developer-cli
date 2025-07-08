@@ -9,7 +9,7 @@ use crossterm::{
 };
 use tokio::sync::Mutex;
 
-use crate::cli::chat::server_reload_manager::{ReloadError, ServerReloadManager};
+use crate::cli::chat::server_reload_manager::{ErrorDisplayManager, ReloadError, ServerReloadManager};
 use crate::cli::chat::tool_manager::LoadingRecord;
 use crate::cli::chat::{
     ChatError,
@@ -194,7 +194,7 @@ impl ReloadArgs {
         let tool_manager_ref = Arc::new(Mutex::new(session.conversation.tool_manager.clone()));
         let reload_manager = ServerReloadManager::new(tool_manager_ref.clone());
         
-        // Perform the reload operation
+        // Perform the reload operation with comprehensive error handling
         match reload_manager.reload_server(&os, &self.server_name).await {
             Ok(_) => {
                 // Update the session's tool manager with the reloaded state
@@ -202,125 +202,33 @@ impl ReloadArgs {
                 session.conversation.tool_manager = updated_tool_manager.clone();
                 drop(updated_tool_manager);
                 
+                // Force update the conversation state to refresh tool list
+                session.conversation.update_state(true).await;
+                
+                // Refresh filtered tools for model context
+                session.conversation.refresh_filtered_tools().await;
+                
                 // Display success message
-                queue!(
-                    session.stderr,
-                    style::Print("✓ "),
-                    style::SetForegroundColor(style::Color::Green),
-                    style::Print("Server '"),
-                    style::Print(&self.server_name),
-                    style::Print("' reloaded successfully\n"),
-                    style::ResetColor,
+                ErrorDisplayManager::display_success(
+                    &format!("Server '{}' reloaded successfully", self.server_name),
+                    Some("Tools and configuration refreshed"),
+                    session,
                 )?;
-                session.stderr.flush()?;
                 
                 Ok(ChatState::PromptUser { skip_printing_tools: true })
             },
             Err(e) => {
-                // Display error message with helpful information
-                self.display_reload_error(&e, session).await?;
+                // Display comprehensive error with user guidance
+                ErrorDisplayManager::display_error(
+                    &e,
+                    &format!("Failed to reload server '{}'", self.server_name),
+                    session,
+                ).await?;
                 
                 // Convert to ChatError but continue the session
-                Err(ChatError::Custom(format!("Failed to reload server '{}': {}", 
-                    self.server_name, e).into()))
+                Err(ChatError::Custom(format!("Server reload failed: {}", e).into()))
             }
         }
-    }
-    
-    /// Displays a user-friendly error message for reload failures
-    async fn display_reload_error(&self, error: &ReloadError, session: &mut ChatSession) -> Result<(), std::io::Error> {
-        match error {
-            ReloadError::ServerNotFound { server_name } => {
-                // Show available servers to help the user
-                let available_servers = session.conversation.tool_manager
-                    .get_configured_server_names()
-                    .await;
-                
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print("Server '"),
-                    style::Print(server_name),
-                    style::Print("' not found in configuration.\n"),
-                    style::ResetColor,
-                )?;
-                
-                if !available_servers.is_empty() {
-                    queue!(
-                        session.stderr,
-                        style::Print("Available servers: "),
-                        style::SetForegroundColor(style::Color::Yellow),
-                        style::Print(available_servers.join(", ")),
-                        style::ResetColor,
-                        style::Print("\n"),
-                    )?;
-                } else {
-                    queue!(
-                        session.stderr,
-                        style::Print("No MCP servers are configured.\n"),
-                    )?;
-                }
-            },
-            ReloadError::ServerStateConflict { server_name, state } => {
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print("Server '"),
-                    style::Print(server_name),
-                    style::Print("' is already "),
-                    style::Print(state),
-                    style::Print(".\n"),
-                    style::ResetColor,
-                )?;
-            },
-            ReloadError::ServerStartFailed { server_name, reason } => {
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print("Failed to start server '"),
-                    style::Print(server_name),
-                    style::Print("': "),
-                    style::Print(reason),
-                    style::Print("\n"),
-                    style::ResetColor,
-                )?;
-                
-                queue!(
-                    session.stderr,
-                    style::Print("💡 Check server configuration and ensure the command is valid.\n"),
-                )?;
-            },
-            ReloadError::ConfigReloadFailed { server_name, reason } => {
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print("Failed to reload configuration for '"),
-                    style::Print(server_name),
-                    style::Print("': "),
-                    style::Print(reason),
-                    style::Print("\n"),
-                    style::ResetColor,
-                )?;
-            },
-            _ => {
-                // Generic error display for other error types
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print(error.to_string()),
-                    style::Print("\n"),
-                    style::ResetColor,
-                )?;
-            }
-        }
-        
-        session.stderr.flush()?;
-        Ok(())
     }
 }
 
@@ -360,118 +268,26 @@ impl EnableArgs {
                 session.conversation.refresh_filtered_tools().await;
                 
                 // Display success message
-                queue!(
-                    session.stderr,
-                    style::Print("✓ "),
-                    style::SetForegroundColor(style::Color::Green),
-                    style::Print("Server '"),
-                    style::Print(&self.server_name),
-                    style::Print("' enabled for this session\n"),
-                    style::ResetColor,
+                ErrorDisplayManager::display_success(
+                    &format!("Server '{}' enabled for this session", self.server_name),
+                    Some("Tools are now available"),
+                    session,
                 )?;
-                session.stderr.flush()?;
                 
                 Ok(ChatState::PromptUser { skip_printing_tools: true })
             },
             Err(e) => {
-                // Display error message with helpful information
-                self.display_enable_error(&e, session).await?;
+                // Display comprehensive error with user guidance
+                ErrorDisplayManager::display_error(
+                    &e,
+                    &format!("Failed to enable server '{}'", self.server_name),
+                    session,
+                ).await?;
                 
                 // Convert to ChatError but continue the session
-                Err(ChatError::Custom(format!("Failed to enable server '{}': {}", 
-                    self.server_name, e).into()))
+                Err(ChatError::Custom(format!("Server enable failed: {}", e).into()))
             }
         }
-    }
-    
-    /// Displays a user-friendly error message for enable failures
-    async fn display_enable_error(&self, error: &ReloadError, session: &mut ChatSession) -> Result<(), std::io::Error> {
-        match error {
-            ReloadError::ServerNotFound { server_name } => {
-                // Show available servers to help the user
-                let available_servers = session.conversation.tool_manager
-                    .get_configured_server_names()
-                    .await;
-                
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print("Server '"),
-                    style::Print(server_name),
-                    style::Print("' not found in configuration.\n"),
-                    style::ResetColor,
-                )?;
-                
-                if !available_servers.is_empty() {
-                    queue!(
-                        session.stderr,
-                        style::Print("Available servers: "),
-                        style::SetForegroundColor(style::Color::Yellow),
-                        style::Print(available_servers.join(", ")),
-                        style::ResetColor,
-                        style::Print("\n"),
-                    )?;
-                } else {
-                    queue!(
-                        session.stderr,
-                        style::Print("No MCP servers are configured.\n"),
-                    )?;
-                }
-            },
-            ReloadError::ServerStateConflict { server_name, state } => {
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print("Server '"),
-                    style::Print(server_name),
-                    style::Print("' is already "),
-                    style::Print(state),
-                    style::Print(".\n"),
-                    style::ResetColor,
-                )?;
-                
-                queue!(
-                    session.stderr,
-                    style::Print("💡 Use '/mcp status "),
-                    style::Print(server_name),
-                    style::Print("' to check current server state.\n"),
-                )?;
-            },
-            ReloadError::ServerStartFailed { server_name, reason } => {
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print("Failed to start server '"),
-                    style::Print(server_name),
-                    style::Print("': "),
-                    style::Print(reason),
-                    style::Print("\n"),
-                    style::ResetColor,
-                )?;
-                
-                queue!(
-                    session.stderr,
-                    style::Print("💡 Check server configuration and ensure the command is valid.\n"),
-                )?;
-            },
-            _ => {
-                // Generic error display for other error types
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print(error.to_string()),
-                    style::Print("\n"),
-                    style::ResetColor,
-                )?;
-            }
-        }
-        
-        session.stderr.flush()?;
-        Ok(())
     }
 }
 
@@ -502,100 +318,26 @@ impl DisableArgs {
                 session.conversation.refresh_filtered_tools().await;
                 
                 // Display success message
-                queue!(
-                    session.stderr,
-                    style::Print("✓ "),
-                    style::SetForegroundColor(style::Color::Green),
-                    style::Print("Server '"),
-                    style::Print(&self.server_name),
-                    style::Print("' disabled for this session\n"),
-                    style::ResetColor,
+                ErrorDisplayManager::display_success(
+                    &format!("Server '{}' disabled for this session", self.server_name),
+                    Some("Tools are no longer available"),
+                    session,
                 )?;
-                session.stderr.flush()?;
                 
                 Ok(ChatState::PromptUser { skip_printing_tools: true })
             },
             Err(e) => {
-                // Display error message with helpful information
-                self.display_disable_error(&e, session).await?;
+                // Display comprehensive error with user guidance
+                ErrorDisplayManager::display_error(
+                    &e,
+                    &format!("Failed to disable server '{}'", self.server_name),
+                    session,
+                ).await?;
                 
                 // Convert to ChatError but continue the session
-                Err(ChatError::Custom(format!("Failed to disable server '{}': {}", 
-                    self.server_name, e).into()))
+                Err(ChatError::Custom(format!("Server disable failed: {}", e).into()))
             }
         }
-    }
-    
-    /// Displays a user-friendly error message for disable failures
-    async fn display_disable_error(&self, error: &ReloadError, session: &mut ChatSession) -> Result<(), std::io::Error> {
-        match error {
-            ReloadError::ServerNotFound { server_name } => {
-                // Show available servers to help the user
-                let available_servers = session.conversation.tool_manager
-                    .get_configured_server_names()
-                    .await;
-                
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print("Server '"),
-                    style::Print(server_name),
-                    style::Print("' not found in configuration.\n"),
-                    style::ResetColor,
-                )?;
-                
-                if !available_servers.is_empty() {
-                    queue!(
-                        session.stderr,
-                        style::Print("Available servers: "),
-                        style::SetForegroundColor(style::Color::Yellow),
-                        style::Print(available_servers.join(", ")),
-                        style::ResetColor,
-                        style::Print("\n"),
-                    )?;
-                } else {
-                    queue!(
-                        session.stderr,
-                        style::Print("No MCP servers are configured.\n"),
-                    )?;
-                }
-            },
-            ReloadError::ServerStateConflict { server_name, state } => {
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print("Server '"),
-                    style::Print(server_name),
-                    style::Print("' is already "),
-                    style::Print(state),
-                    style::Print(".\n"),
-                    style::ResetColor,
-                )?;
-                
-                queue!(
-                    session.stderr,
-                    style::Print("💡 Use '/mcp status "),
-                    style::Print(server_name),
-                    style::Print("' to check current server state.\n"),
-                )?;
-            },
-            _ => {
-                // Generic error display for other error types
-                queue!(
-                    session.stderr,
-                    style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Red),
-                    style::Print(error.to_string()),
-                    style::Print("\n"),
-                    style::ResetColor,
-                )?;
-            }
-        }
-        
-        session.stderr.flush()?;
-        Ok(())
     }
 }
 
