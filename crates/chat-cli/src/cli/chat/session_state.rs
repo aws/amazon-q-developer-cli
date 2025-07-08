@@ -33,6 +33,7 @@ impl SessionServerState {
     /// - If server is in disabled_servers set: return false (session override)
     /// - If server is in enabled_servers set: return true (session override)
     /// - Otherwise: return config_enabled (use configuration setting)
+    #[allow(dead_code)]
     pub fn is_server_enabled(&self, server_name: &str, config_enabled: bool) -> bool {
         if self.disabled_servers.contains(server_name) {
             false
@@ -67,6 +68,7 @@ impl SessionServerState {
     /// 
     /// # Arguments
     /// * `server_name` - The name of the server to reset
+    #[allow(dead_code)]
     pub fn reset_server(&mut self, server_name: &str) {
         self.disabled_servers.remove(server_name);
         self.enabled_servers.remove(server_name);
@@ -84,6 +86,7 @@ impl SessionServerState {
     /// 
     /// # Arguments
     /// * `server_name` - The name of the server to check
+    #[allow(dead_code)]
     pub fn is_session_enabled(&self, server_name: &str) -> bool {
         self.enabled_servers.contains(server_name)
     }
@@ -107,12 +110,14 @@ impl SessionServerState {
     }
     
     /// Clears all session overrides, returning all servers to configuration-based state.
+    #[allow(dead_code)]
     pub fn clear_all_overrides(&mut self) {
         self.disabled_servers.clear();
         self.enabled_servers.clear();
     }
     
     /// Returns the total number of session overrides.
+    #[allow(dead_code)]
     pub fn override_count(&self) -> usize {
         self.disabled_servers.len() + self.enabled_servers.len()
     }
