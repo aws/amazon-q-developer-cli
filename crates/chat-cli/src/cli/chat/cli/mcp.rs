@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::sync::Arc;
 
@@ -10,6 +10,7 @@ use crossterm::{
 use tokio::sync::Mutex;
 
 use crate::cli::chat::server_reload_manager::{ErrorDisplayManager, ReloadError, ServerReloadManager};
+use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::cli::chat::tool_manager::LoadingRecord;
 use crate::cli::chat::{
     ChatError,
@@ -25,7 +26,7 @@ pub struct McpArgs {
 
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum McpSubcommand {
-    /// Reload a specific MCP server
+    /// Reload a specific MCP server with updated configuration
     Reload(ReloadArgs),
     /// Enable a disabled MCP server for this session
     Enable(EnableArgs),
@@ -35,6 +36,8 @@ pub enum McpSubcommand {
     Status(StatusArgs),
     /// List all configured MCP servers
     List(ListArgs),
+    /// Reload all MCP server configurations from files
+    ReloadConfig(ReloadConfigArgs),
 }
 
 #[derive(Debug, PartialEq, Args)]
@@ -63,6 +66,17 @@ pub struct StatusArgs {
 
 #[derive(Debug, PartialEq, Args)]
 pub struct ListArgs;
+
+#[derive(Debug, PartialEq, Args)]
+pub struct ReloadConfigArgs {
+    /// Validate configurations without applying changes
+    #[arg(long)]
+    pub validate_only: bool,
+    
+    /// Show detailed information about configuration changes
+    #[arg(long)]
+    pub verbose: bool,
+}
 
 impl McpArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
@@ -168,6 +182,7 @@ impl McpSubcommand {
             McpSubcommand::Disable(args) => args.execute(session).await,
             McpSubcommand::Status(args) => args.execute(session).await,
             McpSubcommand::List(args) => args.execute(session).await,
+            McpSubcommand::ReloadConfig(args) => args.execute(session).await,
         }
     }
 }
@@ -655,6 +670,214 @@ impl ListArgs {
         
         session.stderr.flush()?;
         Ok(ChatState::PromptUser { skip_printing_tools: true })
+    }
+}
+
+impl ReloadConfigArgs {
+    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Create OS interface for configuration operations
+        let os = crate::os::Os::new().await
+            .map_err(|e| ChatError::Custom(format!("Failed to initialize OS interface: {}", e).into()))?;
+        
+        // Show progress indication
+        queue!(
+            session.stderr,
+            style::Print("🔄 Reloading MCP server configurations..."),
+            style::Print("\n"),
+        )?;
+        session.stderr.flush()?;
+        
+        // Create reload manager with reference to tool manager
+        let tool_manager_ref = Arc::new(Mutex::new(session.conversation.tool_manager.clone()));
+        let reload_manager = ServerReloadManager::new(tool_manager_ref.clone());
+        
+        // Reload configurations with comprehensive validation
+        match reload_manager.reload_configurations(&os).await {
+            Ok(updated_configs) => {
+                if self.validate_only {
+                    // Validation-only mode
+                    ErrorDisplayManager::display_success(
+                        "Configuration validation successful",
+                        Some(&format!("Found {} valid server configurations", updated_configs.len())),
+                        session,
+                    )?;
+                    
+                    if self.verbose {
+                        self.display_configuration_details(&updated_configs, session).await?;
+                    }
+                } else {
+                    // Apply configuration changes
+                    let changes_applied = self.apply_configuration_changes(
+                        &reload_manager, 
+                        &updated_configs, 
+                        session
+                    ).await?;
+                    
+                    if changes_applied > 0 {
+                        // Update the session's tool manager with the updated state
+                        let updated_tool_manager = tool_manager_ref.lock().await;
+                        session.conversation.tool_manager = updated_tool_manager.clone();
+                        drop(updated_tool_manager);
+                        
+                        // Force update the conversation state to refresh tool list
+                        session.conversation.update_state(true).await;
+                        
+                        // Refresh filtered tools for model context
+                        session.conversation.refresh_filtered_tools().await;
+                        
+                        ErrorDisplayManager::display_success(
+                            "Configuration reload completed",
+                            Some(&format!("Applied changes to {} servers", changes_applied)),
+                            session,
+                        )?;
+                    } else {
+                        ErrorDisplayManager::display_success(
+                            "Configuration reload completed",
+                            Some("No changes were necessary"),
+                            session,
+                        )?;
+                    }
+                }
+                
+                Ok(ChatState::PromptUser { skip_printing_tools: true })
+            },
+            Err(e) => {
+                // Display comprehensive error with user guidance
+                ErrorDisplayManager::display_error(
+                    &e,
+                    "Failed to reload MCP server configurations",
+                    session,
+                ).await?;
+                
+                // Convert to ChatError but continue the session
+                Err(ChatError::Custom(format!("Configuration reload failed: {}", e).into()))
+            }
+        }
+    }
+    
+    /// Displays detailed configuration information
+    async fn display_configuration_details(
+        &self,
+        configs: &HashMap<String, CustomToolConfig>,
+        session: &mut ChatSession,
+    ) -> Result<(), std::io::Error> {
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetForegroundColor(style::Color::Cyan),
+            style::SetAttribute(style::Attribute::Bold),
+            style::Print("📋 Configuration Details:"),
+            style::SetAttribute(style::Attribute::Reset),
+            style::ResetColor,
+            style::Print("\n"),
+        )?;
+        
+        for (server_name, config) in configs {
+            queue!(
+                session.stderr,
+                style::Print("   "),
+                style::SetForegroundColor(style::Color::Yellow),
+                style::Print(server_name),
+                style::ResetColor,
+                style::Print(": "),
+                style::Print(&config.command),
+            )?;
+            
+            if !config.args.is_empty() {
+                queue!(
+                    session.stderr,
+                    style::Print(" "),
+                    style::SetForegroundColor(style::Color::DarkGrey),
+                    style::Print(config.args.join(" ")),
+                    style::ResetColor,
+                )?;
+            }
+            
+            if config.disabled {
+                queue!(
+                    session.stderr,
+                    style::Print(" "),
+                    style::SetForegroundColor(style::Color::Red),
+                    style::Print("(disabled)"),
+                    style::ResetColor,
+                )?;
+            }
+            
+            queue!(session.stderr, style::Print("\n"))?;
+        }
+        
+        session.stderr.flush()?;
+        Ok(())
+    }
+    
+    /// Applies configuration changes to running servers
+    async fn apply_configuration_changes(
+        &self,
+        reload_manager: &ServerReloadManager,
+        updated_configs: &HashMap<String, CustomToolConfig>,
+        session: &mut ChatSession,
+    ) -> Result<usize, ChatError> {
+        let mut changes_applied = 0;
+        
+        // Get current running servers
+        let tool_manager = reload_manager.get_tool_manager().lock().await;
+        let current_servers: HashSet<String> = tool_manager.clients.keys().cloned().collect();
+        drop(tool_manager);
+        
+        // Create OS interface for server operations
+        let os = crate::os::Os::new().await
+            .map_err(|e| ChatError::Custom(format!("Failed to initialize OS interface: {}", e).into()))?;
+        
+        // Reload servers that are currently running and have updated configurations
+        for server_name in &current_servers {
+            if updated_configs.contains_key(server_name) {
+                if self.verbose {
+                    queue!(
+                        session.stderr,
+                        style::Print("   🔄 Reloading "),
+                        style::SetForegroundColor(style::Color::Cyan),
+                        style::Print(server_name),
+                        style::ResetColor,
+                        style::Print("...\n"),
+                    )?;
+                    session.stderr.flush()?;
+                }
+                
+                match reload_manager.reload_server(&os, server_name).await {
+                    Ok(_) => {
+                        changes_applied += 1;
+                        if self.verbose {
+                            queue!(
+                                session.stderr,
+                                style::Print("   ✓ "),
+                                style::SetForegroundColor(style::Color::Green),
+                                style::Print(server_name),
+                                style::ResetColor,
+                                style::Print(" reloaded successfully\n"),
+                            )?;
+                        }
+                    },
+                    Err(e) => {
+                        if self.verbose {
+                            queue!(
+                                session.stderr,
+                                style::Print("   ✗ "),
+                                style::SetForegroundColor(style::Color::Red),
+                                style::Print(server_name),
+                                style::ResetColor,
+                                style::Print(" failed: "),
+                                style::Print(&e.to_string()),
+                                style::Print("\n"),
+                            )?;
+                        }
+                        // Continue with other servers even if one fails
+                    }
+                }
+            }
+        }
+        
+        session.stderr.flush()?;
+        Ok(changes_applied)
     }
 }
 
