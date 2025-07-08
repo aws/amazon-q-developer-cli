@@ -363,7 +363,7 @@ impl ConversationState {
                 ToolOrigin::McpServer(server_name) => {
                     !self.tool_manager.is_session_disabled(server_name).await
                 },
-                _ => true, // Include all non-MCP tools (native tools, etc.)
+                ToolOrigin::Native => true, // Include all non-MCP tools (native tools, etc.)
             };
             
             if should_include {

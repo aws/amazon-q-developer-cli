@@ -19,16 +19,12 @@ use crate::os::Os;
 
 /// Errors that can occur during server reload operations
 #[derive(Debug, Error)]
-#[allow(dead_code)]
 pub enum ReloadError {
     #[error("Server '{server_name}' not found in configuration")]
     ServerNotFound { server_name: String },
     
     #[error("Server '{server_name}' is already {state}")]
     ServerStateConflict { server_name: String, state: String },
-    
-    #[error("Failed to stop server '{server_name}': {reason}")]
-    ServerStopFailed { server_name: String, reason: String },
     
     #[error("Failed to start server '{server_name}': {reason}")]
     ServerStartFailed { server_name: String, reason: String },
@@ -39,26 +35,8 @@ pub enum ReloadError {
     #[error("Tool registration failed for '{server_name}': {reason}")]
     ToolRegistrationFailed { server_name: String, reason: String },
     
-    #[error("Server validation failed: {reason}")]
-    ValidationFailed { reason: String },
-    
-    #[error("Server '{server_name}' is not responding")]
-    ServerNotResponding { server_name: String },
-    
-    #[error("Server '{server_name}' configuration is invalid: {reason}")]
-    InvalidConfiguration { server_name: String, reason: String },
-    
-    #[error("Permission denied for server '{server_name}': {reason}")]
-    PermissionDenied { server_name: String, reason: String },
-    
-    #[error("Server '{server_name}' process crashed: {reason}")]
-    ProcessCrashed { server_name: String, reason: String },
-    
     #[error("Timeout waiting for server '{server_name}' to {operation}")]
     OperationTimeout { server_name: String, operation: String },
-    
-    #[error("Multiple servers failed: {}", failed_servers.join(", "))]
-    MultipleServerFailures { failed_servers: Vec<String> },
 }
 
 impl ReloadError {
@@ -71,9 +49,6 @@ impl ReloadError {
             ReloadError::ServerStateConflict { server_name, state } => {
                 format!("Server '{}' is already {}.", server_name, state)
             },
-            ReloadError::ServerStopFailed { server_name, reason } => {
-                format!("Could not stop server '{}': {}", server_name, reason)
-            },
             ReloadError::ServerStartFailed { server_name, reason } => {
                 format!("Could not start server '{}': {}", server_name, reason)
             },
@@ -83,26 +58,8 @@ impl ReloadError {
             ReloadError::ToolRegistrationFailed { server_name, reason } => {
                 format!("Tools from server '{}' could not be registered: {}", server_name, reason)
             },
-            ReloadError::ValidationFailed { reason } => {
-                format!("Validation failed: {}", reason)
-            },
-            ReloadError::ServerNotResponding { server_name } => {
-                format!("Server '{}' is not responding to requests.", server_name)
-            },
-            ReloadError::InvalidConfiguration { server_name, reason } => {
-                format!("Server '{}' has invalid configuration: {}", server_name, reason)
-            },
-            ReloadError::PermissionDenied { server_name, reason } => {
-                format!("Permission denied for server '{}': {}", server_name, reason)
-            },
-            ReloadError::ProcessCrashed { server_name, reason } => {
-                format!("Server '{}' process crashed: {}", server_name, reason)
-            },
             ReloadError::OperationTimeout { server_name, operation } => {
                 format!("Timeout waiting for server '{}' to {}.", server_name, operation)
-            },
-            ReloadError::MultipleServerFailures { failed_servers } => {
-                format!("Multiple servers failed: {}", failed_servers.join(", "))
             },
         }
     }
@@ -134,10 +91,6 @@ impl ReloadError {
                 format!("Use '/mcp status {}' to see detailed error information", server_name),
                 "Check system logs for additional error details".to_string(),
             ],
-            ReloadError::ServerStopFailed { .. } => vec![
-                "The server process may have already terminated".to_string(),
-                "Try restarting the entire Q CLI session if the issue persists".to_string(),
-            ],
             ReloadError::ConfigReloadFailed { .. } => vec![
                 "Check your MCP configuration file syntax".to_string(),
                 "Ensure all required fields are present in the configuration".to_string(),
@@ -148,39 +101,10 @@ impl ReloadError {
                 "Check server logs for tool registration errors".to_string(),
                 "Try reloading the server to refresh tool definitions".to_string(),
             ],
-            ReloadError::ValidationFailed { .. } => vec![
-                "Check the server configuration for required fields".to_string(),
-                "Ensure the server executable path is correct".to_string(),
-            ],
-            ReloadError::ServerNotResponding { server_name } => vec![
-                format!("Try reloading the server with '/mcp reload {}'", server_name),
-                "Check if the server process is still running".to_string(),
-                "The server may need more time to initialize".to_string(),
-            ],
-            ReloadError::InvalidConfiguration { .. } => vec![
-                "Review your MCP configuration file for syntax errors".to_string(),
-                "Check that all required configuration fields are present".to_string(),
-                "Validate JSON syntax if using JSON configuration".to_string(),
-            ],
-            ReloadError::PermissionDenied { .. } => vec![
-                "Check file permissions for the server executable".to_string(),
-                "Ensure you have permission to execute the server command".to_string(),
-                "Try running Q CLI with appropriate permissions".to_string(),
-            ],
-            ReloadError::ProcessCrashed { server_name, .. } => vec![
-                format!("Try reloading the server with '/mcp reload {}'", server_name),
-                "Check server logs for crash details".to_string(),
-                "The server may have encountered an internal error".to_string(),
-            ],
             ReloadError::OperationTimeout { server_name, .. } => vec![
                 format!("Try the operation again with '/mcp reload {}'", server_name),
                 "The server may be slow to respond due to system load".to_string(),
                 "Check if the server process is still running".to_string(),
-            ],
-            ReloadError::MultipleServerFailures { .. } => vec![
-                "Check individual server status with '/mcp status [server-name]'".to_string(),
-                "Try reloading servers individually to isolate issues".to_string(),
-                "Review system resources and server configurations".to_string(),
             ],
         }
     }
@@ -190,27 +114,18 @@ impl ReloadError {
         match self {
             ReloadError::ServerNotFound { .. } => ErrorSeverity::Error,
             ReloadError::ServerStateConflict { .. } => ErrorSeverity::Warning,
-            ReloadError::ServerStopFailed { .. } => ErrorSeverity::Error,
             ReloadError::ServerStartFailed { .. } => ErrorSeverity::Error,
             ReloadError::ConfigReloadFailed { .. } => ErrorSeverity::Error,
             ReloadError::ToolRegistrationFailed { .. } => ErrorSeverity::Warning,
-            ReloadError::ValidationFailed { .. } => ErrorSeverity::Error,
-            ReloadError::ServerNotResponding { .. } => ErrorSeverity::Warning,
-            ReloadError::InvalidConfiguration { .. } => ErrorSeverity::Error,
-            ReloadError::PermissionDenied { .. } => ErrorSeverity::Error,
-            ReloadError::ProcessCrashed { .. } => ErrorSeverity::Error,
             ReloadError::OperationTimeout { .. } => ErrorSeverity::Warning,
-            ReloadError::MultipleServerFailures { .. } => ErrorSeverity::Error,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub enum ErrorSeverity {
     Warning,
     Error,
-    Critical,
 }
 
 /// Manages the lifecycle of MCP servers including reload, start, and stop operations
@@ -235,7 +150,6 @@ impl ErrorDisplayManager {
         let (symbol, color) = match severity {
             ErrorSeverity::Warning => ("⚠", style::Color::Yellow),
             ErrorSeverity::Error => ("✗", style::Color::Red),
-            ErrorSeverity::Critical => ("💥", style::Color::Magenta),
         };
         
         queue!(
@@ -426,37 +340,6 @@ impl ErrorDisplayManager {
         Ok(())
     }
     
-    /// Displays a warning message with consistent formatting
-    #[allow(dead_code)]
-    pub fn display_warning(
-        message: &str,
-        details: Option<&str>,
-        session: &mut ChatSession,
-    ) -> Result<(), std::io::Error> {
-        queue!(
-            session.stderr,
-            style::Print("⚠ "),
-            style::SetForegroundColor(style::Color::Yellow),
-            style::SetAttribute(style::Attribute::Bold),
-            style::Print(message),
-            style::SetAttribute(style::Attribute::Reset),
-            style::ResetColor,
-        )?;
-        
-        if let Some(details) = details {
-            queue!(
-                session.stderr,
-                style::Print(" "),
-                style::SetForegroundColor(style::Color::DarkGrey),
-                style::Print(details),
-                style::ResetColor,
-            )?;
-        }
-        
-        queue!(session.stderr, style::Print("\n"))?;
-        session.stderr.flush()?;
-        Ok(())
-    }
 }
 
 impl ServerReloadManager {
@@ -608,15 +491,6 @@ impl ServerReloadManager {
     }
     
     /// Enables a server that was disabled in configuration or session
-    /// 
-    /// # Arguments
-    /// * `os` - Operating system interface for file operations
-    /// * `server_name` - Name of the server to enable
-    #[allow(dead_code)]
-    pub async fn enable_server(&self, os: &Os, server_name: &str) -> Result<(), ReloadError> {
-        self.enable_server_with_progress(os, server_name, None).await
-    }
-    
     /// Enables a server with optional progress display
     pub async fn enable_server_with_progress(
         &self, 
@@ -747,14 +621,6 @@ impl ServerReloadManager {
     }
     
     /// Disables a server for the current session
-    /// 
-    /// # Arguments
-    /// * `server_name` - Name of the server to disable
-    #[allow(dead_code)]
-    pub async fn disable_server(&self, server_name: &str) -> Result<(), ReloadError> {
-        self.disable_server_with_progress(server_name, None).await
-    }
-    
     /// Disables a server with optional progress display
     pub async fn disable_server_with_progress(
         &self, 
@@ -909,9 +775,7 @@ impl ServerReloadManager {
                 info!("Loaded {} servers from global config", global_config.mcp_servers.len());
                 // Workspace config takes precedence over global config
                 for (name, config) in global_config.mcp_servers {
-                    if !all_servers.contains_key(&name) {
-                        all_servers.insert(name, config);
-                    }
+                    all_servers.entry(name).or_insert(config);
                 }
             },
             Err(e) => {
@@ -991,7 +855,7 @@ impl ServerReloadManager {
         
         // Validate environment variables if present
         if let Some(env) = &config.env {
-            for (key, _value) in env {
+            for key in env.keys() {
                 if key.is_empty() {
                     return Err("Environment variable key cannot be empty".to_string());
                 }
@@ -1012,50 +876,6 @@ impl ServerReloadManager {
         Ok(())
     }
     
-    /// Reloads a specific server with updated configuration
-    #[allow(dead_code)]
-    pub async fn reload_server_with_config(&self, os: &Os, server_name: &str) -> Result<(), ReloadError> {
-        info!("Reloading server '{}' with updated configuration", server_name);
-        
-        // Step 1: Reload all configurations
-        let updated_configs = self.reload_configurations(os).await?;
-        
-        // Step 2: Check if the server exists in the updated configuration
-        let server_config = updated_configs.get(server_name)
-            .ok_or_else(|| ReloadError::ServerNotFound {
-                server_name: server_name.to_string(),
-            })?
-            .clone();
-        
-        // Step 3: Check current state
-        let tool_manager = self.tool_manager.lock().await;
-        let is_currently_running = tool_manager.clients.contains_key(server_name);
-        let is_session_disabled = tool_manager.is_session_disabled(server_name).await;
-        drop(tool_manager);
-        
-        if is_session_disabled {
-            return Err(ReloadError::ServerStateConflict {
-                server_name: server_name.to_string(),
-                state: "disabled for this session".to_string(),
-            });
-        }
-        
-        // Step 4: Stop existing server if running
-        if is_currently_running {
-            self.stop_server_and_cleanup(server_name).await
-                .map_err(|e| ReloadError::ServerStopFailed {
-                    server_name: server_name.to_string(),
-                    reason: e.to_string(),
-                })?;
-        }
-        
-        // Step 5: Start the server with the new configuration
-        self.start_server_with_config(server_name, server_config).await?;
-        
-        info!("Successfully reloaded server '{}' with updated configuration", server_name);
-        Ok(())
-    }
-    
     /// Starts a server with a specific configuration
     async fn start_server_with_config(&self, server_name: &str, config: CustomToolConfig) -> Result<(), ReloadError> {
         // Create the client (this is not async)
@@ -1071,7 +891,7 @@ impl ServerReloadManager {
             client.init()
         )
         .await
-        .map_err(|_| ReloadError::OperationTimeout {
+        .map_err(|_timeout_err| ReloadError::OperationTimeout {
             server_name: server_name.to_string(),
             operation: "initialize".to_string(),
         })?
@@ -1187,30 +1007,6 @@ impl ServerReloadManager {
         Ok(())
     }
     
-    /// Detects configuration changes by comparing file modification times
-    #[allow(dead_code)]
-    pub async fn detect_configuration_changes(&self, os: &Os) -> Result<Vec<String>, ReloadError> {
-        let mut changed_files = Vec::new();
-        
-        // Check workspace config
-        if let Ok(workspace_path) = workspace_mcp_config_path(os) {
-            if os.fs.exists(&workspace_path) {
-                // For now, we'll just report that the file exists
-                // In a more sophisticated implementation, we could track modification times
-                changed_files.push(format!("workspace: {}", workspace_path.display()));
-            }
-        }
-        
-        // Check global config
-        if let Ok(global_path) = global_mcp_config_path(os) {
-            if os.fs.exists(&global_path) {
-                changed_files.push(format!("global: {}", global_path.display()));
-            }
-        }
-        
-        Ok(changed_files)
-    }
-    
     /// Stops a server process without removing tools from the registry
     async fn stop_server_only(&self, server_name: &str) -> Result<(), ReloadError> {
         debug!("Stopping server '{}' (keeping tools in registry)", server_name);
@@ -1288,111 +1084,6 @@ impl ServerReloadManager {
             })
     }
     
-    /// Loads workspace MCP configuration
-    #[allow(dead_code)]
-    async fn load_workspace_mcp_config(&self, os: &Os) -> Result<crate::cli::agent::McpServerConfig, ReloadError> {
-        let config_path = workspace_mcp_config_path(os)
-            .map_err(|e| ReloadError::ConfigReloadFailed {
-                server_name: "workspace".to_string(),
-                reason: format!("Failed to get workspace config path: {}", e),
-            })?;
-        
-        if !os.fs.exists(&config_path) {
-            return Err(ReloadError::ConfigReloadFailed {
-                server_name: "workspace".to_string(),
-                reason: "Workspace MCP configuration file does not exist".to_string(),
-            });
-        }
-        
-        crate::cli::agent::McpServerConfig::load_from_file(os, &config_path).await
-            .map_err(|e| ReloadError::ConfigReloadFailed {
-                server_name: "workspace".to_string(),
-                reason: format!("Failed to load workspace config: {}", e),
-            })
-    }
-    
-    /// Loads global MCP configuration
-    #[allow(dead_code)]
-    async fn load_global_mcp_config(&self, os: &Os) -> Result<crate::cli::agent::McpServerConfig, ReloadError> {
-        let config_path = global_mcp_config_path(os)
-            .map_err(|e| ReloadError::ConfigReloadFailed {
-                server_name: "global".to_string(),
-                reason: format!("Failed to get global config path: {}", e),
-            })?;
-        
-        if !os.fs.exists(&config_path) {
-            return Err(ReloadError::ConfigReloadFailed {
-                server_name: "global".to_string(),
-                reason: "Global MCP configuration file does not exist".to_string(),
-            });
-        }
-        
-        crate::cli::agent::McpServerConfig::load_from_file(os, &config_path).await
-            .map_err(|e| ReloadError::ConfigReloadFailed {
-                server_name: "global".to_string(),
-                reason: format!("Failed to load global config: {}", e),
-            })
-    }
-    
-    /// Starts a server with the given configuration
-    /// Gets the current status of all servers
-    #[allow(dead_code)]
-    pub async fn get_server_status(&self) -> HashMap<String, ServerStatus> {
-        let tool_manager = self.tool_manager.lock().await;
-        let mut status_map = HashMap::new();
-        
-        // Get all configured servers
-        let configured_servers = tool_manager.get_configured_server_names().await;
-        
-        for server_name in configured_servers {
-            let is_running = tool_manager.clients.contains_key(&server_name);
-            let _has_session_override = tool_manager.has_session_override(&server_name).await;
-            let is_session_enabled = tool_manager.is_session_enabled(&server_name).await;
-            let is_session_disabled = tool_manager.is_session_disabled(&server_name).await;
-            
-            let status = if is_running {
-                ServerStatus::Running
-            } else if is_session_disabled {
-                ServerStatus::SessionDisabled
-            } else if is_session_enabled {
-                ServerStatus::SessionEnabled
-            } else {
-                ServerStatus::Stopped
-            };
-            
-            status_map.insert(server_name, status);
-        }
-        
-        status_map
-    }
-}
-
-/// Represents the current status of a server
-#[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
-pub enum ServerStatus {
-    /// Server is currently running
-    Running,
-    /// Server is stopped
-    Stopped,
-    /// Server was enabled for this session only
-    SessionEnabled,
-    /// Server was disabled for this session only
-    SessionDisabled,
-    /// Server failed to start
-    Failed(String),
-}
-
-impl std::fmt::Display for ServerStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ServerStatus::Running => write!(f, "running"),
-            ServerStatus::Stopped => write!(f, "stopped"),
-            ServerStatus::SessionEnabled => write!(f, "enabled (session)"),
-            ServerStatus::SessionDisabled => write!(f, "disabled (session)"),
-            ServerStatus::Failed(reason) => write!(f, "failed: {}", reason),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1423,28 +1114,5 @@ mod tests {
             reason: "file not found".to_string(),
         };
         assert_eq!(error.to_string(), "Configuration reload failed for 'test-server': file not found");
-    }
-
-    #[test]
-    fn test_server_status_display() {
-        assert_eq!(ServerStatus::Running.to_string(), "running");
-        assert_eq!(ServerStatus::Stopped.to_string(), "stopped");
-        assert_eq!(ServerStatus::SessionEnabled.to_string(), "enabled (session)");
-        assert_eq!(ServerStatus::SessionDisabled.to_string(), "disabled (session)");
-        assert_eq!(ServerStatus::Failed("connection error".to_string()).to_string(), "failed: connection error");
-    }
-    
-    #[test]
-    fn test_server_status_equality() {
-        assert_eq!(ServerStatus::Running, ServerStatus::Running);
-        assert_eq!(ServerStatus::Stopped, ServerStatus::Stopped);
-        assert_ne!(ServerStatus::Running, ServerStatus::Stopped);
-        
-        let failed1 = ServerStatus::Failed("error1".to_string());
-        let failed2 = ServerStatus::Failed("error1".to_string());
-        let failed3 = ServerStatus::Failed("error2".to_string());
-        
-        assert_eq!(failed1, failed2);
-        assert_ne!(failed1, failed3);
     }
 }
