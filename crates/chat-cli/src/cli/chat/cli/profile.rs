@@ -99,7 +99,7 @@ impl AgentSubcommand {
                     session.stderr,
                     style::SetForegroundColor(Color::Yellow),
                     style::Print(format!(
-                        "To make changes or create agents, please do so via create the corresponding config in {}, where you would also find an example config for your reference.\n\nTo switch agent, launch another instance of q chat with --agent.",
+                        "To make changes or create agents, please do so via create the corresponding config in {}, where you would also find an example config for your reference.\nTo switch agent, launch another instance of q chat with --agent.\n\n",
                         global_path
                     )),
                     style::SetAttribute(Attribute::Reset)
