@@ -10,7 +10,7 @@ use crossterm::{
 use tokio::sync::Mutex;
 
 use crate::cli::chat::progress_display::{ProgressDisplay, is_interactive_mode};
-use crate::cli::chat::server_reload_manager::{ErrorDisplayManager, ReloadError, ServerReloadManager};
+use crate::cli::chat::server_reload_manager::{ErrorDisplayManager, ServerReloadManager};
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::cli::chat::tool_manager::LoadingRecord;
 use crate::cli::chat::{

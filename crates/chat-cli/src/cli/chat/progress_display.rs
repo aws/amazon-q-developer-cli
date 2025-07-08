@@ -1,5 +1,4 @@
 use std::io::Write;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossterm::{
@@ -9,13 +8,14 @@ use crossterm::{
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{debug, error};
+use tracing::error;
 
 /// Spinner characters for progress animation
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /// Messages for progress display communication
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ProgressMsg {
     /// Start a new operation
     Start {
@@ -129,6 +129,7 @@ impl ProgressDisplay {
     }
     
     /// Marks an operation as completed with warning
+    #[allow(dead_code)]
     pub async fn warning(&self, operation_id: String, message: String, warning: String, duration: Duration) {
         if let Some(sender) = &self.sender {
             let _ = sender.send(ProgressMsg::Warning {
@@ -213,7 +214,7 @@ impl ProgressDisplay {
     }
     
     /// Queues a start message
-    fn queue_start_message(operation_id: &str, description: &str, output: &mut impl Write) -> Result<(), eyre::Report> {
+    fn queue_start_message(_operation_id: &str, description: &str, output: &mut impl Write) -> Result<(), eyre::Report> {
         queue!(
             output,
             style::Print(SPINNER_CHARS[0]),
@@ -227,7 +228,7 @@ impl ProgressDisplay {
     }
     
     /// Queues a progress message
-    fn queue_progress_message(operation_id: &str, message: &str, spinner_idx: usize, output: &mut impl Write) -> Result<(), eyre::Report> {
+    fn queue_progress_message(_operation_id: &str, message: &str, spinner_idx: usize, output: &mut impl Write) -> Result<(), eyre::Report> {
         execute!(
             output,
             cursor::MoveToColumn(0),
@@ -248,7 +249,7 @@ impl ProgressDisplay {
     }
     
     /// Queues a success message
-    fn queue_success_message(operation_id: &str, message: &str, duration: Duration, output: &mut impl Write) -> Result<(), eyre::Report> {
+    fn queue_success_message(_operation_id: &str, message: &str, duration: Duration, output: &mut impl Write) -> Result<(), eyre::Report> {
         execute!(
             output,
             cursor::MoveToColumn(0),
@@ -274,7 +275,7 @@ impl ProgressDisplay {
     }
     
     /// Queues an error message
-    fn queue_error_message(operation_id: &str, message: &str, error: &str, duration: Duration, output: &mut impl Write) -> Result<(), eyre::Report> {
+    fn queue_error_message(_operation_id: &str, message: &str, error: &str, duration: Duration, output: &mut impl Write) -> Result<(), eyre::Report> {
         execute!(
             output,
             cursor::MoveToColumn(0),
@@ -304,7 +305,7 @@ impl ProgressDisplay {
     }
     
     /// Queues a warning message
-    fn queue_warning_message(operation_id: &str, message: &str, warning: &str, duration: Duration, output: &mut impl Write) -> Result<(), eyre::Report> {
+    fn queue_warning_message(_operation_id: &str, message: &str, warning: &str, duration: Duration, output: &mut impl Write) -> Result<(), eyre::Report> {
         execute!(
             output,
             cursor::MoveToColumn(0),
@@ -388,6 +389,7 @@ pub fn is_interactive_mode() -> bool {
 }
 
 /// Simple progress tracker for non-async contexts
+#[allow(dead_code)]
 pub struct SimpleProgress {
     start_time: Instant,
     description: String,
@@ -395,6 +397,7 @@ pub struct SimpleProgress {
 }
 
 impl SimpleProgress {
+    #[allow(dead_code)]
     pub fn new(description: String) -> Self {
         let interactive = is_interactive_mode();
         
@@ -410,6 +413,7 @@ impl SimpleProgress {
         }
     }
     
+    #[allow(dead_code)]
     pub fn success(self, message: Option<&str>) {
         let duration = self.start_time.elapsed();
         
@@ -434,6 +438,7 @@ impl SimpleProgress {
         }
     }
     
+    #[allow(dead_code)]
     pub fn error(self, error: &str) {
         let duration = self.start_time.elapsed();
         
