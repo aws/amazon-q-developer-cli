@@ -31,7 +31,7 @@ phases:
       - pip3 install -r scripts/requirements.txt
   build:
     commands:
-      - python3.11 scripts/qchatmain.py build
+      - python3.11 scripts/main.py build
 
 artifacts:
   discard-paths: "yes"

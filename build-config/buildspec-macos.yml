@@ -29,7 +29,7 @@ phases:
       - pip3 install -r scripts/requirements.txt
   build:
     commands:
-      - python3 scripts/qchatmain.py build --skip-lints --skip-tests --not-release
+      - python3 scripts/main.py build --skip-lints --skip-tests --not-release
 
 artifacts:
   discard-paths: "yes"
