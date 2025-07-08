@@ -9,6 +9,7 @@ use crossterm::{
 };
 use tokio::sync::Mutex;
 
+use crate::cli::chat::progress_display::{ProgressDisplay, is_interactive_mode};
 use crate::cli::chat::server_reload_manager::{ErrorDisplayManager, ReloadError, ServerReloadManager};
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::cli::chat::tool_manager::LoadingRecord;
@@ -194,23 +195,16 @@ impl ReloadArgs {
         let os = crate::os::Os::new().await
             .map_err(|e| ChatError::Custom(format!("Failed to initialize OS interface: {}", e).into()))?;
         
-        // Show progress indication
-        queue!(
-            session.stderr,
-            style::Print("🔄 Reloading server '"),
-            style::SetForegroundColor(style::Color::Cyan),
-            style::Print(&self.server_name),
-            style::ResetColor,
-            style::Print("'...\n"),
-        )?;
-        session.stderr.flush()?;
+        // Create progress display
+        let interactive = is_interactive_mode();
+        let progress = ProgressDisplay::new(interactive);
         
         // Create reload manager with reference to tool manager
         let tool_manager_ref = Arc::new(Mutex::new(session.conversation.tool_manager.clone()));
         let reload_manager = ServerReloadManager::new(tool_manager_ref.clone());
         
-        // Perform the reload operation with comprehensive error handling
-        match reload_manager.reload_server(&os, &self.server_name).await {
+        // Perform the reload operation with progress display
+        match reload_manager.reload_server_with_progress(&os, &self.server_name, Some(&progress)).await {
             Ok(_) => {
                 // Update the session's tool manager with the reloaded state
                 let updated_tool_manager = tool_manager_ref.lock().await;
@@ -223,75 +217,24 @@ impl ReloadArgs {
                 // Refresh filtered tools for model context
                 session.conversation.refresh_filtered_tools().await;
                 
-                // Display success message
-                ErrorDisplayManager::display_success(
-                    &format!("Server '{}' reloaded successfully", self.server_name),
-                    Some("Tools and configuration refreshed"),
-                    session,
-                )?;
+                // Terminate progress display
+                progress.terminate().await;
+                
+                // Display success message if not in interactive mode (interactive mode already showed it)
+                if !interactive {
+                    ErrorDisplayManager::display_success(
+                        &format!("Server '{}' reloaded successfully", self.server_name),
+                        Some("Tools and configuration refreshed"),
+                        session,
+                    )?;
+                }
                 
                 Ok(ChatState::PromptUser { skip_printing_tools: true })
             },
             Err(e) => {
-                // Display comprehensive error with user guidance
-                ErrorDisplayManager::display_error(
-                    &e,
-                    &format!("Failed to reload server '{}'", self.server_name),
-                    session,
-                ).await?;
+                // Terminate progress display
+                progress.terminate().await;
                 
-                // Convert to ChatError but continue the session
-                Err(ChatError::Custom(format!("Server reload failed: {}", e).into()))
-            }
-        }
-    }
-}
-
-impl EnableArgs {
-    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        // Create OS interface for server operations
-        let os = crate::os::Os::new().await
-            .map_err(|e| ChatError::Custom(format!("Failed to initialize OS interface: {}", e).into()))?;
-        
-        // Show progress indication
-        queue!(
-            session.stderr,
-            style::Print("🔧 Enabling server '"),
-            style::SetForegroundColor(style::Color::Cyan),
-            style::Print(&self.server_name),
-            style::ResetColor,
-            style::Print("'...\n"),
-        )?;
-        session.stderr.flush()?;
-        
-        // Create reload manager with reference to tool manager
-        let tool_manager_ref = Arc::new(Mutex::new(session.conversation.tool_manager.clone()));
-        let reload_manager = ServerReloadManager::new(tool_manager_ref.clone());
-        
-        // Perform the enable operation
-        match reload_manager.enable_server(&os, &self.server_name).await {
-            Ok(_) => {
-                // Update the session's tool manager with the updated state
-                let updated_tool_manager = tool_manager_ref.lock().await;
-                session.conversation.tool_manager = updated_tool_manager.clone();
-                drop(updated_tool_manager);
-                
-                // Force update the conversation state to refresh tool list
-                session.conversation.update_state(true).await;
-                
-                // Refresh filtered tools for model context
-                session.conversation.refresh_filtered_tools().await;
-                
-                // Display success message
-                ErrorDisplayManager::display_success(
-                    &format!("Server '{}' enabled for this session", self.server_name),
-                    Some("Tools are now available"),
-                    session,
-                )?;
-                
-                Ok(ChatState::PromptUser { skip_printing_tools: true })
-            },
-            Err(e) => {
                 // Display comprehensive error with user guidance
                 ErrorDisplayManager::display_error(
                     &e,
@@ -308,40 +251,46 @@ impl EnableArgs {
 
 impl DisableArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        // Show progress indication
-        queue!(
-            session.stderr,
-            style::Print("🔧 Disabling server '"),
-            style::SetForegroundColor(style::Color::Cyan),
-            style::Print(&self.server_name),
-            style::ResetColor,
-            style::Print("'...\n"),
-        )?;
-        session.stderr.flush()?;
+        // Create progress display
+        let interactive = is_interactive_mode();
+        let progress = ProgressDisplay::new(interactive);
         
         // Create reload manager with reference to tool manager
         let tool_manager_ref = Arc::new(Mutex::new(session.conversation.tool_manager.clone()));
         let reload_manager = ServerReloadManager::new(tool_manager_ref.clone());
         
-        // Perform the disable operation
-        match reload_manager.disable_server(&self.server_name).await {
+        // Perform the disable operation with progress display
+        match reload_manager.disable_server_with_progress(&self.server_name, Some(&progress)).await {
             Ok(_) => {
+                // Update the session's tool manager with the updated state
+                let updated_tool_manager = tool_manager_ref.lock().await;
+                session.conversation.tool_manager = updated_tool_manager.clone();
+                drop(updated_tool_manager);
+                
                 // Force update the conversation state to refresh tool list
                 session.conversation.update_state(true).await;
                 
                 // Refresh filtered tools for model context
                 session.conversation.refresh_filtered_tools().await;
                 
-                // Display success message
-                ErrorDisplayManager::display_success(
-                    &format!("Server '{}' disabled for this session", self.server_name),
-                    Some("Tools are no longer available"),
-                    session,
-                )?;
+                // Terminate progress display
+                progress.terminate().await;
+                
+                // Display success message if not in interactive mode
+                if !interactive {
+                    ErrorDisplayManager::display_success(
+                        &format!("Server '{}' disabled for this session", self.server_name),
+                        Some("Tools are no longer available"),
+                        session,
+                    )?;
+                }
                 
                 Ok(ChatState::PromptUser { skip_printing_tools: true })
             },
             Err(e) => {
+                // Terminate progress display
+                progress.terminate().await;
+                
                 // Display comprehensive error with user guidance
                 ErrorDisplayManager::display_error(
                     &e,
@@ -351,6 +300,66 @@ impl DisableArgs {
                 
                 // Convert to ChatError but continue the session
                 Err(ChatError::Custom(format!("Server disable failed: {}", e).into()))
+            }
+        }
+    }
+}
+
+impl EnableArgs {
+    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Create OS interface for server operations
+        let os = crate::os::Os::new().await
+            .map_err(|e| ChatError::Custom(format!("Failed to initialize OS interface: {}", e).into()))?;
+        
+        // Create progress display
+        let interactive = is_interactive_mode();
+        let progress = ProgressDisplay::new(interactive);
+        
+        // Create reload manager with reference to tool manager
+        let tool_manager_ref = Arc::new(Mutex::new(session.conversation.tool_manager.clone()));
+        let reload_manager = ServerReloadManager::new(tool_manager_ref.clone());
+        
+        // Perform the enable operation with progress display
+        match reload_manager.enable_server_with_progress(&os, &self.server_name, Some(&progress)).await {
+            Ok(_) => {
+                // Update the session's tool manager with the updated state
+                let updated_tool_manager = tool_manager_ref.lock().await;
+                session.conversation.tool_manager = updated_tool_manager.clone();
+                drop(updated_tool_manager);
+                
+                // Force update the conversation state to refresh tool list
+                session.conversation.update_state(true).await;
+                
+                // Refresh filtered tools for model context
+                session.conversation.refresh_filtered_tools().await;
+                
+                // Terminate progress display
+                progress.terminate().await;
+                
+                // Display success message if not in interactive mode
+                if !interactive {
+                    ErrorDisplayManager::display_success(
+                        &format!("Server '{}' enabled successfully", self.server_name),
+                        Some("Server is now available for this session"),
+                        session,
+                    )?;
+                }
+                
+                Ok(ChatState::PromptUser { skip_printing_tools: true })
+            },
+            Err(e) => {
+                // Terminate progress display
+                progress.terminate().await;
+                
+                // Display comprehensive error with user guidance
+                ErrorDisplayManager::display_error(
+                    &e,
+                    &format!("Failed to enable server '{}'", self.server_name),
+                    session,
+                ).await?;
+                
+                // Convert to ChatError but continue the session
+                Err(ChatError::Custom(format!("Server enable failed: {}", e).into()))
             }
         }
     }

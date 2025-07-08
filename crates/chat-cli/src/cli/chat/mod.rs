@@ -8,6 +8,7 @@ mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
 mod parser;
+pub mod progress_display;
 mod prompt;
 mod prompt_parser;
 mod server_messenger;
