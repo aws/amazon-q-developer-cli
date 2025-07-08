@@ -1330,6 +1330,7 @@ impl ToolManager {
     /// Session State Management Methods
     
     /// Checks if a server should be enabled based on configuration and session overrides.
+    #[allow(dead_code)]
     pub async fn is_server_enabled(&self, server_name: &str, config_enabled: bool) -> bool {
         let session_state = self.session_state.lock().await;
         session_state.is_server_enabled(server_name, config_enabled)
@@ -1348,6 +1349,7 @@ impl ToolManager {
     }
     
     /// Removes any session overrides for a server.
+    #[allow(dead_code)]
     pub async fn reset_server_session_state(&self, server_name: &str) {
         let mut session_state = self.session_state.lock().await;
         session_state.reset_server(server_name);
@@ -1360,6 +1362,7 @@ impl ToolManager {
     }
     
     /// Returns whether a server has been enabled for this session.
+    #[allow(dead_code)]
     pub async fn is_session_enabled(&self, server_name: &str) -> bool {
         let session_state = self.session_state.lock().await;
         session_state.is_session_enabled(server_name)
@@ -1384,12 +1387,14 @@ impl ToolManager {
     }
     
     /// Clears all session overrides.
+    #[allow(dead_code)]
     pub async fn clear_all_session_overrides(&self) {
         let mut session_state = self.session_state.lock().await;
         session_state.clear_all_overrides();
     }
     
     /// Returns the total number of session overrides.
+    #[allow(dead_code)]
     pub async fn session_override_count(&self) -> usize {
         let session_state = self.session_state.lock().await;
         session_state.override_count()

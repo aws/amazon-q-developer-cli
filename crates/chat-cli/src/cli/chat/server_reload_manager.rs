@@ -11,7 +11,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::cli::agent::McpServerConfig;
 use crate::cli::chat::tools::custom_tool::{CustomToolClient, CustomToolConfig};
-use crate::cli::chat::progress_display::{ProgressDisplay, is_interactive_mode};
+use crate::cli::chat::progress_display::ProgressDisplay;
 use crate::cli::chat::tool_manager::{ToolManager, global_mcp_config_path, workspace_mcp_config_path, ToolInfo};
 use crate::cli::chat::tools::{ToolSpec, ToolOrigin};
 use crate::cli::chat::ChatSession;
@@ -19,6 +19,7 @@ use crate::os::Os;
 
 /// Errors that can occur during server reload operations
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum ReloadError {
     #[error("Server '{server_name}' not found in configuration")]
     ServerNotFound { server_name: String },
@@ -205,6 +206,7 @@ impl ReloadError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ErrorSeverity {
     Warning,
     Error,
@@ -425,6 +427,7 @@ impl ErrorDisplayManager {
     }
     
     /// Displays a warning message with consistent formatting
+    #[allow(dead_code)]
     pub fn display_warning(
         message: &str,
         details: Option<&str>,
@@ -609,6 +612,7 @@ impl ServerReloadManager {
     /// # Arguments
     /// * `os` - Operating system interface for file operations
     /// * `server_name` - Name of the server to enable
+    #[allow(dead_code)]
     pub async fn enable_server(&self, os: &Os, server_name: &str) -> Result<(), ReloadError> {
         self.enable_server_with_progress(os, server_name, None).await
     }
@@ -746,6 +750,7 @@ impl ServerReloadManager {
     /// 
     /// # Arguments
     /// * `server_name` - Name of the server to disable
+    #[allow(dead_code)]
     pub async fn disable_server(&self, server_name: &str) -> Result<(), ReloadError> {
         self.disable_server_with_progress(server_name, None).await
     }
@@ -1008,6 +1013,7 @@ impl ServerReloadManager {
     }
     
     /// Reloads a specific server with updated configuration
+    #[allow(dead_code)]
     pub async fn reload_server_with_config(&self, os: &Os, server_name: &str) -> Result<(), ReloadError> {
         info!("Reloading server '{}' with updated configuration", server_name);
         
@@ -1182,6 +1188,7 @@ impl ServerReloadManager {
     }
     
     /// Detects configuration changes by comparing file modification times
+    #[allow(dead_code)]
     pub async fn detect_configuration_changes(&self, os: &Os) -> Result<Vec<String>, ReloadError> {
         let mut changed_files = Vec::new();
         
@@ -1282,6 +1289,7 @@ impl ServerReloadManager {
     }
     
     /// Loads workspace MCP configuration
+    #[allow(dead_code)]
     async fn load_workspace_mcp_config(&self, os: &Os) -> Result<crate::cli::agent::McpServerConfig, ReloadError> {
         let config_path = workspace_mcp_config_path(os)
             .map_err(|e| ReloadError::ConfigReloadFailed {
@@ -1304,6 +1312,7 @@ impl ServerReloadManager {
     }
     
     /// Loads global MCP configuration
+    #[allow(dead_code)]
     async fn load_global_mcp_config(&self, os: &Os) -> Result<crate::cli::agent::McpServerConfig, ReloadError> {
         let config_path = global_mcp_config_path(os)
             .map_err(|e| ReloadError::ConfigReloadFailed {
@@ -1327,6 +1336,7 @@ impl ServerReloadManager {
     
     /// Starts a server with the given configuration
     /// Gets the current status of all servers
+    #[allow(dead_code)]
     pub async fn get_server_status(&self) -> HashMap<String, ServerStatus> {
         let tool_manager = self.tool_manager.lock().await;
         let mut status_map = HashMap::new();
@@ -1359,6 +1369,7 @@ impl ServerReloadManager {
 
 /// Represents the current status of a server
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ServerStatus {
     /// Server is currently running
     Running,
