@@ -10,29 +10,44 @@
     },
     "prompt": {
       "type": "string",
-      "description": "(NOT YET IMPLEMENTED) The system prompt that defines the agent's behavior and capabilities"
+      "description": "The system prompt that defines the agent's behavior and capabilities"
     },
     "mcpServers": {
-      "type": "object",
       "description": "Configuration for Model Context Protocol (MCP) servers",
-      "properties": {
-        "command": {
-          "type": "string",
-          "description": "The command to run the MCP server"
-        },
-        "args": {
-          "type": "array",
-          "description": "Arguments to pass to the MCP server command",
-          "items": {
-            "type": "string"
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "description": "The command to run the MCP server"
+              },
+              "args": {
+                "type": "array",
+                "description": "Arguments to pass to the MCP server command",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["command"]
+          },
+          "propertyNames": {
+            "type": "string",
+            "description": "The names of the mcp server"
           }
         },
-        "disabled": {
-          "type": "bool",
-          "description": "Whether or not the server will be intialized. This is a legacy field from mcp.json"
-        },
-        "required": ["command"]
-      }
+        {
+          "type": "array",
+          "description": "A list of mcp server to include from the global mcp.json. Supports globbing on the server names.",
+          "items": {
+            "type": "string", 
+            "description": "Name of mcp server from global mcp.json"
+          }
+        }
+      ]
     },
     "tools": {
       "type": "array",
@@ -45,7 +60,11 @@
       "type": "object",
       "description": "Tool aliases for remapping tool names",
       "additionalProperties": {
-        "type": "string"
+        "type": "string",
+        "description": "The name to change to. For tools in mcp servers, you would need to exclude their server prefix"
+      },
+      "propertyNames": {
+        "type": "Subject of the tool name change. For tools in mcp servers, you would need to prefix them with their server names"
       }
     },
     "allowedTools": {
@@ -63,25 +82,63 @@
       }
     },
     "createHooks": {
-      "type": "array",
-      "description": "Commands to run when the agent is created",
-      "items": {
-        "type": "string"
-      }
+      "description": "Commands to run when a chat session is created",
+      "oneOf": [
+        {
+          "type": "array",
+          "description": "Array of command to execute",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "description": "Object mapping hook names to command strings",
+          "additionalProperties": {
+            "type": "string",
+            "description": "The command string to execute for this hook"
+          },
+          "propertyNames": {
+            "type": "string",
+            "description": "The name/identifier for this hook"
+          }
+        }
+      ]
     },
     "promptHooks": {
-      "type": "array",
       "description": "Commands to run before processing each prompt",
-      "items": {
-        "type": "string"
-      }
+      "oneOf": [
+        {
+          "type": "array",
+          "description": "Array of command to execute before each prompt",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "description": "Object mapping hook names to command strings for prompt processing",
+          "additionalProperties": {
+            "type": "string",
+            "description": "The command string to execute for this prompt hook"
+          },
+          "propertyNames": {
+            "type": "string",
+            "description": "The name/identifier for this prompt hook"
+          }
+        }
+      ]
     },
     "toolsSettings": {
       "type": "object",
-      "description": "Settings for specific tools",
+      "description": "Settings for specific tools. These are mostly for native tools. The actual schema differs by tools and is documented in detail in our documentation",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": true
+      },
+      "properNames": {
+        "type": "string",
+        "description": "The name of the tool to be configured"
       }
     }
   },
