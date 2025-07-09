@@ -29,15 +29,15 @@ use crate::os::Os;
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
     before_long_help = "Context rules determine which files are included in your Amazon Q session. 
+They are derived from the current active agent.
 The files matched by these rules provide Amazon Q with additional information 
 about your project or environment. Adding relevant files helps Q generate 
 more accurate and helpful responses.
 
 Notes:
 • You can add specific files or use glob patterns (e.g., \"*.py\", \"src/**/*.js\")
-• Profile rules apply only to the current profile
-• Global rules apply across all profiles
-• Context is preserved between chat sessions"
+• Agent rules apply only to the current agent 
+• Context changes is NOT preserved between chat sessions. To make these changes permanent, edit the agent config file."
 )]
 pub enum ContextSubcommand {
     /// Display the context rule configuration and matched files
@@ -89,7 +89,7 @@ impl ContextSubcommand {
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     style::SetForegroundColor(Color::Magenta),
-                    style::Print(format!("\n👤 profile ({}):\n", context_manager.current_profile)),
+                    style::Print(format!("\n👤 Agent ({}):\n", context_manager.current_profile)),
                     style::SetAttribute(Attribute::Reset),
                 )?;
 
