@@ -737,7 +737,10 @@ impl ChatSession {
 
                     return Ok(());
                 },
-                ApiClientError::QuotaBreach { message, .. } => {
+                ApiClientError::QuotaBreach {
+                    message: _,
+                    status_code: _,
+                } => {
                     let err = "Request quota exceeded. Please wait a moment and try again.".to_string();
                     self.conversation.append_transcript(err.clone());
                     execute!(
