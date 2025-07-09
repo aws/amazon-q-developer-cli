@@ -120,6 +120,7 @@ walkdir.workspace = true
 webpki-roots.workspace = true
 whoami.workspace = true
 winnow.workspace = true
+schemars.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
@@ -150,3 +151,4 @@ quote.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 syn.workspace = true
+schemars.workspace = true

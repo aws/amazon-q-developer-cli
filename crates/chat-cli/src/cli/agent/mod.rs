@@ -21,6 +21,7 @@ use crossterm::{
     style,
 };
 use eyre::bail;
+pub use mcp_config::McpServerConfig;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{
@@ -32,8 +33,15 @@ use tracing::{
     error,
     warn,
 };
+use wrapper_types::{
+    OriginalToolName,
+    ToolSettingTarget,
+    alias_schema,
+    create_hooks_schema,
+    prompt_hooks_schema,
+    tool_settings_schema,
+};
 
-use super::chat::tools::custom_tool::CustomToolConfig;
 use super::chat::tools::{
     DEFAULT_APPROVE,
     NATIVE_TOOLS,
@@ -46,34 +54,8 @@ use crate::util::{
 };
 
 mod context_migrate;
-
-// This is to mirror claude's config set up
-#[derive(Clone, Serialize, Deserialize, Debug, Default, Eq, PartialEq, JsonSchema)]
-#[serde(rename_all = "camelCase", transparent)]
-pub struct McpServerConfig {
-    pub mcp_servers: HashMap<String, CustomToolConfig>,
-}
-
-impl McpServerConfig {
-    pub async fn load_from_file(os: &Os, path: impl AsRef<Path>) -> eyre::Result<Self> {
-        let contents = os.fs.read(path.as_ref()).await?;
-        let value = serde_json::from_slice::<serde_json::Value>(&contents)?;
-        // We need to extract mcp_servers field from the value because we have annotated
-        // [McpServerConfig] with transparent. Transparent was added because we want to preserve
-        // the type in agent.
-        let config = value
-            .get("mcpServers")
-            .cloned()
-            .ok_or(eyre::eyre!("No mcp servers found in config"))?;
-        Ok(serde_json::from_value(config)?)
-    }
-
-    pub async fn save_to_file(&self, os: &Os, path: impl AsRef<Path>) -> eyre::Result<()> {
-        let json = serde_json::to_string_pretty(self)?;
-        os.fs.write(path.as_ref(), json).await?;
-        Ok(())
-    }
-}
+mod mcp_config;
+mod wrapper_types;
 
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
 /// impacting q chat in via influenicng [ContextManager] and [ToolManager].
@@ -88,24 +70,40 @@ pub struct Agent {
     /// This field is not model facing and is mostly here for users to discern between agents
     #[serde(default)]
     pub description: Option<String>,
+    /// (NOT YET IMPLEMENTED) The intention for this field is to provide high level context to the
+    /// agent. This should be seen as the same category of context as a system prompt.
     #[serde(default)]
     pub prompt: Option<String>,
+    /// Configuration for Model Context Protocol (MCP) servers
     #[serde(default)]
     pub mcp_servers: McpServerConfig,
+    /// List of tools the agent can see. Use \"@{MCP_SERVER_NAME}/tool_name\" to specify tools from
+    /// mcp servers. To include all tools from a server, use \"@{MCP_SERVER_NAME}\"
     #[serde(default)]
     pub tools: Vec<String>,
+    /// Tool aliases for remapping tool names
     #[serde(default)]
-    pub alias: HashMap<String, String>,
+    #[schemars(schema_with = "alias_schema")]
+    pub alias: HashMap<OriginalToolName, String>,
+    /// List of tools the agent is explicitly allowed to use
     #[serde(default)]
     pub allowed_tools: HashSet<String>,
+    /// Files to include in the agent's context
     #[serde(default)]
     pub included_files: Vec<String>,
+    /// Commands to run when a chat session is created
     #[serde(default)]
+    #[schemars(schema_with = "create_hooks_schema")]
     pub create_hooks: serde_json::Value,
+    /// Commands to run before processing each prompt
     #[serde(default)]
+    #[schemars(schema_with = "prompt_hooks_schema")]
     pub prompt_hooks: serde_json::Value,
+    /// Settings for specific tools. These are mostly for native tools. The actual schema differs by
+    /// tools and is documented in detail in our documentation
     #[serde(default)]
-    pub tools_settings: HashMap<String, serde_json::Value>,
+    #[schemars(schema_with = "tool_settings_schema")]
+    pub tools_settings: HashMap<ToolSettingTarget, serde_json::Value>,
     #[serde(skip)]
     pub path: Option<PathBuf>,
 }
