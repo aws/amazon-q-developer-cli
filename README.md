@@ -237,10 +237,6 @@ Other folder to be aware of
   specification for inter-process communication
 - [`tests/`](tests/) - Contain integration tests for the projects
 
-Below is a high level architecture of how the different components of the app and
-their IPC:
-
-![architecture](docs/assets/architecture.svg)
 
 
 
