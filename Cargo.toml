@@ -7,7 +7,7 @@ authors = ["Amazon Q CLI Team (q-cli@amazon.com)", "Chay Nabors (nabochay@amazon
 edition = "2024"
 homepage = "https://aws.amazon.com/q/"
 publish = false
-version = "1.12.3"
+version = "1.12.4"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]

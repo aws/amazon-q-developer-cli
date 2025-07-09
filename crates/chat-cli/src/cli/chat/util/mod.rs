@@ -34,9 +34,21 @@ pub fn truncate_safe(s: &str, max_bytes: usize) -> &str {
     &s[..byte_count]
 }
 
-pub fn truncate_safe_in_place(s: &mut String, max_chars: usize) {
-    let bytes = s.char_indices().nth(max_chars).map_or(s.len(), |(idx, _)| idx);
-    s.truncate(bytes);
+/// Truncates `s` to a maximum length of `max_bytes`, appending `suffix` if `s` was truncated. The
+/// result is always guaranteed to be at least less than `max_bytes`.
+///
+/// If `suffix` is larger than `max_bytes`, or `s` is within `max_bytes`, then this function does
+/// nothing.
+pub fn truncate_safe_in_place(s: &mut String, max_bytes: usize, suffix: &str) {
+    // Do nothing if the suffix is too large to be truncated within max_bytes, or s is already small
+    // enough to not be truncated.
+    if suffix.len() > max_bytes || s.len() <= max_bytes {
+        return;
+    }
+
+    let end = truncate_safe(s, max_bytes - suffix.len()).len();
+    s.replace_range(end..s.len(), suffix);
+    s.truncate(max_bytes);
 }
 
 pub fn animate_output(output: &mut impl Write, bytes: &[u8]) -> Result<(), ChatError> {
@@ -183,24 +195,31 @@ mod tests {
 
     #[test]
     fn test_truncate_safe() {
+        assert_eq!(truncate_safe("Hello World", 5), "Hello");
+        assert_eq!(truncate_safe("Hello ", 5), "Hello");
+        assert_eq!(truncate_safe("Hello World", 11), "Hello World");
+        assert_eq!(truncate_safe("Hello World", 15), "Hello World");
+    }
+
+    #[test]
+    fn test_truncate_safe_in_place() {
+        let suffix = "suffix";
         let tests = &[
-            ("Hello World", 5, "Hello"),
-            ("Hello ", 5, "Hello"),
-            ("Hello World", 11, "Hello World"),
-            ("Hello World", 15, "Hello World"),
+            ("Hello World", 5, "Hello World"),
+            ("Hello World", 7, "Hsuffix"),
+            ("Hello World", usize::MAX, "Hello World"),
+            // α -> 2 byte length
+            ("αααααα", 7, "suffix"),
+            ("αααααα", 8, "αsuffix"),
+            ("αααααα", 9, "αsuffix"),
         ];
+        assert!("α".len() == 2);
+
         for (input, max_bytes, expected) in tests {
+            let mut input = (*input).to_string();
+            truncate_safe_in_place(&mut input, *max_bytes, suffix);
             assert_eq!(
-                truncate_safe(input, *max_bytes),
-                *expected,
-                "input: {} with max bytes: {} failed",
-                input,
-                max_bytes
-            );
-            let mut in_place = (*input).to_string();
-            truncate_safe_in_place(&mut in_place, *max_bytes);
-            assert_eq!(
-                in_place.as_str(),
+                input.as_str(),
                 *expected,
                 "input: {} with max bytes: {} failed",
                 input,

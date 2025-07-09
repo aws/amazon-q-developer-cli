@@ -34,6 +34,7 @@ pub enum Setting {
     McpLoadedBefore,
     ChatDefaultModel,
     ChatDefaultAgent,
+    ChatDisableAutoCompaction,
 }
 
 impl AsRef<str> for Setting {
@@ -56,6 +57,7 @@ impl AsRef<str> for Setting {
             Self::McpLoadedBefore => "mcp.loadedBefore",
             Self::ChatDefaultModel => "chat.defaultModel",
             Self::ChatDefaultAgent => "chat.defaultAgent",
+            Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
         }
     }
 }
@@ -88,6 +90,7 @@ impl TryFrom<&str> for Setting {
             "mcp.loadedBefore" => Ok(Self::McpLoadedBefore),
             "chat.defaultModel" => Ok(Self::ChatDefaultModel),
             "chat.defaultAgent" => Ok(Self::ChatDefaultAgent),
+            "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
