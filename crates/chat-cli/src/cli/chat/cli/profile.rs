@@ -1,11 +1,27 @@
+use std::io::Write;
+
 use clap::Subcommand;
-use crossterm::execute;
 use crossterm::style::{
     self,
     Attribute,
     Color,
 };
+use crossterm::{
+    execute,
+    queue,
+};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{
+    Style,
+    ThemeSet,
+};
+use syntect::parsing::SyntaxSet;
+use syntect::util::{
+    LinesWithEndings,
+    as_24_bit_terminal_escaped,
+};
 
+use crate::cli::agent::Agent;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -37,6 +53,8 @@ pub enum AgentSubcommand {
     Set { name: String },
     /// Rename a profile
     Rename { old_name: String, new_name: String },
+    /// Show agent config schema
+    Schema,
 }
 
 impl AgentSubcommand {
@@ -81,6 +99,15 @@ impl AgentSubcommand {
                 }
                 execute!(session.stderr, style::Print("\n"))?;
             },
+            Self::Schema => {
+                use schemars::schema_for;
+
+                let schema = schema_for!(Agent);
+                let pretty = serde_json::to_string_pretty(&schema)
+                    .map_err(|e| ChatError::Custom(format!("Failed to convert agent schema to string: {e}").into()))?;
+                highlight_json(&mut session.stderr, pretty.as_str())
+                    .map_err(|e| ChatError::Custom(format!("Error printing agent schema: {e}").into()))?;
+            },
             Self::Rename { .. } | Self::Set { .. } | Self::Delete { .. } | Self::Create { .. } => {
                 // As part of the agent implementation, we are disabling the ability to
                 // switch / create profile after a session has started.
@@ -107,4 +134,20 @@ impl AgentSubcommand {
             skip_printing_tools: true,
         })
     }
+}
+
+fn highlight_json(output: &mut impl Write, json_str: &str) -> eyre::Result<()> {
+    let ps = SyntaxSet::load_defaults_newlines();
+    let ts = ThemeSet::load_defaults();
+
+    let syntax = ps.find_syntax_by_extension("json").unwrap();
+    let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
+
+    for line in LinesWithEndings::from(json_str) {
+        let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps)?;
+        let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
+        queue!(output, style::Print(escaped))?;
+    }
+
+    Ok(execute!(output, style::ResetColor)?)
 }
