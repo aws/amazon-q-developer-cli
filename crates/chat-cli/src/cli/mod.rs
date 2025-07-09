@@ -358,6 +358,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 migrate: false,
+                retry: None,
             })),
             verbose: 2,
             help_all: false,
@@ -398,6 +399,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 migrate: false,
+                retry: None
             })
         );
     }
@@ -415,6 +417,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 migrate: false,
+                retry: None
             })
         );
     }
@@ -432,6 +435,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 migrate: false,
+                retry: None
             })
         );
     }
@@ -449,6 +453,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: true,
                 migrate: false,
+                retry: None
             })
         );
         assert_parse!(
@@ -462,6 +467,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: true,
                 migrate: false,
+                retry: None
             })
         );
     }
@@ -479,6 +485,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 migrate: false,
+                retry: None
             })
         );
     }
@@ -496,6 +503,7 @@ mod test {
                 trust_tools: Some(vec!["".to_string()]),
                 no_interactive: false,
                 migrate: false,
+                retry: None
             })
         );
     }
@@ -513,6 +521,32 @@ mod test {
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
                 no_interactive: false,
                 migrate: false,
+                retry: None
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_retry_flag() {
+        assert_parse!(
+            [
+                "chat",
+                "--no-interactive",
+                "--retry=3",
+                "--model",
+                "claude-4-sonnet",
+                "Hello"
+            ],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: Some("Hello".to_string()),
+                agent: None,
+                model: Some("claude-4-sonnet".to_string()),
+                migrate: false,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: true,
+                retry: Some(3)
             })
         );
     }

@@ -415,6 +415,17 @@ impl ApiClient {
             }
         } else if let Some(client) = &self.mock_client {
             let mut new_events = client.lock().next().unwrap_or_default().clone();
+            if let Some(first_event) = new_events.first() {
+                if let ChatResponseStream::AssistantResponseEvent { content } = first_event {
+                    if content == "MOCK_MODEL_OVERLOADED_ERROR" {
+                        return Err(ApiClientError::ModelOverloadedError {
+                            request_id: Some("mock-test-123".to_string()),
+                            status_code: Some(500),
+                        });
+                    }
+                }
+            }
+
             new_events.reverse();
 
             return Ok(SendMessageOutput::Mock(new_events));
@@ -425,6 +436,20 @@ impl ApiClient {
 
     /// Only meant for testing. Do not use outside of testing responses.
     pub fn set_mock_output(&mut self, json: serde_json::Value) {
+        if let Some(error_type) = json.get("error") {
+            if error_type == "ModelOverloadedError" {
+                // Set up mock to return the error string multiple times for retries
+                let error_responses = vec![
+                    vec![ChatResponseStream::AssistantResponseEvent {
+                        content: "MOCK_MODEL_OVERLOADED_ERROR".to_string(),
+                    }];
+                    4
+                ];
+                self.mock_client = Some(Arc::new(Mutex::new(error_responses.into_iter())));
+                return;
+            }
+        }
+
         let mut mock = Vec::new();
         for response in json.as_array().unwrap() {
             let mut stream = Vec::new();

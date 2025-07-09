@@ -181,6 +181,9 @@ pub struct ChatArgs {
     /// Run migration of legacy profiles to agents if applicable
     #[arg(long)]
     pub migrate: bool,
+    /// Allows exponential backoff if request fails due to model throttle
+    #[arg(long, requires = "no_interactive")]
+    pub retry: Option<u32>,
 }
 
 impl ChatArgs {
@@ -308,6 +311,7 @@ impl ChatArgs {
             model_id,
             tool_config,
             !self.no_interactive,
+            self.retry,
         )
         .await?
         .spawn(os)
@@ -491,6 +495,9 @@ pub struct ChatSession {
     pending_prompts: VecDeque<Prompt>,
     interactive: bool,
     inner: Option<ChatState>,
+    // maximum number of times to retry throttled model
+    max_retry_count: Option<u32>,
+    current_retry_count: u32,
 }
 
 impl ChatSession {
@@ -509,6 +516,7 @@ impl ChatSession {
         model_id: Option<String>,
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
+        max_retry_count: Option<u32>,
     ) -> Result<Self> {
         let valid_model_id = match model_id {
             Some(id) => id,
@@ -591,6 +599,8 @@ impl ChatSession {
             pending_prompts: VecDeque::new(),
             interactive,
             inner: Some(ChatState::default()),
+            max_retry_count,
+            current_retry_count: 0,
         })
     }
 
@@ -782,6 +792,53 @@ impl ChatSession {
                     ("Amazon Q is having trouble responding right now", eyre!(err), false)
                 },
                 ApiClientError::ModelOverloadedError { request_id, .. } => {
+                    if let Some(max_retry) = self.max_retry_count {
+                        // Keep retrying until we don't get ModelOverloadedError or till we reach max retries
+                        // exponential backoff (1sec, 2sec, ... 1 * 2 ^ max_retry count sec)
+
+                        loop {
+                            if self.current_retry_count >= max_retry {
+                                break;
+                            }
+
+                            match os
+                                .client
+                                .send_message(
+                                    self.conversation
+                                        .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                        .await?,
+                                )
+                                .await
+                            {
+                                Ok(response) => {
+                                    self.inner = Some(ChatState::HandleResponseStream(response));
+                                    return Ok(());
+                                },
+                                Err(ApiClientError::ModelOverloadedError { .. })
+                                    if self.current_retry_count < max_retry =>
+                                {
+                                    let delay = Duration::from_secs(1 * 2u64.pow(self.current_retry_count));
+                                    self.current_retry_count += 1;
+
+                                    execute!(
+                                        self.stderr,
+                                        style::SetForegroundColor(Color::Yellow),
+                                        style::Print(format!(
+                                            "\nModel overloaded, retrying in {}s (attempt {} of {})...\n",
+                                            delay.as_secs(),
+                                            self.current_retry_count,
+                                            max_retry
+                                        )),
+                                        style::SetForegroundColor(Color::Reset),
+                                    )?;
+
+                                    tokio::time::sleep(delay).await;
+                                },
+                                Err(e) => return Err(e.into()),
+                            }
+                        }
+                    }
+
                     let err = format!(
                         "The model you've selected is temporarily unavailable. Please use '/model' to select a different model and try again.{}\n\n",
                         match request_id {
@@ -2492,6 +2549,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None,
         )
         .await
         .unwrap()
@@ -2633,6 +2691,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None,
         )
         .await
         .unwrap()
@@ -2729,6 +2788,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None,
         )
         .await
         .unwrap()
@@ -2803,6 +2863,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None,
         )
         .await
         .unwrap()
@@ -2853,6 +2914,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None,
         )
         .await
         .unwrap()
@@ -2876,5 +2938,50 @@ mod tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
         }
+    }
+
+    #[tokio::test]
+    async fn test_retry_mechanism() {
+        let mut os = Os::new().await.unwrap();
+        os.client.set_mock_output(serde_json::json!([
+            ["MOCK_MODEL_OVERLOADED_ERROR"],
+            ["MOCK_MODEL_OVERLOADED_ERROR"],
+            ["MOCK_MODEL_OVERLOADED_ERROR"],
+            ["MOCK_MODEL_OVERLOADED_ERROR"],
+        ]));
+        let agents = get_test_agents(&os).await;
+
+        let start_time = std::time::Instant::now();
+
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+
+        let _result = ChatSession::new(
+            &mut os,
+            std::io::stdout(),
+            std::io::stderr(),
+            "test-conversation-id",
+            agents,
+            Some("test".to_string()),
+            InputSource::new_mock(vec![]),
+            false,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            false,
+            Some(3), // 3 tries under non-interactive mode
+        )
+        .await
+        .unwrap()
+        .spawn(&mut os)
+        .await;
+        let elapsed = start_time.elapsed();
+        assert!(
+            elapsed.as_secs() >= 7,
+            "Expected at least 7 seconds for retries, got {:?}",
+            elapsed
+        );
     }
 }
