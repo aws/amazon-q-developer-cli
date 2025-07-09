@@ -8,9 +8,12 @@ mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
 mod parser;
+pub mod progress_display;
 mod prompt;
 mod prompt_parser;
 mod server_messenger;
+pub mod server_reload_manager;
+pub mod session_state;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -231,6 +234,48 @@ impl ChatArgs {
             let skip_migration = self.no_interactive || !self.migrate;
             let mut agents = Agents::load(os, agent_name, skip_migration, &mut stderr).await;
             agents.trust_all_tools = self.trust_all_tools;
+
+            // Load global MCP configuration and merge it with the active agent
+            if let Some(active_agent) = agents.get_active_mut() {
+                // Try to load global MCP configuration
+                if let Ok(global_mcp_path) = crate::cli::chat::tool_manager::global_mcp_config_path(os) {
+                    if os.fs.exists(&global_mcp_path) {
+                        match crate::cli::agent::McpServerConfig::load_from_file(os, &global_mcp_path).await {
+                            Ok(global_mcp_config) => {
+                                let server_count = global_mcp_config.mcp_servers.len();
+                                // Merge global MCP config with agent's MCP config
+                                for (server_name, server_config) in global_mcp_config.mcp_servers {
+                                    // Only add if not already present in agent config
+                                    active_agent.mcp_servers.mcp_servers.entry(server_name).or_insert(server_config);
+                                }
+                                info!("Loaded global MCP configuration with {} servers", server_count);
+                            },
+                            Err(e) => {
+                                warn!("Failed to load global MCP configuration: {}", e);
+                            }
+                        }
+                    }
+                }
+                
+                // Also try workspace MCP configuration
+                if let Ok(workspace_mcp_path) = crate::cli::chat::tool_manager::workspace_mcp_config_path(os) {
+                    if os.fs.exists(&workspace_mcp_path) {
+                        match crate::cli::agent::McpServerConfig::load_from_file(os, &workspace_mcp_path).await {
+                            Ok(workspace_mcp_config) => {
+                                let server_count = workspace_mcp_config.mcp_servers.len();
+                                // Merge workspace MCP config with agent's MCP config (workspace takes precedence)
+                                for (server_name, server_config) in workspace_mcp_config.mcp_servers {
+                                    active_agent.mcp_servers.mcp_servers.insert(server_name, server_config);
+                                }
+                                info!("Loaded workspace MCP configuration with {} servers", server_count);
+                            },
+                            Err(e) => {
+                                warn!("Failed to load workspace MCP configuration: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
 
             if let Some(name) = self.agent.as_ref() {
                 match agents.switch(name) {
