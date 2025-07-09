@@ -737,7 +737,20 @@ impl ChatSession {
 
                     return Ok(());
                 },
-                ApiClientError::QuotaBreach { message, .. } => (message, Report::from(err), true),
+                ApiClientError::QuotaBreach { message, .. } => {
+                    let err = "Request quota exceeded. Please wait a moment and try again.".to_string();
+                    self.conversation.append_transcript(err.clone());
+                    execute!(
+                        self.stderr,
+                        style::SetAttribute(Attribute::Bold),
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(" ⚠️  Amazon Q rate limit reached:\n"),
+                        style::Print(format!("    {}\n\n", err.clone())),
+                        style::SetAttribute(Attribute::Reset),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+                    ("Amazon Q is having trouble responding right now", eyre!(err), false)
+                },
                 ApiClientError::ModelOverloadedError { request_id, .. } => {
                     let err = format!(
                         "The model you've selected is temporarily unavailable. Please use '/model' to select a different model and try again.{}\n\n",
