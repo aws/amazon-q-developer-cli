@@ -17,7 +17,6 @@ use serde::{
 };
 use tracing::{
     debug,
-    error,
     warn,
 };
 

@@ -38,7 +38,6 @@ use clap::{
     Parser,
 };
 use cli::compact::CompactStrategy;
-use context::ContextManager;
 pub use conversation::ConversationState;
 use conversation::TokenWarningLevel;
 use crossterm::style::{
