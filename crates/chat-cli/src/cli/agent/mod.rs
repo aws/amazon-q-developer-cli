@@ -439,7 +439,7 @@ impl Agents {
         // Assume agent in the following order of priority:
         // 1. The agent name specified by the start command via --agent (this is the agent_name that's
         //    passed in)
-        // 2. If the above is missing or invalid, assume one that is specified by chat.defautlAgent
+        // 2. If the above is missing or invalid, assume one that is specified by chat.defaultAgent
         // 3. If the above is missing or invalid, assume the in-memory default
         let active_idx = 'active_idx: {
             if let Some(name) = agent_name {
