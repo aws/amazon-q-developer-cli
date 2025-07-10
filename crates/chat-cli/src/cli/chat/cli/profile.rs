@@ -140,7 +140,9 @@ fn highlight_json(output: &mut impl Write, json_str: &str) -> eyre::Result<()> {
     let ps = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
 
-    let syntax = ps.find_syntax_by_extension("json").unwrap();
+    let syntax = ps
+        .find_syntax_by_extension("json")
+        .ok_or(eyre::eyre!("No syntax found by extension"))?;
     let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
 
     for line in LinesWithEndings::from(json_str) {

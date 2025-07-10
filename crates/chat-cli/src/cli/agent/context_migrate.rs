@@ -12,6 +12,10 @@ use super::{
     Agent,
     McpServerConfig,
 };
+use crate::cli::agent::{
+    CreateHooks,
+    PromptHooks,
+};
 use crate::cli::chat::cli::hooks::{
     Hook,
     HookTrigger,
@@ -174,8 +178,8 @@ impl ContextMigrate<'c'> {
                 description: Some(DEFAULT_DESC.to_string()),
                 path: Some(directories::chat_global_agent_path(os)?.join(format!("{LEGACY_GLOBAL_AGENT_NAME}.json"))),
                 included_files: context.paths,
-                create_hooks: serde_json::to_value(create_hooks).unwrap_or(serde_json::json!({})),
-                prompt_hooks: serde_json::to_value(prompt_hooks).unwrap_or(serde_json::json!({})),
+                create_hooks: CreateHooks::Map(create_hooks),
+                prompt_hooks: PromptHooks::Map(prompt_hooks),
                 mcp_servers: mcp_servers.clone().unwrap_or_default(),
                 ..Default::default()
             });
@@ -198,8 +202,8 @@ impl ContextMigrate<'c'> {
                 name: profile_name,
                 description: Some(PROFILE_DESC.to_string()),
                 included_files: context.paths,
-                create_hooks: serde_json::to_value(create_hooks).unwrap_or(serde_json::json!({})),
-                prompt_hooks: serde_json::to_value(prompt_hooks).unwrap_or(serde_json::json!({})),
+                create_hooks: CreateHooks::Map(create_hooks),
+                prompt_hooks: PromptHooks::Map(prompt_hooks),
                 mcp_servers: mcp_servers.clone().unwrap_or_default(),
                 ..Default::default()
             });

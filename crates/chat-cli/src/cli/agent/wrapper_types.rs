@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::ops::Deref;
 
 use schemars::{
@@ -11,6 +12,8 @@ use serde::{
     Deserialize,
     Serialize,
 };
+
+use crate::cli::chat::cli::hooks::Hook;
 
 /// Subject of the tool name change. For tools in mcp servers, you would need to prefix them with
 /// their server names
@@ -51,56 +54,35 @@ pub fn alias_schema(generator: &mut SchemaGenerator) -> Schema {
     })
 }
 
-pub fn prompt_hooks_schema(_generator: &mut SchemaGenerator) -> Schema {
-    json_schema!({
-      "oneOf": [
-        {
-          "type": "array",
-          "description": "Array of command to execute before each prompt",
-          "items": {
-            "type": "string"
-          }
-        },
-        {
-          "type": "object",
-          "description": "Object mapping hook names to command strings for prompt processing",
-          "additionalProperties": {
-            "type": "string",
-            "description": "The command string to execute for this prompt hook"
-          },
-          "propertyNames": {
-            "type": "string",
-            "description": "The name/identifier for this prompt hook"
-          }
-        }
-      ]
-    })
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
+#[serde(untagged)]
+pub enum CreateHooks {
+    /// Array of command to execute before the start of the conversation
+    List(Vec<String>),
+    /// Object mapping hook names to command strings for command to run at the start of the
+    /// conversation
+    Map(HashMap<String, Hook>),
 }
 
-pub fn create_hooks_schema(_generator: &mut SchemaGenerator) -> Schema {
-    json_schema!({
-      "oneOf": [
-        {
-          "type": "array",
-          "description": "Array of command to execute",
-          "items": {
-            "type": "string"
-          }
-        },
-        {
-          "type": "object",
-          "description": "Object mapping hook names to command strings",
-          "additionalProperties": {
-            "type": "string",
-            "description": "The command string to execute for this hook"
-          },
-          "propertyNames": {
-            "type": "string",
-            "description": "The name/identifier for this hook"
-          }
-        }
-      ]
-    })
+impl Default for CreateHooks {
+    fn default() -> Self {
+        Self::List(Vec::new())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
+#[serde(untagged)]
+pub enum PromptHooks {
+    /// Array of command to execute before exchange
+    List(Vec<String>),
+    /// Object mapping hook names to command strings for command to be ran before each exchange
+    Map(HashMap<String, Hook>),
+}
+
+impl Default for PromptHooks {
+    fn default() -> Self {
+        Self::List(Vec::new())
+    }
 }
 
 /// The name of the tool to be configured

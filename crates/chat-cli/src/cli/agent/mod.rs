@@ -33,12 +33,12 @@ use tracing::{
     error,
     warn,
 };
-use wrapper_types::{
+pub use wrapper_types::{
+    CreateHooks,
     OriginalToolName,
+    PromptHooks,
     ToolSettingTarget,
     alias_schema,
-    create_hooks_schema,
-    prompt_hooks_schema,
     tool_settings_schema,
 };
 
@@ -93,12 +93,10 @@ pub struct Agent {
     pub included_files: Vec<String>,
     /// Commands to run when a chat session is created
     #[serde(default)]
-    #[schemars(schema_with = "create_hooks_schema")]
-    pub create_hooks: serde_json::Value,
+    pub create_hooks: CreateHooks,
     /// Commands to run before processing each prompt
     #[serde(default)]
-    #[schemars(schema_with = "prompt_hooks_schema")]
-    pub prompt_hooks: serde_json::Value,
+    pub prompt_hooks: PromptHooks,
     /// Settings for specific tools. These are mostly for native tools. The actual schema differs by
     /// tools and is documented in detail in our documentation
     #[serde(default)]

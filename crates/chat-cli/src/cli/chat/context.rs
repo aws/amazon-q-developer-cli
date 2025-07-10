@@ -14,7 +14,11 @@ use serde::{
 
 use super::consts::CONTEXT_FILES_MAX_SIZE;
 use super::util::drop_matched_context_files;
-use crate::cli::agent::Agent;
+use crate::cli::agent::{
+    Agent,
+    CreateHooks,
+    PromptHooks,
+};
 use crate::cli::chat::ChatError;
 use crate::cli::chat::cli::hooks::{
     Hook,
@@ -43,38 +47,34 @@ impl TryFrom<&Agent> for ContextConfig {
             hooks: {
                 let mut hooks = HashMap::<String, Hook>::new();
 
-                if value.prompt_hooks.is_array() {
-                    let prompt_hooks = serde_json::from_value::<Vec<String>>(value.prompt_hooks.clone())
-                        .map_err(|e| eyre::eyre!("Error deserializing prompt hooks: {:?}", e))?;
-                    prompt_hooks
-                        .clone()
-                        .into_iter()
-                        .map(|command| Hook::new_inline_hook(HookTrigger::PerPrompt, command))
-                        .enumerate()
-                        .for_each(|(i, hook)| {
-                            hooks.insert(format!("per_prompt_hook_{i}"), hook);
-                        });
-                } else if value.prompt_hooks.is_object() {
-                    let prompt_hooks = serde_json::from_value::<HashMap<String, Hook>>(value.prompt_hooks.clone())
-                        .map_err(|e| eyre::eyre!("Error deserializing prompt hooks: {:?}", e))?;
-                    hooks.extend(prompt_hooks);
+                match &value.prompt_hooks {
+                    PromptHooks::List(list) => {
+                        list.clone()
+                            .into_iter()
+                            .map(|command| Hook::new_inline_hook(HookTrigger::PerPrompt, command))
+                            .enumerate()
+                            .for_each(|(i, hook)| {
+                                hooks.insert(format!("per_prompt_hook_{i}"), hook);
+                            });
+                    },
+                    PromptHooks::Map(map) => {
+                        hooks.extend(map.clone());
+                    },
                 }
 
-                if value.create_hooks.is_array() {
-                    let create_hooks = serde_json::from_value::<Vec<String>>(value.create_hooks.clone())
-                        .map_err(|e| eyre::eyre!("Error deserializing prompt hooks: {:?}", e))?;
-                    create_hooks
-                        .clone()
-                        .into_iter()
-                        .map(|command| Hook::new_inline_hook(HookTrigger::ConversationStart, command))
-                        .enumerate()
-                        .for_each(|(i, hook)| {
-                            hooks.insert(format!("start_hook_{i}"), hook);
-                        });
-                } else if value.create_hooks.is_object() {
-                    let create_hooks = serde_json::from_value::<HashMap<String, Hook>>(value.create_hooks.clone())
-                        .map_err(|e| eyre::eyre!("Error deserializing prompt hooks: {:?}", e))?;
-                    hooks.extend(create_hooks);
+                match &value.create_hooks {
+                    CreateHooks::List(list) => {
+                        list.clone()
+                            .into_iter()
+                            .map(|command| Hook::new_inline_hook(HookTrigger::ConversationStart, command))
+                            .enumerate()
+                            .for_each(|(i, hook)| {
+                                hooks.insert(format!("start_hook_{i}"), hook);
+                            });
+                    },
+                    CreateHooks::Map(map) => {
+                        hooks.extend(map.clone());
+                    },
                 }
 
                 hooks

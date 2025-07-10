@@ -935,6 +935,8 @@ mod tests {
     use crate::cli::agent::{
         Agent,
         Agents,
+        CreateHooks,
+        PromptHooks,
     };
     use crate::cli::chat::tool_manager::ToolManager;
 
@@ -1204,20 +1206,21 @@ mod tests {
         let prompt_context = "prompt context";
         let agents = {
             let mut agents = Agents::default();
-            let create_hooks = serde_json::json!({
-                "test_conversation_start": {
-                    "trigger": "conversation_start",
-                    "type": "inline",
-                    "command": format!("echo {}", conversation_start_context)
-                }
-            });
-            let prompt_hooks = serde_json::json!({
-                "test_per_prompt": {
-                    "trigger": "per_prompt",
-                    "type": "inline",
-                    "command": format!("echo {}", prompt_context)
-                }
-            });
+            let create_hooks = {
+                let mut map = HashMap::<String, Hook>::new();
+                let hook = Hook::new_inline_hook(
+                    HookTrigger::ConversationStart,
+                    format!("echo {}", conversation_start_context),
+                );
+                map.insert("test_conversation_start".to_string(), hook);
+                CreateHooks::Map(map)
+            };
+            let prompt_hooks = {
+                let mut map = HashMap::<String, Hook>::new();
+                let hook = Hook::new_inline_hook(HookTrigger::PerPrompt, format!("echo {}", prompt_context));
+                map.insert("test_per_prompt".to_string(), hook);
+                PromptHooks::Map(map)
+            };
             let agent = Agent {
                 create_hooks,
                 prompt_hooks,
