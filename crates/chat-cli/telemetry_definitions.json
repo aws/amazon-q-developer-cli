@@ -36,6 +36,26 @@
       "description": "A codewhisperer CLI subcommand"
     },
     {
+      "name": "codewhispererterminal_chatSlashCommand",
+      "type": "string",
+      "description": "The slash command that was executed (e.g., 'context', 'compact', 'model')"
+    },
+    {
+      "name": "codewhispererterminal_chatSlashSubcommand",
+      "type": "string",
+      "description": "The subcommand of the slash command, if applicable (e.g., 'list' for '/prompts list')"
+    },
+    {
+      "name": "codewhispererterminal_chatSlashCommandResult",
+      "type": "string",
+      "description": "The result of slash command execution (e.g., 'Success', 'Failed')"
+    },
+    {
+      "name": "codewhispererterminal_chatSlashCommandFailureReason",
+      "type": "string",
+      "description": "The reason for slash command execution failure, if applicable"
+    },
+    {
       "name": "codewhispererterminal_inCloudshell",
       "type": "boolean",
       "description": "Whether the CLI is running in the AWS CloudShell environment"
@@ -156,38 +176,87 @@
       "name": "amazonq_startChat",
       "description": "Captures start of the conversation with amazonq /dev",
       "metadata": [
-        { "type": "amazonqConversationId" },
-        { "type": "credentialStartUrl", "required": false },
-        { "type": "codewhispererterminal_inCloudshell" },
-        { "type": "codewhispererterminal_model" }
+        {
+          "type": "amazonqConversationId"
+        },
+        {
+          "type": "credentialStartUrl",
+          "required": false
+        },
+        {
+          "type": "codewhispererterminal_inCloudshell"
+        },
+        {
+          "type": "codewhispererterminal_model"
+        }
       ]
     },
     {
       "name": "codewhispererterminal_addChatMessage",
       "description": "Captures active usage with Q Chat in shell",
       "metadata": [
-        { "type": "amazonqConversationId" },
-        { "type": "codewhispererterminal_utteranceId" },
-        { "type": "credentialStartUrl", "required": false },
-        { "type": "ssoRegion", "required": false },
-        { "type": "codewhispererterminal_inCloudshell" },
-        { "type": "codewhispererterminal_contextFileLength", "required": false },
-        { "type": "requestId" },
-        { "type": "result", "required": true },
-        { "type": "reason", "required": false },
-        { "type": "reasonDesc", "required": false },
-        { "type": "statusCode", "required": false },
-        { "type": "codewhispererterminal_model" }
+        {
+          "type": "amazonqConversationId"
+        },
+        {
+          "type": "codewhispererterminal_utteranceId"
+        },
+        {
+          "type": "credentialStartUrl",
+          "required": false
+        },
+        {
+          "type": "ssoRegion",
+          "required": false
+        },
+        {
+          "type": "codewhispererterminal_inCloudshell"
+        },
+        {
+          "type": "codewhispererterminal_contextFileLength",
+          "required": false
+        },
+        {
+          "type": "requestId"
+        },
+        {
+          "type": "result",
+          "required": true
+        },
+        {
+          "type": "reason",
+          "required": false
+        },
+        {
+          "type": "reasonDesc",
+          "required": false
+        },
+        {
+          "type": "statusCode",
+          "required": false
+        },
+        {
+          "type": "codewhispererterminal_model"
+        }
       ]
     },
     {
       "name": "amazonq_endChat",
       "description": "Captures end of the conversation with amazonq /dev",
       "metadata": [
-        { "type": "amazonqConversationId" },
-        { "type": "credentialStartUrl", "required": false },
-        { "type": "codewhispererterminal_inCloudshell" },
-        { "type": "codewhispererterminal_model" }
+        {
+          "type": "amazonqConversationId"
+        },
+        {
+          "type": "credentialStartUrl",
+          "required": false
+        },
+        {
+          "type": "codewhispererterminal_inCloudshell"
+        },
+        {
+          "type": "codewhispererterminal_model"
+        }
       ]
     },
     {
@@ -195,8 +264,12 @@
       "description": "Emitted when users log in",
       "passive": false,
       "metadata": [
-        { "type": "credentialStartUrl" },
-        { "type": "codewhispererterminal_inCloudshell" }
+        {
+          "type": "credentialStartUrl"
+        },
+        {
+          "type": "codewhispererterminal_inCloudshell"
+        }
       ]
     },
     {
@@ -204,12 +277,25 @@
       "description": "Emitted when users refresh their credentials",
       "passive": false,
       "metadata": [
-        { "type": "credentialStartUrl" },
-        { "type": "requestId" },
-        { "type": "oauthFlow" },
-        { "type": "result" },
-        { "type": "reason", "required": false },
-        { "type": "codewhispererterminal_inCloudshell" }
+        {
+          "type": "credentialStartUrl"
+        },
+        {
+          "type": "requestId"
+        },
+        {
+          "type": "oauthFlow"
+        },
+        {
+          "type": "result"
+        },
+        {
+          "type": "reason",
+          "required": false
+        },
+        {
+          "type": "codewhispererterminal_inCloudshell"
+        }
       ]
     },
     {
@@ -217,9 +303,46 @@
       "description": "Emitted on CW CLI subcommand executed",
       "passive": false,
       "metadata": [
-        { "type": "credentialStartUrl" },
-        { "type": "codewhispererterminal_subcommand" },
-        { "type": "codewhispererterminal_inCloudshell" }
+        {
+          "type": "credentialStartUrl"
+        },
+        {
+          "type": "codewhispererterminal_subcommand"
+        },
+        {
+          "type": "codewhispererterminal_inCloudshell"
+        }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_chatSlashCommandExecuted",
+      "description": "Emitted when a slash command is executed in Q Chat",
+      "passive": false,
+      "metadata": [
+        {
+          "type": "credentialStartUrl",
+          "required": false
+        },
+        {
+          "type": "amazonqConversationId"
+        },
+        {
+          "type": "codewhispererterminal_chatSlashCommand"
+        },
+        {
+          "type": "codewhispererterminal_chatSlashSubcommand",
+          "required": false
+        },
+        {
+          "type": "codewhispererterminal_chatSlashCommandResult"
+        },
+        {
+          "type": "codewhispererterminal_chatSlashCommandFailureReason",
+          "required": false
+        },
+        {
+          "type": "codewhispererterminal_inCloudshell"
+        }
       ]
     },
     {
@@ -227,16 +350,37 @@
       "description": "Emitted once per tool use to report outcome of tool use suggested",
       "passive": false,
       "metadata": [
-        { "type": "credentialStartUrl" },
-        { "type": "amazonqConversationId" },
-        { "type": "codewhispererterminal_utteranceId" },
-        { "type": "codewhispererterminal_userInputId" },
-        { "type": "codewhispererterminal_toolUseId" },
-        { "type": "codewhispererterminal_toolName" },
-        { "type": "codewhispererterminal_isToolUseAccepted" },
-        { "type": "codewhispererterminal_isToolValid" },
-        { "type": "codewhispererterminal_toolUseIsSuccess", "required": false },
-        { "type": "codewhispererterminal_isCustomTool" },
+        {
+          "type": "credentialStartUrl"
+        },
+        {
+          "type": "amazonqConversationId"
+        },
+        {
+          "type": "codewhispererterminal_utteranceId"
+        },
+        {
+          "type": "codewhispererterminal_userInputId"
+        },
+        {
+          "type": "codewhispererterminal_toolUseId"
+        },
+        {
+          "type": "codewhispererterminal_toolName"
+        },
+        {
+          "type": "codewhispererterminal_isToolUseAccepted"
+        },
+        {
+          "type": "codewhispererterminal_isToolValid"
+        },
+        {
+          "type": "codewhispererterminal_toolUseIsSuccess",
+          "required": false
+        },
+        {
+          "type": "codewhispererterminal_isCustomTool"
+        },
         {
           "type": "codewhispererterminal_customToolInputTokenSize",
           "required": false
@@ -245,8 +389,13 @@
           "type": "codewhispererterminal_customToolOutputTokenSize",
           "required": false
         },
-        { "type": "codewhispererterminal_customToolLatency", "required": false },
-        { "type": "codewhispererterminal_model" }
+        {
+          "type": "codewhispererterminal_customToolLatency",
+          "required": false
+        },
+        {
+          "type": "codewhispererterminal_model"
+        }
       ]
     },
     {
@@ -254,25 +403,46 @@
       "description": "Emitted once per mcp server on start up",
       "passive": false,
       "metadata": [
-        { "type": "credentialStartUrl" },
-        { "type": "amazonqConversationId" },
+        {
+          "type": "credentialStartUrl"
+        },
+        {
+          "type": "amazonqConversationId"
+        },
         {
           "type": "codewhispererterminal_mcpServerInitFailureReason",
           "required": false
         },
-        { "type": "codewhispererterminal_toolsPerMcpServer" }
+        {
+          "type": "codewhispererterminal_toolsPerMcpServer"
+        }
       ]
     },
     {
       "name": "amazonq_didSelectProfile",
       "description": "Emitted after the user's Q Profile has been set, whether the user was prompted with a dialog, or a profile was automatically assigned after signing in.",
       "metadata": [
-        { "type": "source" },
-        { "type": "amazonQProfileRegion" },
-        { "type": "result" },
-        { "type": "ssoRegion", "required": false },
-        { "type": "credentialStartUrl", "required": false },
-        { "type": "profileCount", "required": false }
+        {
+          "type": "source"
+        },
+        {
+          "type": "amazonQProfileRegion"
+        },
+        {
+          "type": "result"
+        },
+        {
+          "type": "ssoRegion",
+          "required": false
+        },
+        {
+          "type": "credentialStartUrl",
+          "required": false
+        },
+        {
+          "type": "profileCount",
+          "required": false
+        }
       ],
       "passive": true
     },
@@ -280,11 +450,23 @@
       "name": "amazonq_profileState",
       "description": "Indicates a change in the user's Q Profile state",
       "metadata": [
-        { "type": "source" },
-        { "type": "amazonQProfileRegion" },
-        { "type": "result" },
-        { "type": "ssoRegion", "required": false },
-        { "type": "credentialStartUrl", "required": false }
+        {
+          "type": "source"
+        },
+        {
+          "type": "amazonQProfileRegion"
+        },
+        {
+          "type": "result"
+        },
+        {
+          "type": "ssoRegion",
+          "required": false
+        },
+        {
+          "type": "credentialStartUrl",
+          "required": false
+        }
       ],
       "passive": true
     },
@@ -292,14 +474,36 @@
       "name": "amazonq_messageResponseError",
       "description": "When an error has occurred in response to a prompt",
       "metadata": [
-          { "type": "credentialStartUrl", "required": false },
-          { "type": "ssoRegion", "required": false },
-          { "type": "amazonqConversationId" },
-          { "type": "codewhispererterminal_contextFileLength", "required": false },
-          { "type": "result" },
-          { "type": "reason", "required": false },
-          { "type": "reasonDesc", "required": false },
-          { "type": "statusCode", "required": false }
+        {
+          "type": "credentialStartUrl",
+          "required": false
+        },
+        {
+          "type": "ssoRegion",
+          "required": false
+        },
+        {
+          "type": "amazonqConversationId"
+        },
+        {
+          "type": "codewhispererterminal_contextFileLength",
+          "required": false
+        },
+        {
+          "type": "result"
+        },
+        {
+          "type": "reason",
+          "required": false
+        },
+        {
+          "type": "reasonDesc",
+          "required": false
+        },
+        {
+          "type": "statusCode",
+          "required": false
+        }
       ]
     }
   ]

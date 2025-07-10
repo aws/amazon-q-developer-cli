@@ -1386,6 +1386,9 @@ impl ChatSession {
 
             match SlashCommand::try_parse_from(args) {
                 Ok(command) => {
+                    let command_name = orig_args[0].clone();
+                    let subcommand_name = orig_args.get(1).cloned().filter(|s| !s.starts_with('-'));
+
                     match command.execute(os, self).await {
                         Ok(chat_state)
                             if matches!(chat_state, ChatState::Exit)
@@ -1395,6 +1398,16 @@ impl ChatSession {
                                 // other slash commands.
                                 || matches!(chat_state, ChatState::CompactHistory { .. }) =>
                         {
+                            let _ = self
+                                .send_slash_command_telemetry(
+                                    os,
+                                    command_name,
+                                    subcommand_name,
+                                    TelemetryResult::Succeeded,
+                                    None,
+                                )
+                                .await;
+
                             return Ok(chat_state);
                         },
                         Err(err) => {
@@ -1404,6 +1417,15 @@ impl ChatSession {
                                 style::Print(format!("\nFailed to execute command: {}\n", err)),
                                 style::SetForegroundColor(Color::Reset)
                             )?;
+                            let _ = self
+                                .send_slash_command_telemetry(
+                                    os,
+                                    command_name,
+                                    subcommand_name,
+                                    TelemetryResult::Failed,
+                                    Some(err.to_string()),
+                                )
+                                .await;
                         },
                         _ => {},
                     }
@@ -2312,6 +2334,31 @@ impl ChatSession {
             )
             .await
             .ok();
+    }
+
+    pub async fn send_slash_command_telemetry(
+        &self,
+        os: &Os,
+        command: String,
+        subcommand: Option<String>,
+        result: TelemetryResult,
+        failure_reason: Option<String>,
+    ) {
+        let conversation_id = self.conversation.conversation_id().to_owned();
+        if let Err(e) = os
+            .telemetry
+            .send_chat_slash_command_executed(
+                &os.database,
+                conversation_id,
+                command,
+                subcommand,
+                result,
+                failure_reason,
+            )
+            .await
+        {
+            tracing::warn!("Failed to send slash command telemetry: {}", e);
+        }
     }
 }
 

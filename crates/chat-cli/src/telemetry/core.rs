@@ -15,6 +15,7 @@ use crate::telemetry::definitions::metrics::{
     AmazonqProfileState,
     AmazonqStartChat,
     CodewhispererterminalAddChatMessage,
+    CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
     CodewhispererterminalRefreshCredentials,
@@ -99,6 +100,26 @@ impl Event {
                     value: None,
                     credential_start_url: self.credential_start_url.map(Into::into),
                     codewhispererterminal_subcommand: Some(subcommand.into()),
+                    codewhispererterminal_in_cloudshell: None,
+                }
+                .into_metric_datum(),
+            ),
+            EventType::ChatSlashCommandExecuted {
+                conversation_id,
+                command,
+                subcommand,
+                result,
+                failure_reason,
+            } => Some(
+                CodewhispererterminalChatSlashCommandExecuted {
+                    create_time: self.created_time,
+                    value: None,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_chat_slash_command: Some(command.into()),
+                    codewhispererterminal_chat_slash_subcommand: subcommand.map(Into::into),
+                    codewhispererterminal_chat_slash_command_result: Some(result.to_string().into()),
+                    codewhispererterminal_chat_slash_command_failure_reason: failure_reason.map(Into::into),
                     codewhispererterminal_in_cloudshell: None,
                 }
                 .into_metric_datum(),
@@ -286,6 +307,13 @@ pub enum EventType {
     },
     CliSubcommandExecuted {
         subcommand: String,
+    },
+    ChatSlashCommandExecuted {
+        conversation_id: String,
+        command: String,
+        subcommand: Option<String>,
+        result: TelemetryResult,
+        failure_reason: Option<String>,
     },
     ChatStart {
         conversation_id: String,
