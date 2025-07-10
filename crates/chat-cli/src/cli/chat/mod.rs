@@ -207,16 +207,26 @@ impl ChatArgs {
             }
         }
 
+        let stdout = std::io::stdout();
+        let mut stderr = std::io::stderr();
+
         let args: Vec<String> = std::env::args().collect();
         if args
             .iter()
             .any(|arg| arg == "--profile" || arg.starts_with("--profile="))
         {
-            eprintln!("Warning: --profile is deprecated, use --agent instead");
+            execute!(
+                stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("--profile is deprecated, use "),
+                style::SetForegroundColor(Color::Green),
+                style::Print("--agent"),
+                style::SetForegroundColor(Color::Reset),
+                style::Print(" instead\n")
+            )?;
         }
-
-        let stdout = std::io::stdout();
-        let mut stderr = std::io::stderr();
 
         let agents = {
             let mut default_agent_name = None::<String>;
