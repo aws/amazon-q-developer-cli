@@ -223,7 +223,10 @@ impl ChatArgs {
             let mut agents = Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr).await;
             agents.trust_all_tools = self.trust_all_tools;
 
-            if agents.get_active().is_none_or(|a| a.mcp_servers.mcp_servers.is_empty()) {
+            if agents
+                .get_active()
+                .is_some_and(|a| !a.mcp_servers.mcp_servers.is_empty())
+            {
                 if !self.no_interactive && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
                     execute!(
                         stderr,
