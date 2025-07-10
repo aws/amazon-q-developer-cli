@@ -219,39 +219,20 @@ impl ChatArgs {
         let mut stderr = std::io::stderr();
 
         let agents = {
-            let mut default_agent_name = None::<String>;
-            let agent_name = if let Some(agent) = self.agent.as_deref() {
-                Some(agent)
-            } else if let Some(agent) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
-                default_agent_name.replace(agent);
-                default_agent_name.as_deref()
-            } else {
-                None
-            };
             let skip_migration = self.no_interactive || !self.migrate;
-            let mut agents = Agents::load(os, agent_name, skip_migration, &mut stderr).await;
+            let mut agents = Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr).await;
             agents.trust_all_tools = self.trust_all_tools;
 
-            if let Some(name) = self.agent.as_ref() {
-                match agents.switch(name) {
-                    Ok(agent) if !agent.mcp_servers.mcp_servers.is_empty() => {
-                        if !self.no_interactive
-                            && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false)
-                        {
-                            execute!(
-                                stderr,
-                                style::Print(
-                                    "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
-                                )
-                            )?;
-                        }
-                        os.database.settings.set(Setting::McpLoadedBefore, true).await?;
-                    },
-                    Err(e) => {
-                        let _ = execute!(stderr, style::Print(format!("Error switching profile: {}", e)));
-                    },
-                    _ => {},
+            if agents.get_active().is_none_or(|a| a.mcp_servers.mcp_servers.is_empty()) {
+                if !self.no_interactive && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
+                    execute!(
+                        stderr,
+                        style::Print(
+                            "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
+                        )
+                    )?;
                 }
+                os.database.settings.set(Setting::McpLoadedBefore, true).await?;
             }
 
             if let Some(trust_tools) = self.trust_tools.take() {
