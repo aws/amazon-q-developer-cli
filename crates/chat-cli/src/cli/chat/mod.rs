@@ -1386,18 +1386,23 @@ impl ChatSession {
 
             match SlashCommand::try_parse_from(args) {
                 Ok(command) => {
-                    let command_name = orig_args[0].clone();
-                    let subcommand_name = orig_args.get(1).cloned().filter(|s| !s.starts_with('-'));
+                    let command_name = match orig_args[0].as_str() {
+                        "q" | "exit" => "quit",
+                        "profile" => "agent",
+                        cmd => cmd,
+                    }
+                    .to_string();
+                    let subcommand_name = if matches!(
+                        command_name.as_str(),
+                        "agent" | "context" | "knowledge" | "tools" | "prompts" | "hooks"
+                    ) {
+                        orig_args.get(1).cloned().filter(|s| !s.starts_with('-'))
+                    } else {
+                        None
+                    };
 
                     match command.execute(os, self).await {
-                        Ok(chat_state)
-                            if matches!(chat_state, ChatState::Exit)
-                                || matches!(chat_state, ChatState::HandleInput { input: _ })
-                                // TODO(bskiser): this is just a hotfix for handling state changes
-                                // from manually running /compact, without impacting behavior of
-                                // other slash commands.
-                                || matches!(chat_state, ChatState::CompactHistory { .. }) =>
-                        {
+                        Ok(chat_state) => {
                             let _ = self
                                 .send_slash_command_telemetry(
                                     os,
@@ -1408,7 +1413,15 @@ impl ChatSession {
                                 )
                                 .await;
 
-                            return Ok(chat_state);
+                            if matches!(chat_state, ChatState::Exit)
+                                || matches!(chat_state, ChatState::HandleInput { input: _ })
+                                // TODO(bskiser): this is just a hotfix for handling state changes
+                                // from manually running /compact, without impacting behavior of
+                                // other slash commands.
+                                || matches!(chat_state, ChatState::CompactHistory { .. })
+                            {
+                                return Ok(chat_state);
+                            }
                         },
                         Err(err) => {
                             queue!(
@@ -1427,7 +1440,6 @@ impl ChatSession {
                                 )
                                 .await;
                         },
-                        _ => {},
                     }
 
                     writeln!(self.stderr)?;
