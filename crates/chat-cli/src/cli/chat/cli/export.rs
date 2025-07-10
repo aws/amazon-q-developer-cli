@@ -18,8 +18,11 @@ use crate::os::Os;
 /// Export the conversation transcript to a markdown file
 #[derive(Debug, PartialEq, Parser)]
 pub struct ExportArgs {
+    /// Path to save the markdown file
     #[arg(required = true)]
     pub path: PathBuf,
+    
+    /// Force overwrite if file exists
     #[arg(short, long)]
     pub force: bool,
 }
