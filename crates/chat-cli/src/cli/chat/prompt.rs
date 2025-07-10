@@ -80,6 +80,7 @@ pub const COMMANDS: &[&str] = &[
     "/compact",
     "/compact help",
     "/usage",
+    "/export",
     "/save",
     "/load",
     "/subscribe",
