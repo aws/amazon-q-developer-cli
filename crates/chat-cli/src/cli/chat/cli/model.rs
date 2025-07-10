@@ -34,10 +34,6 @@ pub const MODEL_OPTIONS: [ModelOption; 3] = [
         name: "claude-3.7-sonnet",
         model_id: "CLAUDE_3_7_SONNET_20250219_V1_0",
     },
-    ModelOption {
-        name: "claude-3.5-sonnet",
-        model_id: "CLAUDE_3_5_SONNET_20241022_V2_0",
-    },
 ];
 
 #[deny(missing_docs)]
