@@ -37,7 +37,7 @@ more accurate and helpful responses.
 Notes:
 • You can add specific files or use glob patterns (e.g., \"*.py\", \"src/**/*.js\")
 • Agent rules apply only to the current agent 
-• Context changes is NOT preserved between chat sessions. To make these changes permanent, edit the agent config file."
+• Context changes are NOT preserved between chat sessions. To make these changes permanent, edit the agent config file."
 )]
 pub enum ContextSubcommand {
     /// Display the context rule configuration and matched files
