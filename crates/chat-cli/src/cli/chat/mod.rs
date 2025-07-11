@@ -2354,7 +2354,7 @@ impl ChatSession {
         command: String,
         subcommand: Option<String>,
         result: TelemetryResult,
-        failure_reason: Option<String>,
+        reason: Option<String>,
     ) {
         let conversation_id = self.conversation.conversation_id().to_owned();
         if let Err(e) = os
@@ -2365,7 +2365,7 @@ impl ChatSession {
                 command,
                 subcommand,
                 result,
-                failure_reason,
+                reason,
             )
             .await
         {

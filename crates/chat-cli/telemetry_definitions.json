@@ -46,16 +46,6 @@
       "description": "The subcommand of the slash command, if applicable (e.g., 'list' for '/prompts list')"
     },
     {
-      "name": "codewhispererterminal_chatSlashCommandResult",
-      "type": "string",
-      "description": "The result of slash command execution (e.g., 'Success', 'Failed')"
-    },
-    {
-      "name": "codewhispererterminal_chatSlashCommandFailureReason",
-      "type": "string",
-      "description": "The reason for slash command execution failure, if applicable"
-    },
-    {
       "name": "codewhispererterminal_inCloudshell",
       "type": "boolean",
       "description": "Whether the CLI is running in the AWS CloudShell environment"
@@ -252,8 +242,8 @@
         { "type": "amazonqConversationId" },
         { "type": "codewhispererterminal_chatSlashCommand" },
         { "type": "codewhispererterminal_chatSlashSubcommand", "required": false }, 
-        { "type": "codewhispererterminal_chatSlashCommandResult" },
-        { "type": "codewhispererterminal_chatSlashCommandFailureReason", "required": false },
+        { "type": "result" },
+        { "type": "reason", "required": false },
         { "type": "codewhispererterminal_inCloudshell" }
       ]
     },

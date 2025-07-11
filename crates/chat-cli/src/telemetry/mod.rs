@@ -239,14 +239,14 @@ impl TelemetryThread {
         command: String,
         subcommand: Option<String>,
         result: TelemetryResult,
-        failure_reason: Option<String>,
+        reason: Option<String>,
     ) -> Result<(), TelemetryError> {
         let mut event = Event::new(EventType::ChatSlashCommandExecuted {
             conversation_id,
             command,
             subcommand,
             result,
-            failure_reason,
+            reason,
         });
         set_start_url_and_region(database, &mut event).await;
         Ok(self.tx.send(event)?)

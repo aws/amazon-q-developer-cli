@@ -109,7 +109,7 @@ impl Event {
                 command,
                 subcommand,
                 result,
-                failure_reason,
+                reason,
             } => Some(
                 CodewhispererterminalChatSlashCommandExecuted {
                     create_time: self.created_time,
@@ -119,8 +119,8 @@ impl Event {
                     amazonq_conversation_id: Some(conversation_id.into()),
                     codewhispererterminal_chat_slash_command: Some(command.into()),
                     codewhispererterminal_chat_slash_subcommand: subcommand.map(Into::into),
-                    codewhispererterminal_chat_slash_command_result: Some(result.to_string().into()),
-                    codewhispererterminal_chat_slash_command_failure_reason: failure_reason.map(Into::into),
+                    result: Some(result.to_string().into()),
+                    reason: reason.map(Into::into),
                     codewhispererterminal_in_cloudshell: None,
                 }
                 .into_metric_datum(),
@@ -314,7 +314,7 @@ pub enum EventType {
         command: String,
         subcommand: Option<String>,
         result: TelemetryResult,
-        failure_reason: Option<String>,
+        reason: Option<String>,
     },
     ChatStart {
         conversation_id: String,
