@@ -1386,20 +1386,8 @@ impl ChatSession {
 
             match SlashCommand::try_parse_from(args) {
                 Ok(command) => {
-                    let command_name = match orig_args[0].as_str() {
-                        "q" | "exit" => "quit",
-                        "profile" => "agent",
-                        cmd => cmd,
-                    }
-                    .to_string();
-                    let subcommand_name = if matches!(
-                        command_name.as_str(),
-                        "agent" | "context" | "knowledge" | "tools" | "prompts" | "hooks"
-                    ) {
-                        orig_args.get(1).cloned().filter(|s| !s.starts_with('-'))
-                    } else {
-                        None
-                    };
+                    let command_name = command.command_name().to_string();
+                    let subcommand_name = command.subcommand_name().map(|s| s.to_string());
 
                     match command.execute(os, self).await {
                         Ok(chat_state) => {
@@ -2359,14 +2347,7 @@ impl ChatSession {
         let conversation_id = self.conversation.conversation_id().to_owned();
         if let Err(e) = os
             .telemetry
-            .send_chat_slash_command_executed(
-                &os.database,
-                conversation_id,
-                command,
-                subcommand,
-                result,
-                reason,
-            )
+            .send_chat_slash_command_executed(&os.database, conversation_id, command, subcommand, result, reason)
             .await
         {
             tracing::warn!("Failed to send slash command telemetry: {}", e);

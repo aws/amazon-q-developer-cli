@@ -111,4 +111,14 @@ impl AgentSubcommand {
             skip_printing_tools: true,
         })
     }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::List => "list",
+            Self::Create { .. } => "create",
+            Self::Delete { .. } => "delete",
+            Self::Set { .. } => "set",
+            Self::Rename { .. } => "rename",
+        }
+    }
 }

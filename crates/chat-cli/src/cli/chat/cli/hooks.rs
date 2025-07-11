@@ -448,6 +448,10 @@ impl HooksArgs {
             skip_printing_tools: true,
         })
     }
+
+    pub fn subcommand_name(&self) -> Option<&'static str> {
+        self.subcommand.as_ref().map(|s| s.name())
+    }
 }
 
 #[deny(missing_docs)]
@@ -632,6 +636,18 @@ impl HooksSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            HooksSubcommand::Add { .. } => "add",
+            HooksSubcommand::Remove { .. } => "remove",
+            HooksSubcommand::Enable { .. } => "enable",
+            HooksSubcommand::Disable { .. } => "disable",
+            HooksSubcommand::EnableAll => "enableall",
+            HooksSubcommand::DisableAll => "disableall",
+            HooksSubcommand::Show => "show",
+        }
     }
 }
 
