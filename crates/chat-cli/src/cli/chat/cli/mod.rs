@@ -2,6 +2,7 @@ pub mod clear;
 pub mod compact;
 pub mod context;
 pub mod editor;
+pub mod export;
 pub mod hooks;
 pub mod knowledge;
 pub mod mcp;
@@ -18,6 +19,7 @@ use clear::ClearArgs;
 use compact::CompactArgs;
 use context::ContextSubcommand;
 use editor::EditorArgs;
+use export::ExportArgs;
 use hooks::HooksArgs;
 use knowledge::KnowledgeSubcommand;
 use mcp::McpArgs;
@@ -76,6 +78,8 @@ pub enum SlashCommand {
     Mcp(McpArgs),
     /// Select a model for the current conversation session
     Model(ModelArgs),
+    /// Export the conversation transcript to a markdown file
+    Export(ExportArgs),
     /// Upgrade to a Q Developer Pro subscription for increased query limits
     Subscribe(SubscribeArgs),
     #[command(flatten)]
@@ -109,6 +113,7 @@ impl SlashCommand {
             Self::Usage(args) => args.execute(os, session).await,
             Self::Mcp(args) => args.execute(session).await,
             Self::Model(args) => args.execute(session).await,
+            Self::Export(args) => args.execute(os, session).await,
             Self::Subscribe(args) => args.execute(os, session).await,
             Self::Persist(subcommand) => subcommand.execute(os, session).await,
             // Self::Root(subcommand) => {
