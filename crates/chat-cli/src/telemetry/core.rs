@@ -115,6 +115,7 @@ impl Event {
                     create_time: self.created_time,
                     value: None,
                     credential_start_url: self.credential_start_url.map(Into::into),
+                    sso_region: self.sso_region.map(Into::into),
                     amazonq_conversation_id: Some(conversation_id.into()),
                     codewhispererterminal_chat_slash_command: Some(command.into()),
                     codewhispererterminal_chat_slash_subcommand: subcommand.map(Into::into),
