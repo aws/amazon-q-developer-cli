@@ -41,7 +41,7 @@ For example, `1.0.0-alpha.11` is higher than `1.0.0-alpha.4`.
 
 ### The `description` field
 
-The `description` field provides a description of what the agent does to be read by both humans and machines. It's important that descriptions succinctly define an agent behavior, as these descriptions may take up LLM context in certain workflows.
+The `description` field provides a description of what the agent does to be read by both humans and machines. It's important that descriptions succinctly define an agent behavior, as these descriptions take up LLM context when used as tools.
 
 ### The `model` field
 
@@ -56,7 +56,7 @@ As of now, the two supported models are
 
 ### The `inputSchema` field
 
-The `inputSchema` field defines the expected input format for the agent. Because agents can be executed as MCP tools, this aligns directly with the input schema of MCP tools themselves. Input parameters can be templated in the agent using the following syntax:
+The `inputSchema` field defines the input parameters when the agent is used as a tool. This schema takes the form of a JSON schema. Because agents can be executed as MCP tools, this aligns directly with the input schema of MCP tools themselves. Input parameters can be templated in the agent using the following syntax:
 
 ```
 ${my-input-parameter}
@@ -69,13 +69,22 @@ Note that this is the same syntax used for environment variables, in this way, e
   "inputSchema": {
     "type": "object",
     "properties": {
-      "task": {
+      "model-to-use": {
         "type": "string",
-        "description": "The task to perform"
+        "description": "The model to use for this agent invocation."
       }
     },
-    "required": ["task"]
+    "required": ["model-to-use"]
   }
+}
+```
+
+Then you might do something like this:
+
+```json
+{
+  "name": "my-agent",
+  "model": ${model-to-use},
 }
 ```
 
