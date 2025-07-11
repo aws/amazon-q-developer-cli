@@ -38,6 +38,7 @@ use tracing::{
 };
 pub use wrapper_types::{
     CreateHooks,
+    McpServerConfigWrapper,
     OriginalToolName,
     PromptHooks,
     ToolSettingTarget,
@@ -64,8 +65,30 @@ mod wrapper_types;
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
 /// impacting q chat in via influenicng [ContextManager] and [ToolManager].
 /// Changes made to [ContextManager] and [ToolManager] do not persist across sessions.
+///
+/// To increase the usability of the agent config, (both from the perspective of CLI and the users
+/// who would need to write these config), the agent config has two states of existence: "cold" and
+/// "warm".
+///
+/// A "cold" state describes the config as it is written. And a "warm" state is an alternate form
+/// of the same config, modified for the convenience of the business logic that relies on it in the
+/// application.
+///
+/// For example, the "cold" state does not require the field of "path" to be populated. This is
+/// because it would be redundant and tedious for user to have to write the path of the file they
+/// had created in said file. This field is thus populated during its parsing.
+///
+/// Another example is the mcp config. To support backwards compatibility of users existing global
+/// mcp.json, we allow users to supply a list of mcp server names they want the agent to
+/// instantiate. But in order for this config to actually be useful to the CLI, it needs to contain
+/// actual information about the comamnd, not just the list of names. Thus the "warm" state in this
+/// field would be a filtered version of [McpServerConfig], while the "cold" state could be either.
+///
+/// Where agents are instantiated from their config, we would need to convert them from "cold" to
+/// "warm".
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
     /// Agent names are derived from the file name. Thus they are skipped for
     /// serializing
@@ -80,7 +103,7 @@ pub struct Agent {
     pub prompt: Option<String>,
     /// Configuration for Model Context Protocol (MCP) servers
     #[serde(default)]
-    pub mcp_servers: McpServerConfig,
+    pub mcp_servers: McpServerConfigWrapper,
     /// List of tools the agent can see. Use \"@{MCP_SERVER_NAME}/tool_name\" to specify tools from
     /// mcp servers. To include all tools from a server, use \"@{MCP_SERVER_NAME}\"
     #[serde(default)]
@@ -143,9 +166,9 @@ impl Agent {
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
-            let local_config_dir = directories::chat_local_agent_dir()?.join(agent_name);
+            let local_config_dir = directories::chat_local_agent_dir()?.join(format!("{agent_name}.json"));
             if os.fs.exists(&local_config_dir) {
-                break 'config Ok::<PathBuf, PathBuf>(local_config_dir);
+                break 'config Ok(local_config_dir);
             }
 
             let global_config_dir = directories::chat_global_agent_path(os)?.join(format!("{agent_name}.json"));
@@ -159,23 +182,35 @@ impl Agent {
         match config_path {
             Ok(config_path) => {
                 let content = os.fs.read(&config_path).await?;
-                Ok((serde_json::from_slice::<Agent>(&content)?, config_path))
-            },
-            Err(global_config_dir) if agent_name == "default" => {
-                os.fs
-                    .create_dir_all(
-                        global_config_dir
-                            .parent()
-                            .ok_or(eyre::eyre!("Failed to retrieve global agent config parent path"))?,
-                    )
-                    .await?;
-                os.fs.create_new(&global_config_dir).await?;
+                let mut agent = serde_json::from_slice::<Agent>(&content)?;
 
-                let default_agent = Agent::default();
-                let content = serde_json::to_string_pretty(&default_agent)?;
-                os.fs.write(&global_config_dir, content.as_bytes()).await?;
+                if let McpServerConfigWrapper::List(selected_servers) = &agent.mcp_servers {
+                    let global_mcp_config_path = directories::chat_legacy_mcp_config(os)?;
+                    let global_mcp_config = McpServerConfig::load_from_file(os, global_mcp_config_path).await?;
 
-                Ok((default_agent, global_config_dir))
+                    let filtered_config = global_mcp_config
+                        .mcp_servers
+                        .iter()
+                        .filter_map(|(name, config)| {
+                            if selected_servers.contains(name)
+                                || (selected_servers.len() == 1
+                                    && selected_servers.first().is_some_and(|s| s.as_str() == "*"))
+                            {
+                                Some((name.clone(), config.clone()))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<HashMap<_, _>>();
+
+                    agent.mcp_servers = McpServerConfigWrapper::Map(McpServerConfig {
+                        mcp_servers: filtered_config,
+                    });
+                }
+
+                agent.name = agent_name.to_string();
+
+                Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
         }
@@ -324,6 +359,8 @@ impl Agents {
             agent_name.replace(name.as_str());
         }
 
+        let mut global_mcp_config = None::<McpServerConfig>;
+
         let mut local_agents = 'local: {
             // We could be launching from the home dir, in which case the global and local agents
             // are the same set of agents. If that is the case, we simply skip this.
@@ -341,7 +378,7 @@ impl Agents {
             let Ok(files) = os.fs.read_dir(path).await else {
                 break 'local Vec::<Agent>::new();
             };
-            load_agents_from_entries(files).await
+            load_agents_from_entries(files, os, &mut global_mcp_config).await
         };
 
         let mut global_agents = 'global: {
@@ -359,7 +396,7 @@ impl Agents {
                     break 'global Vec::<Agent>::new();
                 },
             };
-            load_agents_from_entries(files).await
+            load_agents_from_entries(files, os, &mut global_mcp_config).await
         }
         .into_iter()
         .chain(new_agents)
@@ -539,7 +576,11 @@ impl Agents {
     }
 }
 
-async fn load_agents_from_entries(mut files: ReadDir) -> Vec<Agent> {
+async fn load_agents_from_entries(
+    mut files: ReadDir,
+    os: &Os,
+    global_mcp_config: &mut Option<McpServerConfig>,
+) -> Vec<Agent> {
     let mut res = Vec::<Agent>::new();
     while let Ok(Some(file)) = files.next_entry().await {
         let file_path = &file.path();
@@ -556,6 +597,7 @@ async fn load_agents_from_entries(mut files: ReadDir) -> Vec<Agent> {
                     continue;
                 },
             };
+
             let mut agent = match serde_json::from_slice::<Agent>(&content) {
                 Ok(mut agent) => {
                     agent.path = Some(file_path.clone());
@@ -567,6 +609,47 @@ async fn load_agents_from_entries(mut files: ReadDir) -> Vec<Agent> {
                     continue;
                 },
             };
+
+            if let McpServerConfigWrapper::List(selected_servers) = &agent.mcp_servers {
+                let global_mcp_config = match global_mcp_config.as_mut() {
+                    Some(config) => config,
+                    None => {
+                        let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
+                            tracing::error!("Error obtaining legacy mcp json path. Skipping");
+                            continue;
+                        };
+                        let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+                            Ok(config) => config,
+                            Err(e) => {
+                                tracing::error!("Error loading global mcp json path: {e}. Skipping");
+                                continue;
+                            },
+                        };
+                        global_mcp_config.replace(legacy_mcp_config);
+                        global_mcp_config.as_mut().unwrap()
+                    },
+                };
+
+                let filtered_config = global_mcp_config
+                    .mcp_servers
+                    .iter()
+                    .filter_map(|(name, config)| {
+                        if selected_servers.contains(name)
+                            || (selected_servers.len() == 1
+                                && selected_servers.first().is_some_and(|s| s.as_str() == "*"))
+                        {
+                            Some((name.clone(), config.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<HashMap<_, _>>();
+
+                agent.mcp_servers = McpServerConfigWrapper::Map(McpServerConfig {
+                    mcp_servers: filtered_config,
+                });
+            }
+
             if let Some(name) = Path::new(&file.file_name()).file_stem() {
                 agent.name = name.to_string_lossy().to_string();
                 res.push(agent);
@@ -662,8 +745,11 @@ mod tests {
     #[test]
     fn test_deser() {
         let agent = serde_json::from_str::<Agent>(INPUT).expect("Deserializtion failed");
-        assert!(agent.mcp_servers.mcp_servers.contains_key("fetch"));
-        assert!(agent.mcp_servers.mcp_servers.contains_key("git"));
+        assert!(matches!(agent.mcp_servers, McpServerConfigWrapper::Map(_)));
+        if let McpServerConfigWrapper::Map(config) = &agent.mcp_servers {
+            assert!(config.mcp_servers.contains_key("fetch"));
+            assert!(config.mcp_servers.contains_key("git"));
+        }
         assert!(agent.alias.contains_key("@gits/some_tool"));
     }
 

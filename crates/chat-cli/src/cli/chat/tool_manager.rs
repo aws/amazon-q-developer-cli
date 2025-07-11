@@ -61,6 +61,7 @@ use crate::api_client::model::{
 use crate::cli::agent::{
     Agent,
     McpServerConfig,
+    McpServerConfigWrapper,
 };
 use crate::cli::chat::cli::prompts::GetPromptError;
 use crate::cli::chat::message::AssistantToolUse;
@@ -173,7 +174,14 @@ impl ToolManagerBuilder {
     }
 
     pub fn agent(mut self, agent: Agent) -> Self {
-        self.mcp_server_config.replace(agent.mcp_servers.clone());
+        if let McpServerConfigWrapper::Map(config) = &agent.mcp_servers {
+            self.mcp_server_config.replace(config.clone());
+        } else {
+            error!(
+                "No valid mcp config valid in agent {}, no mcp config loaded",
+                &agent.name
+            );
+        }
         self.agent.replace(agent);
         self
     }

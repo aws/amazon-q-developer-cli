@@ -14,6 +14,7 @@ use super::{
 };
 use crate::cli::agent::{
     CreateHooks,
+    McpServerConfigWrapper,
     PromptHooks,
 };
 use crate::cli::chat::cli::hooks::{
@@ -180,7 +181,7 @@ impl ContextMigrate<'c'> {
                 included_files: context.paths,
                 create_hooks: CreateHooks::Map(create_hooks),
                 prompt_hooks: PromptHooks::Map(prompt_hooks),
-                mcp_servers: mcp_servers.clone().unwrap_or_default(),
+                mcp_servers: McpServerConfigWrapper::Map(mcp_servers.clone().unwrap_or_default()),
                 ..Default::default()
             });
         }
@@ -204,7 +205,7 @@ impl ContextMigrate<'c'> {
                 included_files: context.paths,
                 create_hooks: CreateHooks::Map(create_hooks),
                 prompt_hooks: PromptHooks::Map(prompt_hooks),
-                mcp_servers: mcp_servers.clone().unwrap_or_default(),
+                mcp_servers: McpServerConfigWrapper::Map(mcp_servers.clone().unwrap_or_default()),
                 ..Default::default()
             });
         }
