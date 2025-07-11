@@ -281,5 +281,75 @@
         "command"
       ]
     }
+  },
+  "task": {
+    "name": "task",
+    "description": "Your primary tool for managing complex workflows requiring multiple sequential steps. Automatically breaks down user requests into organized, actionable task lists and tracks progress throughout execution. Use this whenever users request work involving 2+ distinct steps, such as: code refactoring, debugging workflows, file organization, multi-step installations, project setup, or any process requiring sequential actions. The tool maintains task items in memory for the current conversation session only - tasks reset when starting a new conversation. IMPORTANT: Always create tasks BEFORE starting complex work to ensure nothing is missed and progress is tracked. Use task IDs (1, 2, 3, etc.) from list output for completion and removal operations.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "enum": [
+            "list",
+            "add",
+            "add_multiple",
+            "replace",
+            "complete",
+            "complete_multiple",
+            "remove",
+            "remove_multiple",
+            "clear"
+          ],
+          "description": "The task operation to perform: 'list' shows all items, 'add' creates new items, 'add_multiple' creates multiple items at once, 'replace' replaces entire task list with new tasks, 'complete' marks items done, 'complete_multiple' marks multiple items done, 'remove' deletes items, 'remove_multiple' deletes multiple items, 'clear' removes all items"
+        },
+        "task": {
+          "type": "string",
+          "description": "The task description to add (required for 'add' command). Should be specific and actionable."
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of task descriptions to add (required for 'add_multiple' and 'replace' commands). Each should be specific and actionable."
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "description": "Priority level for new tasks (optional for 'add' command, defaults to 'medium')"
+        },
+        "id": {
+          "type": "string",
+          "description": "The task item ID (required for 'complete' and 'remove' commands). Use the ID from list output."
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of task item IDs (required for 'complete_multiple' and 'remove_multiple' commands). Use the IDs from list output."
+        },
+        "filter": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "completed"
+          ],
+          "description": "Filter tasks by status (optional for 'list' command)"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Optional brief explanation of what this task operation accomplishes"
+        }
+      },
+      "required": [
+        "command"
+      ]
+    }
   }
 }
