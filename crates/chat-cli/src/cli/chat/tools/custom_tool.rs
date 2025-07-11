@@ -54,6 +54,8 @@ pub struct CustomToolConfig {
     /// A boolean flag to denote whether or not to load this mcp server
     #[serde(default)]
     pub disabled: bool,
+    #[serde(default)]
+    pub sampling: bool,
 }
 
 pub fn default_timeout() -> u64 {
@@ -72,14 +74,32 @@ pub enum CustomToolClient {
 
 impl CustomToolClient {
     // TODO: add support for http transport
-    pub fn from_config(server_name: String, config: CustomToolConfig) -> Result<Self> {
+    /// Set the ApiClient for LLM integration in sampling requests
+    pub fn set_streaming_client(&self, api_client: std::sync::Arc<crate::api_client::ApiClient>) {
+        match self {
+            CustomToolClient::Stdio { client, .. } => {
+                client.set_streaming_client(api_client);
+            }
+        }
+    }
+
+    pub fn from_config(
+        server_name: String,
+        config: CustomToolConfig,
+        sampling_sender: Option<tokio::sync::mpsc::UnboundedSender<crate::mcp_client::sampling_ipc::PendingSamplingRequest>>,
+    ) -> Result<Self> {
         let CustomToolConfig {
             command,
             args,
             env,
             timeout,
             disabled: _,
+            sampling,
         } = config;
+
+        // Only pass sampling_sender if sampling is enabled for this server
+        let conditional_sampling_sender = if sampling { sampling_sender } else { None };
+
         let mcp_client_config = McpClientConfig {
             server_name: server_name.clone(),
             bin_path: command.clone(),
@@ -90,6 +110,7 @@ impl CustomToolClient {
                "version": "1.0.0"
             }),
             env,
+            sampling_sender: conditional_sampling_sender,
         };
         let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
         Ok(CustomToolClient::Stdio {

@@ -31,6 +31,7 @@ pub use endpoints::Endpoint;
 pub use error::ApiClientError;
 use parking_lot::Mutex;
 pub use profile::list_available_profiles;
+
 use serde_json::Map;
 use tracing::{
     debug,
@@ -446,6 +447,7 @@ impl ApiClient {
 
         self.mock_client = Some(Arc::new(Mutex::new(mock.into_iter())));
     }
+
 }
 
 fn timeout_config(database: &Database) -> TimeoutConfig {
