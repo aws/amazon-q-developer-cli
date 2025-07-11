@@ -15,7 +15,10 @@ use std::path::{
 };
 
 use context_migrate::ContextMigrate;
-use crossterm::style::Stylize as _;
+use crossterm::style::{
+    Color,
+    Stylize as _,
+};
 use crossterm::{
     queue,
     style,
@@ -47,6 +50,7 @@ use super::chat::tools::{
     NATIVE_TOOLS,
     ToolOrigin,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
@@ -432,11 +436,51 @@ impl Agents {
 
         local_agents.append(&mut global_agents);
 
-        // If we are told which agent to set as active, we will fall back to a default whose
-        // lifetime matches that of the session
-        if agent_name.is_none() {
+        // Assume agent in the following order of priority:
+        // 1. The agent name specified by the start command via --agent (this is the agent_name that's
+        //    passed in)
+        // 2. If the above is missing or invalid, assume one that is specified by chat.defaultAgent
+        // 3. If the above is missing or invalid, assume the in-memory default
+        let active_idx = 'active_idx: {
+            if let Some(name) = agent_name {
+                if local_agents.iter().any(|a| a.name.as_str() == name) {
+                    break 'active_idx name.to_string();
+                }
+                let _ = queue!(
+                    output,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print("Error"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(format!(
+                        ": no agent with name {} found. Falling back to user specified default",
+                        name
+                    )),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Reset)
+                );
+            }
+
+            if let Some(user_set_default) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
+                if local_agents.iter().any(|a| a.name == user_set_default) {
+                    break 'active_idx user_set_default;
+                }
+                let _ = queue!(
+                    output,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print("Error"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(format!(
+                        ": user defined default {} not found. Falling back to in-memory default",
+                        user_set_default
+                    )),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Reset)
+                );
+            }
+
             local_agents.push(Agent::default());
-        }
+            "default".to_string()
+        };
 
         let _ = output.flush();
 
@@ -445,7 +489,7 @@ impl Agents {
                 .into_iter()
                 .map(|a| (a.name.clone(), a))
                 .collect::<HashMap<_, _>>(),
-            active_idx: agent_name.unwrap_or("default").to_string(),
+            active_idx,
             ..Default::default()
         }
     }

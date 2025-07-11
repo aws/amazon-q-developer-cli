@@ -213,7 +213,19 @@ impl ContextMigrate<'c'> {
             os.fs.create_dir_all(&global_agent_path).await?;
         }
 
-        for agent in &new_agents {
+        let formatted_server_list = mcp_servers
+            .map(|config| {
+                config
+                    .mcp_servers
+                    .keys()
+                    .map(|server_name| format!("@{server_name}"))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        for agent in &mut new_agents {
+            agent.tools.extend(formatted_server_list.clone());
+
             let content = serde_json::to_string_pretty(agent)?;
             if let Some(path) = agent.path.as_ref() {
                 info!("Agent {} peristed in path {}", agent.name, path.to_string_lossy());

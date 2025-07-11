@@ -207,51 +207,45 @@ impl ChatArgs {
             }
         }
 
+        let stdout = std::io::stdout();
+        let mut stderr = std::io::stderr();
+
         let args: Vec<String> = std::env::args().collect();
         if args
             .iter()
             .any(|arg| arg == "--profile" || arg.starts_with("--profile="))
         {
-            eprintln!("Warning: --profile is deprecated, use --agent instead");
+            execute!(
+                stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("--profile is deprecated, use "),
+                style::SetForegroundColor(Color::Green),
+                style::Print("--agent"),
+                style::SetForegroundColor(Color::Reset),
+                style::Print(" instead\n")
+            )?;
         }
 
-        let stdout = std::io::stdout();
-        let mut stderr = std::io::stderr();
-
         let agents = {
-            let mut default_agent_name = None::<String>;
-            let agent_name = if let Some(agent) = self.agent.as_deref() {
-                Some(agent)
-            } else if let Some(agent) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
-                default_agent_name.replace(agent);
-                default_agent_name.as_deref()
-            } else {
-                None
-            };
             let skip_migration = self.no_interactive || !self.migrate;
-            let mut agents = Agents::load(os, agent_name, skip_migration, &mut stderr).await;
+            let mut agents = Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr).await;
             agents.trust_all_tools = self.trust_all_tools;
 
-            if let Some(name) = self.agent.as_ref() {
-                match agents.switch(name) {
-                    Ok(agent) if !agent.mcp_servers.mcp_servers.is_empty() => {
-                        if !self.no_interactive
-                            && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false)
-                        {
-                            execute!(
-                                stderr,
-                                style::Print(
-                                    "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
-                                )
-                            )?;
-                        }
-                        os.database.settings.set(Setting::McpLoadedBefore, true).await?;
-                    },
-                    Err(e) => {
-                        let _ = execute!(stderr, style::Print(format!("Error switching profile: {}", e)));
-                    },
-                    _ => {},
+            if agents
+                .get_active()
+                .is_some_and(|a| !a.mcp_servers.mcp_servers.is_empty())
+            {
+                if !self.no_interactive && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
+                    execute!(
+                        stderr,
+                        style::Print(
+                            "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
+                        )
+                    )?;
                 }
+                os.database.settings.set(Setting::McpLoadedBefore, true).await?;
             }
 
             if let Some(trust_tools) = self.trust_tools.take() {
@@ -782,15 +776,31 @@ impl ChatSession {
                     ("Amazon Q is having trouble responding right now", eyre!(err), false)
                 },
                 ApiClientError::ModelOverloadedError { request_id, .. } => {
+                    let model_instruction = if self.interactive {
+                        "Please use '/model' to select a different model and try again."
+                    } else {
+                        "Please relaunch with '--model <model_id>' to use a different model."
+                    };
+
                     let err = format!(
-                        "The model you've selected is temporarily unavailable. Please use '/model' to select a different model and try again.{}\n\n",
+                        "The model you've selected is temporarily unavailable. {}{}\n\n",
+                        model_instruction,
                         match request_id {
                             Some(id) => format!("\n    Request ID: {}", id),
                             None => "".to_owned(),
                         }
                     );
                     self.conversation.append_transcript(err.clone());
-                    ("Amazon Q is having trouble responding right now", eyre!(err), true)
+                    execute!(
+                        self.stderr,
+                        style::SetAttribute(Attribute::Bold),
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("Amazon Q is having trouble responding right now:\n"),
+                        style::Print(format!("    {}\n", err.clone())),
+                        style::SetAttribute(Attribute::Reset),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+                    ("Amazon Q is having trouble responding right now", eyre!(err), false)
                 },
                 ApiClientError::MonthlyLimitReached { .. } => {
                     let subscription_status = get_subscription_status(os).await;

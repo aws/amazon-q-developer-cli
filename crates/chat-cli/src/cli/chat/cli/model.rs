@@ -25,7 +25,7 @@ pub struct ModelOption {
     pub model_id: &'static str,
 }
 
-pub const MODEL_OPTIONS: [ModelOption; 3] = [
+pub const MODEL_OPTIONS: [ModelOption; 2] = [
     ModelOption {
         name: "claude-4-sonnet",
         model_id: "CLAUDE_SONNET_4_20250514_V1_0",
@@ -33,10 +33,6 @@ pub const MODEL_OPTIONS: [ModelOption; 3] = [
     ModelOption {
         name: "claude-3.7-sonnet",
         model_id: "CLAUDE_3_7_SONNET_20250219_V1_0",
-    },
-    ModelOption {
-        name: "claude-3.5-sonnet",
-        model_id: "CLAUDE_3_5_SONNET_20241022_V2_0",
     },
 ];
 
