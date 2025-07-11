@@ -121,7 +121,7 @@ unicode-width = "0.2.0"
 url = "2.5.4"
 uuid = { version = "1.15.1", features = ["v4", "serde"] }
 walkdir = "2.5.0"
-webpki-roots = "=0.26.8"
+webpki-roots = "=1.0.1"
 whoami = "1.6.0"
 windows = { version = "0.61.1", features = ["Foundation", "Win32_System_ProcessStatus", "Win32_System_Kernel", "Win32_System_Threading", "Wdk_System_Threading"] }
 winnow = "=0.6.2"
