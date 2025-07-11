@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.amazon.inputmethod.codewhisperer</string>
+	<key>CFBundleName</key>
+	<string>CodeWhispererInputMethod</string>
+	<key>CFBundleVersion</key>
+	<string>1.12.3</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.12.3</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2022 Amazon Q CLI Team (q-cli@amazon.com):Chay Nabors (nabochay@amazon.com):Brandon Kiser (bskiser@amazon.com) All rights reserved.</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.13</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>fig_input_method</string>
+	<key>LSBackgroundOnly</key>
+	<true/>
+	<key>NSSupportsSuddenTermination</key>
+	<true/>
+	<key>InputMethodConnectionName</key>
+	<string>com.amazon.inputmethod.codewhisperer_Connection</string>
+	<key>InputMethodServerControllerClass</key>
+	<string>RustInputMethodServerController</string>
+	<key>TISInputSourceID</key>
+	<string>com.amazon.inputmethod.codewhisperer</string>
+	<key>InputMethodType</key>
+	<string>palette</string>
+	<key>ComponentInvisibleInSystemUI</key>
+	<true/>
+	<key>tsInputMethodIconFileKey</key>
+	<string>AppIcon</string>
+	<key>TISIntendedLanguage</key>
+	<string>en</string>
+</dict>
+</plist>

@@ -357,6 +357,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                full_context: false,
                 migrate: false,
             })),
             verbose: 2,
@@ -397,6 +398,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                full_context: false,
                 migrate: false,
             })
         );
@@ -414,6 +416,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                full_context: false,
                 migrate: false,
             })
         );
@@ -431,6 +434,7 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
+                full_context: false,
                 migrate: false,
             })
         );
@@ -448,6 +452,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
+                full_context: false,
                 migrate: false,
             })
         );
@@ -461,6 +466,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
+                full_context: false,
                 migrate: false,
             })
         );
@@ -478,6 +484,7 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
+                full_context: false,
                 migrate: false,
             })
         );
@@ -495,6 +502,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["".to_string()]),
                 no_interactive: false,
+                full_context: false,
                 migrate: false,
             })
         );
@@ -512,6 +520,43 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
                 no_interactive: false,
+                full_context: false,
+                migrate: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_full_context() {
+        assert_parse!(
+            ["chat", "--full-context"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                full_context: true,
+                migrate: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_full_context_and_profile() {
+        assert_parse!(
+            ["chat", "--full-context", "--profile", "my-profile"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: Some("my-profile".to_string()),
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                full_context: true,
                 migrate: false,
             })
         );
