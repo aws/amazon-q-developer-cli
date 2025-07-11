@@ -140,7 +140,7 @@ impl Default for Agent {
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
             mcp_servers: Default::default(),
-            tools: NATIVE_TOOLS.iter().copied().map(str::to_string).collect::<Vec<_>>(),
+            tools: vec!["*".to_string()],
             alias: Default::default(),
             allowed_tools: {
                 let mut set = HashSet::<String>::new();

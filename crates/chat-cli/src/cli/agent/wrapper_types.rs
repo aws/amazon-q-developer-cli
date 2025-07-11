@@ -136,7 +136,7 @@ pub enum McpServerConfigWrapper {
 
 impl Default for McpServerConfigWrapper {
     fn default() -> Self {
-        Self::Map(Default::default())
+        Self::List(vec!["*".to_string()])
     }
 }
 
