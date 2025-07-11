@@ -322,4 +322,14 @@ impl ContextSubcommand {
             skip_printing_tools: true,
         })
     }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ContextSubcommand::Show { .. } => "show",
+            ContextSubcommand::Add { .. } => "add",
+            ContextSubcommand::Remove { .. } => "remove",
+            ContextSubcommand::Clear => "clear",
+            ContextSubcommand::Hooks => "hooks",
+        }
+    }
 }

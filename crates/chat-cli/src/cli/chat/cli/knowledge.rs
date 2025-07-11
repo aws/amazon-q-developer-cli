@@ -478,4 +478,16 @@ impl KnowledgeSubcommand {
             },
         }
     }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            KnowledgeSubcommand::Show => "show",
+            KnowledgeSubcommand::Add { .. } => "add",
+            KnowledgeSubcommand::Remove { .. } => "remove",
+            KnowledgeSubcommand::Update { .. } => "update",
+            KnowledgeSubcommand::Clear => "clear",
+            KnowledgeSubcommand::Status => "status",
+            KnowledgeSubcommand::Cancel { .. } => "cancel",
+        }
+    }
 }
