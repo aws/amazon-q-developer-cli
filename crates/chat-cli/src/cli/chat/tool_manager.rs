@@ -213,9 +213,31 @@ impl ToolManagerBuilder {
                 if server_name.contains(MCP_SERVER_TOOL_DELIMITER) {
                     let _ = queue!(
                         output,
-                        style::Print(format!(
-                            "Invalid server name {server_name}. Server name cannot contain {MCP_SERVER_TOOL_DELIMITER}\n"
-                        ))
+                        style::SetForegroundColor(style::Color::Red),
+                        style::Print("✗ Invalid server name "),
+                        style::SetForegroundColor(style::Color::Blue),
+                        style::Print(&server_name),
+                        style::ResetColor,
+                        style::Print(". Server name cannot contain "),
+                        style::SetForegroundColor(style::Color::Yellow),
+                        style::Print(MCP_SERVER_TOOL_DELIMITER),
+                        style::ResetColor,
+                        style::Print("\n")
+                    );
+                    None
+                } else if server_name == "native" {
+                    let _ = queue!(
+                        output,
+                        style::SetForegroundColor(style::Color::Red),
+                        style::Print("✗ Invalid server name "),
+                        style::SetForegroundColor(style::Color::Blue),
+                        style::Print(&server_name),
+                        style::ResetColor,
+                        style::Print(". Server name cannot contain reserved word "),
+                        style::SetForegroundColor(style::Color::Yellow),
+                        style::Print("native"),
+                        style::ResetColor,
+                        style::Print(" (it is used to denote native tools)\n")
                     );
                     None
                 } else {
@@ -873,12 +895,12 @@ impl ToolManager {
         let notify = self.notify.take();
         self.schema = {
             let tool_list = &self.agent.lock().await.tools;
+            let is_allow_all = tool_list.len() == 1 && tool_list.first().is_some_and(|n| n == "*");
+            let is_allow_native = tool_list.iter().any(|t| t.as_str() == "@native");
             let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?
                     .into_iter()
-                    .filter(|(name, _)| {
-                        tool_list.len() == 1 && tool_list.first().is_some_and(|n| n == "*") || tool_list.contains(name)
-                    })
+                    .filter(|(name, _)| is_allow_all || is_allow_native || tool_list.contains(name))
                     .collect::<HashMap<_, _>>();
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled(os) {
                 tool_specs.remove("thinking");
