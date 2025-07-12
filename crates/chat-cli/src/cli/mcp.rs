@@ -22,6 +22,7 @@ use super::agent::{
     Agents,
     McpServerConfig,
 };
+use crate::cli::agent::McpServerConfigWrapper;
 use crate::cli::chat::tool_manager::{
     global_mcp_config_path,
     workspace_mcp_config_path,
@@ -89,7 +90,8 @@ pub struct AddArgs {
     /// Arguments to pass to the command
     #[arg(long, action = ArgAction::Append, allow_hyphen_values = true, value_delimiter = ',')]
     pub args: Vec<String>,
-    /// Where to add the server to.
+    /// Where to add the server to. If an agent name is not supplied, the changes shall be made to
+    /// the global mcp.json
     #[arg(long)]
     pub agent: Option<String>,
     /// Environment variables to use when launching the server
@@ -108,37 +110,71 @@ pub struct AddArgs {
 
 impl AddArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
-        let agent_name = self.agent.as_deref().unwrap_or("default");
-        let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
+        match self.agent.as_deref() {
+            Some(agent_name) => {
+                let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
+                let mcp_servers = if let McpServerConfigWrapper::Map(config) = &mut agent.mcp_servers {
+                    &mut config.mcp_servers
+                } else {
+                    bail!("Mcp server config not found on agent");
+                };
 
-        let mcp_servers = &mut agent.mcp_servers.mcp_servers;
-        if mcp_servers.contains_key(&self.name) && !self.force {
-            bail!(
-                "\nMCP server '{}' already exists in agent {} (path {}). Use --force to overwrite.",
-                self.name,
-                agent_name,
-                config_path.display(),
-            );
-        }
+                if mcp_servers.contains_key(&self.name) && !self.force {
+                    bail!(
+                        "\nMCP server '{}' already exists in agent {} (path {}). Use --force to overwrite.",
+                        self.name,
+                        agent_name,
+                        config_path.display(),
+                    );
+                }
 
-        let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
-        let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
-            "command": self.command,
-            "args": self.args,
-            "env": merged_env,
-            "timeout": self.timeout.unwrap_or(default_timeout()),
-            "disabled": self.disabled,
-        }))?;
+                let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
+                let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
+                    "command": self.command,
+                    "args": self.args,
+                    "env": merged_env,
+                    "timeout": self.timeout.unwrap_or(default_timeout()),
+                    "disabled": self.disabled,
+                }))?;
 
-        writeln!(
-            output,
-            "\nTo learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
-        )?;
+                mcp_servers.insert(self.name.clone(), tool);
+                let json = serde_json::to_string_pretty(&agent)?;
+                os.fs.write(config_path, json).await?;
+                writeln!(output, "✓ Added MCP server '{}' to agent {}\n", self.name, agent_name)?;
+            },
+            None => {
+                let global_config_path = directories::chat_legacy_mcp_config(os)?;
+                let mut mcp_servers = McpServerConfig::load_from_file(os, &global_config_path).await?;
 
-        mcp_servers.insert(self.name.clone(), tool);
-        let json = serde_json::to_string_pretty(&agent)?;
-        os.fs.write(config_path, json).await?;
-        writeln!(output, "✓ Added MCP server '{}' to agent {}\n", self.name, agent_name)?;
+                if mcp_servers.mcp_servers.contains_key(&self.name) && !self.force {
+                    bail!(
+                        "\nMCP server '{}' already exists in global config (path {}). Use --force to overwrite.",
+                        self.name,
+                        &global_config_path.display(),
+                    );
+                }
+
+                let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
+                let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
+                    "command": self.command,
+                    "args": self.args,
+                    "env": merged_env,
+                    "timeout": self.timeout.unwrap_or(default_timeout()),
+                    "disabled": self.disabled,
+                }))?;
+
+                mcp_servers.mcp_servers.insert(self.name.clone(), tool);
+                let json = serde_json::to_string_pretty(&mcp_servers)?;
+                os.fs.write(&global_config_path, json).await?;
+                writeln!(
+                    output,
+                    "✓ Added MCP server '{}' to global config in {}\n",
+                    self.name,
+                    global_config_path.display()
+                )?;
+            },
+        };
+
         Ok(())
     }
 }
@@ -153,33 +189,67 @@ pub struct RemoveArgs {
 
 impl RemoveArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
-        let agent_name = self.agent.as_deref().unwrap_or("default");
-        let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
+        match self.agent.as_deref() {
+            Some(agent_name) => {
+                let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
 
-        if !os.fs.exists(&config_path) {
-            writeln!(output, "\nNo MCP server configurations found.\n")?;
-            return Ok(());
-        }
+                if !os.fs.exists(&config_path) {
+                    writeln!(output, "\nNo MCP server configurations found.\n")?;
+                    return Ok(());
+                }
 
-        let config = &mut agent.mcp_servers.mcp_servers;
-        match config.remove(&self.name) {
-            Some(_) => {
-                let json = serde_json::to_string_pretty(&agent)?;
-                os.fs.write(config_path, json).await?;
-                writeln!(
-                    output,
-                    "\n✓ Removed MCP server '{}' from agent {}\n",
-                    self.name, agent_name,
-                )?;
+                let config = if let McpServerConfigWrapper::Map(config) = &mut agent.mcp_servers {
+                    &mut config.mcp_servers
+                } else {
+                    bail!("Mcp server config not found on agent");
+                };
+
+                match config.remove(&self.name) {
+                    Some(_) => {
+                        let json = serde_json::to_string_pretty(&agent)?;
+                        os.fs.write(config_path, json).await?;
+                        writeln!(
+                            output,
+                            "\n✓ Removed MCP server '{}' from agent {}\n",
+                            self.name, agent_name,
+                        )?;
+                    },
+                    None => {
+                        writeln!(
+                            output,
+                            "\nNo MCP server named '{}' found in agent {}\n",
+                            self.name, agent_name,
+                        )?;
+                    },
+                }
             },
             None => {
-                writeln!(
-                    output,
-                    "\nNo MCP server named '{}' found in agent {}\n",
-                    self.name, agent_name,
-                )?;
+                let global_config_path = directories::chat_legacy_mcp_config(os)?;
+                let mut config = McpServerConfig::load_from_file(os, &global_config_path).await?;
+
+                match config.mcp_servers.remove(&self.name) {
+                    Some(_) => {
+                        let json = serde_json::to_string_pretty(&config)?;
+                        os.fs.write(&global_config_path, json).await?;
+                        writeln!(
+                            output,
+                            "\n✓ Removed MCP server '{}' from global config (path {})\n",
+                            self.name,
+                            &global_config_path.display(),
+                        )?;
+                    },
+                    None => {
+                        writeln!(
+                            output,
+                            "\nNo MCP server named '{}' found in global config (path {})\n",
+                            self.name,
+                            &global_config_path.display(),
+                        )?;
+                    },
+                }
             },
         }
+
         Ok(())
     }
 }
@@ -335,11 +405,13 @@ async fn get_mcp_server_configs(
         } else {
             Scope::Workspace
         };
-        results.push((
-            scope,
-            agent.path.ok_or(eyre::eyre!("Agent missing path info"))?,
-            Some(agent.mcp_servers),
-        ));
+        if let McpServerConfigWrapper::Map(config) = agent.mcp_servers {
+            results.push((
+                scope,
+                agent.path.ok_or(eyre::eyre!("Agent missing path info"))?,
+                Some(config),
+            ));
+        }
     }
     Ok(results)
 }
