@@ -15,7 +15,7 @@ use tokio::io::{
 
 use super::DatabaseError;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Setting {
     TelemetryEnabled,
     OldClientId,
@@ -35,6 +35,7 @@ pub enum Setting {
     ChatDefaultModel,
     ChatDefaultAgent,
     ChatDisableAutoCompaction,
+    ChatHistoryMaxLength,
 }
 
 impl AsRef<str> for Setting {
@@ -58,6 +59,7 @@ impl AsRef<str> for Setting {
             Self::ChatDefaultModel => "chat.defaultModel",
             Self::ChatDefaultAgent => "chat.defaultAgent",
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
+            Self::ChatHistoryMaxLength => "chat.history.maxLength",
         }
     }
 }
@@ -91,6 +93,7 @@ impl TryFrom<&str> for Setting {
             "chat.defaultModel" => Ok(Self::ChatDefaultModel),
             "chat.defaultAgent" => Ok(Self::ChatDefaultAgent),
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
+            "chat.history.maxLength" => Ok(Self::ChatHistoryMaxLength),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -241,5 +244,51 @@ mod test {
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
+    }
+
+    /// Test ChatHistoryMaxLength setting
+    #[tokio::test]
+    async fn test_chat_history_max_length_setting() {
+        let mut settings = Settings::new().await.unwrap();
+
+        // Test initial state (should be None)
+        assert_eq!(settings.get(Setting::ChatHistoryMaxLength), None);
+        assert_eq!(settings.get_int(Setting::ChatHistoryMaxLength), None);
+
+        // Test setting integer value
+        settings.set(Setting::ChatHistoryMaxLength, 60).await.unwrap();
+        assert_eq!(settings.get(Setting::ChatHistoryMaxLength), Some(&Value::Number(60.into())));
+        assert_eq!(settings.get_int(Setting::ChatHistoryMaxLength), Some(60));
+
+        // Test setting different values
+        settings.set(Setting::ChatHistoryMaxLength, 100).await.unwrap();
+        assert_eq!(settings.get_int(Setting::ChatHistoryMaxLength), Some(100));
+
+        settings.set(Setting::ChatHistoryMaxLength, 0).await.unwrap();
+        assert_eq!(settings.get_int(Setting::ChatHistoryMaxLength), Some(0));
+
+        // Test removing the setting
+        settings.remove(Setting::ChatHistoryMaxLength).await.unwrap();
+        assert_eq!(settings.get(Setting::ChatHistoryMaxLength), None);
+        assert_eq!(settings.get_int(Setting::ChatHistoryMaxLength), None);
+    }
+
+    /// Test Setting enum string conversions for ChatHistoryMaxLength
+    #[test]
+    fn test_chat_history_max_length_string_conversions() {
+        // Test AsRef<str> implementation
+        assert_eq!(Setting::ChatHistoryMaxLength.as_ref(), "chat.history.maxLength");
+        
+        // Test Display implementation
+        assert_eq!(Setting::ChatHistoryMaxLength.to_string(), "chat.history.maxLength");
+        
+        // Test TryFrom<&str> implementation
+        assert_eq!(
+            Setting::try_from("chat.history.maxLength").unwrap(),
+            Setting::ChatHistoryMaxLength
+        );
+        
+        // Test invalid string conversion
+        assert!(Setting::try_from("invalid.setting").is_err());
     }
 }

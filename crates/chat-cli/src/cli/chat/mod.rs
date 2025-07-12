@@ -3,6 +3,7 @@ mod consts;
 pub mod context;
 mod conversation;
 mod error_formatter;
+mod history_utils;
 mod input_source;
 mod message;
 mod parse;

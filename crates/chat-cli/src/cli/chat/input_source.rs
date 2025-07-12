@@ -11,14 +11,14 @@ pub struct InputSource(inner::Inner);
 
 mod inner {
     use rustyline::Editor;
-    use rustyline::history::FileHistory;
+    use rustyline::history::DefaultHistory;
 
     use super::super::prompt::ChatHelper;
 
     #[allow(clippy::large_enum_variant)]
     #[derive(Debug)]
     pub enum Inner {
-        Readline(Editor<ChatHelper, FileHistory>),
+        Readline(Editor<ChatHelper, DefaultHistory>),
         #[allow(dead_code)]
         Mock {
             index: usize,

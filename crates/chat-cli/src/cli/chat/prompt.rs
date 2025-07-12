@@ -37,7 +37,8 @@ use winnow::stream::AsChar;
 
 pub use super::prompt_parser::generate_prompt;
 use super::prompt_parser::parse_prompt_components;
-use crate::database::settings::Setting;
+use super::history_utils::{truncate_command_for_display, should_display_history};
+use crate::database::{Database, settings::Setting};
 use crate::os::Os;
 
 pub const COMMANDS: &[&str] = &[
@@ -215,12 +216,17 @@ impl Completer for ChatCompleter {
 pub struct ChatHinter {
     /// Command history for providing suggestions based on past commands
     history: Vec<String>,
+    /// Database reference for accessing settings
+    database: Database,
 }
 
 impl ChatHinter {
     /// Creates a new ChatHinter instance
-    pub fn new() -> Self {
-        Self { history: Vec::new() }
+    pub fn new(database: Database) -> Self {
+        Self { 
+            history: Vec::new(),
+            database,
+        }
     }
 
     /// Updates the history with a new command
@@ -237,6 +243,18 @@ impl ChatHinter {
             return None;
         }
 
+        // Check if history should be displayed at all
+        if !should_display_history(&self.database) {
+            // Only provide command hints when history is disabled
+            if line.starts_with('/') {
+                return COMMANDS
+                    .iter()
+                    .find(|cmd| cmd.starts_with(line))
+                    .map(|cmd| cmd[line.len()..].to_string());
+            }
+            return None;
+        }
+
         // If line starts with a slash, try to find a command hint
         if line.starts_with('/') {
             return COMMANDS
@@ -250,7 +268,37 @@ impl ChatHinter {
             .iter()
             .rev() // Start from most recent
             .find(|cmd| cmd.starts_with(line) && cmd.len() > line.len())
-            .map(|cmd| cmd[line.len()..].to_string())
+            .map(|cmd| {
+                // Get the full command that matches
+                let full_command = cmd;
+                // Get the remaining part after the current input
+                let remaining_part = &cmd[line.len()..];
+                
+                // Truncate the full command for display purposes
+                let truncated_display = truncate_command_for_display(full_command, &self.database);
+                
+                // If the truncated version is different from the original, we need to adjust the hint
+                if truncated_display.len() < full_command.len() && truncated_display.ends_with("...") {
+                    // The command was truncated, so we need to calculate what part of the hint to show
+                    let truncated_without_ellipsis = &truncated_display[..truncated_display.len() - 3];
+                    
+                    if line.len() >= truncated_without_ellipsis.len() {
+                        // The current input is already longer than what we can display
+                        return String::new();
+                    }
+                    
+                    // Show the remaining part up to the truncation point, then add "..."
+                    let remaining_in_truncated = &truncated_without_ellipsis[line.len()..];
+                    if remaining_in_truncated.is_empty() {
+                        "...".to_string()
+                    } else {
+                        format!("{}...", remaining_in_truncated)
+                    }
+                } else {
+                    // Command wasn't truncated, show the normal remaining part
+                    remaining_part.to_string()
+                }
+            })
     }
 }
 
@@ -316,6 +364,8 @@ impl Highlighter for ChatHelper {
     }
 
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+        // Don't truncate the actual input line - user should see their full input
+        // Truncation only applies to hints, not to the current input
         Cow::Borrowed(line)
     }
 
@@ -368,7 +418,7 @@ pub fn rl(
         .build();
     let h = ChatHelper {
         completer: ChatCompleter::new(sender, receiver),
-        hinter: ChatHinter::new(),
+        hinter: ChatHinter::new(os.database.clone()),
         validator: MultiLineValidator,
     };
     let mut rl = Editor::with_config(config)?;
@@ -401,6 +451,8 @@ mod tests {
     use rustyline::highlight::Highlighter;
 
     use super::*;
+    use crate::database::Database;
+    
     #[test]
     fn test_chat_completer_command_completion() {
         let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
@@ -442,13 +494,14 @@ mod tests {
         assert!(completions.is_empty());
     }
 
-    #[test]
-    fn test_highlight_prompt_basic() {
+    #[tokio::test]
+    async fn test_highlight_prompt_basic() {
+        let db = Database::new().await.unwrap();
         let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(db),
             validator: MultiLineValidator,
         };
 
@@ -458,13 +511,14 @@ mod tests {
         assert_eq!(highlighted, "> ".magenta().to_string());
     }
 
-    #[test]
-    fn test_highlight_prompt_with_warning() {
+    #[tokio::test]
+    async fn test_highlight_prompt_with_warning() {
+        let db = Database::new().await.unwrap();
         let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(db),
             validator: MultiLineValidator,
         };
 
@@ -474,13 +528,14 @@ mod tests {
         assert_eq!(highlighted, format!("{}{}", "!".red(), "> ".magenta()));
     }
 
-    #[test]
-    fn test_highlight_prompt_with_profile() {
+    #[tokio::test]
+    async fn test_highlight_prompt_with_profile() {
+        let db = Database::new().await.unwrap();
         let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(db),
             validator: MultiLineValidator,
         };
 
@@ -490,13 +545,14 @@ mod tests {
         assert_eq!(highlighted, format!("{}{}", "[test-profile] ".cyan(), "> ".magenta()));
     }
 
-    #[test]
-    fn test_highlight_prompt_with_profile_and_warning() {
+    #[tokio::test]
+    async fn test_highlight_prompt_with_profile_and_warning() {
+        let db = Database::new().await.unwrap();
         let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(db),
             validator: MultiLineValidator,
         };
 
@@ -509,13 +565,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_highlight_prompt_invalid_format() {
+    #[tokio::test]
+    async fn test_highlight_prompt_invalid_format() {
+        let db = Database::new().await.unwrap();
         let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(db),
             validator: MultiLineValidator,
         };
 
@@ -525,9 +582,10 @@ mod tests {
         assert_eq!(highlighted, invalid_prompt);
     }
 
-    #[test]
-    fn test_chat_hinter_command_hint() {
-        let hinter = ChatHinter::new();
+    #[tokio::test]
+    async fn test_chat_hinter_command_hint() {
+        let db = Database::new().await.unwrap();
+        let hinter = ChatHinter::new(db);
 
         // Test hint for a command
         let line = "/he";
@@ -549,9 +607,10 @@ mod tests {
         assert_eq!(hint, None);
     }
 
-    #[test]
-    fn test_chat_hinter_history_hint() {
-        let mut hinter = ChatHinter::new();
+    #[tokio::test]
+    async fn test_chat_hinter_history_hint() {
+        let db = Database::new().await.unwrap();
+        let mut hinter = ChatHinter::new(db);
 
         // Add some history
         hinter.update_history("Hello, world!");
@@ -565,5 +624,272 @@ mod tests {
 
         let hint = hinter.hint(line, pos, &ctx);
         assert_eq!(hint, Some(" are you?".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_chat_hinter_truncation_basic() {
+        let mut db = Database::new().await.unwrap();
+        // Set a small truncation limit for testing
+        db.settings.set(Setting::ChatHistoryMaxLength, 20).await.unwrap();
+        
+        let mut hinter = ChatHinter::new(db);
+        
+        // Add a long command to history
+        let long_command = "this is a very long command that exceeds the limit";
+        hinter.update_history(long_command);
+        
+        // Test hint for partial match
+        let line = "this";
+        let pos = line.len();
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+        
+        let hint = hinter.hint(line, pos, &ctx);
+        // Should provide a truncated hint
+        assert!(hint.is_some());
+        let hint_text = hint.unwrap();
+        // The hint should end with "..." indicating truncation
+        assert!(hint_text.ends_with("..."));
+    }
+
+    #[tokio::test]
+    async fn test_chat_hinter_truncation_no_truncation_needed() {
+        let mut db = Database::new().await.unwrap();
+        // Set a large truncation limit
+        db.settings.set(Setting::ChatHistoryMaxLength, 100).await.unwrap();
+        
+        let mut hinter = ChatHinter::new(db);
+        
+        // Add a short command to history
+        let short_command = "echo hello world";
+        hinter.update_history(short_command);
+        
+        // Test hint for partial match
+        let line = "echo";
+        let pos = line.len();
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+        
+        let hint = hinter.hint(line, pos, &ctx);
+        // Should provide the full remaining part without truncation
+        assert_eq!(hint, Some(" hello world".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_chat_hinter_history_hidden() {
+        let mut db = Database::new().await.unwrap();
+        // Set history to hidden (0)
+        db.settings.set(Setting::ChatHistoryMaxLength, 0).await.unwrap();
+        
+        let mut hinter = ChatHinter::new(db);
+        
+        // Add commands to history
+        hinter.update_history("some command in history");
+        
+        // Test that history hints are not provided
+        let line = "some";
+        let pos = line.len();
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+        
+        let hint = hinter.hint(line, pos, &ctx);
+        // Should not provide history hints when history is hidden
+        assert_eq!(hint, None);
+        
+        // But command hints should still work
+        let line = "/he";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, Some("lp".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_chat_hinter_truncation_edge_cases() {
+        let mut db = Database::new().await.unwrap();
+        // Set a very small truncation limit
+        db.settings.set(Setting::ChatHistoryMaxLength, 5).await.unwrap();
+        
+        let mut hinter = ChatHinter::new(db);
+        
+        // Add a command that will be heavily truncated
+        let command = "very long command";
+        hinter.update_history(command);
+        
+        // Test hint when input is already longer than truncation limit
+        let line = "very long";
+        let pos = line.len();
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+        
+        let hint = hinter.hint(line, pos, &ctx);
+        // Should handle gracefully when input exceeds truncation limit
+        assert!(hint.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_chat_hinter_truncation_with_unicode() {
+        let mut db = Database::new().await.unwrap();
+        // Set truncation limit
+        db.settings.set(Setting::ChatHistoryMaxLength, 15).await.unwrap();
+        
+        let mut hinter = ChatHinter::new(db);
+        
+        // Add a command with unicode characters
+        let unicode_command = "héllo wörld 🌍 test command";
+        hinter.update_history(unicode_command);
+        
+        // Test hint for partial match
+        let line = "héllo";
+        let pos = line.len();
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+        
+        let hint = hinter.hint(line, pos, &ctx);
+        // Should handle unicode characters properly in truncation
+        assert!(hint.is_some());
+        let hint_text = hint.unwrap();
+        // Should end with "..." due to truncation
+        assert!(hint_text.ends_with("..."));
+    }
+
+    #[tokio::test]
+    async fn test_chat_hinter_multiple_history_entries() {
+        let mut db = Database::new().await.unwrap();
+        // Set truncation limit
+        db.settings.set(Setting::ChatHistoryMaxLength, 25).await.unwrap();
+        
+        let mut hinter = ChatHinter::new(db);
+        
+        // Add multiple commands to history
+        hinter.update_history("test short command");
+        hinter.update_history("test this is a very long command that will be truncated");
+        
+        // Test hint - should match the most recent command
+        let line = "test";
+        let pos = line.len();
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+        
+        let hint = hinter.hint(line, pos, &ctx);
+        assert!(hint.is_some());
+        let hint_text = hint.unwrap();
+        // Should provide hint from the most recent (long) command with truncation
+        assert!(hint_text.ends_with("..."));
+    }
+
+    #[tokio::test]
+    async fn test_chat_hinter_negative_setting_fallback() {
+        let mut db = Database::new().await.unwrap();
+        // Set negative value (should fall back to default)
+        db.settings.set(Setting::ChatHistoryMaxLength, -10).await.unwrap();
+        
+        let mut hinter = ChatHinter::new(db);
+        
+        // Add a command that would be truncated at default (60) but not at a very large limit
+        let command = "this is a moderately long command that is longer than 60 characters for testing";
+        hinter.update_history(command);
+        
+        // Test hint for partial match
+        let line = "this";
+        let pos = line.len();
+        let empty_history = DefaultHistory::new();
+        let ctx = Context::new(&empty_history);
+        
+        let hint = hinter.hint(line, pos, &ctx);
+        assert!(hint.is_some());
+        let hint_text = hint.unwrap();
+        // Should be truncated because negative setting falls back to default (60)
+        assert!(hint_text.ends_with("..."));
+    }
+
+    #[tokio::test]
+    async fn test_highlighter_no_truncation() {
+        let mut db = Database::new().await.unwrap();
+        // Set a small truncation limit for testing
+        db.settings.set(Setting::ChatHistoryMaxLength, 20).await.unwrap();
+        
+        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
+        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(db),
+            validator: MultiLineValidator,
+        };
+
+        // Test that long command is NOT truncated in highlight (user input should be preserved)
+        let long_command = "this is a very long command that exceeds the limit";
+        let highlighted = helper.highlight(long_command, 0);
+        
+        // Should NOT be truncated - user should see their full input
+        assert_eq!(highlighted, long_command);
+        
+        // Test short command (should also not be truncated)
+        let short_command = "short cmd";
+        let highlighted = helper.highlight(short_command, 0);
+        assert_eq!(highlighted, short_command);
+    }
+
+    #[tokio::test]
+    async fn test_highlighter_preserves_input_regardless_of_settings() {
+        let mut db = Database::new().await.unwrap();
+        // Set history to hidden (0)
+        db.settings.set(Setting::ChatHistoryMaxLength, 0).await.unwrap();
+        
+        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
+        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(db),
+            validator: MultiLineValidator,
+        };
+
+        // Test that user input is preserved even when history is hidden
+        let command = "any command here";
+        let highlighted = helper.highlight(command, 0);
+        assert_eq!(highlighted, command); // Should preserve user input
+    }
+
+    #[tokio::test]
+    async fn test_highlighter_preserves_word_boundaries() {
+        let mut db = Database::new().await.unwrap();
+        // Set a limit that will test word boundary logic
+        db.settings.set(Setting::ChatHistoryMaxLength, 25).await.unwrap();
+        
+        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
+        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(db),
+            validator: MultiLineValidator,
+        };
+
+        // Test that user input is preserved regardless of word boundaries
+        let cmd = "short words here and more text";
+        let highlighted = helper.highlight(cmd, 0);
+        
+        // Should preserve the full input
+        assert_eq!(highlighted, cmd);
+    }
+
+    #[tokio::test]
+    async fn test_highlighter_unicode_safety() {
+        let mut db = Database::new().await.unwrap();
+        // Set a small limit to test unicode boundary handling
+        db.settings.set(Setting::ChatHistoryMaxLength, 15).await.unwrap();
+        
+        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
+        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(db),
+            validator: MultiLineValidator,
+        };
+
+        // Test with unicode characters - should preserve full input
+        let unicode_cmd = "héllo wörld 🌍 test command";
+        let highlighted = helper.highlight(unicode_cmd, 0);
+        
+        // Should preserve the full unicode input
+        assert_eq!(highlighted, unicode_cmd);
     }
 }
