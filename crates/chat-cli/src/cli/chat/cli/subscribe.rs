@@ -43,7 +43,7 @@ impl SubscribeArgs {
         {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                style::SetForegroundColor(session.colors.warning()),
                 style::Print("\nYour Q Developer Pro subscription is managed through IAM Identity Center.\n\n"),
                 style::SetForegroundColor(Color::Reset),
             )?;
@@ -54,13 +54,13 @@ impl SubscribeArgs {
                     if status != ActualSubscriptionStatus::Active {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(session.colors.warning()),
                             style::Print("You don't seem to have a Q Developer Pro subscription. "),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            style::SetForegroundColor(session.colors.secondary()),
                             style::Print("Use "),
-                            style::SetForegroundColor(Color::Green),
+                            style::SetForegroundColor(session.colors.success()),
                             style::Print("/subscribe"),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            style::SetForegroundColor(session.colors.secondary()),
                             style::Print(" to upgrade your subscription.\n\n"),
                             style::SetForegroundColor(Color::Reset),
                         )?;

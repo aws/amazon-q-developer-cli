@@ -3,10 +3,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
-};
+use crossterm::style;
 use eyre::{
     ContextCompat as _,
     Result,
@@ -30,6 +27,10 @@ use tracing::{
     error,
     warn,
 };
+
+use crate::cli::chat::colors::ColorManager;
+use crate::database::settings::Settings;
+use crate::{with_success, with_color};
 
 use super::{
     InvokeOutput,
@@ -91,6 +92,9 @@ impl FsWrite {
                     os.fs.create_dir_all(parent).await?;
                 }
 
+                let settings = Settings::default();
+                let color_manager = ColorManager::from_settings(&settings);
+
                 let invoke_description = if os.fs.exists(&path) {
                     "Replacing: "
                 } else {
@@ -99,11 +103,9 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print(invoke_description),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
                 )?;
+                with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
+                queue!(output, style::Print("\n"))?;
 
                 write_to_file(os, path, file_text).await?;
                 Ok(Default::default())
@@ -114,14 +116,14 @@ impl FsWrite {
                 let path = sanitize_path_tool_arg(os, path);
                 let file = os.fs.read_to_string(&path).await?;
                 let matches = file.match_indices(old_str).collect::<Vec<_>>();
-                queue!(
-                    output,
-                    style::Print("Updating: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
+
+                let settings = Settings::default();
+                let color_manager = ColorManager::from_settings(&settings);
+
+                queue!(output, style::Print("Updating: "))?;
+                with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
+                queue!(output, style::Print("\n"))?;
+
                 match matches.len() {
                     0 => Err(eyre!("no occurrences of \"{old_str}\" were found")),
                     1 => {
@@ -140,14 +142,13 @@ impl FsWrite {
             } => {
                 let path = sanitize_path_tool_arg(os, path);
                 let mut file = os.fs.read_to_string(&path).await?;
-                queue!(
-                    output,
-                    style::Print("Updating: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
+
+                let settings = Settings::default();
+                let color_manager = ColorManager::from_settings(&settings);
+
+                queue!(output, style::Print("Updating: "))?;
+                with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
+                queue!(output, style::Print("\n"))?;
 
                 // Get the index of the start of the line to insert at.
                 let num_lines = file.lines().enumerate().map(|(i, _)| i + 1).last().unwrap_or(1);
@@ -164,14 +165,12 @@ impl FsWrite {
             FsWrite::Append { path, new_str, .. } => {
                 let path = sanitize_path_tool_arg(os, path);
 
-                queue!(
-                    output,
-                    style::Print("Appending to: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
+                let settings = Settings::default();
+                let color_manager = ColorManager::from_settings(&settings);
+
+                queue!(output, style::Print("Appending to: "))?;
+                with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
+                queue!(output, style::Print("\n"))?;
 
                 let mut file = os.fs.read_to_string(&path).await?;
                 if !file.ends_with_newline() {
@@ -306,14 +305,14 @@ impl FsWrite {
         // Sanitize the path to handle tilde expansion
         let path = sanitize_path_tool_arg(os, path);
         let relative_path = format_path(cwd, &path);
-        queue!(
-            output,
-            style::Print("Path: "),
-            style::SetForegroundColor(Color::Green),
-            style::Print(&relative_path),
-            style::ResetColor,
-            style::Print("\n\n"),
-        )?;
+
+        let settings = Settings::default();
+        let color_manager = ColorManager::from_settings(&settings);
+
+        queue!(output, style::Print("Path: "))?;
+        with_success!(output, &color_manager, "{}", &relative_path)?;
+        queue!(output, style::Print("\n\n"))?;
+
         Ok(())
     }
 

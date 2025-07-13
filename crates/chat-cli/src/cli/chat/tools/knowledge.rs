@@ -1,10 +1,7 @@
 use std::io::Write;
 
 use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
-};
+use crossterm::style;
 use eyre::Result;
 use serde::Deserialize;
 use tracing::warn;
@@ -13,9 +10,11 @@ use super::{
     InvokeOutput,
     OutputKind,
 };
-use crate::database::settings::Setting;
+use crate::cli::chat::colors::ColorManager;
+use crate::database::settings::{Setting, Settings};
 use crate::os::Os;
 use crate::util::knowledge_store::KnowledgeStore;
+use crate::{with_success, with_info, with_warning, with_color};
 
 /// The Knowledge tool allows storing and retrieving information across chat sessions.
 /// It provides semantic search capabilities for files, directories, and text content.
@@ -147,84 +146,47 @@ impl Knowledge {
     }
 
     pub async fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
+        let settings = Settings::default();
+        let color_manager = ColorManager::from_settings(&settings);
+
         match self {
             Knowledge::Add(add) => {
-                queue!(
-                    updates,
-                    style::Print("Adding to knowledge base: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(&add.name),
-                    style::ResetColor,
-                )?;
+                queue!(updates, style::Print("Adding to knowledge base: "))?;
+                with_success!(updates, &color_manager, "{}", &add.name)?;
 
                 // Check if value is a path or text content
                 let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, &add.value);
                 if path.exists() {
                     let path_type = if path.is_dir() { "directory" } else { "file" };
-                    queue!(
-                        updates,
-                        style::Print(format!(" ({}: ", path_type)),
-                        style::SetForegroundColor(Color::Green),
-                        style::Print(&add.value),
-                        style::ResetColor,
-                        style::Print(")\n")
-                    )?;
+                    queue!(updates, style::Print(format!(" ({}: ", path_type)))?;
+                    with_success!(updates, &color_manager, "{}", &add.value)?;
+                    queue!(updates, style::Print(")\n"))?;
                 } else {
                     let preview: String = add.value.chars().take(20).collect();
                     if add.value.len() > 20 {
-                        queue!(
-                            updates,
-                            style::Print(" (text: "),
-                            style::SetForegroundColor(Color::Blue),
-                            style::Print(format!("{}...", preview)),
-                            style::ResetColor,
-                            style::Print(")\n")
-                        )?;
+                        queue!(updates, style::Print(" (text: "))?;
+                        with_info!(updates, &color_manager, "{}...", preview)?;
+                        queue!(updates, style::Print(")\n"))?;
                     } else {
-                        queue!(
-                            updates,
-                            style::Print(" (text: "),
-                            style::SetForegroundColor(Color::Blue),
-                            style::Print(&add.value),
-                            style::ResetColor,
-                            style::Print(")\n")
-                        )?;
+                        queue!(updates, style::Print(" (text: "))?;
+                        with_info!(updates, &color_manager, "{}", &add.value)?;
+                        queue!(updates, style::Print(")\n"))?;
                     }
                 }
             },
             Knowledge::Remove(remove) => {
                 if !remove.name.is_empty() {
-                    queue!(
-                        updates,
-                        style::Print("Removing from knowledge base by name: "),
-                        style::SetForegroundColor(Color::Green),
-                        style::Print(&remove.name),
-                        style::ResetColor,
-                    )?;
+                    queue!(updates, style::Print("Removing from knowledge base by name: "))?;
+                    with_success!(updates, &color_manager, "{}", &remove.name)?;
                 } else if !remove.context_id.is_empty() {
-                    queue!(
-                        updates,
-                        style::Print("Removing from knowledge base by ID: "),
-                        style::SetForegroundColor(Color::Green),
-                        style::Print(&remove.context_id),
-                        style::ResetColor,
-                    )?;
+                    queue!(updates, style::Print("Removing from knowledge base by ID: "))?;
+                    with_success!(updates, &color_manager, "{}", &remove.context_id)?;
                 } else if !remove.path.is_empty() {
-                    queue!(
-                        updates,
-                        style::Print("Removing from knowledge base by path: "),
-                        style::SetForegroundColor(Color::Green),
-                        style::Print(&remove.path),
-                        style::ResetColor,
-                    )?;
+                    queue!(updates, style::Print("Removing from knowledge base by path: "))?;
+                    with_success!(updates, &color_manager, "{}", &remove.path)?;
                 } else {
-                    queue!(
-                        updates,
-                        style::Print("Removing from knowledge base: "),
-                        style::SetForegroundColor(Color::Yellow),
-                        style::Print("No identifier provided"),
-                        style::ResetColor,
-                    )?;
+                    queue!(updates, style::Print("Removing from knowledge base: "))?;
+                    with_warning!(updates, &color_manager, "No identifier provided")?;
                 }
             },
             Knowledge::Update(update) => {
@@ -234,59 +196,33 @@ impl Knowledge {
                     queue!(
                         updates,
                         style::Print(" with ID: "),
-                        style::SetForegroundColor(Color::Green),
-                        style::Print(&update.context_id),
-                        style::ResetColor,
                     )?;
+                    with_success!(updates, &color_manager, "{}", &update.context_id)?;
                 } else if !update.name.is_empty() {
-                    queue!(
-                        updates,
-                        style::Print(" with name: "),
-                        style::SetForegroundColor(Color::Green),
-                        style::Print(&update.name),
-                        style::ResetColor,
-                    )?;
+                    queue!(updates, style::Print(" with name: "))?;
+                    with_success!(updates, &color_manager, "{}", &update.name)?;
                 }
 
                 let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, &update.path);
                 let path_type = if path.is_dir() { "directory" } else { "file" };
-                queue!(
-                    updates,
-                    style::Print(format!(" using new {}: ", path_type)),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(&update.path),
-                    style::ResetColor,
-                )?;
+                queue!(updates, style::Print(format!(" using new {}: ", path_type)))?;
+                with_success!(updates, &color_manager, "{}", &update.path)?;
+                queue!(updates, style::Print("\n"))?;
             },
             Knowledge::Clear(_) => {
-                queue!(
-                    updates,
-                    style::Print("Clearing "),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print("all"),
-                    style::ResetColor,
-                    style::Print(" knowledge base entries"),
-                )?;
+                queue!(updates, style::Print("Clearing "))?;
+                with_warning!(updates, &color_manager, "all")?;
+                queue!(updates, style::Print(" knowledge base entries"))?;
             },
             Knowledge::Search(search) => {
-                queue!(
-                    updates,
-                    style::Print("Searching knowledge base for: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(&search.query),
-                    style::ResetColor,
-                )?;
+                queue!(updates, style::Print("Searching knowledge base for: "))?;
+                with_success!(updates, &color_manager, "{}", &search.query)?;
 
                 if let Some(context_id) = &search.context_id {
-                    queue!(
-                        updates,
-                        style::Print(" in context: "),
-                        style::SetForegroundColor(Color::Green),
-                        style::Print(context_id),
-                        style::ResetColor,
-                    )?;
+                    queue!(updates, style::Print(" in context: "))?;
+                    with_success!(updates, &color_manager, "{}", context_id)?;
                 } else {
-                    queue!(updates, style::Print(" across all contexts"),)?;
+                    queue!(updates, style::Print(" across all contexts"))?;
                 }
             },
             Knowledge::Show => {
