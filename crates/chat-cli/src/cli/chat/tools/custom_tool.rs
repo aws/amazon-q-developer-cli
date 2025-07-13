@@ -22,7 +22,10 @@ use crate::cli::agent::{
     PermissionEvalResult,
 };
 use crate::cli::chat::CONTINUATION_LINE;
+use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::token_counter::TokenCounter;
+use crate::database::settings::Settings;
+use crate::{with_success, with_color};
 use crate::mcp_client::{
     Client as McpClient,
     ClientConfig as McpClientConfig,
@@ -221,13 +224,11 @@ impl CustomTool {
     }
 
     pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
-        queue!(
-            output,
-            style::Print("Running "),
-            style::SetForegroundColor(style::Color::Green),
-            style::Print(&self.name),
-            style::ResetColor,
-        )?;
+        let settings = Settings::default();
+        let color_manager = ColorManager::from_settings(&settings);
+
+        queue!(output, style::Print("Running "))?;
+        with_success!(output, &color_manager, "{}", &self.name)?;
         if let Some(params) = &self.params {
             let params = match serde_json::to_string_pretty(params) {
                 Ok(params) => params

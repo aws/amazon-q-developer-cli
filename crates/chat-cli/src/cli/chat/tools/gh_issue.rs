@@ -1,11 +1,14 @@
 use std::collections::VecDeque;
 use std::io::Write;
 
-use crossterm::style::Color;
 use crossterm::{
     queue,
     style,
 };
+
+use crate::cli::chat::colors::ColorManager;
+use crate::database::settings::Settings;
+use crate::{with_success, with_color};
 use eyre::{
     Result,
     WrapErr,
@@ -179,13 +182,18 @@ impl GhIssue {
     }
 
     pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
-        Ok(queue!(
+        // Create a default color manager for now - this could be passed as parameter in future
+        let settings = Settings::default();
+        let color_manager = ColorManager::from_settings(&settings);
+
+        queue!(
             output,
             style::Print("I will prepare a github issue with our conversation history.\n\n"),
-            style::SetForegroundColor(Color::Green),
-            style::Print(format!("Title: {}\n", &self.title)),
-            style::ResetColor
-        )?)
+        )?;
+
+        with_success!(output, &color_manager, "Title: {}\n", &self.title)?;
+
+        Ok(())
     }
 
     pub async fn validate(&mut self, _os: &Os) -> Result<()> {
