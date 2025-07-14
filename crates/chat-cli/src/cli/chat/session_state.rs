@@ -93,8 +93,6 @@ mod tests {
 
     #[test]
     fn test_disable_server() {
-    #[test]
-    fn test_disable_server() {
         let mut state = SessionServerState::new();
         
         state.disable_server("test-server".to_string());
@@ -168,5 +166,4 @@ mod tests {
         // server3 should have no overrides
         assert!(!state.has_session_override("server3"));
     }
-}
 }

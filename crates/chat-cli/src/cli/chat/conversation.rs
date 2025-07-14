@@ -115,25 +115,27 @@ impl ConversationState {
             None
         };
 
-        Self {
+        let tools = tool_config
+            .into_values()
+            .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+                let tool = Tool::ToolSpecification(ToolSpecification {
+                    name: v.name,
+                    description: v.description,
+                    input_schema: v.input_schema.into(),
+                });
+                acc.entry(v.tool_origin)
+                    .and_modify(|tools| tools.push(tool.clone()))
+                    .or_insert(vec![tool]);
+                acc
+            });
+
+        let mut instance = Self {
             conversation_id: conversation_id.to_string(),
             next_message: None,
             history: VecDeque::new(),
             valid_history_range: Default::default(),
             transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
-            tools: tool_config
-                .into_values()
-                .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
-                    let tool = Tool::ToolSpecification(ToolSpecification {
-                        name: v.name,
-                        description: v.description,
-                        input_schema: v.input_schema.into(),
-                    });
-                    acc.entry(v.tool_origin)
-                        .and_modify(|tools| tools.push(tool.clone()))
-                        .or_insert(vec![tool]);
-                    acc
-                }),
+            tools,
             filtered_tools: HashMap::new(),
             context_manager,
             tool_manager,
@@ -141,7 +143,11 @@ impl ConversationState {
             latest_summary: None,
             agents,
             model: current_model_id,
-        }
+        };
+
+        // Initialize filtered_tools based on the initial tools
+        instance.update_filtered_tools().await;
+        instance
     }
 
     pub fn latest_summary(&self) -> Option<&str> {
