@@ -82,7 +82,7 @@ impl AgentArgs {
                 writeln!(stderr, "{}", output_str)?;
             },
             Some(AgentSubcommands::Create { name, path, from }) => {
-                let path_with_file_name = create_agent(os, &mut agents, name, path, from).await?;
+                let path_with_file_name = create_agent(os, &mut agents, name.clone(), path, from).await?;
                 let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
                 let mut cmd = std::process::Command::new(editor_cmd);
 
@@ -90,9 +90,17 @@ impl AgentArgs {
                 if !status.success() {
                     bail!("Editor process did not exit with success");
                 }
+
+                writeln!(
+                    stderr,
+                    "\n📁 Created agent {} '{}'\n",
+                    name,
+                    path_with_file_name.display()
+                )?;
             },
             Some(AgentSubcommands::Rename { agent, new_name }) => {
-                rename_agent(os, &mut agents, agent, new_name).await?;
+                rename_agent(os, &mut agents, agent.clone(), new_name.clone()).await?;
+                writeln!(stderr, "\n✓ Renamed agent '{}' to {}\n", agent, new_name)?;
             },
         }
         Ok(ExitCode::SUCCESS)

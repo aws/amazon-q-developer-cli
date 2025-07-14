@@ -272,7 +272,11 @@ impl ContextManager {
     /// Run all the currently enabled hooks from both the global and profile contexts.
     /// # Returns
     /// A vector containing pairs of a [`Hook`] definition and its execution output
-    pub async fn run_hooks(&mut self, output: &mut impl Write, prompt: Option<&str>) -> Result<Vec<(Hook, String)>, ChatError> {
+    pub async fn run_hooks(
+        &mut self,
+        output: &mut impl Write,
+        prompt: Option<&str>,
+    ) -> Result<Vec<(Hook, String)>, ChatError> {
         let hooks = self
             .profile_config
             .hooks
