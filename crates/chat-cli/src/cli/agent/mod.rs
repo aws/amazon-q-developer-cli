@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-
 use std::borrow::Borrow;
 use std::collections::{
     HashMap,
@@ -15,14 +14,19 @@ use std::path::{
     PathBuf,
 };
 
-use crossterm::style::Stylize as _;
+use context_migrate::ContextMigrate;
+use crossterm::style::{
+    Color,
+    Stylize as _,
+};
 use crossterm::{
     queue,
     style,
 };
-use dialoguer::Select;
 use eyre::bail;
+pub use mcp_config::McpServerConfig;
 use regex::Regex;
+use schemars::JsonSchema;
 use serde::{
     Deserialize,
     Serialize,
@@ -30,21 +34,22 @@ use serde::{
 use tokio::fs::ReadDir;
 use tracing::{
     error,
-    info,
     warn,
 };
+pub use wrapper_types::{
+    CreateHooks,
+    OriginalToolName,
+    PromptHooks,
+    ToolSettingTarget,
+    alias_schema,
+    tool_settings_schema,
+};
 
-use super::chat::tools::custom_tool::CustomToolConfig;
 use super::chat::tools::{
     DEFAULT_APPROVE,
     NATIVE_TOOLS,
     ToolOrigin,
 };
-use crate::cli::chat::cli::hooks::{
-    Hook,
-    HookTrigger,
-};
-use crate::cli::chat::context::ContextConfig;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::{
@@ -52,64 +57,55 @@ use crate::util::{
     directories,
 };
 
-// This is to mirror claude's config set up
-#[derive(Clone, Serialize, Deserialize, Debug, Default, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", transparent)]
-pub struct McpServerConfig {
-    pub mcp_servers: HashMap<String, CustomToolConfig>,
-}
-
-impl McpServerConfig {
-    pub async fn load_from_file(os: &Os, path: impl AsRef<Path>) -> eyre::Result<Self> {
-        let contents = os.fs.read(path.as_ref()).await?;
-        let value = serde_json::from_slice::<serde_json::Value>(&contents)?;
-        // We need to extract mcp_servers field from the value because we have annotated
-        // [McpServerConfig] with transparent. Transparent was added because we want to preserve
-        // the type in agent.
-        let config = value
-            .get("mcpServers")
-            .cloned()
-            .ok_or(eyre::eyre!("No mcp servers found in config"))?;
-        Ok(serde_json::from_value(config)?)
-    }
-
-    pub async fn save_to_file(&self, os: &Os, path: impl AsRef<Path>) -> eyre::Result<()> {
-        let json = serde_json::to_string_pretty(self)?;
-        os.fs.write(path.as_ref(), json).await?;
-        Ok(())
-    }
-}
+mod context_migrate;
+mod mcp_config;
+mod wrapper_types;
 
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
 /// impacting q chat in via influenicng [ContextManager] and [ToolManager].
 /// Changes made to [ContextManager] and [ToolManager] do not persist across sessions.
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Agent {
     /// Agent names are derived from the file name. Thus they are skipped for
     /// serializing
     #[serde(skip)]
     pub name: String,
+    /// This field is not model facing and is mostly here for users to discern between agents
     #[serde(default)]
     pub description: Option<String>,
+    /// (NOT YET IMPLEMENTED) The intention for this field is to provide high level context to the
+    /// agent. This should be seen as the same category of context as a system prompt.
     #[serde(default)]
     pub prompt: Option<String>,
+    /// Configuration for Model Context Protocol (MCP) servers
     #[serde(default)]
     pub mcp_servers: McpServerConfig,
+    /// List of tools the agent can see. Use \"@{MCP_SERVER_NAME}/tool_name\" to specify tools from
+    /// mcp servers. To include all tools from a server, use \"@{MCP_SERVER_NAME}\"
     #[serde(default)]
     pub tools: Vec<String>,
+    /// Tool aliases for remapping tool names
     #[serde(default)]
-    pub alias: HashMap<String, String>,
+    #[schemars(schema_with = "alias_schema")]
+    pub alias: HashMap<OriginalToolName, String>,
+    /// List of tools the agent is explicitly allowed to use
     #[serde(default)]
     pub allowed_tools: HashSet<String>,
+    /// Files to include in the agent's context
     #[serde(default)]
     pub included_files: Vec<String>,
+    /// Commands to run when a chat session is created
     #[serde(default)]
-    pub create_hooks: serde_json::Value,
+    pub create_hooks: CreateHooks,
+    /// Commands to run before processing each prompt
     #[serde(default)]
-    pub prompt_hooks: serde_json::Value,
+    pub prompt_hooks: PromptHooks,
+    /// Settings for specific tools. These are mostly for native tools. The actual schema differs by
+    /// tools and is documented in detail in our documentation
     #[serde(default)]
-    pub tools_settings: HashMap<String, serde_json::Value>,
+    #[schemars(schema_with = "tool_settings_schema")]
+    pub tools_settings: HashMap<ToolSettingTarget, serde_json::Value>,
     #[serde(skip)]
     pub path: Option<PathBuf>,
 }
@@ -440,11 +436,51 @@ impl Agents {
 
         local_agents.append(&mut global_agents);
 
-        // If we are told which agent to set as active, we will fall back to a default whose
-        // lifetime matches that of the session
-        if agent_name.is_none() {
+        // Assume agent in the following order of priority:
+        // 1. The agent name specified by the start command via --agent (this is the agent_name that's
+        //    passed in)
+        // 2. If the above is missing or invalid, assume one that is specified by chat.defaultAgent
+        // 3. If the above is missing or invalid, assume the in-memory default
+        let active_idx = 'active_idx: {
+            if let Some(name) = agent_name {
+                if local_agents.iter().any(|a| a.name.as_str() == name) {
+                    break 'active_idx name.to_string();
+                }
+                let _ = queue!(
+                    output,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print("Error"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(format!(
+                        ": no agent with name {} found. Falling back to user specified default",
+                        name
+                    )),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Reset)
+                );
+            }
+
+            if let Some(user_set_default) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
+                if local_agents.iter().any(|a| a.name == user_set_default) {
+                    break 'active_idx user_set_default;
+                }
+                let _ = queue!(
+                    output,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print("Error"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(format!(
+                        ": user defined default {} not found. Falling back to in-memory default",
+                        user_set_default
+                    )),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Reset)
+                );
+            }
+
             local_agents.push(Agent::default());
-        }
+            "default".to_string()
+        };
 
         let _ = output.flush();
 
@@ -453,7 +489,7 @@ impl Agents {
                 .into_iter()
                 .map(|a| (a.name.clone(), a))
                 .collect::<HashMap<_, _>>(),
-            active_idx: agent_name.unwrap_or("default").to_string(),
+            active_idx,
             ..Default::default()
         }
     }
@@ -500,287 +536,6 @@ impl Agents {
         };
 
         format!("{} {label}", "*".reset())
-    }
-}
-
-struct ContextMigrate<const S: char> {
-    legacy_global_context: Option<ContextConfig>,
-    legacy_profiles: HashMap<String, ContextConfig>,
-    mcp_servers: Option<McpServerConfig>,
-    new_agents: Vec<Agent>,
-}
-
-impl ContextMigrate<'a'> {
-    async fn scan(os: &Os) -> eyre::Result<ContextMigrate<'b'>> {
-        let legacy_global_context_path = directories::chat_global_context_path(os)?;
-        let legacy_global_context: Option<ContextConfig> = 'global: {
-            let Ok(content) = os.fs.read(&legacy_global_context_path).await else {
-                break 'global None;
-            };
-            serde_json::from_slice::<ContextConfig>(&content).ok()
-        };
-
-        let legacy_profile_path = directories::chat_profiles_dir(os)?;
-        let legacy_profiles: HashMap<String, ContextConfig> = 'profiles: {
-            let mut profiles = HashMap::<String, ContextConfig>::new();
-            let Ok(mut read_dir) = os.fs.read_dir(&legacy_profile_path).await else {
-                break 'profiles profiles;
-            };
-
-            // Here we assume every profile is stored under their own folders
-            // And that the profile config is in profile_name/context.json
-            while let Ok(Some(entry)) = read_dir.next_entry().await {
-                let config_file_path = entry.path().join("context.json");
-                if !os.fs.exists(&config_file_path) {
-                    continue;
-                }
-                let Some(profile_name) = entry.file_name().to_str().map(|s| s.to_string()) else {
-                    continue;
-                };
-                let Ok(content) = tokio::fs::read_to_string(&config_file_path).await else {
-                    continue;
-                };
-                let Ok(mut context_config) = serde_json::from_str::<ContextConfig>(content.as_str()) else {
-                    continue;
-                };
-
-                // Combine with global context since you can now only choose one agent at a time
-                // So this is how we make what is previously global available to every new agent migrated
-                if let Some(context) = legacy_global_context.as_ref() {
-                    context_config.paths.extend(context.paths.clone());
-                    context_config.hooks.extend(context.hooks.clone());
-                }
-
-                profiles.insert(profile_name.clone(), context_config);
-            }
-
-            profiles
-        };
-
-        let mcp_servers = {
-            let config_path = directories::chat_legacy_mcp_config(os)?;
-            if os.fs.exists(&config_path) {
-                match McpServerConfig::load_from_file(os, config_path).await {
-                    Ok(config) => Some(config),
-                    Err(e) => {
-                        error!("Malformed legacy global mcp config detected: {e}. Skipping mcp migration.");
-                        None
-                    },
-                }
-            } else {
-                None
-            }
-        };
-
-        if legacy_global_context.is_some() || !legacy_profiles.is_empty() {
-            Ok(ContextMigrate {
-                legacy_global_context,
-                legacy_profiles,
-                mcp_servers,
-                new_agents: vec![],
-            })
-        } else {
-            bail!("Nothing to migrate");
-        }
-    }
-}
-
-impl ContextMigrate<'b'> {
-    async fn prompt_migrate(self) -> eyre::Result<ContextMigrate<'c'>> {
-        let ContextMigrate {
-            legacy_global_context,
-            legacy_profiles,
-            mcp_servers,
-            new_agents,
-        } = self;
-
-        let labels = vec!["Yes", "No"];
-        let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
-            .with_prompt("Legacy profiles detected. Would you like to migrate them?")
-            .items(&labels)
-            .default(1)
-            .interact_on_opt(&dialoguer::console::Term::stdout())
-        {
-            Ok(sel) => {
-                let _ = crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-                );
-                sel
-            },
-            // Ctrl‑C -> Err(Interrupted)
-            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
-            Err(e) => bail!("Failed to choose an option: {e}"),
-        };
-
-        if let Some(0) = selection {
-            Ok(ContextMigrate {
-                legacy_global_context,
-                legacy_profiles,
-                mcp_servers,
-                new_agents,
-            })
-        } else {
-            bail!("Aborting migration")
-        }
-    }
-}
-
-impl ContextMigrate<'c'> {
-    async fn migrate(self, os: &Os) -> eyre::Result<ContextMigrate<'d'>> {
-        const LEGACY_GLOBAL_AGENT_NAME: &str = "migrated_agent_from_global_context";
-        const DEFAULT_DESC: &str = "This is an agent migrated from global context";
-        const PROFILE_DESC: &str = "This is an agent migrated from profile context";
-
-        let ContextMigrate {
-            legacy_global_context,
-            mut legacy_profiles,
-            mcp_servers,
-            mut new_agents,
-        } = self;
-
-        let has_global_context = legacy_global_context.is_some();
-
-        // Migration of global context
-        if let Some(context) = legacy_global_context {
-            let (create_hooks, prompt_hooks) =
-                context
-                    .hooks
-                    .into_iter()
-                    .partition::<HashMap<String, Hook>, _>(|(_, hook)| {
-                        matches!(hook.trigger, HookTrigger::ConversationStart)
-                    });
-
-            new_agents.push(Agent {
-                name: LEGACY_GLOBAL_AGENT_NAME.to_string(),
-                description: Some(DEFAULT_DESC.to_string()),
-                path: Some(directories::chat_global_agent_path(os)?.join(format!("{LEGACY_GLOBAL_AGENT_NAME}.json"))),
-                included_files: context.paths,
-                create_hooks: serde_json::to_value(create_hooks).unwrap_or(serde_json::json!({})),
-                prompt_hooks: serde_json::to_value(prompt_hooks).unwrap_or(serde_json::json!({})),
-                mcp_servers: mcp_servers.clone().unwrap_or_default(),
-                ..Default::default()
-            });
-        }
-
-        let global_agent_path = directories::chat_global_agent_path(os)?;
-
-        // Migration of profile context
-        for (profile_name, context) in legacy_profiles.drain() {
-            let (create_hooks, prompt_hooks) =
-                context
-                    .hooks
-                    .into_iter()
-                    .partition::<HashMap<String, Hook>, _>(|(_, hook)| {
-                        matches!(hook.trigger, HookTrigger::ConversationStart)
-                    });
-
-            new_agents.push(Agent {
-                path: Some(global_agent_path.join(format!("{profile_name}.json"))),
-                name: profile_name,
-                description: Some(PROFILE_DESC.to_string()),
-                included_files: context.paths,
-                create_hooks: serde_json::to_value(create_hooks).unwrap_or(serde_json::json!({})),
-                prompt_hooks: serde_json::to_value(prompt_hooks).unwrap_or(serde_json::json!({})),
-                mcp_servers: mcp_servers.clone().unwrap_or_default(),
-                ..Default::default()
-            });
-        }
-
-        if !os.fs.exists(&global_agent_path) {
-            os.fs.create_dir_all(&global_agent_path).await?;
-        }
-
-        for agent in &new_agents {
-            let content = serde_json::to_string_pretty(agent)?;
-            if let Some(path) = agent.path.as_ref() {
-                info!("Agent {} peristed in path {}", agent.name, path.to_string_lossy());
-                os.fs.write(path, content).await?;
-            } else {
-                warn!(
-                    "Agent with name {} does not have path associated and is thus not migrated.",
-                    agent.name
-                );
-            }
-        }
-
-        let legacy_profile_config_path = directories::chat_profiles_dir(os)?;
-        let profile_backup_path = legacy_profile_config_path
-            .parent()
-            .ok_or(eyre::eyre!("Failed to obtain profile config parent path"))?
-            .join("profiles.bak");
-        os.fs.rename(legacy_profile_config_path, profile_backup_path).await?;
-
-        if has_global_context {
-            let legacy_global_config_path = directories::chat_global_context_path(os)?;
-            let legacy_global_config_file_name = legacy_global_config_path
-                .file_name()
-                .ok_or(eyre::eyre!("Failed to obtain legacy global config name"))?
-                .to_string_lossy();
-            let global_context_backup_path = legacy_global_config_path
-                .parent()
-                .ok_or(eyre::eyre!("Failed to obtain parent path for global context"))?
-                .join(format!("{}.bak", legacy_global_config_file_name));
-            os.fs
-                .rename(legacy_global_config_path, global_context_backup_path)
-                .await?;
-        }
-
-        Ok(ContextMigrate {
-            legacy_global_context: None,
-            legacy_profiles,
-            mcp_servers: None,
-            new_agents,
-        })
-    }
-}
-
-impl ContextMigrate<'d'> {
-    async fn prompt_set_default(self, os: &mut Os) -> eyre::Result<(Option<String>, Vec<Agent>)> {
-        let ContextMigrate { new_agents, .. } = self;
-
-        let labels = new_agents
-            .iter()
-            .map(|a| a.name.as_str())
-            .chain(vec!["Let me do this on my own later"])
-            .collect::<Vec<_>>();
-        // This yields 0 if it's negative, which is acceptable.
-        let later_idx = labels.len().saturating_sub(1);
-        let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
-            .with_prompt(
-                "Set an agent as default. This is the agent that q chat will launch with unless specified otherwise.",
-            )
-            .default(0)
-            .items(&labels)
-            .interact_on_opt(&dialoguer::console::Term::stdout())
-        {
-            Ok(sel) => {
-                let _ = crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-                );
-                sel
-            },
-            // Ctrl‑C -> Err(Interrupted)
-            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
-            Err(e) => bail!("Failed to choose an option: {e}"),
-        };
-
-        let mut agent_to_load = None::<String>;
-        if let Some(i) = selection {
-            if later_idx != i {
-                if let Some(name) = labels.get(i) {
-                    if let Ok(value) = serde_json::to_value(name) {
-                        if os.database.settings.set(Setting::ChatDefaultAgent, value).await.is_ok() {
-                            let chosen_name = (*name).to_string();
-                            agent_to_load.replace(chosen_name);
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok((agent_to_load, new_agents))
     }
 }
 
@@ -1089,5 +844,12 @@ mod tests {
         assert!(validate_agent_name("_invalid").is_err());
         assert!(validate_agent_name("invalid!").is_err());
         assert!(validate_agent_name("invalid space").is_err());
+    }
+
+    #[test]
+    fn test_schema_gen() {
+        use schemars::schema_for;
+        let schema = schema_for!(Agent);
+        println!("Schema for agent: {}", serde_json::to_string_pretty(&schema).unwrap());
     }
 }

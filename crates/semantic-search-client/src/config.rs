@@ -82,7 +82,7 @@ impl Default for SemanticSearchConfig {
             model_name: "all-MiniLM-L6-v2".to_string(),
             timeout: 30000, // 30 seconds
             base_dir: get_default_base_dir(),
-            max_files: 5000, // Default limit of 5000 files
+            max_files: 10000, // Default limit of 10000 files
         }
     }
 }
@@ -154,7 +154,7 @@ pub fn get_model_file_path(base_dir: &Path, model_name: &str, file_name: &str) -
 /// Result indicating success or failure
 pub fn ensure_models_dir(base_dir: &Path) -> std::io::Result<()> {
     let models_dir = get_models_dir(base_dir);
-    std::fs::create_dir_all(models_dir)
+    fs::create_dir_all(models_dir)
 }
 
 /// Initializes the global configuration.
@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(config.chunk_overlap, 128);
         assert_eq!(config.default_results, 5);
         assert_eq!(config.model_name, "all-MiniLM-L6-v2");
-        assert_eq!(config.max_files, 5000);
+        assert_eq!(config.max_files, 10000);
     }
 
     #[test]

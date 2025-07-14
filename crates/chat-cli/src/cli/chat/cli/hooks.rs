@@ -32,6 +32,7 @@ use futures::stream::{
     FuturesUnordered,
     StreamExt,
 };
+use schemars::JsonSchema;
 use serde::{
     Deserialize,
     Serialize,
@@ -53,7 +54,7 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_MAX_OUTPUT_SIZE: usize = 1024 * 10;
 const DEFAULT_CACHE_TTL_SECONDS: u64 = 0;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
 pub struct Hook {
     pub trigger: HookTrigger,
 
@@ -117,14 +118,14 @@ impl Hook {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum HookType {
     // Execute an inline shell command
     Inline,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HookTrigger {
     ConversationStart,

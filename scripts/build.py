@@ -506,33 +506,29 @@ def generate_sha(path: pathlib.Path) -> pathlib.Path:
 
 def build_linux(chat_path: pathlib.Path, signer: GpgSigner | None):
     """
-    Creates tar.gz, tar.xz, tar.zst, and zip archives under `BUILD_DIR`.
-
-    Each archive has the following structure:
-    - archive/qchat
+    Creates qchat.tar.gz and qchat.zip archives under `BUILD_DIR`.
     """
-    archive_name = CHAT_BINARY_NAME
+    chat_dst = BUILD_DIR / CHAT_BINARY_NAME
+    chat_dst.unlink(missing_ok=True)
+    shutil.copy2(chat_path, chat_dst)
 
-    archive_path = pathlib.Path(archive_name)
-    archive_path.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(chat_path, archive_path / CHAT_BINARY_NAME)
-
-    info(f"Building {archive_name}.tar.gz")
-    tar_gz_path = BUILD_DIR / f"{archive_name}.tar.gz"
-    run_cmd(["tar", "-czf", tar_gz_path, archive_path])
+    tar_gz_path = BUILD_DIR / f"{CHAT_BINARY_NAME}.tar.gz"
+    tar_gz_path.unlink(missing_ok=True)
+    info(f"Creating tar output to {tar_gz_path}")
+    run_cmd(["tar", "-czf", tar_gz_path, "-C", BUILD_DIR, chat_dst.name], cwd=BUILD_DIR)
     generate_sha(tar_gz_path)
     if signer:
         signer.sign_file(tar_gz_path)
 
-    info(f"Building {archive_name}.zip")
-    zip_path = BUILD_DIR / f"{archive_name}.zip"
-    run_cmd(["zip", "-r", zip_path, archive_path])
+    zip_path = BUILD_DIR / f"{CHAT_BINARY_NAME}.zip"
+    zip_path.unlink(missing_ok=True)
+    info(f"Creating zip output to {zip_path}")
+    run_cmd(["zip", "-j", zip_path, chat_dst], cwd=BUILD_DIR)
     generate_sha(zip_path)
     if signer:
         signer.sign_file(zip_path)
 
     # clean up
-    shutil.rmtree(archive_path)
     if signer:
         signer.clean()
 
