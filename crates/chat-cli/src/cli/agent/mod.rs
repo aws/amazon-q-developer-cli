@@ -939,3 +939,36 @@ mod tests {
         println!("Schema for agent: {}", serde_json::to_string_pretty(&schema).unwrap());
     }
 }
+
+#[cfg(test)]
+mod test_test {
+    use super::*;
+    trait A: for<'de> Deserialize<'de> + Serialize {}
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
+    #[serde(rename_all = "camelCase", bound = "T: A")]
+    struct Testtest<T> {
+        hello: String,
+        #[serde(skip)]
+        phantom: std::marker::PhantomData<T>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct ConcreteA;
+
+    impl A for ConcreteA {}
+
+    #[derive(Serialize, Deserialize)]
+    struct ConcreteB;
+
+    const INPUT: &str = r#"
+            {
+              "hello": "world"
+            }
+        "#;
+
+    #[test]
+    fn test_deser_err() {
+        let deser_res = serde_json::from_str::<Testtest<ConcreteA>>(INPUT);
+        assert!(deser_res.is_ok());
+    }
+}
