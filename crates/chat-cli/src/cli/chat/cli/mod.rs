@@ -122,4 +122,40 @@ impl SlashCommand {
             // },
         }
     }
+
+    pub fn command_name(&self) -> &'static str {
+        match self {
+            Self::Quit => "quit",
+            Self::Clear(_) => "clear",
+            Self::Agent(_) => "agent",
+            Self::Context(_) => "context",
+            Self::Knowledge(_) => "knowledge",
+            Self::PromptEditor(_) => "editor",
+            Self::Compact(_) => "compact",
+            Self::Tools(_) => "tools",
+            Self::Issue(_) => "issue",
+            Self::Prompts(_) => "prompts",
+            Self::Hooks(_) => "hooks",
+            Self::Usage(_) => "usage",
+            Self::Mcp(_) => "mcp",
+            Self::Model(_) => "model",
+            Self::Subscribe(_) => "subscribe",
+            Self::Persist(sub) => match sub {
+                PersistSubcommand::Save { .. } => "save",
+                PersistSubcommand::Load { .. } => "load",
+            },
+        }
+    }
+
+    pub fn subcommand_name(&self) -> Option<&'static str> {
+        match self {
+            SlashCommand::Agent(sub) => Some(sub.name()),
+            SlashCommand::Context(sub) => Some(sub.name()),
+            SlashCommand::Knowledge(sub) => Some(sub.name()),
+            SlashCommand::Tools(arg) => arg.subcommand_name(),
+            SlashCommand::Prompts(arg) => arg.subcommand_name(),
+            SlashCommand::Hooks(arg) => arg.subcommand_name(),
+            _ => None,
+        }
+    }
 }

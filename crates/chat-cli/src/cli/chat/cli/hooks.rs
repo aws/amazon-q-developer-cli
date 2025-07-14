@@ -164,6 +164,7 @@ impl HookExecutor {
         &mut self,
         hooks: Vec<&Hook>,
         output: &mut impl Write,
+        prompt: Option<&str>
     ) -> Result<Vec<(Hook, String)>, ChatError> {
         let mut results = Vec::with_capacity(hooks.len());
         let mut futures = FuturesUnordered::new();
@@ -181,7 +182,7 @@ impl HookExecutor {
                 results.push((index, (hook.clone(), cached.clone())));
                 continue;
             }
-            let future = self.execute_hook(hook);
+            let future = self.execute_hook(hook, prompt);
             futures.push(async move { (index, future.await) });
         }
 
@@ -299,37 +300,46 @@ impl HookExecutor {
         Ok(results.into_iter().map(|(_, r)| r).collect())
     }
 
-    async fn execute_hook<'a>(&self, hook: &'a Hook) -> (&'a Hook, Result<String>, Duration) {
+    async fn execute_hook<'a>(&self, hook: &'a Hook, prompt: Option<&str>) -> (&'a Hook, Result<String>, Duration) {
         let start_time = Instant::now();
         let result = match hook.r#type {
-            HookType::Inline => self.execute_inline_hook(hook).await,
+            HookType::Inline => self.execute_inline_hook(hook, prompt).await,
         };
 
         (hook, result, start_time.elapsed())
     }
 
-    async fn execute_inline_hook(&self, hook: &Hook) -> Result<String> {
+    async fn execute_inline_hook(&self, hook: &Hook, user_prompt: Option<&str>) -> Result<String> {
         let command = hook.command.as_ref().ok_or_else(|| eyre!("no command specified"))?;
 
         #[cfg(unix)]
-        let command_future = tokio::process::Command::new("bash")
-            .arg("-c")
+        let mut cmd = tokio::process::Command::new("bash");
+        #[cfg(unix)]
+        let cmd = cmd.arg("-c")
             .arg(command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
+            .stderr(Stdio::piped());
 
         #[cfg(windows)]
-        let command_future = tokio::process::Command::new("cmd")
-            .arg("/C")
+        let mut cmd = tokio::process::Command::new("cmd");
+        #[cfg(windows)]
+        let cmd = cmd.arg("/C")
             .arg(command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
+            .stderr(Stdio::piped());
 
         let timeout = Duration::from_millis(hook.timeout_ms);
+
+        // Set USER_PROMPT environment variable if provided
+        if let Some(prompt) = user_prompt {
+            // Sanitize the prompt to avoid issues with special characters
+            let sanitized_prompt = sanitize_user_prompt(prompt);
+            cmd.env("USER_PROMPT", sanitized_prompt);
+        }
+
+        let command_future = cmd.output();
 
         // Run with timeout
         match tokio::time::timeout(timeout, command_future).await {
@@ -385,6 +395,19 @@ impl HookExecutor {
 
         cache.insert(hook.name.clone(), hook_output);
     }
+}
+
+/// Sanitizes a string value to be used as an environment variable
+fn sanitize_user_prompt(input: &str) -> String {
+    // Limit the size of input to first 4096 characters
+    let truncated = if input.len() > 4096 {
+        &input[0..4096]
+    } else {
+        input
+    };
+    
+    // Remove any potentially problematic characters
+    truncated.replace(|c: char| c.is_control() && c != '\n' && c != '\r' && c != '\t', "")
 }
 
 #[deny(missing_docs)]
@@ -448,6 +471,10 @@ impl HooksArgs {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn subcommand_name(&self) -> Option<&'static str> {
+        self.subcommand.as_ref().map(|s| s.name())
     }
 }
 
@@ -633,6 +660,18 @@ impl HooksSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            HooksSubcommand::Add { .. } => "add",
+            HooksSubcommand::Remove { .. } => "remove",
+            HooksSubcommand::Enable { .. } => "enable",
+            HooksSubcommand::Disable { .. } => "disable",
+            HooksSubcommand::EnableAll => "enable-all",
+            HooksSubcommand::DisableAll => "disable-all",
+            HooksSubcommand::Show => "show",
+        }
     }
 }
 

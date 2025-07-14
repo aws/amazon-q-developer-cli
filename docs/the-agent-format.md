@@ -4,13 +4,13 @@ The agent configuration file for each agent is called its _manifest_. It is writ
 
 Every manifest file consists of the following sections:
 
-- [`name`](#the-name-field) --- The name of the agent.
-- [`version`](#the-version-field) --- The version of the agent.
-- [`description`](#the-description-field) --- A description of the agent.
-- [`mcpServers`](#the-mcp-servers-field) --- The MCP servers the agent has access to.
+- [`name`](#the-name-field) — The name of the agent.
+- [`version`](#the-version-field) — The version of the agent.
+- [`description`](#the-description-field) — A description of the agent.
+- [`mcpServers`](#the-mcp-servers-field) — The MCP servers the agent has access to.
 - [`tools`](#the-tools-field) --- The tools available to the agent.
-- [`allowedTools`](#the-allowed-tools-field) --- Tools that can be used without prompting.
-- [`toolsSettings`](#the-tools-settings-field) --- Configuration for specific tools.
+- [`allowedTools`](#the-allowed-tools-field) — Tools that can be used without prompting.
+- [`toolsSettings`](#the-tools-settings-field) — Configuration for specific tools.
 
 ### The `name` field
 

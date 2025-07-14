@@ -1,8 +1,16 @@
-## execute_bash
+# Native tools
+
+- [`execute_bash`](#the_execute_bash_tool) — Execute a shell command.
+- [`fs_read`](#the_fs_read_tool) — Read files, directories, and images.
+- [`fs_write`](#the-fs-write-tool) — Create and edit files.
+- [`gh_issue`](#the-gh-issue-tool) — Open a GitHub issue template.
+- [`knowledge`](#the-knowledge-tool) — Store and retrieve information in a knowledge base.
+- [`thinking`](#the-thinking-tool) — Internal reasoning mechanism.
+- [`use_aws`](#the-use-aws-tool) — Make AWS CLI API calls.
+
+### The `execute_bash` tool
 
 Execute the specified bash command.
-
-### Config
 
 #### Schema
 
@@ -34,11 +42,9 @@ Execute the specified bash command.
 }
 ```
 
-## fs_read
+### The `fs_read` tool
 
 Tool for reading files, directories and images.
-
-### Config
 
 #### Schema
 
@@ -65,11 +71,9 @@ Tool for reading files, directories and images.
 }
 ```
 
-## fs_write
+### The `fs_write` tool
 
 Tool for creating and editing files.
-
-### Config
 
 #### Schema
 
@@ -100,35 +104,27 @@ Tool for creating and editing files.
 }
 ```
 
-## gh_issue
+### The `gh_issue` tool
 
 Opens the browser to our GitHub template for reporting issues with `q`.
 
-### Config
-
 This tool has no configuration.
 
-## knowledge
+### The `knowledge` tool
 
 Store and retrieve information in knowledge base across chat sessions
 
-### Config
-
 This tool has no configuration.
 
-## thinking
+### The `thinking` tool
 
 Thinking is an internal reasoning mechanism improving the quality of complex tasks by breaking their atomic actions down.
 
-### Config
-
 This tool has no configuration.
 
-## use_aws
+### The `use_aws` tool
 
 Make an AWS CLI api call with the specified service, operation, and parameters.
-
-### Config
 
 #### Schema
 

@@ -232,6 +232,26 @@ impl TelemetryThread {
         }))?)
     }
 
+    pub async fn send_chat_slash_command_executed(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        command: String,
+        subcommand: Option<String>,
+        result: TelemetryResult,
+        reason: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::ChatSlashCommandExecuted {
+            conversation_id,
+            command,
+            subcommand,
+            result,
+            reason,
+        });
+        set_start_url_and_region(database, &mut event).await;
+        Ok(self.tx.send(event)?)
+    }
+
     #[allow(clippy::too_many_arguments)] // TODO: Should make a parameters struct.
     pub async fn send_chat_added_message(
         &self,

@@ -166,6 +166,10 @@ impl ToolsArgs {
 
         Ok(ChatState::default())
     }
+
+    pub fn subcommand_name(&self) -> Option<&'static str> {
+        self.subcommand.as_ref().map(|s| s.name())
+    }
 }
 
 #[deny(missing_docs)]
@@ -382,5 +386,15 @@ impl ToolsSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ToolsSubcommand::Schema => "schema",
+            ToolsSubcommand::Trust { .. } => "trust",
+            ToolsSubcommand::Untrust { .. } => "untrust",
+            ToolsSubcommand::TrustAll => "trust-all",
+            ToolsSubcommand::Reset => "reset",
+        }
     }
 }
