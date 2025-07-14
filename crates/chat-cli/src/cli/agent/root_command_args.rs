@@ -82,54 +82,7 @@ impl AgentArgs {
                 writeln!(stderr, "{}", output_str)?;
             },
             Some(AgentSubcommands::Create { name, path, from }) => {
-                let path = if let Some(path) = path {
-                    let mut path = PathBuf::from(path);
-
-                    // If path points to a file, strip the filename to get the directory
-                    if path.is_file() || (path.extension().is_some() && !path.is_dir()) {
-                        path = path.parent().unwrap_or(&path).to_path_buf();
-                    }
-
-                    let global_agent_path = directories::chat_global_agent_path(os)?;
-                    let last_three_segments: PathBuf = global_agent_path
-                        .components()
-                        .rev()
-                        .take(3)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .collect();
-
-                    if path.ends_with(&last_three_segments) {
-                        path
-                    } else {
-                        path.join(&last_three_segments)
-                    }
-                } else {
-                    directories::chat_global_agent_path(os)?
-                };
-
-                if let Some((name, _)) = agents.agents.iter().find(|(agent_name, agent)| {
-                    &name == *agent_name
-                        && agent
-                            .path
-                            .as_ref()
-                            .is_some_and(|agent_path| agent_path.parent().is_some_and(|parent| parent == path))
-                }) {
-                    bail!("Agent with name {name} already exists. Aborting");
-                }
-
-                let prepopulated_content = if let Some(from) = from {
-                    let agent_to_copy = agents.switch(from.as_str())?;
-                    serde_json::to_string_pretty(agent_to_copy)?
-                } else {
-                    Default::default()
-                };
-                let path_with_file_name = path.join(format!("{name}.json"));
-
-                os.fs.create_dir_all(&path).await?;
-                os.fs.create_new(&path_with_file_name).await?;
-                os.fs.write(&path_with_file_name, prepopulated_content).await?;
+                let path_with_file_name = create_agent(os, &mut agents, name, path, from).await?;
                 let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
                 let mut cmd = std::process::Command::new(editor_cmd);
 
@@ -139,42 +92,107 @@ impl AgentArgs {
                 }
             },
             Some(AgentSubcommands::Rename { agent, new_name }) => {
-                if agents.agents.iter().any(|(name, _)| name == &new_name) {
-                    bail!("New name {new_name} already exists in the current scope. Aborting");
-                }
-
-                match agents.switch(agent.as_str()) {
-                    Ok(target_agent) => {
-                        if let Some(path) = target_agent.path.as_ref() {
-                            let new_path = path
-                                .parent()
-                                .map(|p| p.join(format!("{new_name}.json")))
-                                .ok_or(eyre::eyre!("Failed to retrieve parent directory of target config"))?;
-                            os.fs.rename(path, new_path).await?;
-
-                            if let Some(default_agent) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
-                                let global_agent_path = directories::chat_global_agent_path(os)?;
-                                if default_agent == agent
-                                    && target_agent
-                                        .path
-                                        .as_ref()
-                                        .is_some_and(|p| p.parent().is_some_and(|p| p == global_agent_path))
-                                {
-                                    os.database.settings.set(Setting::ChatDefaultAgent, new_name).await?;
-                                }
-                            }
-                        } else {
-                            bail!("Target agent has no path associated. Aborting");
-                        }
-                    },
-                    Err(e) => {
-                        bail!(e);
-                    },
-                }
+                rename_agent(os, &mut agents, agent, new_name).await?;
             },
         }
         Ok(ExitCode::SUCCESS)
     }
+}
+
+pub async fn create_agent(
+    os: &mut Os,
+    agents: &mut Agents,
+    name: String,
+    path: Option<String>,
+    from: Option<String>,
+) -> Result<PathBuf> {
+    let path = if let Some(path) = path {
+        let mut path = PathBuf::from(path);
+
+        // If path points to a file, strip the filename to get the directory
+        if path.is_file() || (path.extension().is_some() && !path.is_dir()) {
+            path = path.parent().unwrap_or(&path).to_path_buf();
+        }
+
+        let global_agent_path = directories::chat_global_agent_path(os)?;
+        let last_three_segments: PathBuf = global_agent_path
+            .components()
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+
+        if path.ends_with(&last_three_segments) {
+            path
+        } else {
+            path.join(&last_three_segments)
+        }
+    } else {
+        directories::chat_global_agent_path(os)?
+    };
+
+    if let Some((name, _)) = agents.agents.iter().find(|(agent_name, agent)| {
+        &name == *agent_name
+            && agent
+                .path
+                .as_ref()
+                .is_some_and(|agent_path| agent_path.parent().is_some_and(|parent| parent == path))
+    }) {
+        bail!("Agent with name {name} already exists. Aborting");
+    }
+
+    let prepopulated_content = if let Some(from) = from {
+        let agent_to_copy = agents.switch(from.as_str())?;
+        serde_json::to_string_pretty(agent_to_copy)?
+    } else {
+        Default::default()
+    };
+    let path_with_file_name = path.join(format!("{name}.json"));
+
+    os.fs.create_dir_all(&path).await?;
+    os.fs.create_new(&path_with_file_name).await?;
+    os.fs.write(&path_with_file_name, prepopulated_content).await?;
+
+    Ok(path_with_file_name)
+}
+
+pub async fn rename_agent(os: &mut Os, agents: &mut Agents, agent: String, new_name: String) -> Result<()> {
+    if agents.agents.iter().any(|(name, _)| name == &new_name) {
+        bail!("New name {new_name} already exists in the current scope. Aborting");
+    }
+
+    match agents.switch(agent.as_str()) {
+        Ok(target_agent) => {
+            if let Some(path) = target_agent.path.as_ref() {
+                let new_path = path
+                    .parent()
+                    .map(|p| p.join(format!("{new_name}.json")))
+                    .ok_or(eyre::eyre!("Failed to retrieve parent directory of target config"))?;
+                os.fs.rename(path, new_path).await?;
+
+                if let Some(default_agent) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
+                    let global_agent_path = directories::chat_global_agent_path(os)?;
+                    if default_agent == agent
+                        && target_agent
+                            .path
+                            .as_ref()
+                            .is_some_and(|p| p.parent().is_some_and(|p| p == global_agent_path))
+                    {
+                        os.database.settings.set(Setting::ChatDefaultAgent, new_name).await?;
+                    }
+                }
+            } else {
+                bail!("Target agent has no path associated. Aborting");
+            }
+        },
+        Err(e) => {
+            bail!(e);
+        },
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
