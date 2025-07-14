@@ -108,7 +108,7 @@ Organizing Your Knowledge Base
 
 #### Effective Searching
 
-- Use natural language queries: "how to handle authentication errors unsing the knowledge tool"
+- Use natural language queries: "how to handle authentication errors using the knowledge tool"
 - Be specific about what you're looking for: "database connection configuration"
 - Try different phrasings if initial searches don't return expected results
 - Prompt Q to use the tool with prompts like "find database connection configuration using your knowledge bases" or "using your knowledge tools can you find how to replace your laptop"
