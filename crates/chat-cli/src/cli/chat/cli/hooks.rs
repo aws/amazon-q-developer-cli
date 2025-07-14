@@ -164,7 +164,7 @@ impl HookExecutor {
         &mut self,
         hooks: Vec<&Hook>,
         output: &mut impl Write,
-        prompt: Option<&str>
+        prompt: Option<&str>,
     ) -> Result<Vec<(Hook, String)>, ChatError> {
         let mut results = Vec::with_capacity(hooks.len());
         let mut futures = FuturesUnordered::new();
@@ -315,7 +315,8 @@ impl HookExecutor {
         #[cfg(unix)]
         let mut cmd = tokio::process::Command::new("bash");
         #[cfg(unix)]
-        let cmd = cmd.arg("-c")
+        let cmd = cmd
+            .arg("-c")
             .arg(command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -324,7 +325,8 @@ impl HookExecutor {
         #[cfg(windows)]
         let mut cmd = tokio::process::Command::new("cmd");
         #[cfg(windows)]
-        let cmd = cmd.arg("/C")
+        let cmd = cmd
+            .arg("/C")
             .arg(command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -400,12 +402,8 @@ impl HookExecutor {
 /// Sanitizes a string value to be used as an environment variable
 fn sanitize_user_prompt(input: &str) -> String {
     // Limit the size of input to first 4096 characters
-    let truncated = if input.len() > 4096 {
-        &input[0..4096]
-    } else {
-        input
-    };
-    
+    let truncated = if input.len() > 4096 { &input[0..4096] } else { input };
+
     // Remove any potentially problematic characters
     truncated.replace(|c: char| c.is_control() && c != '\n' && c != '\r' && c != '\t', "")
 }
@@ -816,7 +814,7 @@ mod tests {
         manager.add_hook("hook2".to_string(), hook2).unwrap();
 
         // Run the hooks
-        let results = manager.run_hooks(&mut vec![]).await.unwrap();
+        let results = manager.run_hooks(&mut vec![], None).await.unwrap();
         assert_eq!(results.len(), 2); // Should include both hooks
 
         Ok(())
@@ -848,7 +846,10 @@ mod tests {
 
         // First execution should run the command
         let mut output = vec![];
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
+        let results = executor
+            .run_hooks(vec![&hook1, &hook2], &mut output, None)
+            .await
+            .unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results[0].1.contains("test1"));
@@ -857,7 +858,10 @@ mod tests {
 
         // Second execution should use cache
         let mut output = Vec::new();
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
+        let results = executor
+            .run_hooks(vec![&hook1, &hook2], &mut output, None)
+            .await
+            .unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results[0].1.contains("test1"));
@@ -878,7 +882,10 @@ mod tests {
 
         // First execution should run the command
         let mut output = vec![];
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
+        let results = executor
+            .run_hooks(vec![&hook1, &hook2], &mut output, None)
+            .await
+            .unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results[0].1.contains("test1"));
@@ -887,7 +894,10 @@ mod tests {
 
         // Second execution should use cache
         let mut output = Vec::new();
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
+        let results = executor
+            .run_hooks(vec![&hook1, &hook2], &mut output, None)
+            .await
+            .unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results[0].1.contains("test1"));
@@ -906,7 +916,10 @@ mod tests {
 
         // First execution should run the command
         let mut output = Vec::new();
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
+        let results = executor
+            .run_hooks(vec![&hook1, &hook2], &mut output, None)
+            .await
+            .unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results[0].1.contains("test1"));
@@ -915,7 +928,10 @@ mod tests {
 
         // Second execution should use cache
         let mut output = Vec::new();
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
+        let results = executor
+            .run_hooks(vec![&hook1, &hook2], &mut output, None)
+            .await
+            .unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results[0].1.contains("test1"));
@@ -929,7 +945,7 @@ mod tests {
         let mut hook = Hook::new_inline_hook(HookTrigger::PerPrompt, "sleep 2".to_string());
         hook.timeout_ms = 100; // Set very short timeout
 
-        let results = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
+        let results = executor.run_hooks(vec![&hook], &mut vec![], None).await.unwrap();
 
         assert_eq!(results.len(), 0); // Should fail due to timeout
     }
@@ -940,7 +956,7 @@ mod tests {
         let mut hook = Hook::new_inline_hook(HookTrigger::PerPrompt, "echo 'test'".to_string());
         hook.disabled = true;
 
-        let results = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
+        let results = executor.run_hooks(vec![&hook], &mut vec![], None).await.unwrap();
 
         assert_eq!(results.len(), 0); // Disabled hook should not run
     }
@@ -952,14 +968,14 @@ mod tests {
         hook.cache_ttl_seconds = 1;
 
         // First execution
-        let results1 = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
+        let results1 = executor.run_hooks(vec![&hook], &mut vec![], None).await.unwrap();
         assert_eq!(results1.len(), 1);
 
         // Wait for cache to expire
         sleep(Duration::from_millis(1001)).await;
 
         // Second execution should run command again
-        let results2 = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
+        let results2 = executor.run_hooks(vec![&hook], &mut vec![], None).await.unwrap();
         assert_eq!(results2.len(), 1);
     }
 
@@ -1008,7 +1024,7 @@ mod tests {
         let mut hook = Hook::new_inline_hook(HookTrigger::PerPrompt, command.to_string());
         hook.max_output_size = 100;
 
-        let results = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
+        let results = executor.run_hooks(vec![&hook], &mut vec![], None).await.unwrap();
 
         assert!(results[0].1.len() <= hook.max_output_size + " ... truncated".len());
     }
@@ -1026,7 +1042,7 @@ mod tests {
 
         let hook = Hook::new_inline_hook(HookTrigger::PerPrompt, command.to_string());
 
-        let results = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
+        let results = executor.run_hooks(vec![&hook], &mut vec![], None).await.unwrap();
 
         assert_eq!(results.len(), 1, "Command execution should succeed");
 

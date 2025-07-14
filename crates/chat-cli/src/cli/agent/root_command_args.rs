@@ -192,4 +192,31 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn test_agent_subcommand_create() {
+        assert_parse!(
+            ["agent", "create", "--name", "some_agent", "--from", "some_old_agent"],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Create {
+                    name: "some_agent".to_string(),
+                    path: None,
+                    from: Some("some_old_agent".to_string())
+                })
+            })
+        );
+    }
+
+    #[test]
+    fn test_agent_subcommand_rename() {
+        assert_parse!(
+            ["agent", "rename", "--agent", "old_name", "--new-name", "new_name"],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Rename {
+                    agent: "old_name".to_string(),
+                    new_name: "new_name".to_string(),
+                })
+            })
+        );
+    }
 }
