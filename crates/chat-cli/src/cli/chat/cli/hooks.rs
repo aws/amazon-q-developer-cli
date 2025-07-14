@@ -644,8 +644,8 @@ impl HooksSubcommand {
             HooksSubcommand::Remove { .. } => "remove",
             HooksSubcommand::Enable { .. } => "enable",
             HooksSubcommand::Disable { .. } => "disable",
-            HooksSubcommand::EnableAll => "enableall",
-            HooksSubcommand::DisableAll => "disableall",
+            HooksSubcommand::EnableAll => "enable-all",
+            HooksSubcommand::DisableAll => "disable-all",
             HooksSubcommand::Show => "show",
         }
     }

@@ -393,7 +393,7 @@ impl ToolsSubcommand {
             ToolsSubcommand::Schema => "schema",
             ToolsSubcommand::Trust { .. } => "trust",
             ToolsSubcommand::Untrust { .. } => "untrust",
-            ToolsSubcommand::TrustAll => "trustall",
+            ToolsSubcommand::TrustAll => "trust-all",
             ToolsSubcommand::Reset => "reset",
         }
     }
