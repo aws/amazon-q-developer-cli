@@ -56,10 +56,10 @@ pub enum AgentSubcommand {
         /// Name of the agent to be created
         #[arg(long, short)]
         name: String,
-        /// The path in which the agent shall be saved. If a path is not provided, Q CLI shall
-        /// create this config in the global agent directory
+        /// The directory where the agent will be saved. If not provided, the agent will be saved in
+        /// the global agent directory
         #[arg(long, short)]
-        path: Option<String>,
+        directory: Option<String>,
         /// The name of an agent that shall be used as the starting point for the agent creation
         #[arg(long, short)]
         from: Option<String>,
@@ -132,9 +132,9 @@ impl AgentSubcommand {
                 highlight_json(&mut session.stderr, pretty.as_str())
                     .map_err(|e| ChatError::Custom(format!("Error printing agent schema: {e}").into()))?;
             },
-            Self::Create { name, path, from } => {
+            Self::Create { name, directory, from } => {
                 let mut agents = Agents::load(os, None, true, &mut session.stderr).await;
-                let path_with_file_name = create_agent(os, &mut agents, name.clone(), path, from)
+                let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from)
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
                 let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());

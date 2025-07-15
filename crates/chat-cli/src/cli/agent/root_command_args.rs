@@ -42,10 +42,10 @@ pub enum AgentSubcommands {
         /// Name of the agent to be created
         #[arg(long, short)]
         name: String,
-        /// The path in which the agent shall be saved. If a path is not provided, Q CLI shall
-        /// create this config in the global agent directory
+        /// The directory where the agent will be saved. If not provided, the agent will be saved in
+        /// the global agent directory
         #[arg(long, short)]
-        path: Option<String>,
+        directory: Option<String>,
         /// The name of an agent that shall be used as the starting point for the agent creation
         #[arg(long, short)]
         from: Option<String>,
@@ -87,8 +87,8 @@ impl AgentArgs {
 
                 writeln!(stderr, "{}", output_str)?;
             },
-            Some(AgentSubcommands::Create { name, path, from }) => {
-                let path_with_file_name = create_agent(os, &mut agents, name.clone(), path, from).await?;
+            Some(AgentSubcommands::Create { name, directory, from }) => {
+                let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from).await?;
                 let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
                 let mut cmd = std::process::Command::new(editor_cmd);
 
@@ -104,7 +104,10 @@ impl AgentArgs {
                     );
                 };
                 if let Err(e) = serde_json::from_slice::<Agent>(&content) {
-                    bail!("Post write validation failed for agent '{name}'. Malformed config detected: {e}");
+                    bail!(
+                        "Post write validation failed for agent '{name}' at path: {}. Malformed config detected: {e}",
+                        path_with_file_name.display()
+                    );
                 }
 
                 writeln!(
@@ -134,8 +137,8 @@ pub async fn create_agent(
         let path = PathBuf::from(path);
 
         // If path points to a file, strip the filename to get the directory
-        if path.is_file() || (path.extension().is_some() && !path.is_dir()) {
-            bail!("Only supply the directory. File name is derived from the name of the agent specified. Aborting");
+        if !path.is_dir() {
+            bail!("Path must be a directory");
         }
 
         let last_three_segments = agent_config_dir();
@@ -235,7 +238,7 @@ mod tests {
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Create {
                     name: "some_agent".to_string(),
-                    path: None,
+                    directory: None,
                     from: Some("some_old_agent".to_string())
                 })
             })

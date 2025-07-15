@@ -156,6 +156,7 @@ pub fn chat_local_agent_dir() -> Result<PathBuf> {
 /// This directory contains agent configuration files for Amazon Q.
 /// The path is relative and should be joined with either the home directory
 /// for global agents or the current working directory for local agents.
+// TODO [dingfeli]: implement Brandon's suggestion: https://github.com/aws/amazon-q-developer-cli/pull/2307#discussion_r2207989985
 pub fn agent_config_dir() -> PathBuf {
     PathBuf::from(".aws/amazonq/agents")
 }
