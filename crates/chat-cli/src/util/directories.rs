@@ -151,6 +151,11 @@ pub fn chat_local_agent_dir() -> Result<PathBuf> {
     Ok(cwd.join(agent_config_dir()))
 }
 
+/// The relative path to the agent configuration directory
+///
+/// This directory contains agent configuration files for Amazon Q.
+/// The path is relative and should be joined with either the home directory
+/// for global agents or the current working directory for local agents.
 pub fn agent_config_dir() -> PathBuf {
     PathBuf::from(".aws/amazonq/agents")
 }
