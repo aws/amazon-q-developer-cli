@@ -145,6 +145,17 @@ impl AgentSubcommand {
                     return Err(ChatError::Custom("Editor process did not exit with success".into()));
                 }
 
+                let Ok(content) = os.fs.read(&path_with_file_name).await else {
+                    return Err(ChatError::Custom(
+                        "Post write validation failed. Error opening file. Aborting".into(),
+                    ));
+                };
+                if let Err(e) = serde_json::from_slice::<Agent>(&content) {
+                    return Err(ChatError::Custom(
+                        format!("Post write validation failed. Malformed config detected: {e}").into(),
+                    ));
+                }
+
                 execute!(
                     session.stderr,
                     style::SetForegroundColor(Color::Green),

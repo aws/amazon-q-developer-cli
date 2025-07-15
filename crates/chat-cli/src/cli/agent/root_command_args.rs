@@ -11,10 +11,16 @@ use eyre::{
     bail,
 };
 
-use super::Agents;
+use super::{
+    Agent,
+    Agents,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::directories;
+use crate::util::directories::{
+    self,
+    agent_config_dir,
+};
 
 #[derive(Clone, Debug, Subcommand, PartialEq, Eq)]
 pub enum AgentSubcommands {
@@ -91,6 +97,13 @@ impl AgentArgs {
                     bail!("Editor process did not exit with success");
                 }
 
+                let Ok(content) = os.fs.read(&path_with_file_name).await else {
+                    bail!("Post write validation failed. Error opening file. Aborting");
+                };
+                if let Err(e) = serde_json::from_slice::<Agent>(&content) {
+                    bail!("Post write validation failed. Malformed config detected: {e}");
+                }
+
                 writeln!(
                     stderr,
                     "\n📁 Created agent {} '{}'\n",
@@ -115,23 +128,14 @@ pub async fn create_agent(
     from: Option<String>,
 ) -> Result<PathBuf> {
     let path = if let Some(path) = path {
-        let mut path = PathBuf::from(path);
+        let path = PathBuf::from(path);
 
         // If path points to a file, strip the filename to get the directory
         if path.is_file() || (path.extension().is_some() && !path.is_dir()) {
-            path = path.parent().unwrap_or(&path).to_path_buf();
+            bail!("Only supply the directory. File name is derived from the name of the agent specified. Aborting");
         }
 
-        let global_agent_path = directories::chat_global_agent_path(os)?;
-        let last_three_segments: PathBuf = global_agent_path
-            .components()
-            .rev()
-            .take(3)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-
+        let last_three_segments = agent_config_dir();
         if path.ends_with(&last_three_segments) {
             path
         } else {
@@ -159,7 +163,9 @@ pub async fn create_agent(
     };
     let path_with_file_name = path.join(format!("{name}.json"));
 
-    os.fs.create_dir_all(&path).await?;
+    if !path.exists() {
+        os.fs.create_dir_all(&path).await?;
+    }
     os.fs.create_new(&path_with_file_name).await?;
     os.fs.write(&path_with_file_name, prepopulated_content).await?;
 

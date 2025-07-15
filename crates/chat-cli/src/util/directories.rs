@@ -142,13 +142,17 @@ pub fn chat_legacy_mcp_config(os: &Os) -> Result<PathBuf> {
 
 /// The directory to the directory containing global agents
 pub fn chat_global_agent_path(os: &Os) -> Result<PathBuf> {
-    Ok(home_dir(os)?.join(".aws").join("amazonq").join("agents"))
+    Ok(home_dir(os)?.join(agent_config_dir()))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.
 pub fn chat_local_agent_dir() -> Result<PathBuf> {
     let cwd = std::env::current_dir()?;
-    Ok(cwd.join(".aws").join("amazonq").join("agents"))
+    Ok(cwd.join(agent_config_dir()))
+}
+
+pub fn agent_config_dir() -> PathBuf {
+    PathBuf::from(".aws/amazonq/agents")
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.
