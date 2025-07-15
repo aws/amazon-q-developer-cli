@@ -215,17 +215,23 @@ impl Completer for ChatCompleter {
 pub struct ChatHinter {
     /// Command history for providing suggestions based on past commands
     history: Vec<String>,
+    /// Whether history-based hints are enabled
+    history_hints_enabled: bool,
 }
 
 impl ChatHinter {
     /// Creates a new ChatHinter instance
-    pub fn new() -> Self {
-        Self { history: Vec::new() }
+    pub fn new(history_hints_enabled: bool) -> Self {
+        Self {
+            history: Vec::new(),
+            history_hints_enabled,
+        }
     }
 
     /// Updates the history with a new command
     pub fn update_history(&mut self, command: &str) {
-        if !command.trim().is_empty() {
+        let command = command.trim();
+        if !command.is_empty() && !command.contains('\n') && !command.contains('\r') {
             self.history.push(command.to_string());
         }
     }
@@ -245,12 +251,16 @@ impl ChatHinter {
                 .map(|cmd| cmd[line.len()..].to_string());
         }
 
-        // Try to find a hint from history
-        self.history
-            .iter()
-            .rev() // Start from most recent
-            .find(|cmd| cmd.starts_with(line) && cmd.len() > line.len())
-            .map(|cmd| cmd[line.len()..].to_string())
+        // Try to find a hint from history if history hints are enabled
+        if self.history_hints_enabled {
+            return self.history
+                .iter()
+                .rev() // Start from most recent
+                .find(|cmd| cmd.starts_with(line) && cmd.len() > line.len())
+                .map(|cmd| cmd[line.len()..].to_string());
+        }
+
+        None
     }
 }
 
@@ -366,11 +376,19 @@ pub fn rl(
         .completion_type(CompletionType::List)
         .edit_mode(edit_mode)
         .build();
+
+    // Default to disabled if setting doesn't exist
+    let history_hints_enabled = os
+        .database
+        .settings
+        .get_bool(Setting::ChatEnableHistoryHints)
+        .unwrap_or(false);
     let h = ChatHelper {
         completer: ChatCompleter::new(sender, receiver),
-        hinter: ChatHinter::new(),
+        hinter: ChatHinter::new(history_hints_enabled),
         validator: MultiLineValidator,
     };
+
     let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(h));
 
@@ -401,6 +419,7 @@ mod tests {
     use rustyline::highlight::Highlighter;
 
     use super::*;
+
     #[test]
     fn test_chat_completer_command_completion() {
         let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
@@ -448,7 +467,7 @@ mod tests {
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(true),
             validator: MultiLineValidator,
         };
 
@@ -464,7 +483,7 @@ mod tests {
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(true),
             validator: MultiLineValidator,
         };
 
@@ -480,7 +499,7 @@ mod tests {
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(true),
             validator: MultiLineValidator,
         };
 
@@ -496,7 +515,7 @@ mod tests {
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(true),
             validator: MultiLineValidator,
         };
 
@@ -515,7 +534,7 @@ mod tests {
         let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(),
+            hinter: ChatHinter::new(true),
             validator: MultiLineValidator,
         };
 
@@ -527,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_chat_hinter_command_hint() {
-        let hinter = ChatHinter::new();
+        let hinter = ChatHinter::new(true);
 
         // Test hint for a command
         let line = "/he";
@@ -547,23 +566,29 @@ mod tests {
         let pos = line.len();
         let hint = hinter.hint(line, pos, &ctx);
         assert_eq!(hint, None);
+
+        // Test hint for a multi-line command
+        let line = "/abcd\nefg";
+        let pos = line.len();
+        let hint = hinter.hint(line, pos, &ctx);
+        assert_eq!(hint, None);
     }
 
     #[test]
-    fn test_chat_hinter_history_hint() {
-        let mut hinter = ChatHinter::new();
+    fn test_chat_hinter_history_hint_disabled() {
+        let mut hinter = ChatHinter::new(false);
 
         // Add some history
         hinter.update_history("Hello, world!");
         hinter.update_history("How are you?");
 
-        // Test hint from history
+        // Test hint from history - should be None since history hints are disabled
         let line = "How";
         let pos = line.len();
         let empty_history = DefaultHistory::new();
         let ctx = Context::new(&empty_history);
 
         let hint = hinter.hint(line, pos, &ctx);
-        assert_eq!(hint, Some(" are you?".to_string()));
+        assert_eq!(hint, None);
     }
 }

@@ -33,7 +33,7 @@ To disable this behavior, run: `q settings chat.disableAutoCompaction true`"
 )]
 pub struct CompactArgs {
     /// The prompt to use when generating the summary
-    prompt: Option<String>,
+    prompt: Vec<String>,
     #[arg(long)]
     show_summary: bool,
     /// The number of user and assistant message pairs to exclude from the summarization.
@@ -51,8 +51,14 @@ pub struct CompactArgs {
 impl CompactArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let default = CompactStrategy::default();
+        let prompt = if self.prompt.is_empty() {
+            None
+        } else {
+            Some(self.prompt.join(" "))
+        };
+
         session
-            .compact_history(os, self.prompt, self.show_summary, CompactStrategy {
+            .compact_history(os, prompt, self.show_summary, CompactStrategy {
                 messages_to_exclude: self.messages_to_exclude.unwrap_or(default.messages_to_exclude),
                 truncate_large_messages: self.truncate_large_messages.unwrap_or(default.truncate_large_messages),
                 max_message_length: self.max_message_length.map_or(default.max_message_length, |v| {

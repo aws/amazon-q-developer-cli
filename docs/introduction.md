@@ -2,6 +2,4 @@
 
 Welcome to the Amazon Q CLI developer documentation.
 
-These docs are a work in progress and subject to change.
-
-For information on configuring agents, see [The Agent Format](./the-agent-format.md)
+These docs are experimental, work in progress, and subject to change. As of now, they do not represent latest stable builds, instead documenting the functionality of development builds.

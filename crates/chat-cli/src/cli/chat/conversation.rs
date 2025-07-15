@@ -360,7 +360,10 @@ impl ConversationState {
         // Run hooks and add to conversation start and next user message.
         let mut conversation_start_context = None;
         if let (true, Some(cm)) = (run_hooks, self.context_manager.as_mut()) {
-            let hook_results = cm.run_hooks(output).await?;
+            // Get the user prompt from next_message if available
+            let user_prompt = self.next_message.as_ref().and_then(|m| m.prompt());
+            let hook_results = cm.run_hooks(output, user_prompt).await?;
+
             conversation_start_context = Some(format_hook_context(hook_results.iter(), HookTrigger::ConversationStart));
 
             // add per prompt content to next_user_message if available
