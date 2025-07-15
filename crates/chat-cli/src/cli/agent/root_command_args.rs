@@ -98,10 +98,13 @@ impl AgentArgs {
                 }
 
                 let Ok(content) = os.fs.read(&path_with_file_name).await else {
-                    bail!("Post write validation failed. Error opening file. Aborting");
+                    bail!(
+                        "Post write validation failed. Error opening {}. Aborting",
+                        path_with_file_name.display()
+                    );
                 };
                 if let Err(e) = serde_json::from_slice::<Agent>(&content) {
-                    bail!("Post write validation failed. Malformed config detected: {e}");
+                    bail!("Post write validation failed for agent '{name}'. Malformed config detected: {e}");
                 }
 
                 writeln!(
@@ -113,7 +116,7 @@ impl AgentArgs {
             },
             Some(AgentSubcommands::Rename { agent, new_name }) => {
                 rename_agent(os, &mut agents, agent.clone(), new_name.clone()).await?;
-                writeln!(stderr, "\n✓ Renamed agent '{}' to {}\n", agent, new_name)?;
+                writeln!(stderr, "\n✓ Renamed agent '{}' to '{}'\n", agent, new_name)?;
             },
         }
         Ok(ExitCode::SUCCESS)

@@ -147,12 +147,17 @@ impl AgentSubcommand {
 
                 let Ok(content) = os.fs.read(&path_with_file_name).await else {
                     return Err(ChatError::Custom(
-                        "Post write validation failed. Error opening file. Aborting".into(),
+                        format!(
+                            "Post write validation failed. Error opening {}. Aborting",
+                            path_with_file_name.display()
+                        )
+                        .into(),
                     ));
                 };
                 if let Err(e) = serde_json::from_slice::<Agent>(&content) {
                     return Err(ChatError::Custom(
-                        format!("Post write validation failed. Malformed config detected: {e}").into(),
+                        format!("Post write validation failed for agent '{name}'. Malformed config detected: {e}")
+                            .into(),
                     ));
                 }
 
