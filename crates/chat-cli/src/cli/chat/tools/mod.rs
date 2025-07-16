@@ -55,6 +55,24 @@ pub const NATIVE_TOOLS: [&str; 7] = [
     "thinking",
 ];
 
+/// Context for tool execution
+#[derive(Debug, Clone)]
+pub struct ToolContext {
+    pub full_context: bool,
+}
+
+impl Default for ToolContext {
+    fn default() -> Self {
+        Self { full_context: false }
+    }
+}
+
+impl ToolContext {
+    pub fn new(full_context: bool) -> Self {
+        Self { full_context }
+    }
+}
+
 /// Represents an executable tool use.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
@@ -103,9 +121,9 @@ impl Tool {
     }
 
     /// Invokes the tool asynchronously
-    pub async fn invoke(&self, os: &Os, stdout: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, stdout: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
         match self {
-            Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
+            Tool::FsRead(fs_read) => fs_read.invoke(os, stdout, ctx).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout).await,
             Tool::ExecuteCommand(execute_command) => execute_command.invoke(stdout).await,
             Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,

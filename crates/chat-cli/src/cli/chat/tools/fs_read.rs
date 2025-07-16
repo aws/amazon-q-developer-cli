@@ -30,6 +30,7 @@ use super::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
+    ToolContext,
     format_path,
     sanitize_path_tool_arg,
 };
@@ -214,10 +215,10 @@ impl FsRead {
         }
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
         if self.operations.len() == 1 {
             // Single operation - return result directly
-            self.operations[0].invoke(os, updates).await
+            self.operations[0].invoke(os, updates, ctx).await
         } else {
             // Multiple operations - combine results
             let mut combined_results = Vec::new();
@@ -227,7 +228,7 @@ impl FsRead {
             let mut failed_ops = 0usize;
 
             for (i, op) in self.operations.iter().enumerate() {
-                match op.invoke(os, updates).await {
+                match op.invoke(os, updates, ctx).await {
                     Ok(result) => {
                         success_ops += 1;
 
@@ -324,10 +325,10 @@ impl FsReadOperation {
         }
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
         match self {
-            FsReadOperation::Line(fs_line) => fs_line.invoke(os, updates).await,
-            FsReadOperation::Directory(fs_directory) => fs_directory.invoke(os, updates).await,
+            FsReadOperation::Line(fs_line) => fs_line.invoke(os, updates, ctx).await,
+            FsReadOperation::Directory(fs_directory) => fs_directory.invoke(os, updates, ctx).await,
             FsReadOperation::Search(fs_search) => fs_search.invoke(os, updates).await,
             FsReadOperation::Image(fs_image) => fs_image.invoke(updates).await,
         }
@@ -446,7 +447,7 @@ impl FsLine {
         }
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(os, &self.path);
         debug!(?path, "Reading");
         let file_bytes = os.fs.read(&path).await?;
@@ -478,10 +479,10 @@ impl FsLine {
             .join("\n");
 
         let byte_count = file_contents.len();
-        if byte_count > MAX_TOOL_RESPONSE_SIZE {
+        if !ctx.full_context && byte_count > MAX_TOOL_RESPONSE_SIZE {
             bail!(
                 "This tool only supports reading {MAX_TOOL_RESPONSE_SIZE} bytes at a
-time. You tried to read {byte_count} bytes. Try executing with fewer lines specified."
+time. You tried to read {byte_count} bytes. Try executing with fewer lines specified or use --full-context flag."
             );
         }
 
@@ -649,7 +650,7 @@ impl FsDirectory {
         )?)
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, ctx: &ToolContext) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(os, &self.path);
         let max_depth = self.depth();
         debug!(?path, max_depth, "Reading directory at path with depth");
@@ -727,9 +728,9 @@ impl FsDirectory {
         let file_count = result.len();
         let result = result.join("\n");
         let byte_count = result.len();
-        if byte_count > MAX_TOOL_RESPONSE_SIZE {
+        if !ctx.full_context && byte_count > MAX_TOOL_RESPONSE_SIZE {
             bail!(
-                "This tool only supports reading up to {MAX_TOOL_RESPONSE_SIZE} bytes at a time. You tried to read {byte_count} bytes ({file_count} files). Try executing with fewer lines specified."
+                "This tool only supports reading up to {MAX_TOOL_RESPONSE_SIZE} bytes at a time. You tried to read {byte_count} bytes ({file_count} files). Try executing with fewer lines specified or use --full-context flag."
             );
         }
 
@@ -873,6 +874,7 @@ mod tests {
         let os = setup_test_directory().await;
         let lines = TEST_FILE_CONTENTS.lines().collect::<Vec<_>>();
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
 
         macro_rules! assert_lines {
             ($start_line:expr, $end_line:expr, $expected:expr) => {
@@ -885,7 +887,7 @@ mod tests {
                 });
                 let output = serde_json::from_value::<FsRead>(v)
                     .unwrap()
-                    .invoke(&os, &mut stdout)
+                    .invoke(&os, &mut stdout, &ctx)
                     .await
                     .unwrap();
 
@@ -910,6 +912,7 @@ mod tests {
     async fn test_fs_read_line_past_eof() {
         let os = setup_test_directory().await;
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
         let v = serde_json::json!({
             "operations": [{
             "path": TEST_FILE_PATH,
@@ -919,7 +922,7 @@ mod tests {
         assert!(
             serde_json::from_value::<FsRead>(v)
                 .unwrap()
-                .invoke(&os, &mut stdout)
+                .invoke(&os, &mut stdout, &ctx)
                 .await
                 .is_err()
         );
@@ -943,6 +946,7 @@ mod tests {
     async fn test_fs_read_directory_invoke() {
         let os = setup_test_directory().await;
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
 
         // Testing without depth
         let v = serde_json::json!({
@@ -952,7 +956,7 @@ mod tests {
         }]});
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -971,7 +975,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -991,13 +995,14 @@ mod tests {
     async fn test_fs_read_search_invoke() {
         let os = setup_test_directory().await;
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
 
         macro_rules! invoke_search {
             ($value:tt) => {{
                 let v = serde_json::json!($value);
                 let output = serde_json::from_value::<FsRead>(v)
                     .unwrap()
-                    .invoke(&os, &mut stdout)
+                    .invoke(&os, &mut stdout, &ctx)
                     .await
                     .unwrap();
 
@@ -1032,6 +1037,7 @@ mod tests {
     async fn test_fs_read_non_utf8_binary_file() {
         let os = Os::new().await.unwrap();
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
 
         let binary_data = vec![0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8];
         let binary_file_path = "/binary_test.dat";
@@ -1044,7 +1050,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -1064,6 +1070,7 @@ mod tests {
     async fn test_fs_read_latin1_encoded_file() {
         let os = Os::new().await.unwrap();
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
 
         let latin1_data = vec![99, 97, 102, 233]; // "café" in Latin-1
         let latin1_file_path = "/latin1_test.txt";
@@ -1076,7 +1083,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -1096,6 +1103,7 @@ mod tests {
     async fn test_fs_search_non_utf8_file() {
         let os = Os::new().await.unwrap();
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
 
         let mut mixed_data = Vec::new();
         mixed_data.extend_from_slice(b"Hello world\n");
@@ -1113,7 +1121,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -1137,7 +1145,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -1157,6 +1165,7 @@ mod tests {
     async fn test_fs_read_windows1252_encoded_file() {
         let os = Os::new().await.unwrap();
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
 
         let mut windows1252_data = Vec::new();
         windows1252_data.extend_from_slice(b"Text with ");
@@ -1174,7 +1183,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -1194,6 +1203,7 @@ mod tests {
     async fn test_fs_search_pattern_with_replacement_chars() {
         let os = Os::new().await.unwrap();
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
 
         let mut data_with_invalid_utf8 = Vec::new();
         data_with_invalid_utf8.extend_from_slice(b"Line 1: caf");
@@ -1214,7 +1224,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -1232,6 +1242,7 @@ mod tests {
     async fn test_fs_read_empty_file_with_invalid_utf8() {
         let os = Os::new().await.unwrap();
         let mut stdout = std::io::stdout();
+        let ctx = ToolContext::default();
 
         let invalid_only_data = vec![0xff, 0xfe, 0xfd];
         let invalid_only_file_path = "/invalid_only_test.txt";
@@ -1244,7 +1255,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -1263,7 +1274,7 @@ mod tests {
         });
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
 
@@ -1283,6 +1294,7 @@ mod tests {
     async fn test_fs_read_batch_mixed_operations() {
         let os = setup_test_directory().await;
         let mut stdout = Vec::new();
+        let ctx = ToolContext::default();
 
         let v = serde_json::json!({
             "operations": [
@@ -1295,7 +1307,7 @@ mod tests {
 
         let output = serde_json::from_value::<FsRead>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &ctx)
             .await
             .unwrap();
         // All text operations should return combined text
