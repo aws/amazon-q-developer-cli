@@ -1,6 +1,7 @@
 pub mod custom_tool;
 pub mod execute;
 pub mod fs_read;
+pub mod fs_watch;
 pub mod fs_write;
 pub mod gh_issue;
 pub mod knowledge;
@@ -23,6 +24,7 @@ use custom_tool::CustomTool;
 use execute::ExecuteCommand;
 use eyre::Result;
 use fs_read::FsRead;
+use fs_watch::FsWatch;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
 use knowledge::Knowledge;
@@ -42,9 +44,10 @@ use crate::cli::agent::{
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
-pub const NATIVE_TOOLS: [&str; 7] = [
+pub const NATIVE_TOOLS: [&str; 8] = [
     "fs_read",
     "fs_write",
+    "fs_watch",
     #[cfg(windows)]
     "execute_cmd",
     #[cfg(not(windows))]
@@ -61,6 +64,7 @@ pub const NATIVE_TOOLS: [&str; 7] = [
 pub enum Tool {
     FsRead(FsRead),
     FsWrite(FsWrite),
+    FsWatch(FsWatch),
     ExecuteCommand(ExecuteCommand),
     UseAws(UseAws),
     Custom(CustomTool),
@@ -75,6 +79,7 @@ impl Tool {
         match self {
             Tool::FsRead(_) => "fs_read",
             Tool::FsWrite(_) => "fs_write",
+            Tool::FsWatch(_) => "fs_watch",
             #[cfg(windows)]
             Tool::ExecuteCommand(_) => "execute_cmd",
             #[cfg(not(windows))]
@@ -93,6 +98,7 @@ impl Tool {
         match self {
             Tool::FsRead(fs_read) => fs_read.eval_perm(agent),
             Tool::FsWrite(fs_write) => fs_write.eval_perm(agent),
+            Tool::FsWatch(fs_watch) => fs_watch.eval_perm(agent),
             Tool::ExecuteCommand(execute_command) => execute_command.eval_perm(agent),
             Tool::UseAws(use_aws) => use_aws.eval_perm(agent),
             Tool::Custom(custom_tool) => custom_tool.eval_perm(agent),
@@ -107,6 +113,7 @@ impl Tool {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout).await,
+            Tool::FsWatch(fs_watch) => fs_watch.invoke(os, stdout).await,
             Tool::ExecuteCommand(execute_command) => execute_command.invoke(stdout).await,
             Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
@@ -121,6 +128,7 @@ impl Tool {
         match self {
             Tool::FsRead(fs_read) => fs_read.queue_description(os, output).await,
             Tool::FsWrite(fs_write) => fs_write.queue_description(os, output),
+            Tool::FsWatch(fs_watch) => fs_watch.queue_description(output),
             Tool::ExecuteCommand(execute_command) => execute_command.queue_description(output),
             Tool::UseAws(use_aws) => use_aws.queue_description(output),
             Tool::Custom(custom_tool) => custom_tool.queue_description(output),
@@ -135,6 +143,7 @@ impl Tool {
         match self {
             Tool::FsRead(fs_read) => fs_read.validate(os).await,
             Tool::FsWrite(fs_write) => fs_write.validate(os).await,
+            Tool::FsWatch(fs_watch) => fs_watch.validate(os).await,
             Tool::ExecuteCommand(execute_command) => execute_command.validate(os).await,
             Tool::UseAws(use_aws) => use_aws.validate(os).await,
             Tool::Custom(custom_tool) => custom_tool.validate(os).await,

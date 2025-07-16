@@ -149,6 +149,47 @@
       ]
     }
   },
+  "fs_watch": {
+    "name": "fs_watch",
+    "description": "Watch filesystem changes and get notifications when files or directories are modified, created, or deleted. Supports watching multiple paths with customizable settings.\n\nAvailable operations:\n- add: Start watching specified paths for changes\n- remove: Stop watching specified paths\n- list: Show currently watched paths\n- stop: Stop all filesystem watching\n\nExamples:\n1. Watch directory: {\"operation\": {\"type\": \"add\", \"paths\": [\"/path/to/watch\"], \"recursive\": true}}\n2. Stop watching: {\"operation\": {\"type\": \"remove\", \"paths\": [\"/path/to/stop\"]}}\n3. List watched: {\"operation\": {\"type\": \"list\"}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "object",
+          "description": "The filesystem watch operation to perform",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["add", "remove", "list", "stop"],
+              "description": "Type of operation: 'add' to start watching paths, 'remove' to stop watching paths, 'list' to show watched paths, 'stop' to stop all watching"
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Array of file or directory paths to watch/unwatch. Required for 'add' and 'remove' operations. Paths should be absolute or start with ~ for home directory."
+            },
+            "recursive": {
+              "type": "boolean",
+              "description": "Whether to watch directories recursively (default: true). Only used with 'add' operation.",
+              "default": true
+            },
+            "debounce_ms": {
+              "type": "integer",
+              "description": "Debounce time in milliseconds to prevent spam from rapid file changes (default: 500). Only used with 'add' operation.",
+              "default": 500,
+              "minimum": 50,
+              "maximum": 5000
+            }
+          },
+          "required": ["type"]
+        }
+      },
+      "required": ["operation"]
+    }
+  },
   "use_aws": {
     "name": "use_aws",
     "description": "Make an AWS CLI api call with the specified service, operation, and parameters. All arguments MUST conform to the AWS CLI specification. Should the output of the invocation indicate a malformed command, invoke help to obtain the the correct command.",
