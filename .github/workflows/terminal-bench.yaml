@@ -16,7 +16,7 @@ on:
 jobs:
   run-benchmark:
     # avoids disk storage issues
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest
     # makes these env vars available in main.py
     env:
       CHAT_DOWNLOAD_ROLE_ARN: ${{ secrets.CHAT_DOWNLOAD_ROLE_ARN }}
