@@ -142,13 +142,23 @@ pub fn chat_legacy_mcp_config(os: &Os) -> Result<PathBuf> {
 
 /// The directory to the directory containing global agents
 pub fn chat_global_agent_path(os: &Os) -> Result<PathBuf> {
-    Ok(home_dir(os)?.join(".aws").join("amazonq").join("agents"))
+    Ok(home_dir(os)?.join(agent_config_dir()))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.
 pub fn chat_local_agent_dir() -> Result<PathBuf> {
     let cwd = std::env::current_dir()?;
-    Ok(cwd.join(".aws").join("amazonq").join("agents"))
+    Ok(cwd.join(agent_config_dir()))
+}
+
+/// The relative path to the agent configuration directory
+///
+/// This directory contains agent configuration files for Amazon Q.
+/// The path is relative and should be joined with either the home directory
+/// for global agents or the current working directory for local agents.
+// TODO [dingfeli]: implement Brandon's suggestion: https://github.com/aws/amazon-q-developer-cli/pull/2307#discussion_r2207989985
+pub fn agent_config_dir() -> PathBuf {
+    PathBuf::from(".aws/amazonq/agents")
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.

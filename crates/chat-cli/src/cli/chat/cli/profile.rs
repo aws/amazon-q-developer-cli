@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::Write;
 
 use clap::Subcommand;
@@ -21,8 +22,13 @@ use syntect::util::{
     as_24_bit_terminal_escaped,
 };
 
-use crate::cli::agent::Agent;
-use crate::cli::agent::wrapper_types::Cold;
+use crate::cli::agent::{
+    Agent,
+    Agents,
+    Cold,
+    create_agent,
+    rename_agent,
+};
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -47,23 +53,40 @@ pub enum AgentSubcommand {
     /// List all available agents
     List,
     /// Create a new agent with the specified name
-    #[command(hide = true)]
-    Create { name: String },
+    Create {
+        /// Name of the agent to be created
+        #[arg(long, short)]
+        name: String,
+        /// The directory where the agent will be saved. If not provided, the agent will be saved in
+        /// the global agent directory
+        #[arg(long, short)]
+        directory: Option<String>,
+        /// The name of an agent that shall be used as the starting point for the agent creation
+        #[arg(long, short)]
+        from: Option<String>,
+    },
     /// Delete the specified agent
     #[command(hide = true)]
     Delete { name: String },
     /// Switch to the specified agent
     #[command(hide = true)]
     Set { name: String },
-    /// Rename an agent
-    #[command(hide = true)]
-    Rename { old_name: String, new_name: String },
+    /// Rename an agent. Should this be the current active agent, its changes will take effect upon
+    /// next launch
+    Rename {
+        /// Original name of the agent
+        #[arg(long, short)]
+        agent: String,
+        /// New name the agent shall be changed to
+        #[arg(long, short)]
+        new_name: String,
+    },
     /// Show agent config schema
     Schema,
 }
 
 impl AgentSubcommand {
-    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let agents = &session.conversation.agents;
 
         macro_rules! _print_err {
@@ -82,24 +105,21 @@ impl AgentSubcommand {
                 let profiles = agents.agents.values().collect::<Vec<_>>();
                 let active_profile = agents.get_active();
 
-                execute!(session.stderr, style::Print("\n"))?;
-                for profile in profiles {
-                    if active_profile.is_some_and(|p| p == profile) {
-                        execute!(
+                for (i, profile) in profiles.iter().enumerate() {
+                    if active_profile.is_some_and(|p| p == *profile) {
+                        queue!(
                             session.stderr,
                             style::SetForegroundColor(Color::Green),
                             style::Print("* "),
                             style::Print(&profile.name),
                             style::SetForegroundColor(Color::Reset),
-                            style::Print("\n")
                         )?;
                     } else {
-                        execute!(
-                            session.stderr,
-                            style::Print("  "),
-                            style::Print(&profile.name),
-                            style::Print("\n")
-                        )?;
+                        queue!(session.stderr, style::Print("  "), style::Print(&profile.name),)?;
+                    }
+
+                    if i < profiles.len().saturating_sub(1) {
+                        queue!(session.stderr, style::Print("\n"))?;
                     }
                 }
                 execute!(session.stderr, style::Print("\n"))?;
@@ -113,7 +133,74 @@ impl AgentSubcommand {
                 highlight_json(&mut session.stderr, pretty.as_str())
                     .map_err(|e| ChatError::Custom(format!("Error printing agent schema: {e}").into()))?;
             },
-            Self::Rename { .. } | Self::Set { .. } | Self::Delete { .. } | Self::Create { .. } => {
+            Self::Create { name, directory, from } => {
+                let mut agents = Agents::load(os, None, true, &mut session.stderr).await;
+                let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from)
+                    .await
+                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+                let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+                let mut cmd = std::process::Command::new(editor_cmd);
+
+                let status = cmd.arg(&path_with_file_name).status()?;
+                if !status.success() {
+                    return Err(ChatError::Custom("Editor process did not exit with success".into()));
+                }
+
+                let Ok(content) = os.fs.read(&path_with_file_name).await else {
+                    return Err(ChatError::Custom(
+                        format!(
+                            "Post write validation failed. Error opening {}. Aborting",
+                            path_with_file_name.display()
+                        )
+                        .into(),
+                    ));
+                };
+                if let Err(e) = serde_json::from_slice::<Agent>(&content) {
+                    return Err(ChatError::Custom(
+                        format!("Post write validation failed for agent '{name}'. Malformed config detected: {e}")
+                            .into(),
+                    ));
+                }
+
+                execute!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("Agent "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(name),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(" has been created successfully"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Changes take effect on next launch"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+            },
+            Self::Rename { agent, new_name } => {
+                let mut agents = Agents::load(os, None, true, &mut session.stderr).await;
+                rename_agent(os, &mut agents, agent.clone(), new_name.clone())
+                    .await
+                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+                execute!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("Agent "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(agent),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(" has been renamed to "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(new_name),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Changes take effect on next launch"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+            },
+            Self::Set { .. } | Self::Delete { .. } => {
                 // As part of the agent implementation, we are disabling the ability to
                 // switch / create profile after a session has started.
                 // TODO: perhaps revive this after we have a decision on profile create /
