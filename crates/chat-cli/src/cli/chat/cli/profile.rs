@@ -22,6 +22,7 @@ use syntect::util::{
 };
 
 use crate::cli::agent::Agent;
+use crate::cli::agent::wrapper_types::Cold;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -106,7 +107,7 @@ impl AgentSubcommand {
             Self::Schema => {
                 use schemars::schema_for;
 
-                let schema = schema_for!(Agent);
+                let schema = schema_for!(Agent<Cold>);
                 let pretty = serde_json::to_string_pretty(&schema)
                     .map_err(|e| ChatError::Custom(format!("Failed to convert agent schema to string: {e}").into()))?;
                 highlight_json(&mut session.stderr, pretty.as_str())

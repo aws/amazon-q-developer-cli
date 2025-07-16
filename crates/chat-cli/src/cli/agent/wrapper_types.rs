@@ -155,3 +155,14 @@ impl McpServerConfigWrapper {
         }
     }
 }
+
+/// This is a marker trait to be used in conjunction with [Cold]
+pub trait SerdeReady: for<'de> Deserialize<'de> + Serialize {}
+
+#[derive(Deserialize, Serialize)]
+pub struct Cold;
+
+impl SerdeReady for Cold {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Warm;

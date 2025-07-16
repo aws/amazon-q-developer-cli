@@ -138,7 +138,7 @@ impl AddArgs {
                 }))?;
 
                 mcp_servers.insert(self.name.clone(), tool);
-                let json = serde_json::to_string_pretty(&agent)?;
+                let json = serde_json::to_string_pretty(&agent.clone().freeze())?;
                 os.fs.write(config_path, json).await?;
                 writeln!(output, "✓ Added MCP server '{}' to agent {}\n", self.name, agent_name)?;
             },
@@ -206,7 +206,7 @@ impl RemoveArgs {
 
                 match config.remove(&self.name) {
                     Some(_) => {
-                        let json = serde_json::to_string_pretty(&agent)?;
+                        let json = serde_json::to_string_pretty(&agent.clone().freeze())?;
                         os.fs.write(config_path, json).await?;
                         writeln!(
                             output,

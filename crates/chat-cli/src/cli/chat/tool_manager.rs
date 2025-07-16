@@ -58,6 +58,7 @@ use crate::api_client::model::{
     ToolResultContentBlock,
     ToolResultStatus,
 };
+use crate::cli::agent::wrapper_types::Warm;
 use crate::cli::agent::{
     Agent,
     McpServerConfig,
@@ -154,7 +155,7 @@ pub struct ToolManagerBuilder {
     prompt_list_sender: Option<std::sync::mpsc::Sender<Vec<String>>>,
     prompt_list_receiver: Option<std::sync::mpsc::Receiver<Option<String>>>,
     conversation_id: Option<String>,
-    agent: Option<Agent>,
+    agent: Option<Agent<Warm>>,
 }
 
 impl ToolManagerBuilder {
@@ -173,7 +174,7 @@ impl ToolManagerBuilder {
         self
     }
 
-    pub fn agent(mut self, agent: Agent) -> Self {
+    pub fn agent(mut self, agent: Agent<Warm>) -> Self {
         if let McpServerConfigWrapper::Map(config) = &agent.mcp_servers {
             self.mcp_server_config.replace(config.clone());
         } else {
@@ -192,7 +193,8 @@ impl ToolManagerBuilder {
         mut output: Box<dyn Write + Send + Sync + 'static>,
         interactive: bool,
     ) -> eyre::Result<ToolManager> {
-        let McpServerConfig { mcp_servers } = self.mcp_server_config.ok_or(eyre::eyre!("Missing mcp server config"))?;
+        let McpServerConfig { mcp_servers, .. } =
+            self.mcp_server_config.ok_or(eyre::eyre!("Missing mcp server config"))?;
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
 
@@ -864,7 +866,7 @@ pub struct ToolManager {
 
     /// A collection of preferences that pertains to the conversation.
     /// As far as tool manager goes, this is relevant for tool and server filters
-    pub agent: Arc<Mutex<Agent>>,
+    pub agent: Arc<Mutex<Agent<Warm>>>,
 }
 
 impl Clone for ToolManager {

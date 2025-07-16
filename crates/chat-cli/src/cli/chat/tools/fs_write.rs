@@ -37,6 +37,7 @@ use super::{
     sanitize_path_tool_arg,
     supports_truecolor,
 };
+use crate::cli::agent::wrapper_types::Warm;
 use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
@@ -346,7 +347,7 @@ impl FsWrite {
         }
     }
 
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, agent: &Agent<Warm>) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {
