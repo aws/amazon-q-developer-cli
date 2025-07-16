@@ -207,6 +207,22 @@ impl ChatArgs {
             }
         }
 
+        if self.no_interactive {
+            // Prepend an explicit instruction for the model so that it does not
+            // solicit any further user interaction while running in a fully
+            // automated session. This helps ensure that executions launched with
+            // `--no-interactive` (optionally combined with `--trust-all-tools`) do
+            // not stall because the assistant asks questions such as "Would you like
+            // me to proceed?". The extra instruction is added only once – to the
+            // very first user message – and should not interfere with follow-up
+            // prompts when the CLI is used interactively.
+            const NON_INTERACTIVE_INSTRUCTION: &str = "NOTE: This session is running with '--no-interactive'. Do not ask for confirmation or additional input. Proceed automatically, using any necessary tools, and output the final result.";
+            input = Some(match input {
+                Some(existing) => format!("{NON_INTERACTIVE_INSTRUCTION}\n\n{existing}"),
+                None => NON_INTERACTIVE_INSTRUCTION.to_string(),
+            });
+        }
+
         let stdout = std::io::stdout();
         let mut stderr = std::io::stderr();
 
@@ -2386,7 +2402,7 @@ enum ActualSubscriptionStatus {
 //
 // 3. ConflictException (as an error):
 //    - The user already has an active subscription *with auto-renewal enabled*.
-//    - We return ActualSubscriptionStatus::Active since they don’t need to subscribe again.
+//    - We return ActualSubscriptionStatus::Active since they don't need to subscribe again.
 //
 // Also, it is currently not possible to subscribe or re-subscribe via console, only IDE/CLI.
 async fn get_subscription_status(os: &mut Os) -> Result<ActualSubscriptionStatus> {
