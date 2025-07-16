@@ -155,7 +155,7 @@ impl AgentSubcommand {
                         .into(),
                     ));
                 };
-                if let Err(e) = serde_json::from_slice::<Agent>(&content) {
+                if let Err(e) = serde_json::from_slice::<Agent<Cold>>(&content) {
                     return Err(ChatError::Custom(
                         format!("Post write validation failed for agent '{name}'. Malformed config detected: {e}")
                             .into(),

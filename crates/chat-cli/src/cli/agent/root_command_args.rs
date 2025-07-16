@@ -14,6 +14,7 @@ use eyre::{
 use super::{
     Agent,
     Agents,
+    Cold,
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
@@ -103,7 +104,7 @@ impl AgentArgs {
                         path_with_file_name.display()
                     );
                 };
-                if let Err(e) = serde_json::from_slice::<Agent>(&content) {
+                if let Err(e) = serde_json::from_slice::<Agent<Cold>>(&content) {
                     bail!(
                         "Post write validation failed for agent '{name}' at path: {}. Malformed config detected: {e}",
                         path_with_file_name.display()
@@ -163,7 +164,7 @@ pub async fn create_agent(
 
     let prepopulated_content = if let Some(from) = from {
         let agent_to_copy = agents.switch(from.as_str())?;
-        serde_json::to_string_pretty(agent_to_copy)?
+        serde_json::to_string_pretty(&agent_to_copy.clone().freeze())?
     } else {
         Default::default()
     };

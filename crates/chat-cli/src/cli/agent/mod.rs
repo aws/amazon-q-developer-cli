@@ -10,7 +10,10 @@ use std::io::{
     Write,
 };
 use std::marker::PhantomData;
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
 
 use context_migrate::ContextMigrate;
 use crossterm::style::{
@@ -35,17 +38,15 @@ use tracing::{
     error,
     warn,
 };
-use wrapper_types::{
-    Cold,
-    Warm,
-};
 pub use wrapper_types::{
+    Cold,
     CreateHooks,
     McpServerConfigWrapper,
     OriginalToolName,
     PromptHooks,
     SerdeReady,
     ToolSettingTarget,
+    Warm,
     alias_schema,
     tool_settings_schema,
 };
@@ -65,7 +66,7 @@ use crate::util::{
 mod context_migrate;
 mod mcp_config;
 mod root_command_args;
-mod wrapper_types;
+pub mod wrapper_types;
 
 pub use root_command_args::*;
 
@@ -139,7 +140,7 @@ pub struct Agent<T> {
     #[serde(skip)]
     pub path: Option<PathBuf>,
     #[serde(skip)]
-    phantom: std::marker::PhantomData<T>,
+    pub phantom: std::marker::PhantomData<T>,
 }
 
 impl Default for Agent<Warm> {
@@ -171,7 +172,7 @@ impl Default for Agent<Warm> {
 }
 
 impl Agent<Cold> {
-    pub fn thaw(mut self, path: &PathBuf, global_mcp_config: Option<&McpServerConfig>) -> eyre::Result<Agent<Warm>> {
+    pub fn thaw(mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> eyre::Result<Agent<Warm>> {
         let Self { mcp_servers, .. } = &mut self;
 
         let name = path
@@ -223,7 +224,7 @@ impl Agent<Cold> {
             create_hooks: self.create_hooks,
             prompt_hooks: self.prompt_hooks,
             tools_settings: self.tools_settings,
-            path: Some(path.clone()),
+            path: Some(path.to_path_buf()),
             phantom: PhantomData,
         })
     }
@@ -815,7 +816,7 @@ mod tests {
 
     #[test]
     fn test_deser() {
-        let agent = serde_json::from_str::<Agent>(INPUT).expect("Deserializtion failed");
+        let agent = serde_json::from_str::<Agent<Cold>>(INPUT).expect("Deserializtion failed");
         assert!(matches!(agent.mcp_servers, McpServerConfigWrapper::Map(_)));
         if let McpServerConfigWrapper::Map(config) = &agent.mcp_servers {
             assert!(config.mcp_servers.contains_key("fetch"));
@@ -1001,13 +1002,6 @@ mod tests {
         assert!(validate_agent_name("_invalid").is_err());
         assert!(validate_agent_name("invalid!").is_err());
         assert!(validate_agent_name("invalid space").is_err());
-    }
-
-    #[test]
-    fn test_schema_gen() {
-        use schemars::schema_for;
-        let schema = schema_for!(Agent);
-        println!("Schema for agent: {}", serde_json::to_string_pretty(&schema).unwrap());
     }
 }
 

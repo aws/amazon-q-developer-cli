@@ -227,7 +227,7 @@ impl ToolManagerBuilder {
                         style::Print("\n")
                     );
                     None
-                } else if server_name == "native" {
+                } else if server_name == "builtin" {
                     let _ = queue!(
                         output,
                         style::SetForegroundColor(style::Color::Red),
@@ -237,7 +237,7 @@ impl ToolManagerBuilder {
                         style::ResetColor,
                         style::Print(". Server name cannot contain reserved word "),
                         style::SetForegroundColor(style::Color::Yellow),
-                        style::Print("native"),
+                        style::Print("builtin"),
                         style::ResetColor,
                         style::Print(" (it is used to denote native tools)\n")
                     );
@@ -898,11 +898,16 @@ impl ToolManager {
         self.schema = {
             let tool_list = &self.agent.lock().await.tools;
             let is_allow_all = tool_list.len() == 1 && tool_list.first().is_some_and(|n| n == "*");
-            let is_allow_native = tool_list.iter().any(|t| t.as_str() == "@native");
+            let is_allow_native = tool_list.iter().any(|t| t.as_str() == "@builtin");
             let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?
                     .into_iter()
-                    .filter(|(name, _)| is_allow_all || is_allow_native || tool_list.contains(name))
+                    .filter(|(name, _)| {
+                        is_allow_all
+                            || is_allow_native
+                            || tool_list.contains(name)
+                            || tool_list.contains(&format!("@builtin/{name}"))
+                    })
                     .collect::<HashMap<_, _>>();
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled(os) {
                 tool_specs.remove("thinking");
