@@ -848,7 +848,6 @@ fn enforce_conversation_invariants(
 
     // If the last message from the assistant contains tool uses AND next_message is set, we need to
     // ensure that next_message contains tool results.
-    // if let (Some((_, AssistantMessage::ToolUse { tool_uses, .. }, _)), Some(user_msg)) = (
     if let (
         Some(HistoryEntry {
             assistant: AssistantMessage::ToolUse { tool_uses, .. },

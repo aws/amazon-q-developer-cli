@@ -5,7 +5,7 @@ pub mod endpoint;
 mod install_method;
 
 use core::{
-    ChatAddedMessage,
+    ChatAddedMessageParams,
     ToolUseEventBuilder,
 };
 use std::str::FromStr;
@@ -261,7 +261,7 @@ impl TelemetryThread {
         database: &Database,
         conversation_id: String,
         result: TelemetryResult,
-        data: ChatAddedMessage,
+        data: ChatAddedMessageParams,
     ) -> Result<(), TelemetryError> {
         let mut event = Event::new(EventType::ChatAddedMessage {
             conversation_id,
@@ -465,7 +465,7 @@ impl TelemetryClient {
         if let EventType::ChatAddedMessage {
             conversation_id,
             data:
-                ChatAddedMessage {
+                ChatAddedMessageParams {
                     message_id,
                     model,
                     time_to_first_chunk_ms,
@@ -655,7 +655,7 @@ mod test {
                 &database,
                 "conv_id".to_owned(),
                 TelemetryResult::Succeeded,
-                ChatAddedMessage {
+                ChatAddedMessageParams {
                     message_id: Some("message_id".to_owned()),
                     context_file_length: Some(123),
                     ..Default::default()

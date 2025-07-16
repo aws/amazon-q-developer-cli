@@ -152,7 +152,7 @@ impl Event {
                 conversation_id,
                 result,
                 data:
-                    ChatAddedMessage {
+                    ChatAddedMessageParams {
                         context_file_length,
                         message_id,
                         request_id,
@@ -340,7 +340,7 @@ impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
 
 /// Optional fields to add for a chatAddedMessage telemetry event.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
-pub struct ChatAddedMessage {
+pub struct ChatAddedMessageParams {
     pub message_id: Option<String>,
     pub request_id: Option<String>,
     pub context_file_length: Option<usize>,
@@ -388,7 +388,7 @@ pub enum EventType {
     ChatAddedMessage {
         conversation_id: String,
         result: TelemetryResult,
-        data: ChatAddedMessage,
+        data: ChatAddedMessageParams,
     },
     ToolUseSuggested {
         conversation_id: String,

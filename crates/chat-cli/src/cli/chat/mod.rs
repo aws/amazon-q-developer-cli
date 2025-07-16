@@ -137,7 +137,7 @@ use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 use crate::telemetry::core::{
-    ChatAddedMessage,
+    ChatAddedMessageParams,
     ToolUseEventBuilder,
 };
 use crate::telemetry::{
@@ -991,7 +991,6 @@ pub enum ChatState {
     ExecuteTools,
     /// Consume the response stream and display to the user.
     HandleResponseStream(crate::api_client::model::ConversationState),
-    // HandleResponseStream(SendMessageOutput),
     /// Compact the chat history.
     CompactHistory {
         /// Custom prompt to include as part of history compaction.
@@ -1150,11 +1149,10 @@ impl ChatSession {
         tokio::select! {
             res = self.compact_history_impl(os, custom_prompt, show_summary, strategy, request_metadata_clone) => res,
             Ok(_) = ctrl_c_stream.recv() => {
-                debug!(?request_metadata, "ctrlc received");
+                debug!(?request_metadata, "ctrlc received in compact history");
                 // Wait for handle_response to finish handling the ctrlc.
                 tokio::time::sleep(Duration::from_millis(5)).await;
                 let request_metadata = request_metadata.lock().await.take();
-                println!("??? {:?}", request_metadata);
                 self.send_chat_telemetry(
                     os,
                     TelemetryResult::Cancelled,
@@ -1914,15 +1912,9 @@ impl ChatSession {
     /// the response stream.
     ///
     /// In order to handle sigints while also keeping track of metadata about how the
-    /// response stream was handled, we need a couple extra parameters:
+    /// response stream was handled, we need an extra parameter:
     /// * `request_metadata_lock` - Updated with the [RequestMetadata] once it has been received
     ///   (either though a successful request, or on an error).
-    /// * `ctrl_c` - a broadcast receiver for whenever sigints are encountered.
-    /// * `cancel_token` - a [CancellationToken] to prevent handling the response stream on an error
-    ///   or sigint.
-    ///
-    /// The top-level caller is expected to check the value of `request_metadata_lock` when a
-    /// ctrl+c is sent to get the relevant request metadata.
     async fn handle_response(
         &mut self,
         os: &mut Os,
@@ -2469,7 +2461,7 @@ impl ChatSession {
         status_code: Option<u16>,
         md: Option<&RequestMetadata>,
     ) {
-        let data = ChatAddedMessage {
+        let data = ChatAddedMessageParams {
             request_id: md.and_then(|md| md.request_id.clone()),
             message_id: self.conversation.message_id().map(|s| s.to_owned()),
             context_file_length: self.conversation.context_message_length(),
