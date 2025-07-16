@@ -33,7 +33,6 @@ use super::{
     format_path,
     sanitize_path_tool_arg,
 };
-use crate::cli::agent::wrapper_types::Warm;
 use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
@@ -100,7 +99,7 @@ impl FsRead {
         }
     }
 
-    pub fn eval_perm(&self, agent: &Agent<Warm>) -> PermissionEvalResult {
+    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {

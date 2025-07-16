@@ -9,7 +9,6 @@ use std::io::{
     self,
     Write,
 };
-use std::marker::PhantomData;
 use std::path::{
     Path,
     PathBuf,
@@ -39,14 +38,11 @@ use tracing::{
     warn,
 };
 pub use wrapper_types::{
-    Cold,
     CreateHooks,
     McpServerConfigWrapper,
     OriginalToolName,
     PromptHooks,
-    SerdeReady,
     ToolSettingTarget,
-    Warm,
     alias_schema,
     tool_settings_schema,
 };
@@ -95,9 +91,9 @@ pub use root_command_args::*;
 /// Where agents are instantiated from their config, we would need to convert them from "cold" to
 /// "warm".
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
-#[serde(rename_all = "camelCase", bound = "T: SerdeReady")]
+#[serde(rename_all = "camelCase")]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
-pub struct Agent<T> {
+pub struct Agent {
     /// Agent names are derived from the file name. Thus they are skipped for
     /// serializing
     #[serde(skip)]
@@ -139,11 +135,9 @@ pub struct Agent<T> {
     pub tools_settings: HashMap<ToolSettingTarget, serde_json::Value>,
     #[serde(skip)]
     pub path: Option<PathBuf>,
-    #[serde(skip)]
-    pub phantom: std::marker::PhantomData<T>,
 }
 
-impl Default for Agent<Warm> {
+impl Default for Agent {
     fn default() -> Self {
         Self {
             name: "default".to_string(),
@@ -166,14 +160,41 @@ impl Default for Agent<Warm> {
             prompt_hooks: Default::default(),
             tools_settings: Default::default(),
             path: None,
-            phantom: PhantomData,
         }
     }
 }
 
-impl Agent<Cold> {
-    pub fn thaw(mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> eyre::Result<Agent<Warm>> {
-        let Self { mcp_servers, .. } = &mut self;
+impl Agent {
+    pub fn freeze(&mut self) -> eyre::Result<()> {
+        let Self { mcp_servers, .. } = self;
+
+        if let McpServerConfigWrapper::Map(servers) = mcp_servers {
+            match servers.original_config_form {
+                OriginalForm::All => {
+                    *mcp_servers = McpServerConfigWrapper::List(vec!["*".to_string()]);
+                },
+                OriginalForm::List => {
+                    *mcp_servers = McpServerConfigWrapper::List({
+                        servers
+                            .mcp_servers
+                            .iter()
+                            .fold(Vec::<String>::new(), |mut acc, (name, _)| {
+                                acc.push(name.clone());
+                                acc
+                            })
+                    });
+                },
+                OriginalForm::Map => {
+                    // noop
+                },
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> eyre::Result<()> {
+        let Self { mcp_servers, .. } = self;
 
         let name = path
             .file_stem()
@@ -212,70 +233,18 @@ impl Agent<Cold> {
             });
         }
 
-        Ok(Agent {
-            name,
-            description: self.description,
-            prompt: self.prompt,
-            mcp_servers: self.mcp_servers,
-            tools: self.tools,
-            alias: self.alias,
-            allowed_tools: self.allowed_tools,
-            included_files: self.included_files,
-            create_hooks: self.create_hooks,
-            prompt_hooks: self.prompt_hooks,
-            tools_settings: self.tools_settings,
-            path: Some(path.to_path_buf()),
-            phantom: PhantomData,
-        })
+        Ok(())
     }
-}
 
-impl Agent<Warm> {
-    pub fn freeze(mut self) -> Agent<Cold> {
-        let Self { mcp_servers, .. } = &mut self;
-
-        if let McpServerConfigWrapper::Map(servers) = mcp_servers {
-            match servers.original_config_form {
-                OriginalForm::All => {
-                    *mcp_servers = McpServerConfigWrapper::List(vec!["*".to_string()]);
-                },
-                OriginalForm::List => {
-                    *mcp_servers = McpServerConfigWrapper::List({
-                        servers
-                            .mcp_servers
-                            .iter()
-                            .fold(Vec::<String>::new(), |mut acc, (name, _)| {
-                                acc.push(name.clone());
-                                acc
-                            })
-                    });
-                },
-                OriginalForm::Map => {
-                    // noop
-                },
-            }
-        }
-
-        Agent {
-            name: self.name,
-            description: self.description,
-            prompt: self.prompt,
-            mcp_servers: self.mcp_servers,
-            tools: self.tools,
-            alias: self.alias,
-            allowed_tools: self.allowed_tools,
-            included_files: self.included_files,
-            create_hooks: self.create_hooks,
-            prompt_hooks: self.prompt_hooks,
-            tools_settings: self.tools_settings,
-            path: self.path,
-            phantom: PhantomData,
-        }
+    pub fn to_str_pretty(&self) -> eyre::Result<String> {
+        let mut agent_clone = self.clone();
+        agent_clone.freeze()?;
+        Ok(serde_json::to_string_pretty(&agent_clone)?)
     }
 
     /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
     /// and falling back to global dir if it does not exist in local.
-    pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent<Warm>, PathBuf)> {
+    pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
             let local_config_dir = directories::chat_local_agent_dir()?.join(format!("{agent_name}.json"));
@@ -294,7 +263,7 @@ impl Agent<Warm> {
         match config_path {
             Ok(config_path) => {
                 let content = os.fs.read(&config_path).await?;
-                let agent = serde_json::from_slice::<Agent<Cold>>(&content)?;
+                let mut agent = serde_json::from_slice::<Agent>(&content)?;
 
                 let global_mcp_path = directories::chat_legacy_mcp_config(os)?;
                 let global_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
@@ -304,7 +273,8 @@ impl Agent<Warm> {
                         None
                     },
                 };
-                Ok((agent.thaw(&config_path, global_mcp_config.as_ref())?, config_path))
+                agent.thaw(&config_path, global_mcp_config.as_ref())?;
+                Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
         }
@@ -320,7 +290,7 @@ pub enum PermissionEvalResult {
 
 #[derive(Clone, Default, Debug)]
 pub struct Agents {
-    pub agents: HashMap<String, Agent<Warm>>,
+    pub agents: HashMap<String, Agent>,
     pub active_idx: String,
     pub trust_all_tools: bool,
 }
@@ -344,15 +314,15 @@ impl Agents {
         }
     }
 
-    pub fn get_active(&self) -> Option<&Agent<Warm>> {
+    pub fn get_active(&self) -> Option<&Agent> {
         self.agents.get(&self.active_idx)
     }
 
-    pub fn get_active_mut(&mut self) -> Option<&mut Agent<Warm>> {
+    pub fn get_active_mut(&mut self) -> Option<&mut Agent> {
         self.agents.get_mut(&self.active_idx)
     }
 
-    pub fn switch(&mut self, name: &str) -> eyre::Result<&Agent<Warm>> {
+    pub fn switch(&mut self, name: &str) -> eyre::Result<&Agent> {
         if !self.agents.contains_key(name) {
             eyre::bail!("No agent with name {name} found");
         }
@@ -390,7 +360,8 @@ impl Agents {
             path: Some(agent_path.clone()),
             ..Default::default()
         };
-        let contents = serde_json::to_string_pretty(&agent.clone().freeze())
+        let contents = agent
+            .to_str_pretty()
             .map_err(|e| eyre::eyre!("Failed to serialize profile configuration: {}", e))?;
 
         if let Some(parent) = agent_path.parent() {
@@ -459,7 +430,7 @@ impl Agents {
             // We could be launching from the home dir, in which case the global and local agents
             // are the same set of agents. If that is the case, we simply skip this.
             match (std::env::current_dir(), directories::home_dir(os)) {
-                (Ok(cwd), Ok(home_dir)) if cwd == home_dir => break 'local Vec::<Agent<Warm>>::new(),
+                (Ok(cwd), Ok(home_dir)) if cwd == home_dir => break 'local Vec::<Agent>::new(),
                 _ => {
                     // noop, we keep going with the extraction of local agents (even if we have an
                     // error retrieving cwd or home_dir)
@@ -467,17 +438,17 @@ impl Agents {
             }
 
             let Ok(path) = directories::chat_local_agent_dir() else {
-                break 'local Vec::<Agent<Warm>>::new();
+                break 'local Vec::<Agent>::new();
             };
             let Ok(files) = os.fs.read_dir(path).await else {
-                break 'local Vec::<Agent<Warm>>::new();
+                break 'local Vec::<Agent>::new();
             };
             load_agents_from_entries(files, os, &mut global_mcp_config).await
         };
 
         let mut global_agents = 'global: {
             let Ok(path) = directories::chat_global_agent_path(os) else {
-                break 'global Vec::<Agent<Warm>>::new();
+                break 'global Vec::<Agent>::new();
             };
             let files = match os.fs.read_dir(&path).await {
                 Ok(files) => files,
@@ -487,7 +458,7 @@ impl Agents {
                             error!("Error creating global agent dir: {:?}", e);
                         }
                     }
-                    break 'global Vec::<Agent<Warm>>::new();
+                    break 'global Vec::<Agent>::new();
                 },
             };
             load_agents_from_entries(files, os, &mut global_mcp_config).await
@@ -533,7 +504,7 @@ impl Agents {
                 },
                 ..Default::default()
             };
-            let Ok(content) = serde_json::to_string_pretty(&example_agent.freeze()) else {
+            let Ok(content) = example_agent.to_str_pretty() else {
                 error!("Error serializing example agent config");
                 break 'example_config;
             };
@@ -674,8 +645,8 @@ async fn load_agents_from_entries(
     mut files: ReadDir,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
-) -> Vec<Agent<Warm>> {
-    let mut res = Vec::<Agent<Warm>>::new();
+) -> Vec<Agent> {
+    let mut res = Vec::<Agent>::new();
 
     while let Ok(Some(file)) = files.next_entry().await {
         let file_path = &file.path();
@@ -693,7 +664,7 @@ async fn load_agents_from_entries(
                 },
             };
 
-            let agent = match serde_json::from_slice::<Agent<Cold>>(&content) {
+            let mut agent = match serde_json::from_slice::<Agent>(&content) {
                 Ok(mut agent) => {
                     agent.path = Some(file_path.clone());
                     agent
@@ -720,15 +691,14 @@ async fn load_agents_from_entries(
                 global_mcp_config.replace(legacy_mcp_config);
             }
 
-            match agent.thaw(file_path, global_mcp_config.as_ref()) {
-                Ok(agent) => res.push(agent),
-                Err(e) => {
-                    tracing::error!(
-                        "Error transforming agent at {} to usable state: {e}. Skipping",
-                        file_path.display()
-                    );
-                },
-            }
+            if let Err(e) = agent.thaw(file_path, global_mcp_config.as_ref()) {
+                tracing::error!(
+                    "Error transforming agent at {} to usable state: {e}. Skipping",
+                    file_path.display()
+                );
+            };
+
+            res.push(agent);
         }
     }
     res
@@ -751,7 +721,7 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn migrate(os: &mut Os) -> eyre::Result<(Option<String>, Vec<Agent<Warm>>)> {
+async fn migrate(os: &mut Os) -> eyre::Result<(Option<String>, Vec<Agent>)> {
     ContextMigrate::<'a'>::scan(os)
         .await?
         .prompt_migrate()
@@ -816,7 +786,7 @@ mod tests {
 
     #[test]
     fn test_deser() {
-        let agent = serde_json::from_str::<Agent<Cold>>(INPUT).expect("Deserializtion failed");
+        let agent = serde_json::from_str::<Agent>(INPUT).expect("Deserializtion failed");
         assert!(matches!(agent.mcp_servers, McpServerConfigWrapper::Map(_)));
         if let McpServerConfigWrapper::Map(config) = &agent.mcp_servers {
             assert!(config.mcp_servers.contains_key("fetch"));
@@ -1002,38 +972,5 @@ mod tests {
         assert!(validate_agent_name("_invalid").is_err());
         assert!(validate_agent_name("invalid!").is_err());
         assert!(validate_agent_name("invalid space").is_err());
-    }
-}
-
-#[cfg(test)]
-mod test_test {
-    use super::*;
-    trait A: for<'de> Deserialize<'de> + Serialize {}
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
-    #[serde(rename_all = "camelCase", bound = "T: A")]
-    struct Testtest<T> {
-        hello: String,
-        #[serde(skip)]
-        phantom: std::marker::PhantomData<T>,
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct ConcreteA;
-
-    impl A for ConcreteA {}
-
-    #[derive(Serialize, Deserialize)]
-    struct ConcreteB;
-
-    const INPUT: &str = r#"
-            {
-              "hello": "world"
-            }
-        "#;
-
-    #[test]
-    fn test_deser_err() {
-        let deser_res = serde_json::from_str::<Testtest<ConcreteA>>(INPUT);
-        assert!(deser_res.is_ok());
     }
 }

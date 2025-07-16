@@ -19,7 +19,6 @@ use crossterm::{
 
 use crate::api_client::model::Tool as FigTool;
 use crate::cli::agent::Agent;
-use crate::cli::agent::wrapper_types::Cold;
 use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 use crate::cli::chat::tools::ToolOrigin;
 use crate::cli::chat::{
@@ -352,10 +351,10 @@ impl ToolsSubcommand {
                 if let Some(path) = active_agent_path {
                     let result = async {
                         let content = tokio::fs::read(&path).await?;
-                        let orig_agent = serde_json::from_slice::<Agent<Cold>>(&content)?;
+                        let orig_agent = serde_json::from_slice::<Agent>(&content)?;
                         // since all we're doing here is swapping the tool list, it's okay if we
                         // don't thaw it here
-                        Ok::<Agent<Cold>, Box<dyn std::error::Error>>(orig_agent)
+                        Ok::<Agent, Box<dyn std::error::Error>>(orig_agent)
                     }
                     .await;
 

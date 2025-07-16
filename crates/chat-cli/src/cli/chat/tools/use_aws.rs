@@ -23,7 +23,6 @@ use super::{
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
 };
-use crate::cli::agent::wrapper_types::Warm;
 use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
@@ -195,7 +194,7 @@ impl UseAws {
         }
     }
 
-    pub fn eval_perm(&self, agent: &Agent<Warm>) -> PermissionEvalResult {
+    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {

@@ -14,7 +14,6 @@ use serde::{
 
 use super::consts::CONTEXT_FILES_MAX_SIZE;
 use super::util::drop_matched_context_files;
-use crate::cli::agent::wrapper_types::Warm;
 use crate::cli::agent::{
     Agent,
     CreateHooks,
@@ -39,10 +38,10 @@ pub struct ContextConfig {
     pub hooks: HashMap<String, Hook>,
 }
 
-impl TryFrom<&Agent<Warm>> for ContextConfig {
+impl TryFrom<&Agent> for ContextConfig {
     type Error = eyre::Report;
 
-    fn try_from(value: &Agent<Warm>) -> Result<Self, Self::Error> {
+    fn try_from(value: &Agent) -> Result<Self, Self::Error> {
         Ok(Self {
             paths: value.included_files.clone(),
             hooks: {
@@ -101,7 +100,7 @@ pub struct ContextManager {
 }
 
 impl ContextManager {
-    pub fn from_agent(agent: &Agent<Warm>, max_context_files_size: Option<usize>) -> Result<Self> {
+    pub fn from_agent(agent: &Agent, max_context_files_size: Option<usize>) -> Result<Self> {
         let max_context_files_size = max_context_files_size.unwrap_or(CONTEXT_FILES_MAX_SIZE);
 
         let current_profile = agent.name.clone();

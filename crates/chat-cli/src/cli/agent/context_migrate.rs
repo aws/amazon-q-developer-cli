@@ -8,7 +8,6 @@ use tracing::{
     warn,
 };
 
-use super::wrapper_types::Warm;
 use super::{
     Agent,
     McpServerConfig,
@@ -31,7 +30,7 @@ pub(in crate::cli::agent) struct ContextMigrate<const S: char> {
     legacy_global_context: Option<ContextConfig>,
     legacy_profiles: HashMap<String, ContextConfig>,
     mcp_servers: Option<McpServerConfig>,
-    new_agents: Vec<Agent<Warm>>,
+    new_agents: Vec<Agent>,
 }
 
 impl ContextMigrate<'a'> {
@@ -214,7 +213,7 @@ impl ContextMigrate<'c'> {
         }
 
         for agent in &mut new_agents {
-            let content = serde_json::to_string_pretty(&agent.clone().freeze())?;
+            let content = agent.to_str_pretty()?;
             if let Some(path) = agent.path.as_ref() {
                 info!("Agent {} peristed in path {}", agent.name, path.to_string_lossy());
                 os.fs.write(path, content).await?;
@@ -259,7 +258,7 @@ impl ContextMigrate<'c'> {
 }
 
 impl ContextMigrate<'d'> {
-    pub async fn prompt_set_default(self, os: &mut Os) -> eyre::Result<(Option<String>, Vec<Agent<Warm>>)> {
+    pub async fn prompt_set_default(self, os: &mut Os) -> eyre::Result<(Option<String>, Vec<Agent>)> {
         let ContextMigrate { new_agents, .. } = self;
 
         let labels = new_agents

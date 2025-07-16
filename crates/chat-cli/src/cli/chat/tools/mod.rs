@@ -35,7 +35,6 @@ use use_aws::UseAws;
 
 use super::consts::MAX_TOOL_RESPONSE_SIZE;
 use super::util::images::RichImageBlocks;
-use crate::cli::agent::wrapper_types::Warm;
 use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
@@ -90,7 +89,7 @@ impl Tool {
     }
 
     /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.
-    pub fn requires_acceptance(&self, agent: &Agent<Warm>) -> PermissionEvalResult {
+    pub fn requires_acceptance(&self, agent: &Agent) -> PermissionEvalResult {
         match self {
             Tool::FsRead(fs_read) => fs_read.eval_perm(agent),
             Tool::FsWrite(fs_write) => fs_write.eval_perm(agent),

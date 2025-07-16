@@ -25,7 +25,6 @@ use syntect::util::{
 use crate::cli::agent::{
     Agent,
     Agents,
-    Cold,
     create_agent,
     rename_agent,
 };
@@ -127,7 +126,7 @@ impl AgentSubcommand {
             Self::Schema => {
                 use schemars::schema_for;
 
-                let schema = schema_for!(Agent<Cold>);
+                let schema = schema_for!(Agent);
                 let pretty = serde_json::to_string_pretty(&schema)
                     .map_err(|e| ChatError::Custom(format!("Failed to convert agent schema to string: {e}").into()))?;
                 highlight_json(&mut session.stderr, pretty.as_str())
@@ -155,7 +154,7 @@ impl AgentSubcommand {
                         .into(),
                     ));
                 };
-                if let Err(e) = serde_json::from_slice::<Agent<Cold>>(&content) {
+                if let Err(e) = serde_json::from_slice::<Agent>(&content) {
                     return Err(ChatError::Custom(
                         format!("Post write validation failed for agent '{name}'. Malformed config detected: {e}")
                             .into(),

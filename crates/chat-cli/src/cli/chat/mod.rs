@@ -2476,8 +2476,7 @@ mod tests {
             ..Default::default()
         };
         if let Ok(false) = os.fs.try_exists(AGENT_PATH).await {
-            let content =
-                serde_json::to_string_pretty(&agent.clone().freeze()).expect("Failed to serialize test agent to file");
+            let content = agent.to_str_pretty().expect("Failed to serialize test agent to file");
             let agent_path = PathBuf::from(AGENT_PATH);
             os.fs
                 .create_dir_all(
