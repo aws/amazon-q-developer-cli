@@ -332,7 +332,7 @@ pub enum ChatConversationType {
 impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
     fn from(value: ChatConversationType) -> Self {
         match value {
-            ChatConversationType::NotToolUse => Self::EndTurn,
+            ChatConversationType::NotToolUse => Self::NotToolUse,
             ChatConversationType::ToolUse => Self::ToolUse,
         }
     }

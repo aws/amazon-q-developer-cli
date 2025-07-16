@@ -145,8 +145,8 @@ impl SendMessageStream {
     /// * `client` - api client to make the request with
     /// * `conversation_state` - the [crate::api_client::model::ConversationState] to send
     /// * `request_metadata_lock` - a mutex that will be updated with metadata about the consumed
-    /// response stream on stream completion (ie, [ResponseEvent::EndStream] is returned) or on
-    /// drop.
+    ///   response stream on stream completion (ie, [ResponseEvent::EndStream] is returned) or on
+    ///   drop.
     ///
     /// # Details
     ///

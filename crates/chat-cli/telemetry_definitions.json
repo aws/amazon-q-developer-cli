@@ -189,7 +189,7 @@
       "name": "codewhispererterminal_chatConversationType",
       "type": "string",
       "allowedValues": [
-          "EndTurn",
+          "NotToolUse",
           "ToolUse"
       ],
       "description": "Identifies the role of the message in the conversation."

@@ -1915,11 +1915,11 @@ impl ChatSession {
     ///
     /// In order to handle sigints while also keeping track of metadata about how the
     /// response stream was handled, we need a couple extra parameters:
-    /// - `request_metadata_lock` - Updated with the [RequestMetadata] once it has been received
-    /// (either though a successful request, or on an error).
-    /// - `ctrl_c` - a broadcast receiver for whenever sigints are encountered.
-    /// - `cancel_token` - a [CancellationToken] to prevent handling the response stream on an
-    /// error or sigint.
+    /// * `request_metadata_lock` - Updated with the [RequestMetadata] once it has been received
+    ///   (either though a successful request, or on an error).
+    /// * `ctrl_c` - a broadcast receiver for whenever sigints are encountered.
+    /// * `cancel_token` - a [CancellationToken] to prevent handling the response stream on an error
+    ///   or sigint.
     ///
     /// The top-level caller is expected to check the value of `request_metadata_lock` when a
     /// ctrl+c is sent to get the relevant request metadata.
