@@ -12,6 +12,7 @@
 /// ```text
 /// # let codeanalysisscope = unimplemented!();
 /// match codeanalysisscope {
+///     CodeAnalysisScope::Agentic => { /* ... */ },
 ///     CodeAnalysisScope::File => { /* ... */ },
 ///     CodeAnalysisScope::Project => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
@@ -35,36 +36,30 @@
 /// be avoided for two reasons:
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
+///
 #[allow(missing_docs)] // documentation missing in model
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum CodeAnalysisScope {
+    #[allow(missing_docs)] // documentation missing in model
+    Agentic,
     #[allow(missing_docs)] // documentation missing in model
     File,
     #[allow(missing_docs)] // documentation missing in model
     Project,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for CodeAnalysisScope {
     fn from(s: &str) -> Self {
         match s {
+            "AGENTIC" => CodeAnalysisScope::Agentic,
             "FILE" => CodeAnalysisScope::File,
             "PROJECT" => CodeAnalysisScope::Project,
-            other => CodeAnalysisScope::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => CodeAnalysisScope::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -79,15 +74,15 @@ impl CodeAnalysisScope {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            CodeAnalysisScope::Agentic => "AGENTIC",
             CodeAnalysisScope::File => "FILE",
             CodeAnalysisScope::Project => "PROJECT",
             CodeAnalysisScope::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["FILE", "PROJECT"]
+        &["AGENTIC", "FILE", "PROJECT"]
     }
 }
 impl ::std::convert::AsRef<str> for CodeAnalysisScope {
@@ -110,6 +105,7 @@ impl CodeAnalysisScope {
 impl ::std::fmt::Display for CodeAnalysisScope {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            CodeAnalysisScope::Agentic => write!(f, "AGENTIC"),
             CodeAnalysisScope::File => write!(f, "FILE"),
             CodeAnalysisScope::Project => write!(f, "PROJECT"),
             CodeAnalysisScope::Unknown(value) => write!(f, "{}", value),

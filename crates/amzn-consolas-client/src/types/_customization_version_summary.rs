@@ -21,35 +21,29 @@ impl CustomizationVersionSummary {
     pub fn version(&self) -> i64 {
         self.version
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn base_version(&self) -> ::std::option::Option<i64> {
         self.base_version
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn status(&self) -> &crate::types::CustomizationStatus {
         &self.status
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn data_reference(&self) -> &crate::types::DataReference {
         &self.data_reference
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn updated_at(&self) -> &::aws_smithy_types::DateTime {
         &self.updated_at
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn evaluation_metrics(&self) -> ::std::option::Option<&crate::types::EvaluationMetrics> {
         self.evaluation_metrics.as_ref()
     }
 }
 impl CustomizationVersionSummary {
-    /// Creates a new builder-style object to manufacture
-    /// [`CustomizationVersionSummary`](crate::types::CustomizationVersionSummary).
+    /// Creates a new builder-style object to manufacture [`CustomizationVersionSummary`](crate::types::CustomizationVersionSummary).
     pub fn builder() -> crate::types::builders::CustomizationVersionSummaryBuilder {
         crate::types::builders::CustomizationVersionSummaryBuilder::default()
     }
@@ -73,119 +67,95 @@ impl CustomizationVersionSummaryBuilder {
         self.version = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_version(mut self, input: ::std::option::Option<i64>) -> Self {
         self.version = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_version(&self) -> &::std::option::Option<i64> {
         &self.version
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn base_version(mut self, input: i64) -> Self {
         self.base_version = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_base_version(mut self, input: ::std::option::Option<i64>) -> Self {
         self.base_version = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_base_version(&self) -> &::std::option::Option<i64> {
         &self.base_version
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn status(mut self, input: crate::types::CustomizationStatus) -> Self {
         self.status = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_status(mut self, input: ::std::option::Option<crate::types::CustomizationStatus>) -> Self {
         self.status = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_status(&self) -> &::std::option::Option<crate::types::CustomizationStatus> {
         &self.status
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn data_reference(mut self, input: crate::types::DataReference) -> Self {
         self.data_reference = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_data_reference(mut self, input: ::std::option::Option<crate::types::DataReference>) -> Self {
         self.data_reference = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_data_reference(&self) -> &::std::option::Option<crate::types::DataReference> {
         &self.data_reference
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn updated_at(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.updated_at = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_updated_at(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.updated_at = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_updated_at(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.updated_at
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn evaluation_metrics(mut self, input: crate::types::EvaluationMetrics) -> Self {
         self.evaluation_metrics = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_evaluation_metrics(mut self, input: ::std::option::Option<crate::types::EvaluationMetrics>) -> Self {
         self.evaluation_metrics = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_evaluation_metrics(&self) -> &::std::option::Option<crate::types::EvaluationMetrics> {
         &self.evaluation_metrics
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CustomizationVersionSummary`](crate::types::CustomizationVersionSummary). This method
-    /// will fail if any of the following fields are not set:
+    /// Consumes the builder and constructs a [`CustomizationVersionSummary`](crate::types::CustomizationVersionSummary).
+    /// This method will fail if any of the following fields are not set:
     /// - [`version`](crate::types::builders::CustomizationVersionSummaryBuilder::version)
     /// - [`status`](crate::types::builders::CustomizationVersionSummaryBuilder::status)
     /// - [`data_reference`](crate::types::builders::CustomizationVersionSummaryBuilder::data_reference)
     /// - [`updated_at`](crate::types::builders::CustomizationVersionSummaryBuilder::updated_at)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<
-        crate::types::CustomizationVersionSummary,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    pub fn build(self) -> ::std::result::Result<crate::types::CustomizationVersionSummary, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::CustomizationVersionSummary {
             version: self.version.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

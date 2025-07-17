@@ -46,53 +46,41 @@
 /// be avoided for two reasons:
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
+///
 #[allow(missing_docs)] // documentation missing in model
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum CustomizationStatus {
     /// After a successful activation, a customization has a status of ACTIVATED.
     Activated,
     /// After an activation request is received, a customization has a status of ACTIVATING.
     Activating,
-    /// In the event of a failure during an activation operation, a customization will be assigned a
-    /// status of ACTIVATION_FAILED.
+    /// In the event of a failure during an activation operation, a customization will be assigned a status of ACTIVATION_FAILED.
     ActivationFailed,
     /// Upon successful creation, a customization has a status of CREATED.
     Created,
     /// After a creation request is received, a customization has a status of CREATING.
     Creating,
-    /// In the event of a failure during a creation operation, a customization will be assigned a
-    /// status of CREATION_FAILED.
+    /// In the event of a failure during a creation operation, a customization will be assigned a status of CREATION_FAILED.
     CreationFailed,
     /// After a deactivation request is received, a customization has a status of DEACTIVATING.
     Deactivating,
-    /// In the event of a failure during a deactivation operation, a customization will be assigned
-    /// a status of DEACTIVATION_FAILED.
+    /// In the event of a failure during a deactivation operation, a customization will be assigned a status of DEACTIVATION_FAILED.
     DeactivationFailed,
     /// After an delete request is received, a customization has a status of DELETING.
     Deleting,
-    /// In the event of a failure during a delete operation, a customization will be assigned a
-    /// status of DELETION_FAILED.
+    /// In the event of a failure during a delete operation, a customization will be assigned a status of DELETION_FAILED.
     DeletionFailed,
     /// Upon successful update or deactivation, a customization has a status of UPDATED.
     Updated,
-    /// In the event of a failure during an update operation, a customization will be assigned a
-    /// status of UPDATE_FAILED.
+    /// In the event of a failure during an update operation, a customization will be assigned a status of UPDATE_FAILED.
     UpdateFailed,
     /// After an update request is received, a customization has a status of UPDATING.
     Updating,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for CustomizationStatus {
@@ -111,9 +99,7 @@ impl ::std::convert::From<&str> for CustomizationStatus {
             "UPDATED" => CustomizationStatus::Updated,
             "UPDATE_FAILED" => CustomizationStatus::UpdateFailed,
             "UPDATING" => CustomizationStatus::Updating,
-            other => CustomizationStatus::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => CustomizationStatus::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -144,7 +130,6 @@ impl CustomizationStatus {
             CustomizationStatus::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[

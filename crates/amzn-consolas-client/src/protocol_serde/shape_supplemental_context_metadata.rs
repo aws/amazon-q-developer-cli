@@ -7,19 +7,14 @@ pub fn ser_supplemental_context_metadata(
         crate::types::SupplementalContextMetadata::PreviousEditorStateMetadata(inner) => {
             #[allow(unused_mut)]
             let mut object_1 = object_3.key("previousEditorStateMetadata").start_object();
-            crate::protocol_serde::shape_previous_editor_state_metadata::ser_previous_editor_state_metadata(
-                &mut object_1,
-                inner,
-            )?;
+            crate::protocol_serde::shape_previous_editor_state_metadata::ser_previous_editor_state_metadata(&mut object_1, inner)?;
             object_1.finish();
-        },
+        }
         crate::types::SupplementalContextMetadata::Unknown => {
-            return Err(
-                ::aws_smithy_types::error::operation::SerializationError::unknown_variant(
-                    "SupplementalContextMetadata",
-                ),
-            );
-        },
+            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant(
+                "SupplementalContextMetadata",
+            ))
+        }
     }
     Ok(())
 }

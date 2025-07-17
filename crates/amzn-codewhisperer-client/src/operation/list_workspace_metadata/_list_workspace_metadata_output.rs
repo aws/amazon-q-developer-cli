@@ -15,7 +15,6 @@ impl ListWorkspaceMetadataOutput {
         use std::ops::Deref;
         self.workspaces.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
@@ -27,15 +26,13 @@ impl ::aws_types::request_id::RequestId for ListWorkspaceMetadataOutput {
     }
 }
 impl ListWorkspaceMetadataOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ListWorkspaceMetadataOutput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput).
+    /// Creates a new builder-style object to manufacture [`ListWorkspaceMetadataOutput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput).
     pub fn builder() -> crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataOutputBuilder {
         crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`ListWorkspaceMetadataOutput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput).
+/// A builder for [`ListWorkspaceMetadataOutput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListWorkspaceMetadataOutputBuilder {
@@ -47,44 +44,36 @@ impl ListWorkspaceMetadataOutputBuilder {
     /// Appends an item to `workspaces`.
     ///
     /// To override the contents of this collection use [`set_workspaces`](Self::set_workspaces).
+    ///
     pub fn workspaces(mut self, input: crate::types::WorkspaceMetadata) -> Self {
         let mut v = self.workspaces.unwrap_or_default();
         v.push(input);
         self.workspaces = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_workspaces(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::WorkspaceMetadata>>,
-    ) -> Self {
+    pub fn set_workspaces(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::WorkspaceMetadata>>) -> Self {
         self.workspaces = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_workspaces(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::WorkspaceMetadata>> {
         &self.workspaces
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -94,17 +83,13 @@ impl ListWorkspaceMetadataOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ListWorkspaceMetadataOutput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput).
+    /// Consumes the builder and constructs a [`ListWorkspaceMetadataOutput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`workspaces`](crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataOutputBuilder::workspaces)
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput {
             workspaces: self.workspaces.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

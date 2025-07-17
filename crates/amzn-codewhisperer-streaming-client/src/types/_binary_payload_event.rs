@@ -21,8 +21,7 @@ impl ::std::fmt::Debug for BinaryPayloadEvent {
     }
 }
 impl BinaryPayloadEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`BinaryPayloadEvent`](crate::types::BinaryPayloadEvent).
+    /// Creates a new builder-style object to manufacture [`BinaryPayloadEvent`](crate::types::BinaryPayloadEvent).
     pub fn builder() -> crate::types::builders::BinaryPayloadEventBuilder {
         crate::types::builders::BinaryPayloadEventBuilder::default()
     }
@@ -40,20 +39,16 @@ impl BinaryPayloadEventBuilder {
         self.bytes = ::std::option::Option::Some(input);
         self
     }
-
     /// Payload Part's body
     pub fn set_bytes(mut self, input: ::std::option::Option<::aws_smithy_types::Blob>) -> Self {
         self.bytes = input;
         self
     }
-
     /// Payload Part's body
     pub fn get_bytes(&self) -> &::std::option::Option<::aws_smithy_types::Blob> {
         &self.bytes
     }
-
-    /// Consumes the builder and constructs a
-    /// [`BinaryPayloadEvent`](crate::types::BinaryPayloadEvent).
+    /// Consumes the builder and constructs a [`BinaryPayloadEvent`](crate::types::BinaryPayloadEvent).
     pub fn build(self) -> crate::types::BinaryPayloadEvent {
         crate::types::BinaryPayloadEvent { bytes: self.bytes }
     }

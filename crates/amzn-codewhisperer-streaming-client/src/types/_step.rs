@@ -4,8 +4,7 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq)]
 pub struct Step {
-    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is
-    /// distinct.
+    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is distinct.
     pub id: i32,
     /// Enum representing all possible step states, combining terminal and non-terminal states.
     pub state: crate::types::StepState,
@@ -15,27 +14,22 @@ pub struct Step {
     pub content: ::std::option::Option<::std::vec::Vec<crate::types::StepComponent>>,
 }
 impl Step {
-    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is
-    /// distinct.
+    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is distinct.
     pub fn id(&self) -> i32 {
         self.id
     }
-
     /// Enum representing all possible step states, combining terminal and non-terminal states.
     pub fn state(&self) -> &crate::types::StepState {
         &self.state
     }
-
     /// A label for the step, providing a concise description.
     pub fn label(&self) -> &str {
         use std::ops::Deref;
         self.label.deref()
     }
-
     /// Optional content providing additional details about the step.
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.content.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.content.is_none()`.
     pub fn content(&self) -> &[crate::types::StepComponent] {
         self.content.as_deref().unwrap_or_default()
     }
@@ -67,62 +61,51 @@ pub struct StepBuilder {
     pub(crate) content: ::std::option::Option<::std::vec::Vec<crate::types::StepComponent>>,
 }
 impl StepBuilder {
-    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is
-    /// distinct. This field is required.
+    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is distinct.
+    /// This field is required.
     pub fn id(mut self, input: i32) -> Self {
         self.id = ::std::option::Option::Some(input);
         self
     }
-
-    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is
-    /// distinct.
+    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is distinct.
     pub fn set_id(mut self, input: ::std::option::Option<i32>) -> Self {
         self.id = input;
         self
     }
-
-    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is
-    /// distinct.
+    /// A unique identifier for the step. It must be a non-negative integer to ensure each step is distinct.
     pub fn get_id(&self) -> &::std::option::Option<i32> {
         &self.id
     }
-
     /// Enum representing all possible step states, combining terminal and non-terminal states.
     /// This field is required.
     pub fn state(mut self, input: crate::types::StepState) -> Self {
         self.state = ::std::option::Option::Some(input);
         self
     }
-
     /// Enum representing all possible step states, combining terminal and non-terminal states.
     pub fn set_state(mut self, input: ::std::option::Option<crate::types::StepState>) -> Self {
         self.state = input;
         self
     }
-
     /// Enum representing all possible step states, combining terminal and non-terminal states.
     pub fn get_state(&self) -> &::std::option::Option<crate::types::StepState> {
         &self.state
     }
-
     /// A label for the step, providing a concise description.
     /// This field is required.
     pub fn label(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.label = ::std::option::Option::Some(input.into());
         self
     }
-
     /// A label for the step, providing a concise description.
     pub fn set_label(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.label = input;
         self
     }
-
     /// A label for the step, providing a concise description.
     pub fn get_label(&self) -> &::std::option::Option<::std::string::String> {
         &self.label
     }
-
     /// Appends an item to `content`.
     ///
     /// To override the contents of this collection use [`set_content`](Self::set_content).
@@ -134,18 +117,15 @@ impl StepBuilder {
         self.content = ::std::option::Option::Some(v);
         self
     }
-
     /// Optional content providing additional details about the step.
     pub fn set_content(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::StepComponent>>) -> Self {
         self.content = input;
         self
     }
-
     /// Optional content providing additional details about the step.
     pub fn get_content(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::StepComponent>> {
         &self.content
     }
-
     /// Consumes the builder and constructs a [`Step`](crate::types::Step).
     /// This method will fail if any of the following fields are not set:
     /// - [`id`](crate::types::builders::StepBuilder::id)
@@ -154,10 +134,7 @@ impl StepBuilder {
     pub fn build(self) -> ::std::result::Result<crate::types::Step, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::Step {
             id: self.id.ok_or_else(|| {
-                ::aws_smithy_types::error::operation::BuildError::missing_field(
-                    "id",
-                    "id was not specified but it is required when building Step",
-                )
+                ::aws_smithy_types::error::operation::BuildError::missing_field("id", "id was not specified but it is required when building Step")
             })?,
             state: self.state.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

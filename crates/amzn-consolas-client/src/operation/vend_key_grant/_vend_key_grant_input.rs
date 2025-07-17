@@ -13,15 +13,13 @@ impl VendKeyGrantInput {
     pub fn account_id(&self) -> ::std::option::Option<&str> {
         self.account_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn usecase(&self) -> ::std::option::Option<&crate::types::VendKeyGrantUseCase> {
         self.usecase.as_ref()
     }
 }
 impl VendKeyGrantInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`VendKeyGrantInput`](crate::operation::vend_key_grant::VendKeyGrantInput).
+    /// Creates a new builder-style object to manufacture [`VendKeyGrantInput`](crate::operation::vend_key_grant::VendKeyGrantInput).
     pub fn builder() -> crate::operation::vend_key_grant::builders::VendKeyGrantInputBuilder {
         crate::operation::vend_key_grant::builders::VendKeyGrantInputBuilder::default()
     }
@@ -41,44 +39,34 @@ impl VendKeyGrantInputBuilder {
         self.account_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Represents the AWS account ID of the customer
     pub fn set_account_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.account_id = input;
         self
     }
-
     /// Represents the AWS account ID of the customer
     pub fn get_account_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.account_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn usecase(mut self, input: crate::types::VendKeyGrantUseCase) -> Self {
         self.usecase = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_usecase(mut self, input: ::std::option::Option<crate::types::VendKeyGrantUseCase>) -> Self {
         self.usecase = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_usecase(&self) -> &::std::option::Option<crate::types::VendKeyGrantUseCase> {
         &self.usecase
     }
-
-    /// Consumes the builder and constructs a
-    /// [`VendKeyGrantInput`](crate::operation::vend_key_grant::VendKeyGrantInput).
+    /// Consumes the builder and constructs a [`VendKeyGrantInput`](crate::operation::vend_key_grant::VendKeyGrantInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::vend_key_grant::VendKeyGrantInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::vend_key_grant::VendKeyGrantInput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::vend_key_grant::VendKeyGrantInput {
             account_id: self.account_id,
             usecase: self.usecase,

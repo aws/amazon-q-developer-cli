@@ -9,16 +9,16 @@ pub fn ser_data_reference(
             let mut object_1 = object_2.key("codeStarReference").start_object();
             crate::protocol_serde::shape_code_star_reference::ser_code_star_reference(&mut object_1, inner)?;
             object_1.finish();
-        },
+        }
         crate::types::DataReference::S3Reference(inner) => {
             #[allow(unused_mut)]
             let mut object_2 = object_2.key("s3Reference").start_object();
             crate::protocol_serde::shape_s3_reference::ser_s3_reference(&mut object_2, inner)?;
             object_2.finish();
-        },
+        }
         crate::types::DataReference::Unknown => {
-            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("DataReference"));
-        },
+            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("DataReference"))
+        }
     }
     Ok(())
 }
@@ -27,12 +27,7 @@ pub(crate) fn de_data_reference<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
 ) -> ::std::result::Result<Option<crate::types::DataReference>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
-    I: Iterator<
-        Item = Result<
-            ::aws_smithy_json::deserialize::Token<'a>,
-            ::aws_smithy_json::deserialize::error::DeserializeError,
-        >,
-    >,
+    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
 {
     let mut variant = None;
     match tokens.next().transpose()? {
@@ -41,9 +36,8 @@ where
             match tokens.next().transpose()? {
                 Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
                 Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                    if let ::std::option::Option::Some(::std::result::Result::Ok(
-                        ::aws_smithy_json::deserialize::Token::ValueNull { .. },
-                    )) = tokens.peek()
+                    if let ::std::option::Option::Some(::std::result::Result::Ok(::aws_smithy_json::deserialize::Token::ValueNull { .. })) =
+                        tokens.peek()
                     {
                         let _ = tokens.next().expect("peek returned a token")?;
                         continue;
@@ -60,38 +54,34 @@ where
                     }
                     variant = match key.as_ref() {
                         "codeStarReference" => Some(crate::types::DataReference::CodeStarReference(
-                            crate::protocol_serde::shape_code_star_reference::de_code_star_reference(tokens)?
-                                .ok_or_else(|| {
-                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                                        "value for 'codeStarReference' cannot be null",
-                                    )
-                                })?,
+                            crate::protocol_serde::shape_code_star_reference::de_code_star_reference(tokens)?.ok_or_else(|| {
+                                ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'codeStarReference' cannot be null")
+                            })?,
                         )),
                         "s3Reference" => Some(crate::types::DataReference::S3Reference(
                             crate::protocol_serde::shape_s3_reference::de_s3_reference(tokens)?.ok_or_else(|| {
-                                ::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                                    "value for 's3Reference' cannot be null",
-                                )
+                                ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 's3Reference' cannot be null")
                             })?,
                         )),
                         _ => {
                             ::aws_smithy_json::deserialize::token::skip_value(tokens)?;
                             Some(crate::types::DataReference::Unknown)
-                        },
+                        }
                     };
-                },
+                }
                 other => {
-                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                        format!("expected object key or end object, found: {:?}", other),
-                    ));
-                },
+                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                        "expected object key or end object, found: {:?}",
+                        other
+                    )))
+                }
             }
         },
         _ => {
             return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
                 "expected start object or null",
-            ));
-        },
+            ))
+        }
     }
     if variant.is_none() {
         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(

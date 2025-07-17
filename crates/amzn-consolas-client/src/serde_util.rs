@@ -203,9 +203,7 @@ pub(crate) fn customization_version_summary_correct_errors(
     builder
 }
 
-pub(crate) fn profile_correct_errors(
-    mut builder: crate::types::builders::ProfileBuilder,
-) -> crate::types::builders::ProfileBuilder {
+pub(crate) fn profile_correct_errors(mut builder: crate::types::builders::ProfileBuilder) -> crate::types::builders::ProfileBuilder {
     if builder.arn.is_none() {
         builder.arn = Some(Default::default())
     }
@@ -224,18 +222,14 @@ pub(crate) fn recommendation_correct_errors(
     builder
 }
 
-pub(crate) fn s3_reference_correct_errors(
-    mut builder: crate::types::builders::S3ReferenceBuilder,
-) -> crate::types::builders::S3ReferenceBuilder {
+pub(crate) fn s3_reference_correct_errors(mut builder: crate::types::builders::S3ReferenceBuilder) -> crate::types::builders::S3ReferenceBuilder {
     if builder.uri.is_none() {
         builder.uri = Some(Default::default())
     }
     builder
 }
 
-pub(crate) fn tag_correct_errors(
-    mut builder: crate::types::builders::TagBuilder,
-) -> crate::types::builders::TagBuilder {
+pub(crate) fn tag_correct_errors(mut builder: crate::types::builders::TagBuilder) -> crate::types::builders::TagBuilder {
     if builder.key.is_none() {
         builder.key = Some(Default::default())
     }
@@ -249,9 +243,7 @@ pub(crate) fn reference_tracker_configuration_correct_errors(
     mut builder: crate::types::builders::ReferenceTrackerConfigurationBuilder,
 ) -> crate::types::builders::ReferenceTrackerConfigurationBuilder {
     if builder.recommendations_with_references.is_none() {
-        builder.recommendations_with_references = "no value was set"
-            .parse::<crate::types::RecommendationsWithReferencesPreference>()
-            .ok()
+        builder.recommendations_with_references = "no value was set".parse::<crate::types::RecommendationsWithReferencesPreference>().ok()
     }
     builder
 }

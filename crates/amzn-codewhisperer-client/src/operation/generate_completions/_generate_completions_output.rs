@@ -15,24 +15,21 @@ pub struct GenerateCompletionsOutput {
 }
 impl GenerateCompletionsOutput {
     #[allow(missing_docs)] // documentation missing in model
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.predictions.is_none()`.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.predictions.is_none()`.
     pub fn predictions(&self) -> &[crate::types::Prediction] {
         self.predictions.as_deref().unwrap_or_default()
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.completions.is_none()`.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.completions.is_none()`.
     pub fn completions(&self) -> &[crate::types::Completion] {
         self.completions.as_deref().unwrap_or_default()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
-
     /// Unique identifier for the model
     pub fn model_id(&self) -> ::std::option::Option<&str> {
         self.model_id.as_deref()
@@ -55,15 +52,13 @@ impl ::aws_types::request_id::RequestId for GenerateCompletionsOutput {
     }
 }
 impl GenerateCompletionsOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`GenerateCompletionsOutput`](crate::operation::generate_completions::GenerateCompletionsOutput).
+    /// Creates a new builder-style object to manufacture [`GenerateCompletionsOutput`](crate::operation::generate_completions::GenerateCompletionsOutput).
     pub fn builder() -> crate::operation::generate_completions::builders::GenerateCompletionsOutputBuilder {
         crate::operation::generate_completions::builders::GenerateCompletionsOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`GenerateCompletionsOutput`](crate::operation::generate_completions::GenerateCompletionsOutput).
+/// A builder for [`GenerateCompletionsOutput`](crate::operation::generate_completions::GenerateCompletionsOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct GenerateCompletionsOutputBuilder {
@@ -77,79 +72,69 @@ impl GenerateCompletionsOutputBuilder {
     /// Appends an item to `predictions`.
     ///
     /// To override the contents of this collection use [`set_predictions`](Self::set_predictions).
+    ///
     pub fn predictions(mut self, input: crate::types::Prediction) -> Self {
         let mut v = self.predictions.unwrap_or_default();
         v.push(input);
         self.predictions = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_predictions(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Prediction>>) -> Self {
         self.predictions = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_predictions(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Prediction>> {
         &self.predictions
     }
-
     /// Appends an item to `completions`.
     ///
     /// To override the contents of this collection use [`set_completions`](Self::set_completions).
+    ///
     pub fn completions(mut self, input: crate::types::Completion) -> Self {
         let mut v = self.completions.unwrap_or_default();
         v.push(input);
         self.completions = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_completions(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Completion>>) -> Self {
         self.completions = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_completions(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Completion>> {
         &self.completions
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-
     /// Unique identifier for the model
     pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.model_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Unique identifier for the model
     pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.model_id = input;
         self
     }
-
     /// Unique identifier for the model
     pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.model_id
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -159,9 +144,7 @@ impl GenerateCompletionsOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`GenerateCompletionsOutput`](crate::operation::generate_completions::GenerateCompletionsOutput).
+    /// Consumes the builder and constructs a [`GenerateCompletionsOutput`](crate::operation::generate_completions::GenerateCompletionsOutput).
     pub fn build(self) -> crate::operation::generate_completions::GenerateCompletionsOutput {
         crate::operation::generate_completions::GenerateCompletionsOutput {
             predictions: self.predictions,

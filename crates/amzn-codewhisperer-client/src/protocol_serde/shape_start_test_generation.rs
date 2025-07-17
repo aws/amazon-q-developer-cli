@@ -9,9 +9,8 @@ pub fn de_start_test_generation_http_error(
     crate::operation::start_test_generation::StartTestGenerationError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder =
-        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-            .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
+    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+        .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
@@ -21,35 +20,27 @@ pub fn de_start_test_generation_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "AccessDeniedException" => {
-            crate::operation::start_test_generation::StartTestGenerationError::AccessDeniedError({
+        "AccessDeniedException" => crate::operation::start_test_generation::StartTestGenerationError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                        _response_body,
-                        output,
-                    )
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
                     .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::access_denied_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?
-                };
-                tmp
-            })
-        },
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?
+            };
+            tmp
+        }),
         "ConflictException" => crate::operation::start_test_generation::StartTestGenerationError::ConflictError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
-                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
+                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::conflict_exception_correct_errors(output)
                     .build()
@@ -62,11 +53,8 @@ pub fn de_start_test_generation_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
@@ -79,11 +67,8 @@ pub fn de_start_test_generation_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_exception_correct_errors(output)
                     .build()
@@ -91,26 +76,20 @@ pub fn de_start_test_generation_http_error(
             };
             tmp
         }),
-        "InternalServerException" => {
-            crate::operation::start_test_generation::StartTestGenerationError::InternalServerError({
+        "InternalServerException" => crate::operation::start_test_generation::StartTestGenerationError::InternalServerError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output =
-                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::internal_server_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?
-                };
-                tmp
-            })
-        },
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::internal_server_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::start_test_generation::StartTestGenerationError::unhandled)?
+            };
+            tmp
+        }),
         _ => crate::operation::start_test_generation::StartTestGenerationError::generic(generic),
     })
 }
@@ -136,14 +115,10 @@ pub fn de_start_test_generation_http_response(
 
 pub fn ser_start_test_generation_input(
     input: &crate::operation::start_test_generation::StartTestGenerationInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
-{
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
-    crate::protocol_serde::shape_start_test_generation_input::ser_start_test_generation_input_input(
-        &mut object,
-        input,
-    )?;
+    crate::protocol_serde::shape_start_test_generation_input::ser_start_test_generation_input_input(&mut object, input)?;
     object.finish();
     Ok(::aws_smithy_types::body::SdkBody::from(out))
 }
@@ -155,8 +130,7 @@ pub(crate) fn de_start_test_generation(
     crate::operation::start_test_generation::builders::StartTestGenerationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -164,17 +138,16 @@ pub(crate) fn de_start_test_generation(
             Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "testGenerationJob" => {
-                    builder = builder.set_test_generation_job(
-                        crate::protocol_serde::shape_test_generation_job::de_test_generation_job(tokens)?,
-                    );
-                },
+                    builder = builder.set_test_generation_job(crate::protocol_serde::shape_test_generation_job::de_test_generation_job(tokens)?);
+                }
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
-                ));
-            },
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                    "expected object key or end object, found: {:?}",
+                    other
+                )))
+            }
         }
     }
     if tokens.next().is_some() {

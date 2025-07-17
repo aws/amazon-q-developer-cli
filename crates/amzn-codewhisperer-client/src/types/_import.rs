@@ -38,23 +38,18 @@ impl ImportBuilder {
         self.statement = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_statement(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.statement = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_statement(&self) -> &::std::option::Option<::std::string::String> {
         &self.statement
     }
-
     /// Consumes the builder and constructs a [`Import`](crate::types::Import).
     pub fn build(self) -> crate::types::Import {
-        crate::types::Import {
-            statement: self.statement,
-        }
+        crate::types::Import { statement: self.statement }
     }
 }
 impl ::std::fmt::Debug for ImportBuilder {

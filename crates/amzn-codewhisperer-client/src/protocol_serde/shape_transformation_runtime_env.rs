@@ -6,35 +6,27 @@ pub fn ser_transformation_runtime_env(
     match input {
         crate::types::TransformationRuntimeEnv::Java(inner) => {
             object_3.key("java").string(inner.as_str());
-        },
+        }
         crate::types::TransformationRuntimeEnv::DotNet(inner) => {
             object_3.key("dotNet").string(inner.as_str());
-        },
+        }
         crate::types::TransformationRuntimeEnv::Mainframe(inner) => {
             object_3.key("mainframe").string(inner.as_str());
-        },
+        }
         crate::types::TransformationRuntimeEnv::Unknown => {
-            return Err(
-                ::aws_smithy_types::error::operation::SerializationError::unknown_variant("TransformationRuntimeEnv"),
-            );
-        },
+            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant(
+                "TransformationRuntimeEnv",
+            ))
+        }
     }
     Ok(())
 }
 
 pub(crate) fn de_transformation_runtime_env<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> ::std::result::Result<
-    Option<crate::types::TransformationRuntimeEnv>,
-    ::aws_smithy_json::deserialize::error::DeserializeError,
->
+) -> ::std::result::Result<Option<crate::types::TransformationRuntimeEnv>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
-    I: Iterator<
-        Item = Result<
-            ::aws_smithy_json::deserialize::Token<'a>,
-            ::aws_smithy_json::deserialize::error::DeserializeError,
-        >,
-    >,
+    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
 {
     let mut variant = None;
     match tokens.next().transpose()? {
@@ -43,9 +35,8 @@ where
             match tokens.next().transpose()? {
                 Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
                 Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                    if let ::std::option::Option::Some(::std::result::Result::Ok(
-                        ::aws_smithy_json::deserialize::Token::ValueNull { .. },
-                    )) = tokens.peek()
+                    if let ::std::option::Option::Some(::std::result::Result::Ok(::aws_smithy_json::deserialize::Token::ValueNull { .. })) =
+                        tokens.peek()
                     {
                         let _ = tokens.next().expect("peek returned a token")?;
                         continue;
@@ -63,28 +54,16 @@ where
                     variant = match key.as_ref() {
                         "java" => Some(crate::types::TransformationRuntimeEnv::Java(
                             ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                                .map(|s| {
-                                    s.to_unescaped()
-                                        .map(|u| crate::types::TransformationJavaRuntimeEnv::from(u.as_ref()))
-                                })
+                                .map(|s| s.to_unescaped().map(|u| crate::types::TransformationJavaRuntimeEnv::from(u.as_ref())))
                                 .transpose()?
-                                .ok_or_else(|| {
-                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                                        "value for 'java' cannot be null",
-                                    )
-                                })?,
+                                .ok_or_else(|| ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'java' cannot be null"))?,
                         )),
                         "dotNet" => Some(crate::types::TransformationRuntimeEnv::DotNet(
                             ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                                .map(|s| {
-                                    s.to_unescaped()
-                                        .map(|u| crate::types::TransformationDotNetRuntimeEnv::from(u.as_ref()))
-                                })
+                                .map(|s| s.to_unescaped().map(|u| crate::types::TransformationDotNetRuntimeEnv::from(u.as_ref())))
                                 .transpose()?
                                 .ok_or_else(|| {
-                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                                        "value for 'dotNet' cannot be null",
-                                    )
+                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'dotNet' cannot be null")
                                 })?,
                         )),
                         "mainframe" => Some(crate::types::TransformationRuntimeEnv::Mainframe(
@@ -95,29 +74,28 @@ where
                                 })
                                 .transpose()?
                                 .ok_or_else(|| {
-                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                                        "value for 'mainframe' cannot be null",
-                                    )
+                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'mainframe' cannot be null")
                                 })?,
                         )),
                         _ => {
                             ::aws_smithy_json::deserialize::token::skip_value(tokens)?;
                             Some(crate::types::TransformationRuntimeEnv::Unknown)
-                        },
+                        }
                     };
-                },
+                }
                 other => {
-                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                        format!("expected object key or end object, found: {:?}", other),
-                    ));
-                },
+                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                        "expected object key or end object, found: {:?}",
+                        other
+                    )))
+                }
             }
         },
         _ => {
             return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
                 "expected start object or null",
-            ));
-        },
+            ))
+        }
     }
     if variant.is_none() {
         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(

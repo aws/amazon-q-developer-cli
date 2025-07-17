@@ -17,17 +17,14 @@ impl CreateUserMemoryEntryInput {
     pub fn memory_entry_string(&self) -> ::std::option::Option<&str> {
         self.memory_entry_string.as_deref()
     }
-
     /// Enum to represent the origin application conversing with Sidekick.
     pub fn origin(&self) -> ::std::option::Option<&crate::types::Origin> {
         self.origin.as_ref()
     }
-
     /// ProfileArn for the managing Q Profile
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(&self) -> ::std::option::Option<&str> {
         self.client_token.as_deref()
@@ -44,15 +41,13 @@ impl ::std::fmt::Debug for CreateUserMemoryEntryInput {
     }
 }
 impl CreateUserMemoryEntryInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`CreateUserMemoryEntryInput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput).
+    /// Creates a new builder-style object to manufacture [`CreateUserMemoryEntryInput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput).
     pub fn builder() -> crate::operation::create_user_memory_entry::builders::CreateUserMemoryEntryInputBuilder {
         crate::operation::create_user_memory_entry::builders::CreateUserMemoryEntryInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`CreateUserMemoryEntryInput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput).
+/// A builder for [`CreateUserMemoryEntryInput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct CreateUserMemoryEntryInputBuilder {
@@ -68,78 +63,63 @@ impl CreateUserMemoryEntryInputBuilder {
         self.memory_entry_string = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_memory_entry_string(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.memory_entry_string = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_memory_entry_string(&self) -> &::std::option::Option<::std::string::String> {
         &self.memory_entry_string
     }
-
     /// Enum to represent the origin application conversing with Sidekick.
     /// This field is required.
     pub fn origin(mut self, input: crate::types::Origin) -> Self {
         self.origin = ::std::option::Option::Some(input);
         self
     }
-
     /// Enum to represent the origin application conversing with Sidekick.
     pub fn set_origin(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
         self.origin = input;
         self
     }
-
     /// Enum to represent the origin application conversing with Sidekick.
     pub fn get_origin(&self) -> &::std::option::Option<crate::types::Origin> {
         &self.origin
     }
-
     /// ProfileArn for the managing Q Profile
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     /// ProfileArn for the managing Q Profile
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     /// ProfileArn for the managing Q Profile
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.client_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_client_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.client_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_token
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CreateUserMemoryEntryInput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput).
+    /// Consumes the builder and constructs a [`CreateUserMemoryEntryInput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput {
             memory_entry_string: self.memory_entry_string,
             origin: self.origin,

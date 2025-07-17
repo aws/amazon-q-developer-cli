@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "amzn-codewhisperer-streaming-client"
-version = "0.1.8702"
+version = "0.1.9759"
 authors = ["Grant Gurvis <grangurv@amazon.com>"]
 build = false
 exclude = [
@@ -67,11 +67,11 @@ version = "1.2.4"
 version = "0.60.6"
 
 [dependencies.aws-smithy-http]
-version = "0.62.1"
+version = "0.60.12"
 features = ["event-stream"]
 
 [dependencies.aws-smithy-json]
-version = "0.61.3"
+version = "0.61.2"
 
 [dependencies.aws-smithy-runtime]
 version = "1.7.8"

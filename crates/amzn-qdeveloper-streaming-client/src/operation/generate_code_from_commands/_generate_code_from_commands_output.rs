@@ -28,15 +28,13 @@ impl ::aws_types::request_id::RequestId for GenerateCodeFromCommandsOutput {
     }
 }
 impl GenerateCodeFromCommandsOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`GenerateCodeFromCommandsOutput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsOutput).
+    /// Creates a new builder-style object to manufacture [`GenerateCodeFromCommandsOutput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsOutput).
     pub fn builder() -> crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsOutputBuilder {
         crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`GenerateCodeFromCommandsOutput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsOutput).
+/// A builder for [`GenerateCodeFromCommandsOutput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsOutput).
 #[derive(::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GenerateCodeFromCommandsOutputBuilder {
@@ -61,7 +59,6 @@ impl GenerateCodeFromCommandsOutputBuilder {
         self.generated_code_from_commands_response = ::std::option::Option::Some(input);
         self
     }
-
     /// Streaming events from UniDirectional streaming infrastructure code generation APIs.
     pub fn set_generated_code_from_commands_response(
         mut self,
@@ -75,7 +72,6 @@ impl GenerateCodeFromCommandsOutputBuilder {
         self.generated_code_from_commands_response = input;
         self
     }
-
     /// Streaming events from UniDirectional streaming infrastructure code generation APIs.
     pub fn get_generated_code_from_commands_response(
         &self,
@@ -87,7 +83,6 @@ impl GenerateCodeFromCommandsOutputBuilder {
     > {
         &self.generated_code_from_commands_response
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -97,9 +92,7 @@ impl GenerateCodeFromCommandsOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`GenerateCodeFromCommandsOutput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsOutput).
+    /// Consumes the builder and constructs a [`GenerateCodeFromCommandsOutput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`generated_code_from_commands_response`](crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsOutputBuilder::generated_code_from_commands_response)
     pub fn build(

@@ -14,23 +14,19 @@ impl DeleteTaskAssistConversationInput {
     pub fn conversation_id(&self) -> ::std::option::Option<&str> {
         self.conversation_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
 }
 impl DeleteTaskAssistConversationInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`DeleteTaskAssistConversationInput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput).
-    pub fn builder()
-    -> crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationInputBuilder {
+    /// Creates a new builder-style object to manufacture [`DeleteTaskAssistConversationInput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput).
+    pub fn builder() -> crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationInputBuilder {
         crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`DeleteTaskAssistConversationInput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput).
+/// A builder for [`DeleteTaskAssistConversationInput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteTaskAssistConversationInputBuilder {
@@ -44,48 +40,39 @@ impl DeleteTaskAssistConversationInputBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
-
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
-    /// Consumes the builder and constructs a
-    /// [`DeleteTaskAssistConversationInput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput).
+    /// Consumes the builder and constructs a [`DeleteTaskAssistConversationInput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput).
     pub fn build(
         self,
     ) -> ::std::result::Result<
         crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput {
-                conversation_id: self.conversation_id,
-                profile_arn: self.profile_arn,
-            },
-        )
+        ::std::result::Result::Ok(crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput {
+            conversation_id: self.conversation_id,
+            profile_arn: self.profile_arn,
+        })
     }
 }

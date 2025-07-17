@@ -14,7 +14,6 @@ impl Range {
     pub fn start(&self) -> &crate::types::Position {
         &self.start
     }
-
     /// The range's end position.
     pub fn end(&self) -> &crate::types::Position {
         &self.end
@@ -41,36 +40,30 @@ impl RangeBuilder {
         self.start = ::std::option::Option::Some(input);
         self
     }
-
     /// The range's start position.
     pub fn set_start(mut self, input: ::std::option::Option<crate::types::Position>) -> Self {
         self.start = input;
         self
     }
-
     /// The range's start position.
     pub fn get_start(&self) -> &::std::option::Option<crate::types::Position> {
         &self.start
     }
-
     /// The range's end position.
     /// This field is required.
     pub fn end(mut self, input: crate::types::Position) -> Self {
         self.end = ::std::option::Option::Some(input);
         self
     }
-
     /// The range's end position.
     pub fn set_end(mut self, input: ::std::option::Option<crate::types::Position>) -> Self {
         self.end = input;
         self
     }
-
     /// The range's end position.
     pub fn get_end(&self) -> &::std::option::Option<crate::types::Position> {
         &self.end
     }
-
     /// Consumes the builder and constructs a [`Range`](crate::types::Range).
     /// This method will fail if any of the following fields are not set:
     /// - [`start`](crate::types::builders::RangeBuilder::start)
@@ -84,10 +77,7 @@ impl RangeBuilder {
                 )
             })?,
             end: self.end.ok_or_else(|| {
-                ::aws_smithy_types::error::operation::BuildError::missing_field(
-                    "end",
-                    "end was not specified but it is required when building Range",
-                )
+                ::aws_smithy_types::error::operation::BuildError::missing_field("end", "end was not specified but it is required when building Range")
             })?,
         })
     }

@@ -5,20 +5,12 @@
 #[derive(::std::fmt::Debug)]
 pub struct ExportResultArchiveOutput {
     /// Response Stream
-    pub body: crate::event_receiver::EventReceiver<
-        crate::types::ResultArchiveStream,
-        crate::types::error::ResultArchiveStreamError,
-    >,
+    pub body: crate::event_receiver::EventReceiver<crate::types::ResultArchiveStream, crate::types::error::ResultArchiveStreamError>,
     _request_id: Option<String>,
 }
 impl ExportResultArchiveOutput {
     /// Response Stream
-    pub fn body(
-        &self,
-    ) -> &crate::event_receiver::EventReceiver<
-        crate::types::ResultArchiveStream,
-        crate::types::error::ResultArchiveStreamError,
-    > {
+    pub fn body(&self) -> &crate::event_receiver::EventReceiver<crate::types::ResultArchiveStream, crate::types::error::ResultArchiveStreamError> {
         &self.body
     }
 }
@@ -28,24 +20,18 @@ impl ::aws_types::request_id::RequestId for ExportResultArchiveOutput {
     }
 }
 impl ExportResultArchiveOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ExportResultArchiveOutput`](crate::operation::export_result_archive::ExportResultArchiveOutput).
+    /// Creates a new builder-style object to manufacture [`ExportResultArchiveOutput`](crate::operation::export_result_archive::ExportResultArchiveOutput).
     pub fn builder() -> crate::operation::export_result_archive::builders::ExportResultArchiveOutputBuilder {
         crate::operation::export_result_archive::builders::ExportResultArchiveOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`ExportResultArchiveOutput`](crate::operation::export_result_archive::ExportResultArchiveOutput).
+/// A builder for [`ExportResultArchiveOutput`](crate::operation::export_result_archive::ExportResultArchiveOutput).
 #[derive(::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ExportResultArchiveOutputBuilder {
-    pub(crate) body: ::std::option::Option<
-        crate::event_receiver::EventReceiver<
-            crate::types::ResultArchiveStream,
-            crate::types::error::ResultArchiveStreamError,
-        >,
-    >,
+    pub(crate) body:
+        ::std::option::Option<crate::event_receiver::EventReceiver<crate::types::ResultArchiveStream, crate::types::error::ResultArchiveStreamError>>,
     _request_id: Option<String>,
 }
 impl ExportResultArchiveOutputBuilder {
@@ -53,41 +39,28 @@ impl ExportResultArchiveOutputBuilder {
     /// This field is required.
     pub fn body(
         mut self,
-        input: crate::event_receiver::EventReceiver<
-            crate::types::ResultArchiveStream,
-            crate::types::error::ResultArchiveStreamError,
-        >,
+        input: crate::event_receiver::EventReceiver<crate::types::ResultArchiveStream, crate::types::error::ResultArchiveStreamError>,
     ) -> Self {
         self.body = ::std::option::Option::Some(input);
         self
     }
-
     /// Response Stream
     pub fn set_body(
         mut self,
         input: ::std::option::Option<
-            crate::event_receiver::EventReceiver<
-                crate::types::ResultArchiveStream,
-                crate::types::error::ResultArchiveStreamError,
-            >,
+            crate::event_receiver::EventReceiver<crate::types::ResultArchiveStream, crate::types::error::ResultArchiveStreamError>,
         >,
     ) -> Self {
         self.body = input;
         self
     }
-
     /// Response Stream
     pub fn get_body(
         &self,
-    ) -> &::std::option::Option<
-        crate::event_receiver::EventReceiver<
-            crate::types::ResultArchiveStream,
-            crate::types::error::ResultArchiveStreamError,
-        >,
-    > {
+    ) -> &::std::option::Option<crate::event_receiver::EventReceiver<crate::types::ResultArchiveStream, crate::types::error::ResultArchiveStreamError>>
+    {
         &self.body
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -97,17 +70,13 @@ impl ExportResultArchiveOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ExportResultArchiveOutput`](crate::operation::export_result_archive::ExportResultArchiveOutput).
+    /// Consumes the builder and constructs a [`ExportResultArchiveOutput`](crate::operation::export_result_archive::ExportResultArchiveOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`body`](crate::operation::export_result_archive::builders::ExportResultArchiveOutputBuilder::body)
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::export_result_archive::ExportResultArchiveOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::export_result_archive::ExportResultArchiveOutput, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::operation::export_result_archive::ExportResultArchiveOutput {
             body: self.body.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

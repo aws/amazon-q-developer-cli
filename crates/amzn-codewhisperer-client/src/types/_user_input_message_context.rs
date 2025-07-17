@@ -32,69 +32,55 @@ impl UserInputMessageContext {
     pub fn editor_state(&self) -> ::std::option::Option<&crate::types::EditorState> {
         self.editor_state.as_ref()
     }
-
     /// Shell state chat message context.
     pub fn shell_state(&self) -> ::std::option::Option<&crate::types::ShellState> {
         self.shell_state.as_ref()
     }
-
     /// Git state chat message context.
     pub fn git_state(&self) -> ::std::option::Option<&crate::types::GitState> {
         self.git_state.as_ref()
     }
-
     /// Environment state chat message context.
     pub fn env_state(&self) -> ::std::option::Option<&crate::types::EnvState> {
         self.env_state.as_ref()
     }
-
     /// The state of a user's AppStudio UI when sending a message.
     pub fn app_studio_context(&self) -> ::std::option::Option<&crate::types::AppStudioState> {
         self.app_studio_context.as_ref()
     }
-
     /// Diagnostic chat message context.
     pub fn diagnostic(&self) -> ::std::option::Option<&crate::types::Diagnostic> {
         self.diagnostic.as_ref()
     }
-
     /// Contextual information about the environment from which the user is calling.
     pub fn console_state(&self) -> ::std::option::Option<&crate::types::ConsoleState> {
         self.console_state.as_ref()
     }
-
     /// Settings information, e.g., whether the user has enabled cross-region API calls.
     pub fn user_settings(&self) -> ::std::option::Option<&crate::types::UserSettings> {
         self.user_settings.as_ref()
     }
-
     /// List of additional contextual content entries that can be included with the message.
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.additional_context.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.additional_context.is_none()`.
     pub fn additional_context(&self) -> &[crate::types::AdditionalContentEntry] {
         self.additional_context.as_deref().unwrap_or_default()
     }
-
     /// ToolResults for the requested ToolUses.
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.tool_results.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.tool_results.is_none()`.
     pub fn tool_results(&self) -> &[crate::types::ToolResult] {
         self.tool_results.as_deref().unwrap_or_default()
     }
-
     /// Tools that can be used.
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.tools.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.tools.is_none()`.
     pub fn tools(&self) -> &[crate::types::Tool] {
         self.tools.as_deref().unwrap_or_default()
     }
 }
 impl UserInputMessageContext {
-    /// Creates a new builder-style object to manufacture
-    /// [`UserInputMessageContext`](crate::types::UserInputMessageContext).
+    /// Creates a new builder-style object to manufacture [`UserInputMessageContext`](crate::types::UserInputMessageContext).
     pub fn builder() -> crate::types::builders::UserInputMessageContextBuilder {
         crate::types::builders::UserInputMessageContextBuilder::default()
     }
@@ -122,141 +108,116 @@ impl UserInputMessageContextBuilder {
         self.editor_state = ::std::option::Option::Some(input);
         self
     }
-
     /// Editor state chat message context.
     pub fn set_editor_state(mut self, input: ::std::option::Option<crate::types::EditorState>) -> Self {
         self.editor_state = input;
         self
     }
-
     /// Editor state chat message context.
     pub fn get_editor_state(&self) -> &::std::option::Option<crate::types::EditorState> {
         &self.editor_state
     }
-
     /// Shell state chat message context.
     pub fn shell_state(mut self, input: crate::types::ShellState) -> Self {
         self.shell_state = ::std::option::Option::Some(input);
         self
     }
-
     /// Shell state chat message context.
     pub fn set_shell_state(mut self, input: ::std::option::Option<crate::types::ShellState>) -> Self {
         self.shell_state = input;
         self
     }
-
     /// Shell state chat message context.
     pub fn get_shell_state(&self) -> &::std::option::Option<crate::types::ShellState> {
         &self.shell_state
     }
-
     /// Git state chat message context.
     pub fn git_state(mut self, input: crate::types::GitState) -> Self {
         self.git_state = ::std::option::Option::Some(input);
         self
     }
-
     /// Git state chat message context.
     pub fn set_git_state(mut self, input: ::std::option::Option<crate::types::GitState>) -> Self {
         self.git_state = input;
         self
     }
-
     /// Git state chat message context.
     pub fn get_git_state(&self) -> &::std::option::Option<crate::types::GitState> {
         &self.git_state
     }
-
     /// Environment state chat message context.
     pub fn env_state(mut self, input: crate::types::EnvState) -> Self {
         self.env_state = ::std::option::Option::Some(input);
         self
     }
-
     /// Environment state chat message context.
     pub fn set_env_state(mut self, input: ::std::option::Option<crate::types::EnvState>) -> Self {
         self.env_state = input;
         self
     }
-
     /// Environment state chat message context.
     pub fn get_env_state(&self) -> &::std::option::Option<crate::types::EnvState> {
         &self.env_state
     }
-
     /// The state of a user's AppStudio UI when sending a message.
     pub fn app_studio_context(mut self, input: crate::types::AppStudioState) -> Self {
         self.app_studio_context = ::std::option::Option::Some(input);
         self
     }
-
     /// The state of a user's AppStudio UI when sending a message.
     pub fn set_app_studio_context(mut self, input: ::std::option::Option<crate::types::AppStudioState>) -> Self {
         self.app_studio_context = input;
         self
     }
-
     /// The state of a user's AppStudio UI when sending a message.
     pub fn get_app_studio_context(&self) -> &::std::option::Option<crate::types::AppStudioState> {
         &self.app_studio_context
     }
-
     /// Diagnostic chat message context.
     pub fn diagnostic(mut self, input: crate::types::Diagnostic) -> Self {
         self.diagnostic = ::std::option::Option::Some(input);
         self
     }
-
     /// Diagnostic chat message context.
     pub fn set_diagnostic(mut self, input: ::std::option::Option<crate::types::Diagnostic>) -> Self {
         self.diagnostic = input;
         self
     }
-
     /// Diagnostic chat message context.
     pub fn get_diagnostic(&self) -> &::std::option::Option<crate::types::Diagnostic> {
         &self.diagnostic
     }
-
     /// Contextual information about the environment from which the user is calling.
     pub fn console_state(mut self, input: crate::types::ConsoleState) -> Self {
         self.console_state = ::std::option::Option::Some(input);
         self
     }
-
     /// Contextual information about the environment from which the user is calling.
     pub fn set_console_state(mut self, input: ::std::option::Option<crate::types::ConsoleState>) -> Self {
         self.console_state = input;
         self
     }
-
     /// Contextual information about the environment from which the user is calling.
     pub fn get_console_state(&self) -> &::std::option::Option<crate::types::ConsoleState> {
         &self.console_state
     }
-
     /// Settings information, e.g., whether the user has enabled cross-region API calls.
     pub fn user_settings(mut self, input: crate::types::UserSettings) -> Self {
         self.user_settings = ::std::option::Option::Some(input);
         self
     }
-
     /// Settings information, e.g., whether the user has enabled cross-region API calls.
     pub fn set_user_settings(mut self, input: ::std::option::Option<crate::types::UserSettings>) -> Self {
         self.user_settings = input;
         self
     }
-
     /// Settings information, e.g., whether the user has enabled cross-region API calls.
     pub fn get_user_settings(&self) -> &::std::option::Option<crate::types::UserSettings> {
         &self.user_settings
     }
-
     /// Appends an item to `additional_context`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_additional_context`](Self::set_additional_context).
+    /// To override the contents of this collection use [`set_additional_context`](Self::set_additional_context).
     ///
     /// List of additional contextual content entries that can be included with the message.
     pub fn additional_context(mut self, input: crate::types::AdditionalContentEntry) -> Self {
@@ -265,27 +226,18 @@ impl UserInputMessageContextBuilder {
         self.additional_context = ::std::option::Option::Some(v);
         self
     }
-
     /// List of additional contextual content entries that can be included with the message.
-    pub fn set_additional_context(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::AdditionalContentEntry>>,
-    ) -> Self {
+    pub fn set_additional_context(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::AdditionalContentEntry>>) -> Self {
         self.additional_context = input;
         self
     }
-
     /// List of additional contextual content entries that can be included with the message.
-    pub fn get_additional_context(
-        &self,
-    ) -> &::std::option::Option<::std::vec::Vec<crate::types::AdditionalContentEntry>> {
+    pub fn get_additional_context(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::AdditionalContentEntry>> {
         &self.additional_context
     }
-
     /// Appends an item to `tool_results`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_tool_results`](Self::set_tool_results).
+    /// To override the contents of this collection use [`set_tool_results`](Self::set_tool_results).
     ///
     /// ToolResults for the requested ToolUses.
     pub fn tool_results(mut self, input: crate::types::ToolResult) -> Self {
@@ -294,18 +246,15 @@ impl UserInputMessageContextBuilder {
         self.tool_results = ::std::option::Option::Some(v);
         self
     }
-
     /// ToolResults for the requested ToolUses.
     pub fn set_tool_results(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::ToolResult>>) -> Self {
         self.tool_results = input;
         self
     }
-
     /// ToolResults for the requested ToolUses.
     pub fn get_tool_results(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::ToolResult>> {
         &self.tool_results
     }
-
     /// Appends an item to `tools`.
     ///
     /// To override the contents of this collection use [`set_tools`](Self::set_tools).
@@ -317,20 +266,16 @@ impl UserInputMessageContextBuilder {
         self.tools = ::std::option::Option::Some(v);
         self
     }
-
     /// Tools that can be used.
     pub fn set_tools(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Tool>>) -> Self {
         self.tools = input;
         self
     }
-
     /// Tools that can be used.
     pub fn get_tools(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Tool>> {
         &self.tools
     }
-
-    /// Consumes the builder and constructs a
-    /// [`UserInputMessageContext`](crate::types::UserInputMessageContext).
+    /// Consumes the builder and constructs a [`UserInputMessageContext`](crate::types::UserInputMessageContext).
     pub fn build(self) -> crate::types::UserInputMessageContext {
         crate::types::UserInputMessageContext {
             editor_state: self.editor_state,

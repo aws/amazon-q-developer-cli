@@ -20,8 +20,7 @@ impl ::aws_types::request_id::RequestId for CreateProfileOutput {
     }
 }
 impl CreateProfileOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`CreateProfileOutput`](crate::operation::create_profile::CreateProfileOutput).
+    /// Creates a new builder-style object to manufacture [`CreateProfileOutput`](crate::operation::create_profile::CreateProfileOutput).
     pub fn builder() -> crate::operation::create_profile::builders::CreateProfileOutputBuilder {
         crate::operation::create_profile::builders::CreateProfileOutputBuilder::default()
     }
@@ -41,18 +40,15 @@ impl CreateProfileOutputBuilder {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -62,17 +58,12 @@ impl CreateProfileOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CreateProfileOutput`](crate::operation::create_profile::CreateProfileOutput).
+    /// Consumes the builder and constructs a [`CreateProfileOutput`](crate::operation::create_profile::CreateProfileOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`profile_arn`](crate::operation::create_profile::builders::CreateProfileOutputBuilder::profile_arn)
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::create_profile::CreateProfileOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::create_profile::CreateProfileOutput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::create_profile::CreateProfileOutput {
             profile_arn: self.profile_arn.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

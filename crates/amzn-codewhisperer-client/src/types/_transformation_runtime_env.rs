@@ -9,21 +9,18 @@ pub enum TransformationRuntimeEnv {
     Java(crate::types::TransformationJavaRuntimeEnv),
     #[allow(missing_docs)] // documentation missing in model
     Mainframe(crate::types::TransformationMainframeRuntimeEnv),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider
-    /// upgrading the SDK to the latest available version. An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
+    /// An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has
-    /// not been updated. To investigate this, consider turning on debug logging to print the
-    /// raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
+    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl TransformationRuntimeEnv {
-    /// Tries to convert the enum instance into
-    /// [`DotNet`](crate::types::TransformationRuntimeEnv::DotNet), extracting the inner
-    /// [`TransformationDotNetRuntimeEnv`](crate::types::TransformationDotNetRuntimeEnv).
+    /// Tries to convert the enum instance into [`DotNet`](crate::types::TransformationRuntimeEnv::DotNet), extracting the inner [`TransformationDotNetRuntimeEnv`](crate::types::TransformationDotNetRuntimeEnv).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_dot_net(&self) -> ::std::result::Result<&crate::types::TransformationDotNetRuntimeEnv, &Self> {
         if let TransformationRuntimeEnv::DotNet(val) = &self {
@@ -32,15 +29,11 @@ impl TransformationRuntimeEnv {
             ::std::result::Result::Err(self)
         }
     }
-
     /// Returns true if this is a [`DotNet`](crate::types::TransformationRuntimeEnv::DotNet).
     pub fn is_dot_net(&self) -> bool {
         self.as_dot_net().is_ok()
     }
-
-    /// Tries to convert the enum instance into
-    /// [`Java`](crate::types::TransformationRuntimeEnv::Java), extracting the inner
-    /// [`TransformationJavaRuntimeEnv`](crate::types::TransformationJavaRuntimeEnv).
+    /// Tries to convert the enum instance into [`Java`](crate::types::TransformationRuntimeEnv::Java), extracting the inner [`TransformationJavaRuntimeEnv`](crate::types::TransformationJavaRuntimeEnv).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_java(&self) -> ::std::result::Result<&crate::types::TransformationJavaRuntimeEnv, &Self> {
         if let TransformationRuntimeEnv::Java(val) = &self {
@@ -49,15 +42,11 @@ impl TransformationRuntimeEnv {
             ::std::result::Result::Err(self)
         }
     }
-
     /// Returns true if this is a [`Java`](crate::types::TransformationRuntimeEnv::Java).
     pub fn is_java(&self) -> bool {
         self.as_java().is_ok()
     }
-
-    /// Tries to convert the enum instance into
-    /// [`Mainframe`](crate::types::TransformationRuntimeEnv::Mainframe), extracting the inner
-    /// [`TransformationMainframeRuntimeEnv`](crate::types::TransformationMainframeRuntimeEnv).
+    /// Tries to convert the enum instance into [`Mainframe`](crate::types::TransformationRuntimeEnv::Mainframe), extracting the inner [`TransformationMainframeRuntimeEnv`](crate::types::TransformationMainframeRuntimeEnv).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_mainframe(&self) -> ::std::result::Result<&crate::types::TransformationMainframeRuntimeEnv, &Self> {
         if let TransformationRuntimeEnv::Mainframe(val) = &self {
@@ -66,12 +55,10 @@ impl TransformationRuntimeEnv {
             ::std::result::Result::Err(self)
         }
     }
-
     /// Returns true if this is a [`Mainframe`](crate::types::TransformationRuntimeEnv::Mainframe).
     pub fn is_mainframe(&self) -> bool {
         self.as_mainframe().is_ok()
     }
-
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

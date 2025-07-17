@@ -5,20 +5,14 @@
 #[derive(::std::fmt::Debug)]
 pub struct SendMessageOutput {
     /// Streaming events from UniDirectional Streaming Conversational APIs.
-    pub send_message_response: crate::event_receiver::EventReceiver<
-        crate::types::ChatResponseStream,
-        crate::types::error::ChatResponseStreamError,
-    >,
+    pub send_message_response: crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>,
     _request_id: Option<String>,
 }
 impl SendMessageOutput {
     /// Streaming events from UniDirectional Streaming Conversational APIs.
     pub fn send_message_response(
         &self,
-    ) -> &crate::event_receiver::EventReceiver<
-        crate::types::ChatResponseStream,
-        crate::types::error::ChatResponseStreamError,
-    > {
+    ) -> &crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError> {
         &self.send_message_response
     }
 }
@@ -28,8 +22,7 @@ impl ::aws_types::request_id::RequestId for SendMessageOutput {
     }
 }
 impl SendMessageOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`SendMessageOutput`](crate::operation::send_message::SendMessageOutput).
+    /// Creates a new builder-style object to manufacture [`SendMessageOutput`](crate::operation::send_message::SendMessageOutput).
     pub fn builder() -> crate::operation::send_message::builders::SendMessageOutputBuilder {
         crate::operation::send_message::builders::SendMessageOutputBuilder::default()
     }
@@ -39,12 +32,8 @@ impl SendMessageOutput {
 #[derive(::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct SendMessageOutputBuilder {
-    pub(crate) send_message_response: ::std::option::Option<
-        crate::event_receiver::EventReceiver<
-            crate::types::ChatResponseStream,
-            crate::types::error::ChatResponseStreamError,
-        >,
-    >,
+    pub(crate) send_message_response:
+        ::std::option::Option<crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>>,
     _request_id: Option<String>,
 }
 impl SendMessageOutputBuilder {
@@ -52,41 +41,28 @@ impl SendMessageOutputBuilder {
     /// This field is required.
     pub fn send_message_response(
         mut self,
-        input: crate::event_receiver::EventReceiver<
-            crate::types::ChatResponseStream,
-            crate::types::error::ChatResponseStreamError,
-        >,
+        input: crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>,
     ) -> Self {
         self.send_message_response = ::std::option::Option::Some(input);
         self
     }
-
     /// Streaming events from UniDirectional Streaming Conversational APIs.
     pub fn set_send_message_response(
         mut self,
         input: ::std::option::Option<
-            crate::event_receiver::EventReceiver<
-                crate::types::ChatResponseStream,
-                crate::types::error::ChatResponseStreamError,
-            >,
+            crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>,
         >,
     ) -> Self {
         self.send_message_response = input;
         self
     }
-
     /// Streaming events from UniDirectional Streaming Conversational APIs.
     pub fn get_send_message_response(
         &self,
-    ) -> &::std::option::Option<
-        crate::event_receiver::EventReceiver<
-            crate::types::ChatResponseStream,
-            crate::types::error::ChatResponseStreamError,
-        >,
-    > {
+    ) -> &::std::option::Option<crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>>
+    {
         &self.send_message_response
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -96,17 +72,10 @@ impl SendMessageOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`SendMessageOutput`](crate::operation::send_message::SendMessageOutput). This method
-    /// will fail if any of the following fields are not set:
+    /// Consumes the builder and constructs a [`SendMessageOutput`](crate::operation::send_message::SendMessageOutput).
+    /// This method will fail if any of the following fields are not set:
     /// - [`send_message_response`](crate::operation::send_message::builders::SendMessageOutputBuilder::send_message_response)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<
-        crate::operation::send_message::SendMessageOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    pub fn build(self) -> ::std::result::Result<crate::operation::send_message::SendMessageOutput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::send_message::SendMessageOutput {
             send_message_response: self.send_message_response.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

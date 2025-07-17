@@ -15,7 +15,6 @@ impl ListUserMemoryEntriesOutput {
         use std::ops::Deref;
         self.memory_entries.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
@@ -27,15 +26,13 @@ impl ::aws_types::request_id::RequestId for ListUserMemoryEntriesOutput {
     }
 }
 impl ListUserMemoryEntriesOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ListUserMemoryEntriesOutput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput).
+    /// Creates a new builder-style object to manufacture [`ListUserMemoryEntriesOutput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput).
     pub fn builder() -> crate::operation::list_user_memory_entries::builders::ListUserMemoryEntriesOutputBuilder {
         crate::operation::list_user_memory_entries::builders::ListUserMemoryEntriesOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`ListUserMemoryEntriesOutput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput).
+/// A builder for [`ListUserMemoryEntriesOutput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListUserMemoryEntriesOutputBuilder {
@@ -46,8 +43,7 @@ pub struct ListUserMemoryEntriesOutputBuilder {
 impl ListUserMemoryEntriesOutputBuilder {
     /// Appends an item to `memory_entries`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_memory_entries`](Self::set_memory_entries).
+    /// To override the contents of this collection use [`set_memory_entries`](Self::set_memory_entries).
     ///
     /// List of user memories
     pub fn memory_entries(mut self, input: crate::types::MemoryEntry) -> Self {
@@ -56,38 +52,29 @@ impl ListUserMemoryEntriesOutputBuilder {
         self.memory_entries = ::std::option::Option::Some(v);
         self
     }
-
     /// List of user memories
-    pub fn set_memory_entries(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::MemoryEntry>>,
-    ) -> Self {
+    pub fn set_memory_entries(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::MemoryEntry>>) -> Self {
         self.memory_entries = input;
         self
     }
-
     /// List of user memories
     pub fn get_memory_entries(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::MemoryEntry>> {
         &self.memory_entries
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -97,9 +84,7 @@ impl ListUserMemoryEntriesOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ListUserMemoryEntriesOutput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput).
+    /// Consumes the builder and constructs a [`ListUserMemoryEntriesOutput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`memory_entries`](crate::operation::list_user_memory_entries::builders::ListUserMemoryEntriesOutputBuilder::memory_entries)
     pub fn build(
@@ -108,17 +93,15 @@ impl ListUserMemoryEntriesOutputBuilder {
         crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(
-            crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput {
-                memory_entries: self.memory_entries.ok_or_else(|| {
-                    ::aws_smithy_types::error::operation::BuildError::missing_field(
-                        "memory_entries",
-                        "memory_entries was not specified but it is required when building ListUserMemoryEntriesOutput",
-                    )
-                })?,
-                next_token: self.next_token,
-                _request_id: self._request_id,
-            },
-        )
+        ::std::result::Result::Ok(crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput {
+            memory_entries: self.memory_entries.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "memory_entries",
+                    "memory_entries was not specified but it is required when building ListUserMemoryEntriesOutput",
+                )
+            })?,
+            next_token: self.next_token,
+            _request_id: self._request_id,
+        })
     }
 }

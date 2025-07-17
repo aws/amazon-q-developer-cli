@@ -7,15 +7,12 @@ pub fn ser_intent_context(
         crate::types::IntentContext::Documentation(inner) => {
             #[allow(unused_mut)]
             let mut object_1 = object_13.key("documentation").start_object();
-            crate::protocol_serde::shape_documentation_intent_context::ser_documentation_intent_context(
-                &mut object_1,
-                inner,
-            )?;
+            crate::protocol_serde::shape_documentation_intent_context::ser_documentation_intent_context(&mut object_1, inner)?;
             object_1.finish();
-        },
+        }
         crate::types::IntentContext::Unknown => {
-            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("IntentContext"));
-        },
+            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("IntentContext"))
+        }
     }
     Ok(())
 }

@@ -12,6 +12,7 @@
 /// ```text
 /// # let uploadintent = unimplemented!();
 /// match uploadintent {
+///     UploadIntent::AgenticCodeReview => { /* ... */ },
 ///     UploadIntent::AutomaticFileSecurityScan => { /* ... */ },
 ///     UploadIntent::CodeFixGeneration => { /* ... */ },
 ///     UploadIntent::FullProjectSecurityScan => { /* ... */ },
@@ -44,15 +45,11 @@
 /// Upload Intent
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum UploadIntent {
+    /// Agentic Code Review
+    AgenticCodeReview,
     /// Automatic File Security Scan
     AutomaticFileSecurityScan,
     /// Code Fix Generation
@@ -68,14 +65,13 @@ pub enum UploadIntent {
     /// Workspace Context
     WorkspaceContext,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for UploadIntent {
     fn from(s: &str) -> Self {
         match s {
+            "AGENTIC_CODE_REVIEW" => UploadIntent::AgenticCodeReview,
             "AUTOMATIC_FILE_SECURITY_SCAN" => UploadIntent::AutomaticFileSecurityScan,
             "CODE_FIX_GENERATION" => UploadIntent::CodeFixGeneration,
             "FULL_PROJECT_SECURITY_SCAN" => UploadIntent::FullProjectSecurityScan,
@@ -83,9 +79,7 @@ impl ::std::convert::From<&str> for UploadIntent {
             "TRANSFORMATION" => UploadIntent::Transformation,
             "UNIT_TESTS_GENERATION" => UploadIntent::UnitTestsGeneration,
             "WORKSPACE_CONTEXT" => UploadIntent::WorkspaceContext,
-            other => UploadIntent::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => UploadIntent::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -100,6 +94,7 @@ impl UploadIntent {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            UploadIntent::AgenticCodeReview => "AGENTIC_CODE_REVIEW",
             UploadIntent::AutomaticFileSecurityScan => "AUTOMATIC_FILE_SECURITY_SCAN",
             UploadIntent::CodeFixGeneration => "CODE_FIX_GENERATION",
             UploadIntent::FullProjectSecurityScan => "FULL_PROJECT_SECURITY_SCAN",
@@ -110,10 +105,10 @@ impl UploadIntent {
             UploadIntent::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[
+            "AGENTIC_CODE_REVIEW",
             "AUTOMATIC_FILE_SECURITY_SCAN",
             "CODE_FIX_GENERATION",
             "FULL_PROJECT_SECURITY_SCAN",
@@ -144,6 +139,7 @@ impl UploadIntent {
 impl ::std::fmt::Display for UploadIntent {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            UploadIntent::AgenticCodeReview => write!(f, "AGENTIC_CODE_REVIEW"),
             UploadIntent::AutomaticFileSecurityScan => write!(f, "AUTOMATIC_FILE_SECURITY_SCAN"),
             UploadIntent::CodeFixGeneration => write!(f, "CODE_FIX_GENERATION"),
             UploadIntent::FullProjectSecurityScan => write!(f, "FULL_PROJECT_SECURITY_SCAN"),

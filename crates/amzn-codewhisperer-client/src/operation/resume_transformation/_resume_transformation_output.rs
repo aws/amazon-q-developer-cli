@@ -20,15 +20,13 @@ impl ::aws_types::request_id::RequestId for ResumeTransformationOutput {
     }
 }
 impl ResumeTransformationOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ResumeTransformationOutput`](crate::operation::resume_transformation::ResumeTransformationOutput).
+    /// Creates a new builder-style object to manufacture [`ResumeTransformationOutput`](crate::operation::resume_transformation::ResumeTransformationOutput).
     pub fn builder() -> crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder {
         crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`ResumeTransformationOutput`](crate::operation::resume_transformation::ResumeTransformationOutput).
+/// A builder for [`ResumeTransformationOutput`](crate::operation::resume_transformation::ResumeTransformationOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ResumeTransformationOutputBuilder {
@@ -42,21 +40,15 @@ impl ResumeTransformationOutputBuilder {
         self.transformation_status = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_transformation_status(
-        mut self,
-        input: ::std::option::Option<crate::types::TransformationStatus>,
-    ) -> Self {
+    pub fn set_transformation_status(mut self, input: ::std::option::Option<crate::types::TransformationStatus>) -> Self {
         self.transformation_status = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_transformation_status(&self) -> &::std::option::Option<crate::types::TransformationStatus> {
         &self.transformation_status
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -66,17 +58,13 @@ impl ResumeTransformationOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ResumeTransformationOutput`](crate::operation::resume_transformation::ResumeTransformationOutput).
+    /// Consumes the builder and constructs a [`ResumeTransformationOutput`](crate::operation::resume_transformation::ResumeTransformationOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`transformation_status`](crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder::transformation_status)
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::resume_transformation::ResumeTransformationOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::resume_transformation::ResumeTransformationOutput, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::operation::resume_transformation::ResumeTransformationOutput {
             transformation_status: self.transformation_status.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

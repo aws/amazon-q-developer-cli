@@ -10,8 +10,7 @@ pub struct CreateArtifactUploadUrlOutput {
     #[allow(missing_docs)] // documentation missing in model
     pub kms_key_arn: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
-    pub request_headers:
-        ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>>,
+    pub request_headers: ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>>,
     _request_id: Option<String>,
 }
 impl CreateArtifactUploadUrlOutput {
@@ -20,22 +19,17 @@ impl CreateArtifactUploadUrlOutput {
         use std::ops::Deref;
         self.upload_id.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn upload_url(&self) -> &str {
         use std::ops::Deref;
         self.upload_url.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn kms_key_arn(&self) -> ::std::option::Option<&str> {
         self.kms_key_arn.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn request_headers(
-        &self,
-    ) -> ::std::option::Option<&::std::collections::HashMap<::std::string::String, ::std::string::String>> {
+    pub fn request_headers(&self) -> ::std::option::Option<&::std::collections::HashMap<::std::string::String, ::std::string::String>> {
         self.request_headers.as_ref()
     }
 }
@@ -56,23 +50,20 @@ impl ::aws_types::request_id::RequestId for CreateArtifactUploadUrlOutput {
     }
 }
 impl CreateArtifactUploadUrlOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`CreateArtifactUploadUrlOutput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlOutput).
+    /// Creates a new builder-style object to manufacture [`CreateArtifactUploadUrlOutput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlOutput).
     pub fn builder() -> crate::operation::create_artifact_upload_url::builders::CreateArtifactUploadUrlOutputBuilder {
         crate::operation::create_artifact_upload_url::builders::CreateArtifactUploadUrlOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`CreateArtifactUploadUrlOutput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlOutput).
+/// A builder for [`CreateArtifactUploadUrlOutput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct CreateArtifactUploadUrlOutputBuilder {
     pub(crate) upload_id: ::std::option::Option<::std::string::String>,
     pub(crate) upload_url: ::std::option::Option<::std::string::String>,
     pub(crate) kms_key_arn: ::std::option::Option<::std::string::String>,
-    pub(crate) request_headers:
-        ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>>,
+    pub(crate) request_headers: ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>>,
     _request_id: Option<String>,
 }
 impl CreateArtifactUploadUrlOutputBuilder {
@@ -82,57 +73,48 @@ impl CreateArtifactUploadUrlOutputBuilder {
         self.upload_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Upload ID returned by CreateUploadUrl API
     pub fn set_upload_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.upload_id = input;
         self
     }
-
     /// Upload ID returned by CreateUploadUrl API
     pub fn get_upload_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.upload_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn upload_url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.upload_url = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_upload_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.upload_url = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_upload_url(&self) -> &::std::option::Option<::std::string::String> {
         &self.upload_url
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn kms_key_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.kms_key_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_kms_key_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.kms_key_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_kms_key_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.kms_key_arn
     }
-
     /// Adds a key-value pair to `request_headers`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_request_headers`](Self::set_request_headers).
+    /// To override the contents of this collection use [`set_request_headers`](Self::set_request_headers).
+    ///
     pub fn request_headers(
         mut self,
         k: impl ::std::convert::Into<::std::string::String>,
@@ -143,7 +125,6 @@ impl CreateArtifactUploadUrlOutputBuilder {
         self.request_headers = ::std::option::Option::Some(hash_map);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_request_headers(
         mut self,
@@ -152,14 +133,10 @@ impl CreateArtifactUploadUrlOutputBuilder {
         self.request_headers = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_request_headers(
-        &self,
-    ) -> &::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>> {
+    pub fn get_request_headers(&self) -> &::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>> {
         &self.request_headers
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -169,9 +146,7 @@ impl CreateArtifactUploadUrlOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CreateArtifactUploadUrlOutput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlOutput).
+    /// Consumes the builder and constructs a [`CreateArtifactUploadUrlOutput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`upload_id`](crate::operation::create_artifact_upload_url::builders::CreateArtifactUploadUrlOutputBuilder::upload_id)
     /// - [`upload_url`](crate::operation::create_artifact_upload_url::builders::CreateArtifactUploadUrlOutputBuilder::upload_url)
@@ -181,25 +156,23 @@ impl CreateArtifactUploadUrlOutputBuilder {
         crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlOutput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(
-            crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlOutput {
-                upload_id: self.upload_id.ok_or_else(|| {
-                    ::aws_smithy_types::error::operation::BuildError::missing_field(
-                        "upload_id",
-                        "upload_id was not specified but it is required when building CreateArtifactUploadUrlOutput",
-                    )
-                })?,
-                upload_url: self.upload_url.ok_or_else(|| {
-                    ::aws_smithy_types::error::operation::BuildError::missing_field(
-                        "upload_url",
-                        "upload_url was not specified but it is required when building CreateArtifactUploadUrlOutput",
-                    )
-                })?,
-                kms_key_arn: self.kms_key_arn,
-                request_headers: self.request_headers,
-                _request_id: self._request_id,
-            },
-        )
+        ::std::result::Result::Ok(crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlOutput {
+            upload_id: self.upload_id.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "upload_id",
+                    "upload_id was not specified but it is required when building CreateArtifactUploadUrlOutput",
+                )
+            })?,
+            upload_url: self.upload_url.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "upload_url",
+                    "upload_url was not specified but it is required when building CreateArtifactUploadUrlOutput",
+                )
+            })?,
+            kms_key_arn: self.kms_key_arn,
+            request_headers: self.request_headers,
+            _request_id: self._request_id,
+        })
     }
 }
 impl ::std::fmt::Debug for CreateArtifactUploadUrlOutputBuilder {

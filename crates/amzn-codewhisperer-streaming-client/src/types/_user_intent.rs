@@ -47,13 +47,7 @@
 /// User Intent
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum UserIntent {
     /// Apply Common Best Practices
@@ -77,9 +71,7 @@ pub enum UserIntent {
     /// Suggest Alternative Implementation
     SuggestAlternateImplementation,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for UserIntent {
@@ -95,9 +87,7 @@ impl ::std::convert::From<&str> for UserIntent {
             "IMPROVE_CODE" => UserIntent::ImproveCode,
             "SHOW_EXAMPLES" => UserIntent::ShowExamples,
             "SUGGEST_ALTERNATE_IMPLEMENTATION" => UserIntent::SuggestAlternateImplementation,
-            other => UserIntent::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => UserIntent::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -125,7 +115,6 @@ impl UserIntent {
             UserIntent::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[

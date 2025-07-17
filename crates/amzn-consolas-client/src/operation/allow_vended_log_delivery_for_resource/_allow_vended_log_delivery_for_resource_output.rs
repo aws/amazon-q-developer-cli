@@ -19,15 +19,13 @@ impl ::aws_types::request_id::RequestId for AllowVendedLogDeliveryForResourceOut
     }
 }
 impl AllowVendedLogDeliveryForResourceOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`AllowVendedLogDeliveryForResourceOutput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput).
-    pub fn builder() -> crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceOutputBuilder{
+    /// Creates a new builder-style object to manufacture [`AllowVendedLogDeliveryForResourceOutput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput).
+    pub fn builder() -> crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceOutputBuilder {
         crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`AllowVendedLogDeliveryForResourceOutput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput).
+/// A builder for [`AllowVendedLogDeliveryForResourceOutput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct AllowVendedLogDeliveryForResourceOutputBuilder {
@@ -40,18 +38,15 @@ impl AllowVendedLogDeliveryForResourceOutputBuilder {
         self.message = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.message
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -61,12 +56,8 @@ impl AllowVendedLogDeliveryForResourceOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`AllowVendedLogDeliveryForResourceOutput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput).
-    pub fn build(
-        self,
-    ) -> crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput {
+    /// Consumes the builder and constructs a [`AllowVendedLogDeliveryForResourceOutput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput).
+    pub fn build(self) -> crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput {
         crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput {
             message: self.message,
             _request_id: self._request_id,

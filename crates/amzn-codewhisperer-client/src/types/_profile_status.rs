@@ -40,39 +40,29 @@
 /// be avoided for two reasons:
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
+///
 #[allow(missing_docs)] // documentation missing in model
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum ProfileStatus {
     /// After successful creation or update, a profile transitions to ACTIVE status.
     Active,
-    /// In the event of a failure during a create operation, a profile will be assigned a status of
-    /// CREATE_FAILED.
+    /// In the event of a failure during a create operation, a profile will be assigned a status of CREATE_FAILED.
     CreateFailed,
     /// After a create request is received, a profile transitions to CREATING status.
     Creating,
-    /// In the event of a failure during a delete operation, a profile will be assigned a status of
-    /// DELETE_FAILED.
+    /// In the event of a failure during a delete operation, a profile will be assigned a status of DELETE_FAILED.
     DeleteFailed,
     /// After a delete request is received, a profile transitions to DELETING status.
     Deleting,
-    /// In the event of a failure during an update operation, a profile will be assigned a status of
-    /// UPDATE_FAILED.
+    /// In the event of a failure during an update operation, a profile will be assigned a status of UPDATE_FAILED.
     UpdateFailed,
     /// After an update request is received, a profile transitions to UPDATING status.
     Updating,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for ProfileStatus {
@@ -85,9 +75,7 @@ impl ::std::convert::From<&str> for ProfileStatus {
             "DELETING" => ProfileStatus::Deleting,
             "UPDATE_FAILED" => ProfileStatus::UpdateFailed,
             "UPDATING" => ProfileStatus::Updating,
-            other => ProfileStatus::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => ProfileStatus::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -112,7 +100,6 @@ impl ProfileStatus {
             ProfileStatus::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[

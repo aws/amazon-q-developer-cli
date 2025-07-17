@@ -18,32 +18,27 @@ impl ExportResultArchiveInput {
     pub fn export_id(&self) -> ::std::option::Option<&str> {
         self.export_id.as_deref()
     }
-
     /// Export Intent
     pub fn export_intent(&self) -> ::std::option::Option<&crate::types::ExportIntent> {
         self.export_intent.as_ref()
     }
-
     /// Export Context
     pub fn export_context(&self) -> ::std::option::Option<&crate::types::ExportContext> {
         self.export_context.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
 }
 impl ExportResultArchiveInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ExportResultArchiveInput`](crate::operation::export_result_archive::ExportResultArchiveInput).
+    /// Creates a new builder-style object to manufacture [`ExportResultArchiveInput`](crate::operation::export_result_archive::ExportResultArchiveInput).
     pub fn builder() -> crate::operation::export_result_archive::builders::ExportResultArchiveInputBuilder {
         crate::operation::export_result_archive::builders::ExportResultArchiveInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`ExportResultArchiveInput`](crate::operation::export_result_archive::ExportResultArchiveInput).
+/// A builder for [`ExportResultArchiveInput`](crate::operation::export_result_archive::ExportResultArchiveInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ExportResultArchiveInputBuilder {
@@ -59,78 +54,63 @@ impl ExportResultArchiveInputBuilder {
         self.export_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_export_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.export_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_export_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.export_id
     }
-
     /// Export Intent
     /// This field is required.
     pub fn export_intent(mut self, input: crate::types::ExportIntent) -> Self {
         self.export_intent = ::std::option::Option::Some(input);
         self
     }
-
     /// Export Intent
     pub fn set_export_intent(mut self, input: ::std::option::Option<crate::types::ExportIntent>) -> Self {
         self.export_intent = input;
         self
     }
-
     /// Export Intent
     pub fn get_export_intent(&self) -> &::std::option::Option<crate::types::ExportIntent> {
         &self.export_intent
     }
-
     /// Export Context
     pub fn export_context(mut self, input: crate::types::ExportContext) -> Self {
         self.export_context = ::std::option::Option::Some(input);
         self
     }
-
     /// Export Context
     pub fn set_export_context(mut self, input: ::std::option::Option<crate::types::ExportContext>) -> Self {
         self.export_context = input;
         self
     }
-
     /// Export Context
     pub fn get_export_context(&self) -> &::std::option::Option<crate::types::ExportContext> {
         &self.export_context
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ExportResultArchiveInput`](crate::operation::export_result_archive::ExportResultArchiveInput).
+    /// Consumes the builder and constructs a [`ExportResultArchiveInput`](crate::operation::export_result_archive::ExportResultArchiveInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::export_result_archive::ExportResultArchiveInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::export_result_archive::ExportResultArchiveInput, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::operation::export_result_archive::ExportResultArchiveInput {
             export_id: self.export_id,
             export_intent: self.export_intent,

@@ -14,7 +14,6 @@ impl WebLink {
         use std::ops::Deref;
         self.label.deref()
     }
-
     /// URL of the Weblink
     pub fn url(&self) -> &str {
         use std::ops::Deref;
@@ -50,43 +49,35 @@ impl WebLinkBuilder {
         self.label = ::std::option::Option::Some(input.into());
         self
     }
-
     /// A label for the link
     pub fn set_label(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.label = input;
         self
     }
-
     /// A label for the link
     pub fn get_label(&self) -> &::std::option::Option<::std::string::String> {
         &self.label
     }
-
     /// URL of the Weblink
     /// This field is required.
     pub fn url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.url = ::std::option::Option::Some(input.into());
         self
     }
-
     /// URL of the Weblink
     pub fn set_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.url = input;
         self
     }
-
     /// URL of the Weblink
     pub fn get_url(&self) -> &::std::option::Option<::std::string::String> {
         &self.url
     }
-
     /// Consumes the builder and constructs a [`WebLink`](crate::types::WebLink).
     /// This method will fail if any of the following fields are not set:
     /// - [`label`](crate::types::builders::WebLinkBuilder::label)
     /// - [`url`](crate::types::builders::WebLinkBuilder::url)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::WebLink, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::WebLink, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::WebLink {
             label: self.label.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

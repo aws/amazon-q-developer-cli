@@ -14,7 +14,6 @@ impl InvalidStateEvent {
     pub fn reason(&self) -> &crate::types::InvalidStateReason {
         &self.reason
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn message(&self) -> &str {
         use std::ops::Deref;
@@ -22,8 +21,7 @@ impl InvalidStateEvent {
     }
 }
 impl InvalidStateEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`InvalidStateEvent`](crate::types::InvalidStateEvent).
+    /// Creates a new builder-style object to manufacture [`InvalidStateEvent`](crate::types::InvalidStateEvent).
     pub fn builder() -> crate::types::builders::InvalidStateEventBuilder {
         crate::types::builders::InvalidStateEventBuilder::default()
     }
@@ -43,44 +41,35 @@ impl InvalidStateEventBuilder {
         self.reason = ::std::option::Option::Some(input);
         self
     }
-
     /// Reasons for Invalid State Event
     pub fn set_reason(mut self, input: ::std::option::Option<crate::types::InvalidStateReason>) -> Self {
         self.reason = input;
         self
     }
-
     /// Reasons for Invalid State Event
     pub fn get_reason(&self) -> &::std::option::Option<crate::types::InvalidStateReason> {
         &self.reason
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn message(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.message = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.message
     }
-
-    /// Consumes the builder and constructs a
-    /// [`InvalidStateEvent`](crate::types::InvalidStateEvent). This method will fail if any of
-    /// the following fields are not set:
+    /// Consumes the builder and constructs a [`InvalidStateEvent`](crate::types::InvalidStateEvent).
+    /// This method will fail if any of the following fields are not set:
     /// - [`reason`](crate::types::builders::InvalidStateEventBuilder::reason)
     /// - [`message`](crate::types::builders::InvalidStateEventBuilder::message)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::InvalidStateEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::InvalidStateEvent, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::InvalidStateEvent {
             reason: self.reason.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

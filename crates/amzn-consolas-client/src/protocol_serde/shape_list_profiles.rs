@@ -4,14 +4,10 @@ pub fn de_list_profiles_http_error(
     _response_status: u16,
     _response_headers: &::aws_smithy_runtime_api::http::Headers,
     _response_body: &[u8],
-) -> std::result::Result<
-    crate::operation::list_profiles::ListProfilesOutput,
-    crate::operation::list_profiles::ListProfilesError,
-> {
+) -> std::result::Result<crate::operation::list_profiles::ListProfilesOutput, crate::operation::list_profiles::ListProfilesError> {
     #[allow(unused_mut)]
-    let mut generic_builder =
-        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-            .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
+    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+        .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
@@ -26,11 +22,8 @@ pub fn de_list_profiles_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_exception_correct_errors(output)
                     .build()
@@ -43,11 +36,8 @@ pub fn de_list_profiles_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
@@ -60,11 +50,8 @@ pub fn de_list_profiles_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::internal_server_exception_correct_errors(output)
                     .build()
@@ -77,11 +64,8 @@ pub fn de_list_profiles_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::list_profiles::ListProfilesError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
@@ -98,10 +82,7 @@ pub fn de_list_profiles_http_response(
     _response_status: u16,
     _response_headers: &::aws_smithy_runtime_api::http::Headers,
     _response_body: &[u8],
-) -> std::result::Result<
-    crate::operation::list_profiles::ListProfilesOutput,
-    crate::operation::list_profiles::ListProfilesError,
-> {
+) -> std::result::Result<crate::operation::list_profiles::ListProfilesOutput, crate::operation::list_profiles::ListProfilesError> {
     Ok({
         #[allow(unused_mut)]
         let mut output = crate::operation::list_profiles::builders::ListProfilesOutputBuilder::default();
@@ -116,8 +97,7 @@ pub fn de_list_profiles_http_response(
 
 pub fn ser_list_profiles_input(
     input: &crate::operation::list_profiles::ListProfilesInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
-{
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_list_profiles_input::ser_list_profiles_input_input(&mut object, input)?;
@@ -132,8 +112,7 @@ pub(crate) fn de_list_profiles(
     crate::operation::list_profiles::builders::ListProfilesOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -142,21 +121,22 @@ pub(crate) fn de_list_profiles(
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "profiles" => {
                     builder = builder.set_profiles(crate::protocol_serde::shape_profile_list::de_profile_list(tokens)?);
-                },
+                }
                 "nextToken" => {
                     builder = builder.set_next_token(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
                             .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                             .transpose()?,
                     );
-                },
+                }
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
-                ));
-            },
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                    "expected object key or end object, found: {:?}",
+                    other
+                )))
+            }
         }
     }
     if tokens.next().is_some() {

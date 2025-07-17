@@ -21,10 +21,7 @@ pub fn ser_update_profile_input_input(
     if let Some(var_6) = &input.reference_tracker_configuration {
         #[allow(unused_mut)]
         let mut object_7 = object.key("referenceTrackerConfiguration").start_object();
-        crate::protocol_serde::shape_reference_tracker_configuration::ser_reference_tracker_configuration(
-            &mut object_7,
-            var_6,
-        )?;
+        crate::protocol_serde::shape_reference_tracker_configuration::ser_reference_tracker_configuration(&mut object_7, var_6)?;
         object_7.finish();
     }
     if let Some(var_8) = &input.active_functionalities {

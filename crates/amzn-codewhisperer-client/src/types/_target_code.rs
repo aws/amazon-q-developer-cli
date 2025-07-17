@@ -14,10 +14,9 @@ impl TargetCode {
         use std::ops::Deref;
         self.relative_target_path.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.target_line_range_list.is_none()`.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.target_line_range_list.is_none()`.
     pub fn target_line_range_list(&self) -> &[crate::types::Range] {
         self.target_line_range_list.as_deref().unwrap_or_default()
     }
@@ -51,49 +50,38 @@ impl TargetCodeBuilder {
         self.relative_target_path = ::std::option::Option::Some(input.into());
         self
     }
-
     /// The file path relative to the root of the workspace, could be a single file or a folder.
     pub fn set_relative_target_path(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.relative_target_path = input;
         self
     }
-
     /// The file path relative to the root of the workspace, could be a single file or a folder.
     pub fn get_relative_target_path(&self) -> &::std::option::Option<::std::string::String> {
         &self.relative_target_path
     }
-
     /// Appends an item to `target_line_range_list`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_target_line_range_list`](Self::set_target_line_range_list).
+    /// To override the contents of this collection use [`set_target_line_range_list`](Self::set_target_line_range_list).
+    ///
     pub fn target_line_range_list(mut self, input: crate::types::Range) -> Self {
         let mut v = self.target_line_range_list.unwrap_or_default();
         v.push(input);
         self.target_line_range_list = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_target_line_range_list(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::Range>>,
-    ) -> Self {
+    pub fn set_target_line_range_list(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Range>>) -> Self {
         self.target_line_range_list = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_target_line_range_list(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Range>> {
         &self.target_line_range_list
     }
-
     /// Consumes the builder and constructs a [`TargetCode`](crate::types::TargetCode).
     /// This method will fail if any of the following fields are not set:
     /// - [`relative_target_path`](crate::types::builders::TargetCodeBuilder::relative_target_path)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::TargetCode, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::TargetCode, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TargetCode {
             relative_target_path: self.relative_target_path.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

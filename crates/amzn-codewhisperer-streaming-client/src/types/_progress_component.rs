@@ -13,8 +13,7 @@ impl ProgressComponent {
     }
 }
 impl ProgressComponent {
-    /// Creates a new builder-style object to manufacture
-    /// [`ProgressComponent`](crate::types::ProgressComponent).
+    /// Creates a new builder-style object to manufacture [`ProgressComponent`](crate::types::ProgressComponent).
     pub fn builder() -> crate::types::builders::ProgressComponentBuilder {
         crate::types::builders::ProgressComponentBuilder::default()
     }
@@ -32,20 +31,16 @@ impl ProgressComponentBuilder {
         self.step = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure representing an individual step in a process.
     pub fn set_step(mut self, input: ::std::option::Option<crate::types::Step>) -> Self {
         self.step = input;
         self
     }
-
     /// Structure representing an individual step in a process.
     pub fn get_step(&self) -> &::std::option::Option<crate::types::Step> {
         &self.step
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ProgressComponent`](crate::types::ProgressComponent).
+    /// Consumes the builder and constructs a [`ProgressComponent`](crate::types::ProgressComponent).
     pub fn build(self) -> crate::types::ProgressComponent {
         crate::types::ProgressComponent { step: self.step }
     }

@@ -13,7 +13,6 @@ impl CreateWorkspaceInput {
     pub fn workspace_root(&self) -> ::std::option::Option<&str> {
         self.workspace_root.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
@@ -28,15 +27,13 @@ impl ::std::fmt::Debug for CreateWorkspaceInput {
     }
 }
 impl CreateWorkspaceInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`CreateWorkspaceInput`](crate::operation::create_workspace::CreateWorkspaceInput).
+    /// Creates a new builder-style object to manufacture [`CreateWorkspaceInput`](crate::operation::create_workspace::CreateWorkspaceInput).
     pub fn builder() -> crate::operation::create_workspace::builders::CreateWorkspaceInputBuilder {
         crate::operation::create_workspace::builders::CreateWorkspaceInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`CreateWorkspaceInput`](crate::operation::create_workspace::CreateWorkspaceInput).
+/// A builder for [`CreateWorkspaceInput`](crate::operation::create_workspace::CreateWorkspaceInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct CreateWorkspaceInputBuilder {
@@ -50,43 +47,33 @@ impl CreateWorkspaceInputBuilder {
         self.workspace_root = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_workspace_root(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.workspace_root = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_workspace_root(&self) -> &::std::option::Option<::std::string::String> {
         &self.workspace_root
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CreateWorkspaceInput`](crate::operation::create_workspace::CreateWorkspaceInput).
+    /// Consumes the builder and constructs a [`CreateWorkspaceInput`](crate::operation::create_workspace::CreateWorkspaceInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::create_workspace::CreateWorkspaceInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::create_workspace::CreateWorkspaceInput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::create_workspace::CreateWorkspaceInput {
             workspace_root: self.workspace_root,
             profile_arn: self.profile_arn,

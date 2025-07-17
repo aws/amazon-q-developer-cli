@@ -5,8 +5,7 @@
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct DryRunSucceedEvent {}
 impl DryRunSucceedEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`DryRunSucceedEvent`](crate::types::DryRunSucceedEvent).
+    /// Creates a new builder-style object to manufacture [`DryRunSucceedEvent`](crate::types::DryRunSucceedEvent).
     pub fn builder() -> crate::types::builders::DryRunSucceedEventBuilder {
         crate::types::builders::DryRunSucceedEventBuilder::default()
     }
@@ -17,8 +16,7 @@ impl DryRunSucceedEvent {
 #[non_exhaustive]
 pub struct DryRunSucceedEventBuilder {}
 impl DryRunSucceedEventBuilder {
-    /// Consumes the builder and constructs a
-    /// [`DryRunSucceedEvent`](crate::types::DryRunSucceedEvent).
+    /// Consumes the builder and constructs a [`DryRunSucceedEvent`](crate::types::DryRunSucceedEvent).
     pub fn build(self) -> crate::types::DryRunSucceedEvent {
         crate::types::DryRunSucceedEvent {}
     }

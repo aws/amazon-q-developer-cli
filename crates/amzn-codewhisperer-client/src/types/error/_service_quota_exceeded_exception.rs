@@ -44,8 +44,7 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for ServiceQuotaE
     }
 }
 impl ServiceQuotaExceededError {
-    /// Creates a new builder-style object to manufacture
-    /// [`ServiceQuotaExceededError`](crate::types::error::ServiceQuotaExceededError).
+    /// Creates a new builder-style object to manufacture [`ServiceQuotaExceededError`](crate::types::error::ServiceQuotaExceededError).
     pub fn builder() -> crate::types::error::builders::ServiceQuotaExceededErrorBuilder {
         crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default()
     }
@@ -66,38 +65,29 @@ impl ServiceQuotaExceededErrorBuilder {
         self.message = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.message
     }
-
     /// Reason for ServiceQuotaExceededException
     pub fn reason(mut self, input: crate::types::ServiceQuotaExceededExceptionReason) -> Self {
         self.reason = ::std::option::Option::Some(input);
         self
     }
-
     /// Reason for ServiceQuotaExceededException
-    pub fn set_reason(
-        mut self,
-        input: ::std::option::Option<crate::types::ServiceQuotaExceededExceptionReason>,
-    ) -> Self {
+    pub fn set_reason(mut self, input: ::std::option::Option<crate::types::ServiceQuotaExceededExceptionReason>) -> Self {
         self.reason = input;
         self
     }
-
     /// Reason for ServiceQuotaExceededException
     pub fn get_reason(&self) -> &::std::option::Option<crate::types::ServiceQuotaExceededExceptionReason> {
         &self.reason
     }
-
     /// Sets error metadata
     pub fn meta(mut self, meta: ::aws_smithy_types::error::ErrorMetadata) -> Self {
         self.meta = Some(meta);
@@ -109,17 +99,10 @@ impl ServiceQuotaExceededErrorBuilder {
         self.meta = meta;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ServiceQuotaExceededError`](crate::types::error::ServiceQuotaExceededError).
+    /// Consumes the builder and constructs a [`ServiceQuotaExceededError`](crate::types::error::ServiceQuotaExceededError).
     /// This method will fail if any of the following fields are not set:
     /// - [`message`](crate::types::error::builders::ServiceQuotaExceededErrorBuilder::message)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<
-        crate::types::error::ServiceQuotaExceededError,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    pub fn build(self) -> ::std::result::Result<crate::types::error::ServiceQuotaExceededError, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::error::ServiceQuotaExceededError {
             message: self.message.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

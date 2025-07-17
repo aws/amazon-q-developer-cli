@@ -10,15 +10,13 @@ pub struct CodeReferenceEvent {
 impl CodeReferenceEvent {
     /// Code References for Assistant Response Message
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.references.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.references.is_none()`.
     pub fn references(&self) -> &[crate::types::Reference] {
         self.references.as_deref().unwrap_or_default()
     }
 }
 impl CodeReferenceEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`CodeReferenceEvent`](crate::types::CodeReferenceEvent).
+    /// Creates a new builder-style object to manufacture [`CodeReferenceEvent`](crate::types::CodeReferenceEvent).
     pub fn builder() -> crate::types::builders::CodeReferenceEventBuilder {
         crate::types::builders::CodeReferenceEventBuilder::default()
     }
@@ -42,23 +40,17 @@ impl CodeReferenceEventBuilder {
         self.references = ::std::option::Option::Some(v);
         self
     }
-
     /// Code References for Assistant Response Message
     pub fn set_references(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Reference>>) -> Self {
         self.references = input;
         self
     }
-
     /// Code References for Assistant Response Message
     pub fn get_references(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Reference>> {
         &self.references
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CodeReferenceEvent`](crate::types::CodeReferenceEvent).
+    /// Consumes the builder and constructs a [`CodeReferenceEvent`](crate::types::CodeReferenceEvent).
     pub fn build(self) -> crate::types::CodeReferenceEvent {
-        crate::types::CodeReferenceEvent {
-            references: self.references,
-        }
+        crate::types::CodeReferenceEvent { references: self.references }
     }
 }

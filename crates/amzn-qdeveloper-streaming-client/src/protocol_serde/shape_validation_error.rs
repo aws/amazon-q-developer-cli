@@ -2,12 +2,8 @@
 pub(crate) fn de_validation_error_json_err(
     value: &[u8],
     mut builder: crate::types::error::builders::ValidationErrorBuilder,
-) -> ::std::result::Result<
-    crate::types::error::builders::ValidationErrorBuilder,
-    ::aws_smithy_json::deserialize::error::DeserializeError,
-> {
-    let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+) -> ::std::result::Result<crate::types::error::builders::ValidationErrorBuilder, ::aws_smithy_json::deserialize::error::DeserializeError> {
+    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -20,24 +16,22 @@ pub(crate) fn de_validation_error_json_err(
                             .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                             .transpose()?,
                     );
-                },
+                }
                 "reason" => {
                     builder = builder.set_reason(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                            .map(|s| {
-                                s.to_unescaped()
-                                    .map(|u| crate::types::ValidationExceptionReason::from(u.as_ref()))
-                            })
+                            .map(|s| s.to_unescaped().map(|u| crate::types::ValidationExceptionReason::from(u.as_ref())))
                             .transpose()?,
                     );
-                },
+                }
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
-                ));
-            },
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                    "expected object key or end object, found: {:?}",
+                    other
+                )))
+            }
         }
     }
     if tokens.next().is_some() {

@@ -23,31 +23,26 @@ impl Resource {
         use std::ops::Deref;
         self.title.deref()
     }
-
     /// Link for the resource item
     pub fn link(&self) -> &str {
         use std::ops::Deref;
         self.link.deref()
     }
-
     /// Short text about that resource for example Region: us-east-1
     pub fn description(&self) -> &str {
         use std::ops::Deref;
         self.description.deref()
     }
-
     /// Resource type e.g AWS EC2
     pub fn r#type(&self) -> &str {
         use std::ops::Deref;
         self.r#type.deref()
     }
-
     /// Amazon resource number e.g arn:aws:aec:.....
     pub fn arn(&self) -> &str {
         use std::ops::Deref;
         self.arn.deref()
     }
-
     /// A stringified object
     pub fn resource_json_string(&self) -> &str {
         use std::ops::Deref;
@@ -91,108 +86,90 @@ impl ResourceBuilder {
         self.title = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Card title.
     pub fn set_title(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.title = input;
         self
     }
-
     /// Card title.
     pub fn get_title(&self) -> &::std::option::Option<::std::string::String> {
         &self.title
     }
-
     /// Link for the resource item
     /// This field is required.
     pub fn link(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.link = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Link for the resource item
     pub fn set_link(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.link = input;
         self
     }
-
     /// Link for the resource item
     pub fn get_link(&self) -> &::std::option::Option<::std::string::String> {
         &self.link
     }
-
     /// Short text about that resource for example Region: us-east-1
     /// This field is required.
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Short text about that resource for example Region: us-east-1
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
-
     /// Short text about that resource for example Region: us-east-1
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
-
     /// Resource type e.g AWS EC2
     /// This field is required.
     pub fn r#type(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.r#type = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Resource type e.g AWS EC2
     pub fn set_type(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.r#type = input;
         self
     }
-
     /// Resource type e.g AWS EC2
     pub fn get_type(&self) -> &::std::option::Option<::std::string::String> {
         &self.r#type
     }
-
     /// Amazon resource number e.g arn:aws:aec:.....
     /// This field is required.
     pub fn arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.arn = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Amazon resource number e.g arn:aws:aec:.....
     pub fn set_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.arn = input;
         self
     }
-
     /// Amazon resource number e.g arn:aws:aec:.....
     pub fn get_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.arn
     }
-
     /// A stringified object
     /// This field is required.
     pub fn resource_json_string(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.resource_json_string = ::std::option::Option::Some(input.into());
         self
     }
-
     /// A stringified object
     pub fn set_resource_json_string(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.resource_json_string = input;
         self
     }
-
     /// A stringified object
     pub fn get_resource_json_string(&self) -> &::std::option::Option<::std::string::String> {
         &self.resource_json_string
     }
-
     /// Consumes the builder and constructs a [`Resource`](crate::types::Resource).
     /// This method will fail if any of the following fields are not set:
     /// - [`title`](crate::types::builders::ResourceBuilder::title)
@@ -201,9 +178,7 @@ impl ResourceBuilder {
     /// - [`r#type`](crate::types::builders::ResourceBuilder::type)
     /// - [`arn`](crate::types::builders::ResourceBuilder::arn)
     /// - [`resource_json_string`](crate::types::builders::ResourceBuilder::resource_json_string)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::Resource, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::Resource, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::Resource {
             title: self.title.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

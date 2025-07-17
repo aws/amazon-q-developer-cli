@@ -23,35 +23,29 @@ impl PackageInfo {
     pub fn execution_command(&self) -> ::std::option::Option<&str> {
         self.execution_command.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn build_command(&self) -> ::std::option::Option<&str> {
         self.build_command.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn build_order(&self) -> ::std::option::Option<i32> {
         self.build_order
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn test_framework(&self) -> ::std::option::Option<&str> {
         self.test_framework.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn package_summary(&self) -> ::std::option::Option<&str> {
         self.package_summary.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn package_plan(&self) -> ::std::option::Option<&str> {
         self.package_plan.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.target_file_info_list.is_none()`.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.target_file_info_list.is_none()`.
     pub fn target_file_info_list(&self) -> &[crate::types::TargetFileInfo] {
         self.target_file_info_list.as_deref().unwrap_or_default()
     }
@@ -70,8 +64,7 @@ impl ::std::fmt::Debug for PackageInfo {
     }
 }
 impl PackageInfo {
-    /// Creates a new builder-style object to manufacture
-    /// [`PackageInfo`](crate::types::PackageInfo).
+    /// Creates a new builder-style object to manufacture [`PackageInfo`](crate::types::PackageInfo).
     pub fn builder() -> crate::types::builders::PackageInfoBuilder {
         crate::types::builders::PackageInfoBuilder::default()
     }
@@ -95,128 +88,104 @@ impl PackageInfoBuilder {
         self.execution_command = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_execution_command(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.execution_command = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_execution_command(&self) -> &::std::option::Option<::std::string::String> {
         &self.execution_command
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn build_command(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.build_command = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_build_command(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.build_command = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_build_command(&self) -> &::std::option::Option<::std::string::String> {
         &self.build_command
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn build_order(mut self, input: i32) -> Self {
         self.build_order = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_build_order(mut self, input: ::std::option::Option<i32>) -> Self {
         self.build_order = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_build_order(&self) -> &::std::option::Option<i32> {
         &self.build_order
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn test_framework(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.test_framework = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_test_framework(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.test_framework = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_test_framework(&self) -> &::std::option::Option<::std::string::String> {
         &self.test_framework
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn package_summary(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.package_summary = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_package_summary(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.package_summary = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_package_summary(&self) -> &::std::option::Option<::std::string::String> {
         &self.package_summary
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn package_plan(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.package_plan = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_package_plan(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.package_plan = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_package_plan(&self) -> &::std::option::Option<::std::string::String> {
         &self.package_plan
     }
-
     /// Appends an item to `target_file_info_list`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_target_file_info_list`](Self::set_target_file_info_list).
+    /// To override the contents of this collection use [`set_target_file_info_list`](Self::set_target_file_info_list).
+    ///
     pub fn target_file_info_list(mut self, input: crate::types::TargetFileInfo) -> Self {
         let mut v = self.target_file_info_list.unwrap_or_default();
         v.push(input);
         self.target_file_info_list = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_target_file_info_list(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::TargetFileInfo>>,
-    ) -> Self {
+    pub fn set_target_file_info_list(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::TargetFileInfo>>) -> Self {
         self.target_file_info_list = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_target_file_info_list(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::TargetFileInfo>> {
         &self.target_file_info_list
     }
-
     /// Consumes the builder and constructs a [`PackageInfo`](crate::types::PackageInfo).
     pub fn build(self) -> crate::types::PackageInfo {
         crate::types::PackageInfo {

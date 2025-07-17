@@ -2,15 +2,13 @@
 pub fn de_send_message_response_payload(
     body: &mut ::aws_smithy_types::body::SdkBody,
 ) -> std::result::Result<
-    crate::event_receiver::EventReceiver<
-        crate::types::ChatResponseStream,
-        crate::types::error::ChatResponseStreamError,
-    >,
+    crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>,
     crate::operation::send_message::SendMessageError,
 > {
     let unmarshaller = crate::event_stream_serde::ChatResponseStreamUnmarshaller::new();
     let body = std::mem::replace(body, ::aws_smithy_types::body::SdkBody::taken());
-    Ok(crate::event_receiver::EventReceiver::new(
-        ::aws_smithy_http::event_stream::Receiver::new(unmarshaller, body),
-    ))
+    Ok(crate::event_receiver::EventReceiver::new(::aws_smithy_http::event_stream::Receiver::new(
+        unmarshaller,
+        body,
+    )))
 }

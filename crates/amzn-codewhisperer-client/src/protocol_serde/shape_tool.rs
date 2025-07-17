@@ -9,10 +9,8 @@ pub fn ser_tool(
             let mut object_1 = object_28.key("toolSpecification").start_object();
             crate::protocol_serde::shape_tool_specification::ser_tool_specification(&mut object_1, inner)?;
             object_1.finish();
-        },
-        crate::types::Tool::Unknown => {
-            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("Tool"));
-        },
+        }
+        crate::types::Tool::Unknown => return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("Tool")),
     }
     Ok(())
 }

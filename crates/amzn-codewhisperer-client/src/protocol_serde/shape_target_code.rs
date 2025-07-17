@@ -4,9 +4,7 @@ pub fn ser_target_code(
     input: &crate::types::TargetCode,
 ) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
-        object
-            .key("relativeTargetPath")
-            .string(input.relative_target_path.as_str());
+        object.key("relativeTargetPath").string(input.relative_target_path.as_str());
     }
     if let Some(var_1) = &input.target_line_range_list {
         let mut array_2 = object.key("targetLineRangeList").start_array();

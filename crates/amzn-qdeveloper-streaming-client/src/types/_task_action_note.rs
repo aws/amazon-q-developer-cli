@@ -15,7 +15,6 @@ impl TaskActionNote {
         use std::ops::Deref;
         self.content.deref()
     }
-
     /// Enum defining the types of notes that can be associated with a task action.
     pub fn r#type(&self) -> ::std::option::Option<&crate::types::TaskActionNoteType> {
         self.r#type.as_ref()
@@ -30,8 +29,7 @@ impl ::std::fmt::Debug for TaskActionNote {
     }
 }
 impl TaskActionNote {
-    /// Creates a new builder-style object to manufacture
-    /// [`TaskActionNote`](crate::types::TaskActionNote).
+    /// Creates a new builder-style object to manufacture [`TaskActionNote`](crate::types::TaskActionNote).
     pub fn builder() -> crate::types::builders::TaskActionNoteBuilder {
         crate::types::builders::TaskActionNoteBuilder::default()
     }
@@ -51,41 +49,33 @@ impl TaskActionNoteBuilder {
         self.content = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Content of the note, which may include sensitive information.
     pub fn set_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.content = input;
         self
     }
-
     /// Content of the note, which may include sensitive information.
     pub fn get_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.content
     }
-
     /// Enum defining the types of notes that can be associated with a task action.
     pub fn r#type(mut self, input: crate::types::TaskActionNoteType) -> Self {
         self.r#type = ::std::option::Option::Some(input);
         self
     }
-
     /// Enum defining the types of notes that can be associated with a task action.
     pub fn set_type(mut self, input: ::std::option::Option<crate::types::TaskActionNoteType>) -> Self {
         self.r#type = input;
         self
     }
-
     /// Enum defining the types of notes that can be associated with a task action.
     pub fn get_type(&self) -> &::std::option::Option<crate::types::TaskActionNoteType> {
         &self.r#type
     }
-
     /// Consumes the builder and constructs a [`TaskActionNote`](crate::types::TaskActionNote).
     /// This method will fail if any of the following fields are not set:
     /// - [`content`](crate::types::builders::TaskActionNoteBuilder::content)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::TaskActionNote, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::TaskActionNote, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TaskActionNote {
             content: self.content.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

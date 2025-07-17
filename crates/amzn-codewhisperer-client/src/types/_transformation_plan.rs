@@ -14,8 +14,7 @@ impl TransformationPlan {
     }
 }
 impl TransformationPlan {
-    /// Creates a new builder-style object to manufacture
-    /// [`TransformationPlan`](crate::types::TransformationPlan).
+    /// Creates a new builder-style object to manufacture [`TransformationPlan`](crate::types::TransformationPlan).
     pub fn builder() -> crate::types::builders::TransformationPlanBuilder {
         crate::types::builders::TransformationPlanBuilder::default()
     }
@@ -30,38 +29,27 @@ pub struct TransformationPlanBuilder {
 impl TransformationPlanBuilder {
     /// Appends an item to `transformation_steps`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_transformation_steps`](Self::set_transformation_steps).
+    /// To override the contents of this collection use [`set_transformation_steps`](Self::set_transformation_steps).
+    ///
     pub fn transformation_steps(mut self, input: crate::types::TransformationStep) -> Self {
         let mut v = self.transformation_steps.unwrap_or_default();
         v.push(input);
         self.transformation_steps = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_transformation_steps(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::TransformationStep>>,
-    ) -> Self {
+    pub fn set_transformation_steps(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::TransformationStep>>) -> Self {
         self.transformation_steps = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_transformation_steps(
-        &self,
-    ) -> &::std::option::Option<::std::vec::Vec<crate::types::TransformationStep>> {
+    pub fn get_transformation_steps(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::TransformationStep>> {
         &self.transformation_steps
     }
-
-    /// Consumes the builder and constructs a
-    /// [`TransformationPlan`](crate::types::TransformationPlan). This method will fail if any
-    /// of the following fields are not set:
+    /// Consumes the builder and constructs a [`TransformationPlan`](crate::types::TransformationPlan).
+    /// This method will fail if any of the following fields are not set:
     /// - [`transformation_steps`](crate::types::builders::TransformationPlanBuilder::transformation_steps)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::TransformationPlan, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::TransformationPlan, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TransformationPlan {
             transformation_steps: self.transformation_steps.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

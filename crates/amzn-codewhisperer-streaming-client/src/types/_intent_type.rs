@@ -12,6 +12,7 @@
 /// ```text
 /// # let intenttype = unimplemented!();
 /// match intenttype {
+///     IntentType::Deeplinks => { /* ... */ },
 ///     IntentType::GlueSensei => { /* ... */ },
 ///     IntentType::ResourceData => { /* ... */ },
 ///     IntentType::Support => { /* ... */ },
@@ -36,18 +37,15 @@
 /// be avoided for two reasons:
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
+///
 #[allow(missing_docs)] // documentation missing in model
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum IntentType {
+    #[allow(missing_docs)] // documentation missing in model
+    Deeplinks,
     #[allow(missing_docs)] // documentation missing in model
     GlueSensei,
     #[allow(missing_docs)] // documentation missing in model
@@ -55,20 +53,17 @@ pub enum IntentType {
     #[allow(missing_docs)] // documentation missing in model
     Support,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for IntentType {
     fn from(s: &str) -> Self {
         match s {
+            "DEEPLINKS" => IntentType::Deeplinks,
             "GLUE_SENSEI" => IntentType::GlueSensei,
             "RESOURCE_DATA" => IntentType::ResourceData,
             "SUPPORT" => IntentType::Support,
-            other => IntentType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => IntentType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -83,16 +78,16 @@ impl IntentType {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            IntentType::Deeplinks => "DEEPLINKS",
             IntentType::GlueSensei => "GLUE_SENSEI",
             IntentType::ResourceData => "RESOURCE_DATA",
             IntentType::Support => "SUPPORT",
             IntentType::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["GLUE_SENSEI", "RESOURCE_DATA", "SUPPORT"]
+        &["DEEPLINKS", "GLUE_SENSEI", "RESOURCE_DATA", "SUPPORT"]
     }
 }
 impl ::std::convert::AsRef<str> for IntentType {
@@ -115,6 +110,7 @@ impl IntentType {
 impl ::std::fmt::Display for IntentType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            IntentType::Deeplinks => write!(f, "DEEPLINKS"),
             IntentType::GlueSensei => write!(f, "GLUE_SENSEI"),
             IntentType::ResourceData => write!(f, "RESOURCE_DATA"),
             IntentType::Support => write!(f, "SUPPORT"),

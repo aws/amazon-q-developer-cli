@@ -4,23 +4,15 @@ pub fn de_get_usage_limits_http_error(
     _response_status: u16,
     _response_headers: &::aws_smithy_runtime_api::http::Headers,
     _response_body: &[u8],
-) -> std::result::Result<
-    crate::operation::get_usage_limits::GetUsageLimitsOutput,
-    crate::operation::get_usage_limits::GetUsageLimitsError,
-> {
+) -> std::result::Result<crate::operation::get_usage_limits::GetUsageLimitsOutput, crate::operation::get_usage_limits::GetUsageLimitsError> {
     #[allow(unused_mut)]
-    let mut generic_builder =
-        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-            .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
+    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+        .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
         Some(code) => code,
-        None => {
-            return Err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled(
-                generic,
-            ));
-        },
+        None => return Err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled(generic)),
     };
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
@@ -30,11 +22,8 @@ pub fn de_get_usage_limits_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_exception_correct_errors(output)
                     .build()
@@ -47,11 +36,8 @@ pub fn de_get_usage_limits_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
@@ -64,11 +50,8 @@ pub fn de_get_usage_limits_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
@@ -81,11 +64,8 @@ pub fn de_get_usage_limits_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::internal_server_exception_correct_errors(output)
                     .build()
@@ -102,10 +82,7 @@ pub fn de_get_usage_limits_http_response(
     _response_status: u16,
     _response_headers: &::aws_smithy_runtime_api::http::Headers,
     _response_body: &[u8],
-) -> std::result::Result<
-    crate::operation::get_usage_limits::GetUsageLimitsOutput,
-    crate::operation::get_usage_limits::GetUsageLimitsError,
-> {
+) -> std::result::Result<crate::operation::get_usage_limits::GetUsageLimitsOutput, crate::operation::get_usage_limits::GetUsageLimitsError> {
     Ok({
         #[allow(unused_mut)]
         let mut output = crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder::default();
@@ -120,8 +97,7 @@ pub fn de_get_usage_limits_http_response(
 
 pub fn ser_get_usage_limits_input(
     input: &crate::operation::get_usage_limits::GetUsageLimitsInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
-{
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_get_usage_limits_input::ser_get_usage_limits_input_input(&mut object, input)?;
@@ -136,8 +112,7 @@ pub(crate) fn de_get_usage_limits(
     crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -146,21 +121,22 @@ pub(crate) fn de_get_usage_limits(
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "limits" => {
                     builder = builder.set_limits(crate::protocol_serde::shape_usage_limits::de_usage_limits(tokens)?);
-                },
+                }
                 "daysUntilReset" => {
                     builder = builder.set_days_until_reset(
                         ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                             .map(i32::try_from)
                             .transpose()?,
                     );
-                },
+                }
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
-                ));
-            },
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                    "expected object key or end object, found: {:?}",
+                    other
+                )))
+            }
         }
     }
     if tokens.next().is_some() {

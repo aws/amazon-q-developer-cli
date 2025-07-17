@@ -13,7 +13,6 @@ impl Action {
     pub fn web_link(&self) -> ::std::option::Option<&crate::types::WebLink> {
         self.web_link.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn module_link(&self) -> ::std::option::Option<&crate::types::ModuleLink> {
         self.module_link.as_ref()
@@ -39,35 +38,29 @@ impl ActionBuilder {
         self.web_link = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_web_link(mut self, input: ::std::option::Option<crate::types::WebLink>) -> Self {
         self.web_link = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_web_link(&self) -> &::std::option::Option<crate::types::WebLink> {
         &self.web_link
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn module_link(mut self, input: crate::types::ModuleLink) -> Self {
         self.module_link = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_module_link(mut self, input: ::std::option::Option<crate::types::ModuleLink>) -> Self {
         self.module_link = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_module_link(&self) -> &::std::option::Option<crate::types::ModuleLink> {
         &self.module_link
     }
-
     /// Consumes the builder and constructs a [`Action`](crate::types::Action).
     pub fn build(self) -> crate::types::Action {
         crate::types::Action {

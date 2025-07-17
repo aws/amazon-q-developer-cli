@@ -12,6 +12,8 @@
 /// ```text
 /// # let throttlingexceptionreason = unimplemented!();
 /// match throttlingexceptionreason {
+///     ThrottlingExceptionReason::DailyRequestCount => { /* ... */ },
+///     ThrottlingExceptionReason::InsufficientModelCapacity => { /* ... */ },
 ///     ThrottlingExceptionReason::MonthlyRequestCount => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
@@ -38,30 +40,26 @@
 /// Reason for ThrottlingException
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum ThrottlingExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
+    DailyRequestCount,
+    #[allow(missing_docs)] // documentation missing in model
+    InsufficientModelCapacity,
+    #[allow(missing_docs)] // documentation missing in model
     MonthlyRequestCount,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for ThrottlingExceptionReason {
     fn from(s: &str) -> Self {
         match s {
+            "DAILY_REQUEST_COUNT" => ThrottlingExceptionReason::DailyRequestCount,
+            "INSUFFICIENT_MODEL_CAPACITY" => ThrottlingExceptionReason::InsufficientModelCapacity,
             "MONTHLY_REQUEST_COUNT" => ThrottlingExceptionReason::MonthlyRequestCount,
-            other => ThrottlingExceptionReason::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => ThrottlingExceptionReason::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -76,14 +74,15 @@ impl ThrottlingExceptionReason {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            ThrottlingExceptionReason::DailyRequestCount => "DAILY_REQUEST_COUNT",
+            ThrottlingExceptionReason::InsufficientModelCapacity => "INSUFFICIENT_MODEL_CAPACITY",
             ThrottlingExceptionReason::MonthlyRequestCount => "MONTHLY_REQUEST_COUNT",
             ThrottlingExceptionReason::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["MONTHLY_REQUEST_COUNT"]
+        &["DAILY_REQUEST_COUNT", "INSUFFICIENT_MODEL_CAPACITY", "MONTHLY_REQUEST_COUNT"]
     }
 }
 impl ::std::convert::AsRef<str> for ThrottlingExceptionReason {
@@ -106,6 +105,8 @@ impl ThrottlingExceptionReason {
 impl ::std::fmt::Display for ThrottlingExceptionReason {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            ThrottlingExceptionReason::DailyRequestCount => write!(f, "DAILY_REQUEST_COUNT"),
+            ThrottlingExceptionReason::InsufficientModelCapacity => write!(f, "INSUFFICIENT_MODEL_CAPACITY"),
             ThrottlingExceptionReason::MonthlyRequestCount => write!(f, "MONTHLY_REQUEST_COUNT"),
             ThrottlingExceptionReason::Unknown(value) => write!(f, "{}", value),
         }

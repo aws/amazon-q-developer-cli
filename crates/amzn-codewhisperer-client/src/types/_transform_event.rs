@@ -24,40 +24,33 @@ impl TransformEvent {
         use std::ops::Deref;
         self.job_id.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
         self.timestamp.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn ide_category(&self) -> ::std::option::Option<&crate::types::IdeCategory> {
         self.ide_category.as_ref()
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> ::std::option::Option<&crate::types::ProgrammingLanguage> {
         self.programming_language.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_changed(&self) -> ::std::option::Option<i32> {
         self.lines_of_code_changed
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn chars_of_code_changed(&self) -> ::std::option::Option<i32> {
         self.chars_of_code_changed
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_submitted(&self) -> ::std::option::Option<i32> {
         self.lines_of_code_submitted
     }
 }
 impl TransformEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`TransformEvent`](crate::types::TransformEvent).
+    /// Creates a new builder-style object to manufacture [`TransformEvent`](crate::types::TransformEvent).
     pub fn builder() -> crate::types::builders::TransformEventBuilder {
         crate::types::builders::TransformEventBuilder::default()
     }
@@ -82,126 +75,103 @@ impl TransformEventBuilder {
         self.job_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Identifier for the Transformation Job
     pub fn set_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.job_id = input;
         self
     }
-
     /// Identifier for the Transformation Job
     pub fn get_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.job_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.timestamp = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.timestamp = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn ide_category(mut self, input: crate::types::IdeCategory) -> Self {
         self.ide_category = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_ide_category(mut self, input: ::std::option::Option<crate::types::IdeCategory>) -> Self {
         self.ide_category = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_ide_category(&self) -> &::std::option::Option<crate::types::IdeCategory> {
         &self.ide_category
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_changed(mut self, input: i32) -> Self {
         self.lines_of_code_changed = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_lines_of_code_changed(mut self, input: ::std::option::Option<i32>) -> Self {
         self.lines_of_code_changed = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_lines_of_code_changed(&self) -> &::std::option::Option<i32> {
         &self.lines_of_code_changed
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn chars_of_code_changed(mut self, input: i32) -> Self {
         self.chars_of_code_changed = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_chars_of_code_changed(mut self, input: ::std::option::Option<i32>) -> Self {
         self.chars_of_code_changed = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_chars_of_code_changed(&self) -> &::std::option::Option<i32> {
         &self.chars_of_code_changed
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_submitted(mut self, input: i32) -> Self {
         self.lines_of_code_submitted = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_lines_of_code_submitted(mut self, input: ::std::option::Option<i32>) -> Self {
         self.lines_of_code_submitted = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_lines_of_code_submitted(&self) -> &::std::option::Option<i32> {
         &self.lines_of_code_submitted
     }
-
     /// Consumes the builder and constructs a [`TransformEvent`](crate::types::TransformEvent).
     /// This method will fail if any of the following fields are not set:
     /// - [`job_id`](crate::types::builders::TransformEventBuilder::job_id)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::TransformEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::TransformEvent, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TransformEvent {
             job_id: self.job_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

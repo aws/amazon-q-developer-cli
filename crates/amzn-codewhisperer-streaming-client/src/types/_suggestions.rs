@@ -15,8 +15,7 @@ impl Suggestions {
     }
 }
 impl Suggestions {
-    /// Creates a new builder-style object to manufacture
-    /// [`Suggestions`](crate::types::Suggestions).
+    /// Creates a new builder-style object to manufacture [`Suggestions`](crate::types::Suggestions).
     pub fn builder() -> crate::types::builders::SuggestionsBuilder {
         crate::types::builders::SuggestionsBuilder::default()
     }
@@ -32,30 +31,26 @@ impl SuggestionsBuilder {
     /// Appends an item to `items`.
     ///
     /// To override the contents of this collection use [`set_items`](Self::set_items).
+    ///
     pub fn items(mut self, input: crate::types::Suggestion) -> Self {
         let mut v = self.items.unwrap_or_default();
         v.push(input);
         self.items = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_items(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Suggestion>>) -> Self {
         self.items = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_items(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Suggestion>> {
         &self.items
     }
-
     /// Consumes the builder and constructs a [`Suggestions`](crate::types::Suggestions).
     /// This method will fail if any of the following fields are not set:
     /// - [`items`](crate::types::builders::SuggestionsBuilder::items)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::Suggestions, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::Suggestions, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::Suggestions {
             items: self.items.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

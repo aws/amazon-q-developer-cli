@@ -8,7 +8,6 @@ impl UnlockServiceLinkedRole {
     pub fn new() -> Self {
         Self
     }
-
     pub(crate) async fn orchestrate(
         runtime_plugins: &::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins,
         input: crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput,
@@ -28,13 +27,9 @@ impl UnlockServiceLinkedRole {
                     .expect("correct error type")
             })
         };
-        let context = Self::orchestrate_with_stop_point(
-            runtime_plugins,
-            input,
-            ::aws_smithy_runtime::client::orchestrator::StopPoint::None,
-        )
-        .await
-        .map_err(map_err)?;
+        let context = Self::orchestrate_with_stop_point(runtime_plugins, input, ::aws_smithy_runtime::client::orchestrator::StopPoint::None)
+            .await
+            .map_err(map_err)?;
         let output = context.finalize().map_err(map_err)?;
         ::std::result::Result::Ok(
             output
@@ -94,17 +89,13 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for UnlockS
         cfg.store_put(::aws_smithy_runtime_api::client::ser_de::SharedRequestSerializer::new(
             UnlockServiceLinkedRoleRequestSerializer,
         ));
-        cfg.store_put(
-            ::aws_smithy_runtime_api::client::ser_de::SharedResponseDeserializer::new(
-                UnlockServiceLinkedRoleResponseDeserializer,
-            ),
-        );
+        cfg.store_put(::aws_smithy_runtime_api::client::ser_de::SharedResponseDeserializer::new(
+            UnlockServiceLinkedRoleResponseDeserializer,
+        ));
 
-        cfg.store_put(
-            ::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
-                ::aws_smithy_runtime_api::client::auth::static_resolver::StaticAuthSchemeOptionResolverParams::new(),
-            ),
-        );
+        cfg.store_put(::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
+            ::aws_smithy_runtime_api::client::auth::static_resolver::StaticAuthSchemeOptionResolverParams::new(),
+        ));
 
         cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::Metadata::new(
             "UnlockServiceLinkedRole",
@@ -129,26 +120,18 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for UnlockS
         _: &::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder,
     ) -> ::std::borrow::Cow<'_, ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder> {
         #[allow(unused_mut)]
-        let mut rcb = ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder::new(
-            "UnlockServiceLinkedRole",
-        )
-        .with_interceptor(
-            ::aws_smithy_runtime::client::stalled_stream_protection::StalledStreamProtectionInterceptor::default(),
-        )
-        .with_interceptor(UnlockServiceLinkedRoleEndpointParamsInterceptor)
-        .with_retry_classifier(
-            ::aws_smithy_runtime::client::retries::classifiers::TransientErrorClassifier::<
+        let mut rcb = ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder::new("UnlockServiceLinkedRole")
+            .with_interceptor(::aws_smithy_runtime::client::stalled_stream_protection::StalledStreamProtectionInterceptor::default())
+            .with_interceptor(UnlockServiceLinkedRoleEndpointParamsInterceptor)
+            .with_retry_classifier(::aws_smithy_runtime::client::retries::classifiers::TransientErrorClassifier::<
                 crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleError,
-            >::new(),
-        )
-        .with_retry_classifier(
-            ::aws_smithy_runtime::client::retries::classifiers::ModeledAsRetryableClassifier::<
+            >::new())
+            .with_retry_classifier(::aws_smithy_runtime::client::retries::classifiers::ModeledAsRetryableClassifier::<
                 crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleError,
-            >::new(),
-        )
-        .with_retry_classifier(::aws_runtime::retries::classifiers::AwsErrorCodeClassifier::<
-            crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleError,
-        >::new());
+            >::new())
+            .with_retry_classifier(::aws_runtime::retries::classifiers::AwsErrorCodeClassifier::<
+                crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleError,
+            >::new());
 
         ::std::borrow::Cow::Owned(rcb)
     }
@@ -168,13 +151,9 @@ impl ::aws_smithy_runtime_api::client::ser_de::DeserializeResponse for UnlockSer
         let mut force_error = false;
         ::tracing::debug!(request_id = ?::aws_types::request_id::RequestId::request_id(response));
         let parse_result = if !success && status != 200 || force_error {
-            crate::protocol_serde::shape_unlock_service_linked_role::de_unlock_service_linked_role_http_error(
-                status, headers, body,
-            )
+            crate::protocol_serde::shape_unlock_service_linked_role::de_unlock_service_linked_role_http_error(status, headers, body)
         } else {
-            crate::protocol_serde::shape_unlock_service_linked_role::de_unlock_service_linked_role_http_response(
-                status, headers, body,
-            )
+            crate::protocol_serde::shape_unlock_service_linked_role::de_unlock_service_linked_role_http_response(status, headers, body)
         };
         crate::protocol_serde::type_erase_result(parse_result)
     }
@@ -182,20 +161,12 @@ impl ::aws_smithy_runtime_api::client::ser_de::DeserializeResponse for UnlockSer
 #[derive(Debug)]
 struct UnlockServiceLinkedRoleRequestSerializer;
 impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for UnlockServiceLinkedRoleRequestSerializer {
-    #[allow(
-        unused_mut,
-        clippy::let_and_return,
-        clippy::needless_borrow,
-        clippy::useless_conversion
-    )]
+    #[allow(unused_mut, clippy::let_and_return, clippy::needless_borrow, clippy::useless_conversion)]
     fn serialize_input(
         &self,
         input: ::aws_smithy_runtime_api::client::interceptors::context::Input,
         _cfg: &mut ::aws_smithy_types::config_bag::ConfigBag,
-    ) -> ::std::result::Result<
-        ::aws_smithy_runtime_api::client::orchestrator::HttpRequest,
-        ::aws_smithy_runtime_api::box_error::BoxError,
-    > {
+    ) -> ::std::result::Result<::aws_smithy_runtime_api::client::orchestrator::HttpRequest, ::aws_smithy_runtime_api::box_error::BoxError> {
         let input = input
             .downcast::<crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput>()
             .expect("correct type");
@@ -216,18 +187,13 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for UnlockServic
             fn update_http_builder(
                 input: &crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput,
                 builder: ::http::request::Builder,
-            ) -> ::std::result::Result<::http::request::Builder, ::aws_smithy_types::error::operation::BuildError>
-            {
+            ) -> ::std::result::Result<::http::request::Builder, ::aws_smithy_types::error::operation::BuildError> {
                 let mut uri = ::std::string::String::new();
                 uri_base(input, &mut uri)?;
                 ::std::result::Result::Ok(builder.method("POST").uri(uri))
             }
             let mut builder = update_http_builder(&input, ::http::request::Builder::new())?;
-            builder = _header_serialization_settings.set_default_header(
-                builder,
-                ::http::header::CONTENT_TYPE,
-                "application/x-amz-json-1.0",
-            );
+            builder = _header_serialization_settings.set_default_header(builder, ::http::header::CONTENT_TYPE, "application/x-amz-json-1.0");
             builder = _header_serialization_settings.set_default_header(
                 builder,
                 ::http::header::HeaderName::from_static("x-amz-target"),
@@ -240,11 +206,7 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for UnlockServic
         );
         if let Some(content_length) = body.content_length() {
             let content_length = content_length.to_string();
-            request_builder = _header_serialization_settings.set_default_header(
-                request_builder,
-                ::http::header::CONTENT_LENGTH,
-                &content_length,
-            );
+            request_builder = _header_serialization_settings.set_default_header(request_builder, ::http::header::CONTENT_LENGTH, &content_length);
         }
         ::std::result::Result::Ok(request_builder.body(body).expect("valid request").try_into().unwrap())
     }
@@ -273,15 +235,10 @@ impl ::aws_smithy_runtime_api::client::interceptors::Intercept for UnlockService
             .ok_or("failed to downcast to UnlockServiceLinkedRoleInput")?;
 
         let params = crate::config::endpoint::Params::builder().build().map_err(|err| {
-            ::aws_smithy_runtime_api::client::interceptors::error::ContextAttachedError::new(
-                "endpoint params could not be built",
-                err,
-            )
+            ::aws_smithy_runtime_api::client::interceptors::error::ContextAttachedError::new("endpoint params could not be built", err)
         })?;
         cfg.interceptor_state()
-            .store_put(::aws_smithy_runtime_api::client::endpoint::EndpointResolverParams::new(
-                params,
-            ));
+            .store_put(::aws_smithy_runtime_api::client::endpoint::EndpointResolverParams::new(params));
         ::std::result::Result::Ok(())
     }
 }
@@ -297,27 +254,21 @@ pub enum UnlockServiceLinkedRoleError {
     ServiceLinkedRoleLockClientError(crate::types::error::ServiceLinkedRoleLockClientError),
     #[allow(missing_docs)] // documentation missing in model
     ServiceLinkedRoleLockServiceError(crate::types::error::ServiceLinkedRoleLockServiceError),
-    /// This exception is thrown when the user does not have sufficient access to perform this
-    /// action.
+    /// This exception is thrown when the user does not have sufficient access to perform this action.
     AccessDeniedError(crate::types::error::AccessDeniedError),
-    /// An unexpected error occurred (e.g., invalid JSON returned by the service or an unknown error
-    /// code).
-    #[deprecated(
-        note = "Matching `Unhandled` directly is not forwards compatible. Instead, match using a \
+    /// An unexpected error occurred (e.g., invalid JSON returned by the service or an unknown error code).
+    #[deprecated(note = "Matching `Unhandled` directly is not forwards compatible. Instead, match using a \
     variable wildcard pattern and check `.code()`:
      \
     &nbsp;&nbsp;&nbsp;`err if err.code() == Some(\"SpecificExceptionCode\") => { /* handle the error */ }`
      \
-    See [`ProvideErrorMetadata`](#impl-ProvideErrorMetadata-for-UnlockServiceLinkedRoleError) for what information is available for the error."
-    )]
+    See [`ProvideErrorMetadata`](#impl-ProvideErrorMetadata-for-UnlockServiceLinkedRoleError) for what information is available for the error.")]
     Unhandled(crate::error::sealed_unhandled::Unhandled),
 }
 impl UnlockServiceLinkedRoleError {
     /// Creates the `UnlockServiceLinkedRoleError::Unhandled` variant from any error type.
     pub fn unhandled(
-        err: impl ::std::convert::Into<
-            ::std::boxed::Box<dyn ::std::error::Error + ::std::marker::Send + ::std::marker::Sync + 'static>,
-        >,
+        err: impl ::std::convert::Into<::std::boxed::Box<dyn ::std::error::Error + ::std::marker::Send + ::std::marker::Sync + 'static>>,
     ) -> Self {
         Self::Unhandled(crate::error::sealed_unhandled::Unhandled {
             source: err.into(),
@@ -325,42 +276,33 @@ impl UnlockServiceLinkedRoleError {
         })
     }
 
-    /// Creates the `UnlockServiceLinkedRoleError::Unhandled` variant from an
-    /// [`ErrorMetadata`](::aws_smithy_types::error::ErrorMetadata).
+    /// Creates the `UnlockServiceLinkedRoleError::Unhandled` variant from an [`ErrorMetadata`](::aws_smithy_types::error::ErrorMetadata).
     pub fn generic(err: ::aws_smithy_types::error::ErrorMetadata) -> Self {
         Self::Unhandled(crate::error::sealed_unhandled::Unhandled {
             source: err.clone().into(),
             meta: err,
         })
     }
-
+    ///
     /// Returns error metadata, which includes the error code, message,
     /// request ID, and potentially additional information.
+    ///
     pub fn meta(&self) -> &::aws_smithy_types::error::ErrorMetadata {
         match self {
-            Self::ServiceLinkedRoleLockClientError(e) => {
-                ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e)
-            },
-            Self::ServiceLinkedRoleLockServiceError(e) => {
-                ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e)
-            },
+            Self::ServiceLinkedRoleLockClientError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
+            Self::ServiceLinkedRoleLockServiceError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::AccessDeniedError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
             Self::Unhandled(e) => &e.meta,
         }
     }
-
-    /// Returns `true` if the error kind is
-    /// `UnlockServiceLinkedRoleError::ServiceLinkedRoleLockClientError`.
+    /// Returns `true` if the error kind is `UnlockServiceLinkedRoleError::ServiceLinkedRoleLockClientError`.
     pub fn is_service_linked_role_lock_client_error(&self) -> bool {
         matches!(self, Self::ServiceLinkedRoleLockClientError(_))
     }
-
-    /// Returns `true` if the error kind is
-    /// `UnlockServiceLinkedRoleError::ServiceLinkedRoleLockServiceError`.
+    /// Returns `true` if the error kind is `UnlockServiceLinkedRoleError::ServiceLinkedRoleLockServiceError`.
     pub fn is_service_linked_role_lock_service_error(&self) -> bool {
         matches!(self, Self::ServiceLinkedRoleLockServiceError(_))
     }
-
     /// Returns `true` if the error kind is `UnlockServiceLinkedRoleError::AccessDeniedError`.
     pub fn is_access_denied_error(&self) -> bool {
         matches!(self, Self::AccessDeniedError(_))
@@ -383,14 +325,12 @@ impl ::std::fmt::Display for UnlockServiceLinkedRoleError {
             Self::ServiceLinkedRoleLockServiceError(_inner) => _inner.fmt(f),
             Self::AccessDeniedError(_inner) => _inner.fmt(f),
             Self::Unhandled(_inner) => {
-                if let ::std::option::Option::Some(code) =
-                    ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self)
-                {
+                if let ::std::option::Option::Some(code) = ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self) {
                     write!(f, "unhandled error ({code})")
                 } else {
                     f.write_str("unhandled error")
                 }
-            },
+            }
         }
     }
 }
@@ -398,7 +338,6 @@ impl ::aws_smithy_types::retry::ProvideErrorKind for UnlockServiceLinkedRoleErro
     fn code(&self) -> ::std::option::Option<&str> {
         ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self)
     }
-
     fn retryable_error_kind(&self) -> ::std::option::Option<::aws_smithy_types::retry::ErrorKind> {
         ::std::option::Option::None
     }
@@ -406,12 +345,8 @@ impl ::aws_smithy_types::retry::ProvideErrorKind for UnlockServiceLinkedRoleErro
 impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for UnlockServiceLinkedRoleError {
     fn meta(&self) -> &::aws_smithy_types::error::ErrorMetadata {
         match self {
-            Self::ServiceLinkedRoleLockClientError(_inner) => {
-                ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner)
-            },
-            Self::ServiceLinkedRoleLockServiceError(_inner) => {
-                ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner)
-            },
+            Self::ServiceLinkedRoleLockClientError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
+            Self::ServiceLinkedRoleLockServiceError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::AccessDeniedError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::Unhandled(_inner) => &_inner.meta,
         }
@@ -434,8 +369,9 @@ impl ::aws_types::request_id::RequestId for crate::operation::unlock_service_lin
     }
 }
 
-pub use crate::operation::unlock_service_linked_role::_unlock_service_linked_role_input::UnlockServiceLinkedRoleInput;
 pub use crate::operation::unlock_service_linked_role::_unlock_service_linked_role_output::UnlockServiceLinkedRoleOutput;
+
+pub use crate::operation::unlock_service_linked_role::_unlock_service_linked_role_input::UnlockServiceLinkedRoleInput;
 
 mod _unlock_service_linked_role_input;
 

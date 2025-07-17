@@ -14,8 +14,7 @@ impl CodeStarReference {
     }
 }
 impl CodeStarReference {
-    /// Creates a new builder-style object to manufacture
-    /// [`CodeStarReference`](crate::types::CodeStarReference).
+    /// Creates a new builder-style object to manufacture [`CodeStarReference`](crate::types::CodeStarReference).
     pub fn builder() -> crate::types::builders::CodeStarReferenceBuilder {
         crate::types::builders::CodeStarReferenceBuilder::default()
     }
@@ -34,25 +33,19 @@ impl CodeStarReferenceBuilder {
         self.connection_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_connection_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.connection_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_connection_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.connection_arn
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CodeStarReference`](crate::types::CodeStarReference). This method will fail if any of
-    /// the following fields are not set:
+    /// Consumes the builder and constructs a [`CodeStarReference`](crate::types::CodeStarReference).
+    /// This method will fail if any of the following fields are not set:
     /// - [`connection_arn`](crate::types::builders::CodeStarReferenceBuilder::connection_arn)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::CodeStarReference, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::CodeStarReference, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::CodeStarReference {
             connection_arn: self.connection_arn.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

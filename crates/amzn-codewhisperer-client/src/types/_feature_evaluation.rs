@@ -16,21 +16,18 @@ impl FeatureEvaluation {
         use std::ops::Deref;
         self.feature.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn variation(&self) -> &str {
         use std::ops::Deref;
         self.variation.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn value(&self) -> &crate::types::FeatureValue {
         &self.value
     }
 }
 impl FeatureEvaluation {
-    /// Creates a new builder-style object to manufacture
-    /// [`FeatureEvaluation`](crate::types::FeatureEvaluation).
+    /// Creates a new builder-style object to manufacture [`FeatureEvaluation`](crate::types::FeatureEvaluation).
     pub fn builder() -> crate::types::builders::FeatureEvaluationBuilder {
         crate::types::builders::FeatureEvaluationBuilder::default()
     }
@@ -51,63 +48,51 @@ impl FeatureEvaluationBuilder {
         self.feature = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_feature(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.feature = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_feature(&self) -> &::std::option::Option<::std::string::String> {
         &self.feature
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn variation(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.variation = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_variation(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.variation = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_variation(&self) -> &::std::option::Option<::std::string::String> {
         &self.variation
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn value(mut self, input: crate::types::FeatureValue) -> Self {
         self.value = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_value(mut self, input: ::std::option::Option<crate::types::FeatureValue>) -> Self {
         self.value = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_value(&self) -> &::std::option::Option<crate::types::FeatureValue> {
         &self.value
     }
-
-    /// Consumes the builder and constructs a
-    /// [`FeatureEvaluation`](crate::types::FeatureEvaluation). This method will fail if any of
-    /// the following fields are not set:
+    /// Consumes the builder and constructs a [`FeatureEvaluation`](crate::types::FeatureEvaluation).
+    /// This method will fail if any of the following fields are not set:
     /// - [`feature`](crate::types::builders::FeatureEvaluationBuilder::feature)
     /// - [`variation`](crate::types::builders::FeatureEvaluationBuilder::variation)
     /// - [`value`](crate::types::builders::FeatureEvaluationBuilder::value)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::FeatureEvaluation, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::FeatureEvaluation, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::FeatureEvaluation {
             feature: self.feature.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

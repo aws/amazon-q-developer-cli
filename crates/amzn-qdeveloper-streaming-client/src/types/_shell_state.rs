@@ -15,11 +15,9 @@ impl ShellState {
         use std::ops::Deref;
         self.shell_name.deref()
     }
-
     /// The history previous shell commands for the current shell
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.shell_history.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.shell_history.is_none()`.
     pub fn shell_history(&self) -> &[crate::types::ShellHistoryEntry] {
         self.shell_history.as_deref().unwrap_or_default()
     }
@@ -45,22 +43,18 @@ impl ShellStateBuilder {
         self.shell_name = ::std::option::Option::Some(input.into());
         self
     }
-
     /// The name of the current shell
     pub fn set_shell_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.shell_name = input;
         self
     }
-
     /// The name of the current shell
     pub fn get_shell_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.shell_name
     }
-
     /// Appends an item to `shell_history`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_shell_history`](Self::set_shell_history).
+    /// To override the contents of this collection use [`set_shell_history`](Self::set_shell_history).
     ///
     /// The history previous shell commands for the current shell
     pub fn shell_history(mut self, input: crate::types::ShellHistoryEntry) -> Self {
@@ -69,27 +63,19 @@ impl ShellStateBuilder {
         self.shell_history = ::std::option::Option::Some(v);
         self
     }
-
     /// The history previous shell commands for the current shell
-    pub fn set_shell_history(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::ShellHistoryEntry>>,
-    ) -> Self {
+    pub fn set_shell_history(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::ShellHistoryEntry>>) -> Self {
         self.shell_history = input;
         self
     }
-
     /// The history previous shell commands for the current shell
     pub fn get_shell_history(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::ShellHistoryEntry>> {
         &self.shell_history
     }
-
     /// Consumes the builder and constructs a [`ShellState`](crate::types::ShellState).
     /// This method will fail if any of the following fields are not set:
     /// - [`shell_name`](crate::types::builders::ShellStateBuilder::shell_name)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::ShellState, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::ShellState, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::ShellState {
             shell_name: self.shell_name.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

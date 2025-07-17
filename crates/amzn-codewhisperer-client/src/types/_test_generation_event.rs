@@ -32,61 +32,50 @@ impl TestGenerationEvent {
         use std::ops::Deref;
         self.job_id.deref()
     }
-
     /// Test generation job group name
     pub fn group_name(&self) -> &str {
         use std::ops::Deref;
         self.group_name.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
         self.timestamp.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn ide_category(&self) -> ::std::option::Option<&crate::types::IdeCategory> {
         self.ide_category.as_ref()
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> ::std::option::Option<&crate::types::ProgrammingLanguage> {
         self.programming_language.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_unit_test_cases_generated(&self) -> ::std::option::Option<i32> {
         self.number_of_unit_test_cases_generated
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_unit_test_cases_accepted(&self) -> ::std::option::Option<i32> {
         self.number_of_unit_test_cases_accepted
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_generated(&self) -> ::std::option::Option<i32> {
         self.lines_of_code_generated
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_accepted(&self) -> ::std::option::Option<i32> {
         self.lines_of_code_accepted
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn chars_of_code_generated(&self) -> ::std::option::Option<i32> {
         self.chars_of_code_generated
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn chars_of_code_accepted(&self) -> ::std::option::Option<i32> {
         self.chars_of_code_accepted
     }
 }
 impl TestGenerationEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`TestGenerationEvent`](crate::types::TestGenerationEvent).
+    /// Creates a new builder-style object to manufacture [`TestGenerationEvent`](crate::types::TestGenerationEvent).
     pub fn builder() -> crate::types::builders::TestGenerationEventBuilder {
         crate::types::builders::TestGenerationEventBuilder::default()
     }
@@ -115,198 +104,161 @@ impl TestGenerationEventBuilder {
         self.job_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.job_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.job_id
     }
-
     /// Test generation job group name
     /// This field is required.
     pub fn group_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.group_name = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Test generation job group name
     pub fn set_group_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.group_name = input;
         self
     }
-
     /// Test generation job group name
     pub fn get_group_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.group_name
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.timestamp = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.timestamp = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn ide_category(mut self, input: crate::types::IdeCategory) -> Self {
         self.ide_category = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_ide_category(mut self, input: ::std::option::Option<crate::types::IdeCategory>) -> Self {
         self.ide_category = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_ide_category(&self) -> &::std::option::Option<crate::types::IdeCategory> {
         &self.ide_category
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_unit_test_cases_generated(mut self, input: i32) -> Self {
         self.number_of_unit_test_cases_generated = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_number_of_unit_test_cases_generated(mut self, input: ::std::option::Option<i32>) -> Self {
         self.number_of_unit_test_cases_generated = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_number_of_unit_test_cases_generated(&self) -> &::std::option::Option<i32> {
         &self.number_of_unit_test_cases_generated
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_unit_test_cases_accepted(mut self, input: i32) -> Self {
         self.number_of_unit_test_cases_accepted = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_number_of_unit_test_cases_accepted(mut self, input: ::std::option::Option<i32>) -> Self {
         self.number_of_unit_test_cases_accepted = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_number_of_unit_test_cases_accepted(&self) -> &::std::option::Option<i32> {
         &self.number_of_unit_test_cases_accepted
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_generated(mut self, input: i32) -> Self {
         self.lines_of_code_generated = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_lines_of_code_generated(mut self, input: ::std::option::Option<i32>) -> Self {
         self.lines_of_code_generated = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_lines_of_code_generated(&self) -> &::std::option::Option<i32> {
         &self.lines_of_code_generated
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_accepted(mut self, input: i32) -> Self {
         self.lines_of_code_accepted = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_lines_of_code_accepted(mut self, input: ::std::option::Option<i32>) -> Self {
         self.lines_of_code_accepted = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_lines_of_code_accepted(&self) -> &::std::option::Option<i32> {
         &self.lines_of_code_accepted
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn chars_of_code_generated(mut self, input: i32) -> Self {
         self.chars_of_code_generated = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_chars_of_code_generated(mut self, input: ::std::option::Option<i32>) -> Self {
         self.chars_of_code_generated = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_chars_of_code_generated(&self) -> &::std::option::Option<i32> {
         &self.chars_of_code_generated
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn chars_of_code_accepted(mut self, input: i32) -> Self {
         self.chars_of_code_accepted = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_chars_of_code_accepted(mut self, input: ::std::option::Option<i32>) -> Self {
         self.chars_of_code_accepted = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_chars_of_code_accepted(&self) -> &::std::option::Option<i32> {
         &self.chars_of_code_accepted
     }
-
-    /// Consumes the builder and constructs a
-    /// [`TestGenerationEvent`](crate::types::TestGenerationEvent). This method will fail if any
-    /// of the following fields are not set:
+    /// Consumes the builder and constructs a [`TestGenerationEvent`](crate::types::TestGenerationEvent).
+    /// This method will fail if any of the following fields are not set:
     /// - [`job_id`](crate::types::builders::TestGenerationEventBuilder::job_id)
     /// - [`group_name`](crate::types::builders::TestGenerationEventBuilder::group_name)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::TestGenerationEvent, ::aws_smithy_types::error::operation::BuildError>
-    {
+    pub fn build(self) -> ::std::result::Result<crate::types::TestGenerationEvent, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TestGenerationEvent {
             job_id: self.job_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

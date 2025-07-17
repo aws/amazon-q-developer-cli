@@ -6,6 +6,8 @@ pub struct ListProfilesInput {
     #[allow(missing_docs)] // documentation missing in model
     pub max_results: ::std::option::Option<i32>,
     #[allow(missing_docs)] // documentation missing in model
+    pub include_management_account: ::std::option::Option<bool>,
+    #[allow(missing_docs)] // documentation missing in model
     pub next_token: ::std::option::Option<::std::string::String>,
 }
 impl ListProfilesInput {
@@ -13,15 +15,17 @@ impl ListProfilesInput {
     pub fn max_results(&self) -> ::std::option::Option<i32> {
         self.max_results
     }
-
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn include_management_account(&self) -> ::std::option::Option<bool> {
+        self.include_management_account
+    }
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
 }
 impl ListProfilesInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ListProfilesInput`](crate::operation::list_profiles::ListProfilesInput).
+    /// Creates a new builder-style object to manufacture [`ListProfilesInput`](crate::operation::list_profiles::ListProfilesInput).
     pub fn builder() -> crate::operation::list_profiles::builders::ListProfilesInputBuilder {
         crate::operation::list_profiles::builders::ListProfilesInputBuilder::default()
     }
@@ -32,6 +36,7 @@ impl ListProfilesInput {
 #[non_exhaustive]
 pub struct ListProfilesInputBuilder {
     pub(crate) max_results: ::std::option::Option<i32>,
+    pub(crate) include_management_account: ::std::option::Option<bool>,
     pub(crate) next_token: ::std::option::Option<::std::string::String>,
 }
 impl ListProfilesInputBuilder {
@@ -40,45 +45,50 @@ impl ListProfilesInputBuilder {
         self.max_results = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_max_results(mut self, input: ::std::option::Option<i32>) -> Self {
         self.max_results = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         &self.max_results
     }
-
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn include_management_account(mut self, input: bool) -> Self {
+        self.include_management_account = ::std::option::Option::Some(input);
+        self
+    }
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_include_management_account(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.include_management_account = input;
+        self
+    }
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_include_management_account(&self) -> &::std::option::Option<bool> {
+        &self.include_management_account
+    }
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ListProfilesInput`](crate::operation::list_profiles::ListProfilesInput).
+    /// Consumes the builder and constructs a [`ListProfilesInput`](crate::operation::list_profiles::ListProfilesInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::list_profiles::ListProfilesInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::list_profiles::ListProfilesInput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::list_profiles::ListProfilesInput {
             max_results: self.max_results,
+            include_management_account: self.include_management_account,
             next_token: self.next_token,
         })
     }

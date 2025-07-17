@@ -13,22 +13,19 @@ impl UnlockServiceLinkedRoleInput {
     pub fn role_arn(&self) -> ::std::option::Option<&str> {
         self.role_arn.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn deletion_status(&self) -> ::std::option::Option<&crate::types::DeletionStatus> {
         self.deletion_status.as_ref()
     }
 }
 impl UnlockServiceLinkedRoleInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`UnlockServiceLinkedRoleInput`](crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput).
+    /// Creates a new builder-style object to manufacture [`UnlockServiceLinkedRoleInput`](crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput).
     pub fn builder() -> crate::operation::unlock_service_linked_role::builders::UnlockServiceLinkedRoleInputBuilder {
         crate::operation::unlock_service_linked_role::builders::UnlockServiceLinkedRoleInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`UnlockServiceLinkedRoleInput`](crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput).
+/// A builder for [`UnlockServiceLinkedRoleInput`](crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct UnlockServiceLinkedRoleInputBuilder {
@@ -42,48 +39,39 @@ impl UnlockServiceLinkedRoleInputBuilder {
         self.role_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_role_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.role_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_role_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.role_arn
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn deletion_status(mut self, input: crate::types::DeletionStatus) -> Self {
         self.deletion_status = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_deletion_status(mut self, input: ::std::option::Option<crate::types::DeletionStatus>) -> Self {
         self.deletion_status = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_deletion_status(&self) -> &::std::option::Option<crate::types::DeletionStatus> {
         &self.deletion_status
     }
-
-    /// Consumes the builder and constructs a
-    /// [`UnlockServiceLinkedRoleInput`](crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput).
+    /// Consumes the builder and constructs a [`UnlockServiceLinkedRoleInput`](crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput).
     pub fn build(
         self,
     ) -> ::std::result::Result<
         crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(
-            crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput {
-                role_arn: self.role_arn,
-                deletion_status: self.deletion_status,
-            },
-        )
+        ::std::result::Result::Ok(crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleInput {
+            role_arn: self.role_arn,
+            deletion_status: self.deletion_status,
+        })
     }
 }

@@ -11,8 +11,7 @@ impl ::aws_types::request_id::RequestId for DeleteProfileOutput {
     }
 }
 impl DeleteProfileOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`DeleteProfileOutput`](crate::operation::delete_profile::DeleteProfileOutput).
+    /// Creates a new builder-style object to manufacture [`DeleteProfileOutput`](crate::operation::delete_profile::DeleteProfileOutput).
     pub fn builder() -> crate::operation::delete_profile::builders::DeleteProfileOutputBuilder {
         crate::operation::delete_profile::builders::DeleteProfileOutputBuilder::default()
     }
@@ -34,9 +33,7 @@ impl DeleteProfileOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`DeleteProfileOutput`](crate::operation::delete_profile::DeleteProfileOutput).
+    /// Consumes the builder and constructs a [`DeleteProfileOutput`](crate::operation::delete_profile::DeleteProfileOutput).
     pub fn build(self) -> crate::operation::delete_profile::DeleteProfileOutput {
         crate::operation::delete_profile::DeleteProfileOutput {
             _request_id: self._request_id,

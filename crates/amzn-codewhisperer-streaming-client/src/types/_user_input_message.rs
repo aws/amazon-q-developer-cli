@@ -23,30 +23,24 @@ impl UserInputMessage {
         use std::ops::Deref;
         self.content.deref()
     }
-
     /// Chat message context associated with the Chat Message.
     pub fn user_input_message_context(&self) -> ::std::option::Option<&crate::types::UserInputMessageContext> {
         self.user_input_message_context.as_ref()
     }
-
     /// User Intent.
     pub fn user_intent(&self) -> ::std::option::Option<&crate::types::UserIntent> {
         self.user_intent.as_ref()
     }
-
     /// User Input Origin.
     pub fn origin(&self) -> ::std::option::Option<&crate::types::Origin> {
         self.origin.as_ref()
     }
-
     /// Images associated with the Chat Message.
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.images.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.images.is_none()`.
     pub fn images(&self) -> &[crate::types::ImageBlock] {
         self.images.as_deref().unwrap_or_default()
     }
-
     /// Unique identifier for the model used in this conversation
     pub fn model_id(&self) -> ::std::option::Option<&str> {
         self.model_id.as_deref()
@@ -65,8 +59,7 @@ impl ::std::fmt::Debug for UserInputMessage {
     }
 }
 impl UserInputMessage {
-    /// Creates a new builder-style object to manufacture
-    /// [`UserInputMessage`](crate::types::UserInputMessage).
+    /// Creates a new builder-style object to manufacture [`UserInputMessage`](crate::types::UserInputMessage).
     pub fn builder() -> crate::types::builders::UserInputMessageBuilder {
         crate::types::builders::UserInputMessageBuilder::default()
     }
@@ -90,72 +83,57 @@ impl UserInputMessageBuilder {
         self.content = ::std::option::Option::Some(input.into());
         self
     }
-
     /// The content of the chat message.
     pub fn set_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.content = input;
         self
     }
-
     /// The content of the chat message.
     pub fn get_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.content
     }
-
     /// Chat message context associated with the Chat Message.
     pub fn user_input_message_context(mut self, input: crate::types::UserInputMessageContext) -> Self {
         self.user_input_message_context = ::std::option::Option::Some(input);
         self
     }
-
     /// Chat message context associated with the Chat Message.
-    pub fn set_user_input_message_context(
-        mut self,
-        input: ::std::option::Option<crate::types::UserInputMessageContext>,
-    ) -> Self {
+    pub fn set_user_input_message_context(mut self, input: ::std::option::Option<crate::types::UserInputMessageContext>) -> Self {
         self.user_input_message_context = input;
         self
     }
-
     /// Chat message context associated with the Chat Message.
     pub fn get_user_input_message_context(&self) -> &::std::option::Option<crate::types::UserInputMessageContext> {
         &self.user_input_message_context
     }
-
     /// User Intent.
     pub fn user_intent(mut self, input: crate::types::UserIntent) -> Self {
         self.user_intent = ::std::option::Option::Some(input);
         self
     }
-
     /// User Intent.
     pub fn set_user_intent(mut self, input: ::std::option::Option<crate::types::UserIntent>) -> Self {
         self.user_intent = input;
         self
     }
-
     /// User Intent.
     pub fn get_user_intent(&self) -> &::std::option::Option<crate::types::UserIntent> {
         &self.user_intent
     }
-
     /// User Input Origin.
     pub fn origin(mut self, input: crate::types::Origin) -> Self {
         self.origin = ::std::option::Option::Some(input);
         self
     }
-
     /// User Input Origin.
     pub fn set_origin(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
         self.origin = input;
         self
     }
-
     /// User Input Origin.
     pub fn get_origin(&self) -> &::std::option::Option<crate::types::Origin> {
         &self.origin
     }
-
     /// Appends an item to `images`.
     ///
     /// To override the contents of this collection use [`set_images`](Self::set_images).
@@ -167,41 +145,33 @@ impl UserInputMessageBuilder {
         self.images = ::std::option::Option::Some(v);
         self
     }
-
     /// Images associated with the Chat Message.
     pub fn set_images(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>) -> Self {
         self.images = input;
         self
     }
-
     /// Images associated with the Chat Message.
     pub fn get_images(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>> {
         &self.images
     }
-
     /// Unique identifier for the model used in this conversation
     pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.model_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Unique identifier for the model used in this conversation
     pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.model_id = input;
         self
     }
-
     /// Unique identifier for the model used in this conversation
     pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.model_id
     }
-
     /// Consumes the builder and constructs a [`UserInputMessage`](crate::types::UserInputMessage).
     /// This method will fail if any of the following fields are not set:
     /// - [`content`](crate::types::builders::UserInputMessageBuilder::content)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::UserInputMessage, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::UserInputMessage, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::UserInputMessage {
             content: self.content.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

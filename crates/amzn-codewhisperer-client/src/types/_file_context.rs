@@ -20,24 +20,20 @@ impl FileContext {
         use std::ops::Deref;
         self.left_file_content.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn right_file_content(&self) -> &str {
         use std::ops::Deref;
         self.right_file_content.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn filename(&self) -> &str {
         use std::ops::Deref;
         self.filename.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn file_uri(&self) -> ::std::option::Option<&str> {
         self.file_uri.as_deref()
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> &crate::types::ProgrammingLanguage {
         &self.programming_language
@@ -55,8 +51,7 @@ impl ::std::fmt::Debug for FileContext {
     }
 }
 impl FileContext {
-    /// Creates a new builder-style object to manufacture
-    /// [`FileContext`](crate::types::FileContext).
+    /// Creates a new builder-style object to manufacture [`FileContext`](crate::types::FileContext).
     pub fn builder() -> crate::types::builders::FileContextBuilder {
         crate::types::builders::FileContextBuilder::default()
     }
@@ -79,98 +74,81 @@ impl FileContextBuilder {
         self.left_file_content = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_left_file_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.left_file_content = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_left_file_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.left_file_content
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn right_file_content(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.right_file_content = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_right_file_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.right_file_content = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_right_file_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.right_file_content
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn filename(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.filename = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_filename(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.filename = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_filename(&self) -> &::std::option::Option<::std::string::String> {
         &self.filename
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn file_uri(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.file_uri = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_file_uri(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.file_uri = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_file_uri(&self) -> &::std::option::Option<::std::string::String> {
         &self.file_uri
     }
-
     /// Programming Languages supported by CodeWhisperer
     /// This field is required.
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
-
     /// Consumes the builder and constructs a [`FileContext`](crate::types::FileContext).
     /// This method will fail if any of the following fields are not set:
     /// - [`left_file_content`](crate::types::builders::FileContextBuilder::left_file_content)
     /// - [`right_file_content`](crate::types::builders::FileContextBuilder::right_file_content)
     /// - [`filename`](crate::types::builders::FileContextBuilder::filename)
     /// - [`programming_language`](crate::types::builders::FileContextBuilder::programming_language)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::FileContext, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::FileContext, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::FileContext {
             left_file_content: self.left_file_content.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

@@ -5,20 +5,15 @@
 #[derive(::std::fmt::Debug)]
 pub struct GenerateTaskAssistPlanOutput {
     /// Streaming events from UniDirectional Streaming Conversational APIs.
-    pub planning_response_stream: crate::event_receiver::EventReceiver<
-        crate::types::ChatResponseStream,
-        crate::types::error::ChatResponseStreamError,
-    >,
+    pub planning_response_stream:
+        crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>,
     _request_id: Option<String>,
 }
 impl GenerateTaskAssistPlanOutput {
     /// Streaming events from UniDirectional Streaming Conversational APIs.
     pub fn planning_response_stream(
         &self,
-    ) -> &crate::event_receiver::EventReceiver<
-        crate::types::ChatResponseStream,
-        crate::types::error::ChatResponseStreamError,
-    > {
+    ) -> &crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError> {
         &self.planning_response_stream
     }
 }
@@ -28,65 +23,46 @@ impl ::aws_types::request_id::RequestId for GenerateTaskAssistPlanOutput {
     }
 }
 impl GenerateTaskAssistPlanOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`GenerateTaskAssistPlanOutput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanOutput).
+    /// Creates a new builder-style object to manufacture [`GenerateTaskAssistPlanOutput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanOutput).
     pub fn builder() -> crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanOutputBuilder {
         crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`GenerateTaskAssistPlanOutput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanOutput).
+/// A builder for [`GenerateTaskAssistPlanOutput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanOutput).
 #[derive(::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GenerateTaskAssistPlanOutputBuilder {
-    pub(crate) planning_response_stream: ::std::option::Option<
-        crate::event_receiver::EventReceiver<
-            crate::types::ChatResponseStream,
-            crate::types::error::ChatResponseStreamError,
-        >,
-    >,
+    pub(crate) planning_response_stream:
+        ::std::option::Option<crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>>,
     _request_id: Option<String>,
 }
 impl GenerateTaskAssistPlanOutputBuilder {
     /// Streaming events from UniDirectional Streaming Conversational APIs.
     pub fn planning_response_stream(
         mut self,
-        input: crate::event_receiver::EventReceiver<
-            crate::types::ChatResponseStream,
-            crate::types::error::ChatResponseStreamError,
-        >,
+        input: crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>,
     ) -> Self {
         self.planning_response_stream = ::std::option::Option::Some(input);
         self
     }
-
     /// Streaming events from UniDirectional Streaming Conversational APIs.
     pub fn set_planning_response_stream(
         mut self,
         input: ::std::option::Option<
-            crate::event_receiver::EventReceiver<
-                crate::types::ChatResponseStream,
-                crate::types::error::ChatResponseStreamError,
-            >,
+            crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>,
         >,
     ) -> Self {
         self.planning_response_stream = input;
         self
     }
-
     /// Streaming events from UniDirectional Streaming Conversational APIs.
     pub fn get_planning_response_stream(
         &self,
-    ) -> &::std::option::Option<
-        crate::event_receiver::EventReceiver<
-            crate::types::ChatResponseStream,
-            crate::types::error::ChatResponseStreamError,
-        >,
-    > {
+    ) -> &::std::option::Option<crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>>
+    {
         &self.planning_response_stream
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -96,9 +72,7 @@ impl GenerateTaskAssistPlanOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`GenerateTaskAssistPlanOutput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanOutput).
+    /// Consumes the builder and constructs a [`GenerateTaskAssistPlanOutput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`planning_response_stream`](crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanOutputBuilder::planning_response_stream)
     pub fn build(

@@ -2,21 +2,11 @@
 pub(crate) fn de_intent_map<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
 ) -> ::std::result::Result<
-    Option<
-        ::std::collections::HashMap<
-            crate::types::IntentType,
-            ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>,
-        >,
-    >,
+    Option<::std::collections::HashMap<crate::types::IntentType, ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>>>,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 >
 where
-    I: Iterator<
-        Item = Result<
-            ::aws_smithy_json::deserialize::Token<'a>,
-            ::aws_smithy_json::deserialize::error::DeserializeError,
-        >,
-    >,
+    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
 {
     match tokens.next().transpose()? {
         Some(::aws_smithy_json::deserialize::Token::ValueNull { .. }) => Ok(None),
@@ -31,16 +21,17 @@ where
                         if let Some(value) = value {
                             map.insert(key, value);
                         }
-                    },
+                    }
                     other => {
-                        return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                            format!("expected object key or end object, found: {:?}", other),
-                        ));
-                    },
+                        return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                            "expected object key or end object, found: {:?}",
+                            other
+                        )))
+                    }
                 }
             }
             Ok(Some(map))
-        },
+        }
         _ => Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
             "expected start object or null",
         )),

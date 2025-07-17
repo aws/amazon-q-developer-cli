@@ -21,22 +21,18 @@ impl ShellHistoryEntry {
         use std::ops::Deref;
         self.command.deref()
     }
-
     /// The directory the command was ran in
     pub fn directory(&self) -> ::std::option::Option<&str> {
         self.directory.as_deref()
     }
-
     /// The exit code of the command after it finished
     pub fn exit_code(&self) -> ::std::option::Option<i32> {
         self.exit_code
     }
-
     /// The stdout from the command
     pub fn stdout(&self) -> ::std::option::Option<&str> {
         self.stdout.as_deref()
     }
-
     /// The stderr from the command
     pub fn stderr(&self) -> ::std::option::Option<&str> {
         self.stderr.as_deref()
@@ -54,8 +50,7 @@ impl ::std::fmt::Debug for ShellHistoryEntry {
     }
 }
 impl ShellHistoryEntry {
-    /// Creates a new builder-style object to manufacture
-    /// [`ShellHistoryEntry`](crate::types::ShellHistoryEntry).
+    /// Creates a new builder-style object to manufacture [`ShellHistoryEntry`](crate::types::ShellHistoryEntry).
     pub fn builder() -> crate::types::builders::ShellHistoryEntryBuilder {
         crate::types::builders::ShellHistoryEntryBuilder::default()
     }
@@ -78,93 +73,75 @@ impl ShellHistoryEntryBuilder {
         self.command = ::std::option::Option::Some(input.into());
         self
     }
-
     /// The shell command that was run
     pub fn set_command(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.command = input;
         self
     }
-
     /// The shell command that was run
     pub fn get_command(&self) -> &::std::option::Option<::std::string::String> {
         &self.command
     }
-
     /// The directory the command was ran in
     pub fn directory(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.directory = ::std::option::Option::Some(input.into());
         self
     }
-
     /// The directory the command was ran in
     pub fn set_directory(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.directory = input;
         self
     }
-
     /// The directory the command was ran in
     pub fn get_directory(&self) -> &::std::option::Option<::std::string::String> {
         &self.directory
     }
-
     /// The exit code of the command after it finished
     pub fn exit_code(mut self, input: i32) -> Self {
         self.exit_code = ::std::option::Option::Some(input);
         self
     }
-
     /// The exit code of the command after it finished
     pub fn set_exit_code(mut self, input: ::std::option::Option<i32>) -> Self {
         self.exit_code = input;
         self
     }
-
     /// The exit code of the command after it finished
     pub fn get_exit_code(&self) -> &::std::option::Option<i32> {
         &self.exit_code
     }
-
     /// The stdout from the command
     pub fn stdout(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.stdout = ::std::option::Option::Some(input.into());
         self
     }
-
     /// The stdout from the command
     pub fn set_stdout(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.stdout = input;
         self
     }
-
     /// The stdout from the command
     pub fn get_stdout(&self) -> &::std::option::Option<::std::string::String> {
         &self.stdout
     }
-
     /// The stderr from the command
     pub fn stderr(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.stderr = ::std::option::Option::Some(input.into());
         self
     }
-
     /// The stderr from the command
     pub fn set_stderr(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.stderr = input;
         self
     }
-
     /// The stderr from the command
     pub fn get_stderr(&self) -> &::std::option::Option<::std::string::String> {
         &self.stderr
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ShellHistoryEntry`](crate::types::ShellHistoryEntry). This method will fail if any of
-    /// the following fields are not set:
+    /// Consumes the builder and constructs a [`ShellHistoryEntry`](crate::types::ShellHistoryEntry).
+    /// This method will fail if any of the following fields are not set:
     /// - [`command`](crate::types::builders::ShellHistoryEntryBuilder::command)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::ShellHistoryEntry, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::ShellHistoryEntry, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::ShellHistoryEntry {
             command: self.command.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

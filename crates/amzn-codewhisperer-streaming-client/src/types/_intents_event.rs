@@ -6,10 +6,7 @@
 pub struct IntentsEvent {
     /// A map of Intent objects
     pub intents: ::std::option::Option<
-        ::std::collections::HashMap<
-            crate::types::IntentType,
-            ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>,
-        >,
+        ::std::collections::HashMap<crate::types::IntentType, ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>>,
     >,
 }
 impl IntentsEvent {
@@ -17,17 +14,13 @@ impl IntentsEvent {
     pub fn intents(
         &self,
     ) -> ::std::option::Option<
-        &::std::collections::HashMap<
-            crate::types::IntentType,
-            ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>,
-        >,
+        &::std::collections::HashMap<crate::types::IntentType, ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>>,
     > {
         self.intents.as_ref()
     }
 }
 impl IntentsEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`IntentsEvent`](crate::types::IntentsEvent).
+    /// Creates a new builder-style object to manufacture [`IntentsEvent`](crate::types::IntentsEvent).
     pub fn builder() -> crate::types::builders::IntentsEventBuilder {
         crate::types::builders::IntentsEventBuilder::default()
     }
@@ -38,10 +31,7 @@ impl IntentsEvent {
 #[non_exhaustive]
 pub struct IntentsEventBuilder {
     pub(crate) intents: ::std::option::Option<
-        ::std::collections::HashMap<
-            crate::types::IntentType,
-            ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>,
-        >,
+        ::std::collections::HashMap<crate::types::IntentType, ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>>,
     >,
 }
 impl IntentsEventBuilder {
@@ -60,33 +50,24 @@ impl IntentsEventBuilder {
         self.intents = ::std::option::Option::Some(hash_map);
         self
     }
-
     /// A map of Intent objects
     pub fn set_intents(
         mut self,
         input: ::std::option::Option<
-            ::std::collections::HashMap<
-                crate::types::IntentType,
-                ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>,
-            >,
+            ::std::collections::HashMap<crate::types::IntentType, ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>>,
         >,
     ) -> Self {
         self.intents = input;
         self
     }
-
     /// A map of Intent objects
     pub fn get_intents(
         &self,
     ) -> &::std::option::Option<
-        ::std::collections::HashMap<
-            crate::types::IntentType,
-            ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>,
-        >,
+        ::std::collections::HashMap<crate::types::IntentType, ::std::collections::HashMap<::std::string::String, crate::types::IntentDataType>>,
     > {
         &self.intents
     }
-
     /// Consumes the builder and constructs a [`IntentsEvent`](crate::types::IntentsEvent).
     pub fn build(self) -> crate::types::IntentsEvent {
         crate::types::IntentsEvent { intents: self.intents }

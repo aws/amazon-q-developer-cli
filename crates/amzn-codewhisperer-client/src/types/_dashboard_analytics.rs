@@ -13,8 +13,7 @@ impl DashboardAnalytics {
     }
 }
 impl DashboardAnalytics {
-    /// Creates a new builder-style object to manufacture
-    /// [`DashboardAnalytics`](crate::types::DashboardAnalytics).
+    /// Creates a new builder-style object to manufacture [`DashboardAnalytics`](crate::types::DashboardAnalytics).
     pub fn builder() -> crate::types::builders::DashboardAnalyticsBuilder {
         crate::types::builders::DashboardAnalyticsBuilder::default()
     }
@@ -33,25 +32,19 @@ impl DashboardAnalyticsBuilder {
         self.toggle = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_toggle(mut self, input: ::std::option::Option<crate::types::OptInFeatureToggle>) -> Self {
         self.toggle = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_toggle(&self) -> &::std::option::Option<crate::types::OptInFeatureToggle> {
         &self.toggle
     }
-
-    /// Consumes the builder and constructs a
-    /// [`DashboardAnalytics`](crate::types::DashboardAnalytics). This method will fail if any
-    /// of the following fields are not set:
+    /// Consumes the builder and constructs a [`DashboardAnalytics`](crate::types::DashboardAnalytics).
+    /// This method will fail if any of the following fields are not set:
     /// - [`toggle`](crate::types::builders::DashboardAnalyticsBuilder::toggle)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::DashboardAnalytics, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::DashboardAnalytics, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::DashboardAnalytics {
             toggle: self.toggle.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

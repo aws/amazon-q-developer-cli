@@ -13,42 +13,32 @@ pub enum UploadContext {
     TransformationUploadContext(crate::types::TransformationUploadContext),
     #[allow(missing_docs)] // documentation missing in model
     WorkspaceContextUploadContext(crate::types::WorkspaceContextUploadContext),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider
-    /// upgrading the SDK to the latest available version. An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
+    /// An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has
-    /// not been updated. To investigate this, consider turning on debug logging to print the
-    /// raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
+    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl UploadContext {
-    /// Tries to convert the enum instance into
-    /// [`CodeAnalysisUploadContext`](crate::types::UploadContext::CodeAnalysisUploadContext),
-    /// extracting the inner [`CodeAnalysisUploadContext`](crate::types::CodeAnalysisUploadContext).
+    /// Tries to convert the enum instance into [`CodeAnalysisUploadContext`](crate::types::UploadContext::CodeAnalysisUploadContext), extracting the inner [`CodeAnalysisUploadContext`](crate::types::CodeAnalysisUploadContext).
     /// Returns `Err(&Self)` if it can't be converted.
-    pub fn as_code_analysis_upload_context(
-        &self,
-    ) -> ::std::result::Result<&crate::types::CodeAnalysisUploadContext, &Self> {
+    pub fn as_code_analysis_upload_context(&self) -> ::std::result::Result<&crate::types::CodeAnalysisUploadContext, &Self> {
         if let UploadContext::CodeAnalysisUploadContext(val) = &self {
             ::std::result::Result::Ok(val)
         } else {
             ::std::result::Result::Err(self)
         }
     }
-
-    /// Returns true if this is a
-    /// [`CodeAnalysisUploadContext`](crate::types::UploadContext::CodeAnalysisUploadContext).
+    /// Returns true if this is a [`CodeAnalysisUploadContext`](crate::types::UploadContext::CodeAnalysisUploadContext).
     pub fn is_code_analysis_upload_context(&self) -> bool {
         self.as_code_analysis_upload_context().is_ok()
     }
-
-    /// Tries to convert the enum instance into
-    /// [`CodeFixUploadContext`](crate::types::UploadContext::CodeFixUploadContext), extracting the
-    /// inner [`CodeFixUploadContext`](crate::types::CodeFixUploadContext). Returns `Err(&Self)`
-    /// if it can't be converted.
+    /// Tries to convert the enum instance into [`CodeFixUploadContext`](crate::types::UploadContext::CodeFixUploadContext), extracting the inner [`CodeFixUploadContext`](crate::types::CodeFixUploadContext).
+    /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_code_fix_upload_context(&self) -> ::std::result::Result<&crate::types::CodeFixUploadContext, &Self> {
         if let UploadContext::CodeFixUploadContext(val) = &self {
             ::std::result::Result::Ok(val)
@@ -56,76 +46,49 @@ impl UploadContext {
             ::std::result::Result::Err(self)
         }
     }
-
-    /// Returns true if this is a
-    /// [`CodeFixUploadContext`](crate::types::UploadContext::CodeFixUploadContext).
+    /// Returns true if this is a [`CodeFixUploadContext`](crate::types::UploadContext::CodeFixUploadContext).
     pub fn is_code_fix_upload_context(&self) -> bool {
         self.as_code_fix_upload_context().is_ok()
     }
-
-    /// Tries to convert the enum instance into
-    /// [`TaskAssistPlanningUploadContext`](crate::types::UploadContext::TaskAssistPlanningUploadContext),
-    /// extracting the inner
-    /// [`TaskAssistPlanningUploadContext`](crate::types::TaskAssistPlanningUploadContext).
+    /// Tries to convert the enum instance into [`TaskAssistPlanningUploadContext`](crate::types::UploadContext::TaskAssistPlanningUploadContext), extracting the inner [`TaskAssistPlanningUploadContext`](crate::types::TaskAssistPlanningUploadContext).
     /// Returns `Err(&Self)` if it can't be converted.
-    pub fn as_task_assist_planning_upload_context(
-        &self,
-    ) -> ::std::result::Result<&crate::types::TaskAssistPlanningUploadContext, &Self> {
+    pub fn as_task_assist_planning_upload_context(&self) -> ::std::result::Result<&crate::types::TaskAssistPlanningUploadContext, &Self> {
         if let UploadContext::TaskAssistPlanningUploadContext(val) = &self {
             ::std::result::Result::Ok(val)
         } else {
             ::std::result::Result::Err(self)
         }
     }
-
-    /// Returns true if this is a
-    /// [`TaskAssistPlanningUploadContext`](crate::types::UploadContext::TaskAssistPlanningUploadContext).
+    /// Returns true if this is a [`TaskAssistPlanningUploadContext`](crate::types::UploadContext::TaskAssistPlanningUploadContext).
     pub fn is_task_assist_planning_upload_context(&self) -> bool {
         self.as_task_assist_planning_upload_context().is_ok()
     }
-
-    /// Tries to convert the enum instance into
-    /// [`TransformationUploadContext`](crate::types::UploadContext::TransformationUploadContext),
-    /// extracting the inner
-    /// [`TransformationUploadContext`](crate::types::TransformationUploadContext).
+    /// Tries to convert the enum instance into [`TransformationUploadContext`](crate::types::UploadContext::TransformationUploadContext), extracting the inner [`TransformationUploadContext`](crate::types::TransformationUploadContext).
     /// Returns `Err(&Self)` if it can't be converted.
-    pub fn as_transformation_upload_context(
-        &self,
-    ) -> ::std::result::Result<&crate::types::TransformationUploadContext, &Self> {
+    pub fn as_transformation_upload_context(&self) -> ::std::result::Result<&crate::types::TransformationUploadContext, &Self> {
         if let UploadContext::TransformationUploadContext(val) = &self {
             ::std::result::Result::Ok(val)
         } else {
             ::std::result::Result::Err(self)
         }
     }
-
-    /// Returns true if this is a
-    /// [`TransformationUploadContext`](crate::types::UploadContext::TransformationUploadContext).
+    /// Returns true if this is a [`TransformationUploadContext`](crate::types::UploadContext::TransformationUploadContext).
     pub fn is_transformation_upload_context(&self) -> bool {
         self.as_transformation_upload_context().is_ok()
     }
-
-    /// Tries to convert the enum instance into
-    /// [`WorkspaceContextUploadContext`](crate::types::UploadContext::WorkspaceContextUploadContext),
-    /// extracting the inner
-    /// [`WorkspaceContextUploadContext`](crate::types::WorkspaceContextUploadContext).
+    /// Tries to convert the enum instance into [`WorkspaceContextUploadContext`](crate::types::UploadContext::WorkspaceContextUploadContext), extracting the inner [`WorkspaceContextUploadContext`](crate::types::WorkspaceContextUploadContext).
     /// Returns `Err(&Self)` if it can't be converted.
-    pub fn as_workspace_context_upload_context(
-        &self,
-    ) -> ::std::result::Result<&crate::types::WorkspaceContextUploadContext, &Self> {
+    pub fn as_workspace_context_upload_context(&self) -> ::std::result::Result<&crate::types::WorkspaceContextUploadContext, &Self> {
         if let UploadContext::WorkspaceContextUploadContext(val) = &self {
             ::std::result::Result::Ok(val)
         } else {
             ::std::result::Result::Err(self)
         }
     }
-
-    /// Returns true if this is a
-    /// [`WorkspaceContextUploadContext`](crate::types::UploadContext::WorkspaceContextUploadContext).
+    /// Returns true if this is a [`WorkspaceContextUploadContext`](crate::types::UploadContext::WorkspaceContextUploadContext).
     pub fn is_workspace_context_upload_context(&self) -> bool {
         self.as_workspace_context_upload_context().is_ok()
     }
-
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

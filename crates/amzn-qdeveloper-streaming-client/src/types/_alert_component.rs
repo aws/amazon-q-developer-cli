@@ -3,20 +3,17 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct AlertComponent {
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub text: ::std::option::Option<crate::types::Text>,
 }
 impl AlertComponent {
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn text(&self) -> ::std::option::Option<&crate::types::Text> {
         self.text.as_ref()
     }
 }
 impl AlertComponent {
-    /// Creates a new builder-style object to manufacture
-    /// [`AlertComponent`](crate::types::AlertComponent).
+    /// Creates a new builder-style object to manufacture [`AlertComponent`](crate::types::AlertComponent).
     pub fn builder() -> crate::types::builders::AlertComponentBuilder {
         crate::types::builders::AlertComponentBuilder::default()
     }
@@ -29,26 +26,20 @@ pub struct AlertComponentBuilder {
     pub(crate) text: ::std::option::Option<crate::types::Text>,
 }
 impl AlertComponentBuilder {
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn text(mut self, input: crate::types::Text) -> Self {
         self.text = ::std::option::Option::Some(input);
         self
     }
-
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn set_text(mut self, input: ::std::option::Option<crate::types::Text>) -> Self {
         self.text = input;
         self
     }
-
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn get_text(&self) -> &::std::option::Option<crate::types::Text> {
         &self.text
     }
-
     /// Consumes the builder and constructs a [`AlertComponent`](crate::types::AlertComponent).
     pub fn build(self) -> crate::types::AlertComponent {
         crate::types::AlertComponent { text: self.text }

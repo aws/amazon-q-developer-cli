@@ -10,15 +10,13 @@ pub struct SupplementaryWebLinksEvent {
 impl SupplementaryWebLinksEvent {
     /// Web References for Assistant Response Message
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.supplementary_web_links.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.supplementary_web_links.is_none()`.
     pub fn supplementary_web_links(&self) -> &[crate::types::SupplementaryWebLink] {
         self.supplementary_web_links.as_deref().unwrap_or_default()
     }
 }
 impl SupplementaryWebLinksEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`SupplementaryWebLinksEvent`](crate::types::SupplementaryWebLinksEvent).
+    /// Creates a new builder-style object to manufacture [`SupplementaryWebLinksEvent`](crate::types::SupplementaryWebLinksEvent).
     pub fn builder() -> crate::types::builders::SupplementaryWebLinksEventBuilder {
         crate::types::builders::SupplementaryWebLinksEventBuilder::default()
     }
@@ -33,8 +31,7 @@ pub struct SupplementaryWebLinksEventBuilder {
 impl SupplementaryWebLinksEventBuilder {
     /// Appends an item to `supplementary_web_links`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_supplementary_web_links`](Self::set_supplementary_web_links).
+    /// To override the contents of this collection use [`set_supplementary_web_links`](Self::set_supplementary_web_links).
     ///
     /// Web References for Assistant Response Message
     pub fn supplementary_web_links(mut self, input: crate::types::SupplementaryWebLink) -> Self {
@@ -43,25 +40,16 @@ impl SupplementaryWebLinksEventBuilder {
         self.supplementary_web_links = ::std::option::Option::Some(v);
         self
     }
-
     /// Web References for Assistant Response Message
-    pub fn set_supplementary_web_links(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::SupplementaryWebLink>>,
-    ) -> Self {
+    pub fn set_supplementary_web_links(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::SupplementaryWebLink>>) -> Self {
         self.supplementary_web_links = input;
         self
     }
-
     /// Web References for Assistant Response Message
-    pub fn get_supplementary_web_links(
-        &self,
-    ) -> &::std::option::Option<::std::vec::Vec<crate::types::SupplementaryWebLink>> {
+    pub fn get_supplementary_web_links(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::SupplementaryWebLink>> {
         &self.supplementary_web_links
     }
-
-    /// Consumes the builder and constructs a
-    /// [`SupplementaryWebLinksEvent`](crate::types::SupplementaryWebLinksEvent).
+    /// Consumes the builder and constructs a [`SupplementaryWebLinksEvent`](crate::types::SupplementaryWebLinksEvent).
     pub fn build(self) -> crate::types::SupplementaryWebLinksEvent {
         crate::types::SupplementaryWebLinksEvent {
             supplementary_web_links: self.supplementary_web_links,

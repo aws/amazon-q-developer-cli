@@ -7,21 +7,19 @@ pub enum Prediction {
     Completion(crate::types::Completion),
     #[allow(missing_docs)] // documentation missing in model
     Edit(crate::types::Edit),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider
-    /// upgrading the SDK to the latest available version. An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
+    /// An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has
-    /// not been updated. To investigate this, consider turning on debug logging to print the
-    /// raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
+    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl Prediction {
-    /// Tries to convert the enum instance into
-    /// [`Completion`](crate::types::Prediction::Completion), extracting the inner
-    /// [`Completion`](crate::types::Completion). Returns `Err(&Self)` if it can't be converted.
+    /// Tries to convert the enum instance into [`Completion`](crate::types::Prediction::Completion), extracting the inner [`Completion`](crate::types::Completion).
+    /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_completion(&self) -> ::std::result::Result<&crate::types::Completion, &Self> {
         if let Prediction::Completion(val) = &self {
             ::std::result::Result::Ok(val)
@@ -29,14 +27,12 @@ impl Prediction {
             ::std::result::Result::Err(self)
         }
     }
-
     /// Returns true if this is a [`Completion`](crate::types::Prediction::Completion).
     pub fn is_completion(&self) -> bool {
         self.as_completion().is_ok()
     }
-
-    /// Tries to convert the enum instance into [`Edit`](crate::types::Prediction::Edit), extracting
-    /// the inner [`Edit`](crate::types::Edit). Returns `Err(&Self)` if it can't be converted.
+    /// Tries to convert the enum instance into [`Edit`](crate::types::Prediction::Edit), extracting the inner [`Edit`](crate::types::Edit).
+    /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_edit(&self) -> ::std::result::Result<&crate::types::Edit, &Self> {
         if let Prediction::Edit(val) = &self {
             ::std::result::Result::Ok(val)
@@ -44,12 +40,10 @@ impl Prediction {
             ::std::result::Result::Err(self)
         }
     }
-
     /// Returns true if this is a [`Edit`](crate::types::Prediction::Edit).
     pub fn is_edit(&self) -> bool {
         self.as_edit().is_ok()
     }
-
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

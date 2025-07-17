@@ -46,8 +46,7 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for DryRunOperati
     }
 }
 impl DryRunOperationError {
-    /// Creates a new builder-style object to manufacture
-    /// [`DryRunOperationError`](crate::types::error::DryRunOperationError).
+    /// Creates a new builder-style object to manufacture [`DryRunOperationError`](crate::types::error::DryRunOperationError).
     pub fn builder() -> crate::types::error::builders::DryRunOperationErrorBuilder {
         crate::types::error::builders::DryRunOperationErrorBuilder::default()
     }
@@ -67,35 +66,29 @@ impl DryRunOperationErrorBuilder {
         self.message = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.message
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn response_code(mut self, input: i32) -> Self {
         self.response_code = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_response_code(mut self, input: ::std::option::Option<i32>) -> Self {
         self.response_code = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_response_code(&self) -> &::std::option::Option<i32> {
         &self.response_code
     }
-
     /// Sets error metadata
     pub fn meta(mut self, meta: ::aws_smithy_types::error::ErrorMetadata) -> Self {
         self.meta = Some(meta);
@@ -107,9 +100,7 @@ impl DryRunOperationErrorBuilder {
         self.meta = meta;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`DryRunOperationError`](crate::types::error::DryRunOperationError).
+    /// Consumes the builder and constructs a [`DryRunOperationError`](crate::types::error::DryRunOperationError).
     pub fn build(self) -> crate::types::error::DryRunOperationError {
         crate::types::error::DryRunOperationError {
             message: self.message,

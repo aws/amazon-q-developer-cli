@@ -22,8 +22,7 @@ impl ::std::fmt::Debug for CodeDescription {
     }
 }
 impl CodeDescription {
-    /// Creates a new builder-style object to manufacture
-    /// [`CodeDescription`](crate::types::CodeDescription).
+    /// Creates a new builder-style object to manufacture [`CodeDescription`](crate::types::CodeDescription).
     pub fn builder() -> crate::types::builders::CodeDescriptionBuilder {
         crate::types::builders::CodeDescriptionBuilder::default()
     }
@@ -42,24 +41,19 @@ impl CodeDescriptionBuilder {
         self.href = ::std::option::Option::Some(input.into());
         self
     }
-
     /// An URI to open with more information about the diagnostic error.
     pub fn set_href(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.href = input;
         self
     }
-
     /// An URI to open with more information about the diagnostic error.
     pub fn get_href(&self) -> &::std::option::Option<::std::string::String> {
         &self.href
     }
-
     /// Consumes the builder and constructs a [`CodeDescription`](crate::types::CodeDescription).
     /// This method will fail if any of the following fields are not set:
     /// - [`href`](crate::types::builders::CodeDescriptionBuilder::href)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::CodeDescription, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::CodeDescription, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::CodeDescription {
             href: self.href.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

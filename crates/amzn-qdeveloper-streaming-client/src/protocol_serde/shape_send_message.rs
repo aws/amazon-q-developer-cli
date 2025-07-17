@@ -2,10 +2,7 @@
 #[allow(clippy::unnecessary_wraps)]
 pub fn de_send_message_http_response(
     response: &mut ::aws_smithy_runtime_api::http::Response,
-) -> std::result::Result<
-    crate::operation::send_message::SendMessageOutput,
-    crate::operation::send_message::SendMessageError,
-> {
+) -> std::result::Result<crate::operation::send_message::SendMessageOutput, crate::operation::send_message::SendMessageError> {
     let mut _response_body = ::aws_smithy_types::body::SdkBody::taken();
     std::mem::swap(&mut _response_body, response.body_mut());
     let _response_body = &mut _response_body;
@@ -15,13 +12,11 @@ pub fn de_send_message_http_response(
     Ok({
         #[allow(unused_mut)]
         let mut output = crate::operation::send_message::builders::SendMessageOutputBuilder::default();
-        output = output.set_send_message_response(Some(
-            crate::protocol_serde::shape_send_message_output::de_send_message_response_payload(_response_body)?,
-        ));
+        output = output.set_send_message_response(Some(crate::protocol_serde::shape_send_message_output::de_send_message_response_payload(
+            _response_body,
+        )?));
         output._set_request_id(::aws_types::request_id::RequestId::request_id(_response_headers).map(str::to_string));
-        output
-            .build()
-            .map_err(crate::operation::send_message::SendMessageError::unhandled)?
+        output.build().map_err(crate::operation::send_message::SendMessageError::unhandled)?
     })
 }
 
@@ -30,14 +25,10 @@ pub fn de_send_message_http_error(
     _response_status: u16,
     _response_headers: &::aws_smithy_runtime_api::http::Headers,
     _response_body: &[u8],
-) -> std::result::Result<
-    crate::operation::send_message::SendMessageOutput,
-    crate::operation::send_message::SendMessageError,
-> {
+) -> std::result::Result<crate::operation::send_message::SendMessageOutput, crate::operation::send_message::SendMessageError> {
     #[allow(unused_mut)]
-    let mut generic_builder =
-        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-            .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+        .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
@@ -66,9 +57,8 @@ pub fn de_send_message_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output =
-                    crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
-                        .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+                output = crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_error_correct_errors(output)
                     .build()
@@ -76,31 +66,28 @@ pub fn de_send_message_http_error(
             };
             tmp
         }),
-        "DryRunOperationException" => {
-            crate::operation::send_message::SendMessageError::DryRunOperationError({
+        "DryRunOperationException" => crate::operation::send_message::SendMessageError::DryRunOperationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::DryRunOperationErrorBuilder::default();
-                    output = crate::protocol_serde::shape_dry_run_operation_exception::de_dry_run_operation_exception_json_err(_response_body, output)
+                let mut output = crate::types::error::builders::DryRunOperationErrorBuilder::default();
+                output = crate::protocol_serde::shape_dry_run_operation_exception::de_dry_run_operation_exception_json_err(_response_body, output)
                     .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
-                    let output = output.meta(generic);
-                    output.build()
-                };
-                if tmp.message.is_none() {
-                    tmp.message = _error_message;
-                }
-                tmp
-            })
-        },
+                let output = output.meta(generic);
+                output.build()
+            };
+            if tmp.message.is_none() {
+                tmp.message = _error_message;
+            }
+            tmp
+        }),
         "ValidationError" => crate::operation::send_message::SendMessageError::ValidationError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output =
-                    crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
-                        .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+                output = crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_error_correct_errors(output)
                     .build()
@@ -113,11 +100,8 @@ pub fn de_send_message_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+                output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(_response_body, output)
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::access_denied_error_correct_errors(output)
                     .build()
@@ -130,11 +114,8 @@ pub fn de_send_message_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
-                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::conflict_exception_correct_errors(output)
                     .build()
@@ -147,11 +128,8 @@ pub fn de_send_message_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+                output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(_response_body, output)
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::internal_server_error_correct_errors(output)
                     .build()
@@ -179,8 +157,7 @@ pub fn de_send_message_http_error(
 
 pub fn ser_send_message_input(
     input: &crate::operation::send_message::SendMessageInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
-{
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_send_message_input::ser_send_message_input_input(&mut object, input)?;

@@ -13,22 +13,19 @@ impl GetCodeAnalysisInput {
     pub fn job_id(&self) -> ::std::option::Option<&str> {
         self.job_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
 }
 impl GetCodeAnalysisInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`GetCodeAnalysisInput`](crate::operation::get_code_analysis::GetCodeAnalysisInput).
+    /// Creates a new builder-style object to manufacture [`GetCodeAnalysisInput`](crate::operation::get_code_analysis::GetCodeAnalysisInput).
     pub fn builder() -> crate::operation::get_code_analysis::builders::GetCodeAnalysisInputBuilder {
         crate::operation::get_code_analysis::builders::GetCodeAnalysisInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`GetCodeAnalysisInput`](crate::operation::get_code_analysis::GetCodeAnalysisInput).
+/// A builder for [`GetCodeAnalysisInput`](crate::operation::get_code_analysis::GetCodeAnalysisInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GetCodeAnalysisInputBuilder {
@@ -42,43 +39,33 @@ impl GetCodeAnalysisInputBuilder {
         self.job_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.job_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.job_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
-    /// Consumes the builder and constructs a
-    /// [`GetCodeAnalysisInput`](crate::operation::get_code_analysis::GetCodeAnalysisInput).
+    /// Consumes the builder and constructs a [`GetCodeAnalysisInput`](crate::operation::get_code_analysis::GetCodeAnalysisInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::get_code_analysis::GetCodeAnalysisInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::get_code_analysis::GetCodeAnalysisInput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::get_code_analysis::GetCodeAnalysisInput {
             job_id: self.job_id,
             profile_arn: self.profile_arn,

@@ -19,31 +19,26 @@ impl UserContext {
     pub fn ide_category(&self) -> &crate::types::IdeCategory {
         &self.ide_category
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn operating_system(&self) -> &crate::types::OperatingSystem {
         &self.operating_system
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn product(&self) -> &str {
         use std::ops::Deref;
         self.product.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_id(&self) -> ::std::option::Option<&str> {
         self.client_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn ide_version(&self) -> ::std::option::Option<&str> {
         self.ide_version.as_deref()
     }
 }
 impl UserContext {
-    /// Creates a new builder-style object to manufacture
-    /// [`UserContext`](crate::types::UserContext).
+    /// Creates a new builder-style object to manufacture [`UserContext`](crate::types::UserContext).
     pub fn builder() -> crate::types::builders::UserContextBuilder {
         crate::types::builders::UserContextBuilder::default()
     }
@@ -66,96 +61,79 @@ impl UserContextBuilder {
         self.ide_category = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_ide_category(mut self, input: ::std::option::Option<crate::types::IdeCategory>) -> Self {
         self.ide_category = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_ide_category(&self) -> &::std::option::Option<crate::types::IdeCategory> {
         &self.ide_category
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn operating_system(mut self, input: crate::types::OperatingSystem) -> Self {
         self.operating_system = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_operating_system(mut self, input: ::std::option::Option<crate::types::OperatingSystem>) -> Self {
         self.operating_system = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_operating_system(&self) -> &::std::option::Option<crate::types::OperatingSystem> {
         &self.operating_system
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn product(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.product = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_product(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.product = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_product(&self) -> &::std::option::Option<::std::string::String> {
         &self.product
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.client_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_client_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.client_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn ide_version(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.ide_version = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_ide_version(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.ide_version = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_ide_version(&self) -> &::std::option::Option<::std::string::String> {
         &self.ide_version
     }
-
     /// Consumes the builder and constructs a [`UserContext`](crate::types::UserContext).
     /// This method will fail if any of the following fields are not set:
     /// - [`ide_category`](crate::types::builders::UserContextBuilder::ide_category)
     /// - [`operating_system`](crate::types::builders::UserContextBuilder::operating_system)
     /// - [`product`](crate::types::builders::UserContextBuilder::product)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::UserContext, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::UserContext, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::UserContext {
             ide_category: self.ide_category.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

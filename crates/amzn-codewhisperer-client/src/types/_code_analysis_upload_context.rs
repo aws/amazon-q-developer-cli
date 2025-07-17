@@ -14,8 +14,7 @@ impl CodeAnalysisUploadContext {
     }
 }
 impl CodeAnalysisUploadContext {
-    /// Creates a new builder-style object to manufacture
-    /// [`CodeAnalysisUploadContext`](crate::types::CodeAnalysisUploadContext).
+    /// Creates a new builder-style object to manufacture [`CodeAnalysisUploadContext`](crate::types::CodeAnalysisUploadContext).
     pub fn builder() -> crate::types::builders::CodeAnalysisUploadContextBuilder {
         crate::types::builders::CodeAnalysisUploadContextBuilder::default()
     }
@@ -34,26 +33,19 @@ impl CodeAnalysisUploadContextBuilder {
         self.code_scan_name = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Code analysis scan name
     pub fn set_code_scan_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.code_scan_name = input;
         self
     }
-
     /// Code analysis scan name
     pub fn get_code_scan_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.code_scan_name
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CodeAnalysisUploadContext`](crate::types::CodeAnalysisUploadContext). This method will
-    /// fail if any of the following fields are not set:
+    /// Consumes the builder and constructs a [`CodeAnalysisUploadContext`](crate::types::CodeAnalysisUploadContext).
+    /// This method will fail if any of the following fields are not set:
     /// - [`code_scan_name`](crate::types::builders::CodeAnalysisUploadContextBuilder::code_scan_name)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::CodeAnalysisUploadContext, ::aws_smithy_types::error::operation::BuildError>
-    {
+    pub fn build(self) -> ::std::result::Result<crate::types::CodeAnalysisUploadContext, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::CodeAnalysisUploadContext {
             code_scan_name: self.code_scan_name.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

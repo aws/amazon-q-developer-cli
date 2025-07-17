@@ -8,9 +8,8 @@ pub(crate) struct Handle {
 
 /// Client for Amazon CodeWhisperer
 ///
-/// Client for invoking operations on Amazon CodeWhisperer. Each operation on Amazon CodeWhisperer
-/// is a method on this this struct. `.send()` MUST be invoked on the generated operations to
-/// dispatch the request to the service.
+/// Client for invoking operations on Amazon CodeWhisperer. Each operation on Amazon CodeWhisperer is a method on this
+/// this struct. `.send()` MUST be invoked on the generated operations to dispatch the request to the service.
 #[derive(::std::clone::Clone, ::std::fmt::Debug)]
 pub struct Client {
     handle: ::std::sync::Arc<Handle>,
@@ -62,14 +61,11 @@ impl Client {
     ///
     /// # Panics
     ///
-    /// - This method will panic if the `sdk_config` is missing an async sleep implementation. If
-    ///   you experience this panic, set the `sleep_impl` on the Config passed into this function to
-    ///   fix it.
-    /// - This method will panic if the `sdk_config` is missing an HTTP connector. If you experience
-    ///   this panic, set the `http_connector` on the Config passed into this function to fix it.
-    /// - This method will panic if no `BehaviorVersion` is provided. If you experience this panic,
-    ///   set `behavior_version` on the Config or enable the `behavior-version-latest` Cargo
-    ///   feature.
+    /// - This method will panic if the `sdk_config` is missing an async sleep implementation. If you experience this panic, set
+    ///     the `sleep_impl` on the Config passed into this function to fix it.
+    /// - This method will panic if the `sdk_config` is missing an HTTP connector. If you experience this panic, set the
+    ///     `http_connector` on the Config passed into this function to fix it.
+    /// - This method will panic if no `BehaviorVersion` is provided. If you experience this panic, set `behavior_version` on the Config or enable the `behavior-version-latest` Cargo feature.
     #[track_caller]
     pub fn new(sdk_config: &::aws_types::sdk_config::SdkConfig) -> Self {
         Self::from_conf(sdk_config.into())
@@ -89,6 +85,7 @@ mod create_user_memory_entry;
 mod create_workspace;
 
 /// Operation customization and supporting types.
+///
 pub mod customize;
 
 mod delete_task_assist_conversation;
@@ -114,6 +111,8 @@ mod get_transformation_plan;
 mod get_usage_limits;
 
 mod list_available_customizations;
+
+mod list_available_models;
 
 mod list_available_profiles;
 

@@ -21,8 +21,10 @@
 ///     Origin::Ide => { /* ... */ },
 ///     Origin::Marketing => { /* ... */ },
 ///     Origin::Md => { /* ... */ },
+///     Origin::MdIde => { /* ... */ },
 ///     Origin::Mobile => { /* ... */ },
 ///     Origin::OpensearchDashboard => { /* ... */ },
+///     Origin::QDevBext => { /* ... */ },
 ///     Origin::SageMaker => { /* ... */ },
 ///     Origin::ServiceInternal => { /* ... */ },
 ///     Origin::UnifiedSearch => { /* ... */ },
@@ -54,13 +56,7 @@
 /// _Note: `Origin::Unknown` has been renamed to `::UnknownValue`._
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum Origin {
     /// Any AI Editor.
@@ -81,14 +77,17 @@ pub enum Origin {
     Marketing,
     /// MD.
     Md,
+    /// SageMaker Unified Studio/MaxDome IDE Chat
+    MdIde,
     /// AWS Mobile Application (ACMA)
     Mobile,
     /// Amazon OpenSearch dashboard
     OpensearchDashboard,
+    /// Any caller from Q Developer Browser Extension.
+    QDevBext,
     /// Amazon SageMaker's Rome Chat.
     SageMaker,
-    /// Internal Service Traffic (Integ Tests, Canaries, etc.). This is the default when no Origin
-    /// header present in request.
+    /// Internal Service Traffic (Integ Tests, Canaries, etc.). This is the default when no Origin header present in request.
     ServiceInternal,
     /// Unified Search in AWS Management Console (https://<region>.console.aws.amazon.com)
     UnifiedSearch,
@@ -97,9 +96,7 @@ pub enum Origin {
     /// _Note: `::Unknown` has been renamed to `::UnknownValue`._
     UnknownValue,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for Origin {
@@ -114,15 +111,15 @@ impl ::std::convert::From<&str> for Origin {
             "IDE" => Origin::Ide,
             "MARKETING" => Origin::Marketing,
             "MD" => Origin::Md,
+            "MD_IDE" => Origin::MdIde,
             "MOBILE" => Origin::Mobile,
             "OPENSEARCH_DASHBOARD" => Origin::OpensearchDashboard,
+            "Q_DEV_BEXT" => Origin::QDevBext,
             "SAGE_MAKER" => Origin::SageMaker,
             "SERVICE_INTERNAL" => Origin::ServiceInternal,
             "UNIFIED_SEARCH" => Origin::UnifiedSearch,
             "UNKNOWN" => Origin::UnknownValue,
-            other => Origin::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => Origin::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -146,8 +143,10 @@ impl Origin {
             Origin::Ide => "IDE",
             Origin::Marketing => "MARKETING",
             Origin::Md => "MD",
+            Origin::MdIde => "MD_IDE",
             Origin::Mobile => "MOBILE",
             Origin::OpensearchDashboard => "OPENSEARCH_DASHBOARD",
+            Origin::QDevBext => "Q_DEV_BEXT",
             Origin::SageMaker => "SAGE_MAKER",
             Origin::ServiceInternal => "SERVICE_INTERNAL",
             Origin::UnifiedSearch => "UNIFIED_SEARCH",
@@ -155,7 +154,6 @@ impl Origin {
             Origin::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[
@@ -168,8 +166,10 @@ impl Origin {
             "IDE",
             "MARKETING",
             "MD",
+            "MD_IDE",
             "MOBILE",
             "OPENSEARCH_DASHBOARD",
+            "Q_DEV_BEXT",
             "SAGE_MAKER",
             "SERVICE_INTERNAL",
             "UNIFIED_SEARCH",
@@ -206,8 +206,10 @@ impl ::std::fmt::Display for Origin {
             Origin::Ide => write!(f, "IDE"),
             Origin::Marketing => write!(f, "MARKETING"),
             Origin::Md => write!(f, "MD"),
+            Origin::MdIde => write!(f, "MD_IDE"),
             Origin::Mobile => write!(f, "MOBILE"),
             Origin::OpensearchDashboard => write!(f, "OPENSEARCH_DASHBOARD"),
+            Origin::QDevBext => write!(f, "Q_DEV_BEXT"),
             Origin::SageMaker => write!(f, "SAGE_MAKER"),
             Origin::ServiceInternal => write!(f, "SERVICE_INTERNAL"),
             Origin::UnifiedSearch => write!(f, "UNIFIED_SEARCH"),

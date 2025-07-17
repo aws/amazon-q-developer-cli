@@ -11,15 +11,13 @@ impl ::aws_types::request_id::RequestId for DeleteUserMemoryEntryOutput {
     }
 }
 impl DeleteUserMemoryEntryOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`DeleteUserMemoryEntryOutput`](crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryOutput).
+    /// Creates a new builder-style object to manufacture [`DeleteUserMemoryEntryOutput`](crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryOutput).
     pub fn builder() -> crate::operation::delete_user_memory_entry::builders::DeleteUserMemoryEntryOutputBuilder {
         crate::operation::delete_user_memory_entry::builders::DeleteUserMemoryEntryOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`DeleteUserMemoryEntryOutput`](crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryOutput).
+/// A builder for [`DeleteUserMemoryEntryOutput`](crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteUserMemoryEntryOutputBuilder {
@@ -35,9 +33,7 @@ impl DeleteUserMemoryEntryOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`DeleteUserMemoryEntryOutput`](crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryOutput).
+    /// Consumes the builder and constructs a [`DeleteUserMemoryEntryOutput`](crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryOutput).
     pub fn build(self) -> crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryOutput {
         crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryOutput {
             _request_id: self._request_id,

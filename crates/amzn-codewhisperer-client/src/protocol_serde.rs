@@ -3,9 +3,7 @@ pub(crate) fn type_erase_result<O, E>(
     result: ::std::result::Result<O, E>,
 ) -> ::std::result::Result<
     ::aws_smithy_runtime_api::client::interceptors::context::Output,
-    ::aws_smithy_runtime_api::client::orchestrator::OrchestratorError<
-        ::aws_smithy_runtime_api::client::interceptors::context::Error,
-    >,
+    ::aws_smithy_runtime_api::client::orchestrator::OrchestratorError<::aws_smithy_runtime_api::client::interceptors::context::Error>,
 >
 where
     O: ::std::fmt::Debug + ::std::marker::Send + ::std::marker::Sync + 'static,
@@ -21,10 +19,7 @@ pub fn parse_http_error_metadata(
     _response_status: u16,
     response_headers: &::aws_smithy_runtime_api::http::Headers,
     response_body: &[u8],
-) -> ::std::result::Result<
-    ::aws_smithy_types::error::metadata::Builder,
-    ::aws_smithy_json::deserialize::error::DeserializeError,
-> {
+) -> ::std::result::Result<::aws_smithy_types::error::metadata::Builder, ::aws_smithy_json::deserialize::error::DeserializeError> {
     crate::json_errors::parse_error_metadata(response_body, response_headers)
 }
 
@@ -64,6 +59,8 @@ pub(crate) mod shape_get_usage_limits;
 
 pub(crate) mod shape_list_available_customizations;
 
+pub(crate) mod shape_list_available_models;
+
 pub(crate) mod shape_list_available_profiles;
 
 pub(crate) mod shape_list_code_analysis_findings;
@@ -97,7 +94,11 @@ pub(crate) mod shape_stop_transformation;
 pub(crate) mod shape_update_usage_limits;
 
 pub(crate) fn or_empty_doc(data: &[u8]) -> &[u8] {
-    if data.is_empty() { b"{}" } else { data }
+    if data.is_empty() {
+        b"{}"
+    } else {
+        data
+    }
 }
 
 pub(crate) mod shape_access_denied_exception;
@@ -141,6 +142,8 @@ pub(crate) mod shape_get_usage_limits_input;
 pub(crate) mod shape_internal_server_exception;
 
 pub(crate) mod shape_list_available_customizations_input;
+
+pub(crate) mod shape_list_available_models_input;
 
 pub(crate) mod shape_list_available_profiles_input;
 
@@ -205,6 +208,8 @@ pub(crate) mod shape_intent_context;
 pub(crate) mod shape_memory_entry;
 
 pub(crate) mod shape_memory_entry_list;
+
+pub(crate) mod shape_models;
 
 pub(crate) mod shape_predictions;
 
@@ -304,6 +309,8 @@ pub(crate) mod shape_memory_entry_metadata;
 
 pub(crate) mod shape_metric_data;
 
+pub(crate) mod shape_model;
+
 pub(crate) mod shape_package_info_list;
 
 pub(crate) mod shape_position;
@@ -375,6 +382,10 @@ pub(crate) mod shape_previous_editor_state_metadata;
 pub(crate) mod shape_reference;
 
 pub(crate) mod shape_resource_policy;
+
+pub(crate) mod shape_supported_input_types_list;
+
+pub(crate) mod shape_token_limits;
 
 pub(crate) mod shape_transformation_platform_config;
 

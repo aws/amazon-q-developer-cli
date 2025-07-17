@@ -20,24 +20,20 @@ impl Event {
         use std::ops::Deref;
         self.event_id.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn generation_id(&self) -> &str {
         use std::ops::Deref;
         self.generation_id.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn event_timestamp(&self) -> &::aws_smithy_types::DateTime {
         &self.event_timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn event_type(&self) -> &str {
         use std::ops::Deref;
         self.event_type.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn event_blob(&self) -> &::aws_smithy_types::Blob {
         &self.event_blob
@@ -78,90 +74,75 @@ impl EventBuilder {
         self.event_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_event_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.event_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_event_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.event_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn generation_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.generation_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_generation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.generation_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_generation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.generation_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn event_timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.event_timestamp = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_event_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.event_timestamp = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_event_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.event_timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn event_type(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.event_type = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_event_type(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.event_type = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_event_type(&self) -> &::std::option::Option<::std::string::String> {
         &self.event_type
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn event_blob(mut self, input: ::aws_smithy_types::Blob) -> Self {
         self.event_blob = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_event_blob(mut self, input: ::std::option::Option<::aws_smithy_types::Blob>) -> Self {
         self.event_blob = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_event_blob(&self) -> &::std::option::Option<::aws_smithy_types::Blob> {
         &self.event_blob
     }
-
     /// Consumes the builder and constructs a [`Event`](crate::types::Event).
     /// This method will fail if any of the following fields are not set:
     /// - [`event_id`](crate::types::builders::EventBuilder::event_id)

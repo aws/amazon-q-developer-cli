@@ -16,9 +16,7 @@ pub fn ser_ide_diagnostic(
         object.key("severity").string(var_4.as_str());
     }
     {
-        object
-            .key("ideDiagnosticType")
-            .string(input.ide_diagnostic_type.as_str());
+        object.key("ideDiagnosticType").string(input.ide_diagnostic_type.as_str());
     }
     Ok(())
 }

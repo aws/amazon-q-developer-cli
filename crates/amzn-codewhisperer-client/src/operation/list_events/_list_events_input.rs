@@ -15,20 +15,17 @@ impl ListEventsInput {
     pub fn conversation_id(&self) -> ::std::option::Option<&str> {
         self.conversation_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(&self) -> ::std::option::Option<i32> {
         self.max_results
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
 }
 impl ListEventsInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ListEventsInput`](crate::operation::list_events::ListEventsInput).
+    /// Creates a new builder-style object to manufacture [`ListEventsInput`](crate::operation::list_events::ListEventsInput).
     pub fn builder() -> crate::operation::list_events::builders::ListEventsInputBuilder {
         crate::operation::list_events::builders::ListEventsInputBuilder::default()
     }
@@ -49,60 +46,45 @@ impl ListEventsInputBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(mut self, input: i32) -> Self {
         self.max_results = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_max_results(mut self, input: ::std::option::Option<i32>) -> Self {
         self.max_results = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         &self.max_results
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ListEventsInput`](crate::operation::list_events::ListEventsInput).
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<
-        crate::operation::list_events::ListEventsInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    /// Consumes the builder and constructs a [`ListEventsInput`](crate::operation::list_events::ListEventsInput).
+    pub fn build(self) -> ::std::result::Result<crate::operation::list_events::ListEventsInput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::list_events::ListEventsInput {
             conversation_id: self.conversation_id,
             max_results: self.max_results,

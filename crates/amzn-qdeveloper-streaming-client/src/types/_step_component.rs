@@ -3,20 +3,17 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct StepComponent {
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub text: ::std::option::Option<crate::types::Text>,
 }
 impl StepComponent {
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn text(&self) -> ::std::option::Option<&crate::types::Text> {
         self.text.as_ref()
     }
 }
 impl StepComponent {
-    /// Creates a new builder-style object to manufacture
-    /// [`StepComponent`](crate::types::StepComponent).
+    /// Creates a new builder-style object to manufacture [`StepComponent`](crate::types::StepComponent).
     pub fn builder() -> crate::types::builders::StepComponentBuilder {
         crate::types::builders::StepComponentBuilder::default()
     }
@@ -29,26 +26,20 @@ pub struct StepComponentBuilder {
     pub(crate) text: ::std::option::Option<crate::types::Text>,
 }
 impl StepComponentBuilder {
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn text(mut self, input: crate::types::Text) -> Self {
         self.text = ::std::option::Option::Some(input);
         self
     }
-
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn set_text(mut self, input: ::std::option::Option<crate::types::Text>) -> Self {
         self.text = input;
         self
     }
-
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn get_text(&self) -> &::std::option::Option<crate::types::Text> {
         &self.text
     }
-
     /// Consumes the builder and constructs a [`StepComponent`](crate::types::StepComponent).
     pub fn build(self) -> crate::types::StepComponent {
         crate::types::StepComponent { text: self.text }

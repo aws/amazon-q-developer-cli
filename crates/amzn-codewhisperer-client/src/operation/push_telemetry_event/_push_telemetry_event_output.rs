@@ -11,15 +11,13 @@ impl ::aws_types::request_id::RequestId for PushTelemetryEventOutput {
     }
 }
 impl PushTelemetryEventOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`PushTelemetryEventOutput`](crate::operation::push_telemetry_event::PushTelemetryEventOutput).
+    /// Creates a new builder-style object to manufacture [`PushTelemetryEventOutput`](crate::operation::push_telemetry_event::PushTelemetryEventOutput).
     pub fn builder() -> crate::operation::push_telemetry_event::builders::PushTelemetryEventOutputBuilder {
         crate::operation::push_telemetry_event::builders::PushTelemetryEventOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`PushTelemetryEventOutput`](crate::operation::push_telemetry_event::PushTelemetryEventOutput).
+/// A builder for [`PushTelemetryEventOutput`](crate::operation::push_telemetry_event::PushTelemetryEventOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct PushTelemetryEventOutputBuilder {
@@ -35,9 +33,7 @@ impl PushTelemetryEventOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`PushTelemetryEventOutput`](crate::operation::push_telemetry_event::PushTelemetryEventOutput).
+    /// Consumes the builder and constructs a [`PushTelemetryEventOutput`](crate::operation::push_telemetry_event::PushTelemetryEventOutput).
     pub fn build(self) -> crate::operation::push_telemetry_event::PushTelemetryEventOutput {
         crate::operation::push_telemetry_event::PushTelemetryEventOutput {
             _request_id: self._request_id,

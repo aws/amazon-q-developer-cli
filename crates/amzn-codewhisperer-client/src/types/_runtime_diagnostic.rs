@@ -17,12 +17,10 @@ impl RuntimeDiagnostic {
         use std::ops::Deref;
         self.source.deref()
     }
-
     /// Diagnostic Error type
     pub fn severity(&self) -> &crate::types::DiagnosticSeverity {
         &self.severity
     }
-
     /// The diagnostic's message.
     pub fn message(&self) -> &str {
         use std::ops::Deref;
@@ -39,8 +37,7 @@ impl ::std::fmt::Debug for RuntimeDiagnostic {
     }
 }
 impl RuntimeDiagnostic {
-    /// Creates a new builder-style object to manufacture
-    /// [`RuntimeDiagnostic`](crate::types::RuntimeDiagnostic).
+    /// Creates a new builder-style object to manufacture [`RuntimeDiagnostic`](crate::types::RuntimeDiagnostic).
     pub fn builder() -> crate::types::builders::RuntimeDiagnosticBuilder {
         crate::types::builders::RuntimeDiagnosticBuilder::default()
     }
@@ -61,63 +58,51 @@ impl RuntimeDiagnosticBuilder {
         self.source = ::std::option::Option::Some(input.into());
         self
     }
-
     /// A human-readable string describing the source of the diagnostic
     pub fn set_source(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.source = input;
         self
     }
-
     /// A human-readable string describing the source of the diagnostic
     pub fn get_source(&self) -> &::std::option::Option<::std::string::String> {
         &self.source
     }
-
     /// Diagnostic Error type
     /// This field is required.
     pub fn severity(mut self, input: crate::types::DiagnosticSeverity) -> Self {
         self.severity = ::std::option::Option::Some(input);
         self
     }
-
     /// Diagnostic Error type
     pub fn set_severity(mut self, input: ::std::option::Option<crate::types::DiagnosticSeverity>) -> Self {
         self.severity = input;
         self
     }
-
     /// Diagnostic Error type
     pub fn get_severity(&self) -> &::std::option::Option<crate::types::DiagnosticSeverity> {
         &self.severity
     }
-
     /// The diagnostic's message.
     /// This field is required.
     pub fn message(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.message = ::std::option::Option::Some(input.into());
         self
     }
-
     /// The diagnostic's message.
     pub fn set_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message = input;
         self
     }
-
     /// The diagnostic's message.
     pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.message
     }
-
-    /// Consumes the builder and constructs a
-    /// [`RuntimeDiagnostic`](crate::types::RuntimeDiagnostic). This method will fail if any of
-    /// the following fields are not set:
+    /// Consumes the builder and constructs a [`RuntimeDiagnostic`](crate::types::RuntimeDiagnostic).
+    /// This method will fail if any of the following fields are not set:
     /// - [`source`](crate::types::builders::RuntimeDiagnosticBuilder::source)
     /// - [`severity`](crate::types::builders::RuntimeDiagnosticBuilder::severity)
     /// - [`message`](crate::types::builders::RuntimeDiagnosticBuilder::message)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::RuntimeDiagnostic, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::RuntimeDiagnostic, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::RuntimeDiagnostic {
             source: self.source.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

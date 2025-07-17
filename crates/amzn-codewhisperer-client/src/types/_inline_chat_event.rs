@@ -36,70 +36,57 @@ impl InlineChatEvent {
         use std::ops::Deref;
         self.request_id.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(&self) -> &::aws_smithy_types::DateTime {
         &self.timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn input_length(&self) -> i32 {
         self.input_length
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_selected_lines(&self) -> i32 {
         self.num_selected_lines
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_suggestion_add_chars(&self) -> i32 {
         self.num_suggestion_add_chars
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_suggestion_add_lines(&self) -> i32 {
         self.num_suggestion_add_lines
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_suggestion_del_chars(&self) -> i32 {
         self.num_suggestion_del_chars
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_suggestion_del_lines(&self) -> i32 {
         self.num_suggestion_del_lines
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_intent(&self) -> ::std::option::Option<bool> {
         self.code_intent
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn user_decision(&self) -> ::std::option::Option<&crate::types::InlineChatUserDecision> {
         self.user_decision.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn response_start_latency(&self) -> ::std::option::Option<f64> {
         self.response_start_latency
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn response_end_latency(&self) -> ::std::option::Option<f64> {
         self.response_end_latency
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> ::std::option::Option<&crate::types::ProgrammingLanguage> {
         self.programming_language.as_ref()
     }
 }
 impl InlineChatEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`InlineChatEvent`](crate::types::InlineChatEvent).
+    /// Creates a new builder-style object to manufacture [`InlineChatEvent`](crate::types::InlineChatEvent).
     pub fn builder() -> crate::types::builders::InlineChatEventBuilder {
         crate::types::builders::InlineChatEventBuilder::default()
     }
@@ -130,230 +117,189 @@ impl InlineChatEventBuilder {
         self.request_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_request_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.request_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_request_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.request_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.timestamp = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.timestamp = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn input_length(mut self, input: i32) -> Self {
         self.input_length = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_input_length(mut self, input: ::std::option::Option<i32>) -> Self {
         self.input_length = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_input_length(&self) -> &::std::option::Option<i32> {
         &self.input_length
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_selected_lines(mut self, input: i32) -> Self {
         self.num_selected_lines = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_num_selected_lines(mut self, input: ::std::option::Option<i32>) -> Self {
         self.num_selected_lines = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_num_selected_lines(&self) -> &::std::option::Option<i32> {
         &self.num_selected_lines
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_suggestion_add_chars(mut self, input: i32) -> Self {
         self.num_suggestion_add_chars = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_num_suggestion_add_chars(mut self, input: ::std::option::Option<i32>) -> Self {
         self.num_suggestion_add_chars = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_num_suggestion_add_chars(&self) -> &::std::option::Option<i32> {
         &self.num_suggestion_add_chars
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_suggestion_add_lines(mut self, input: i32) -> Self {
         self.num_suggestion_add_lines = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_num_suggestion_add_lines(mut self, input: ::std::option::Option<i32>) -> Self {
         self.num_suggestion_add_lines = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_num_suggestion_add_lines(&self) -> &::std::option::Option<i32> {
         &self.num_suggestion_add_lines
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_suggestion_del_chars(mut self, input: i32) -> Self {
         self.num_suggestion_del_chars = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_num_suggestion_del_chars(mut self, input: ::std::option::Option<i32>) -> Self {
         self.num_suggestion_del_chars = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_num_suggestion_del_chars(&self) -> &::std::option::Option<i32> {
         &self.num_suggestion_del_chars
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn num_suggestion_del_lines(mut self, input: i32) -> Self {
         self.num_suggestion_del_lines = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_num_suggestion_del_lines(mut self, input: ::std::option::Option<i32>) -> Self {
         self.num_suggestion_del_lines = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_num_suggestion_del_lines(&self) -> &::std::option::Option<i32> {
         &self.num_suggestion_del_lines
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_intent(mut self, input: bool) -> Self {
         self.code_intent = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_code_intent(mut self, input: ::std::option::Option<bool>) -> Self {
         self.code_intent = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_code_intent(&self) -> &::std::option::Option<bool> {
         &self.code_intent
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn user_decision(mut self, input: crate::types::InlineChatUserDecision) -> Self {
         self.user_decision = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_user_decision(mut self, input: ::std::option::Option<crate::types::InlineChatUserDecision>) -> Self {
         self.user_decision = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_user_decision(&self) -> &::std::option::Option<crate::types::InlineChatUserDecision> {
         &self.user_decision
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn response_start_latency(mut self, input: f64) -> Self {
         self.response_start_latency = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_response_start_latency(mut self, input: ::std::option::Option<f64>) -> Self {
         self.response_start_latency = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_response_start_latency(&self) -> &::std::option::Option<f64> {
         &self.response_start_latency
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn response_end_latency(mut self, input: f64) -> Self {
         self.response_end_latency = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_response_end_latency(mut self, input: ::std::option::Option<f64>) -> Self {
         self.response_end_latency = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_response_end_latency(&self) -> &::std::option::Option<f64> {
         &self.response_end_latency
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
-
     /// Consumes the builder and constructs a [`InlineChatEvent`](crate::types::InlineChatEvent).
     /// This method will fail if any of the following fields are not set:
     /// - [`request_id`](crate::types::builders::InlineChatEventBuilder::request_id)
     /// - [`timestamp`](crate::types::builders::InlineChatEventBuilder::timestamp)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::InlineChatEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::InlineChatEvent, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::InlineChatEvent {
             request_id: self.request_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

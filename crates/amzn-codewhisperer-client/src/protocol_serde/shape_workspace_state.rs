@@ -9,10 +9,7 @@ pub fn ser_workspace_state(
     {
         #[allow(unused_mut)]
         let mut object_1 = object.key("programmingLanguage").start_object();
-        crate::protocol_serde::shape_programming_language::ser_programming_language(
-            &mut object_1,
-            &input.programming_language,
-        )?;
+        crate::protocol_serde::shape_programming_language::ser_programming_language(&mut object_1, &input.programming_language)?;
         object_1.finish();
     }
     if let Some(var_2) = &input.context_truncation_scheme {

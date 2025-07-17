@@ -21,8 +21,7 @@ impl ::std::fmt::Debug for TaskActionConfirmation {
     }
 }
 impl TaskActionConfirmation {
-    /// Creates a new builder-style object to manufacture
-    /// [`TaskActionConfirmation`](crate::types::TaskActionConfirmation).
+    /// Creates a new builder-style object to manufacture [`TaskActionConfirmation`](crate::types::TaskActionConfirmation).
     pub fn builder() -> crate::types::builders::TaskActionConfirmationBuilder {
         crate::types::builders::TaskActionConfirmationBuilder::default()
     }
@@ -40,20 +39,16 @@ impl TaskActionConfirmationBuilder {
         self.content = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Confirmation message related to the action note, which may include sensitive information.
     pub fn set_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.content = input;
         self
     }
-
     /// Confirmation message related to the action note, which may include sensitive information.
     pub fn get_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.content
     }
-
-    /// Consumes the builder and constructs a
-    /// [`TaskActionConfirmation`](crate::types::TaskActionConfirmation).
+    /// Consumes the builder and constructs a [`TaskActionConfirmation`](crate::types::TaskActionConfirmation).
     pub fn build(self) -> crate::types::TaskActionConfirmation {
         crate::types::TaskActionConfirmation { content: self.content }
     }

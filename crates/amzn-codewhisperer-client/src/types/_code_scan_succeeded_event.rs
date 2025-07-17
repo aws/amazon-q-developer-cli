@@ -20,31 +20,26 @@ impl CodeScanSucceededEvent {
     pub fn programming_language(&self) -> &crate::types::ProgrammingLanguage {
         &self.programming_language
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_scan_job_id(&self) -> &str {
         use std::ops::Deref;
         self.code_scan_job_id.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(&self) -> &::aws_smithy_types::DateTime {
         &self.timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_findings(&self) -> i32 {
         self.number_of_findings
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_analysis_scope(&self) -> ::std::option::Option<&crate::types::CodeAnalysisScope> {
         self.code_analysis_scope.as_ref()
     }
 }
 impl CodeScanSucceededEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`CodeScanSucceededEvent`](crate::types::CodeScanSucceededEvent).
+    /// Creates a new builder-style object to manufacture [`CodeScanSucceededEvent`](crate::types::CodeScanSucceededEvent).
     pub fn builder() -> crate::types::builders::CodeScanSucceededEventBuilder {
         crate::types::builders::CodeScanSucceededEventBuilder::default()
     }
@@ -67,99 +62,80 @@ impl CodeScanSucceededEventBuilder {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn code_scan_job_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.code_scan_job_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_code_scan_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.code_scan_job_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_code_scan_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.code_scan_job_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.timestamp = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.timestamp = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn number_of_findings(mut self, input: i32) -> Self {
         self.number_of_findings = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_number_of_findings(mut self, input: ::std::option::Option<i32>) -> Self {
         self.number_of_findings = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_number_of_findings(&self) -> &::std::option::Option<i32> {
         &self.number_of_findings
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_analysis_scope(mut self, input: crate::types::CodeAnalysisScope) -> Self {
         self.code_analysis_scope = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_code_analysis_scope(mut self, input: ::std::option::Option<crate::types::CodeAnalysisScope>) -> Self {
         self.code_analysis_scope = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_code_analysis_scope(&self) -> &::std::option::Option<crate::types::CodeAnalysisScope> {
         &self.code_analysis_scope
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CodeScanSucceededEvent`](crate::types::CodeScanSucceededEvent). This method will fail
-    /// if any of the following fields are not set:
+    /// Consumes the builder and constructs a [`CodeScanSucceededEvent`](crate::types::CodeScanSucceededEvent).
+    /// This method will fail if any of the following fields are not set:
     /// - [`programming_language`](crate::types::builders::CodeScanSucceededEventBuilder::programming_language)
     /// - [`code_scan_job_id`](crate::types::builders::CodeScanSucceededEventBuilder::code_scan_job_id)
     /// - [`timestamp`](crate::types::builders::CodeScanSucceededEventBuilder::timestamp)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::CodeScanSucceededEvent, ::aws_smithy_types::error::operation::BuildError>
-    {
+    pub fn build(self) -> ::std::result::Result<crate::types::CodeScanSucceededEvent, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::CodeScanSucceededEvent {
             programming_language: self.programming_language.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

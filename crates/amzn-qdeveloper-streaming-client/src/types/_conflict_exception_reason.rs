@@ -40,13 +40,7 @@
 /// Reason for ConflictException
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum ConflictExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
@@ -56,9 +50,7 @@ pub enum ConflictExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
     MismatchedKmsKey,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for ConflictExceptionReason {
@@ -67,9 +59,7 @@ impl ::std::convert::From<&str> for ConflictExceptionReason {
             "CUSTOMER_KMS_KEY_DISABLED" => ConflictExceptionReason::CustomerKmsKeyDisabled,
             "CUSTOMER_KMS_KEY_INVALID_KEY_POLICY" => ConflictExceptionReason::CustomerKmsKeyInvalidKeyPolicy,
             "MISMATCHED_KMS_KEY" => ConflictExceptionReason::MismatchedKmsKey,
-            other => ConflictExceptionReason::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => ConflictExceptionReason::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -90,14 +80,9 @@ impl ConflictExceptionReason {
             ConflictExceptionReason::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &[
-            "CUSTOMER_KMS_KEY_DISABLED",
-            "CUSTOMER_KMS_KEY_INVALID_KEY_POLICY",
-            "MISMATCHED_KMS_KEY",
-        ]
+        &["CUSTOMER_KMS_KEY_DISABLED", "CUSTOMER_KMS_KEY_INVALID_KEY_POLICY", "MISMATCHED_KMS_KEY"]
     }
 }
 impl ::std::convert::AsRef<str> for ConflictExceptionReason {

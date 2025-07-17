@@ -11,8 +11,7 @@ impl ::aws_types::request_id::RequestId for UntagResourceOutput {
     }
 }
 impl UntagResourceOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`UntagResourceOutput`](crate::operation::untag_resource::UntagResourceOutput).
+    /// Creates a new builder-style object to manufacture [`UntagResourceOutput`](crate::operation::untag_resource::UntagResourceOutput).
     pub fn builder() -> crate::operation::untag_resource::builders::UntagResourceOutputBuilder {
         crate::operation::untag_resource::builders::UntagResourceOutputBuilder::default()
     }
@@ -34,9 +33,7 @@ impl UntagResourceOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`UntagResourceOutput`](crate::operation::untag_resource::UntagResourceOutput).
+    /// Consumes the builder and constructs a [`UntagResourceOutput`](crate::operation::untag_resource::UntagResourceOutput).
     pub fn build(self) -> crate::operation::untag_resource::UntagResourceOutput {
         crate::operation::untag_resource::UntagResourceOutput {
             _request_id: self._request_id,

@@ -6,15 +6,15 @@ pub fn ser_tool_result_content_block(
     match input {
         crate::types::ToolResultContentBlock::Text(inner) => {
             object_3.key("text").string(inner.as_str());
-        },
+        }
         crate::types::ToolResultContentBlock::Json(inner) => {
             object_3.key("json").document(inner);
-        },
+        }
         crate::types::ToolResultContentBlock::Unknown => {
-            return Err(
-                ::aws_smithy_types::error::operation::SerializationError::unknown_variant("ToolResultContentBlock"),
-            );
-        },
+            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant(
+                "ToolResultContentBlock",
+            ))
+        }
     }
     Ok(())
 }

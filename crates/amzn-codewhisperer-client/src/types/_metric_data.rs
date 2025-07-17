@@ -20,26 +20,22 @@ impl MetricData {
         use std::ops::Deref;
         self.metric_name.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn metric_value(&self) -> f64 {
         self.metric_value
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(&self) -> &::aws_smithy_types::DateTime {
         &self.timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn product(&self) -> &str {
         use std::ops::Deref;
         self.product.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.dimensions.is_none()`.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.dimensions.is_none()`.
     pub fn dimensions(&self) -> &[crate::types::Dimension] {
         self.dimensions.as_deref().unwrap_or_default()
     }
@@ -68,102 +64,86 @@ impl MetricDataBuilder {
         self.metric_name = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_metric_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.metric_name = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_metric_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.metric_name
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn metric_value(mut self, input: f64) -> Self {
         self.metric_value = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_metric_value(mut self, input: ::std::option::Option<f64>) -> Self {
         self.metric_value = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_metric_value(&self) -> &::std::option::Option<f64> {
         &self.metric_value
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.timestamp = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.timestamp = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.timestamp
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn product(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.product = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_product(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.product = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_product(&self) -> &::std::option::Option<::std::string::String> {
         &self.product
     }
-
     /// Appends an item to `dimensions`.
     ///
     /// To override the contents of this collection use [`set_dimensions`](Self::set_dimensions).
+    ///
     pub fn dimensions(mut self, input: crate::types::Dimension) -> Self {
         let mut v = self.dimensions.unwrap_or_default();
         v.push(input);
         self.dimensions = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_dimensions(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Dimension>>) -> Self {
         self.dimensions = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_dimensions(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Dimension>> {
         &self.dimensions
     }
-
     /// Consumes the builder and constructs a [`MetricData`](crate::types::MetricData).
     /// This method will fail if any of the following fields are not set:
     /// - [`metric_name`](crate::types::builders::MetricDataBuilder::metric_name)
     /// - [`metric_value`](crate::types::builders::MetricDataBuilder::metric_value)
     /// - [`timestamp`](crate::types::builders::MetricDataBuilder::timestamp)
     /// - [`product`](crate::types::builders::MetricDataBuilder::product)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::MetricData, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::MetricData, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::MetricData {
             metric_name: self.metric_name.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

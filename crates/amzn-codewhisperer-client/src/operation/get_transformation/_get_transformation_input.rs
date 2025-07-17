@@ -14,22 +14,19 @@ impl GetTransformationInput {
     pub fn transformation_job_id(&self) -> ::std::option::Option<&str> {
         self.transformation_job_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
 }
 impl GetTransformationInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`GetTransformationInput`](crate::operation::get_transformation::GetTransformationInput).
+    /// Creates a new builder-style object to manufacture [`GetTransformationInput`](crate::operation::get_transformation::GetTransformationInput).
     pub fn builder() -> crate::operation::get_transformation::builders::GetTransformationInputBuilder {
         crate::operation::get_transformation::builders::GetTransformationInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`GetTransformationInput`](crate::operation::get_transformation::GetTransformationInput).
+/// A builder for [`GetTransformationInput`](crate::operation::get_transformation::GetTransformationInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GetTransformationInputBuilder {
@@ -43,43 +40,33 @@ impl GetTransformationInputBuilder {
         self.transformation_job_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Identifier for the Transformation Job
     pub fn set_transformation_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.transformation_job_id = input;
         self
     }
-
     /// Identifier for the Transformation Job
     pub fn get_transformation_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.transformation_job_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
-    /// Consumes the builder and constructs a
-    /// [`GetTransformationInput`](crate::operation::get_transformation::GetTransformationInput).
+    /// Consumes the builder and constructs a [`GetTransformationInput`](crate::operation::get_transformation::GetTransformationInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::get_transformation::GetTransformationInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::get_transformation::GetTransformationInput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::get_transformation::GetTransformationInput {
             transformation_job_id: self.transformation_job_id,
             profile_arn: self.profile_arn,

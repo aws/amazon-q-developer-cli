@@ -3,12 +3,7 @@ pub(crate) fn de_suggestions<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
 ) -> ::std::result::Result<Option<crate::types::Suggestions>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
-    I: Iterator<
-        Item = Result<
-            ::aws_smithy_json::deserialize::Token<'a>,
-            ::aws_smithy_json::deserialize::error::DeserializeError,
-        >,
-    >,
+    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
 {
     match tokens.next().transpose()? {
         Some(::aws_smithy_json::deserialize::Token::ValueNull { .. }) => Ok(None),
@@ -18,34 +13,24 @@ where
             loop {
                 match tokens.next().transpose()? {
                     Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
-                    Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                        match key.to_unescaped()?.as_ref() {
-                            "items" => {
-                                builder = builder.set_items(
-                                    crate::protocol_serde::shape_suggestion_list::de_suggestion_list(tokens)?,
-                                );
-                            },
-                            _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
+                    Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
+                        "items" => {
+                            builder = builder.set_items(crate::protocol_serde::shape_suggestion_list::de_suggestion_list(tokens)?);
                         }
+                        _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                     },
                     other => {
-                        return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                            format!("expected object key or end object, found: {:?}", other),
-                        ));
-                    },
+                        return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                            "expected object key or end object, found: {:?}",
+                            other
+                        )))
+                    }
                 }
             }
-            Ok(Some(
-                crate::serde_util::suggestions_correct_errors(builder)
-                    .build()
-                    .map_err(|err| {
-                        ::aws_smithy_json::deserialize::error::DeserializeError::custom_source(
-                            "Response was invalid",
-                            err,
-                        )
-                    })?,
-            ))
-        },
+            Ok(Some(crate::serde_util::suggestions_correct_errors(builder).build().map_err(|err| {
+                ::aws_smithy_json::deserialize::error::DeserializeError::custom_source("Response was invalid", err)
+            })?))
+        }
         _ => Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
             "expected start object or null",
         )),

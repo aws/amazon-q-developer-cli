@@ -17,12 +17,10 @@ impl StartCodeAnalysisOutput {
         use std::ops::Deref;
         self.job_id.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn status(&self) -> &crate::types::CodeAnalysisStatus {
         &self.status
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn error_message(&self) -> ::std::option::Option<&str> {
         self.error_message.as_deref()
@@ -44,15 +42,13 @@ impl ::aws_types::request_id::RequestId for StartCodeAnalysisOutput {
     }
 }
 impl StartCodeAnalysisOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`StartCodeAnalysisOutput`](crate::operation::start_code_analysis::StartCodeAnalysisOutput).
+    /// Creates a new builder-style object to manufacture [`StartCodeAnalysisOutput`](crate::operation::start_code_analysis::StartCodeAnalysisOutput).
     pub fn builder() -> crate::operation::start_code_analysis::builders::StartCodeAnalysisOutputBuilder {
         crate::operation::start_code_analysis::builders::StartCodeAnalysisOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`StartCodeAnalysisOutput`](crate::operation::start_code_analysis::StartCodeAnalysisOutput).
+/// A builder for [`StartCodeAnalysisOutput`](crate::operation::start_code_analysis::StartCodeAnalysisOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct StartCodeAnalysisOutputBuilder {
@@ -68,53 +64,44 @@ impl StartCodeAnalysisOutputBuilder {
         self.job_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.job_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.job_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn status(mut self, input: crate::types::CodeAnalysisStatus) -> Self {
         self.status = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_status(mut self, input: ::std::option::Option<crate::types::CodeAnalysisStatus>) -> Self {
         self.status = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_status(&self) -> &::std::option::Option<crate::types::CodeAnalysisStatus> {
         &self.status
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn error_message(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.error_message = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_error_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.error_message = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_error_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.error_message
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -124,18 +111,13 @@ impl StartCodeAnalysisOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`StartCodeAnalysisOutput`](crate::operation::start_code_analysis::StartCodeAnalysisOutput).
+    /// Consumes the builder and constructs a [`StartCodeAnalysisOutput`](crate::operation::start_code_analysis::StartCodeAnalysisOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`job_id`](crate::operation::start_code_analysis::builders::StartCodeAnalysisOutputBuilder::job_id)
     /// - [`status`](crate::operation::start_code_analysis::builders::StartCodeAnalysisOutputBuilder::status)
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::start_code_analysis::StartCodeAnalysisOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::start_code_analysis::StartCodeAnalysisOutput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::start_code_analysis::StartCodeAnalysisOutput {
             job_id: self.job_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

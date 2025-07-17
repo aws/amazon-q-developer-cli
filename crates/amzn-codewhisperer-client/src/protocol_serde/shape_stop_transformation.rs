@@ -9,9 +9,8 @@ pub fn de_stop_transformation_http_error(
     crate::operation::stop_transformation::StopTransformationError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder =
-        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-            .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
+    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+        .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
@@ -21,36 +20,27 @@ pub fn de_stop_transformation_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => {
-            crate::operation::stop_transformation::StopTransformationError::InternalServerError({
+        "InternalServerException" => crate::operation::stop_transformation::StopTransformationError::InternalServerError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output =
-                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::internal_server_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?
-                };
-                tmp
-            })
-        },
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::internal_server_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?
+            };
+            tmp
+        }),
         "ValidationException" => crate::operation::stop_transformation::StopTransformationError::ValidationError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_exception_correct_errors(output)
                     .build()
@@ -63,11 +53,8 @@ pub fn de_stop_transformation_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
@@ -80,11 +67,8 @@ pub fn de_stop_transformation_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
@@ -92,22 +76,20 @@ pub fn de_stop_transformation_http_error(
             };
             tmp
         }),
-        "ResourceNotFoundException" => {
-            crate::operation::stop_transformation::StopTransformationError::ResourceNotFoundError({
+        "ResourceNotFoundException" => crate::operation::stop_transformation::StopTransformationError::ResourceNotFoundError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
                     .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::resource_not_found_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?
-                };
-                tmp
-            })
-        },
+                let output = output.meta(generic);
+                crate::serde_util::resource_not_found_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::stop_transformation::StopTransformationError::unhandled)?
+            };
+            tmp
+        }),
         _ => crate::operation::stop_transformation::StopTransformationError::generic(generic),
     })
 }
@@ -135,8 +117,7 @@ pub fn de_stop_transformation_http_response(
 
 pub fn ser_stop_transformation_input(
     input: &crate::operation::stop_transformation::StopTransformationInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
-{
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_stop_transformation_input::ser_stop_transformation_input_input(&mut object, input)?;
@@ -151,8 +132,7 @@ pub(crate) fn de_stop_transformation(
     crate::operation::stop_transformation::builders::StopTransformationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -162,20 +142,18 @@ pub(crate) fn de_stop_transformation(
                 "transformationStatus" => {
                     builder = builder.set_transformation_status(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                            .map(|s| {
-                                s.to_unescaped()
-                                    .map(|u| crate::types::TransformationStatus::from(u.as_ref()))
-                            })
+                            .map(|s| s.to_unescaped().map(|u| crate::types::TransformationStatus::from(u.as_ref())))
                             .transpose()?,
                     );
-                },
+                }
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
-                ));
-            },
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                    "expected object key or end object, found: {:?}",
+                    other
+                )))
+            }
         }
     }
     if tokens.next().is_some() {

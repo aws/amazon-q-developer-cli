@@ -15,7 +15,6 @@ impl ListCustomizationPermissionsOutput {
         use std::ops::Deref;
         self.permissions.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
@@ -27,16 +26,13 @@ impl ::aws_types::request_id::RequestId for ListCustomizationPermissionsOutput {
     }
 }
 impl ListCustomizationPermissionsOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ListCustomizationPermissionsOutput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsOutput).
-    pub fn builder()
-    -> crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsOutputBuilder {
+    /// Creates a new builder-style object to manufacture [`ListCustomizationPermissionsOutput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsOutput).
+    pub fn builder() -> crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsOutputBuilder {
         crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`ListCustomizationPermissionsOutput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsOutput).
+/// A builder for [`ListCustomizationPermissionsOutput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListCustomizationPermissionsOutputBuilder {
@@ -48,44 +44,36 @@ impl ListCustomizationPermissionsOutputBuilder {
     /// Appends an item to `permissions`.
     ///
     /// To override the contents of this collection use [`set_permissions`](Self::set_permissions).
+    ///
     pub fn permissions(mut self, input: crate::types::CustomizationPermission) -> Self {
         let mut v = self.permissions.unwrap_or_default();
         v.push(input);
         self.permissions = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_permissions(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::CustomizationPermission>>,
-    ) -> Self {
+    pub fn set_permissions(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::CustomizationPermission>>) -> Self {
         self.permissions = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_permissions(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::CustomizationPermission>> {
         &self.permissions
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -95,9 +83,7 @@ impl ListCustomizationPermissionsOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ListCustomizationPermissionsOutput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsOutput).
+    /// Consumes the builder and constructs a [`ListCustomizationPermissionsOutput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`permissions`](crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsOutputBuilder::permissions)
     pub fn build(

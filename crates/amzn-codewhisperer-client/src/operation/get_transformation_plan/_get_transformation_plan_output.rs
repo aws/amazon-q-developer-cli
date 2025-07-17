@@ -20,15 +20,13 @@ impl ::aws_types::request_id::RequestId for GetTransformationPlanOutput {
     }
 }
 impl GetTransformationPlanOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`GetTransformationPlanOutput`](crate::operation::get_transformation_plan::GetTransformationPlanOutput).
+    /// Creates a new builder-style object to manufacture [`GetTransformationPlanOutput`](crate::operation::get_transformation_plan::GetTransformationPlanOutput).
     pub fn builder() -> crate::operation::get_transformation_plan::builders::GetTransformationPlanOutputBuilder {
         crate::operation::get_transformation_plan::builders::GetTransformationPlanOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`GetTransformationPlanOutput`](crate::operation::get_transformation_plan::GetTransformationPlanOutput).
+/// A builder for [`GetTransformationPlanOutput`](crate::operation::get_transformation_plan::GetTransformationPlanOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GetTransformationPlanOutputBuilder {
@@ -42,18 +40,15 @@ impl GetTransformationPlanOutputBuilder {
         self.transformation_plan = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_transformation_plan(mut self, input: ::std::option::Option<crate::types::TransformationPlan>) -> Self {
         self.transformation_plan = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_transformation_plan(&self) -> &::std::option::Option<crate::types::TransformationPlan> {
         &self.transformation_plan
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -63,17 +58,13 @@ impl GetTransformationPlanOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`GetTransformationPlanOutput`](crate::operation::get_transformation_plan::GetTransformationPlanOutput).
+    /// Consumes the builder and constructs a [`GetTransformationPlanOutput`](crate::operation::get_transformation_plan::GetTransformationPlanOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`transformation_plan`](crate::operation::get_transformation_plan::builders::GetTransformationPlanOutputBuilder::transformation_plan)
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::get_transformation_plan::GetTransformationPlanOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::get_transformation_plan::GetTransformationPlanOutput, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::operation::get_transformation_plan::GetTransformationPlanOutput {
             transformation_plan: self.transformation_plan.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

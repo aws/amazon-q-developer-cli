@@ -19,37 +19,31 @@ impl UpdateUsageLimitsInput {
     pub fn account_id(&self) -> ::std::option::Option<&str> {
         self.account_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn accountless_user_id(&self) -> ::std::option::Option<&str> {
         self.accountless_user_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn feature_type(&self) -> ::std::option::Option<&crate::types::UsageLimitType> {
         self.feature_type.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn requested_limit(&self) -> ::std::option::Option<i64> {
         self.requested_limit
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn justification(&self) -> ::std::option::Option<&str> {
         self.justification.as_deref()
     }
 }
 impl UpdateUsageLimitsInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`UpdateUsageLimitsInput`](crate::operation::update_usage_limits::UpdateUsageLimitsInput).
+    /// Creates a new builder-style object to manufacture [`UpdateUsageLimitsInput`](crate::operation::update_usage_limits::UpdateUsageLimitsInput).
     pub fn builder() -> crate::operation::update_usage_limits::builders::UpdateUsageLimitsInputBuilder {
         crate::operation::update_usage_limits::builders::UpdateUsageLimitsInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`UpdateUsageLimitsInput`](crate::operation::update_usage_limits::UpdateUsageLimitsInput).
+/// A builder for [`UpdateUsageLimitsInput`](crate::operation::update_usage_limits::UpdateUsageLimitsInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct UpdateUsageLimitsInputBuilder {
@@ -66,96 +60,77 @@ impl UpdateUsageLimitsInputBuilder {
         self.account_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_account_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.account_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_account_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.account_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn accountless_user_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.accountless_user_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_accountless_user_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.accountless_user_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_accountless_user_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.accountless_user_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn feature_type(mut self, input: crate::types::UsageLimitType) -> Self {
         self.feature_type = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_feature_type(mut self, input: ::std::option::Option<crate::types::UsageLimitType>) -> Self {
         self.feature_type = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_feature_type(&self) -> &::std::option::Option<crate::types::UsageLimitType> {
         &self.feature_type
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn requested_limit(mut self, input: i64) -> Self {
         self.requested_limit = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_requested_limit(mut self, input: ::std::option::Option<i64>) -> Self {
         self.requested_limit = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_requested_limit(&self) -> &::std::option::Option<i64> {
         &self.requested_limit
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn justification(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.justification = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_justification(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.justification = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_justification(&self) -> &::std::option::Option<::std::string::String> {
         &self.justification
     }
-
-    /// Consumes the builder and constructs a
-    /// [`UpdateUsageLimitsInput`](crate::operation::update_usage_limits::UpdateUsageLimitsInput).
+    /// Consumes the builder and constructs a [`UpdateUsageLimitsInput`](crate::operation::update_usage_limits::UpdateUsageLimitsInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::update_usage_limits::UpdateUsageLimitsInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::update_usage_limits::UpdateUsageLimitsInput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::update_usage_limits::UpdateUsageLimitsInput {
             account_id: self.account_id,
             accountless_user_id: self.accountless_user_id,

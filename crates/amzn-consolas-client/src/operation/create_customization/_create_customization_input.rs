@@ -23,37 +23,31 @@ impl CreateCustomizationInput {
     pub fn data_reference(&self) -> ::std::option::Option<&crate::types::DataReference> {
         self.data_reference.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn customization_name(&self) -> ::std::option::Option<&str> {
         self.customization_name.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(&self) -> ::std::option::Option<&str> {
         self.description.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.tags.is_none()`.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.tags.is_none()`.
     pub fn tags(&self) -> &[crate::types::Tag] {
         self.tags.as_deref().unwrap_or_default()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(&self) -> ::std::option::Option<&str> {
         self.client_token.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.include_repos.is_none()`.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.include_repos.is_none()`.
     pub fn include_repos(&self) -> &[::std::string::String] {
         self.include_repos.as_deref().unwrap_or_default()
     }
@@ -72,15 +66,13 @@ impl ::std::fmt::Debug for CreateCustomizationInput {
     }
 }
 impl CreateCustomizationInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`CreateCustomizationInput`](crate::operation::create_customization::CreateCustomizationInput).
+    /// Creates a new builder-style object to manufacture [`CreateCustomizationInput`](crate::operation::create_customization::CreateCustomizationInput).
     pub fn builder() -> crate::operation::create_customization::builders::CreateCustomizationInputBuilder {
         crate::operation::create_customization::builders::CreateCustomizationInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`CreateCustomizationInput`](crate::operation::create_customization::CreateCustomizationInput).
+/// A builder for [`CreateCustomizationInput`](crate::operation::create_customization::CreateCustomizationInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct CreateCustomizationInputBuilder {
@@ -99,139 +91,116 @@ impl CreateCustomizationInputBuilder {
         self.data_reference = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_data_reference(mut self, input: ::std::option::Option<crate::types::DataReference>) -> Self {
         self.data_reference = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_data_reference(&self) -> &::std::option::Option<crate::types::DataReference> {
         &self.data_reference
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn customization_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.customization_name = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_customization_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.customization_name = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_customization_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.customization_name
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
     /// Appends an item to `tags`.
     ///
     /// To override the contents of this collection use [`set_tags`](Self::set_tags).
+    ///
     pub fn tags(mut self, input: crate::types::Tag) -> Self {
         let mut v = self.tags.unwrap_or_default();
         v.push(input);
         self.tags = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_tags(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Tag>>) -> Self {
         self.tags = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_tags(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Tag>> {
         &self.tags
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.client_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_client_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.client_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_token
     }
-
     /// Appends an item to `include_repos`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_include_repos`](Self::set_include_repos).
+    /// To override the contents of this collection use [`set_include_repos`](Self::set_include_repos).
+    ///
     pub fn include_repos(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         let mut v = self.include_repos.unwrap_or_default();
         v.push(input.into());
         self.include_repos = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_include_repos(mut self, input: ::std::option::Option<::std::vec::Vec<::std::string::String>>) -> Self {
         self.include_repos = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_include_repos(&self) -> &::std::option::Option<::std::vec::Vec<::std::string::String>> {
         &self.include_repos
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CreateCustomizationInput`](crate::operation::create_customization::CreateCustomizationInput).
+    /// Consumes the builder and constructs a [`CreateCustomizationInput`](crate::operation::create_customization::CreateCustomizationInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::create_customization::CreateCustomizationInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::create_customization::CreateCustomizationInput, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::operation::create_customization::CreateCustomizationInput {
             data_reference: self.data_reference,
             customization_name: self.customization_name,

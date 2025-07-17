@@ -9,9 +9,8 @@ pub fn de_lock_service_linked_role_http_error(
     crate::operation::lock_service_linked_role::LockServiceLinkedRoleError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder =
-        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-            .map_err(crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::unhandled)?;
+    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+        .map_err(crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
@@ -36,7 +35,7 @@ pub fn de_lock_service_linked_role_http_error(
                 }
                 tmp
             })
-        },
+        }
         "ServiceLinkedRoleLockServiceException" => {
             crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::ServiceLinkedRoleLockServiceError({
                 #[allow(unused_mut)]
@@ -52,26 +51,21 @@ pub fn de_lock_service_linked_role_http_error(
                 }
                 tmp
             })
-        },
-        "AccessDeniedException" => {
-            crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::AccessDeniedError({
+        }
+        "AccessDeniedException" => crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                        _response_body,
-                        output,
-                    )
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
                     .map_err(crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::access_denied_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::unhandled)?
-                };
-                tmp
-            })
-        },
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::unhandled)?
+            };
+            tmp
+        }),
         _ => crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::generic(generic),
     })
 }
@@ -87,11 +81,9 @@ pub fn de_lock_service_linked_role_http_response(
 > {
     Ok({
         #[allow(unused_mut)]
-        let mut output =
-            crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder::default();
-        output =
-            crate::protocol_serde::shape_lock_service_linked_role::de_lock_service_linked_role(_response_body, output)
-                .map_err(crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::unhandled)?;
+        let mut output = crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder::default();
+        output = crate::protocol_serde::shape_lock_service_linked_role::de_lock_service_linked_role(_response_body, output)
+            .map_err(crate::operation::lock_service_linked_role::LockServiceLinkedRoleError::unhandled)?;
         output._set_request_id(::aws_types::request_id::RequestId::request_id(_response_headers).map(str::to_string));
         crate::serde_util::lock_service_linked_role_output_output_correct_errors(output).build()
     })
@@ -99,14 +91,10 @@ pub fn de_lock_service_linked_role_http_response(
 
 pub fn ser_lock_service_linked_role_input(
     input: &crate::operation::lock_service_linked_role::LockServiceLinkedRoleInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
-{
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
-    crate::protocol_serde::shape_lock_service_linked_role_input::ser_lock_service_linked_role_input_input(
-        &mut object,
-        input,
-    )?;
+    crate::protocol_serde::shape_lock_service_linked_role_input::ser_lock_service_linked_role_input_input(&mut object, input)?;
     object.finish();
     Ok(::aws_smithy_types::body::SdkBody::from(out))
 }
@@ -118,8 +106,7 @@ pub(crate) fn de_lock_service_linked_role(
     crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -127,29 +114,26 @@ pub(crate) fn de_lock_service_linked_role(
             Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "CanBeDeleted" => {
-                    builder = builder.set_can_be_deleted(::aws_smithy_json::deserialize::token::expect_bool_or_null(
-                        tokens.next(),
-                    )?);
-                },
+                    builder = builder.set_can_be_deleted(::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?);
+                }
                 "ReasonOfFailure" => {
                     builder = builder.set_reason_of_failure(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
                             .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                             .transpose()?,
                     );
-                },
+                }
                 "RelatedResources" => {
-                    builder = builder.set_related_resources(
-                        crate::protocol_serde::shape_string_list_type::de_string_list_type(tokens)?,
-                    );
-                },
+                    builder = builder.set_related_resources(crate::protocol_serde::shape_string_list_type::de_string_list_type(tokens)?);
+                }
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
-                ));
-            },
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                    "expected object key or end object, found: {:?}",
+                    other
+                )))
+            }
         }
     }
     if tokens.next().is_some() {

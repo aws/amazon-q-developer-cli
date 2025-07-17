@@ -14,8 +14,7 @@ impl CodeFixUploadContext {
     }
 }
 impl CodeFixUploadContext {
-    /// Creates a new builder-style object to manufacture
-    /// [`CodeFixUploadContext`](crate::types::CodeFixUploadContext).
+    /// Creates a new builder-style object to manufacture [`CodeFixUploadContext`](crate::types::CodeFixUploadContext).
     pub fn builder() -> crate::types::builders::CodeFixUploadContextBuilder {
         crate::types::builders::CodeFixUploadContextBuilder::default()
     }
@@ -34,26 +33,19 @@ impl CodeFixUploadContextBuilder {
         self.code_fix_name = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Code fix name
     pub fn set_code_fix_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.code_fix_name = input;
         self
     }
-
     /// Code fix name
     pub fn get_code_fix_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.code_fix_name
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CodeFixUploadContext`](crate::types::CodeFixUploadContext). This method will fail if
-    /// any of the following fields are not set:
+    /// Consumes the builder and constructs a [`CodeFixUploadContext`](crate::types::CodeFixUploadContext).
+    /// This method will fail if any of the following fields are not set:
     /// - [`code_fix_name`](crate::types::builders::CodeFixUploadContextBuilder::code_fix_name)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::CodeFixUploadContext, ::aws_smithy_types::error::operation::BuildError>
-    {
+    pub fn build(self) -> ::std::result::Result<crate::types::CodeFixUploadContext, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::CodeFixUploadContext {
             code_fix_name: self.code_fix_name.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

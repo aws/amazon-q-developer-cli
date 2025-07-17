@@ -17,13 +17,11 @@ impl ListEventsOutput {
         use std::ops::Deref;
         self.conversation_id.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn events(&self) -> &[crate::types::Event] {
         use std::ops::Deref;
         self.events.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
@@ -35,8 +33,7 @@ impl ::aws_types::request_id::RequestId for ListEventsOutput {
     }
 }
 impl ListEventsOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ListEventsOutput`](crate::operation::list_events::ListEventsOutput).
+    /// Creates a new builder-style object to manufacture [`ListEventsOutput`](crate::operation::list_events::ListEventsOutput).
     pub fn builder() -> crate::operation::list_events::builders::ListEventsOutputBuilder {
         crate::operation::list_events::builders::ListEventsOutputBuilder::default()
     }
@@ -58,56 +55,48 @@ impl ListEventsOutputBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
-
     /// Appends an item to `events`.
     ///
     /// To override the contents of this collection use [`set_events`](Self::set_events).
+    ///
     pub fn events(mut self, input: crate::types::Event) -> Self {
         let mut v = self.events.unwrap_or_default();
         v.push(input);
         self.events = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_events(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Event>>) -> Self {
         self.events = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_events(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Event>> {
         &self.events
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -117,18 +106,11 @@ impl ListEventsOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ListEventsOutput`](crate::operation::list_events::ListEventsOutput). This method will
-    /// fail if any of the following fields are not set:
+    /// Consumes the builder and constructs a [`ListEventsOutput`](crate::operation::list_events::ListEventsOutput).
+    /// This method will fail if any of the following fields are not set:
     /// - [`conversation_id`](crate::operation::list_events::builders::ListEventsOutputBuilder::conversation_id)
     /// - [`events`](crate::operation::list_events::builders::ListEventsOutputBuilder::events)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<
-        crate::operation::list_events::ListEventsOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    pub fn build(self) -> ::std::result::Result<crate::operation::list_events::ListEventsOutput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::list_events::ListEventsOutput {
             conversation_id: self.conversation_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

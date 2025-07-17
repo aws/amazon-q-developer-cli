@@ -15,10 +15,7 @@ impl ServiceLinkedRoleLockClientError {
 }
 impl ::std::fmt::Display for ServiceLinkedRoleLockClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        ::std::write!(
-            f,
-            "ServiceLinkedRoleLockClientError [ServiceLinkedRoleLockClientException]"
-        )?;
+        ::std::write!(f, "ServiceLinkedRoleLockClientError [ServiceLinkedRoleLockClientException]")?;
         if let ::std::option::Option::Some(inner_1) = &self.message {
             {
                 ::std::write!(f, ": {}", inner_1)?;
@@ -40,15 +37,13 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for ServiceLinked
     }
 }
 impl ServiceLinkedRoleLockClientError {
-    /// Creates a new builder-style object to manufacture
-    /// [`ServiceLinkedRoleLockClientError`](crate::types::error::ServiceLinkedRoleLockClientError).
+    /// Creates a new builder-style object to manufacture [`ServiceLinkedRoleLockClientError`](crate::types::error::ServiceLinkedRoleLockClientError).
     pub fn builder() -> crate::types::error::builders::ServiceLinkedRoleLockClientErrorBuilder {
         crate::types::error::builders::ServiceLinkedRoleLockClientErrorBuilder::default()
     }
 }
 
-/// A builder for
-/// [`ServiceLinkedRoleLockClientError`](crate::types::error::ServiceLinkedRoleLockClientError).
+/// A builder for [`ServiceLinkedRoleLockClientError`](crate::types::error::ServiceLinkedRoleLockClientError).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ServiceLinkedRoleLockClientErrorBuilder {
@@ -61,18 +56,15 @@ impl ServiceLinkedRoleLockClientErrorBuilder {
         self.message = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.message
     }
-
     /// Sets error metadata
     pub fn meta(mut self, meta: ::aws_smithy_types::error::ErrorMetadata) -> Self {
         self.meta = Some(meta);
@@ -84,9 +76,7 @@ impl ServiceLinkedRoleLockClientErrorBuilder {
         self.meta = meta;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ServiceLinkedRoleLockClientError`](crate::types::error::ServiceLinkedRoleLockClientError).
+    /// Consumes the builder and constructs a [`ServiceLinkedRoleLockClientError`](crate::types::error::ServiceLinkedRoleLockClientError).
     pub fn build(self) -> crate::types::error::ServiceLinkedRoleLockClientError {
         crate::types::error::ServiceLinkedRoleLockClientError {
             message: self.message,

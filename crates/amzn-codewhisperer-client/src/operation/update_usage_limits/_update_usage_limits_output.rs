@@ -16,12 +16,10 @@ impl UpdateUsageLimitsOutput {
     pub fn status(&self) -> &crate::types::UsageLimitUpdateRequestStatus {
         &self.status
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn approved_limit(&self) -> ::std::option::Option<i64> {
         self.approved_limit
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn remaining_requests_this_month(&self) -> ::std::option::Option<i32> {
         self.remaining_requests_this_month
@@ -33,15 +31,13 @@ impl ::aws_types::request_id::RequestId for UpdateUsageLimitsOutput {
     }
 }
 impl UpdateUsageLimitsOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`UpdateUsageLimitsOutput`](crate::operation::update_usage_limits::UpdateUsageLimitsOutput).
+    /// Creates a new builder-style object to manufacture [`UpdateUsageLimitsOutput`](crate::operation::update_usage_limits::UpdateUsageLimitsOutput).
     pub fn builder() -> crate::operation::update_usage_limits::builders::UpdateUsageLimitsOutputBuilder {
         crate::operation::update_usage_limits::builders::UpdateUsageLimitsOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`UpdateUsageLimitsOutput`](crate::operation::update_usage_limits::UpdateUsageLimitsOutput).
+/// A builder for [`UpdateUsageLimitsOutput`](crate::operation::update_usage_limits::UpdateUsageLimitsOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct UpdateUsageLimitsOutputBuilder {
@@ -57,52 +53,43 @@ impl UpdateUsageLimitsOutputBuilder {
         self.status = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_status(mut self, input: ::std::option::Option<crate::types::UsageLimitUpdateRequestStatus>) -> Self {
         self.status = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_status(&self) -> &::std::option::Option<crate::types::UsageLimitUpdateRequestStatus> {
         &self.status
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn approved_limit(mut self, input: i64) -> Self {
         self.approved_limit = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_approved_limit(mut self, input: ::std::option::Option<i64>) -> Self {
         self.approved_limit = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_approved_limit(&self) -> &::std::option::Option<i64> {
         &self.approved_limit
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn remaining_requests_this_month(mut self, input: i32) -> Self {
         self.remaining_requests_this_month = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_remaining_requests_this_month(mut self, input: ::std::option::Option<i32>) -> Self {
         self.remaining_requests_this_month = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_remaining_requests_this_month(&self) -> &::std::option::Option<i32> {
         &self.remaining_requests_this_month
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -112,17 +99,12 @@ impl UpdateUsageLimitsOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`UpdateUsageLimitsOutput`](crate::operation::update_usage_limits::UpdateUsageLimitsOutput).
+    /// Consumes the builder and constructs a [`UpdateUsageLimitsOutput`](crate::operation::update_usage_limits::UpdateUsageLimitsOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`status`](crate::operation::update_usage_limits::builders::UpdateUsageLimitsOutputBuilder::status)
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::update_usage_limits::UpdateUsageLimitsOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::update_usage_limits::UpdateUsageLimitsOutput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::update_usage_limits::UpdateUsageLimitsOutput {
             status: self.status.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

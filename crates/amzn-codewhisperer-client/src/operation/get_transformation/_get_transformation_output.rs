@@ -20,15 +20,13 @@ impl ::aws_types::request_id::RequestId for GetTransformationOutput {
     }
 }
 impl GetTransformationOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`GetTransformationOutput`](crate::operation::get_transformation::GetTransformationOutput).
+    /// Creates a new builder-style object to manufacture [`GetTransformationOutput`](crate::operation::get_transformation::GetTransformationOutput).
     pub fn builder() -> crate::operation::get_transformation::builders::GetTransformationOutputBuilder {
         crate::operation::get_transformation::builders::GetTransformationOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`GetTransformationOutput`](crate::operation::get_transformation::GetTransformationOutput).
+/// A builder for [`GetTransformationOutput`](crate::operation::get_transformation::GetTransformationOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GetTransformationOutputBuilder {
@@ -42,18 +40,15 @@ impl GetTransformationOutputBuilder {
         self.transformation_job = ::std::option::Option::Some(input);
         self
     }
-
     /// Represent a Transformation Job
     pub fn set_transformation_job(mut self, input: ::std::option::Option<crate::types::TransformationJob>) -> Self {
         self.transformation_job = input;
         self
     }
-
     /// Represent a Transformation Job
     pub fn get_transformation_job(&self) -> &::std::option::Option<crate::types::TransformationJob> {
         &self.transformation_job
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -63,17 +58,12 @@ impl GetTransformationOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`GetTransformationOutput`](crate::operation::get_transformation::GetTransformationOutput).
+    /// Consumes the builder and constructs a [`GetTransformationOutput`](crate::operation::get_transformation::GetTransformationOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`transformation_job`](crate::operation::get_transformation::builders::GetTransformationOutputBuilder::transformation_job)
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::get_transformation::GetTransformationOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::get_transformation::GetTransformationOutput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::get_transformation::GetTransformationOutput {
             transformation_job: self.transformation_job.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

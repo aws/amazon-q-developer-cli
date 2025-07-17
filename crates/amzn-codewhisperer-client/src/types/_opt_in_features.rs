@@ -19,32 +19,27 @@ impl OptInFeatures {
     pub fn prompt_logging(&self) -> ::std::option::Option<&crate::types::PromptLogging> {
         self.prompt_logging.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn by_user_analytics(&self) -> ::std::option::Option<&crate::types::ByUserAnalytics> {
         self.by_user_analytics.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn dashboard_analytics(&self) -> ::std::option::Option<&crate::types::DashboardAnalytics> {
         self.dashboard_analytics.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    /// If no value was sent for this field, a default will be set. If you want to determine if no
-    /// value was sent, use `.notifications.is_none()`.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.notifications.is_none()`.
     pub fn notifications(&self) -> &[crate::types::NotificationsFeature] {
         self.notifications.as_deref().unwrap_or_default()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn workspace_context(&self) -> ::std::option::Option<&crate::types::WorkspaceContext> {
         self.workspace_context.as_ref()
     }
 }
 impl OptInFeatures {
-    /// Creates a new builder-style object to manufacture
-    /// [`OptInFeatures`](crate::types::OptInFeatures).
+    /// Creates a new builder-style object to manufacture [`OptInFeatures`](crate::types::OptInFeatures).
     pub fn builder() -> crate::types::builders::OptInFeaturesBuilder {
         crate::types::builders::OptInFeaturesBuilder::default()
     }
@@ -66,94 +61,76 @@ impl OptInFeaturesBuilder {
         self.prompt_logging = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_prompt_logging(mut self, input: ::std::option::Option<crate::types::PromptLogging>) -> Self {
         self.prompt_logging = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_prompt_logging(&self) -> &::std::option::Option<crate::types::PromptLogging> {
         &self.prompt_logging
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn by_user_analytics(mut self, input: crate::types::ByUserAnalytics) -> Self {
         self.by_user_analytics = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_by_user_analytics(mut self, input: ::std::option::Option<crate::types::ByUserAnalytics>) -> Self {
         self.by_user_analytics = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_by_user_analytics(&self) -> &::std::option::Option<crate::types::ByUserAnalytics> {
         &self.by_user_analytics
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn dashboard_analytics(mut self, input: crate::types::DashboardAnalytics) -> Self {
         self.dashboard_analytics = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_dashboard_analytics(mut self, input: ::std::option::Option<crate::types::DashboardAnalytics>) -> Self {
         self.dashboard_analytics = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_dashboard_analytics(&self) -> &::std::option::Option<crate::types::DashboardAnalytics> {
         &self.dashboard_analytics
     }
-
     /// Appends an item to `notifications`.
     ///
-    /// To override the contents of this collection use
-    /// [`set_notifications`](Self::set_notifications).
+    /// To override the contents of this collection use [`set_notifications`](Self::set_notifications).
+    ///
     pub fn notifications(mut self, input: crate::types::NotificationsFeature) -> Self {
         let mut v = self.notifications.unwrap_or_default();
         v.push(input);
         self.notifications = ::std::option::Option::Some(v);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_notifications(
-        mut self,
-        input: ::std::option::Option<::std::vec::Vec<crate::types::NotificationsFeature>>,
-    ) -> Self {
+    pub fn set_notifications(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::NotificationsFeature>>) -> Self {
         self.notifications = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_notifications(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::NotificationsFeature>> {
         &self.notifications
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn workspace_context(mut self, input: crate::types::WorkspaceContext) -> Self {
         self.workspace_context = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_workspace_context(mut self, input: ::std::option::Option<crate::types::WorkspaceContext>) -> Self {
         self.workspace_context = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_workspace_context(&self) -> &::std::option::Option<crate::types::WorkspaceContext> {
         &self.workspace_context
     }
-
     /// Consumes the builder and constructs a [`OptInFeatures`](crate::types::OptInFeatures).
     pub fn build(self) -> crate::types::OptInFeatures {
         crate::types::OptInFeatures {

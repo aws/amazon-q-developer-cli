@@ -7,9 +7,7 @@ pub fn ser_transformation_upload_context(
         object.key("jobId").string(input.job_id.as_str());
     }
     {
-        object
-            .key("uploadArtifactType")
-            .string(input.upload_artifact_type.as_str());
+        object.key("uploadArtifactType").string(input.upload_artifact_type.as_str());
     }
     Ok(())
 }

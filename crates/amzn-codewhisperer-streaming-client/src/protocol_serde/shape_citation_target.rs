@@ -3,12 +3,7 @@ pub(crate) fn de_citation_target<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
 ) -> ::std::result::Result<Option<crate::types::CitationTarget>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
-    I: Iterator<
-        Item = Result<
-            ::aws_smithy_json::deserialize::Token<'a>,
-            ::aws_smithy_json::deserialize::error::DeserializeError,
-        >,
-    >,
+    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
 {
     let mut variant = None;
     match tokens.next().transpose()? {
@@ -17,9 +12,8 @@ where
             match tokens.next().transpose()? {
                 Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
                 Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                    if let ::std::option::Option::Some(::std::result::Result::Ok(
-                        ::aws_smithy_json::deserialize::Token::ValueNull { .. },
-                    )) = tokens.peek()
+                    if let ::std::option::Option::Some(::std::result::Result::Ok(::aws_smithy_json::deserialize::Token::ValueNull { .. })) =
+                        tokens.peek()
                     {
                         let _ = tokens.next().expect("peek returned a token")?;
                         continue;
@@ -40,36 +34,32 @@ where
                                 .map(i32::try_from)
                                 .transpose()?
                                 .ok_or_else(|| {
-                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                                        "value for 'location' cannot be null",
-                                    )
+                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'location' cannot be null")
                                 })?,
                         )),
                         "range" => Some(crate::types::CitationTarget::Range(
-                            crate::protocol_serde::shape_span::de_span(tokens)?.ok_or_else(|| {
-                                ::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                                    "value for 'range' cannot be null",
-                                )
-                            })?,
+                            crate::protocol_serde::shape_span::de_span(tokens)?
+                                .ok_or_else(|| ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'range' cannot be null"))?,
                         )),
                         _ => {
                             ::aws_smithy_json::deserialize::token::skip_value(tokens)?;
                             Some(crate::types::CitationTarget::Unknown)
-                        },
+                        }
                     };
-                },
+                }
                 other => {
-                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                        format!("expected object key or end object, found: {:?}", other),
-                    ));
-                },
+                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                        "expected object key or end object, found: {:?}",
+                        other
+                    )))
+                }
             }
         },
         _ => {
             return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
                 "expected start object or null",
-            ));
-        },
+            ))
+        }
     }
     if variant.is_none() {
         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(

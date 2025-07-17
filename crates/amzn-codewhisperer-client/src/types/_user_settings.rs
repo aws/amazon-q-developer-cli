@@ -14,8 +14,7 @@ impl UserSettings {
     }
 }
 impl UserSettings {
-    /// Creates a new builder-style object to manufacture
-    /// [`UserSettings`](crate::types::UserSettings).
+    /// Creates a new builder-style object to manufacture [`UserSettings`](crate::types::UserSettings).
     pub fn builder() -> crate::types::builders::UserSettingsBuilder {
         crate::types::builders::UserSettingsBuilder::default()
     }
@@ -33,18 +32,15 @@ impl UserSettingsBuilder {
         self.has_consented_to_cross_region_calls = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_has_consented_to_cross_region_calls(mut self, input: ::std::option::Option<bool>) -> Self {
         self.has_consented_to_cross_region_calls = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_has_consented_to_cross_region_calls(&self) -> &::std::option::Option<bool> {
         &self.has_consented_to_cross_region_calls
     }
-
     /// Consumes the builder and constructs a [`UserSettings`](crate::types::UserSettings).
     pub fn build(self) -> crate::types::UserSettings {
         crate::types::UserSettings {

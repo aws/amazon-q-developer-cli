@@ -4,8 +4,7 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct InteractionComponent {
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub text: ::std::option::Option<crate::types::Text>,
     /// Structure representing an alert with a type and content.
     pub alert: ::std::option::Option<crate::types::Alert>,
@@ -31,70 +30,57 @@ pub struct InteractionComponent {
     pub action: ::std::option::Option<crate::types::Action>,
 }
 impl InteractionComponent {
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn text(&self) -> ::std::option::Option<&crate::types::Text> {
         self.text.as_ref()
     }
-
     /// Structure representing an alert with a type and content.
     pub fn alert(&self) -> ::std::option::Option<&crate::types::Alert> {
         self.alert.as_ref()
     }
-
     /// Structure representing different types of infrastructure updates.
     pub fn infrastructure_update(&self) -> ::std::option::Option<&crate::types::InfrastructureUpdate> {
         self.infrastructure_update.as_ref()
     }
-
     /// Structure representing a collection of steps in a process.
     pub fn progress(&self) -> ::std::option::Option<&crate::types::Progress> {
         self.progress.as_ref()
     }
-
     /// Structure representing an individual step in a process.
     pub fn step(&self) -> ::std::option::Option<&crate::types::Step> {
         self.step.as_ref()
     }
-
     /// Structure containing details about a task.
     pub fn task_details(&self) -> ::std::option::Option<&crate::types::TaskDetails> {
         self.task_details.as_ref()
     }
-
     /// Structure representing a reference to a task.
     pub fn task_reference(&self) -> ::std::option::Option<&crate::types::TaskReference> {
         self.task_reference.as_ref()
     }
-
     /// Structure containing a list of suggestions.
     pub fn suggestions(&self) -> ::std::option::Option<&crate::types::Suggestions> {
         self.suggestions.as_ref()
     }
-
     /// Structure representing a collapsable section
     pub fn section(&self) -> ::std::option::Option<&crate::types::Section> {
         self.section.as_ref()
     }
-
     /// Structure representing a resource item
     pub fn resource(&self) -> ::std::option::Option<&crate::types::Resource> {
         self.resource.as_ref()
     }
-
     /// Structure representing a list of Items
     pub fn resource_list(&self) -> ::std::option::Option<&crate::types::ResourceList> {
         self.resource_list.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn action(&self) -> ::std::option::Option<&crate::types::Action> {
         self.action.as_ref()
     }
 }
 impl InteractionComponent {
-    /// Creates a new builder-style object to manufacture
-    /// [`InteractionComponent`](crate::types::InteractionComponent).
+    /// Creates a new builder-style object to manufacture [`InteractionComponent`](crate::types::InteractionComponent).
     pub fn builder() -> crate::types::builders::InteractionComponentBuilder {
         crate::types::builders::InteractionComponentBuilder::default()
     }
@@ -118,218 +104,175 @@ pub struct InteractionComponentBuilder {
     pub(crate) action: ::std::option::Option<crate::types::Action>,
 }
 impl InteractionComponentBuilder {
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn text(mut self, input: crate::types::Text) -> Self {
         self.text = ::std::option::Option::Some(input);
         self
     }
-
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn set_text(mut self, input: ::std::option::Option<crate::types::Text>) -> Self {
         self.text = input;
         self
     }
-
-    /// Structure representing a simple text component with sensitive content, which can include
-    /// Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
     pub fn get_text(&self) -> &::std::option::Option<crate::types::Text> {
         &self.text
     }
-
     /// Structure representing an alert with a type and content.
     pub fn alert(mut self, input: crate::types::Alert) -> Self {
         self.alert = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure representing an alert with a type and content.
     pub fn set_alert(mut self, input: ::std::option::Option<crate::types::Alert>) -> Self {
         self.alert = input;
         self
     }
-
     /// Structure representing an alert with a type and content.
     pub fn get_alert(&self) -> &::std::option::Option<crate::types::Alert> {
         &self.alert
     }
-
     /// Structure representing different types of infrastructure updates.
     pub fn infrastructure_update(mut self, input: crate::types::InfrastructureUpdate) -> Self {
         self.infrastructure_update = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure representing different types of infrastructure updates.
-    pub fn set_infrastructure_update(
-        mut self,
-        input: ::std::option::Option<crate::types::InfrastructureUpdate>,
-    ) -> Self {
+    pub fn set_infrastructure_update(mut self, input: ::std::option::Option<crate::types::InfrastructureUpdate>) -> Self {
         self.infrastructure_update = input;
         self
     }
-
     /// Structure representing different types of infrastructure updates.
     pub fn get_infrastructure_update(&self) -> &::std::option::Option<crate::types::InfrastructureUpdate> {
         &self.infrastructure_update
     }
-
     /// Structure representing a collection of steps in a process.
     pub fn progress(mut self, input: crate::types::Progress) -> Self {
         self.progress = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure representing a collection of steps in a process.
     pub fn set_progress(mut self, input: ::std::option::Option<crate::types::Progress>) -> Self {
         self.progress = input;
         self
     }
-
     /// Structure representing a collection of steps in a process.
     pub fn get_progress(&self) -> &::std::option::Option<crate::types::Progress> {
         &self.progress
     }
-
     /// Structure representing an individual step in a process.
     pub fn step(mut self, input: crate::types::Step) -> Self {
         self.step = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure representing an individual step in a process.
     pub fn set_step(mut self, input: ::std::option::Option<crate::types::Step>) -> Self {
         self.step = input;
         self
     }
-
     /// Structure representing an individual step in a process.
     pub fn get_step(&self) -> &::std::option::Option<crate::types::Step> {
         &self.step
     }
-
     /// Structure containing details about a task.
     pub fn task_details(mut self, input: crate::types::TaskDetails) -> Self {
         self.task_details = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure containing details about a task.
     pub fn set_task_details(mut self, input: ::std::option::Option<crate::types::TaskDetails>) -> Self {
         self.task_details = input;
         self
     }
-
     /// Structure containing details about a task.
     pub fn get_task_details(&self) -> &::std::option::Option<crate::types::TaskDetails> {
         &self.task_details
     }
-
     /// Structure representing a reference to a task.
     pub fn task_reference(mut self, input: crate::types::TaskReference) -> Self {
         self.task_reference = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure representing a reference to a task.
     pub fn set_task_reference(mut self, input: ::std::option::Option<crate::types::TaskReference>) -> Self {
         self.task_reference = input;
         self
     }
-
     /// Structure representing a reference to a task.
     pub fn get_task_reference(&self) -> &::std::option::Option<crate::types::TaskReference> {
         &self.task_reference
     }
-
     /// Structure containing a list of suggestions.
     pub fn suggestions(mut self, input: crate::types::Suggestions) -> Self {
         self.suggestions = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure containing a list of suggestions.
     pub fn set_suggestions(mut self, input: ::std::option::Option<crate::types::Suggestions>) -> Self {
         self.suggestions = input;
         self
     }
-
     /// Structure containing a list of suggestions.
     pub fn get_suggestions(&self) -> &::std::option::Option<crate::types::Suggestions> {
         &self.suggestions
     }
-
     /// Structure representing a collapsable section
     pub fn section(mut self, input: crate::types::Section) -> Self {
         self.section = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure representing a collapsable section
     pub fn set_section(mut self, input: ::std::option::Option<crate::types::Section>) -> Self {
         self.section = input;
         self
     }
-
     /// Structure representing a collapsable section
     pub fn get_section(&self) -> &::std::option::Option<crate::types::Section> {
         &self.section
     }
-
     /// Structure representing a resource item
     pub fn resource(mut self, input: crate::types::Resource) -> Self {
         self.resource = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure representing a resource item
     pub fn set_resource(mut self, input: ::std::option::Option<crate::types::Resource>) -> Self {
         self.resource = input;
         self
     }
-
     /// Structure representing a resource item
     pub fn get_resource(&self) -> &::std::option::Option<crate::types::Resource> {
         &self.resource
     }
-
     /// Structure representing a list of Items
     pub fn resource_list(mut self, input: crate::types::ResourceList) -> Self {
         self.resource_list = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure representing a list of Items
     pub fn set_resource_list(mut self, input: ::std::option::Option<crate::types::ResourceList>) -> Self {
         self.resource_list = input;
         self
     }
-
     /// Structure representing a list of Items
     pub fn get_resource_list(&self) -> &::std::option::Option<crate::types::ResourceList> {
         &self.resource_list
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn action(mut self, input: crate::types::Action) -> Self {
         self.action = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_action(mut self, input: ::std::option::Option<crate::types::Action>) -> Self {
         self.action = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_action(&self) -> &::std::option::Option<crate::types::Action> {
         &self.action
     }
-
-    /// Consumes the builder and constructs a
-    /// [`InteractionComponent`](crate::types::InteractionComponent).
+    /// Consumes the builder and constructs a [`InteractionComponent`](crate::types::InteractionComponent).
     pub fn build(self) -> crate::types::InteractionComponent {
         crate::types::InteractionComponent {
             text: self.text,

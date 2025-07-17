@@ -24,10 +24,7 @@ pub fn ser_start_code_fix_job_input_input(
     if let Some(var_7) = &input.reference_tracker_configuration {
         #[allow(unused_mut)]
         let mut object_8 = object.key("referenceTrackerConfiguration").start_object();
-        crate::protocol_serde::shape_reference_tracker_configuration::ser_reference_tracker_configuration(
-            &mut object_8,
-            var_7,
-        )?;
+        crate::protocol_serde::shape_reference_tracker_configuration::ser_reference_tracker_configuration(&mut object_8, var_7)?;
         object_8.finish();
     }
     if let Some(var_9) = &input.profile_arn {

@@ -3,87 +3,74 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct CreateSubscriptionTokenInput {
-    /// Represents the AWS account ID of the customer
-    pub account_id: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub client_token: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub status_only: ::std::option::Option<bool>,
 }
 impl CreateSubscriptionTokenInput {
-    /// Represents the AWS account ID of the customer
-    pub fn account_id(&self) -> ::std::option::Option<&str> {
-        self.account_id.as_deref()
-    }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(&self) -> ::std::option::Option<&str> {
         self.client_token.as_deref()
     }
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn status_only(&self) -> ::std::option::Option<bool> {
+        self.status_only
+    }
 }
 impl CreateSubscriptionTokenInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
+    /// Creates a new builder-style object to manufacture [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
     pub fn builder() -> crate::operation::create_subscription_token::builders::CreateSubscriptionTokenInputBuilder {
         crate::operation::create_subscription_token::builders::CreateSubscriptionTokenInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
+/// A builder for [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct CreateSubscriptionTokenInputBuilder {
-    pub(crate) account_id: ::std::option::Option<::std::string::String>,
     pub(crate) client_token: ::std::option::Option<::std::string::String>,
+    pub(crate) status_only: ::std::option::Option<bool>,
 }
 impl CreateSubscriptionTokenInputBuilder {
-    /// Represents the AWS account ID of the customer
-    /// This field is required.
-    pub fn account_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
-        self.account_id = ::std::option::Option::Some(input.into());
-        self
-    }
-
-    /// Represents the AWS account ID of the customer
-    pub fn set_account_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
-        self.account_id = input;
-        self
-    }
-
-    /// Represents the AWS account ID of the customer
-    pub fn get_account_id(&self) -> &::std::option::Option<::std::string::String> {
-        &self.account_id
-    }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.client_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_client_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.client_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_token
     }
-
-    /// Consumes the builder and constructs a
-    /// [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn status_only(mut self, input: bool) -> Self {
+        self.status_only = ::std::option::Option::Some(input);
+        self
+    }
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_status_only(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.status_only = input;
+        self
+    }
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_status_only(&self) -> &::std::option::Option<bool> {
+        &self.status_only
+    }
+    /// Consumes the builder and constructs a [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
     pub fn build(
         self,
     ) -> ::std::result::Result<
         crate::operation::create_subscription_token::CreateSubscriptionTokenInput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(
-            crate::operation::create_subscription_token::CreateSubscriptionTokenInput {
-                account_id: self.account_id,
-                client_token: self.client_token,
-            },
-        )
+        ::std::result::Result::Ok(crate::operation::create_subscription_token::CreateSubscriptionTokenInput {
+            client_token: self.client_token,
+            status_only: self.status_only,
+        })
     }
 }

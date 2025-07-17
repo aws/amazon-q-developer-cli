@@ -8,9 +8,7 @@ pub struct ModuleLink {
 }
 impl ModuleLink {
     /// For CloudWatch Troubleshooting Link Module
-    pub fn cloud_watch_troubleshooting_link(
-        &self,
-    ) -> ::std::option::Option<&crate::types::CloudWatchTroubleshootingLink> {
+    pub fn cloud_watch_troubleshooting_link(&self) -> ::std::option::Option<&crate::types::CloudWatchTroubleshootingLink> {
         self.cloud_watch_troubleshooting_link.as_ref()
     }
 }
@@ -33,23 +31,15 @@ impl ModuleLinkBuilder {
         self.cloud_watch_troubleshooting_link = ::std::option::Option::Some(input);
         self
     }
-
     /// For CloudWatch Troubleshooting Link Module
-    pub fn set_cloud_watch_troubleshooting_link(
-        mut self,
-        input: ::std::option::Option<crate::types::CloudWatchTroubleshootingLink>,
-    ) -> Self {
+    pub fn set_cloud_watch_troubleshooting_link(mut self, input: ::std::option::Option<crate::types::CloudWatchTroubleshootingLink>) -> Self {
         self.cloud_watch_troubleshooting_link = input;
         self
     }
-
     /// For CloudWatch Troubleshooting Link Module
-    pub fn get_cloud_watch_troubleshooting_link(
-        &self,
-    ) -> &::std::option::Option<crate::types::CloudWatchTroubleshootingLink> {
+    pub fn get_cloud_watch_troubleshooting_link(&self) -> &::std::option::Option<crate::types::CloudWatchTroubleshootingLink> {
         &self.cloud_watch_troubleshooting_link
     }
-
     /// Consumes the builder and constructs a [`ModuleLink`](crate::types::ModuleLink).
     pub fn build(self) -> crate::types::ModuleLink {
         crate::types::ModuleLink {

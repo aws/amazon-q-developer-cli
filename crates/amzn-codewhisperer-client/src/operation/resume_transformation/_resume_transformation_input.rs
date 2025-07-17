@@ -16,27 +16,23 @@ impl ResumeTransformationInput {
     pub fn transformation_job_id(&self) -> ::std::option::Option<&str> {
         self.transformation_job_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn user_action_status(&self) -> ::std::option::Option<&crate::types::TransformationUserActionStatus> {
         self.user_action_status.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
 }
 impl ResumeTransformationInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ResumeTransformationInput`](crate::operation::resume_transformation::ResumeTransformationInput).
+    /// Creates a new builder-style object to manufacture [`ResumeTransformationInput`](crate::operation::resume_transformation::ResumeTransformationInput).
     pub fn builder() -> crate::operation::resume_transformation::builders::ResumeTransformationInputBuilder {
         crate::operation::resume_transformation::builders::ResumeTransformationInputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`ResumeTransformationInput`](crate::operation::resume_transformation::ResumeTransformationInput).
+/// A builder for [`ResumeTransformationInput`](crate::operation::resume_transformation::ResumeTransformationInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ResumeTransformationInputBuilder {
@@ -51,63 +47,48 @@ impl ResumeTransformationInputBuilder {
         self.transformation_job_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Identifier for the Transformation Job
     pub fn set_transformation_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.transformation_job_id = input;
         self
     }
-
     /// Identifier for the Transformation Job
     pub fn get_transformation_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.transformation_job_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn user_action_status(mut self, input: crate::types::TransformationUserActionStatus) -> Self {
         self.user_action_status = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_user_action_status(
-        mut self,
-        input: ::std::option::Option<crate::types::TransformationUserActionStatus>,
-    ) -> Self {
+    pub fn set_user_action_status(mut self, input: ::std::option::Option<crate::types::TransformationUserActionStatus>) -> Self {
         self.user_action_status = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_user_action_status(&self) -> &::std::option::Option<crate::types::TransformationUserActionStatus> {
         &self.user_action_status
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ResumeTransformationInput`](crate::operation::resume_transformation::ResumeTransformationInput).
+    /// Consumes the builder and constructs a [`ResumeTransformationInput`](crate::operation::resume_transformation::ResumeTransformationInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::resume_transformation::ResumeTransformationInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::resume_transformation::ResumeTransformationInput, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::operation::resume_transformation::ResumeTransformationInput {
             transformation_job_id: self.transformation_job_id,
             user_action_status: self.user_action_status,

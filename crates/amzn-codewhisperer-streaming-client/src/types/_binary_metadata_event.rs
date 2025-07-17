@@ -18,17 +18,14 @@ impl BinaryMetadataEvent {
     pub fn size(&self) -> ::std::option::Option<i64> {
         self.size
     }
-
     /// Content type of the response
     pub fn mime_type(&self) -> ::std::option::Option<&str> {
         self.mime_type.as_deref()
     }
-
     /// Content checksum of the binary payload
     pub fn content_checksum(&self) -> ::std::option::Option<&str> {
         self.content_checksum.as_deref()
     }
-
     /// Content checksum type of the binary payload
     pub fn content_checksum_type(&self) -> ::std::option::Option<&crate::types::ContentChecksumType> {
         self.content_checksum_type.as_ref()
@@ -45,8 +42,7 @@ impl ::std::fmt::Debug for BinaryMetadataEvent {
     }
 }
 impl BinaryMetadataEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`BinaryMetadataEvent`](crate::types::BinaryMetadataEvent).
+    /// Creates a new builder-style object to manufacture [`BinaryMetadataEvent`](crate::types::BinaryMetadataEvent).
     pub fn builder() -> crate::types::builders::BinaryMetadataEventBuilder {
         crate::types::builders::BinaryMetadataEventBuilder::default()
     }
@@ -67,74 +63,58 @@ impl BinaryMetadataEventBuilder {
         self.size = ::std::option::Option::Some(input);
         self
     }
-
     /// Content length of the binary payload
     pub fn set_size(mut self, input: ::std::option::Option<i64>) -> Self {
         self.size = input;
         self
     }
-
     /// Content length of the binary payload
     pub fn get_size(&self) -> &::std::option::Option<i64> {
         &self.size
     }
-
     /// Content type of the response
     pub fn mime_type(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.mime_type = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Content type of the response
     pub fn set_mime_type(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.mime_type = input;
         self
     }
-
     /// Content type of the response
     pub fn get_mime_type(&self) -> &::std::option::Option<::std::string::String> {
         &self.mime_type
     }
-
     /// Content checksum of the binary payload
     pub fn content_checksum(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.content_checksum = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Content checksum of the binary payload
     pub fn set_content_checksum(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.content_checksum = input;
         self
     }
-
     /// Content checksum of the binary payload
     pub fn get_content_checksum(&self) -> &::std::option::Option<::std::string::String> {
         &self.content_checksum
     }
-
     /// Content checksum type of the binary payload
     pub fn content_checksum_type(mut self, input: crate::types::ContentChecksumType) -> Self {
         self.content_checksum_type = ::std::option::Option::Some(input);
         self
     }
-
     /// Content checksum type of the binary payload
-    pub fn set_content_checksum_type(
-        mut self,
-        input: ::std::option::Option<crate::types::ContentChecksumType>,
-    ) -> Self {
+    pub fn set_content_checksum_type(mut self, input: ::std::option::Option<crate::types::ContentChecksumType>) -> Self {
         self.content_checksum_type = input;
         self
     }
-
     /// Content checksum type of the binary payload
     pub fn get_content_checksum_type(&self) -> &::std::option::Option<crate::types::ContentChecksumType> {
         &self.content_checksum_type
     }
-
-    /// Consumes the builder and constructs a
-    /// [`BinaryMetadataEvent`](crate::types::BinaryMetadataEvent).
+    /// Consumes the builder and constructs a [`BinaryMetadataEvent`](crate::types::BinaryMetadataEvent).
     pub fn build(self) -> crate::types::BinaryMetadataEvent {
         crate::types::BinaryMetadataEvent {
             size: self.size,

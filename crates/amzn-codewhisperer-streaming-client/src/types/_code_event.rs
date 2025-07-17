@@ -41,24 +41,19 @@ impl CodeEventBuilder {
         self.content = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Generated code snippet.
     pub fn set_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.content = input;
         self
     }
-
     /// Generated code snippet.
     pub fn get_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.content
     }
-
     /// Consumes the builder and constructs a [`CodeEvent`](crate::types::CodeEvent).
     /// This method will fail if any of the following fields are not set:
     /// - [`content`](crate::types::builders::CodeEventBuilder::content)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::CodeEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(self) -> ::std::result::Result<crate::types::CodeEvent, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::CodeEvent {
             content: self.content.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

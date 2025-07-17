@@ -3,12 +3,7 @@ pub(crate) fn de_prediction<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
 ) -> ::std::result::Result<Option<crate::types::Prediction>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
-    I: Iterator<
-        Item = Result<
-            ::aws_smithy_json::deserialize::Token<'a>,
-            ::aws_smithy_json::deserialize::error::DeserializeError,
-        >,
-    >,
+    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
 {
     let mut variant = None;
     match tokens.next().transpose()? {
@@ -17,9 +12,8 @@ where
             match tokens.next().transpose()? {
                 Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
                 Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                    if let ::std::option::Option::Some(::std::result::Result::Ok(
-                        ::aws_smithy_json::deserialize::Token::ValueNull { .. },
-                    )) = tokens.peek()
+                    if let ::std::option::Option::Some(::std::result::Result::Ok(::aws_smithy_json::deserialize::Token::ValueNull { .. })) =
+                        tokens.peek()
                     {
                         let _ = tokens.next().expect("peek returned a token")?;
                         continue;
@@ -37,36 +31,32 @@ where
                     variant = match key.as_ref() {
                         "completion" => Some(crate::types::Prediction::Completion(
                             crate::protocol_serde::shape_completion::de_completion(tokens)?.ok_or_else(|| {
-                                ::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                                    "value for 'completion' cannot be null",
-                                )
+                                ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'completion' cannot be null")
                             })?,
                         )),
                         "edit" => Some(crate::types::Prediction::Edit(
-                            crate::protocol_serde::shape_edit::de_edit(tokens)?.ok_or_else(|| {
-                                ::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                                    "value for 'edit' cannot be null",
-                                )
-                            })?,
+                            crate::protocol_serde::shape_edit::de_edit(tokens)?
+                                .ok_or_else(|| ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'edit' cannot be null"))?,
                         )),
                         _ => {
                             ::aws_smithy_json::deserialize::token::skip_value(tokens)?;
                             Some(crate::types::Prediction::Unknown)
-                        },
+                        }
                     };
-                },
+                }
                 other => {
-                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                        format!("expected object key or end object, found: {:?}", other),
-                    ));
-                },
+                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                        "expected object key or end object, found: {:?}",
+                        other
+                    )))
+                }
             }
         },
         _ => {
             return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
                 "expected start object or null",
-            ));
-        },
+            ))
+        }
     }
     if variant.is_none() {
         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(

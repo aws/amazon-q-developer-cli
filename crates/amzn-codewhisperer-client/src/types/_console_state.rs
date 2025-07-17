@@ -22,27 +22,22 @@ impl ConsoleState {
     pub fn region(&self) -> ::std::option::Option<&str> {
         self.region.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn console_url(&self) -> ::std::option::Option<&str> {
         self.console_url.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn service_id(&self) -> ::std::option::Option<&str> {
         self.service_id.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn service_console_page(&self) -> ::std::option::Option<&str> {
         self.service_console_page.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn service_subconsole_page(&self) -> ::std::option::Option<&str> {
         self.service_subconsole_page.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn task_name(&self) -> ::std::option::Option<&str> {
         self.task_name.as_deref()
@@ -61,8 +56,7 @@ impl ::std::fmt::Debug for ConsoleState {
     }
 }
 impl ConsoleState {
-    /// Creates a new builder-style object to manufacture
-    /// [`ConsoleState`](crate::types::ConsoleState).
+    /// Creates a new builder-style object to manufacture [`ConsoleState`](crate::types::ConsoleState).
     pub fn builder() -> crate::types::builders::ConsoleStateBuilder {
         crate::types::builders::ConsoleStateBuilder::default()
     }
@@ -85,103 +79,85 @@ impl ConsoleStateBuilder {
         self.region = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_region(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.region = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_region(&self) -> &::std::option::Option<::std::string::String> {
         &self.region
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn console_url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.console_url = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_console_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.console_url = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_console_url(&self) -> &::std::option::Option<::std::string::String> {
         &self.console_url
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn service_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.service_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_service_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.service_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_service_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.service_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn service_console_page(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.service_console_page = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_service_console_page(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.service_console_page = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_service_console_page(&self) -> &::std::option::Option<::std::string::String> {
         &self.service_console_page
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn service_subconsole_page(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.service_subconsole_page = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_service_subconsole_page(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.service_subconsole_page = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_service_subconsole_page(&self) -> &::std::option::Option<::std::string::String> {
         &self.service_subconsole_page
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn task_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.task_name = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_task_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.task_name = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_task_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.task_name
     }
-
     /// Consumes the builder and constructs a [`ConsoleState`](crate::types::ConsoleState).
     pub fn build(self) -> crate::types::ConsoleState {
         crate::types::ConsoleState {

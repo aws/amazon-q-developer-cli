@@ -11,15 +11,13 @@ impl ::aws_types::request_id::RequestId for SendTelemetryEventOutput {
     }
 }
 impl SendTelemetryEventOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`SendTelemetryEventOutput`](crate::operation::send_telemetry_event::SendTelemetryEventOutput).
+    /// Creates a new builder-style object to manufacture [`SendTelemetryEventOutput`](crate::operation::send_telemetry_event::SendTelemetryEventOutput).
     pub fn builder() -> crate::operation::send_telemetry_event::builders::SendTelemetryEventOutputBuilder {
         crate::operation::send_telemetry_event::builders::SendTelemetryEventOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`SendTelemetryEventOutput`](crate::operation::send_telemetry_event::SendTelemetryEventOutput).
+/// A builder for [`SendTelemetryEventOutput`](crate::operation::send_telemetry_event::SendTelemetryEventOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct SendTelemetryEventOutputBuilder {
@@ -35,9 +33,7 @@ impl SendTelemetryEventOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`SendTelemetryEventOutput`](crate::operation::send_telemetry_event::SendTelemetryEventOutput).
+    /// Consumes the builder and constructs a [`SendTelemetryEventOutput`](crate::operation::send_telemetry_event::SendTelemetryEventOutput).
     pub fn build(self) -> crate::operation::send_telemetry_event::SendTelemetryEventOutput {
         crate::operation::send_telemetry_event::SendTelemetryEventOutput {
             _request_id: self._request_id,

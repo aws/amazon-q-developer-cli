@@ -39,13 +39,7 @@
 /// Workspace context truncation schemes based on usecase
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone,
-    ::std::cmp::Eq,
-    ::std::cmp::Ord,
-    ::std::cmp::PartialEq,
-    ::std::cmp::PartialOrd,
-    ::std::fmt::Debug,
-    ::std::hash::Hash,
+    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
 )]
 pub enum ContextTruncationScheme {
     #[allow(missing_docs)] // documentation missing in model
@@ -53,9 +47,7 @@ pub enum ContextTruncationScheme {
     #[allow(missing_docs)] // documentation missing in model
     Gumby,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(
-        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
-    )]
+    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for ContextTruncationScheme {
@@ -63,9 +55,7 @@ impl ::std::convert::From<&str> for ContextTruncationScheme {
         match s {
             "ANALYSIS" => ContextTruncationScheme::Analysis,
             "GUMBY" => ContextTruncationScheme::Gumby,
-            other => ContextTruncationScheme::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
-                other.to_owned(),
-            )),
+            other => ContextTruncationScheme::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
         }
     }
 }
@@ -85,7 +75,6 @@ impl ContextTruncationScheme {
             ContextTruncationScheme::Unknown(value) => value.as_str(),
         }
     }
-
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &["ANALYSIS", "GUMBY"]

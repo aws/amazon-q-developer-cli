@@ -18,25 +18,21 @@ impl SendMessageInput {
     pub fn conversation_state(&self) -> ::std::option::Option<&crate::types::ConversationState> {
         self.conversation_state.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
-
     /// The origin of the caller
     pub fn source(&self) -> ::std::option::Option<&crate::types::Origin> {
         self.source.as_ref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn dry_run(&self) -> ::std::option::Option<bool> {
         self.dry_run
     }
 }
 impl SendMessageInput {
-    /// Creates a new builder-style object to manufacture
-    /// [`SendMessageInput`](crate::operation::send_message::SendMessageInput).
+    /// Creates a new builder-style object to manufacture [`SendMessageInput`](crate::operation::send_message::SendMessageInput).
     pub fn builder() -> crate::operation::send_message::builders::SendMessageInputBuilder {
         crate::operation::send_message::builders::SendMessageInputBuilder::default()
     }
@@ -58,77 +54,59 @@ impl SendMessageInputBuilder {
         self.conversation_state = ::std::option::Option::Some(input);
         self
     }
-
     /// Structure to represent the current state of a chat conversation.
     pub fn set_conversation_state(mut self, input: ::std::option::Option<crate::types::ConversationState>) -> Self {
         self.conversation_state = input;
         self
     }
-
     /// Structure to represent the current state of a chat conversation.
     pub fn get_conversation_state(&self) -> &::std::option::Option<crate::types::ConversationState> {
         &self.conversation_state
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-
     /// The origin of the caller
     pub fn source(mut self, input: crate::types::Origin) -> Self {
         self.source = ::std::option::Option::Some(input);
         self
     }
-
     /// The origin of the caller
     pub fn set_source(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
         self.source = input;
         self
     }
-
     /// The origin of the caller
     pub fn get_source(&self) -> &::std::option::Option<crate::types::Origin> {
         &self.source
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn dry_run(mut self, input: bool) -> Self {
         self.dry_run = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_dry_run(mut self, input: ::std::option::Option<bool>) -> Self {
         self.dry_run = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_dry_run(&self) -> &::std::option::Option<bool> {
         &self.dry_run
     }
-
-    /// Consumes the builder and constructs a
-    /// [`SendMessageInput`](crate::operation::send_message::SendMessageInput).
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<
-        crate::operation::send_message::SendMessageInput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    /// Consumes the builder and constructs a [`SendMessageInput`](crate::operation::send_message::SendMessageInput).
+    pub fn build(self) -> ::std::result::Result<crate::operation::send_message::SendMessageInput, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::operation::send_message::SendMessageInput {
             conversation_state: self.conversation_state,
             profile_arn: self.profile_arn,

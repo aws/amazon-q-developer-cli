@@ -14,7 +14,6 @@ impl ListCodeAnalysisFindingsOutput {
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_analysis_findings(&self) -> &str {
         use std::ops::Deref;
@@ -36,15 +35,13 @@ impl ::aws_types::request_id::RequestId for ListCodeAnalysisFindingsOutput {
     }
 }
 impl ListCodeAnalysisFindingsOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`ListCodeAnalysisFindingsOutput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsOutput).
+    /// Creates a new builder-style object to manufacture [`ListCodeAnalysisFindingsOutput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsOutput).
     pub fn builder() -> crate::operation::list_code_analysis_findings::builders::ListCodeAnalysisFindingsOutputBuilder {
         crate::operation::list_code_analysis_findings::builders::ListCodeAnalysisFindingsOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`ListCodeAnalysisFindingsOutput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsOutput).
+/// A builder for [`ListCodeAnalysisFindingsOutput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct ListCodeAnalysisFindingsOutputBuilder {
@@ -58,36 +55,30 @@ impl ListCodeAnalysisFindingsOutputBuilder {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn code_analysis_findings(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.code_analysis_findings = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_code_analysis_findings(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.code_analysis_findings = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_code_analysis_findings(&self) -> &::std::option::Option<::std::string::String> {
         &self.code_analysis_findings
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -97,9 +88,7 @@ impl ListCodeAnalysisFindingsOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ListCodeAnalysisFindingsOutput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsOutput).
+    /// Consumes the builder and constructs a [`ListCodeAnalysisFindingsOutput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`code_analysis_findings`](crate::operation::list_code_analysis_findings::builders::ListCodeAnalysisFindingsOutputBuilder::code_analysis_findings)
     pub fn build(

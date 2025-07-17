@@ -20,15 +20,13 @@ impl ::aws_types::request_id::RequestId for StopTransformationOutput {
     }
 }
 impl StopTransformationOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`StopTransformationOutput`](crate::operation::stop_transformation::StopTransformationOutput).
+    /// Creates a new builder-style object to manufacture [`StopTransformationOutput`](crate::operation::stop_transformation::StopTransformationOutput).
     pub fn builder() -> crate::operation::stop_transformation::builders::StopTransformationOutputBuilder {
         crate::operation::stop_transformation::builders::StopTransformationOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`StopTransformationOutput`](crate::operation::stop_transformation::StopTransformationOutput).
+/// A builder for [`StopTransformationOutput`](crate::operation::stop_transformation::StopTransformationOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct StopTransformationOutputBuilder {
@@ -42,21 +40,15 @@ impl StopTransformationOutputBuilder {
         self.transformation_status = ::std::option::Option::Some(input);
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_transformation_status(
-        mut self,
-        input: ::std::option::Option<crate::types::TransformationStatus>,
-    ) -> Self {
+    pub fn set_transformation_status(mut self, input: ::std::option::Option<crate::types::TransformationStatus>) -> Self {
         self.transformation_status = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_transformation_status(&self) -> &::std::option::Option<crate::types::TransformationStatus> {
         &self.transformation_status
     }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -66,17 +58,13 @@ impl StopTransformationOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`StopTransformationOutput`](crate::operation::stop_transformation::StopTransformationOutput).
+    /// Consumes the builder and constructs a [`StopTransformationOutput`](crate::operation::stop_transformation::StopTransformationOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`transformation_status`](crate::operation::stop_transformation::builders::StopTransformationOutputBuilder::transformation_status)
     pub fn build(
         self,
-    ) -> ::std::result::Result<
-        crate::operation::stop_transformation::StopTransformationOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    ) -> ::std::result::Result<crate::operation::stop_transformation::StopTransformationOutput, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::operation::stop_transformation::StopTransformationOutput {
             transformation_status: self.transformation_status.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

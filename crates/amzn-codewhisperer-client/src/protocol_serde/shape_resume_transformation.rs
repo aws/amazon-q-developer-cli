@@ -9,9 +9,8 @@ pub fn de_resume_transformation_http_error(
     crate::operation::resume_transformation::ResumeTransformationError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder =
-        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-            .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
+    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+        .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
@@ -21,36 +20,27 @@ pub fn de_resume_transformation_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "InternalServerException" => {
-            crate::operation::resume_transformation::ResumeTransformationError::InternalServerError({
+        "InternalServerException" => crate::operation::resume_transformation::ResumeTransformationError::InternalServerError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output =
-                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::internal_server_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
-                };
-                tmp
-            })
-        },
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::internal_server_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
+            };
+            tmp
+        }),
         "ValidationException" => crate::operation::resume_transformation::ResumeTransformationError::ValidationError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_exception_correct_errors(output)
                     .build()
@@ -63,11 +53,8 @@ pub fn de_resume_transformation_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                    _response_body,
-                    output,
-                )
-                .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
@@ -75,41 +62,34 @@ pub fn de_resume_transformation_http_error(
             };
             tmp
         }),
-        "AccessDeniedException" => {
-            crate::operation::resume_transformation::ResumeTransformationError::AccessDeniedError({
+        "AccessDeniedException" => crate::operation::resume_transformation::ResumeTransformationError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                        _response_body,
-                        output,
-                    )
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
                     .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::access_denied_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ResourceNotFoundException" => {
-            crate::operation::resume_transformation::ResumeTransformationError::ResourceNotFoundError({
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
+            };
+            tmp
+        }),
+        "ResourceNotFoundException" => crate::operation::resume_transformation::ResumeTransformationError::ResourceNotFoundError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
                     .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::resource_not_found_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
-                };
-                tmp
-            })
-        },
+                let output = output.meta(generic);
+                crate::serde_util::resource_not_found_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?
+            };
+            tmp
+        }),
         _ => crate::operation::resume_transformation::ResumeTransformationError::generic(generic),
     })
 }
@@ -125,8 +105,7 @@ pub fn de_resume_transformation_http_response(
 > {
     Ok({
         #[allow(unused_mut)]
-        let mut output =
-            crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder::default();
+        let mut output = crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder::default();
         output = crate::protocol_serde::shape_resume_transformation::de_resume_transformation(_response_body, output)
             .map_err(crate::operation::resume_transformation::ResumeTransformationError::unhandled)?;
         output._set_request_id(::aws_types::request_id::RequestId::request_id(_response_headers).map(str::to_string));
@@ -138,14 +117,10 @@ pub fn de_resume_transformation_http_response(
 
 pub fn ser_resume_transformation_input(
     input: &crate::operation::resume_transformation::ResumeTransformationInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
-{
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
-    crate::protocol_serde::shape_resume_transformation_input::ser_resume_transformation_input_input(
-        &mut object,
-        input,
-    )?;
+    crate::protocol_serde::shape_resume_transformation_input::ser_resume_transformation_input_input(&mut object, input)?;
     object.finish();
     Ok(::aws_smithy_types::body::SdkBody::from(out))
 }
@@ -157,8 +132,7 @@ pub(crate) fn de_resume_transformation(
     crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -168,20 +142,18 @@ pub(crate) fn de_resume_transformation(
                 "transformationStatus" => {
                     builder = builder.set_transformation_status(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                            .map(|s| {
-                                s.to_unescaped()
-                                    .map(|u| crate::types::TransformationStatus::from(u.as_ref()))
-                            })
+                            .map(|s| s.to_unescaped().map(|u| crate::types::TransformationStatus::from(u.as_ref())))
                             .transpose()?,
                     );
-                },
+                }
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
-                ));
-            },
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                    "expected object key or end object, found: {:?}",
+                    other
+                )))
+            }
         }
     }
     if tokens.next().is_some() {

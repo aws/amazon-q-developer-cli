@@ -6,14 +6,21 @@
 pub struct InternalServerError {
     #[allow(missing_docs)] // documentation missing in model
     pub message: ::std::string::String,
+    /// Reason for InternalServerException
+    pub reason: ::std::option::Option<crate::types::InternalServerExceptionReason>,
     pub(crate) meta: ::aws_smithy_types::error::ErrorMetadata,
+}
+impl InternalServerError {
+    /// Reason for InternalServerException
+    pub fn reason(&self) -> ::std::option::Option<&crate::types::InternalServerExceptionReason> {
+        self.reason.as_ref()
+    }
 }
 impl InternalServerError {
     /// Returns `Some(ErrorKind)` if the error is retryable. Otherwise, returns `None`.
     pub fn retryable_error_kind(&self) -> ::aws_smithy_types::retry::ErrorKind {
         ::aws_smithy_types::retry::ErrorKind::ServerError
     }
-
     /// Returns the error message.
     pub fn message(&self) -> &str {
         &self.message
@@ -41,8 +48,7 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for InternalServe
     }
 }
 impl InternalServerError {
-    /// Creates a new builder-style object to manufacture
-    /// [`InternalServerError`](crate::types::error::InternalServerError).
+    /// Creates a new builder-style object to manufacture [`InternalServerError`](crate::types::error::InternalServerError).
     pub fn builder() -> crate::types::error::builders::InternalServerErrorBuilder {
         crate::types::error::builders::InternalServerErrorBuilder::default()
     }
@@ -53,6 +59,7 @@ impl InternalServerError {
 #[non_exhaustive]
 pub struct InternalServerErrorBuilder {
     pub(crate) message: ::std::option::Option<::std::string::String>,
+    pub(crate) reason: ::std::option::Option<crate::types::InternalServerExceptionReason>,
     meta: std::option::Option<::aws_smithy_types::error::ErrorMetadata>,
 }
 impl InternalServerErrorBuilder {
@@ -62,18 +69,29 @@ impl InternalServerErrorBuilder {
         self.message = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.message
     }
-
+    /// Reason for InternalServerException
+    pub fn reason(mut self, input: crate::types::InternalServerExceptionReason) -> Self {
+        self.reason = ::std::option::Option::Some(input);
+        self
+    }
+    /// Reason for InternalServerException
+    pub fn set_reason(mut self, input: ::std::option::Option<crate::types::InternalServerExceptionReason>) -> Self {
+        self.reason = input;
+        self
+    }
+    /// Reason for InternalServerException
+    pub fn get_reason(&self) -> &::std::option::Option<crate::types::InternalServerExceptionReason> {
+        &self.reason
+    }
     /// Sets error metadata
     pub fn meta(mut self, meta: ::aws_smithy_types::error::ErrorMetadata) -> Self {
         self.meta = Some(meta);
@@ -85,15 +103,10 @@ impl InternalServerErrorBuilder {
         self.meta = meta;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`InternalServerError`](crate::types::error::InternalServerError). This method will fail
-    /// if any of the following fields are not set:
+    /// Consumes the builder and constructs a [`InternalServerError`](crate::types::error::InternalServerError).
+    /// This method will fail if any of the following fields are not set:
     /// - [`message`](crate::types::error::builders::InternalServerErrorBuilder::message)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::error::InternalServerError, ::aws_smithy_types::error::operation::BuildError>
-    {
+    pub fn build(self) -> ::std::result::Result<crate::types::error::InternalServerError, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::error::InternalServerError {
             message: self.message.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
@@ -101,6 +114,7 @@ impl InternalServerErrorBuilder {
                     "message was not specified but it is required when building InternalServerError",
                 )
             })?,
+            reason: self.reason,
             meta: self.meta.unwrap_or_default(),
         })
     }

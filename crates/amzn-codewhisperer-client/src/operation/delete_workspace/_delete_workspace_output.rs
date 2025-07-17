@@ -11,15 +11,13 @@ impl ::aws_types::request_id::RequestId for DeleteWorkspaceOutput {
     }
 }
 impl DeleteWorkspaceOutput {
-    /// Creates a new builder-style object to manufacture
-    /// [`DeleteWorkspaceOutput`](crate::operation::delete_workspace::DeleteWorkspaceOutput).
+    /// Creates a new builder-style object to manufacture [`DeleteWorkspaceOutput`](crate::operation::delete_workspace::DeleteWorkspaceOutput).
     pub fn builder() -> crate::operation::delete_workspace::builders::DeleteWorkspaceOutputBuilder {
         crate::operation::delete_workspace::builders::DeleteWorkspaceOutputBuilder::default()
     }
 }
 
-/// A builder for
-/// [`DeleteWorkspaceOutput`](crate::operation::delete_workspace::DeleteWorkspaceOutput).
+/// A builder for [`DeleteWorkspaceOutput`](crate::operation::delete_workspace::DeleteWorkspaceOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteWorkspaceOutputBuilder {
@@ -35,9 +33,7 @@ impl DeleteWorkspaceOutputBuilder {
         self._request_id = request_id;
         self
     }
-
-    /// Consumes the builder and constructs a
-    /// [`DeleteWorkspaceOutput`](crate::operation::delete_workspace::DeleteWorkspaceOutput).
+    /// Consumes the builder and constructs a [`DeleteWorkspaceOutput`](crate::operation::delete_workspace::DeleteWorkspaceOutput).
     pub fn build(self) -> crate::operation::delete_workspace::DeleteWorkspaceOutput {
         crate::operation::delete_workspace::DeleteWorkspaceOutput {
             _request_id: self._request_id,

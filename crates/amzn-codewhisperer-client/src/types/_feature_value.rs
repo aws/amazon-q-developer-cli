@@ -11,20 +11,18 @@ pub enum FeatureValue {
     LongValue(i64),
     #[allow(missing_docs)] // documentation missing in model
     StringValue(::std::string::String),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider
-    /// upgrading the SDK to the latest available version. An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
+    /// An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has
-    /// not been updated. To investigate this, consider turning on debug logging to print the
-    /// raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
+    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl FeatureValue {
-    /// Tries to convert the enum instance into
-    /// [`BoolValue`](crate::types::FeatureValue::BoolValue), extracting the inner [`bool`](bool).
+    /// Tries to convert the enum instance into [`BoolValue`](crate::types::FeatureValue::BoolValue), extracting the inner [`bool`](bool).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_bool_value(&self) -> ::std::result::Result<&bool, &Self> {
         if let FeatureValue::BoolValue(val) = &self {
@@ -33,14 +31,11 @@ impl FeatureValue {
             ::std::result::Result::Err(self)
         }
     }
-
     /// Returns true if this is a [`BoolValue`](crate::types::FeatureValue::BoolValue).
     pub fn is_bool_value(&self) -> bool {
         self.as_bool_value().is_ok()
     }
-
-    /// Tries to convert the enum instance into
-    /// [`DoubleValue`](crate::types::FeatureValue::DoubleValue), extracting the inner [`f64`](f64).
+    /// Tries to convert the enum instance into [`DoubleValue`](crate::types::FeatureValue::DoubleValue), extracting the inner [`f64`](f64).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_double_value(&self) -> ::std::result::Result<&f64, &Self> {
         if let FeatureValue::DoubleValue(val) = &self {
@@ -49,14 +44,11 @@ impl FeatureValue {
             ::std::result::Result::Err(self)
         }
     }
-
     /// Returns true if this is a [`DoubleValue`](crate::types::FeatureValue::DoubleValue).
     pub fn is_double_value(&self) -> bool {
         self.as_double_value().is_ok()
     }
-
-    /// Tries to convert the enum instance into
-    /// [`LongValue`](crate::types::FeatureValue::LongValue), extracting the inner [`i64`](i64).
+    /// Tries to convert the enum instance into [`LongValue`](crate::types::FeatureValue::LongValue), extracting the inner [`i64`](i64).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_long_value(&self) -> ::std::result::Result<&i64, &Self> {
         if let FeatureValue::LongValue(val) = &self {
@@ -65,15 +57,12 @@ impl FeatureValue {
             ::std::result::Result::Err(self)
         }
     }
-
     /// Returns true if this is a [`LongValue`](crate::types::FeatureValue::LongValue).
     pub fn is_long_value(&self) -> bool {
         self.as_long_value().is_ok()
     }
-
-    /// Tries to convert the enum instance into
-    /// [`StringValue`](crate::types::FeatureValue::StringValue), extracting the inner
-    /// [`String`](::std::string::String). Returns `Err(&Self)` if it can't be converted.
+    /// Tries to convert the enum instance into [`StringValue`](crate::types::FeatureValue::StringValue), extracting the inner [`String`](::std::string::String).
+    /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_string_value(&self) -> ::std::result::Result<&::std::string::String, &Self> {
         if let FeatureValue::StringValue(val) = &self {
             ::std::result::Result::Ok(val)
@@ -81,12 +70,10 @@ impl FeatureValue {
             ::std::result::Result::Err(self)
         }
     }
-
     /// Returns true if this is a [`StringValue`](crate::types::FeatureValue::StringValue).
     pub fn is_string_value(&self) -> bool {
         self.as_string_value().is_ok()
     }
-
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

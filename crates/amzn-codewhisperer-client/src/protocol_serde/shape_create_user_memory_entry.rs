@@ -9,9 +9,8 @@ pub fn de_create_user_memory_entry_http_error(
     crate::operation::create_user_memory_entry::CreateUserMemoryEntryError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder =
-        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-            .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
+    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+        .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
@@ -21,118 +20,93 @@ pub fn de_create_user_memory_entry_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "AccessDeniedException" => {
-            crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::AccessDeniedError({
+        "AccessDeniedException" => crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
-                        _response_body,
-                        output,
-                    )
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
                     .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::access_denied_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ThrottlingException" => {
-            crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::ThrottlingError({
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
+            };
+            tmp
+        }),
+        "ThrottlingException" => crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
-                        _response_body,
-                        output,
-                    )
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
                     .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::throttling_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ResourceNotFoundException" => {
-            crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::ResourceNotFoundError({
+                let output = output.meta(generic);
+                crate::serde_util::throttling_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
+            };
+            tmp
+        }),
+        "ResourceNotFoundException" => crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::ResourceNotFoundError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
                     .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::resource_not_found_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ServiceQuotaExceededException" => {
-            crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::ServiceQuotaExceededError({
+                let output = output.meta(generic);
+                crate::serde_util::resource_not_found_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
+            };
+            tmp
+        }),
+        "ServiceQuotaExceededException" => crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::ServiceQuotaExceededError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
-                    output = crate::protocol_serde::shape_service_quota_exceeded_exception::de_service_quota_exceeded_exception_json_err(
+                let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
+                output = crate::protocol_serde::shape_service_quota_exceeded_exception::de_service_quota_exceeded_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::service_quota_exceeded_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "ValidationException" => {
-            crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::ValidationError({
+                let output = output.meta(generic);
+                crate::serde_util::service_quota_exceeded_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
+            };
+            tmp
+        }),
+        "ValidationException" => crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                    output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
-                        _response_body,
-                        output,
-                    )
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
                     .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::validation_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
-                };
-                tmp
-            })
-        },
-        "InternalServerException" => {
-            crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::InternalServerError({
+                let output = output.meta(generic);
+                crate::serde_util::validation_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
+            };
+            tmp
+        }),
+        "InternalServerException" => crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::InternalServerError({
+            #[allow(unused_mut)]
+            let mut tmp = {
                 #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output =
-                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::internal_server_exception_correct_errors(output)
-                        .build()
-                        .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
-                };
-                tmp
-            })
-        },
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::internal_server_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?
+            };
+            tmp
+        }),
         _ => crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::generic(generic),
     })
 }
@@ -148,11 +122,9 @@ pub fn de_create_user_memory_entry_http_response(
 > {
     Ok({
         #[allow(unused_mut)]
-        let mut output =
-            crate::operation::create_user_memory_entry::builders::CreateUserMemoryEntryOutputBuilder::default();
-        output =
-            crate::protocol_serde::shape_create_user_memory_entry::de_create_user_memory_entry(_response_body, output)
-                .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
+        let mut output = crate::operation::create_user_memory_entry::builders::CreateUserMemoryEntryOutputBuilder::default();
+        output = crate::protocol_serde::shape_create_user_memory_entry::de_create_user_memory_entry(_response_body, output)
+            .map_err(crate::operation::create_user_memory_entry::CreateUserMemoryEntryError::unhandled)?;
         output._set_request_id(::aws_types::request_id::RequestId::request_id(_response_headers).map(str::to_string));
         crate::serde_util::create_user_memory_entry_output_output_correct_errors(output)
             .build()
@@ -162,14 +134,10 @@ pub fn de_create_user_memory_entry_http_response(
 
 pub fn ser_create_user_memory_entry_input(
     input: &crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
-{
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
-    crate::protocol_serde::shape_create_user_memory_entry_input::ser_create_user_memory_entry_input_input(
-        &mut object,
-        input,
-    )?;
+    crate::protocol_serde::shape_create_user_memory_entry_input::ser_create_user_memory_entry_input_input(&mut object, input)?;
     object.finish();
     Ok(::aws_smithy_types::body::SdkBody::from(out))
 }
@@ -181,8 +149,7 @@ pub(crate) fn de_create_user_memory_entry(
     crate::operation::create_user_memory_entry::builders::CreateUserMemoryEntryOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned =
-        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -190,16 +157,16 @@ pub(crate) fn de_create_user_memory_entry(
             Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "memoryEntry" => {
-                    builder =
-                        builder.set_memory_entry(crate::protocol_serde::shape_memory_entry::de_memory_entry(tokens)?);
-                },
+                    builder = builder.set_memory_entry(crate::protocol_serde::shape_memory_entry::de_memory_entry(tokens)?);
+                }
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
-                ));
-            },
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                    "expected object key or end object, found: {:?}",
+                    other
+                )))
+            }
         }
     }
     if tokens.next().is_some() {

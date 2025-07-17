@@ -5,40 +5,31 @@
 pub enum SupplementalContextMetadata {
     #[allow(missing_docs)] // documentation missing in model
     PreviousEditorStateMetadata(crate::types::PreviousEditorStateMetadata),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider
-    /// upgrading the SDK to the latest available version. An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
+    /// An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has
-    /// not been updated. To investigate this, consider turning on debug logging to print the
-    /// raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
+    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl SupplementalContextMetadata {
     #[allow(irrefutable_let_patterns)]
-    /// Tries to convert the enum instance into
-    /// [`PreviousEditorStateMetadata`](crate::types::SupplementalContextMetadata::PreviousEditorStateMetadata),
-    /// extracting the inner
-    /// [`PreviousEditorStateMetadata`](crate::types::PreviousEditorStateMetadata).
+    /// Tries to convert the enum instance into [`PreviousEditorStateMetadata`](crate::types::SupplementalContextMetadata::PreviousEditorStateMetadata), extracting the inner [`PreviousEditorStateMetadata`](crate::types::PreviousEditorStateMetadata).
     /// Returns `Err(&Self)` if it can't be converted.
-    pub fn as_previous_editor_state_metadata(
-        &self,
-    ) -> ::std::result::Result<&crate::types::PreviousEditorStateMetadata, &Self> {
+    pub fn as_previous_editor_state_metadata(&self) -> ::std::result::Result<&crate::types::PreviousEditorStateMetadata, &Self> {
         if let SupplementalContextMetadata::PreviousEditorStateMetadata(val) = &self {
             ::std::result::Result::Ok(val)
         } else {
             ::std::result::Result::Err(self)
         }
     }
-
-    /// Returns true if this is a
-    /// [`PreviousEditorStateMetadata`](crate::types::SupplementalContextMetadata::PreviousEditorStateMetadata).
+    /// Returns true if this is a [`PreviousEditorStateMetadata`](crate::types::SupplementalContextMetadata::PreviousEditorStateMetadata).
     pub fn is_previous_editor_state_metadata(&self) -> bool {
         self.as_previous_editor_state_metadata().is_ok()
     }
-
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

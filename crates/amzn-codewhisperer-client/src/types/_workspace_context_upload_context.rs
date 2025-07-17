@@ -16,13 +16,11 @@ impl WorkspaceContextUploadContext {
         use std::ops::Deref;
         self.workspace_id.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn relative_path(&self) -> &str {
         use std::ops::Deref;
         self.relative_path.deref()
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> &crate::types::ProgrammingLanguage {
         &self.programming_language
@@ -38,8 +36,7 @@ impl ::std::fmt::Debug for WorkspaceContextUploadContext {
     }
 }
 impl WorkspaceContextUploadContext {
-    /// Creates a new builder-style object to manufacture
-    /// [`WorkspaceContextUploadContext`](crate::types::WorkspaceContextUploadContext).
+    /// Creates a new builder-style object to manufacture [`WorkspaceContextUploadContext`](crate::types::WorkspaceContextUploadContext).
     pub fn builder() -> crate::types::builders::WorkspaceContextUploadContextBuilder {
         crate::types::builders::WorkspaceContextUploadContextBuilder::default()
     }
@@ -60,66 +57,51 @@ impl WorkspaceContextUploadContextBuilder {
         self.workspace_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_workspace_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.workspace_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_workspace_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.workspace_id
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn relative_path(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.relative_path = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_relative_path(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.relative_path = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_relative_path(&self) -> &::std::option::Option<::std::string::String> {
         &self.relative_path
     }
-
     /// Programming Languages supported by CodeWhisperer
     /// This field is required.
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
-
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
-
-    /// Consumes the builder and constructs a
-    /// [`WorkspaceContextUploadContext`](crate::types::WorkspaceContextUploadContext).
+    /// Consumes the builder and constructs a [`WorkspaceContextUploadContext`](crate::types::WorkspaceContextUploadContext).
     /// This method will fail if any of the following fields are not set:
     /// - [`workspace_id`](crate::types::builders::WorkspaceContextUploadContextBuilder::workspace_id)
     /// - [`relative_path`](crate::types::builders::WorkspaceContextUploadContextBuilder::relative_path)
     /// - [`programming_language`](crate::types::builders::WorkspaceContextUploadContextBuilder::programming_language)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<
-        crate::types::WorkspaceContextUploadContext,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
+    pub fn build(self) -> ::std::result::Result<crate::types::WorkspaceContextUploadContext, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::WorkspaceContextUploadContext {
             workspace_id: self.workspace_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

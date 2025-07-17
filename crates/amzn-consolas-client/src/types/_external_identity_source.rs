@@ -14,7 +14,6 @@ impl ExternalIdentitySource {
         use std::ops::Deref;
         self.issuer_url.deref()
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_id(&self) -> &str {
         use std::ops::Deref;
@@ -22,8 +21,7 @@ impl ExternalIdentitySource {
     }
 }
 impl ExternalIdentitySource {
-    /// Creates a new builder-style object to manufacture
-    /// [`ExternalIdentitySource`](crate::types::ExternalIdentitySource).
+    /// Creates a new builder-style object to manufacture [`ExternalIdentitySource`](crate::types::ExternalIdentitySource).
     pub fn builder() -> crate::types::builders::ExternalIdentitySourceBuilder {
         crate::types::builders::ExternalIdentitySourceBuilder::default()
     }
@@ -43,45 +41,35 @@ impl ExternalIdentitySourceBuilder {
         self.issuer_url = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_issuer_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.issuer_url = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_issuer_url(&self) -> &::std::option::Option<::std::string::String> {
         &self.issuer_url
     }
-
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn client_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.client_id = ::std::option::Option::Some(input.into());
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_client_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.client_id = input;
         self
     }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_id
     }
-
-    /// Consumes the builder and constructs a
-    /// [`ExternalIdentitySource`](crate::types::ExternalIdentitySource). This method will fail
-    /// if any of the following fields are not set:
+    /// Consumes the builder and constructs a [`ExternalIdentitySource`](crate::types::ExternalIdentitySource).
+    /// This method will fail if any of the following fields are not set:
     /// - [`issuer_url`](crate::types::builders::ExternalIdentitySourceBuilder::issuer_url)
     /// - [`client_id`](crate::types::builders::ExternalIdentitySourceBuilder::client_id)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<crate::types::ExternalIdentitySource, ::aws_smithy_types::error::operation::BuildError>
-    {
+    pub fn build(self) -> ::std::result::Result<crate::types::ExternalIdentitySource, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::ExternalIdentitySource {
             issuer_url: self.issuer_url.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

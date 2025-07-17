@@ -14,15 +14,13 @@ impl MessageMetadataEvent {
     pub fn conversation_id(&self) -> ::std::option::Option<&str> {
         self.conversation_id.as_deref()
     }
-
     /// Unique identifier for the utterance
     pub fn utterance_id(&self) -> ::std::option::Option<&str> {
         self.utterance_id.as_deref()
     }
 }
 impl MessageMetadataEvent {
-    /// Creates a new builder-style object to manufacture
-    /// [`MessageMetadataEvent`](crate::types::MessageMetadataEvent).
+    /// Creates a new builder-style object to manufacture [`MessageMetadataEvent`](crate::types::MessageMetadataEvent).
     pub fn builder() -> crate::types::builders::MessageMetadataEventBuilder {
         crate::types::builders::MessageMetadataEventBuilder::default()
     }
@@ -41,37 +39,30 @@ impl MessageMetadataEventBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Unique identifier for the conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
-
     /// Unique identifier for the conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
-
     /// Unique identifier for the utterance
     pub fn utterance_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.utterance_id = ::std::option::Option::Some(input.into());
         self
     }
-
     /// Unique identifier for the utterance
     pub fn set_utterance_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.utterance_id = input;
         self
     }
-
     /// Unique identifier for the utterance
     pub fn get_utterance_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.utterance_id
     }
-
-    /// Consumes the builder and constructs a
-    /// [`MessageMetadataEvent`](crate::types::MessageMetadataEvent).
+    /// Consumes the builder and constructs a [`MessageMetadataEvent`](crate::types::MessageMetadataEvent).
     pub fn build(self) -> crate::types::MessageMetadataEvent {
         crate::types::MessageMetadataEvent {
             conversation_id: self.conversation_id,

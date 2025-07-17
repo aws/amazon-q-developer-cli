@@ -12,10 +12,8 @@ pub fn ser_command_input(
                 }
             }
             array_1.finish();
-        },
-        crate::types::CommandInput::Unknown => {
-            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("CommandInput"));
-        },
+        }
+        crate::types::CommandInput::Unknown => return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("CommandInput")),
     }
     Ok(())
 }

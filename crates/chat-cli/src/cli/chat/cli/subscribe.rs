@@ -169,7 +169,9 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     let r = os.client.create_subscription_token().await?;
 
     let url = with_spinner(&mut session.stderr, "Preparing to upgrade...", || async move {
-        Ok::<String, ChatError>(r.encoded_verification_url().to_string())
+        r.encoded_verification_url()
+            .map(|s| s.to_string())
+            .ok_or(ChatError::Custom("Missing verification URL".into()))
     })
     .await?;
 

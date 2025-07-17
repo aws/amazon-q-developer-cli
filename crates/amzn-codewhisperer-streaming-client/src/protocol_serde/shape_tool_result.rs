@@ -3,12 +3,7 @@ pub(crate) fn de_tool_result<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
 ) -> ::std::result::Result<Option<crate::types::ToolResult>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
-    I: Iterator<
-        Item = Result<
-            ::aws_smithy_json::deserialize::Token<'a>,
-            ::aws_smithy_json::deserialize::error::DeserializeError,
-        >,
-    >,
+    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
 {
     match tokens.next().transpose()? {
         Some(::aws_smithy_json::deserialize::Token::ValueNull { .. }) => Ok(None),
@@ -18,51 +13,38 @@ where
             loop {
                 match tokens.next().transpose()? {
                     Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
-                    Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                        match key.to_unescaped()?.as_ref() {
-                            "toolUseId" => {
-                                builder = builder.set_tool_use_id(
-                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
-                                        .transpose()?,
-                                );
-                            },
-                            "content" => {
-                                builder = builder.set_content(
-                                    crate::protocol_serde::shape_tool_result_content::de_tool_result_content(tokens)?,
-                                );
-                            },
-                            "status" => {
-                                builder = builder.set_status(
-                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                                        .map(|s| {
-                                            s.to_unescaped()
-                                                .map(|u| crate::types::ToolResultStatus::from(u.as_ref()))
-                                        })
-                                        .transpose()?,
-                                );
-                            },
-                            _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
+                    Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
+                        "toolUseId" => {
+                            builder = builder.set_tool_use_id(
+                                ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                    .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                    .transpose()?,
+                            );
                         }
+                        "content" => {
+                            builder = builder.set_content(crate::protocol_serde::shape_tool_result_content::de_tool_result_content(tokens)?);
+                        }
+                        "status" => {
+                            builder = builder.set_status(
+                                ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                    .map(|s| s.to_unescaped().map(|u| crate::types::ToolResultStatus::from(u.as_ref())))
+                                    .transpose()?,
+                            );
+                        }
+                        _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                     },
                     other => {
-                        return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                            format!("expected object key or end object, found: {:?}", other),
-                        ));
-                    },
+                        return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
+                            "expected object key or end object, found: {:?}",
+                            other
+                        )))
+                    }
                 }
             }
-            Ok(Some(
-                crate::serde_util::tool_result_correct_errors(builder)
-                    .build()
-                    .map_err(|err| {
-                        ::aws_smithy_json::deserialize::error::DeserializeError::custom_source(
-                            "Response was invalid",
-                            err,
-                        )
-                    })?,
-            ))
-        },
+            Ok(Some(crate::serde_util::tool_result_correct_errors(builder).build().map_err(|err| {
+                ::aws_smithy_json::deserialize::error::DeserializeError::custom_source("Response was invalid", err)
+            })?))
+        }
         _ => Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
             "expected start object or null",
         )),
@@ -82,10 +64,7 @@ pub fn ser_tool_result(
             {
                 #[allow(unused_mut)]
                 let mut object_3 = array_1.value().start_object();
-                crate::protocol_serde::shape_tool_result_content_block::ser_tool_result_content_block(
-                    &mut object_3,
-                    item_2,
-                )?;
+                crate::protocol_serde::shape_tool_result_content_block::ser_tool_result_content_block(&mut object_3, item_2)?;
                 object_3.finish();
             }
         }
