@@ -42,7 +42,6 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for UpdateUsageLi
 impl UpdateUsageLimitQuotaExceededError {
     /// Creates a new builder-style object to manufacture
     /// [`UpdateUsageLimitQuotaExceededError`](crate::types::error::UpdateUsageLimitQuotaExceededError).
-    ///
     pub fn builder() -> crate::types::error::builders::UpdateUsageLimitQuotaExceededErrorBuilder {
         crate::types::error::builders::UpdateUsageLimitQuotaExceededErrorBuilder::default()
     }

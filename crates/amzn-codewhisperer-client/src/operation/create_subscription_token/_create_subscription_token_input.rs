@@ -22,7 +22,6 @@ impl CreateSubscriptionTokenInput {
 impl CreateSubscriptionTokenInput {
     /// Creates a new builder-style object to manufacture
     /// [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
-    ///
     pub fn builder() -> crate::operation::create_subscription_token::builders::CreateSubscriptionTokenInputBuilder {
         crate::operation::create_subscription_token::builders::CreateSubscriptionTokenInputBuilder::default()
     }
@@ -30,7 +29,6 @@ impl CreateSubscriptionTokenInput {
 
 /// A builder for
 /// [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct CreateSubscriptionTokenInputBuilder {
@@ -74,7 +72,6 @@ impl CreateSubscriptionTokenInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

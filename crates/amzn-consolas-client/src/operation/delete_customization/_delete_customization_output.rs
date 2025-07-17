@@ -13,7 +13,6 @@ impl ::aws_types::request_id::RequestId for DeleteCustomizationOutput {
 impl DeleteCustomizationOutput {
     /// Creates a new builder-style object to manufacture
     /// [`DeleteCustomizationOutput`](crate::operation::delete_customization::DeleteCustomizationOutput).
-    ///
     pub fn builder() -> crate::operation::delete_customization::builders::DeleteCustomizationOutputBuilder {
         crate::operation::delete_customization::builders::DeleteCustomizationOutputBuilder::default()
     }
@@ -21,7 +20,6 @@ impl DeleteCustomizationOutput {
 
 /// A builder for
 /// [`DeleteCustomizationOutput`](crate::operation::delete_customization::DeleteCustomizationOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteCustomizationOutputBuilder {
@@ -40,7 +38,6 @@ impl DeleteCustomizationOutputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`DeleteCustomizationOutput`](crate::operation::delete_customization::DeleteCustomizationOutput).
-    ///
     pub fn build(self) -> crate::operation::delete_customization::DeleteCustomizationOutput {
         crate::operation::delete_customization::DeleteCustomizationOutput {
             _request_id: self._request_id,

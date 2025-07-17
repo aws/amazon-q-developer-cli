@@ -30,7 +30,6 @@ impl ::aws_types::request_id::RequestId for ExportResultArchiveOutput {
 impl ExportResultArchiveOutput {
     /// Creates a new builder-style object to manufacture
     /// [`ExportResultArchiveOutput`](crate::operation::export_result_archive::ExportResultArchiveOutput).
-    ///
     pub fn builder() -> crate::operation::export_result_archive::builders::ExportResultArchiveOutputBuilder {
         crate::operation::export_result_archive::builders::ExportResultArchiveOutputBuilder::default()
     }
@@ -38,7 +37,6 @@ impl ExportResultArchiveOutput {
 
 /// A builder for
 /// [`ExportResultArchiveOutput`](crate::operation::export_result_archive::ExportResultArchiveOutput).
-///
 #[derive(::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ExportResultArchiveOutputBuilder {

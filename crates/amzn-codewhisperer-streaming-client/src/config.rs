@@ -1121,7 +1121,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_codewhisperer_streaming_client::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_codewhisperer_streaming_client::config::BehaviorVersion;
@@ -1157,7 +1157,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_codewhisperer_streaming_client::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_codewhisperer_streaming_client::config::BehaviorVersion;

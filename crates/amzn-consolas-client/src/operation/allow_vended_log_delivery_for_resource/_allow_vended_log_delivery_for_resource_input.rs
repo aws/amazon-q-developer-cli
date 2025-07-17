@@ -22,7 +22,6 @@ impl AllowVendedLogDeliveryForResourceInput {
 impl AllowVendedLogDeliveryForResourceInput {
     /// Creates a new builder-style object to manufacture
     /// [`AllowVendedLogDeliveryForResourceInput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput).
-    ///
     pub fn builder()
     -> crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceInputBuilder
     {
@@ -32,7 +31,6 @@ impl AllowVendedLogDeliveryForResourceInput {
 
 /// A builder for
 /// [`AllowVendedLogDeliveryForResourceInput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct AllowVendedLogDeliveryForResourceInputBuilder {
@@ -78,7 +76,6 @@ impl AllowVendedLogDeliveryForResourceInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`AllowVendedLogDeliveryForResourceInput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

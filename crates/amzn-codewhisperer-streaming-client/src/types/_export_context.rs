@@ -58,7 +58,6 @@ impl ExportContext {
 
     /// Returns true if this is a
     /// [`UnitTestGenerationExportContext`](crate::types::ExportContext::UnitTestGenerationExportContext).
-    ///
     pub fn is_unit_test_generation_export_context(&self) -> bool {
         self.as_unit_test_generation_export_context().is_ok()
     }

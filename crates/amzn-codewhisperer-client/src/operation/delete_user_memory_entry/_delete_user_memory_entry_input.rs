@@ -22,7 +22,6 @@ impl DeleteUserMemoryEntryInput {
 impl DeleteUserMemoryEntryInput {
     /// Creates a new builder-style object to manufacture
     /// [`DeleteUserMemoryEntryInput`](crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryInput).
-    ///
     pub fn builder() -> crate::operation::delete_user_memory_entry::builders::DeleteUserMemoryEntryInputBuilder {
         crate::operation::delete_user_memory_entry::builders::DeleteUserMemoryEntryInputBuilder::default()
     }
@@ -30,7 +29,6 @@ impl DeleteUserMemoryEntryInput {
 
 /// A builder for
 /// [`DeleteUserMemoryEntryInput`](crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteUserMemoryEntryInputBuilder {
@@ -75,7 +73,6 @@ impl DeleteUserMemoryEntryInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`DeleteUserMemoryEntryInput`](crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

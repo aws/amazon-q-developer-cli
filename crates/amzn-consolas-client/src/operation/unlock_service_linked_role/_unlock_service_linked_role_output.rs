@@ -13,7 +13,6 @@ impl ::aws_types::request_id::RequestId for UnlockServiceLinkedRoleOutput {
 impl UnlockServiceLinkedRoleOutput {
     /// Creates a new builder-style object to manufacture
     /// [`UnlockServiceLinkedRoleOutput`](crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleOutput).
-    ///
     pub fn builder() -> crate::operation::unlock_service_linked_role::builders::UnlockServiceLinkedRoleOutputBuilder {
         crate::operation::unlock_service_linked_role::builders::UnlockServiceLinkedRoleOutputBuilder::default()
     }
@@ -21,7 +20,6 @@ impl UnlockServiceLinkedRoleOutput {
 
 /// A builder for
 /// [`UnlockServiceLinkedRoleOutput`](crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct UnlockServiceLinkedRoleOutputBuilder {
@@ -40,7 +38,6 @@ impl UnlockServiceLinkedRoleOutputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`UnlockServiceLinkedRoleOutput`](crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleOutput).
-    ///
     pub fn build(self) -> crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleOutput {
         crate::operation::unlock_service_linked_role::UnlockServiceLinkedRoleOutput {
             _request_id: self._request_id,

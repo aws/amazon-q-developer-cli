@@ -13,7 +13,6 @@ impl ::aws_types::request_id::RequestId for PushTelemetryEventOutput {
 impl PushTelemetryEventOutput {
     /// Creates a new builder-style object to manufacture
     /// [`PushTelemetryEventOutput`](crate::operation::push_telemetry_event::PushTelemetryEventOutput).
-    ///
     pub fn builder() -> crate::operation::push_telemetry_event::builders::PushTelemetryEventOutputBuilder {
         crate::operation::push_telemetry_event::builders::PushTelemetryEventOutputBuilder::default()
     }
@@ -39,7 +38,6 @@ impl PushTelemetryEventOutputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`PushTelemetryEventOutput`](crate::operation::push_telemetry_event::PushTelemetryEventOutput).
-    ///
     pub fn build(self) -> crate::operation::push_telemetry_event::PushTelemetryEventOutput {
         crate::operation::push_telemetry_event::PushTelemetryEventOutput {
             _request_id: self._request_id,

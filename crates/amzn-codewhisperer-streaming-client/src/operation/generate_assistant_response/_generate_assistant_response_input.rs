@@ -23,7 +23,6 @@ impl GenerateAssistantResponseInput {
 impl GenerateAssistantResponseInput {
     /// Creates a new builder-style object to manufacture
     /// [`GenerateAssistantResponseInput`](crate::operation::generate_assistant_response::GenerateAssistantResponseInput).
-    ///
     pub fn builder() -> crate::operation::generate_assistant_response::builders::GenerateAssistantResponseInputBuilder {
         crate::operation::generate_assistant_response::builders::GenerateAssistantResponseInputBuilder::default()
     }
@@ -31,7 +30,6 @@ impl GenerateAssistantResponseInput {
 
 /// A builder for
 /// [`GenerateAssistantResponseInput`](crate::operation::generate_assistant_response::GenerateAssistantResponseInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GenerateAssistantResponseInputBuilder {
@@ -76,7 +74,6 @@ impl GenerateAssistantResponseInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`GenerateAssistantResponseInput`](crate::operation::generate_assistant_response::GenerateAssistantResponseInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

@@ -43,7 +43,6 @@ impl ListAvailableModelsInput {
 impl ListAvailableModelsInput {
     /// Creates a new builder-style object to manufacture
     /// [`ListAvailableModelsInput`](crate::operation::list_available_models::ListAvailableModelsInput).
-    ///
     pub fn builder() -> crate::operation::list_available_models::builders::ListAvailableModelsInputBuilder {
         crate::operation::list_available_models::builders::ListAvailableModelsInputBuilder::default()
     }
@@ -149,7 +148,6 @@ impl ListAvailableModelsInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ListAvailableModelsInput`](crate::operation::list_available_models::ListAvailableModelsInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

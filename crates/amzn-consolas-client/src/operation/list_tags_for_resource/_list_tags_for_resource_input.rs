@@ -15,7 +15,6 @@ impl ListTagsForResourceInput {
 impl ListTagsForResourceInput {
     /// Creates a new builder-style object to manufacture
     /// [`ListTagsForResourceInput`](crate::operation::list_tags_for_resource::ListTagsForResourceInput).
-    ///
     pub fn builder() -> crate::operation::list_tags_for_resource::builders::ListTagsForResourceInputBuilder {
         crate::operation::list_tags_for_resource::builders::ListTagsForResourceInputBuilder::default()
     }
@@ -23,7 +22,6 @@ impl ListTagsForResourceInput {
 
 /// A builder for
 /// [`ListTagsForResourceInput`](crate::operation::list_tags_for_resource::ListTagsForResourceInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListTagsForResourceInputBuilder {
@@ -50,7 +48,6 @@ impl ListTagsForResourceInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ListTagsForResourceInput`](crate::operation::list_tags_for_resource::ListTagsForResourceInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

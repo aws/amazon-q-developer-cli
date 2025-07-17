@@ -13,7 +13,6 @@ impl ::aws_types::request_id::RequestId for UpdateCustomizationOutput {
 impl UpdateCustomizationOutput {
     /// Creates a new builder-style object to manufacture
     /// [`UpdateCustomizationOutput`](crate::operation::update_customization::UpdateCustomizationOutput).
-    ///
     pub fn builder() -> crate::operation::update_customization::builders::UpdateCustomizationOutputBuilder {
         crate::operation::update_customization::builders::UpdateCustomizationOutputBuilder::default()
     }
@@ -21,7 +20,6 @@ impl UpdateCustomizationOutput {
 
 /// A builder for
 /// [`UpdateCustomizationOutput`](crate::operation::update_customization::UpdateCustomizationOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct UpdateCustomizationOutputBuilder {
@@ -40,7 +38,6 @@ impl UpdateCustomizationOutputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`UpdateCustomizationOutput`](crate::operation::update_customization::UpdateCustomizationOutput).
-    ///
     pub fn build(self) -> crate::operation::update_customization::UpdateCustomizationOutput {
         crate::operation::update_customization::UpdateCustomizationOutput {
             _request_id: self._request_id,

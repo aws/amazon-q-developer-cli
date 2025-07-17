@@ -21,7 +21,6 @@ impl ::aws_types::request_id::RequestId for AllowVendedLogDeliveryForResourceOut
 impl AllowVendedLogDeliveryForResourceOutput {
     /// Creates a new builder-style object to manufacture
     /// [`AllowVendedLogDeliveryForResourceOutput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput).
-    ///
     pub fn builder() -> crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceOutputBuilder{
         crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceOutputBuilder::default()
     }
@@ -29,7 +28,6 @@ impl AllowVendedLogDeliveryForResourceOutput {
 
 /// A builder for
 /// [`AllowVendedLogDeliveryForResourceOutput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct AllowVendedLogDeliveryForResourceOutputBuilder {
@@ -66,7 +64,6 @@ impl AllowVendedLogDeliveryForResourceOutputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`AllowVendedLogDeliveryForResourceOutput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput).
-    ///
     pub fn build(
         self,
     ) -> crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceOutput {

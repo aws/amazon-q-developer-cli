@@ -37,7 +37,6 @@ impl ::aws_types::request_id::RequestId for LockServiceLinkedRoleOutput {
 impl LockServiceLinkedRoleOutput {
     /// Creates a new builder-style object to manufacture
     /// [`LockServiceLinkedRoleOutput`](crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput).
-    ///
     pub fn builder() -> crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder {
         crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder::default()
     }
@@ -45,7 +44,6 @@ impl LockServiceLinkedRoleOutput {
 
 /// A builder for
 /// [`LockServiceLinkedRoleOutput`](crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct LockServiceLinkedRoleOutputBuilder {
@@ -127,7 +125,6 @@ impl LockServiceLinkedRoleOutputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`LockServiceLinkedRoleOutput`](crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput).
-    ///
     pub fn build(self) -> crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput {
         crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput {
             can_be_deleted: self.can_be_deleted.unwrap_or_default(),

@@ -22,7 +22,6 @@ impl GenerateCodeFromCommandsInput {
 impl GenerateCodeFromCommandsInput {
     /// Creates a new builder-style object to manufacture
     /// [`GenerateCodeFromCommandsInput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsInput).
-    ///
     pub fn builder() -> crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsInputBuilder {
         crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsInputBuilder::default()
     }
@@ -30,7 +29,6 @@ impl GenerateCodeFromCommandsInput {
 
 /// A builder for
 /// [`GenerateCodeFromCommandsInput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GenerateCodeFromCommandsInputBuilder {
@@ -76,7 +74,6 @@ impl GenerateCodeFromCommandsInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`GenerateCodeFromCommandsInput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

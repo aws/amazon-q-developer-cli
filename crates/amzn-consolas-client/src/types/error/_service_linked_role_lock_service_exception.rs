@@ -42,7 +42,6 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for ServiceLinked
 impl ServiceLinkedRoleLockServiceError {
     /// Creates a new builder-style object to manufacture
     /// [`ServiceLinkedRoleLockServiceError`](crate::types::error::ServiceLinkedRoleLockServiceError).
-    ///
     pub fn builder() -> crate::types::error::builders::ServiceLinkedRoleLockServiceErrorBuilder {
         crate::types::error::builders::ServiceLinkedRoleLockServiceErrorBuilder::default()
     }
@@ -88,7 +87,6 @@ impl ServiceLinkedRoleLockServiceErrorBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ServiceLinkedRoleLockServiceError`](crate::types::error::ServiceLinkedRoleLockServiceError).
-    ///
     pub fn build(self) -> crate::types::error::ServiceLinkedRoleLockServiceError {
         crate::types::error::ServiceLinkedRoleLockServiceError {
             message: self.message,

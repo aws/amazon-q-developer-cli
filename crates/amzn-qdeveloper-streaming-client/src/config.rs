@@ -1136,7 +1136,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_qdeveloper_streaming_client::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_qdeveloper_streaming_client::config::BehaviorVersion;
@@ -1172,7 +1172,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_qdeveloper_streaming_client::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_qdeveloper_streaming_client::config::BehaviorVersion;

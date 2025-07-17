@@ -22,7 +22,6 @@ impl ListAvailableProfilesInput {
 impl ListAvailableProfilesInput {
     /// Creates a new builder-style object to manufacture
     /// [`ListAvailableProfilesInput`](crate::operation::list_available_profiles::ListAvailableProfilesInput).
-    ///
     pub fn builder() -> crate::operation::list_available_profiles::builders::ListAvailableProfilesInputBuilder {
         crate::operation::list_available_profiles::builders::ListAvailableProfilesInputBuilder::default()
     }
@@ -30,7 +29,6 @@ impl ListAvailableProfilesInput {
 
 /// A builder for
 /// [`ListAvailableProfilesInput`](crate::operation::list_available_profiles::ListAvailableProfilesInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListAvailableProfilesInputBuilder {
@@ -74,7 +72,6 @@ impl ListAvailableProfilesInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ListAvailableProfilesInput`](crate::operation::list_available_profiles::ListAvailableProfilesInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

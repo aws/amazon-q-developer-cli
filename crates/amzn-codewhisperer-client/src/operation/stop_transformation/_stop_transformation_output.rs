@@ -22,7 +22,6 @@ impl ::aws_types::request_id::RequestId for StopTransformationOutput {
 impl StopTransformationOutput {
     /// Creates a new builder-style object to manufacture
     /// [`StopTransformationOutput`](crate::operation::stop_transformation::StopTransformationOutput).
-    ///
     pub fn builder() -> crate::operation::stop_transformation::builders::StopTransformationOutputBuilder {
         crate::operation::stop_transformation::builders::StopTransformationOutputBuilder::default()
     }

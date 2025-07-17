@@ -29,7 +29,6 @@ impl ::aws_types::request_id::RequestId for ListWorkspaceMetadataOutput {
 impl ListWorkspaceMetadataOutput {
     /// Creates a new builder-style object to manufacture
     /// [`ListWorkspaceMetadataOutput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput).
-    ///
     pub fn builder() -> crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataOutputBuilder {
         crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataOutputBuilder::default()
     }
@@ -37,7 +36,6 @@ impl ListWorkspaceMetadataOutput {
 
 /// A builder for
 /// [`ListWorkspaceMetadataOutput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListWorkspaceMetadataOutputBuilder {

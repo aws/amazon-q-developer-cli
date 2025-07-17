@@ -30,7 +30,6 @@ impl ::aws_types::request_id::RequestId for GenerateAssistantResponseOutput {
 impl GenerateAssistantResponseOutput {
     /// Creates a new builder-style object to manufacture
     /// [`GenerateAssistantResponseOutput`](crate::operation::generate_assistant_response::GenerateAssistantResponseOutput).
-    ///
     pub fn builder() -> crate::operation::generate_assistant_response::builders::GenerateAssistantResponseOutputBuilder
     {
         crate::operation::generate_assistant_response::builders::GenerateAssistantResponseOutputBuilder::default()
@@ -39,7 +38,6 @@ impl GenerateAssistantResponseOutput {
 
 /// A builder for
 /// [`GenerateAssistantResponseOutput`](crate::operation::generate_assistant_response::GenerateAssistantResponseOutput).
-///
 #[derive(::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GenerateAssistantResponseOutputBuilder {

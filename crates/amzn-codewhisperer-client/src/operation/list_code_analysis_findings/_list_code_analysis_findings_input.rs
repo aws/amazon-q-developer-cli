@@ -36,7 +36,6 @@ impl ListCodeAnalysisFindingsInput {
 impl ListCodeAnalysisFindingsInput {
     /// Creates a new builder-style object to manufacture
     /// [`ListCodeAnalysisFindingsInput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsInput).
-    ///
     pub fn builder() -> crate::operation::list_code_analysis_findings::builders::ListCodeAnalysisFindingsInputBuilder {
         crate::operation::list_code_analysis_findings::builders::ListCodeAnalysisFindingsInputBuilder::default()
     }
@@ -44,7 +43,6 @@ impl ListCodeAnalysisFindingsInput {
 
 /// A builder for
 /// [`ListCodeAnalysisFindingsInput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListCodeAnalysisFindingsInputBuilder {
@@ -131,7 +129,6 @@ impl ListCodeAnalysisFindingsInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ListCodeAnalysisFindingsInput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

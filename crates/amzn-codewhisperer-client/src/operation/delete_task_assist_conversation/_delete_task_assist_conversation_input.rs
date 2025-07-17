@@ -23,7 +23,6 @@ impl DeleteTaskAssistConversationInput {
 impl DeleteTaskAssistConversationInput {
     /// Creates a new builder-style object to manufacture
     /// [`DeleteTaskAssistConversationInput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput).
-    ///
     pub fn builder()
     -> crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationInputBuilder {
         crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationInputBuilder::default()
@@ -32,7 +31,6 @@ impl DeleteTaskAssistConversationInput {
 
 /// A builder for
 /// [`DeleteTaskAssistConversationInput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteTaskAssistConversationInputBuilder {
@@ -77,7 +75,6 @@ impl DeleteTaskAssistConversationInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`DeleteTaskAssistConversationInput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

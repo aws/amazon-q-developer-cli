@@ -23,7 +23,6 @@ impl ::aws_types::request_id::RequestId for DeleteTaskAssistConversationOutput {
 impl DeleteTaskAssistConversationOutput {
     /// Creates a new builder-style object to manufacture
     /// [`DeleteTaskAssistConversationOutput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput).
-    ///
     pub fn builder()
     -> crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder {
         crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder::default(
@@ -33,7 +32,6 @@ impl DeleteTaskAssistConversationOutput {
 
 /// A builder for
 /// [`DeleteTaskAssistConversationOutput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteTaskAssistConversationOutputBuilder {

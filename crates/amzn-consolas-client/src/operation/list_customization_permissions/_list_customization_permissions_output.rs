@@ -29,7 +29,6 @@ impl ::aws_types::request_id::RequestId for ListCustomizationPermissionsOutput {
 impl ListCustomizationPermissionsOutput {
     /// Creates a new builder-style object to manufacture
     /// [`ListCustomizationPermissionsOutput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsOutput).
-    ///
     pub fn builder()
     -> crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsOutputBuilder {
         crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsOutputBuilder::default()
@@ -38,7 +37,6 @@ impl ListCustomizationPermissionsOutput {
 
 /// A builder for
 /// [`ListCustomizationPermissionsOutput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListCustomizationPermissionsOutputBuilder {

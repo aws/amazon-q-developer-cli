@@ -23,7 +23,6 @@ impl GetTransformationPlanInput {
 impl GetTransformationPlanInput {
     /// Creates a new builder-style object to manufacture
     /// [`GetTransformationPlanInput`](crate::operation::get_transformation_plan::GetTransformationPlanInput).
-    ///
     pub fn builder() -> crate::operation::get_transformation_plan::builders::GetTransformationPlanInputBuilder {
         crate::operation::get_transformation_plan::builders::GetTransformationPlanInputBuilder::default()
     }
@@ -31,7 +30,6 @@ impl GetTransformationPlanInput {
 
 /// A builder for
 /// [`GetTransformationPlanInput`](crate::operation::get_transformation_plan::GetTransformationPlanInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GetTransformationPlanInputBuilder {
@@ -76,7 +74,6 @@ impl GetTransformationPlanInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`GetTransformationPlanInput`](crate::operation::get_transformation_plan::GetTransformationPlanInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

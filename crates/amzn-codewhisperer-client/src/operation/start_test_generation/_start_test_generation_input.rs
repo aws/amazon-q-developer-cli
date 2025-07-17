@@ -75,7 +75,6 @@ impl ::std::fmt::Debug for StartTestGenerationInput {
 impl StartTestGenerationInput {
     /// Creates a new builder-style object to manufacture
     /// [`StartTestGenerationInput`](crate::operation::start_test_generation::StartTestGenerationInput).
-    ///
     pub fn builder() -> crate::operation::start_test_generation::builders::StartTestGenerationInputBuilder {
         crate::operation::start_test_generation::builders::StartTestGenerationInputBuilder::default()
     }
@@ -231,7 +230,6 @@ impl StartTestGenerationInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`StartTestGenerationInput`](crate::operation::start_test_generation::StartTestGenerationInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

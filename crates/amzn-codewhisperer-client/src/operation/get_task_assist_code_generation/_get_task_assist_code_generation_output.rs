@@ -69,7 +69,6 @@ impl ::aws_types::request_id::RequestId for GetTaskAssistCodeGenerationOutput {
 impl GetTaskAssistCodeGenerationOutput {
     /// Creates a new builder-style object to manufacture
     /// [`GetTaskAssistCodeGenerationOutput`](crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationOutput).
-    ///
     pub fn builder()
     -> crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder {
         crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder::default()
@@ -78,7 +77,6 @@ impl GetTaskAssistCodeGenerationOutput {
 
 /// A builder for
 /// [`GetTaskAssistCodeGenerationOutput`](crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct GetTaskAssistCodeGenerationOutputBuilder {

@@ -37,7 +37,6 @@ impl ExportResultArchiveInput {
 impl ExportResultArchiveInput {
     /// Creates a new builder-style object to manufacture
     /// [`ExportResultArchiveInput`](crate::operation::export_result_archive::ExportResultArchiveInput).
-    ///
     pub fn builder() -> crate::operation::export_result_archive::builders::ExportResultArchiveInputBuilder {
         crate::operation::export_result_archive::builders::ExportResultArchiveInputBuilder::default()
     }
@@ -126,7 +125,6 @@ impl ExportResultArchiveInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ExportResultArchiveInput`](crate::operation::export_result_archive::ExportResultArchiveInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

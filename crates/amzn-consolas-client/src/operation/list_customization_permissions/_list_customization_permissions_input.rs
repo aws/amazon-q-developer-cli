@@ -29,7 +29,6 @@ impl ListCustomizationPermissionsInput {
 impl ListCustomizationPermissionsInput {
     /// Creates a new builder-style object to manufacture
     /// [`ListCustomizationPermissionsInput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsInput).
-    ///
     pub fn builder()
     -> crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsInputBuilder {
         crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsInputBuilder::default()
@@ -38,7 +37,6 @@ impl ListCustomizationPermissionsInput {
 
 /// A builder for
 /// [`ListCustomizationPermissionsInput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListCustomizationPermissionsInputBuilder {
@@ -101,7 +99,6 @@ impl ListCustomizationPermissionsInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ListCustomizationPermissionsInput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

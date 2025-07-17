@@ -29,7 +29,6 @@ impl ::aws_types::request_id::RequestId for ListAvailableModelsOutput {
 impl ListAvailableModelsOutput {
     /// Creates a new builder-style object to manufacture
     /// [`ListAvailableModelsOutput`](crate::operation::list_available_models::ListAvailableModelsOutput).
-    ///
     pub fn builder() -> crate::operation::list_available_models::builders::ListAvailableModelsOutputBuilder {
         crate::operation::list_available_models::builders::ListAvailableModelsOutputBuilder::default()
     }
@@ -37,7 +36,6 @@ impl ListAvailableModelsOutput {
 
 /// A builder for
 /// [`ListAvailableModelsOutput`](crate::operation::list_available_models::ListAvailableModelsOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListAvailableModelsOutputBuilder {

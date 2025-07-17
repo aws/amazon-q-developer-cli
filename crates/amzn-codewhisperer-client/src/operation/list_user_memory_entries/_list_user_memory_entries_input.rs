@@ -29,7 +29,6 @@ impl ListUserMemoryEntriesInput {
 impl ListUserMemoryEntriesInput {
     /// Creates a new builder-style object to manufacture
     /// [`ListUserMemoryEntriesInput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput).
-    ///
     pub fn builder() -> crate::operation::list_user_memory_entries::builders::ListUserMemoryEntriesInputBuilder {
         crate::operation::list_user_memory_entries::builders::ListUserMemoryEntriesInputBuilder::default()
     }
@@ -37,7 +36,6 @@ impl ListUserMemoryEntriesInput {
 
 /// A builder for
 /// [`ListUserMemoryEntriesInput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListUserMemoryEntriesInputBuilder {
@@ -99,7 +97,6 @@ impl ListUserMemoryEntriesInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ListUserMemoryEntriesInput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

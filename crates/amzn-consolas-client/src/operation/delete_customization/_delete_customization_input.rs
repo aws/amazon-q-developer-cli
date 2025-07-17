@@ -22,7 +22,6 @@ impl DeleteCustomizationInput {
 impl DeleteCustomizationInput {
     /// Creates a new builder-style object to manufacture
     /// [`DeleteCustomizationInput`](crate::operation::delete_customization::DeleteCustomizationInput).
-    ///
     pub fn builder() -> crate::operation::delete_customization::builders::DeleteCustomizationInputBuilder {
         crate::operation::delete_customization::builders::DeleteCustomizationInputBuilder::default()
     }
@@ -74,7 +73,6 @@ impl DeleteCustomizationInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`DeleteCustomizationInput`](crate::operation::delete_customization::DeleteCustomizationInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

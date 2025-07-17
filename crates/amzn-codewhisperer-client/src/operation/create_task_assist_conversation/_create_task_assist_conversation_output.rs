@@ -23,7 +23,6 @@ impl ::aws_types::request_id::RequestId for CreateTaskAssistConversationOutput {
 impl CreateTaskAssistConversationOutput {
     /// Creates a new builder-style object to manufacture
     /// [`CreateTaskAssistConversationOutput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput).
-    ///
     pub fn builder()
     -> crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder {
         crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder::default(
@@ -33,7 +32,6 @@ impl CreateTaskAssistConversationOutput {
 
 /// A builder for
 /// [`CreateTaskAssistConversationOutput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct CreateTaskAssistConversationOutputBuilder {

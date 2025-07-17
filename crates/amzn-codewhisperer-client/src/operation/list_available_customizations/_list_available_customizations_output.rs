@@ -29,7 +29,6 @@ impl ::aws_types::request_id::RequestId for ListAvailableCustomizationsOutput {
 impl ListAvailableCustomizationsOutput {
     /// Creates a new builder-style object to manufacture
     /// [`ListAvailableCustomizationsOutput`](crate::operation::list_available_customizations::ListAvailableCustomizationsOutput).
-    ///
     pub fn builder()
     -> crate::operation::list_available_customizations::builders::ListAvailableCustomizationsOutputBuilder {
         crate::operation::list_available_customizations::builders::ListAvailableCustomizationsOutputBuilder::default()
@@ -38,7 +37,6 @@ impl ListAvailableCustomizationsOutput {
 
 /// A builder for
 /// [`ListAvailableCustomizationsOutput`](crate::operation::list_available_customizations::ListAvailableCustomizationsOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListAvailableCustomizationsOutputBuilder {

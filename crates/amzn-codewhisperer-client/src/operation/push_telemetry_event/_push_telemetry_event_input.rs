@@ -29,7 +29,6 @@ impl PushTelemetryEventInput {
 impl PushTelemetryEventInput {
     /// Creates a new builder-style object to manufacture
     /// [`PushTelemetryEventInput`](crate::operation::push_telemetry_event::PushTelemetryEventInput).
-    ///
     pub fn builder() -> crate::operation::push_telemetry_event::builders::PushTelemetryEventInputBuilder {
         crate::operation::push_telemetry_event::builders::PushTelemetryEventInputBuilder::default()
     }
@@ -100,7 +99,6 @@ impl PushTelemetryEventInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`PushTelemetryEventInput`](crate::operation::push_telemetry_event::PushTelemetryEventInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

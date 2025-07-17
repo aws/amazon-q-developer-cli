@@ -22,7 +22,6 @@ impl AssociateCustomizationPermissionInput {
 impl AssociateCustomizationPermissionInput {
     /// Creates a new builder-style object to manufacture
     /// [`AssociateCustomizationPermissionInput`](crate::operation::associate_customization_permission::AssociateCustomizationPermissionInput).
-    ///
     pub fn builder()
     -> crate::operation::associate_customization_permission::builders::AssociateCustomizationPermissionInputBuilder
     {
@@ -32,7 +31,6 @@ impl AssociateCustomizationPermissionInput {
 
 /// A builder for
 /// [`AssociateCustomizationPermissionInput`](crate::operation::associate_customization_permission::AssociateCustomizationPermissionInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct AssociateCustomizationPermissionInputBuilder {
@@ -78,7 +76,6 @@ impl AssociateCustomizationPermissionInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`AssociateCustomizationPermissionInput`](crate::operation::associate_customization_permission::AssociateCustomizationPermissionInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

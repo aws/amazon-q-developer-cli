@@ -1154,7 +1154,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_consolas_client::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;
@@ -1190,7 +1190,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_consolas_client::Client::from_conf(config);
     /// ```
-    ///
+    /// 
     /// Customizing behavior major version:
     /// ```no_run
     /// use amzn_consolas_client::config::BehaviorVersion;

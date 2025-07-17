@@ -35,7 +35,6 @@ impl TransformationProjectArtifactDescriptor {
 
     /// Returns true if this is a
     /// [`SourceCodeArtifact`](crate::types::TransformationProjectArtifactDescriptor::SourceCodeArtifact).
-    ///
     pub fn is_source_code_artifact(&self) -> bool {
         self.as_source_code_artifact().is_ok()
     }

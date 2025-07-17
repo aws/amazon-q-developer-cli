@@ -86,7 +86,6 @@ impl ::std::fmt::Debug for CreateArtifactUploadUrlInput {
 impl CreateArtifactUploadUrlInput {
     /// Creates a new builder-style object to manufacture
     /// [`CreateArtifactUploadUrlInput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlInput).
-    ///
     pub fn builder() -> crate::operation::create_artifact_upload_url::builders::CreateArtifactUploadUrlInputBuilder {
         crate::operation::create_artifact_upload_url::builders::CreateArtifactUploadUrlInputBuilder::default()
     }
@@ -94,7 +93,6 @@ impl CreateArtifactUploadUrlInput {
 
 /// A builder for
 /// [`CreateArtifactUploadUrlInput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct CreateArtifactUploadUrlInputBuilder {
@@ -267,7 +265,6 @@ impl CreateArtifactUploadUrlInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`CreateArtifactUploadUrlInput`](crate::operation::create_artifact_upload_url::CreateArtifactUploadUrlInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

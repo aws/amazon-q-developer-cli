@@ -46,7 +46,6 @@ impl ::std::fmt::Debug for CreateUserMemoryEntryInput {
 impl CreateUserMemoryEntryInput {
     /// Creates a new builder-style object to manufacture
     /// [`CreateUserMemoryEntryInput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput).
-    ///
     pub fn builder() -> crate::operation::create_user_memory_entry::builders::CreateUserMemoryEntryInputBuilder {
         crate::operation::create_user_memory_entry::builders::CreateUserMemoryEntryInputBuilder::default()
     }
@@ -54,7 +53,6 @@ impl CreateUserMemoryEntryInput {
 
 /// A builder for
 /// [`CreateUserMemoryEntryInput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct CreateUserMemoryEntryInputBuilder {
@@ -136,7 +134,6 @@ impl CreateUserMemoryEntryInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`CreateUserMemoryEntryInput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

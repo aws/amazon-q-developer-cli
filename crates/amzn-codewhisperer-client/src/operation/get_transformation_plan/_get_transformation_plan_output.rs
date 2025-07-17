@@ -22,7 +22,6 @@ impl ::aws_types::request_id::RequestId for GetTransformationPlanOutput {
 impl GetTransformationPlanOutput {
     /// Creates a new builder-style object to manufacture
     /// [`GetTransformationPlanOutput`](crate::operation::get_transformation_plan::GetTransformationPlanOutput).
-    ///
     pub fn builder() -> crate::operation::get_transformation_plan::builders::GetTransformationPlanOutputBuilder {
         crate::operation::get_transformation_plan::builders::GetTransformationPlanOutputBuilder::default()
     }
@@ -30,7 +29,6 @@ impl GetTransformationPlanOutput {
 
 /// A builder for
 /// [`GetTransformationPlanOutput`](crate::operation::get_transformation_plan::GetTransformationPlanOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GetTransformationPlanOutputBuilder {

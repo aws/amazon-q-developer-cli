@@ -30,7 +30,6 @@ impl StartTransformationInput {
 impl StartTransformationInput {
     /// Creates a new builder-style object to manufacture
     /// [`StartTransformationInput`](crate::operation::start_transformation::StartTransformationInput).
-    ///
     pub fn builder() -> crate::operation::start_transformation::builders::StartTransformationInputBuilder {
         crate::operation::start_transformation::builders::StartTransformationInputBuilder::default()
     }
@@ -101,7 +100,6 @@ impl StartTransformationInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`StartTransformationInput`](crate::operation::start_transformation::StartTransformationInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

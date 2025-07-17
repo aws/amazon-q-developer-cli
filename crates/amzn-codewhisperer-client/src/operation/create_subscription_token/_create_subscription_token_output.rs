@@ -35,7 +35,6 @@ impl ::aws_types::request_id::RequestId for CreateSubscriptionTokenOutput {
 impl CreateSubscriptionTokenOutput {
     /// Creates a new builder-style object to manufacture
     /// [`CreateSubscriptionTokenOutput`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput).
-    ///
     pub fn builder() -> crate::operation::create_subscription_token::builders::CreateSubscriptionTokenOutputBuilder {
         crate::operation::create_subscription_token::builders::CreateSubscriptionTokenOutputBuilder::default()
     }
@@ -43,7 +42,6 @@ impl CreateSubscriptionTokenOutput {
 
 /// A builder for
 /// [`CreateSubscriptionTokenOutput`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct CreateSubscriptionTokenOutputBuilder {

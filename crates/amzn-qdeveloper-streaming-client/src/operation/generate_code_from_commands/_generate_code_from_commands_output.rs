@@ -30,7 +30,6 @@ impl ::aws_types::request_id::RequestId for GenerateCodeFromCommandsOutput {
 impl GenerateCodeFromCommandsOutput {
     /// Creates a new builder-style object to manufacture
     /// [`GenerateCodeFromCommandsOutput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsOutput).
-    ///
     pub fn builder() -> crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsOutputBuilder {
         crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsOutputBuilder::default()
     }
@@ -38,7 +37,6 @@ impl GenerateCodeFromCommandsOutput {
 
 /// A builder for
 /// [`GenerateCodeFromCommandsOutput`](crate::operation::generate_code_from_commands::GenerateCodeFromCommandsOutput).
-///
 #[derive(::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GenerateCodeFromCommandsOutputBuilder {

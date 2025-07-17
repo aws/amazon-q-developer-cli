@@ -38,7 +38,6 @@ impl ::aws_types::request_id::RequestId for ListCodeAnalysisFindingsOutput {
 impl ListCodeAnalysisFindingsOutput {
     /// Creates a new builder-style object to manufacture
     /// [`ListCodeAnalysisFindingsOutput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsOutput).
-    ///
     pub fn builder() -> crate::operation::list_code_analysis_findings::builders::ListCodeAnalysisFindingsOutputBuilder {
         crate::operation::list_code_analysis_findings::builders::ListCodeAnalysisFindingsOutputBuilder::default()
     }
@@ -46,7 +45,6 @@ impl ListCodeAnalysisFindingsOutput {
 
 /// A builder for
 /// [`ListCodeAnalysisFindingsOutput`](crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct ListCodeAnalysisFindingsOutputBuilder {

@@ -13,7 +13,6 @@ impl ::aws_types::request_id::RequestId for AssociateCustomizationPermissionOutp
 impl AssociateCustomizationPermissionOutput {
     /// Creates a new builder-style object to manufacture
     /// [`AssociateCustomizationPermissionOutput`](crate::operation::associate_customization_permission::AssociateCustomizationPermissionOutput).
-    ///
     pub fn builder()
     -> crate::operation::associate_customization_permission::builders::AssociateCustomizationPermissionOutputBuilder
     {
@@ -23,7 +22,6 @@ impl AssociateCustomizationPermissionOutput {
 
 /// A builder for
 /// [`AssociateCustomizationPermissionOutput`](crate::operation::associate_customization_permission::AssociateCustomizationPermissionOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct AssociateCustomizationPermissionOutputBuilder {
@@ -42,7 +40,6 @@ impl AssociateCustomizationPermissionOutputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`AssociateCustomizationPermissionOutput`](crate::operation::associate_customization_permission::AssociateCustomizationPermissionOutput).
-    ///
     pub fn build(self) -> crate::operation::associate_customization_permission::AssociateCustomizationPermissionOutput {
         crate::operation::associate_customization_permission::AssociateCustomizationPermissionOutput {
             _request_id: self._request_id,

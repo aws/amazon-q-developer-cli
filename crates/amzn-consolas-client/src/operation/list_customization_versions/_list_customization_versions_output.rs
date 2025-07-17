@@ -29,7 +29,6 @@ impl ::aws_types::request_id::RequestId for ListCustomizationVersionsOutput {
 impl ListCustomizationVersionsOutput {
     /// Creates a new builder-style object to manufacture
     /// [`ListCustomizationVersionsOutput`](crate::operation::list_customization_versions::ListCustomizationVersionsOutput).
-    ///
     pub fn builder() -> crate::operation::list_customization_versions::builders::ListCustomizationVersionsOutputBuilder
     {
         crate::operation::list_customization_versions::builders::ListCustomizationVersionsOutputBuilder::default()
@@ -38,7 +37,6 @@ impl ListCustomizationVersionsOutput {
 
 /// A builder for
 /// [`ListCustomizationVersionsOutput`](crate::operation::list_customization_versions::ListCustomizationVersionsOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListCustomizationVersionsOutputBuilder {

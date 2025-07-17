@@ -22,7 +22,6 @@ impl ListFeatureEvaluationsInput {
 impl ListFeatureEvaluationsInput {
     /// Creates a new builder-style object to manufacture
     /// [`ListFeatureEvaluationsInput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsInput).
-    ///
     pub fn builder() -> crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsInputBuilder {
         crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsInputBuilder::default()
     }
@@ -30,7 +29,6 @@ impl ListFeatureEvaluationsInput {
 
 /// A builder for
 /// [`ListFeatureEvaluationsInput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListFeatureEvaluationsInputBuilder {
@@ -75,7 +73,6 @@ impl ListFeatureEvaluationsInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ListFeatureEvaluationsInput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

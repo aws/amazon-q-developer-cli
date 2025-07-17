@@ -29,7 +29,6 @@ impl ListCustomizationVersionsInput {
 impl ListCustomizationVersionsInput {
     /// Creates a new builder-style object to manufacture
     /// [`ListCustomizationVersionsInput`](crate::operation::list_customization_versions::ListCustomizationVersionsInput).
-    ///
     pub fn builder() -> crate::operation::list_customization_versions::builders::ListCustomizationVersionsInputBuilder {
         crate::operation::list_customization_versions::builders::ListCustomizationVersionsInputBuilder::default()
     }
@@ -37,7 +36,6 @@ impl ListCustomizationVersionsInput {
 
 /// A builder for
 /// [`ListCustomizationVersionsInput`](crate::operation::list_customization_versions::ListCustomizationVersionsInput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListCustomizationVersionsInputBuilder {
@@ -100,7 +98,6 @@ impl ListCustomizationVersionsInputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`ListCustomizationVersionsInput`](crate::operation::list_customization_versions::ListCustomizationVersionsInput).
-    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

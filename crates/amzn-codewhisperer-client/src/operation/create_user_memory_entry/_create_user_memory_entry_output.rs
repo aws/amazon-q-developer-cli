@@ -21,7 +21,6 @@ impl ::aws_types::request_id::RequestId for CreateUserMemoryEntryOutput {
 impl CreateUserMemoryEntryOutput {
     /// Creates a new builder-style object to manufacture
     /// [`CreateUserMemoryEntryOutput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryOutput).
-    ///
     pub fn builder() -> crate::operation::create_user_memory_entry::builders::CreateUserMemoryEntryOutputBuilder {
         crate::operation::create_user_memory_entry::builders::CreateUserMemoryEntryOutputBuilder::default()
     }
@@ -29,7 +28,6 @@ impl CreateUserMemoryEntryOutput {
 
 /// A builder for
 /// [`CreateUserMemoryEntryOutput`](crate::operation::create_user_memory_entry::CreateUserMemoryEntryOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct CreateUserMemoryEntryOutputBuilder {

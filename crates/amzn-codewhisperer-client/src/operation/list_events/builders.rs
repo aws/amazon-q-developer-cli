@@ -123,7 +123,6 @@ impl ListEventsFluentBuilder {
     /// Paginators are used by calling
     /// [`send().await`](crate::operation::list_events::paginator::ListEventsPaginator::send) which
     /// returns a [`PaginationStream`](aws_smithy_async::future::pagination_stream::PaginationStream).
-    ///
     pub fn into_paginator(self) -> crate::operation::list_events::paginator::ListEventsPaginator {
         crate::operation::list_events::paginator::ListEventsPaginator::new(self.handle, self.inner)
     }

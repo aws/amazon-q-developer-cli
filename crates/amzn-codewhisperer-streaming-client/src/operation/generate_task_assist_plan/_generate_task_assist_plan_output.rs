@@ -30,7 +30,6 @@ impl ::aws_types::request_id::RequestId for GenerateTaskAssistPlanOutput {
 impl GenerateTaskAssistPlanOutput {
     /// Creates a new builder-style object to manufacture
     /// [`GenerateTaskAssistPlanOutput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanOutput).
-    ///
     pub fn builder() -> crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanOutputBuilder {
         crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanOutputBuilder::default()
     }
@@ -38,7 +37,6 @@ impl GenerateTaskAssistPlanOutput {
 
 /// A builder for
 /// [`GenerateTaskAssistPlanOutput`](crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanOutput).
-///
 #[derive(::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GenerateTaskAssistPlanOutputBuilder {

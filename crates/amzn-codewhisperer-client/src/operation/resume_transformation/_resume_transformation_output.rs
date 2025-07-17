@@ -22,7 +22,6 @@ impl ::aws_types::request_id::RequestId for ResumeTransformationOutput {
 impl ResumeTransformationOutput {
     /// Creates a new builder-style object to manufacture
     /// [`ResumeTransformationOutput`](crate::operation::resume_transformation::ResumeTransformationOutput).
-    ///
     pub fn builder() -> crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder {
         crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder::default()
     }
@@ -30,7 +29,6 @@ impl ResumeTransformationOutput {
 
 /// A builder for
 /// [`ResumeTransformationOutput`](crate::operation::resume_transformation::ResumeTransformationOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ResumeTransformationOutputBuilder {

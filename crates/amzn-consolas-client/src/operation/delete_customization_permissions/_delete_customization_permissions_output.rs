@@ -13,7 +13,6 @@ impl ::aws_types::request_id::RequestId for DeleteCustomizationPermissionsOutput
 impl DeleteCustomizationPermissionsOutput {
     /// Creates a new builder-style object to manufacture
     /// [`DeleteCustomizationPermissionsOutput`](crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsOutput).
-    ///
     pub fn builder()
     -> crate::operation::delete_customization_permissions::builders::DeleteCustomizationPermissionsOutputBuilder {
         crate::operation::delete_customization_permissions::builders::DeleteCustomizationPermissionsOutputBuilder::default()
@@ -22,7 +21,6 @@ impl DeleteCustomizationPermissionsOutput {
 
 /// A builder for
 /// [`DeleteCustomizationPermissionsOutput`](crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteCustomizationPermissionsOutputBuilder {
@@ -41,7 +39,6 @@ impl DeleteCustomizationPermissionsOutputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`DeleteCustomizationPermissionsOutput`](crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsOutput).
-    ///
     pub fn build(self) -> crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsOutput {
         crate::operation::delete_customization_permissions::DeleteCustomizationPermissionsOutput {
             _request_id: self._request_id,

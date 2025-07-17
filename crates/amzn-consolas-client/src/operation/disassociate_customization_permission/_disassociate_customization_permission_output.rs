@@ -13,7 +13,6 @@ impl ::aws_types::request_id::RequestId for DisassociateCustomizationPermissionO
 impl DisassociateCustomizationPermissionOutput {
     /// Creates a new builder-style object to manufacture
     /// [`DisassociateCustomizationPermissionOutput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput).
-    ///
     pub fn builder() -> crate::operation::disassociate_customization_permission::builders::DisassociateCustomizationPermissionOutputBuilder{
         crate::operation::disassociate_customization_permission::builders::DisassociateCustomizationPermissionOutputBuilder::default()
     }
@@ -21,7 +20,6 @@ impl DisassociateCustomizationPermissionOutput {
 
 /// A builder for
 /// [`DisassociateCustomizationPermissionOutput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DisassociateCustomizationPermissionOutputBuilder {
@@ -40,7 +38,6 @@ impl DisassociateCustomizationPermissionOutputBuilder {
 
     /// Consumes the builder and constructs a
     /// [`DisassociateCustomizationPermissionOutput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput).
-    ///
     pub fn build(
         self,
     ) -> crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput {

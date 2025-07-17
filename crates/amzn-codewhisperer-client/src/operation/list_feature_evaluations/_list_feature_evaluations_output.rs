@@ -22,7 +22,6 @@ impl ::aws_types::request_id::RequestId for ListFeatureEvaluationsOutput {
 impl ListFeatureEvaluationsOutput {
     /// Creates a new builder-style object to manufacture
     /// [`ListFeatureEvaluationsOutput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsOutput).
-    ///
     pub fn builder() -> crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsOutputBuilder {
         crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsOutputBuilder::default()
     }
@@ -30,7 +29,6 @@ impl ListFeatureEvaluationsOutput {
 
 /// A builder for
 /// [`ListFeatureEvaluationsOutput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsOutput).
-///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListFeatureEvaluationsOutputBuilder {
