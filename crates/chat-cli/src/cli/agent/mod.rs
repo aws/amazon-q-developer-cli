@@ -202,6 +202,8 @@ impl Agent {
             .to_string_lossy()
             .to_string();
 
+        self.name = name.clone();
+
         if let McpServerConfigWrapper::List(selected_servers) = mcp_servers {
             let include_all =
                 selected_servers.len() == 1 && selected_servers.first().is_some_and(|s| s.as_str() == "*");
