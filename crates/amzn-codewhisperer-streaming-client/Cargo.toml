@@ -55,19 +55,19 @@ name = "amzn_codewhisperer_streaming_client"
 path = "src/lib.rs"
 
 [dependencies.aws-credential-types]
-version = "1.2.1"
+version = "1.2.4"
 
 [dependencies.aws-runtime]
-version = "1.5.5"
+version = "1.5.9"
 
 [dependencies.aws-smithy-async]
 version = "1.2.4"
 
 [dependencies.aws-smithy-eventstream]
-version = "0.60.6"
+version = "0.60.10"
 
 [dependencies.aws-smithy-http]
-version = "0.60.12"
+version = "0.62.1"
 features = ["event-stream"]
 
 [dependencies.aws-smithy-json]
