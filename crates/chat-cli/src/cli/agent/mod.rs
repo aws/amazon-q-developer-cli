@@ -165,6 +165,9 @@ impl Default for Agent {
 }
 
 impl Agent {
+    /// This function mutates the agent to a state that is writable.
+    /// Practically this means reverting some fields back to their original values as they were
+    /// written in the config.
     pub fn freeze(&mut self) -> eyre::Result<()> {
         let Self { mcp_servers, .. } = self;
 
@@ -193,6 +196,10 @@ impl Agent {
         Ok(())
     }
 
+    /// This function mutates the agent to a state that is usable for runtime.
+    /// Practically this means to convert some of the fields value to their usable counterpart.
+    /// For example, we populate the agent with its file name, convert the mcp array to actual
+    /// mcp config and populate the agent file path.
     pub fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> eyre::Result<()> {
         let Self { mcp_servers, .. } = self;
 
