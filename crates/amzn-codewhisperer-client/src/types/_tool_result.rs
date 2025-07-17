@@ -17,11 +17,13 @@ impl ToolResult {
         use std::ops::Deref;
         self.tool_use_id.deref()
     }
+
     /// Content of the tool result.
     pub fn content(&self) -> &[crate::types::ToolResultContentBlock] {
         use std::ops::Deref;
         self.content.deref()
     }
+
     /// Status of the tools result.
     pub fn status(&self) -> ::std::option::Option<&crate::types::ToolResultStatus> {
         self.status.as_ref()
@@ -49,15 +51,18 @@ impl ToolResultBuilder {
         self.tool_use_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The ID for the tool request.
     pub fn set_tool_use_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.tool_use_id = input;
         self
     }
+
     /// The ID for the tool request.
     pub fn get_tool_use_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.tool_use_id
     }
+
     /// Appends an item to `content`.
     ///
     /// To override the contents of this collection use [`set_content`](Self::set_content).
@@ -69,34 +74,45 @@ impl ToolResultBuilder {
         self.content = ::std::option::Option::Some(v);
         self
     }
+
     /// Content of the tool result.
-    pub fn set_content(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::ToolResultContentBlock>>) -> Self {
+    pub fn set_content(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::ToolResultContentBlock>>,
+    ) -> Self {
         self.content = input;
         self
     }
+
     /// Content of the tool result.
     pub fn get_content(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::ToolResultContentBlock>> {
         &self.content
     }
+
     /// Status of the tools result.
     pub fn status(mut self, input: crate::types::ToolResultStatus) -> Self {
         self.status = ::std::option::Option::Some(input);
         self
     }
+
     /// Status of the tools result.
     pub fn set_status(mut self, input: ::std::option::Option<crate::types::ToolResultStatus>) -> Self {
         self.status = input;
         self
     }
+
     /// Status of the tools result.
     pub fn get_status(&self) -> &::std::option::Option<crate::types::ToolResultStatus> {
         &self.status
     }
+
     /// Consumes the builder and constructs a [`ToolResult`](crate::types::ToolResult).
     /// This method will fail if any of the following fields are not set:
     /// - [`tool_use_id`](crate::types::builders::ToolResultBuilder::tool_use_id)
     /// - [`content`](crate::types::builders::ToolResultBuilder::content)
-    pub fn build(self) -> ::std::result::Result<crate::types::ToolResult, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::ToolResult, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::ToolResult {
             tool_use_id: self.tool_use_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

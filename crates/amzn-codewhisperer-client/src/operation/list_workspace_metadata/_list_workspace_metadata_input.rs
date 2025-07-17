@@ -17,14 +17,17 @@ impl ListWorkspaceMetadataInput {
     pub fn workspace_root(&self) -> ::std::option::Option<&str> {
         self.workspace_root.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(&self) -> ::std::option::Option<i32> {
         self.max_results
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
@@ -41,13 +44,17 @@ impl ::std::fmt::Debug for ListWorkspaceMetadataInput {
     }
 }
 impl ListWorkspaceMetadataInput {
-    /// Creates a new builder-style object to manufacture [`ListWorkspaceMetadataInput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`ListWorkspaceMetadataInput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput).
+    ///
     pub fn builder() -> crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataInputBuilder {
         crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataInputBuilder::default()
     }
 }
 
-/// A builder for [`ListWorkspaceMetadataInput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput).
+/// A builder for
+/// [`ListWorkspaceMetadataInput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct ListWorkspaceMetadataInputBuilder {
@@ -62,62 +69,78 @@ impl ListWorkspaceMetadataInputBuilder {
         self.workspace_root = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_workspace_root(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.workspace_root = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_workspace_root(&self) -> &::std::option::Option<::std::string::String> {
         &self.workspace_root
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(mut self, input: i32) -> Self {
         self.max_results = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_max_results(mut self, input: ::std::option::Option<i32>) -> Self {
         self.max_results = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         &self.max_results
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-    /// Consumes the builder and constructs a [`ListWorkspaceMetadataInput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput).
+
+    /// Consumes the builder and constructs a
+    /// [`ListWorkspaceMetadataInput`](crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput).
+    ///
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput, ::aws_smithy_types::error::operation::BuildError>
-    {
+    ) -> ::std::result::Result<
+        crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::list_workspace_metadata::ListWorkspaceMetadataInput {
             workspace_root: self.workspace_root,
             next_token: self.next_token,

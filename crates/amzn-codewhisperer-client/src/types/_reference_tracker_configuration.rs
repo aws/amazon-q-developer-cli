@@ -13,7 +13,8 @@ impl ReferenceTrackerConfiguration {
     }
 }
 impl ReferenceTrackerConfiguration {
-    /// Creates a new builder-style object to manufacture [`ReferenceTrackerConfiguration`](crate::types::ReferenceTrackerConfiguration).
+    /// Creates a new builder-style object to manufacture
+    /// [`ReferenceTrackerConfiguration`](crate::types::ReferenceTrackerConfiguration).
     pub fn builder() -> crate::types::builders::ReferenceTrackerConfigurationBuilder {
         crate::types::builders::ReferenceTrackerConfigurationBuilder::default()
     }
@@ -23,15 +24,20 @@ impl ReferenceTrackerConfiguration {
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ReferenceTrackerConfigurationBuilder {
-    pub(crate) recommendations_with_references: ::std::option::Option<crate::types::RecommendationsWithReferencesPreference>,
+    pub(crate) recommendations_with_references:
+        ::std::option::Option<crate::types::RecommendationsWithReferencesPreference>,
 }
 impl ReferenceTrackerConfigurationBuilder {
     /// Recommendations with references setting for CodeWhisperer
     /// This field is required.
-    pub fn recommendations_with_references(mut self, input: crate::types::RecommendationsWithReferencesPreference) -> Self {
+    pub fn recommendations_with_references(
+        mut self,
+        input: crate::types::RecommendationsWithReferencesPreference,
+    ) -> Self {
         self.recommendations_with_references = ::std::option::Option::Some(input);
         self
     }
+
     /// Recommendations with references setting for CodeWhisperer
     pub fn set_recommendations_with_references(
         mut self,
@@ -40,14 +46,24 @@ impl ReferenceTrackerConfigurationBuilder {
         self.recommendations_with_references = input;
         self
     }
+
     /// Recommendations with references setting for CodeWhisperer
-    pub fn get_recommendations_with_references(&self) -> &::std::option::Option<crate::types::RecommendationsWithReferencesPreference> {
+    pub fn get_recommendations_with_references(
+        &self,
+    ) -> &::std::option::Option<crate::types::RecommendationsWithReferencesPreference> {
         &self.recommendations_with_references
     }
-    /// Consumes the builder and constructs a [`ReferenceTrackerConfiguration`](crate::types::ReferenceTrackerConfiguration).
+
+    /// Consumes the builder and constructs a
+    /// [`ReferenceTrackerConfiguration`](crate::types::ReferenceTrackerConfiguration).
     /// This method will fail if any of the following fields are not set:
     /// - [`recommendations_with_references`](crate::types::builders::ReferenceTrackerConfigurationBuilder::recommendations_with_references)
-    pub fn build(self) -> ::std::result::Result<crate::types::ReferenceTrackerConfiguration, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::ReferenceTrackerConfiguration,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::ReferenceTrackerConfiguration {
             recommendations_with_references: self.recommendations_with_references.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

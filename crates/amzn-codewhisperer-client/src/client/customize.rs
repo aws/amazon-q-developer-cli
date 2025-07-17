@@ -35,21 +35,30 @@ impl<T, E, B> CustomizableOperation<T, E, B> {
         f(self.customizable_send, config_override)
     }
 
-    /// Adds an [interceptor](::aws_smithy_runtime_api::client::interceptors::Intercept) that runs at specific stages of the request execution pipeline.
+    /// Adds an [interceptor](::aws_smithy_runtime_api::client::interceptors::Intercept) that runs
+    /// at specific stages of the request execution pipeline.
     ///
     /// Note that interceptors can also be added to `CustomizableOperation` by `config_override`,
-    /// `map_request`, and `mutate_request` (the last two are implemented via interceptors under the hood).
-    /// The order in which those user-specified operation interceptors are invoked should not be relied upon
-    /// as it is an implementation detail.
-    pub fn interceptor(mut self, interceptor: impl ::aws_smithy_runtime_api::client::interceptors::Intercept + 'static) -> Self {
+    /// `map_request`, and `mutate_request` (the last two are implemented via interceptors under the
+    /// hood). The order in which those user-specified operation interceptors are invoked should
+    /// not be relied upon as it is an implementation detail.
+    pub fn interceptor(
+        mut self,
+        interceptor: impl ::aws_smithy_runtime_api::client::interceptors::Intercept + 'static,
+    ) -> Self {
         self.interceptors
-            .push(::aws_smithy_runtime_api::client::interceptors::SharedInterceptor::new(interceptor));
+            .push(::aws_smithy_runtime_api::client::interceptors::SharedInterceptor::new(
+                interceptor,
+            ));
         self
     }
 
     /// Adds a runtime plugin.
     #[allow(unused)]
-    pub(crate) fn runtime_plugin(mut self, runtime_plugin: impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin + 'static) -> Self {
+    pub(crate) fn runtime_plugin(
+        mut self,
+        runtime_plugin: impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin + 'static,
+    ) -> Self {
         self.runtime_plugins
             .push(::aws_smithy_runtime_api::client::runtime_plugin::SharedRuntimePlugin::new(runtime_plugin));
         self
@@ -60,7 +69,8 @@ impl<T, E, B> CustomizableOperation<T, E, B> {
     where
         F: ::std::ops::Fn(
                 ::aws_smithy_runtime_api::client::orchestrator::HttpRequest,
-            ) -> ::std::result::Result<::aws_smithy_runtime_api::client::orchestrator::HttpRequest, MapE>
+            )
+                -> ::std::result::Result<::aws_smithy_runtime_api::client::orchestrator::HttpRequest, MapE>
             + ::std::marker::Send
             + ::std::marker::Sync
             + 'static,
@@ -76,7 +86,10 @@ impl<T, E, B> CustomizableOperation<T, E, B> {
     /// Convenience for `map_request` where infallible direct mutation of request is acceptable.
     pub fn mutate_request<F>(mut self, f: F) -> Self
     where
-        F: ::std::ops::Fn(&mut ::aws_smithy_runtime_api::client::orchestrator::HttpRequest) + ::std::marker::Send + ::std::marker::Sync + 'static,
+        F: ::std::ops::Fn(&mut ::aws_smithy_runtime_api::client::orchestrator::HttpRequest)
+            + ::std::marker::Send
+            + ::std::marker::Sync
+            + 'static,
     {
         self.interceptors
             .push(::aws_smithy_runtime_api::client::interceptors::SharedInterceptor::new(

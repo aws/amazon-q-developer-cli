@@ -13,7 +13,8 @@ impl TransformationPlatformConfig {
     }
 }
 impl TransformationPlatformConfig {
-    /// Creates a new builder-style object to manufacture [`TransformationPlatformConfig`](crate::types::TransformationPlatformConfig).
+    /// Creates a new builder-style object to manufacture
+    /// [`TransformationPlatformConfig`](crate::types::TransformationPlatformConfig).
     pub fn builder() -> crate::types::builders::TransformationPlatformConfigBuilder {
         crate::types::builders::TransformationPlatformConfigBuilder::default()
     }
@@ -31,16 +32,25 @@ impl TransformationPlatformConfigBuilder {
         self.operating_system_family = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_operating_system_family(mut self, input: ::std::option::Option<crate::types::TransformationOperatingSystemFamily>) -> Self {
+    pub fn set_operating_system_family(
+        mut self,
+        input: ::std::option::Option<crate::types::TransformationOperatingSystemFamily>,
+    ) -> Self {
         self.operating_system_family = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_operating_system_family(&self) -> &::std::option::Option<crate::types::TransformationOperatingSystemFamily> {
+    pub fn get_operating_system_family(
+        &self,
+    ) -> &::std::option::Option<crate::types::TransformationOperatingSystemFamily> {
         &self.operating_system_family
     }
-    /// Consumes the builder and constructs a [`TransformationPlatformConfig`](crate::types::TransformationPlatformConfig).
+
+    /// Consumes the builder and constructs a
+    /// [`TransformationPlatformConfig`](crate::types::TransformationPlatformConfig).
     pub fn build(self) -> crate::types::TransformationPlatformConfig {
         crate::types::TransformationPlatformConfig {
             operating_system_family: self.operating_system_family,

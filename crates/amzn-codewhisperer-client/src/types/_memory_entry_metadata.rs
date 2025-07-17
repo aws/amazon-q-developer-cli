@@ -7,7 +7,9 @@ pub struct MemoryEntryMetadata {
     /// Enum to represent the origin application conversing with Sidekick.
     pub origin: crate::types::Origin,
     /// Attributes is a map of key-value pairs
-    pub attributes: ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>>,
+    pub attributes: ::std::option::Option<
+        ::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>,
+    >,
     #[allow(missing_docs)] // documentation missing in model
     pub created_at: ::aws_smithy_types::DateTime,
     #[allow(missing_docs)] // documentation missing in model
@@ -20,25 +22,34 @@ impl MemoryEntryMetadata {
     pub fn origin(&self) -> &crate::types::Origin {
         &self.origin
     }
+
     /// Attributes is a map of key-value pairs
-    pub fn attributes(&self) -> ::std::option::Option<&::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>> {
+    pub fn attributes(
+        &self,
+    ) -> ::std::option::Option<
+        &::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>,
+    > {
         self.attributes.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn created_at(&self) -> &::aws_smithy_types::DateTime {
         &self.created_at
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn updated_at(&self) -> &::aws_smithy_types::DateTime {
         &self.updated_at
     }
+
     /// Status of user memory
     pub fn memory_status(&self) -> ::std::option::Option<&crate::types::MemoryStatus> {
         self.memory_status.as_ref()
     }
 }
 impl MemoryEntryMetadata {
-    /// Creates a new builder-style object to manufacture [`MemoryEntryMetadata`](crate::types::MemoryEntryMetadata).
+    /// Creates a new builder-style object to manufacture
+    /// [`MemoryEntryMetadata`](crate::types::MemoryEntryMetadata).
     pub fn builder() -> crate::types::builders::MemoryEntryMetadataBuilder {
         crate::types::builders::MemoryEntryMetadataBuilder::default()
     }
@@ -49,7 +60,9 @@ impl MemoryEntryMetadata {
 #[non_exhaustive]
 pub struct MemoryEntryMetadataBuilder {
     pub(crate) origin: ::std::option::Option<crate::types::Origin>,
-    pub(crate) attributes: ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>>,
+    pub(crate) attributes: ::std::option::Option<
+        ::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>,
+    >,
     pub(crate) created_at: ::std::option::Option<::aws_smithy_types::DateTime>,
     pub(crate) updated_at: ::std::option::Option<::aws_smithy_types::DateTime>,
     pub(crate) memory_status: ::std::option::Option<crate::types::MemoryStatus>,
@@ -61,90 +74,117 @@ impl MemoryEntryMetadataBuilder {
         self.origin = ::std::option::Option::Some(input);
         self
     }
+
     /// Enum to represent the origin application conversing with Sidekick.
     pub fn set_origin(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
         self.origin = input;
         self
     }
+
     /// Enum to represent the origin application conversing with Sidekick.
     pub fn get_origin(&self) -> &::std::option::Option<crate::types::Origin> {
         &self.origin
     }
+
     /// Adds a key-value pair to `attributes`.
     ///
     /// To override the contents of this collection use [`set_attributes`](Self::set_attributes).
     ///
     /// Attributes is a map of key-value pairs
-    pub fn attributes(mut self, k: impl ::std::convert::Into<::std::string::String>, v: ::std::vec::Vec<::std::string::String>) -> Self {
+    pub fn attributes(
+        mut self,
+        k: impl ::std::convert::Into<::std::string::String>,
+        v: ::std::vec::Vec<::std::string::String>,
+    ) -> Self {
         let mut hash_map = self.attributes.unwrap_or_default();
         hash_map.insert(k.into(), v);
         self.attributes = ::std::option::Option::Some(hash_map);
         self
     }
+
     /// Attributes is a map of key-value pairs
     pub fn set_attributes(
         mut self,
-        input: ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>>,
+        input: ::std::option::Option<
+            ::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>,
+        >,
     ) -> Self {
         self.attributes = input;
         self
     }
+
     /// Attributes is a map of key-value pairs
     pub fn get_attributes(
         &self,
-    ) -> &::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>> {
+    ) -> &::std::option::Option<
+        ::std::collections::HashMap<::std::string::String, ::std::vec::Vec<::std::string::String>>,
+    > {
         &self.attributes
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn created_at(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.created_at = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_created_at(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.created_at = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_created_at(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.created_at
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn updated_at(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.updated_at = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_updated_at(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.updated_at = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_updated_at(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.updated_at
     }
+
     /// Status of user memory
     pub fn memory_status(mut self, input: crate::types::MemoryStatus) -> Self {
         self.memory_status = ::std::option::Option::Some(input);
         self
     }
+
     /// Status of user memory
     pub fn set_memory_status(mut self, input: ::std::option::Option<crate::types::MemoryStatus>) -> Self {
         self.memory_status = input;
         self
     }
+
     /// Status of user memory
     pub fn get_memory_status(&self) -> &::std::option::Option<crate::types::MemoryStatus> {
         &self.memory_status
     }
-    /// Consumes the builder and constructs a [`MemoryEntryMetadata`](crate::types::MemoryEntryMetadata).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`MemoryEntryMetadata`](crate::types::MemoryEntryMetadata). This method will fail if any
+    /// of the following fields are not set:
     /// - [`origin`](crate::types::builders::MemoryEntryMetadataBuilder::origin)
     /// - [`created_at`](crate::types::builders::MemoryEntryMetadataBuilder::created_at)
     /// - [`updated_at`](crate::types::builders::MemoryEntryMetadataBuilder::updated_at)
-    pub fn build(self) -> ::std::result::Result<crate::types::MemoryEntryMetadata, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::MemoryEntryMetadata, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::MemoryEntryMetadata {
             origin: self.origin.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

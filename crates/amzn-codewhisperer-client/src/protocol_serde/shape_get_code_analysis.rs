@@ -4,15 +4,23 @@ pub fn de_get_code_analysis_http_error(
     _response_status: u16,
     _response_headers: &::aws_smithy_runtime_api::http::Headers,
     _response_body: &[u8],
-) -> std::result::Result<crate::operation::get_code_analysis::GetCodeAnalysisOutput, crate::operation::get_code_analysis::GetCodeAnalysisError> {
+) -> std::result::Result<
+    crate::operation::get_code_analysis::GetCodeAnalysisOutput,
+    crate::operation::get_code_analysis::GetCodeAnalysisError,
+> {
     #[allow(unused_mut)]
-    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-        .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
+    let mut generic_builder =
+        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+            .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
         Some(code) => code,
-        None => return Err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled(generic)),
+        None => {
+            return Err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled(
+                generic,
+            ));
+        },
     };
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
@@ -22,8 +30,11 @@ pub fn de_get_code_analysis_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_exception_correct_errors(output)
                     .build()
@@ -36,8 +47,11 @@ pub fn de_get_code_analysis_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
@@ -45,27 +59,32 @@ pub fn de_get_code_analysis_http_error(
             };
             tmp
         }),
-        "ResourceNotFoundException" => crate::operation::get_code_analysis::GetCodeAnalysisError::ResourceNotFoundError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+        "ResourceNotFoundException" => {
+            crate::operation::get_code_analysis::GetCodeAnalysisError::ResourceNotFoundError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
                     .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::resource_not_found_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?
-            };
-            tmp
-        }),
+                    let output = output.meta(generic);
+                    crate::serde_util::resource_not_found_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?
+                };
+                tmp
+            })
+        },
         "ThrottlingException" => crate::operation::get_code_analysis::GetCodeAnalysisError::ThrottlingError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
@@ -78,8 +97,11 @@ pub fn de_get_code_analysis_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::get_code_analysis::GetCodeAnalysisError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::internal_server_exception_correct_errors(output)
                     .build()
@@ -96,7 +118,10 @@ pub fn de_get_code_analysis_http_response(
     _response_status: u16,
     _response_headers: &::aws_smithy_runtime_api::http::Headers,
     _response_body: &[u8],
-) -> std::result::Result<crate::operation::get_code_analysis::GetCodeAnalysisOutput, crate::operation::get_code_analysis::GetCodeAnalysisError> {
+) -> std::result::Result<
+    crate::operation::get_code_analysis::GetCodeAnalysisOutput,
+    crate::operation::get_code_analysis::GetCodeAnalysisError,
+> {
     Ok({
         #[allow(unused_mut)]
         let mut output = crate::operation::get_code_analysis::builders::GetCodeAnalysisOutputBuilder::default();
@@ -111,7 +136,8 @@ pub fn de_get_code_analysis_http_response(
 
 pub fn ser_get_code_analysis_input(
     input: &crate::operation::get_code_analysis::GetCodeAnalysisInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_get_code_analysis_input::ser_get_code_analysis_input_input(&mut object, input)?;
@@ -126,7 +152,8 @@ pub(crate) fn de_get_code_analysis(
     crate::operation::get_code_analysis::builders::GetCodeAnalysisOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned =
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -136,25 +163,27 @@ pub(crate) fn de_get_code_analysis(
                 "status" => {
                     builder = builder.set_status(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                            .map(|s| s.to_unescaped().map(|u| crate::types::CodeAnalysisStatus::from(u.as_ref())))
+                            .map(|s| {
+                                s.to_unescaped()
+                                    .map(|u| crate::types::CodeAnalysisStatus::from(u.as_ref()))
+                            })
                             .transpose()?,
                     );
-                }
+                },
                 "errorMessage" => {
                     builder = builder.set_error_message(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
                             .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                             .transpose()?,
                     );
-                }
+                },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
-                    "expected object key or end object, found: {:?}",
-                    other
-                )))
-            }
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                    format!("expected object key or end object, found: {:?}", other),
+                ));
+            },
         }
     }
     if tokens.next().is_some() {

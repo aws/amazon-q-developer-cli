@@ -17,11 +17,13 @@ impl MemoryEntry {
         use std::ops::Deref;
         self.id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn memory_entry_string(&self) -> &str {
         use std::ops::Deref;
         self.memory_entry_string.deref()
     }
+
     /// Metadata for a single memory entry
     pub fn metadata(&self) -> &crate::types::MemoryEntryMetadata {
         &self.metadata
@@ -37,7 +39,8 @@ impl ::std::fmt::Debug for MemoryEntry {
     }
 }
 impl MemoryEntry {
-    /// Creates a new builder-style object to manufacture [`MemoryEntry`](crate::types::MemoryEntry).
+    /// Creates a new builder-style object to manufacture
+    /// [`MemoryEntry`](crate::types::MemoryEntry).
     pub fn builder() -> crate::types::builders::MemoryEntryBuilder {
         crate::types::builders::MemoryEntryBuilder::default()
     }
@@ -58,51 +61,62 @@ impl MemoryEntryBuilder {
         self.id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// A unique identifier for a single memory entry
     pub fn set_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.id = input;
         self
     }
+
     /// A unique identifier for a single memory entry
     pub fn get_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn memory_entry_string(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.memory_entry_string = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_memory_entry_string(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.memory_entry_string = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_memory_entry_string(&self) -> &::std::option::Option<::std::string::String> {
         &self.memory_entry_string
     }
+
     /// Metadata for a single memory entry
     /// This field is required.
     pub fn metadata(mut self, input: crate::types::MemoryEntryMetadata) -> Self {
         self.metadata = ::std::option::Option::Some(input);
         self
     }
+
     /// Metadata for a single memory entry
     pub fn set_metadata(mut self, input: ::std::option::Option<crate::types::MemoryEntryMetadata>) -> Self {
         self.metadata = input;
         self
     }
+
     /// Metadata for a single memory entry
     pub fn get_metadata(&self) -> &::std::option::Option<crate::types::MemoryEntryMetadata> {
         &self.metadata
     }
+
     /// Consumes the builder and constructs a [`MemoryEntry`](crate::types::MemoryEntry).
     /// This method will fail if any of the following fields are not set:
     /// - [`id`](crate::types::builders::MemoryEntryBuilder::id)
     /// - [`memory_entry_string`](crate::types::builders::MemoryEntryBuilder::memory_entry_string)
     /// - [`metadata`](crate::types::builders::MemoryEntryBuilder::metadata)
-    pub fn build(self) -> ::std::result::Result<crate::types::MemoryEntry, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::MemoryEntry, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::MemoryEntry {
             id: self.id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

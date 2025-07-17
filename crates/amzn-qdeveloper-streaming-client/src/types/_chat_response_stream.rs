@@ -30,18 +30,21 @@ pub enum ChatResponseStream {
     ToolResultEvent(crate::types::ToolResultEvent),
     /// ToolUse event
     ToolUseEvent(crate::types::ToolUseEvent),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
-    /// An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider
+    /// upgrading the SDK to the latest available version. An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
-    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has
+    /// not been updated. To investigate this, consider turning on debug logging to print the
+    /// raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl ChatResponseStream {
-    /// Tries to convert the enum instance into [`AssistantResponseEvent`](crate::types::ChatResponseStream::AssistantResponseEvent), extracting the inner [`AssistantResponseEvent`](crate::types::AssistantResponseEvent).
+    /// Tries to convert the enum instance into
+    /// [`AssistantResponseEvent`](crate::types::ChatResponseStream::AssistantResponseEvent),
+    /// extracting the inner [`AssistantResponseEvent`](crate::types::AssistantResponseEvent).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_assistant_response_event(&self) -> ::std::result::Result<&crate::types::AssistantResponseEvent, &Self> {
         if let ChatResponseStream::AssistantResponseEvent(val) = &self {
@@ -50,12 +53,17 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`AssistantResponseEvent`](crate::types::ChatResponseStream::AssistantResponseEvent).
+
+    /// Returns true if this is a
+    /// [`AssistantResponseEvent`](crate::types::ChatResponseStream::AssistantResponseEvent).
     pub fn is_assistant_response_event(&self) -> bool {
         self.as_assistant_response_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`CitationEvent`](crate::types::ChatResponseStream::CitationEvent), extracting the inner [`CitationEvent`](crate::types::CitationEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`CitationEvent`](crate::types::ChatResponseStream::CitationEvent), extracting the inner
+    /// [`CitationEvent`](crate::types::CitationEvent). Returns `Err(&Self)` if it can't be
+    /// converted.
     pub fn as_citation_event(&self) -> ::std::result::Result<&crate::types::CitationEvent, &Self> {
         if let ChatResponseStream::CitationEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -63,12 +71,16 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`CitationEvent`](crate::types::ChatResponseStream::CitationEvent).
+
+    /// Returns true if this is a
+    /// [`CitationEvent`](crate::types::ChatResponseStream::CitationEvent).
     pub fn is_citation_event(&self) -> bool {
         self.as_citation_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`CodeEvent`](crate::types::ChatResponseStream::CodeEvent), extracting the inner [`CodeEvent`](crate::types::CodeEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`CodeEvent`](crate::types::ChatResponseStream::CodeEvent), extracting the inner
+    /// [`CodeEvent`](crate::types::CodeEvent). Returns `Err(&Self)` if it can't be converted.
     pub fn as_code_event(&self) -> ::std::result::Result<&crate::types::CodeEvent, &Self> {
         if let ChatResponseStream::CodeEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -76,12 +88,16 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
+
     /// Returns true if this is a [`CodeEvent`](crate::types::ChatResponseStream::CodeEvent).
     pub fn is_code_event(&self) -> bool {
         self.as_code_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`CodeReferenceEvent`](crate::types::ChatResponseStream::CodeReferenceEvent), extracting the inner [`CodeReferenceEvent`](crate::types::CodeReferenceEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`CodeReferenceEvent`](crate::types::ChatResponseStream::CodeReferenceEvent), extracting the
+    /// inner [`CodeReferenceEvent`](crate::types::CodeReferenceEvent). Returns `Err(&Self)` if
+    /// it can't be converted.
     pub fn as_code_reference_event(&self) -> ::std::result::Result<&crate::types::CodeReferenceEvent, &Self> {
         if let ChatResponseStream::CodeReferenceEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -89,12 +105,17 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`CodeReferenceEvent`](crate::types::ChatResponseStream::CodeReferenceEvent).
+
+    /// Returns true if this is a
+    /// [`CodeReferenceEvent`](crate::types::ChatResponseStream::CodeReferenceEvent).
     pub fn is_code_reference_event(&self) -> bool {
         self.as_code_reference_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`DryRunSucceedEvent`](crate::types::ChatResponseStream::DryRunSucceedEvent), extracting the inner [`DryRunSucceedEvent`](crate::types::DryRunSucceedEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`DryRunSucceedEvent`](crate::types::ChatResponseStream::DryRunSucceedEvent), extracting the
+    /// inner [`DryRunSucceedEvent`](crate::types::DryRunSucceedEvent). Returns `Err(&Self)` if
+    /// it can't be converted.
     pub fn as_dry_run_succeed_event(&self) -> ::std::result::Result<&crate::types::DryRunSucceedEvent, &Self> {
         if let ChatResponseStream::DryRunSucceedEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -102,12 +123,17 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`DryRunSucceedEvent`](crate::types::ChatResponseStream::DryRunSucceedEvent).
+
+    /// Returns true if this is a
+    /// [`DryRunSucceedEvent`](crate::types::ChatResponseStream::DryRunSucceedEvent).
     pub fn is_dry_run_succeed_event(&self) -> bool {
         self.as_dry_run_succeed_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`FollowupPromptEvent`](crate::types::ChatResponseStream::FollowupPromptEvent), extracting the inner [`FollowupPromptEvent`](crate::types::FollowupPromptEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`FollowupPromptEvent`](crate::types::ChatResponseStream::FollowupPromptEvent), extracting
+    /// the inner [`FollowupPromptEvent`](crate::types::FollowupPromptEvent). Returns `Err(&
+    /// Self)` if it can't be converted.
     pub fn as_followup_prompt_event(&self) -> ::std::result::Result<&crate::types::FollowupPromptEvent, &Self> {
         if let ChatResponseStream::FollowupPromptEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -115,12 +141,17 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`FollowupPromptEvent`](crate::types::ChatResponseStream::FollowupPromptEvent).
+
+    /// Returns true if this is a
+    /// [`FollowupPromptEvent`](crate::types::ChatResponseStream::FollowupPromptEvent).
     pub fn is_followup_prompt_event(&self) -> bool {
         self.as_followup_prompt_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`IntentsEvent`](crate::types::ChatResponseStream::IntentsEvent), extracting the inner [`IntentsEvent`](crate::types::IntentsEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`IntentsEvent`](crate::types::ChatResponseStream::IntentsEvent), extracting the inner
+    /// [`IntentsEvent`](crate::types::IntentsEvent). Returns `Err(&Self)` if it can't be
+    /// converted.
     pub fn as_intents_event(&self) -> ::std::result::Result<&crate::types::IntentsEvent, &Self> {
         if let ChatResponseStream::IntentsEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -128,25 +159,38 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
+
     /// Returns true if this is a [`IntentsEvent`](crate::types::ChatResponseStream::IntentsEvent).
     pub fn is_intents_event(&self) -> bool {
         self.as_intents_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`InteractionComponentsEvent`](crate::types::ChatResponseStream::InteractionComponentsEvent), extracting the inner [`InteractionComponentsEvent`](crate::types::InteractionComponentsEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
-    pub fn as_interaction_components_event(&self) -> ::std::result::Result<&crate::types::InteractionComponentsEvent, &Self> {
+
+    /// Tries to convert the enum instance into
+    /// [`InteractionComponentsEvent`](crate::types::ChatResponseStream::InteractionComponentsEvent),
+    /// extracting the inner
+    /// [`InteractionComponentsEvent`](crate::types::InteractionComponentsEvent). Returns `Err(&
+    /// Self)` if it can't be converted.
+    pub fn as_interaction_components_event(
+        &self,
+    ) -> ::std::result::Result<&crate::types::InteractionComponentsEvent, &Self> {
         if let ChatResponseStream::InteractionComponentsEvent(val) = &self {
             ::std::result::Result::Ok(val)
         } else {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`InteractionComponentsEvent`](crate::types::ChatResponseStream::InteractionComponentsEvent).
+
+    /// Returns true if this is a
+    /// [`InteractionComponentsEvent`](crate::types::ChatResponseStream::InteractionComponentsEvent).
+    ///
     pub fn is_interaction_components_event(&self) -> bool {
         self.as_interaction_components_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`InvalidStateEvent`](crate::types::ChatResponseStream::InvalidStateEvent), extracting the inner [`InvalidStateEvent`](crate::types::InvalidStateEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`InvalidStateEvent`](crate::types::ChatResponseStream::InvalidStateEvent), extracting the
+    /// inner [`InvalidStateEvent`](crate::types::InvalidStateEvent). Returns `Err(&Self)` if it
+    /// can't be converted.
     pub fn as_invalid_state_event(&self) -> ::std::result::Result<&crate::types::InvalidStateEvent, &Self> {
         if let ChatResponseStream::InvalidStateEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -154,12 +198,17 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`InvalidStateEvent`](crate::types::ChatResponseStream::InvalidStateEvent).
+
+    /// Returns true if this is a
+    /// [`InvalidStateEvent`](crate::types::ChatResponseStream::InvalidStateEvent).
     pub fn is_invalid_state_event(&self) -> bool {
         self.as_invalid_state_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`MessageMetadataEvent`](crate::types::ChatResponseStream::MessageMetadataEvent), extracting the inner [`MessageMetadataEvent`](crate::types::MessageMetadataEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`MessageMetadataEvent`](crate::types::ChatResponseStream::MessageMetadataEvent), extracting
+    /// the inner [`MessageMetadataEvent`](crate::types::MessageMetadataEvent). Returns `Err(&
+    /// Self)` if it can't be converted.
     pub fn as_message_metadata_event(&self) -> ::std::result::Result<&crate::types::MessageMetadataEvent, &Self> {
         if let ChatResponseStream::MessageMetadataEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -167,25 +216,39 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`MessageMetadataEvent`](crate::types::ChatResponseStream::MessageMetadataEvent).
+
+    /// Returns true if this is a
+    /// [`MessageMetadataEvent`](crate::types::ChatResponseStream::MessageMetadataEvent).
     pub fn is_message_metadata_event(&self) -> bool {
         self.as_message_metadata_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`SupplementaryWebLinksEvent`](crate::types::ChatResponseStream::SupplementaryWebLinksEvent), extracting the inner [`SupplementaryWebLinksEvent`](crate::types::SupplementaryWebLinksEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
-    pub fn as_supplementary_web_links_event(&self) -> ::std::result::Result<&crate::types::SupplementaryWebLinksEvent, &Self> {
+
+    /// Tries to convert the enum instance into
+    /// [`SupplementaryWebLinksEvent`](crate::types::ChatResponseStream::SupplementaryWebLinksEvent),
+    /// extracting the inner
+    /// [`SupplementaryWebLinksEvent`](crate::types::SupplementaryWebLinksEvent). Returns `Err(&
+    /// Self)` if it can't be converted.
+    pub fn as_supplementary_web_links_event(
+        &self,
+    ) -> ::std::result::Result<&crate::types::SupplementaryWebLinksEvent, &Self> {
         if let ChatResponseStream::SupplementaryWebLinksEvent(val) = &self {
             ::std::result::Result::Ok(val)
         } else {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`SupplementaryWebLinksEvent`](crate::types::ChatResponseStream::SupplementaryWebLinksEvent).
+
+    /// Returns true if this is a
+    /// [`SupplementaryWebLinksEvent`](crate::types::ChatResponseStream::SupplementaryWebLinksEvent).
+    ///
     pub fn is_supplementary_web_links_event(&self) -> bool {
         self.as_supplementary_web_links_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`ToolResultEvent`](crate::types::ChatResponseStream::ToolResultEvent), extracting the inner [`ToolResultEvent`](crate::types::ToolResultEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`ToolResultEvent`](crate::types::ChatResponseStream::ToolResultEvent), extracting the inner
+    /// [`ToolResultEvent`](crate::types::ToolResultEvent). Returns `Err(&Self)` if it can't be
+    /// converted.
     pub fn as_tool_result_event(&self) -> ::std::result::Result<&crate::types::ToolResultEvent, &Self> {
         if let ChatResponseStream::ToolResultEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -193,12 +256,17 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`ToolResultEvent`](crate::types::ChatResponseStream::ToolResultEvent).
+
+    /// Returns true if this is a
+    /// [`ToolResultEvent`](crate::types::ChatResponseStream::ToolResultEvent).
     pub fn is_tool_result_event(&self) -> bool {
         self.as_tool_result_event().is_ok()
     }
-    /// Tries to convert the enum instance into [`ToolUseEvent`](crate::types::ChatResponseStream::ToolUseEvent), extracting the inner [`ToolUseEvent`](crate::types::ToolUseEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`ToolUseEvent`](crate::types::ChatResponseStream::ToolUseEvent), extracting the inner
+    /// [`ToolUseEvent`](crate::types::ToolUseEvent). Returns `Err(&Self)` if it can't be
+    /// converted.
     pub fn as_tool_use_event(&self) -> ::std::result::Result<&crate::types::ToolUseEvent, &Self> {
         if let ChatResponseStream::ToolUseEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -206,10 +274,12 @@ impl ChatResponseStream {
             ::std::result::Result::Err(self)
         }
     }
+
     /// Returns true if this is a [`ToolUseEvent`](crate::types::ChatResponseStream::ToolUseEvent).
     pub fn is_tool_use_event(&self) -> bool {
         self.as_tool_use_event().is_ok()
     }
+
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

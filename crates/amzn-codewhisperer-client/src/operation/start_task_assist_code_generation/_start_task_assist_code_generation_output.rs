@@ -16,6 +16,7 @@ impl StartTaskAssistCodeGenerationOutput {
         use std::ops::Deref;
         self.conversation_id.deref()
     }
+
     /// ID which represents a single code generation in a conversation
     pub fn code_generation_id(&self) -> &str {
         use std::ops::Deref;
@@ -28,13 +29,18 @@ impl ::aws_types::request_id::RequestId for StartTaskAssistCodeGenerationOutput 
     }
 }
 impl StartTaskAssistCodeGenerationOutput {
-    /// Creates a new builder-style object to manufacture [`StartTaskAssistCodeGenerationOutput`](crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationOutput).
-    pub fn builder() -> crate::operation::start_task_assist_code_generation::builders::StartTaskAssistCodeGenerationOutputBuilder {
+    /// Creates a new builder-style object to manufacture
+    /// [`StartTaskAssistCodeGenerationOutput`](crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationOutput).
+    ///
+    pub fn builder()
+    -> crate::operation::start_task_assist_code_generation::builders::StartTaskAssistCodeGenerationOutputBuilder {
         crate::operation::start_task_assist_code_generation::builders::StartTaskAssistCodeGenerationOutputBuilder::default()
     }
 }
 
-/// A builder for [`StartTaskAssistCodeGenerationOutput`](crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationOutput).
+/// A builder for
+/// [`StartTaskAssistCodeGenerationOutput`](crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct StartTaskAssistCodeGenerationOutputBuilder {
@@ -49,30 +55,36 @@ impl StartTaskAssistCodeGenerationOutputBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
+
     /// ID which represents a single code generation in a conversation
     /// This field is required.
     pub fn code_generation_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.code_generation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a single code generation in a conversation
     pub fn set_code_generation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.code_generation_id = input;
         self
     }
+
     /// ID which represents a single code generation in a conversation
     pub fn get_code_generation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.code_generation_id
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -82,7 +94,9 @@ impl StartTaskAssistCodeGenerationOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`StartTaskAssistCodeGenerationOutput`](crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`StartTaskAssistCodeGenerationOutput`](crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`conversation_id`](crate::operation::start_task_assist_code_generation::builders::StartTaskAssistCodeGenerationOutputBuilder::conversation_id)
     /// - [`code_generation_id`](crate::operation::start_task_assist_code_generation::builders::StartTaskAssistCodeGenerationOutputBuilder::code_generation_id)

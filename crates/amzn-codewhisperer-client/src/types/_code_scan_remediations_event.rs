@@ -29,45 +29,57 @@ impl CodeScanRemediationsEvent {
     pub fn programming_language(&self) -> ::std::option::Option<&crate::types::ProgrammingLanguage> {
         self.programming_language.as_ref()
     }
+
     /// Code Scan Remediations Interaction Type
-    pub fn code_scan_remediations_event_type(&self) -> ::std::option::Option<&crate::types::CodeScanRemediationsEventType> {
+    pub fn code_scan_remediations_event_type(
+        &self,
+    ) -> ::std::option::Option<&crate::types::CodeScanRemediationsEventType> {
         self.code_scan_remediations_event_type.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
         self.timestamp.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn detector_id(&self) -> ::std::option::Option<&str> {
         self.detector_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn finding_id(&self) -> ::std::option::Option<&str> {
         self.finding_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn rule_id(&self) -> ::std::option::Option<&str> {
         self.rule_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn component(&self) -> ::std::option::Option<&str> {
         self.component.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn reason(&self) -> ::std::option::Option<&str> {
         self.reason.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn result(&self) -> ::std::option::Option<&str> {
         self.result.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn includes_fix(&self) -> ::std::option::Option<bool> {
         self.includes_fix
     }
 }
 impl CodeScanRemediationsEvent {
-    /// Creates a new builder-style object to manufacture [`CodeScanRemediationsEvent`](crate::types::CodeScanRemediationsEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`CodeScanRemediationsEvent`](crate::types::CodeScanRemediationsEvent).
     pub fn builder() -> crate::types::builders::CodeScanRemediationsEventBuilder {
         crate::types::builders::CodeScanRemediationsEventBuilder::default()
     }
@@ -94,142 +106,178 @@ impl CodeScanRemediationsEventBuilder {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
+
     /// Code Scan Remediations Interaction Type
     pub fn code_scan_remediations_event_type(mut self, input: crate::types::CodeScanRemediationsEventType) -> Self {
         self.code_scan_remediations_event_type = ::std::option::Option::Some(input);
         self
     }
+
     /// Code Scan Remediations Interaction Type
-    pub fn set_code_scan_remediations_event_type(mut self, input: ::std::option::Option<crate::types::CodeScanRemediationsEventType>) -> Self {
+    pub fn set_code_scan_remediations_event_type(
+        mut self,
+        input: ::std::option::Option<crate::types::CodeScanRemediationsEventType>,
+    ) -> Self {
         self.code_scan_remediations_event_type = input;
         self
     }
+
     /// Code Scan Remediations Interaction Type
-    pub fn get_code_scan_remediations_event_type(&self) -> &::std::option::Option<crate::types::CodeScanRemediationsEventType> {
+    pub fn get_code_scan_remediations_event_type(
+        &self,
+    ) -> &::std::option::Option<crate::types::CodeScanRemediationsEventType> {
         &self.code_scan_remediations_event_type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.timestamp = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.timestamp = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.timestamp
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn detector_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.detector_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_detector_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.detector_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_detector_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.detector_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn finding_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.finding_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_finding_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.finding_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_finding_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.finding_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn rule_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.rule_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_rule_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.rule_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_rule_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.rule_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn component(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.component = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_component(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.component = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_component(&self) -> &::std::option::Option<::std::string::String> {
         &self.component
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn reason(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.reason = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_reason(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.reason = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_reason(&self) -> &::std::option::Option<::std::string::String> {
         &self.reason
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn result(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.result = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_result(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.result = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_result(&self) -> &::std::option::Option<::std::string::String> {
         &self.result
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn includes_fix(mut self, input: bool) -> Self {
         self.includes_fix = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_includes_fix(mut self, input: ::std::option::Option<bool>) -> Self {
         self.includes_fix = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_includes_fix(&self) -> &::std::option::Option<bool> {
         &self.includes_fix
     }
-    /// Consumes the builder and constructs a [`CodeScanRemediationsEvent`](crate::types::CodeScanRemediationsEvent).
+
+    /// Consumes the builder and constructs a
+    /// [`CodeScanRemediationsEvent`](crate::types::CodeScanRemediationsEvent).
     pub fn build(self) -> crate::types::CodeScanRemediationsEvent {
         crate::types::CodeScanRemediationsEvent {
             programming_language: self.programming_language,

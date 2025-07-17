@@ -18,23 +18,27 @@ impl ApplicationProperties {
         use std::ops::Deref;
         self.tenant_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn application_arn(&self) -> &str {
         use std::ops::Deref;
         self.application_arn.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn tenant_url(&self) -> &str {
         use std::ops::Deref;
         self.tenant_url.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn application_type(&self) -> &crate::types::FunctionalityName {
         &self.application_type
     }
 }
 impl ApplicationProperties {
-    /// Creates a new builder-style object to manufacture [`ApplicationProperties`](crate::types::ApplicationProperties).
+    /// Creates a new builder-style object to manufacture
+    /// [`ApplicationProperties`](crate::types::ApplicationProperties).
     pub fn builder() -> crate::types::builders::ApplicationPropertiesBuilder {
         crate::types::builders::ApplicationPropertiesBuilder::default()
     }
@@ -56,67 +60,83 @@ impl ApplicationPropertiesBuilder {
         self.tenant_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_tenant_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.tenant_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_tenant_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.tenant_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn application_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.application_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_application_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.application_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_application_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.application_arn
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn tenant_url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.tenant_url = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_tenant_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.tenant_url = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_tenant_url(&self) -> &::std::option::Option<::std::string::String> {
         &self.tenant_url
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn application_type(mut self, input: crate::types::FunctionalityName) -> Self {
         self.application_type = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_application_type(mut self, input: ::std::option::Option<crate::types::FunctionalityName>) -> Self {
         self.application_type = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_application_type(&self) -> &::std::option::Option<crate::types::FunctionalityName> {
         &self.application_type
     }
-    /// Consumes the builder and constructs a [`ApplicationProperties`](crate::types::ApplicationProperties).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`ApplicationProperties`](crate::types::ApplicationProperties). This method will fail if
+    /// any of the following fields are not set:
     /// - [`tenant_id`](crate::types::builders::ApplicationPropertiesBuilder::tenant_id)
     /// - [`application_arn`](crate::types::builders::ApplicationPropertiesBuilder::application_arn)
     /// - [`tenant_url`](crate::types::builders::ApplicationPropertiesBuilder::tenant_url)
     /// - [`application_type`](crate::types::builders::ApplicationPropertiesBuilder::application_type)
-    pub fn build(self) -> ::std::result::Result<crate::types::ApplicationProperties, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::ApplicationProperties, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::ApplicationProperties {
             tenant_id: self.tenant_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

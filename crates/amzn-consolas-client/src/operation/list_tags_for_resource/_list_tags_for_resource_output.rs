@@ -9,8 +9,8 @@ pub struct ListTagsForResourceOutput {
 }
 impl ListTagsForResourceOutput {
     #[allow(missing_docs)] // documentation missing in model
-    ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.tags.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.tags.is_none()`.
     pub fn tags(&self) -> &[crate::types::Tag] {
         self.tags.as_deref().unwrap_or_default()
     }
@@ -21,13 +21,17 @@ impl ::aws_types::request_id::RequestId for ListTagsForResourceOutput {
     }
 }
 impl ListTagsForResourceOutput {
-    /// Creates a new builder-style object to manufacture [`ListTagsForResourceOutput`](crate::operation::list_tags_for_resource::ListTagsForResourceOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`ListTagsForResourceOutput`](crate::operation::list_tags_for_resource::ListTagsForResourceOutput).
+    ///
     pub fn builder() -> crate::operation::list_tags_for_resource::builders::ListTagsForResourceOutputBuilder {
         crate::operation::list_tags_for_resource::builders::ListTagsForResourceOutputBuilder::default()
     }
 }
 
-/// A builder for [`ListTagsForResourceOutput`](crate::operation::list_tags_for_resource::ListTagsForResourceOutput).
+/// A builder for
+/// [`ListTagsForResourceOutput`](crate::operation::list_tags_for_resource::ListTagsForResourceOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListTagsForResourceOutputBuilder {
@@ -38,22 +42,24 @@ impl ListTagsForResourceOutputBuilder {
     /// Appends an item to `tags`.
     ///
     /// To override the contents of this collection use [`set_tags`](Self::set_tags).
-    ///
     pub fn tags(mut self, input: crate::types::Tag) -> Self {
         let mut v = self.tags.unwrap_or_default();
         v.push(input);
         self.tags = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_tags(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Tag>>) -> Self {
         self.tags = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_tags(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Tag>> {
         &self.tags
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -63,7 +69,10 @@ impl ListTagsForResourceOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`ListTagsForResourceOutput`](crate::operation::list_tags_for_resource::ListTagsForResourceOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`ListTagsForResourceOutput`](crate::operation::list_tags_for_resource::ListTagsForResourceOutput).
+    ///
     pub fn build(self) -> crate::operation::list_tags_for_resource::ListTagsForResourceOutput {
         crate::operation::list_tags_for_resource::ListTagsForResourceOutput {
             tags: self.tags,

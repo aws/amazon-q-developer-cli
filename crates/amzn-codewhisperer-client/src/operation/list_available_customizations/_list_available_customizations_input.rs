@@ -15,23 +15,30 @@ impl ListAvailableCustomizationsInput {
     pub fn max_results(&self) -> ::std::option::Option<i32> {
         self.max_results
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
 }
 impl ListAvailableCustomizationsInput {
-    /// Creates a new builder-style object to manufacture [`ListAvailableCustomizationsInput`](crate::operation::list_available_customizations::ListAvailableCustomizationsInput).
-    pub fn builder() -> crate::operation::list_available_customizations::builders::ListAvailableCustomizationsInputBuilder {
+    /// Creates a new builder-style object to manufacture
+    /// [`ListAvailableCustomizationsInput`](crate::operation::list_available_customizations::ListAvailableCustomizationsInput).
+    ///
+    pub fn builder()
+    -> crate::operation::list_available_customizations::builders::ListAvailableCustomizationsInputBuilder {
         crate::operation::list_available_customizations::builders::ListAvailableCustomizationsInputBuilder::default()
     }
 }
 
-/// A builder for [`ListAvailableCustomizationsInput`](crate::operation::list_available_customizations::ListAvailableCustomizationsInput).
+/// A builder for
+/// [`ListAvailableCustomizationsInput`](crate::operation::list_available_customizations::ListAvailableCustomizationsInput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListAvailableCustomizationsInputBuilder {
@@ -45,54 +52,67 @@ impl ListAvailableCustomizationsInputBuilder {
         self.max_results = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_max_results(mut self, input: ::std::option::Option<i32>) -> Self {
         self.max_results = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         &self.max_results
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-    /// Consumes the builder and constructs a [`ListAvailableCustomizationsInput`](crate::operation::list_available_customizations::ListAvailableCustomizationsInput).
+
+    /// Consumes the builder and constructs a
+    /// [`ListAvailableCustomizationsInput`](crate::operation::list_available_customizations::ListAvailableCustomizationsInput).
+    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<
         crate::operation::list_available_customizations::ListAvailableCustomizationsInput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(crate::operation::list_available_customizations::ListAvailableCustomizationsInput {
-            max_results: self.max_results,
-            next_token: self.next_token,
-            profile_arn: self.profile_arn,
-        })
+        ::std::result::Result::Ok(
+            crate::operation::list_available_customizations::ListAvailableCustomizationsInput {
+                max_results: self.max_results,
+                next_token: self.next_token,
+                profile_arn: self.profile_arn,
+            },
+        )
     }
 }

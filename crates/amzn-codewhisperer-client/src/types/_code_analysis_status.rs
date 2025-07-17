@@ -36,11 +36,16 @@
 /// be avoided for two reasons:
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
-///
 #[allow(missing_docs)] // documentation missing in model
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
+    ::std::clone::Clone,
+    ::std::cmp::Eq,
+    ::std::cmp::Ord,
+    ::std::cmp::PartialEq,
+    ::std::cmp::PartialOrd,
+    ::std::fmt::Debug,
+    ::std::hash::Hash,
 )]
 pub enum CodeAnalysisStatus {
     #[allow(missing_docs)] // documentation missing in model
@@ -50,7 +55,9 @@ pub enum CodeAnalysisStatus {
     #[allow(missing_docs)] // documentation missing in model
     Pending,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
+    #[deprecated(
+        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
+    )]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for CodeAnalysisStatus {
@@ -59,7 +66,9 @@ impl ::std::convert::From<&str> for CodeAnalysisStatus {
             "Completed" => CodeAnalysisStatus::Completed,
             "Failed" => CodeAnalysisStatus::Failed,
             "Pending" => CodeAnalysisStatus::Pending,
-            other => CodeAnalysisStatus::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
+            other => CodeAnalysisStatus::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
+                other.to_owned(),
+            )),
         }
     }
 }
@@ -80,6 +89,7 @@ impl CodeAnalysisStatus {
             CodeAnalysisStatus::Unknown(value) => value.as_str(),
         }
     }
+
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &["Completed", "Failed", "Pending"]

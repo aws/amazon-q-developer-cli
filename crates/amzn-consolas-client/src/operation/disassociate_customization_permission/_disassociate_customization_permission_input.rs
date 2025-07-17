@@ -13,19 +13,24 @@ impl DisassociateCustomizationPermissionInput {
     pub fn identifier(&self) -> ::std::option::Option<&str> {
         self.identifier.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn permission(&self) -> ::std::option::Option<&crate::types::CustomizationPermission> {
         self.permission.as_ref()
     }
 }
 impl DisassociateCustomizationPermissionInput {
-    /// Creates a new builder-style object to manufacture [`DisassociateCustomizationPermissionInput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionInput).
-    pub fn builder() -> crate::operation::disassociate_customization_permission::builders::DisassociateCustomizationPermissionInputBuilder {
+    /// Creates a new builder-style object to manufacture
+    /// [`DisassociateCustomizationPermissionInput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionInput).
+    ///
+    pub fn builder() -> crate::operation::disassociate_customization_permission::builders::DisassociateCustomizationPermissionInputBuilder{
         crate::operation::disassociate_customization_permission::builders::DisassociateCustomizationPermissionInputBuilder::default()
     }
 }
 
-/// A builder for [`DisassociateCustomizationPermissionInput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionInput).
+/// A builder for
+/// [`DisassociateCustomizationPermissionInput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionInput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DisassociateCustomizationPermissionInputBuilder {
@@ -39,31 +44,39 @@ impl DisassociateCustomizationPermissionInputBuilder {
         self.identifier = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_identifier(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.identifier = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_identifier(&self) -> &::std::option::Option<::std::string::String> {
         &self.identifier
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn permission(mut self, input: crate::types::CustomizationPermission) -> Self {
         self.permission = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_permission(mut self, input: ::std::option::Option<crate::types::CustomizationPermission>) -> Self {
         self.permission = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_permission(&self) -> &::std::option::Option<crate::types::CustomizationPermission> {
         &self.permission
     }
-    /// Consumes the builder and constructs a [`DisassociateCustomizationPermissionInput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionInput).
+
+    /// Consumes the builder and constructs a
+    /// [`DisassociateCustomizationPermissionInput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionInput).
+    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

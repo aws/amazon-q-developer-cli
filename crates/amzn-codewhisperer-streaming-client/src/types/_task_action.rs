@@ -23,22 +23,27 @@ impl TaskAction {
         use std::ops::Deref;
         self.label.deref()
     }
+
     /// Structure representing a note associated with a task action.
     pub fn note(&self) -> ::std::option::Option<&crate::types::TaskActionNote> {
         self.note.as_ref()
     }
+
     /// Indicates whether the action is primary or not.
     pub fn primary(&self) -> ::std::option::Option<bool> {
         self.primary
     }
+
     /// Indicates whether the action is disabled or not.
     pub fn disabled(&self) -> ::std::option::Option<bool> {
         self.disabled
     }
+
     /// Map representing key-value pairs for the payload of a task action.
     pub fn payload(&self) -> &::std::collections::HashMap<::std::string::String, ::std::string::String> {
         &self.payload
     }
+
     /// Structure representing a confirmation message related to a task action.
     pub fn confirmation(&self) -> ::std::option::Option<&crate::types::TaskActionConfirmation> {
         self.confirmation.as_ref()
@@ -71,7 +76,8 @@ pub struct TaskActionBuilder {
     pub(crate) note: ::std::option::Option<crate::types::TaskActionNote>,
     pub(crate) primary: ::std::option::Option<bool>,
     pub(crate) disabled: ::std::option::Option<bool>,
-    pub(crate) payload: ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>>,
+    pub(crate) payload:
+        ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>>,
     pub(crate) confirmation: ::std::option::Option<crate::types::TaskActionConfirmation>,
 }
 impl TaskActionBuilder {
@@ -81,96 +87,125 @@ impl TaskActionBuilder {
         self.label = ::std::option::Option::Some(input.into());
         self
     }
+
     /// A label for the action.
     pub fn set_label(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.label = input;
         self
     }
+
     /// A label for the action.
     pub fn get_label(&self) -> &::std::option::Option<::std::string::String> {
         &self.label
     }
+
     /// Structure representing a note associated with a task action.
     pub fn note(mut self, input: crate::types::TaskActionNote) -> Self {
         self.note = ::std::option::Option::Some(input);
         self
     }
+
     /// Structure representing a note associated with a task action.
     pub fn set_note(mut self, input: ::std::option::Option<crate::types::TaskActionNote>) -> Self {
         self.note = input;
         self
     }
+
     /// Structure representing a note associated with a task action.
     pub fn get_note(&self) -> &::std::option::Option<crate::types::TaskActionNote> {
         &self.note
     }
+
     /// Indicates whether the action is primary or not.
     pub fn primary(mut self, input: bool) -> Self {
         self.primary = ::std::option::Option::Some(input);
         self
     }
+
     /// Indicates whether the action is primary or not.
     pub fn set_primary(mut self, input: ::std::option::Option<bool>) -> Self {
         self.primary = input;
         self
     }
+
     /// Indicates whether the action is primary or not.
     pub fn get_primary(&self) -> &::std::option::Option<bool> {
         &self.primary
     }
+
     /// Indicates whether the action is disabled or not.
     pub fn disabled(mut self, input: bool) -> Self {
         self.disabled = ::std::option::Option::Some(input);
         self
     }
+
     /// Indicates whether the action is disabled or not.
     pub fn set_disabled(mut self, input: ::std::option::Option<bool>) -> Self {
         self.disabled = input;
         self
     }
+
     /// Indicates whether the action is disabled or not.
     pub fn get_disabled(&self) -> &::std::option::Option<bool> {
         &self.disabled
     }
+
     /// Adds a key-value pair to `payload`.
     ///
     /// To override the contents of this collection use [`set_payload`](Self::set_payload).
     ///
     /// Map representing key-value pairs for the payload of a task action.
-    pub fn payload(mut self, k: impl ::std::convert::Into<::std::string::String>, v: impl ::std::convert::Into<::std::string::String>) -> Self {
+    pub fn payload(
+        mut self,
+        k: impl ::std::convert::Into<::std::string::String>,
+        v: impl ::std::convert::Into<::std::string::String>,
+    ) -> Self {
         let mut hash_map = self.payload.unwrap_or_default();
         hash_map.insert(k.into(), v.into());
         self.payload = ::std::option::Option::Some(hash_map);
         self
     }
+
     /// Map representing key-value pairs for the payload of a task action.
-    pub fn set_payload(mut self, input: ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>>) -> Self {
+    pub fn set_payload(
+        mut self,
+        input: ::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>>,
+    ) -> Self {
         self.payload = input;
         self
     }
+
     /// Map representing key-value pairs for the payload of a task action.
-    pub fn get_payload(&self) -> &::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>> {
+    pub fn get_payload(
+        &self,
+    ) -> &::std::option::Option<::std::collections::HashMap<::std::string::String, ::std::string::String>> {
         &self.payload
     }
+
     /// Structure representing a confirmation message related to a task action.
     pub fn confirmation(mut self, input: crate::types::TaskActionConfirmation) -> Self {
         self.confirmation = ::std::option::Option::Some(input);
         self
     }
+
     /// Structure representing a confirmation message related to a task action.
     pub fn set_confirmation(mut self, input: ::std::option::Option<crate::types::TaskActionConfirmation>) -> Self {
         self.confirmation = input;
         self
     }
+
     /// Structure representing a confirmation message related to a task action.
     pub fn get_confirmation(&self) -> &::std::option::Option<crate::types::TaskActionConfirmation> {
         &self.confirmation
     }
+
     /// Consumes the builder and constructs a [`TaskAction`](crate::types::TaskAction).
     /// This method will fail if any of the following fields are not set:
     /// - [`label`](crate::types::builders::TaskActionBuilder::label)
     /// - [`payload`](crate::types::builders::TaskActionBuilder::payload)
-    pub fn build(self) -> ::std::result::Result<crate::types::TaskAction, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::TaskAction, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TaskAction {
             label: self.label.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

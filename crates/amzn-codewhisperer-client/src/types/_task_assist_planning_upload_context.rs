@@ -14,13 +14,15 @@ impl TaskAssistPlanningUploadContext {
     }
 }
 impl TaskAssistPlanningUploadContext {
-    /// Creates a new builder-style object to manufacture [`TaskAssistPlanningUploadContext`](crate::types::TaskAssistPlanningUploadContext).
+    /// Creates a new builder-style object to manufacture
+    /// [`TaskAssistPlanningUploadContext`](crate::types::TaskAssistPlanningUploadContext).
     pub fn builder() -> crate::types::builders::TaskAssistPlanningUploadContextBuilder {
         crate::types::builders::TaskAssistPlanningUploadContextBuilder::default()
     }
 }
 
-/// A builder for [`TaskAssistPlanningUploadContext`](crate::types::TaskAssistPlanningUploadContext).
+/// A builder for
+/// [`TaskAssistPlanningUploadContext`](crate::types::TaskAssistPlanningUploadContext).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct TaskAssistPlanningUploadContextBuilder {
@@ -33,19 +35,28 @@ impl TaskAssistPlanningUploadContextBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
-    /// Consumes the builder and constructs a [`TaskAssistPlanningUploadContext`](crate::types::TaskAssistPlanningUploadContext).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`TaskAssistPlanningUploadContext`](crate::types::TaskAssistPlanningUploadContext). This
+    /// method will fail if any of the following fields are not set:
     /// - [`conversation_id`](crate::types::builders::TaskAssistPlanningUploadContextBuilder::conversation_id)
-    pub fn build(self) -> ::std::result::Result<crate::types::TaskAssistPlanningUploadContext, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::TaskAssistPlanningUploadContext,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::TaskAssistPlanningUploadContext {
             conversation_id: self.conversation_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

@@ -34,58 +34,72 @@ impl ChatInteractWithMessageEvent {
         use std::ops::Deref;
         self.conversation_id.deref()
     }
+
     /// Unique identifier for the chat message
     pub fn message_id(&self) -> &str {
         use std::ops::Deref;
         self.message_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn customization_arn(&self) -> ::std::option::Option<&str> {
         self.customization_arn.as_deref()
     }
+
     /// Chat Message Interaction Type
     pub fn interaction_type(&self) -> ::std::option::Option<&crate::types::ChatMessageInteractionType> {
         self.interaction_type.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn interaction_target(&self) -> ::std::option::Option<&str> {
         self.interaction_target.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn accepted_character_count(&self) -> ::std::option::Option<i32> {
         self.accepted_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn accepted_line_count(&self) -> ::std::option::Option<i32> {
         self.accepted_line_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn accepted_snippet_has_reference(&self) -> ::std::option::Option<bool> {
         self.accepted_snippet_has_reference
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn has_project_level_context(&self) -> ::std::option::Option<bool> {
         self.has_project_level_context
     }
+
     /// User Intent
     pub fn user_intent(&self) -> ::std::option::Option<&crate::types::UserIntent> {
         self.user_intent.as_ref()
     }
+
     /// List of IDE Diagnostics
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.added_ide_diagnostics.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.added_ide_diagnostics.is_none()`.
     pub fn added_ide_diagnostics(&self) -> &[crate::types::IdeDiagnostic] {
         self.added_ide_diagnostics.as_deref().unwrap_or_default()
     }
+
     /// List of IDE Diagnostics
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.removed_ide_diagnostics.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.removed_ide_diagnostics.is_none()`.
     pub fn removed_ide_diagnostics(&self) -> &[crate::types::IdeDiagnostic] {
         self.removed_ide_diagnostics.as_deref().unwrap_or_default()
     }
 }
 impl ChatInteractWithMessageEvent {
-    /// Creates a new builder-style object to manufacture [`ChatInteractWithMessageEvent`](crate::types::ChatInteractWithMessageEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`ChatInteractWithMessageEvent`](crate::types::ChatInteractWithMessageEvent).
     pub fn builder() -> crate::types::builders::ChatInteractWithMessageEventBuilder {
         crate::types::builders::ChatInteractWithMessageEventBuilder::default()
     }
@@ -115,145 +129,179 @@ impl ChatInteractWithMessageEventBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
+
     /// Unique identifier for the chat message
     /// This field is required.
     pub fn message_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.message_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Unique identifier for the chat message
     pub fn set_message_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message_id = input;
         self
     }
+
     /// Unique identifier for the chat message
     pub fn get_message_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.message_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn customization_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.customization_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_customization_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.customization_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_customization_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.customization_arn
     }
+
     /// Chat Message Interaction Type
     pub fn interaction_type(mut self, input: crate::types::ChatMessageInteractionType) -> Self {
         self.interaction_type = ::std::option::Option::Some(input);
         self
     }
+
     /// Chat Message Interaction Type
-    pub fn set_interaction_type(mut self, input: ::std::option::Option<crate::types::ChatMessageInteractionType>) -> Self {
+    pub fn set_interaction_type(
+        mut self,
+        input: ::std::option::Option<crate::types::ChatMessageInteractionType>,
+    ) -> Self {
         self.interaction_type = input;
         self
     }
+
     /// Chat Message Interaction Type
     pub fn get_interaction_type(&self) -> &::std::option::Option<crate::types::ChatMessageInteractionType> {
         &self.interaction_type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn interaction_target(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.interaction_target = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_interaction_target(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.interaction_target = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_interaction_target(&self) -> &::std::option::Option<::std::string::String> {
         &self.interaction_target
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn accepted_character_count(mut self, input: i32) -> Self {
         self.accepted_character_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_accepted_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.accepted_character_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_accepted_character_count(&self) -> &::std::option::Option<i32> {
         &self.accepted_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn accepted_line_count(mut self, input: i32) -> Self {
         self.accepted_line_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_accepted_line_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.accepted_line_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_accepted_line_count(&self) -> &::std::option::Option<i32> {
         &self.accepted_line_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn accepted_snippet_has_reference(mut self, input: bool) -> Self {
         self.accepted_snippet_has_reference = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_accepted_snippet_has_reference(mut self, input: ::std::option::Option<bool>) -> Self {
         self.accepted_snippet_has_reference = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_accepted_snippet_has_reference(&self) -> &::std::option::Option<bool> {
         &self.accepted_snippet_has_reference
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn has_project_level_context(mut self, input: bool) -> Self {
         self.has_project_level_context = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_has_project_level_context(mut self, input: ::std::option::Option<bool>) -> Self {
         self.has_project_level_context = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_has_project_level_context(&self) -> &::std::option::Option<bool> {
         &self.has_project_level_context
     }
+
     /// User Intent
     pub fn user_intent(mut self, input: crate::types::UserIntent) -> Self {
         self.user_intent = ::std::option::Option::Some(input);
         self
     }
+
     /// User Intent
     pub fn set_user_intent(mut self, input: ::std::option::Option<crate::types::UserIntent>) -> Self {
         self.user_intent = input;
         self
     }
+
     /// User Intent
     pub fn get_user_intent(&self) -> &::std::option::Option<crate::types::UserIntent> {
         &self.user_intent
     }
+
     /// Appends an item to `added_ide_diagnostics`.
     ///
-    /// To override the contents of this collection use [`set_added_ide_diagnostics`](Self::set_added_ide_diagnostics).
+    /// To override the contents of this collection use
+    /// [`set_added_ide_diagnostics`](Self::set_added_ide_diagnostics).
     ///
     /// List of IDE Diagnostics
     pub fn added_ide_diagnostics(mut self, input: crate::types::IdeDiagnostic) -> Self {
@@ -262,18 +310,25 @@ impl ChatInteractWithMessageEventBuilder {
         self.added_ide_diagnostics = ::std::option::Option::Some(v);
         self
     }
+
     /// List of IDE Diagnostics
-    pub fn set_added_ide_diagnostics(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>) -> Self {
+    pub fn set_added_ide_diagnostics(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    ) -> Self {
         self.added_ide_diagnostics = input;
         self
     }
+
     /// List of IDE Diagnostics
     pub fn get_added_ide_diagnostics(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>> {
         &self.added_ide_diagnostics
     }
+
     /// Appends an item to `removed_ide_diagnostics`.
     ///
-    /// To override the contents of this collection use [`set_removed_ide_diagnostics`](Self::set_removed_ide_diagnostics).
+    /// To override the contents of this collection use
+    /// [`set_removed_ide_diagnostics`](Self::set_removed_ide_diagnostics).
     ///
     /// List of IDE Diagnostics
     pub fn removed_ide_diagnostics(mut self, input: crate::types::IdeDiagnostic) -> Self {
@@ -282,20 +337,32 @@ impl ChatInteractWithMessageEventBuilder {
         self.removed_ide_diagnostics = ::std::option::Option::Some(v);
         self
     }
+
     /// List of IDE Diagnostics
-    pub fn set_removed_ide_diagnostics(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>) -> Self {
+    pub fn set_removed_ide_diagnostics(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    ) -> Self {
         self.removed_ide_diagnostics = input;
         self
     }
+
     /// List of IDE Diagnostics
     pub fn get_removed_ide_diagnostics(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>> {
         &self.removed_ide_diagnostics
     }
-    /// Consumes the builder and constructs a [`ChatInteractWithMessageEvent`](crate::types::ChatInteractWithMessageEvent).
+
+    /// Consumes the builder and constructs a
+    /// [`ChatInteractWithMessageEvent`](crate::types::ChatInteractWithMessageEvent).
     /// This method will fail if any of the following fields are not set:
     /// - [`conversation_id`](crate::types::builders::ChatInteractWithMessageEventBuilder::conversation_id)
     /// - [`message_id`](crate::types::builders::ChatInteractWithMessageEventBuilder::message_id)
-    pub fn build(self) -> ::std::result::Result<crate::types::ChatInteractWithMessageEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::ChatInteractWithMessageEvent,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::ChatInteractWithMessageEvent {
             conversation_id: self.conversation_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

@@ -14,6 +14,7 @@ impl StartCodeFixJobOutput {
     pub fn job_id(&self) -> ::std::option::Option<&str> {
         self.job_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn status(&self) -> ::std::option::Option<&crate::types::CodeFixJobStatus> {
         self.status.as_ref()
@@ -25,13 +26,15 @@ impl ::aws_types::request_id::RequestId for StartCodeFixJobOutput {
     }
 }
 impl StartCodeFixJobOutput {
-    /// Creates a new builder-style object to manufacture [`StartCodeFixJobOutput`](crate::operation::start_code_fix_job::StartCodeFixJobOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`StartCodeFixJobOutput`](crate::operation::start_code_fix_job::StartCodeFixJobOutput).
     pub fn builder() -> crate::operation::start_code_fix_job::builders::StartCodeFixJobOutputBuilder {
         crate::operation::start_code_fix_job::builders::StartCodeFixJobOutputBuilder::default()
     }
 }
 
-/// A builder for [`StartCodeFixJobOutput`](crate::operation::start_code_fix_job::StartCodeFixJobOutput).
+/// A builder for
+/// [`StartCodeFixJobOutput`](crate::operation::start_code_fix_job::StartCodeFixJobOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct StartCodeFixJobOutputBuilder {
@@ -45,29 +48,35 @@ impl StartCodeFixJobOutputBuilder {
         self.job_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.job_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.job_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn status(mut self, input: crate::types::CodeFixJobStatus) -> Self {
         self.status = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_status(mut self, input: ::std::option::Option<crate::types::CodeFixJobStatus>) -> Self {
         self.status = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_status(&self) -> &::std::option::Option<crate::types::CodeFixJobStatus> {
         &self.status
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -77,7 +86,9 @@ impl StartCodeFixJobOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`StartCodeFixJobOutput`](crate::operation::start_code_fix_job::StartCodeFixJobOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`StartCodeFixJobOutput`](crate::operation::start_code_fix_job::StartCodeFixJobOutput).
     pub fn build(self) -> crate::operation::start_code_fix_job::StartCodeFixJobOutput {
         crate::operation::start_code_fix_job::StartCodeFixJobOutput {
             job_id: self.job_id,

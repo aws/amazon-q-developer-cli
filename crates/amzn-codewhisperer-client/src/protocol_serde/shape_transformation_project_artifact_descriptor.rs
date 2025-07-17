@@ -12,21 +12,31 @@ pub fn ser_transformation_project_artifact_descriptor(
                 inner,
             )?;
             object_1.finish();
-        }
+        },
         crate::types::TransformationProjectArtifactDescriptor::Unknown => {
-            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant(
-                "TransformationProjectArtifactDescriptor",
-            ))
-        }
+            return Err(
+                ::aws_smithy_types::error::operation::SerializationError::unknown_variant(
+                    "TransformationProjectArtifactDescriptor",
+                ),
+            );
+        },
     }
     Ok(())
 }
 
 pub(crate) fn de_transformation_project_artifact_descriptor<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> ::std::result::Result<Option<crate::types::TransformationProjectArtifactDescriptor>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<
+    Option<crate::types::TransformationProjectArtifactDescriptor>,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+>
 where
-    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
+    I: Iterator<
+        Item = Result<
+            ::aws_smithy_json::deserialize::Token<'a>,
+            ::aws_smithy_json::deserialize::error::DeserializeError,
+        >,
+    >,
 {
     let mut variant = None;
     match tokens.next().transpose()? {
@@ -35,8 +45,9 @@ where
             match tokens.next().transpose()? {
                 Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
                 Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                    if let ::std::option::Option::Some(::std::result::Result::Ok(::aws_smithy_json::deserialize::Token::ValueNull { .. })) =
-                        tokens.peek()
+                    if let ::std::option::Option::Some(::std::result::Result::Ok(
+                        ::aws_smithy_json::deserialize::Token::ValueNull { .. },
+                    )) = tokens.peek()
                     {
                         let _ = tokens.next().expect("peek returned a token")?;
                         continue;
@@ -63,20 +74,19 @@ where
                                                                               Some(crate::types::TransformationProjectArtifactDescriptor::Unknown)
                                                                             }
                         };
-                }
+                },
                 other => {
-                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
-                        "expected object key or end object, found: {:?}",
-                        other
-                    )))
-                }
+                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                        format!("expected object key or end object, found: {:?}", other),
+                    ));
+                },
             }
         },
         _ => {
             return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
                 "expected start object or null",
-            ))
-        }
+            ));
+        },
     }
     if variant.is_none() {
         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(

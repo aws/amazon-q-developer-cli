@@ -7,18 +7,21 @@ pub enum IdentitySource {
     ExternalIdentitySource(crate::types::ExternalIdentitySource),
     #[allow(missing_docs)] // documentation missing in model
     SsoIdentitySource(crate::types::SsoIdentitySource),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
-    /// An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider
+    /// upgrading the SDK to the latest available version. An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
-    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has
+    /// not been updated. To investigate this, consider turning on debug logging to print the
+    /// raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl IdentitySource {
-    /// Tries to convert the enum instance into [`ExternalIdentitySource`](crate::types::IdentitySource::ExternalIdentitySource), extracting the inner [`ExternalIdentitySource`](crate::types::ExternalIdentitySource).
+    /// Tries to convert the enum instance into
+    /// [`ExternalIdentitySource`](crate::types::IdentitySource::ExternalIdentitySource), extracting
+    /// the inner [`ExternalIdentitySource`](crate::types::ExternalIdentitySource).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_external_identity_source(&self) -> ::std::result::Result<&crate::types::ExternalIdentitySource, &Self> {
         if let IdentitySource::ExternalIdentitySource(val) = &self {
@@ -27,12 +30,17 @@ impl IdentitySource {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`ExternalIdentitySource`](crate::types::IdentitySource::ExternalIdentitySource).
+
+    /// Returns true if this is a
+    /// [`ExternalIdentitySource`](crate::types::IdentitySource::ExternalIdentitySource).
     pub fn is_external_identity_source(&self) -> bool {
         self.as_external_identity_source().is_ok()
     }
-    /// Tries to convert the enum instance into [`SsoIdentitySource`](crate::types::IdentitySource::SsoIdentitySource), extracting the inner [`SsoIdentitySource`](crate::types::SsoIdentitySource).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`SsoIdentitySource`](crate::types::IdentitySource::SsoIdentitySource), extracting the inner
+    /// [`SsoIdentitySource`](crate::types::SsoIdentitySource). Returns `Err(&Self)` if it can't
+    /// be converted.
     pub fn as_sso_identity_source(&self) -> ::std::result::Result<&crate::types::SsoIdentitySource, &Self> {
         if let IdentitySource::SsoIdentitySource(val) = &self {
             ::std::result::Result::Ok(val)
@@ -40,10 +48,13 @@ impl IdentitySource {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`SsoIdentitySource`](crate::types::IdentitySource::SsoIdentitySource).
+
+    /// Returns true if this is a
+    /// [`SsoIdentitySource`](crate::types::IdentitySource::SsoIdentitySource).
     pub fn is_sso_identity_source(&self) -> bool {
         self.as_sso_identity_source().is_ok()
     }
+
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

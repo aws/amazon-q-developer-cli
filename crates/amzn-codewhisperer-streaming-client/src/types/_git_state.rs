@@ -39,15 +39,18 @@ impl GitStateBuilder {
         self.status = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The output of the command `git status --porcelain=v1 -b`
     pub fn set_status(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.status = input;
         self
     }
+
     /// The output of the command `git status --porcelain=v1 -b`
     pub fn get_status(&self) -> &::std::option::Option<::std::string::String> {
         &self.status
     }
+
     /// Consumes the builder and constructs a [`GitState`](crate::types::GitState).
     pub fn build(self) -> crate::types::GitState {
         crate::types::GitState { status: self.status }

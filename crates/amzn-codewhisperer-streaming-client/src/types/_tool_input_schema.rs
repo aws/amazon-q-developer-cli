@@ -21,7 +21,8 @@ impl ::std::fmt::Debug for ToolInputSchema {
     }
 }
 impl ToolInputSchema {
-    /// Creates a new builder-style object to manufacture [`ToolInputSchema`](crate::types::ToolInputSchema).
+    /// Creates a new builder-style object to manufacture
+    /// [`ToolInputSchema`](crate::types::ToolInputSchema).
     pub fn builder() -> crate::types::builders::ToolInputSchemaBuilder {
         crate::types::builders::ToolInputSchemaBuilder::default()
     }
@@ -39,15 +40,18 @@ impl ToolInputSchemaBuilder {
         self.json = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_json(mut self, input: ::std::option::Option<::aws_smithy_types::Document>) -> Self {
         self.json = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_json(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
         &self.json
     }
+
     /// Consumes the builder and constructs a [`ToolInputSchema`](crate::types::ToolInputSchema).
     pub fn build(self) -> crate::types::ToolInputSchema {
         crate::types::ToolInputSchema { json: self.json }

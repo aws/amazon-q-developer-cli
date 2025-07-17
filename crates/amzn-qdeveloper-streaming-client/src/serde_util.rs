@@ -83,7 +83,9 @@ pub(crate) fn citation_event_correct_errors(
     builder
 }
 
-pub(crate) fn code_event_correct_errors(mut builder: crate::types::builders::CodeEventBuilder) -> crate::types::builders::CodeEventBuilder {
+pub(crate) fn code_event_correct_errors(
+    mut builder: crate::types::builders::CodeEventBuilder,
+) -> crate::types::builders::CodeEventBuilder {
     if builder.content.is_none() {
         builder.content = Some(Default::default())
     }
@@ -111,7 +113,9 @@ pub(crate) fn invalid_state_event_correct_errors(
     builder
 }
 
-pub(crate) fn tool_use_event_correct_errors(mut builder: crate::types::builders::ToolUseEventBuilder) -> crate::types::builders::ToolUseEventBuilder {
+pub(crate) fn tool_use_event_correct_errors(
+    mut builder: crate::types::builders::ToolUseEventBuilder,
+) -> crate::types::builders::ToolUseEventBuilder {
     if builder.tool_use_id.is_none() {
         builder.tool_use_id = Some(Default::default())
     }
@@ -130,7 +134,9 @@ pub(crate) fn followup_prompt_correct_errors(
     builder
 }
 
-pub(crate) fn tool_result_correct_errors(mut builder: crate::types::builders::ToolResultBuilder) -> crate::types::builders::ToolResultBuilder {
+pub(crate) fn tool_result_correct_errors(
+    mut builder: crate::types::builders::ToolResultBuilder,
+) -> crate::types::builders::ToolResultBuilder {
     if builder.tool_use_id.is_none() {
         builder.tool_use_id = Some(Default::default())
     }
@@ -164,7 +170,9 @@ pub(crate) fn supplementary_web_link_correct_errors(
     builder
 }
 
-pub(crate) fn alert_correct_errors(mut builder: crate::types::builders::AlertBuilder) -> crate::types::builders::AlertBuilder {
+pub(crate) fn alert_correct_errors(
+    mut builder: crate::types::builders::AlertBuilder,
+) -> crate::types::builders::AlertBuilder {
     if builder.r#type.is_none() {
         builder.r#type = "no value was set".parse::<crate::types::AlertType>().ok()
     }
@@ -174,14 +182,18 @@ pub(crate) fn alert_correct_errors(mut builder: crate::types::builders::AlertBui
     builder
 }
 
-pub(crate) fn progress_correct_errors(mut builder: crate::types::builders::ProgressBuilder) -> crate::types::builders::ProgressBuilder {
+pub(crate) fn progress_correct_errors(
+    mut builder: crate::types::builders::ProgressBuilder,
+) -> crate::types::builders::ProgressBuilder {
     if builder.content.is_none() {
         builder.content = Some(Default::default())
     }
     builder
 }
 
-pub(crate) fn resource_correct_errors(mut builder: crate::types::builders::ResourceBuilder) -> crate::types::builders::ResourceBuilder {
+pub(crate) fn resource_correct_errors(
+    mut builder: crate::types::builders::ResourceBuilder,
+) -> crate::types::builders::ResourceBuilder {
     if builder.title.is_none() {
         builder.title = Some(Default::default())
     }
@@ -203,14 +215,18 @@ pub(crate) fn resource_correct_errors(mut builder: crate::types::builders::Resou
     builder
 }
 
-pub(crate) fn resource_list_correct_errors(mut builder: crate::types::builders::ResourceListBuilder) -> crate::types::builders::ResourceListBuilder {
+pub(crate) fn resource_list_correct_errors(
+    mut builder: crate::types::builders::ResourceListBuilder,
+) -> crate::types::builders::ResourceListBuilder {
     if builder.items.is_none() {
         builder.items = Some(Default::default())
     }
     builder
 }
 
-pub(crate) fn section_correct_errors(mut builder: crate::types::builders::SectionBuilder) -> crate::types::builders::SectionBuilder {
+pub(crate) fn section_correct_errors(
+    mut builder: crate::types::builders::SectionBuilder,
+) -> crate::types::builders::SectionBuilder {
     if builder.title.is_none() {
         builder.title = Some(Default::default())
     }
@@ -220,7 +236,9 @@ pub(crate) fn section_correct_errors(mut builder: crate::types::builders::Sectio
     builder
 }
 
-pub(crate) fn step_correct_errors(mut builder: crate::types::builders::StepBuilder) -> crate::types::builders::StepBuilder {
+pub(crate) fn step_correct_errors(
+    mut builder: crate::types::builders::StepBuilder,
+) -> crate::types::builders::StepBuilder {
     if builder.id.is_none() {
         builder.id = Some(Default::default())
     }
@@ -233,14 +251,18 @@ pub(crate) fn step_correct_errors(mut builder: crate::types::builders::StepBuild
     builder
 }
 
-pub(crate) fn suggestions_correct_errors(mut builder: crate::types::builders::SuggestionsBuilder) -> crate::types::builders::SuggestionsBuilder {
+pub(crate) fn suggestions_correct_errors(
+    mut builder: crate::types::builders::SuggestionsBuilder,
+) -> crate::types::builders::SuggestionsBuilder {
     if builder.items.is_none() {
         builder.items = Some(Default::default())
     }
     builder
 }
 
-pub(crate) fn task_details_correct_errors(mut builder: crate::types::builders::TaskDetailsBuilder) -> crate::types::builders::TaskDetailsBuilder {
+pub(crate) fn task_details_correct_errors(
+    mut builder: crate::types::builders::TaskDetailsBuilder,
+) -> crate::types::builders::TaskDetailsBuilder {
     if builder.overview.is_none() {
         builder.overview = {
             let builder = crate::types::builders::TaskOverviewBuilder::default();
@@ -262,7 +284,9 @@ pub(crate) fn task_reference_correct_errors(
     builder
 }
 
-pub(crate) fn text_correct_errors(mut builder: crate::types::builders::TextBuilder) -> crate::types::builders::TextBuilder {
+pub(crate) fn text_correct_errors(
+    mut builder: crate::types::builders::TextBuilder,
+) -> crate::types::builders::TextBuilder {
     if builder.content.is_none() {
         builder.content = Some(Default::default())
     }
@@ -281,7 +305,9 @@ pub(crate) fn infrastructure_update_transition_correct_errors(
     builder
 }
 
-pub(crate) fn task_overview_correct_errors(mut builder: crate::types::builders::TaskOverviewBuilder) -> crate::types::builders::TaskOverviewBuilder {
+pub(crate) fn task_overview_correct_errors(
+    mut builder: crate::types::builders::TaskOverviewBuilder,
+) -> crate::types::builders::TaskOverviewBuilder {
     if builder.label.is_none() {
         builder.label = Some(Default::default())
     }
@@ -291,7 +317,9 @@ pub(crate) fn task_overview_correct_errors(mut builder: crate::types::builders::
     builder
 }
 
-pub(crate) fn web_link_correct_errors(mut builder: crate::types::builders::WebLinkBuilder) -> crate::types::builders::WebLinkBuilder {
+pub(crate) fn web_link_correct_errors(
+    mut builder: crate::types::builders::WebLinkBuilder,
+) -> crate::types::builders::WebLinkBuilder {
     if builder.label.is_none() {
         builder.label = Some(Default::default())
     }
@@ -313,14 +341,18 @@ pub(crate) fn cloud_watch_troubleshooting_link_correct_errors(
     builder
 }
 
-pub(crate) fn suggestion_correct_errors(mut builder: crate::types::builders::SuggestionBuilder) -> crate::types::builders::SuggestionBuilder {
+pub(crate) fn suggestion_correct_errors(
+    mut builder: crate::types::builders::SuggestionBuilder,
+) -> crate::types::builders::SuggestionBuilder {
     if builder.value.is_none() {
         builder.value = Some(Default::default())
     }
     builder
 }
 
-pub(crate) fn task_action_correct_errors(mut builder: crate::types::builders::TaskActionBuilder) -> crate::types::builders::TaskActionBuilder {
+pub(crate) fn task_action_correct_errors(
+    mut builder: crate::types::builders::TaskActionBuilder,
+) -> crate::types::builders::TaskActionBuilder {
     if builder.label.is_none() {
         builder.label = Some(Default::default())
     }

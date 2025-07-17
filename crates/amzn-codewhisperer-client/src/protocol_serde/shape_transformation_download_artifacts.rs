@@ -6,7 +6,12 @@ pub(crate) fn de_transformation_download_artifacts<'a, I>(
     ::aws_smithy_json::deserialize::error::DeserializeError,
 >
 where
-    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
+    I: Iterator<
+        Item = Result<
+            ::aws_smithy_json::deserialize::Token<'a>,
+            ::aws_smithy_json::deserialize::error::DeserializeError,
+        >,
+    >,
 {
     match tokens.next().transpose()? {
         Some(::aws_smithy_json::deserialize::Token::ValueNull { .. }) => Ok(None),
@@ -17,17 +22,17 @@ where
                     Some(Ok(::aws_smithy_json::deserialize::Token::EndArray { .. })) => {
                         tokens.next().transpose().unwrap();
                         break;
-                    }
+                    },
                     _ => {
                         let value = crate::protocol_serde::shape_transformation_download_artifact::de_transformation_download_artifact(tokens)?;
                         if let Some(value) = value {
                             items.push(value);
                         }
-                    }
+                    },
                 }
             }
             Ok(Some(items))
-        }
+        },
         _ => Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
             "expected start array or null",
         )),

@@ -6,20 +6,22 @@
 pub enum ImageSource {
     #[allow(missing_docs)] // documentation missing in model
     Bytes(::aws_smithy_types::Blob),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
-    /// An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider
+    /// upgrading the SDK to the latest available version. An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
-    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has
+    /// not been updated. To investigate this, consider turning on debug logging to print the
+    /// raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl ImageSource {
     #[allow(irrefutable_let_patterns)]
-    /// Tries to convert the enum instance into [`Bytes`](crate::types::ImageSource::Bytes), extracting the inner [`Blob`](::aws_smithy_types::Blob).
-    /// Returns `Err(&Self)` if it can't be converted.
+    /// Tries to convert the enum instance into [`Bytes`](crate::types::ImageSource::Bytes),
+    /// extracting the inner [`Blob`](::aws_smithy_types::Blob). Returns `Err(&Self)` if it
+    /// can't be converted.
     pub fn as_bytes(&self) -> ::std::result::Result<&::aws_smithy_types::Blob, &Self> {
         if let ImageSource::Bytes(val) = &self {
             ::std::result::Result::Ok(val)
@@ -27,10 +29,12 @@ impl ImageSource {
             ::std::result::Result::Err(self)
         }
     }
+
     /// Returns true if this is a [`Bytes`](crate::types::ImageSource::Bytes).
     pub fn is_bytes(&self) -> bool {
         self.as_bytes().is_ok()
     }
+
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

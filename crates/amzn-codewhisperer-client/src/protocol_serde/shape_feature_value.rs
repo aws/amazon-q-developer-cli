@@ -3,7 +3,12 @@ pub(crate) fn de_feature_value<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
 ) -> ::std::result::Result<Option<crate::types::FeatureValue>, ::aws_smithy_json::deserialize::error::DeserializeError>
 where
-    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
+    I: Iterator<
+        Item = Result<
+            ::aws_smithy_json::deserialize::Token<'a>,
+            ::aws_smithy_json::deserialize::error::DeserializeError,
+        >,
+    >,
 {
     let mut variant = None;
     match tokens.next().transpose()? {
@@ -12,8 +17,9 @@ where
             match tokens.next().transpose()? {
                 Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
                 Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                    if let ::std::option::Option::Some(::std::result::Result::Ok(::aws_smithy_json::deserialize::Token::ValueNull { .. })) =
-                        tokens.peek()
+                    if let ::std::option::Option::Some(::std::result::Result::Ok(
+                        ::aws_smithy_json::deserialize::Token::ValueNull { .. },
+                    )) = tokens.peek()
                     {
                         let _ = tokens.next().expect("peek returned a token")?;
                         continue;
@@ -30,15 +36,21 @@ where
                     }
                     variant = match key.as_ref() {
                         "boolValue" => Some(crate::types::FeatureValue::BoolValue(
-                            ::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?.ok_or_else(|| {
-                                ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'boolValue' cannot be null")
-                            })?,
+                            ::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?.ok_or_else(
+                                || {
+                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                                        "value for 'boolValue' cannot be null",
+                                    )
+                                },
+                            )?,
                         )),
                         "doubleValue" => Some(crate::types::FeatureValue::DoubleValue(
                             ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                                 .map(|v| v.to_f64_lossy())
                                 .ok_or_else(|| {
-                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'doubleValue' cannot be null")
+                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                                        "value for 'doubleValue' cannot be null",
+                                    )
                                 })?,
                         )),
                         "longValue" => Some(crate::types::FeatureValue::LongValue(
@@ -46,7 +58,9 @@ where
                                 .map(i64::try_from)
                                 .transpose()?
                                 .ok_or_else(|| {
-                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'longValue' cannot be null")
+                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                                        "value for 'longValue' cannot be null",
+                                    )
                                 })?,
                         )),
                         "stringValue" => Some(crate::types::FeatureValue::StringValue(
@@ -54,28 +68,29 @@ where
                                 .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                                 .transpose()?
                                 .ok_or_else(|| {
-                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'stringValue' cannot be null")
+                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                                        "value for 'stringValue' cannot be null",
+                                    )
                                 })?,
                         )),
                         _ => {
                             ::aws_smithy_json::deserialize::token::skip_value(tokens)?;
                             Some(crate::types::FeatureValue::Unknown)
-                        }
+                        },
                     };
-                }
+                },
                 other => {
-                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
-                        "expected object key or end object, found: {:?}",
-                        other
-                    )))
-                }
+                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                        format!("expected object key or end object, found: {:?}", other),
+                    ));
+                },
             }
         },
         _ => {
             return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
                 "expected start object or null",
-            ))
-        }
+            ));
+        },
     }
     if variant.is_none() {
         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(

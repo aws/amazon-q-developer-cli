@@ -15,6 +15,7 @@ impl GetUsageLimitsOutput {
         use std::ops::Deref;
         self.limits.deref()
     }
+
     /// Number of days remaining until the usage metrics reset
     pub fn days_until_reset(&self) -> i32 {
         self.days_until_reset
@@ -26,13 +27,15 @@ impl ::aws_types::request_id::RequestId for GetUsageLimitsOutput {
     }
 }
 impl GetUsageLimitsOutput {
-    /// Creates a new builder-style object to manufacture [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput).
     pub fn builder() -> crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder {
         crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder::default()
     }
 }
 
-/// A builder for [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput).
+/// A builder for
+/// [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GetUsageLimitsOutputBuilder {
@@ -44,37 +47,42 @@ impl GetUsageLimitsOutputBuilder {
     /// Appends an item to `limits`.
     ///
     /// To override the contents of this collection use [`set_limits`](Self::set_limits).
-    ///
     pub fn limits(mut self, input: crate::types::UsageLimitList) -> Self {
         let mut v = self.limits.unwrap_or_default();
         v.push(input);
         self.limits = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_limits(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::UsageLimitList>>) -> Self {
         self.limits = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_limits(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::UsageLimitList>> {
         &self.limits
     }
+
     /// Number of days remaining until the usage metrics reset
     /// This field is required.
     pub fn days_until_reset(mut self, input: i32) -> Self {
         self.days_until_reset = ::std::option::Option::Some(input);
         self
     }
+
     /// Number of days remaining until the usage metrics reset
     pub fn set_days_until_reset(mut self, input: ::std::option::Option<i32>) -> Self {
         self.days_until_reset = input;
         self
     }
+
     /// Number of days remaining until the usage metrics reset
     pub fn get_days_until_reset(&self) -> &::std::option::Option<i32> {
         &self.days_until_reset
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -84,13 +92,18 @@ impl GetUsageLimitsOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput). This
+    /// method will fail if any of the following fields are not set:
     /// - [`limits`](crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder::limits)
     /// - [`days_until_reset`](crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder::days_until_reset)
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::get_usage_limits::GetUsageLimitsOutput, ::aws_smithy_types::error::operation::BuildError> {
+    ) -> ::std::result::Result<
+        crate::operation::get_usage_limits::GetUsageLimitsOutput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::get_usage_limits::GetUsageLimitsOutput {
             limits: self.limits.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

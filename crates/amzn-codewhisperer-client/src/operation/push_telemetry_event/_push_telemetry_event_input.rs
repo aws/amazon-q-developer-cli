@@ -15,23 +15,28 @@ impl PushTelemetryEventInput {
     pub fn client_token(&self) -> ::std::option::Option<&str> {
         self.client_token.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn event_type(&self) -> ::std::option::Option<&str> {
         self.event_type.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn event(&self) -> ::std::option::Option<&::aws_smithy_types::Document> {
         self.event.as_ref()
     }
 }
 impl PushTelemetryEventInput {
-    /// Creates a new builder-style object to manufacture [`PushTelemetryEventInput`](crate::operation::push_telemetry_event::PushTelemetryEventInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`PushTelemetryEventInput`](crate::operation::push_telemetry_event::PushTelemetryEventInput).
+    ///
     pub fn builder() -> crate::operation::push_telemetry_event::builders::PushTelemetryEventInputBuilder {
         crate::operation::push_telemetry_event::builders::PushTelemetryEventInputBuilder::default()
     }
 }
 
-/// A builder for [`PushTelemetryEventInput`](crate::operation::push_telemetry_event::PushTelemetryEventInput).
+/// A builder for
+/// [`PushTelemetryEventInput`](crate::operation::push_telemetry_event::PushTelemetryEventInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct PushTelemetryEventInputBuilder {
@@ -45,50 +50,63 @@ impl PushTelemetryEventInputBuilder {
         self.client_token = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_client_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.client_token = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_token
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn event_type(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.event_type = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_event_type(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.event_type = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_event_type(&self) -> &::std::option::Option<::std::string::String> {
         &self.event_type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn event(mut self, input: ::aws_smithy_types::Document) -> Self {
         self.event = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_event(mut self, input: ::std::option::Option<::aws_smithy_types::Document>) -> Self {
         self.event = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_event(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
         &self.event
     }
-    /// Consumes the builder and constructs a [`PushTelemetryEventInput`](crate::operation::push_telemetry_event::PushTelemetryEventInput).
+
+    /// Consumes the builder and constructs a
+    /// [`PushTelemetryEventInput`](crate::operation::push_telemetry_event::PushTelemetryEventInput).
+    ///
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::push_telemetry_event::PushTelemetryEventInput, ::aws_smithy_types::error::operation::BuildError>
-    {
+    ) -> ::std::result::Result<
+        crate::operation::push_telemetry_event::PushTelemetryEventInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::push_telemetry_event::PushTelemetryEventInput {
             client_token: self.client_token,
             event_type: self.event_type,

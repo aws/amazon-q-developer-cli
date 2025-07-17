@@ -8,18 +8,20 @@ pub enum CitationTarget {
     Location(i32),
     /// Represents the range in the response text to be targetted by a citation
     Range(crate::types::Span),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
-    /// An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider
+    /// upgrading the SDK to the latest available version. An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
-    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has
+    /// not been updated. To investigate this, consider turning on debug logging to print the
+    /// raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl CitationTarget {
-    /// Tries to convert the enum instance into [`Location`](crate::types::CitationTarget::Location), extracting the inner [`i32`](i32).
+    /// Tries to convert the enum instance into
+    /// [`Location`](crate::types::CitationTarget::Location), extracting the inner [`i32`](i32).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_location(&self) -> ::std::result::Result<&i32, &Self> {
         if let CitationTarget::Location(val) = &self {
@@ -28,12 +30,15 @@ impl CitationTarget {
             ::std::result::Result::Err(self)
         }
     }
+
     /// Returns true if this is a [`Location`](crate::types::CitationTarget::Location).
     pub fn is_location(&self) -> bool {
         self.as_location().is_ok()
     }
-    /// Tries to convert the enum instance into [`Range`](crate::types::CitationTarget::Range), extracting the inner [`Span`](crate::types::Span).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into [`Range`](crate::types::CitationTarget::Range),
+    /// extracting the inner [`Span`](crate::types::Span). Returns `Err(&Self)` if it can't be
+    /// converted.
     pub fn as_range(&self) -> ::std::result::Result<&crate::types::Span, &Self> {
         if let CitationTarget::Range(val) = &self {
             ::std::result::Result::Ok(val)
@@ -41,10 +46,12 @@ impl CitationTarget {
             ::std::result::Result::Err(self)
         }
     }
+
     /// Returns true if this is a [`Range`](crate::types::CitationTarget::Range).
     pub fn is_range(&self) -> bool {
         self.as_range().is_ok()
     }
+
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

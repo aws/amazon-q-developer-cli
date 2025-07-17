@@ -6,24 +6,32 @@ pub fn ser_tool_result_content_block(
     match input {
         crate::types::ToolResultContentBlock::Text(inner) => {
             object_3.key("text").string(inner.as_str());
-        }
+        },
         crate::types::ToolResultContentBlock::Json(inner) => {
             object_3.key("json").document(inner);
-        }
+        },
         crate::types::ToolResultContentBlock::Unknown => {
-            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant(
-                "ToolResultContentBlock",
-            ))
-        }
+            return Err(
+                ::aws_smithy_types::error::operation::SerializationError::unknown_variant("ToolResultContentBlock"),
+            );
+        },
     }
     Ok(())
 }
 
 pub(crate) fn de_tool_result_content_block<'a, I>(
     tokens: &mut ::std::iter::Peekable<I>,
-) -> ::std::result::Result<Option<crate::types::ToolResultContentBlock>, ::aws_smithy_json::deserialize::error::DeserializeError>
+) -> ::std::result::Result<
+    Option<crate::types::ToolResultContentBlock>,
+    ::aws_smithy_json::deserialize::error::DeserializeError,
+>
 where
-    I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>>,
+    I: Iterator<
+        Item = Result<
+            ::aws_smithy_json::deserialize::Token<'a>,
+            ::aws_smithy_json::deserialize::error::DeserializeError,
+        >,
+    >,
 {
     let mut variant = None;
     match tokens.next().transpose()? {
@@ -32,8 +40,9 @@ where
             match tokens.next().transpose()? {
                 Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
                 Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                    if let ::std::option::Option::Some(::std::result::Result::Ok(::aws_smithy_json::deserialize::Token::ValueNull { .. })) =
-                        tokens.peek()
+                    if let ::std::option::Option::Some(::std::result::Result::Ok(
+                        ::aws_smithy_json::deserialize::Token::ValueNull { .. },
+                    )) = tokens.peek()
                     {
                         let _ = tokens.next().expect("peek returned a token")?;
                         continue;
@@ -53,31 +62,37 @@ where
                             ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
                                 .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                                 .transpose()?
-                                .ok_or_else(|| ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'text' cannot be null"))?,
+                                .ok_or_else(|| {
+                                    ::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                                        "value for 'text' cannot be null",
+                                    )
+                                })?,
                         )),
                         "json" => Some(crate::types::ToolResultContentBlock::Json(
-                            Some(::aws_smithy_json::deserialize::token::expect_document(tokens)?)
-                                .ok_or_else(|| ::aws_smithy_json::deserialize::error::DeserializeError::custom("value for 'json' cannot be null"))?,
+                            Some(::aws_smithy_json::deserialize::token::expect_document(tokens)?).ok_or_else(|| {
+                                ::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                                    "value for 'json' cannot be null",
+                                )
+                            })?,
                         )),
                         _ => {
                             ::aws_smithy_json::deserialize::token::skip_value(tokens)?;
                             Some(crate::types::ToolResultContentBlock::Unknown)
-                        }
+                        },
                     };
-                }
+                },
                 other => {
-                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
-                        "expected object key or end object, found: {:?}",
-                        other
-                    )))
-                }
+                    return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                        format!("expected object key or end object, found: {:?}", other),
+                    ));
+                },
             }
         },
         _ => {
             return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
                 "expected start object or null",
-            ))
-        }
+            ));
+        },
     }
     if variant.is_none() {
         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(

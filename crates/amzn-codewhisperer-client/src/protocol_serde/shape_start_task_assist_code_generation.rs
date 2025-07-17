@@ -9,13 +9,21 @@ pub fn de_start_task_assist_code_generation_http_error(
     crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-        .map_err(crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::unhandled)?;
+    let mut generic_builder =
+        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body).map_err(
+            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::unhandled,
+        )?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
         Some(code) => code,
-        None => return Err(crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::unhandled(generic)),
+        None => {
+            return Err(
+                crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::unhandled(
+                    generic,
+                ),
+            );
+        },
     };
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
@@ -142,18 +150,24 @@ pub fn de_start_task_assist_code_generation_http_response(
     Ok({
         #[allow(unused_mut)]
         let mut output = crate::operation::start_task_assist_code_generation::builders::StartTaskAssistCodeGenerationOutputBuilder::default();
-        output = crate::protocol_serde::shape_start_task_assist_code_generation::de_start_task_assist_code_generation(_response_body, output)
-            .map_err(crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::unhandled)?;
+        output = crate::protocol_serde::shape_start_task_assist_code_generation::de_start_task_assist_code_generation(
+            _response_body,
+            output,
+        )
+        .map_err(crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::unhandled)?;
         output._set_request_id(::aws_types::request_id::RequestId::request_id(_response_headers).map(str::to_string));
         crate::serde_util::start_task_assist_code_generation_output_output_correct_errors(output)
             .build()
-            .map_err(crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::unhandled)?
+            .map_err(
+                crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::unhandled,
+            )?
     })
 }
 
 pub fn ser_start_task_assist_code_generation_input(
     input: &crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_start_task_assist_code_generation_input::ser_start_task_assist_code_generation_input_input(&mut object, input)?;
@@ -168,7 +182,8 @@ pub(crate) fn de_start_task_assist_code_generation(
     crate::operation::start_task_assist_code_generation::builders::StartTaskAssistCodeGenerationOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned =
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -181,22 +196,21 @@ pub(crate) fn de_start_task_assist_code_generation(
                             .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                             .transpose()?,
                     );
-                }
+                },
                 "codeGenerationId" => {
                     builder = builder.set_code_generation_id(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
                             .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                             .transpose()?,
                     );
-                }
+                },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
-                    "expected object key or end object, found: {:?}",
-                    other
-                )))
-            }
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                    format!("expected object key or end object, found: {:?}", other),
+                ));
+            },
         }
     }
     if tokens.next().is_some() {

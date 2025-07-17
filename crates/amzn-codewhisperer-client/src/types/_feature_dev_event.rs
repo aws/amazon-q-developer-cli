@@ -14,7 +14,8 @@ impl FeatureDevEvent {
     }
 }
 impl FeatureDevEvent {
-    /// Creates a new builder-style object to manufacture [`FeatureDevEvent`](crate::types::FeatureDevEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`FeatureDevEvent`](crate::types::FeatureDevEvent).
     pub fn builder() -> crate::types::builders::FeatureDevEventBuilder {
         crate::types::builders::FeatureDevEventBuilder::default()
     }
@@ -33,19 +34,24 @@ impl FeatureDevEventBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
+
     /// Consumes the builder and constructs a [`FeatureDevEvent`](crate::types::FeatureDevEvent).
     /// This method will fail if any of the following fields are not set:
     /// - [`conversation_id`](crate::types::builders::FeatureDevEventBuilder::conversation_id)
-    pub fn build(self) -> ::std::result::Result<crate::types::FeatureDevEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::FeatureDevEvent, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::FeatureDevEvent {
             conversation_id: self.conversation_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

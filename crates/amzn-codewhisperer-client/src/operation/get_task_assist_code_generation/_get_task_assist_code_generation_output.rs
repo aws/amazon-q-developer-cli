@@ -22,18 +22,22 @@ impl GetTaskAssistCodeGenerationOutput {
         use std::ops::Deref;
         self.conversation_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_generation_status(&self) -> &crate::types::CodeGenerationStatus {
         &self.code_generation_status
     }
+
     /// Detailed message about the code generation status
     pub fn code_generation_status_detail(&self) -> ::std::option::Option<&str> {
         self.code_generation_status_detail.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_generation_remaining_iteration_count(&self) -> ::std::option::Option<i32> {
         self.code_generation_remaining_iteration_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_generation_total_iteration_count(&self) -> ::std::option::Option<i32> {
         self.code_generation_total_iteration_count
@@ -49,7 +53,10 @@ impl ::std::fmt::Debug for GetTaskAssistCodeGenerationOutput {
             "code_generation_remaining_iteration_count",
             &self.code_generation_remaining_iteration_count,
         );
-        formatter.field("code_generation_total_iteration_count", &self.code_generation_total_iteration_count);
+        formatter.field(
+            "code_generation_total_iteration_count",
+            &self.code_generation_total_iteration_count,
+        );
         formatter.field("_request_id", &self._request_id);
         formatter.finish()
     }
@@ -60,13 +67,18 @@ impl ::aws_types::request_id::RequestId for GetTaskAssistCodeGenerationOutput {
     }
 }
 impl GetTaskAssistCodeGenerationOutput {
-    /// Creates a new builder-style object to manufacture [`GetTaskAssistCodeGenerationOutput`](crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationOutput).
-    pub fn builder() -> crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder {
+    /// Creates a new builder-style object to manufacture
+    /// [`GetTaskAssistCodeGenerationOutput`](crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationOutput).
+    ///
+    pub fn builder()
+    -> crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder {
         crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder::default()
     }
 }
 
-/// A builder for [`GetTaskAssistCodeGenerationOutput`](crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationOutput).
+/// A builder for
+/// [`GetTaskAssistCodeGenerationOutput`](crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct GetTaskAssistCodeGenerationOutputBuilder {
@@ -84,72 +96,90 @@ impl GetTaskAssistCodeGenerationOutputBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn code_generation_status(mut self, input: crate::types::CodeGenerationStatus) -> Self {
         self.code_generation_status = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_code_generation_status(mut self, input: ::std::option::Option<crate::types::CodeGenerationStatus>) -> Self {
+    pub fn set_code_generation_status(
+        mut self,
+        input: ::std::option::Option<crate::types::CodeGenerationStatus>,
+    ) -> Self {
         self.code_generation_status = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_code_generation_status(&self) -> &::std::option::Option<crate::types::CodeGenerationStatus> {
         &self.code_generation_status
     }
+
     /// Detailed message about the code generation status
     pub fn code_generation_status_detail(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.code_generation_status_detail = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Detailed message about the code generation status
     pub fn set_code_generation_status_detail(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.code_generation_status_detail = input;
         self
     }
+
     /// Detailed message about the code generation status
     pub fn get_code_generation_status_detail(&self) -> &::std::option::Option<::std::string::String> {
         &self.code_generation_status_detail
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_generation_remaining_iteration_count(mut self, input: i32) -> Self {
         self.code_generation_remaining_iteration_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_code_generation_remaining_iteration_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.code_generation_remaining_iteration_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_code_generation_remaining_iteration_count(&self) -> &::std::option::Option<i32> {
         &self.code_generation_remaining_iteration_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn code_generation_total_iteration_count(mut self, input: i32) -> Self {
         self.code_generation_total_iteration_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_code_generation_total_iteration_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.code_generation_total_iteration_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_code_generation_total_iteration_count(&self) -> &::std::option::Option<i32> {
         &self.code_generation_total_iteration_count
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -159,7 +189,9 @@ impl GetTaskAssistCodeGenerationOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`GetTaskAssistCodeGenerationOutput`](crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`GetTaskAssistCodeGenerationOutput`](crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`conversation_id`](crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder::conversation_id)
     /// - [`code_generation_status`](crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder::code_generation_status)
@@ -199,7 +231,10 @@ impl ::std::fmt::Debug for GetTaskAssistCodeGenerationOutputBuilder {
             "code_generation_remaining_iteration_count",
             &self.code_generation_remaining_iteration_count,
         );
-        formatter.field("code_generation_total_iteration_count", &self.code_generation_total_iteration_count);
+        formatter.field(
+            "code_generation_total_iteration_count",
+            &self.code_generation_total_iteration_count,
+        );
         formatter.field("_request_id", &self._request_id);
         formatter.finish()
     }

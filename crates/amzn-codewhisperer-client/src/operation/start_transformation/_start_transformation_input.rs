@@ -16,23 +16,28 @@ impl StartTransformationInput {
     pub fn workspace_state(&self) -> ::std::option::Option<&crate::types::WorkspaceState> {
         self.workspace_state.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn transformation_spec(&self) -> ::std::option::Option<&crate::types::TransformationSpec> {
         self.transformation_spec.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
 }
 impl StartTransformationInput {
-    /// Creates a new builder-style object to manufacture [`StartTransformationInput`](crate::operation::start_transformation::StartTransformationInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`StartTransformationInput`](crate::operation::start_transformation::StartTransformationInput).
+    ///
     pub fn builder() -> crate::operation::start_transformation::builders::StartTransformationInputBuilder {
         crate::operation::start_transformation::builders::StartTransformationInputBuilder::default()
     }
 }
 
-/// A builder for [`StartTransformationInput`](crate::operation::start_transformation::StartTransformationInput).
+/// A builder for
+/// [`StartTransformationInput`](crate::operation::start_transformation::StartTransformationInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct StartTransformationInputBuilder {
@@ -47,49 +52,62 @@ impl StartTransformationInputBuilder {
         self.workspace_state = ::std::option::Option::Some(input);
         self
     }
+
     /// Represents a Workspace state uploaded to S3 for Async Code Actions
     pub fn set_workspace_state(mut self, input: ::std::option::Option<crate::types::WorkspaceState>) -> Self {
         self.workspace_state = input;
         self
     }
+
     /// Represents a Workspace state uploaded to S3 for Async Code Actions
     pub fn get_workspace_state(&self) -> &::std::option::Option<crate::types::WorkspaceState> {
         &self.workspace_state
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn transformation_spec(mut self, input: crate::types::TransformationSpec) -> Self {
         self.transformation_spec = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_transformation_spec(mut self, input: ::std::option::Option<crate::types::TransformationSpec>) -> Self {
         self.transformation_spec = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_transformation_spec(&self) -> &::std::option::Option<crate::types::TransformationSpec> {
         &self.transformation_spec
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-    /// Consumes the builder and constructs a [`StartTransformationInput`](crate::operation::start_transformation::StartTransformationInput).
+
+    /// Consumes the builder and constructs a
+    /// [`StartTransformationInput`](crate::operation::start_transformation::StartTransformationInput).
+    ///
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::start_transformation::StartTransformationInput, ::aws_smithy_types::error::operation::BuildError>
-    {
+    ) -> ::std::result::Result<
+        crate::operation::start_transformation::StartTransformationInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::start_transformation::StartTransformationInput {
             workspace_state: self.workspace_state,
             transformation_spec: self.transformation_spec,

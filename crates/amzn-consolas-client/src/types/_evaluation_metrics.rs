@@ -13,7 +13,8 @@ impl EvaluationMetrics {
     }
 }
 impl EvaluationMetrics {
-    /// Creates a new builder-style object to manufacture [`EvaluationMetrics`](crate::types::EvaluationMetrics).
+    /// Creates a new builder-style object to manufacture
+    /// [`EvaluationMetrics`](crate::types::EvaluationMetrics).
     pub fn builder() -> crate::types::builders::EvaluationMetricsBuilder {
         crate::types::builders::EvaluationMetricsBuilder::default()
     }
@@ -32,19 +33,25 @@ impl EvaluationMetricsBuilder {
         self.composite_score = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_composite_score(mut self, input: ::std::option::Option<i32>) -> Self {
         self.composite_score = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_composite_score(&self) -> &::std::option::Option<i32> {
         &self.composite_score
     }
-    /// Consumes the builder and constructs a [`EvaluationMetrics`](crate::types::EvaluationMetrics).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`EvaluationMetrics`](crate::types::EvaluationMetrics). This method will fail if any of
+    /// the following fields are not set:
     /// - [`composite_score`](crate::types::builders::EvaluationMetricsBuilder::composite_score)
-    pub fn build(self) -> ::std::result::Result<crate::types::EvaluationMetrics, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::EvaluationMetrics, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::EvaluationMetrics {
             composite_score: self.composite_score.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

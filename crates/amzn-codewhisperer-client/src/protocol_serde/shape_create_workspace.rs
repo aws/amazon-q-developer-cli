@@ -4,15 +4,23 @@ pub fn de_create_workspace_http_error(
     _response_status: u16,
     _response_headers: &::aws_smithy_runtime_api::http::Headers,
     _response_body: &[u8],
-) -> std::result::Result<crate::operation::create_workspace::CreateWorkspaceOutput, crate::operation::create_workspace::CreateWorkspaceError> {
+) -> std::result::Result<
+    crate::operation::create_workspace::CreateWorkspaceOutput,
+    crate::operation::create_workspace::CreateWorkspaceError,
+> {
     #[allow(unused_mut)]
-    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-        .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
+    let mut generic_builder =
+        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+            .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
         Some(code) => code,
-        None => return Err(crate::operation::create_workspace::CreateWorkspaceError::unhandled(generic)),
+        None => {
+            return Err(crate::operation::create_workspace::CreateWorkspaceError::unhandled(
+                generic,
+            ));
+        },
     };
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
@@ -22,8 +30,11 @@ pub fn de_create_workspace_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_exception_correct_errors(output)
                     .build()
@@ -36,8 +47,11 @@ pub fn de_create_workspace_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
+                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::access_denied_exception_correct_errors(output)
                     .build()
@@ -50,8 +64,11 @@ pub fn de_create_workspace_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
+                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::internal_server_exception_correct_errors(output)
                     .build()
@@ -64,8 +81,11 @@ pub fn de_create_workspace_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
@@ -78,8 +98,11 @@ pub fn de_create_workspace_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
-                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
+                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::conflict_exception_correct_errors(output)
                     .build()
@@ -87,23 +110,25 @@ pub fn de_create_workspace_http_error(
             };
             tmp
         }),
-        "ServiceQuotaExceededException" => crate::operation::create_workspace::CreateWorkspaceError::ServiceQuotaExceededError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+        "ServiceQuotaExceededException" => {
+            crate::operation::create_workspace::CreateWorkspaceError::ServiceQuotaExceededError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
-                output = crate::protocol_serde::shape_service_quota_exceeded_exception::de_service_quota_exceeded_exception_json_err(
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
+                    output = crate::protocol_serde::shape_service_quota_exceeded_exception::de_service_quota_exceeded_exception_json_err(
                     _response_body,
                     output,
                 )
                 .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::service_quota_exceeded_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?
-            };
-            tmp
-        }),
+                    let output = output.meta(generic);
+                    crate::serde_util::service_quota_exceeded_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::create_workspace::CreateWorkspaceError::unhandled)?
+                };
+                tmp
+            })
+        },
         _ => crate::operation::create_workspace::CreateWorkspaceError::generic(generic),
     })
 }
@@ -113,7 +138,10 @@ pub fn de_create_workspace_http_response(
     _response_status: u16,
     _response_headers: &::aws_smithy_runtime_api::http::Headers,
     _response_body: &[u8],
-) -> std::result::Result<crate::operation::create_workspace::CreateWorkspaceOutput, crate::operation::create_workspace::CreateWorkspaceError> {
+) -> std::result::Result<
+    crate::operation::create_workspace::CreateWorkspaceOutput,
+    crate::operation::create_workspace::CreateWorkspaceError,
+> {
     Ok({
         #[allow(unused_mut)]
         let mut output = crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder::default();
@@ -128,7 +156,8 @@ pub fn de_create_workspace_http_response(
 
 pub fn ser_create_workspace_input(
     input: &crate::operation::create_workspace::CreateWorkspaceInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_create_workspace_input::ser_create_workspace_input_input(&mut object, input)?;
@@ -143,7 +172,8 @@ pub(crate) fn de_create_workspace(
     crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned =
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -151,16 +181,17 @@ pub(crate) fn de_create_workspace(
             Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
             Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key.to_unescaped()?.as_ref() {
                 "workspace" => {
-                    builder = builder.set_workspace(crate::protocol_serde::shape_workspace_metadata::de_workspace_metadata(tokens)?);
-                }
+                    builder = builder.set_workspace(
+                        crate::protocol_serde::shape_workspace_metadata::de_workspace_metadata(tokens)?,
+                    );
+                },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
-                    "expected object key or end object, found: {:?}",
-                    other
-                )))
-            }
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                    format!("expected object key or end object, found: {:?}", other),
+                ));
+            },
         }
     }
     if tokens.next().is_some() {

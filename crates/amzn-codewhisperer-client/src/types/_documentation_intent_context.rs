@@ -15,10 +15,12 @@ impl DocumentationIntentContext {
     pub fn scope(&self) -> ::std::option::Option<&str> {
         self.scope.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn r#type(&self) -> &crate::types::DocumentationType {
         &self.r#type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn change_log_options(&self) -> ::std::option::Option<&crate::types::ChangeLogOptions> {
         self.change_log_options.as_ref()
@@ -34,7 +36,8 @@ impl ::std::fmt::Debug for DocumentationIntentContext {
     }
 }
 impl DocumentationIntentContext {
-    /// Creates a new builder-style object to manufacture [`DocumentationIntentContext`](crate::types::DocumentationIntentContext).
+    /// Creates a new builder-style object to manufacture
+    /// [`DocumentationIntentContext`](crate::types::DocumentationIntentContext).
     pub fn builder() -> crate::types::builders::DocumentationIntentContextBuilder {
         crate::types::builders::DocumentationIntentContextBuilder::default()
     }
@@ -54,48 +57,61 @@ impl DocumentationIntentContextBuilder {
         self.scope = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_scope(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.scope = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_scope(&self) -> &::std::option::Option<::std::string::String> {
         &self.scope
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn r#type(mut self, input: crate::types::DocumentationType) -> Self {
         self.r#type = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_type(mut self, input: ::std::option::Option<crate::types::DocumentationType>) -> Self {
         self.r#type = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_type(&self) -> &::std::option::Option<crate::types::DocumentationType> {
         &self.r#type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn change_log_options(mut self, input: crate::types::ChangeLogOptions) -> Self {
         self.change_log_options = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_change_log_options(mut self, input: ::std::option::Option<crate::types::ChangeLogOptions>) -> Self {
         self.change_log_options = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_change_log_options(&self) -> &::std::option::Option<crate::types::ChangeLogOptions> {
         &self.change_log_options
     }
-    /// Consumes the builder and constructs a [`DocumentationIntentContext`](crate::types::DocumentationIntentContext).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`DocumentationIntentContext`](crate::types::DocumentationIntentContext). This method
+    /// will fail if any of the following fields are not set:
     /// - [`r#type`](crate::types::builders::DocumentationIntentContextBuilder::type)
-    pub fn build(self) -> ::std::result::Result<crate::types::DocumentationIntentContext, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::DocumentationIntentContext, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::DocumentationIntentContext {
             scope: self.scope,
             r#type: self.r#type.ok_or_else(|| {

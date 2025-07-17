@@ -15,17 +15,20 @@ impl ExternalIdentityDetails {
     pub fn issuer_url(&self) -> ::std::option::Option<&str> {
         self.issuer_url.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_id(&self) -> ::std::option::Option<&str> {
         self.client_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn scim_endpoint(&self) -> ::std::option::Option<&str> {
         self.scim_endpoint.as_deref()
     }
 }
 impl ExternalIdentityDetails {
-    /// Creates a new builder-style object to manufacture [`ExternalIdentityDetails`](crate::types::ExternalIdentityDetails).
+    /// Creates a new builder-style object to manufacture
+    /// [`ExternalIdentityDetails`](crate::types::ExternalIdentityDetails).
     pub fn builder() -> crate::types::builders::ExternalIdentityDetailsBuilder {
         crate::types::builders::ExternalIdentityDetailsBuilder::default()
     }
@@ -45,44 +48,54 @@ impl ExternalIdentityDetailsBuilder {
         self.issuer_url = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_issuer_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.issuer_url = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_issuer_url(&self) -> &::std::option::Option<::std::string::String> {
         &self.issuer_url
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.client_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_client_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.client_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn scim_endpoint(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.scim_endpoint = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_scim_endpoint(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.scim_endpoint = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_scim_endpoint(&self) -> &::std::option::Option<::std::string::String> {
         &self.scim_endpoint
     }
-    /// Consumes the builder and constructs a [`ExternalIdentityDetails`](crate::types::ExternalIdentityDetails).
+
+    /// Consumes the builder and constructs a
+    /// [`ExternalIdentityDetails`](crate::types::ExternalIdentityDetails).
     pub fn build(self) -> crate::types::ExternalIdentityDetails {
         crate::types::ExternalIdentityDetails {
             issuer_url: self.issuer_url,

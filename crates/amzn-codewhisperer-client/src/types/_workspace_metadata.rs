@@ -18,14 +18,17 @@ impl WorkspaceMetadata {
         use std::ops::Deref;
         self.workspace_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn workspace_status(&self) -> &crate::types::WorkspaceStatus {
         &self.workspace_status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn environment_address(&self) -> ::std::option::Option<&str> {
         self.environment_address.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn environment_id(&self) -> ::std::option::Option<&str> {
         self.environment_id.as_deref()
@@ -42,7 +45,8 @@ impl ::std::fmt::Debug for WorkspaceMetadata {
     }
 }
 impl WorkspaceMetadata {
-    /// Creates a new builder-style object to manufacture [`WorkspaceMetadata`](crate::types::WorkspaceMetadata).
+    /// Creates a new builder-style object to manufacture
+    /// [`WorkspaceMetadata`](crate::types::WorkspaceMetadata).
     pub fn builder() -> crate::types::builders::WorkspaceMetadataBuilder {
         crate::types::builders::WorkspaceMetadataBuilder::default()
     }
@@ -64,63 +68,78 @@ impl WorkspaceMetadataBuilder {
         self.workspace_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_workspace_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.workspace_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_workspace_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.workspace_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn workspace_status(mut self, input: crate::types::WorkspaceStatus) -> Self {
         self.workspace_status = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_workspace_status(mut self, input: ::std::option::Option<crate::types::WorkspaceStatus>) -> Self {
         self.workspace_status = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_workspace_status(&self) -> &::std::option::Option<crate::types::WorkspaceStatus> {
         &self.workspace_status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn environment_address(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.environment_address = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_environment_address(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.environment_address = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_environment_address(&self) -> &::std::option::Option<::std::string::String> {
         &self.environment_address
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn environment_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.environment_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_environment_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.environment_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_environment_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.environment_id
     }
-    /// Consumes the builder and constructs a [`WorkspaceMetadata`](crate::types::WorkspaceMetadata).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`WorkspaceMetadata`](crate::types::WorkspaceMetadata). This method will fail if any of
+    /// the following fields are not set:
     /// - [`workspace_id`](crate::types::builders::WorkspaceMetadataBuilder::workspace_id)
     /// - [`workspace_status`](crate::types::builders::WorkspaceMetadataBuilder::workspace_status)
-    pub fn build(self) -> ::std::result::Result<crate::types::WorkspaceMetadata, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::WorkspaceMetadata, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::WorkspaceMetadata {
             workspace_id: self.workspace_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

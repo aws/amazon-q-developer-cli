@@ -7,19 +7,22 @@ pub enum DataReference {
     CodeStarReference(crate::types::CodeStarReference),
     #[allow(missing_docs)] // documentation missing in model
     S3Reference(crate::types::S3Reference),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
-    /// An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider
+    /// upgrading the SDK to the latest available version. An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
-    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has
+    /// not been updated. To investigate this, consider turning on debug logging to print the
+    /// raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl DataReference {
-    /// Tries to convert the enum instance into [`CodeStarReference`](crate::types::DataReference::CodeStarReference), extracting the inner [`CodeStarReference`](crate::types::CodeStarReference).
-    /// Returns `Err(&Self)` if it can't be converted.
+    /// Tries to convert the enum instance into
+    /// [`CodeStarReference`](crate::types::DataReference::CodeStarReference), extracting the inner
+    /// [`CodeStarReference`](crate::types::CodeStarReference). Returns `Err(&Self)` if it can't
+    /// be converted.
     pub fn as_code_star_reference(&self) -> ::std::result::Result<&crate::types::CodeStarReference, &Self> {
         if let DataReference::CodeStarReference(val) = &self {
             ::std::result::Result::Ok(val)
@@ -27,12 +30,17 @@ impl DataReference {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`CodeStarReference`](crate::types::DataReference::CodeStarReference).
+
+    /// Returns true if this is a
+    /// [`CodeStarReference`](crate::types::DataReference::CodeStarReference).
     pub fn is_code_star_reference(&self) -> bool {
         self.as_code_star_reference().is_ok()
     }
-    /// Tries to convert the enum instance into [`S3Reference`](crate::types::DataReference::S3Reference), extracting the inner [`S3Reference`](crate::types::S3Reference).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`S3Reference`](crate::types::DataReference::S3Reference), extracting the inner
+    /// [`S3Reference`](crate::types::S3Reference). Returns `Err(&Self)` if it can't be
+    /// converted.
     pub fn as_s3_reference(&self) -> ::std::result::Result<&crate::types::S3Reference, &Self> {
         if let DataReference::S3Reference(val) = &self {
             ::std::result::Result::Ok(val)
@@ -40,10 +48,12 @@ impl DataReference {
             ::std::result::Result::Err(self)
         }
     }
+
     /// Returns true if this is a [`S3Reference`](crate::types::DataReference::S3Reference).
     pub fn is_s3_reference(&self) -> bool {
         self.as_s3_reference().is_ok()
     }
+
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

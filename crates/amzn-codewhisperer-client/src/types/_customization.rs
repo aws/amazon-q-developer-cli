@@ -18,21 +18,25 @@ impl Customization {
         use std::ops::Deref;
         self.arn.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn name(&self) -> ::std::option::Option<&str> {
         self.name.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(&self) -> ::std::option::Option<&str> {
         self.description.as_deref()
     }
+
     /// Unique identifier for the model
     pub fn model_id(&self) -> ::std::option::Option<&str> {
         self.model_id.as_deref()
     }
 }
 impl Customization {
-    /// Creates a new builder-style object to manufacture [`Customization`](crate::types::Customization).
+    /// Creates a new builder-style object to manufacture
+    /// [`Customization`](crate::types::Customization).
     pub fn builder() -> crate::types::builders::CustomizationBuilder {
         crate::types::builders::CustomizationBuilder::default()
     }
@@ -54,61 +58,75 @@ impl CustomizationBuilder {
         self.arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.arn
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.name = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.name = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.name
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
+
     /// Unique identifier for the model
     pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.model_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Unique identifier for the model
     pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.model_id = input;
         self
     }
+
     /// Unique identifier for the model
     pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.model_id
     }
+
     /// Consumes the builder and constructs a [`Customization`](crate::types::Customization).
     /// This method will fail if any of the following fields are not set:
     /// - [`arn`](crate::types::builders::CustomizationBuilder::arn)
-    pub fn build(self) -> ::std::result::Result<crate::types::Customization, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::Customization, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::Customization {
             arn: self.arn.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

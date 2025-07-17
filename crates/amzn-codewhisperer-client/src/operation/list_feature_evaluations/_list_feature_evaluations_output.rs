@@ -20,13 +20,17 @@ impl ::aws_types::request_id::RequestId for ListFeatureEvaluationsOutput {
     }
 }
 impl ListFeatureEvaluationsOutput {
-    /// Creates a new builder-style object to manufacture [`ListFeatureEvaluationsOutput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`ListFeatureEvaluationsOutput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsOutput).
+    ///
     pub fn builder() -> crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsOutputBuilder {
         crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsOutputBuilder::default()
     }
 }
 
-/// A builder for [`ListFeatureEvaluationsOutput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsOutput).
+/// A builder for
+/// [`ListFeatureEvaluationsOutput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListFeatureEvaluationsOutputBuilder {
@@ -36,23 +40,29 @@ pub struct ListFeatureEvaluationsOutputBuilder {
 impl ListFeatureEvaluationsOutputBuilder {
     /// Appends an item to `feature_evaluations`.
     ///
-    /// To override the contents of this collection use [`set_feature_evaluations`](Self::set_feature_evaluations).
-    ///
+    /// To override the contents of this collection use
+    /// [`set_feature_evaluations`](Self::set_feature_evaluations).
     pub fn feature_evaluations(mut self, input: crate::types::FeatureEvaluation) -> Self {
         let mut v = self.feature_evaluations.unwrap_or_default();
         v.push(input);
         self.feature_evaluations = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_feature_evaluations(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::FeatureEvaluation>>) -> Self {
+    pub fn set_feature_evaluations(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::FeatureEvaluation>>,
+    ) -> Self {
         self.feature_evaluations = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_feature_evaluations(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::FeatureEvaluation>> {
         &self.feature_evaluations
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -62,7 +72,9 @@ impl ListFeatureEvaluationsOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`ListFeatureEvaluationsOutput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`ListFeatureEvaluationsOutput`](crate::operation::list_feature_evaluations::ListFeatureEvaluationsOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`feature_evaluations`](crate::operation::list_feature_evaluations::builders::ListFeatureEvaluationsOutputBuilder::feature_evaluations)
     pub fn build(

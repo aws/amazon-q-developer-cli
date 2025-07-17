@@ -6,7 +6,8 @@
 pub struct TaskOverview {
     /// A label for the task overview.
     pub label: ::std::string::String,
-    /// Text description providing details about the task. This field may include sensitive information and supports Markdown formatting.
+    /// Text description providing details about the task. This field may include sensitive
+    /// information and supports Markdown formatting.
     pub description: ::std::string::String,
 }
 impl TaskOverview {
@@ -15,7 +16,9 @@ impl TaskOverview {
         use std::ops::Deref;
         self.label.deref()
     }
-    /// Text description providing details about the task. This field may include sensitive information and supports Markdown formatting.
+
+    /// Text description providing details about the task. This field may include sensitive
+    /// information and supports Markdown formatting.
     pub fn description(&self) -> &str {
         use std::ops::Deref;
         self.description.deref()
@@ -30,7 +33,8 @@ impl ::std::fmt::Debug for TaskOverview {
     }
 }
 impl TaskOverview {
-    /// Creates a new builder-style object to manufacture [`TaskOverview`](crate::types::TaskOverview).
+    /// Creates a new builder-style object to manufacture
+    /// [`TaskOverview`](crate::types::TaskOverview).
     pub fn builder() -> crate::types::builders::TaskOverviewBuilder {
         crate::types::builders::TaskOverviewBuilder::default()
     }
@@ -50,35 +54,45 @@ impl TaskOverviewBuilder {
         self.label = ::std::option::Option::Some(input.into());
         self
     }
+
     /// A label for the task overview.
     pub fn set_label(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.label = input;
         self
     }
+
     /// A label for the task overview.
     pub fn get_label(&self) -> &::std::option::Option<::std::string::String> {
         &self.label
     }
-    /// Text description providing details about the task. This field may include sensitive information and supports Markdown formatting.
-    /// This field is required.
+
+    /// Text description providing details about the task. This field may include sensitive
+    /// information and supports Markdown formatting. This field is required.
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
-    /// Text description providing details about the task. This field may include sensitive information and supports Markdown formatting.
+
+    /// Text description providing details about the task. This field may include sensitive
+    /// information and supports Markdown formatting.
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
-    /// Text description providing details about the task. This field may include sensitive information and supports Markdown formatting.
+
+    /// Text description providing details about the task. This field may include sensitive
+    /// information and supports Markdown formatting.
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
+
     /// Consumes the builder and constructs a [`TaskOverview`](crate::types::TaskOverview).
     /// This method will fail if any of the following fields are not set:
     /// - [`label`](crate::types::builders::TaskOverviewBuilder::label)
     /// - [`description`](crate::types::builders::TaskOverviewBuilder::description)
-    pub fn build(self) -> ::std::result::Result<crate::types::TaskOverview, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::TaskOverview, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TaskOverview {
             label: self.label.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

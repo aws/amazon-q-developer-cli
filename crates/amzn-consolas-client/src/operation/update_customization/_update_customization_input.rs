@@ -21,25 +21,30 @@ impl UpdateCustomizationInput {
     pub fn identifier(&self) -> ::std::option::Option<&str> {
         self.identifier.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn operation(&self) -> ::std::option::Option<&crate::types::UpdateOperation> {
         self.operation.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(&self) -> ::std::option::Option<&str> {
         self.client_token.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn data_reference(&self) -> ::std::option::Option<&crate::types::DataReference> {
         self.data_reference.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn version(&self) -> ::std::option::Option<i64> {
         self.version
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.include_repos.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.include_repos.is_none()`.
     pub fn include_repos(&self) -> &[::std::string::String] {
         self.include_repos.as_deref().unwrap_or_default()
     }
@@ -57,13 +62,16 @@ impl ::std::fmt::Debug for UpdateCustomizationInput {
     }
 }
 impl UpdateCustomizationInput {
-    /// Creates a new builder-style object to manufacture [`UpdateCustomizationInput`](crate::operation::update_customization::UpdateCustomizationInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`UpdateCustomizationInput`](crate::operation::update_customization::UpdateCustomizationInput).
+    ///
     pub fn builder() -> crate::operation::update_customization::builders::UpdateCustomizationInputBuilder {
         crate::operation::update_customization::builders::UpdateCustomizationInputBuilder::default()
     }
 }
 
-/// A builder for [`UpdateCustomizationInput`](crate::operation::update_customization::UpdateCustomizationInput).
+/// A builder for
+/// [`UpdateCustomizationInput`](crate::operation::update_customization::UpdateCustomizationInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct UpdateCustomizationInputBuilder {
@@ -81,96 +89,118 @@ impl UpdateCustomizationInputBuilder {
         self.identifier = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_identifier(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.identifier = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_identifier(&self) -> &::std::option::Option<::std::string::String> {
         &self.identifier
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn operation(mut self, input: crate::types::UpdateOperation) -> Self {
         self.operation = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_operation(mut self, input: ::std::option::Option<crate::types::UpdateOperation>) -> Self {
         self.operation = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_operation(&self) -> &::std::option::Option<crate::types::UpdateOperation> {
         &self.operation
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.client_token = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_client_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.client_token = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_token
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn data_reference(mut self, input: crate::types::DataReference) -> Self {
         self.data_reference = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_data_reference(mut self, input: ::std::option::Option<crate::types::DataReference>) -> Self {
         self.data_reference = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_data_reference(&self) -> &::std::option::Option<crate::types::DataReference> {
         &self.data_reference
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn version(mut self, input: i64) -> Self {
         self.version = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_version(mut self, input: ::std::option::Option<i64>) -> Self {
         self.version = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_version(&self) -> &::std::option::Option<i64> {
         &self.version
     }
+
     /// Appends an item to `include_repos`.
     ///
-    /// To override the contents of this collection use [`set_include_repos`](Self::set_include_repos).
-    ///
+    /// To override the contents of this collection use
+    /// [`set_include_repos`](Self::set_include_repos).
     pub fn include_repos(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         let mut v = self.include_repos.unwrap_or_default();
         v.push(input.into());
         self.include_repos = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_include_repos(mut self, input: ::std::option::Option<::std::vec::Vec<::std::string::String>>) -> Self {
         self.include_repos = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_include_repos(&self) -> &::std::option::Option<::std::vec::Vec<::std::string::String>> {
         &self.include_repos
     }
-    /// Consumes the builder and constructs a [`UpdateCustomizationInput`](crate::operation::update_customization::UpdateCustomizationInput).
+
+    /// Consumes the builder and constructs a
+    /// [`UpdateCustomizationInput`](crate::operation::update_customization::UpdateCustomizationInput).
+    ///
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::update_customization::UpdateCustomizationInput, ::aws_smithy_types::error::operation::BuildError>
-    {
+    ) -> ::std::result::Result<
+        crate::operation::update_customization::UpdateCustomizationInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::update_customization::UpdateCustomizationInput {
             identifier: self.identifier,
             operation: self.operation,

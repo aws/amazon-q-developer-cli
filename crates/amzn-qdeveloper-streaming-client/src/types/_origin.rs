@@ -56,7 +56,13 @@
 /// _Note: `Origin::Unknown` has been renamed to `::UnknownValue`._
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
+    ::std::clone::Clone,
+    ::std::cmp::Eq,
+    ::std::cmp::Ord,
+    ::std::cmp::PartialEq,
+    ::std::cmp::PartialOrd,
+    ::std::fmt::Debug,
+    ::std::hash::Hash,
 )]
 pub enum Origin {
     /// Any AI Editor.
@@ -87,7 +93,8 @@ pub enum Origin {
     QDevBext,
     /// Amazon SageMaker's Rome Chat.
     SageMaker,
-    /// Internal Service Traffic (Integ Tests, Canaries, etc.). This is the default when no Origin header present in request.
+    /// Internal Service Traffic (Integ Tests, Canaries, etc.). This is the default when no Origin
+    /// header present in request.
     ServiceInternal,
     /// Unified Search in AWS Management Console (https://<region>.console.aws.amazon.com)
     UnifiedSearch,
@@ -96,7 +103,9 @@ pub enum Origin {
     /// _Note: `::Unknown` has been renamed to `::UnknownValue`._
     UnknownValue,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
+    #[deprecated(
+        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
+    )]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for Origin {
@@ -119,7 +128,9 @@ impl ::std::convert::From<&str> for Origin {
             "SERVICE_INTERNAL" => Origin::ServiceInternal,
             "UNIFIED_SEARCH" => Origin::UnifiedSearch,
             "UNKNOWN" => Origin::UnknownValue,
-            other => Origin::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
+            other => Origin::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
+                other.to_owned(),
+            )),
         }
     }
 }
@@ -154,6 +165,7 @@ impl Origin {
             Origin::Unknown(value) => value.as_str(),
         }
     }
+
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[

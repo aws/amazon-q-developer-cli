@@ -16,15 +16,17 @@ impl Completion {
         use std::ops::Deref;
         self.content.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.references.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.references.is_none()`.
     pub fn references(&self) -> &[crate::types::Reference] {
         self.references.as_deref().unwrap_or_default()
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.most_relevant_missing_imports.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.most_relevant_missing_imports.is_none()`.
     pub fn most_relevant_missing_imports(&self) -> &[crate::types::Import] {
         self.most_relevant_missing_imports.as_deref().unwrap_or_default()
     }
@@ -60,57 +62,70 @@ impl CompletionBuilder {
         self.content = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.content = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.content
     }
+
     /// Appends an item to `references`.
     ///
     /// To override the contents of this collection use [`set_references`](Self::set_references).
-    ///
     pub fn references(mut self, input: crate::types::Reference) -> Self {
         let mut v = self.references.unwrap_or_default();
         v.push(input);
         self.references = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_references(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Reference>>) -> Self {
         self.references = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_references(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Reference>> {
         &self.references
     }
+
     /// Appends an item to `most_relevant_missing_imports`.
     ///
-    /// To override the contents of this collection use [`set_most_relevant_missing_imports`](Self::set_most_relevant_missing_imports).
-    ///
+    /// To override the contents of this collection use
+    /// [`set_most_relevant_missing_imports`](Self::set_most_relevant_missing_imports).
     pub fn most_relevant_missing_imports(mut self, input: crate::types::Import) -> Self {
         let mut v = self.most_relevant_missing_imports.unwrap_or_default();
         v.push(input);
         self.most_relevant_missing_imports = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_most_relevant_missing_imports(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Import>>) -> Self {
+    pub fn set_most_relevant_missing_imports(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::Import>>,
+    ) -> Self {
         self.most_relevant_missing_imports = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_most_relevant_missing_imports(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Import>> {
         &self.most_relevant_missing_imports
     }
+
     /// Consumes the builder and constructs a [`Completion`](crate::types::Completion).
     /// This method will fail if any of the following fields are not set:
     /// - [`content`](crate::types::builders::CompletionBuilder::content)
-    pub fn build(self) -> ::std::result::Result<crate::types::Completion, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::Completion, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::Completion {
             content: self.content.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

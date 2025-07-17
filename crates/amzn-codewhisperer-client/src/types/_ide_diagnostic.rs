@@ -18,14 +18,17 @@ impl IdeDiagnostic {
     pub fn range(&self) -> ::std::option::Option<&crate::types::Range> {
         self.range.as_ref()
     }
+
     /// A human-readable string describing the source of the diagnostic
     pub fn source(&self) -> ::std::option::Option<&str> {
         self.source.as_deref()
     }
+
     /// Diagnostic Error type
     pub fn severity(&self) -> ::std::option::Option<&crate::types::DiagnosticSeverity> {
         self.severity.as_ref()
     }
+
     /// Type of the diagnostic
     pub fn ide_diagnostic_type(&self) -> &crate::types::IdeDiagnosticType {
         &self.ide_diagnostic_type
@@ -42,7 +45,8 @@ impl ::std::fmt::Debug for IdeDiagnostic {
     }
 }
 impl IdeDiagnostic {
-    /// Creates a new builder-style object to manufacture [`IdeDiagnostic`](crate::types::IdeDiagnostic).
+    /// Creates a new builder-style object to manufacture
+    /// [`IdeDiagnostic`](crate::types::IdeDiagnostic).
     pub fn builder() -> crate::types::builders::IdeDiagnosticBuilder {
         crate::types::builders::IdeDiagnosticBuilder::default()
     }
@@ -63,62 +67,76 @@ impl IdeDiagnosticBuilder {
         self.range = ::std::option::Option::Some(input);
         self
     }
+
     /// The range at which the message applies.
     pub fn set_range(mut self, input: ::std::option::Option<crate::types::Range>) -> Self {
         self.range = input;
         self
     }
+
     /// The range at which the message applies.
     pub fn get_range(&self) -> &::std::option::Option<crate::types::Range> {
         &self.range
     }
+
     /// A human-readable string describing the source of the diagnostic
     pub fn source(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.source = ::std::option::Option::Some(input.into());
         self
     }
+
     /// A human-readable string describing the source of the diagnostic
     pub fn set_source(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.source = input;
         self
     }
+
     /// A human-readable string describing the source of the diagnostic
     pub fn get_source(&self) -> &::std::option::Option<::std::string::String> {
         &self.source
     }
+
     /// Diagnostic Error type
     pub fn severity(mut self, input: crate::types::DiagnosticSeverity) -> Self {
         self.severity = ::std::option::Option::Some(input);
         self
     }
+
     /// Diagnostic Error type
     pub fn set_severity(mut self, input: ::std::option::Option<crate::types::DiagnosticSeverity>) -> Self {
         self.severity = input;
         self
     }
+
     /// Diagnostic Error type
     pub fn get_severity(&self) -> &::std::option::Option<crate::types::DiagnosticSeverity> {
         &self.severity
     }
+
     /// Type of the diagnostic
     /// This field is required.
     pub fn ide_diagnostic_type(mut self, input: crate::types::IdeDiagnosticType) -> Self {
         self.ide_diagnostic_type = ::std::option::Option::Some(input);
         self
     }
+
     /// Type of the diagnostic
     pub fn set_ide_diagnostic_type(mut self, input: ::std::option::Option<crate::types::IdeDiagnosticType>) -> Self {
         self.ide_diagnostic_type = input;
         self
     }
+
     /// Type of the diagnostic
     pub fn get_ide_diagnostic_type(&self) -> &::std::option::Option<crate::types::IdeDiagnosticType> {
         &self.ide_diagnostic_type
     }
+
     /// Consumes the builder and constructs a [`IdeDiagnostic`](crate::types::IdeDiagnostic).
     /// This method will fail if any of the following fields are not set:
     /// - [`ide_diagnostic_type`](crate::types::builders::IdeDiagnosticBuilder::ide_diagnostic_type)
-    pub fn build(self) -> ::std::result::Result<crate::types::IdeDiagnostic, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::IdeDiagnostic, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::IdeDiagnostic {
             range: self.range,
             source: self.source,

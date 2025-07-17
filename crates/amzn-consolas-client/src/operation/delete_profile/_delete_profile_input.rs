@@ -13,7 +13,8 @@ impl DeleteProfileInput {
     }
 }
 impl DeleteProfileInput {
-    /// Creates a new builder-style object to manufacture [`DeleteProfileInput`](crate::operation::delete_profile::DeleteProfileInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`DeleteProfileInput`](crate::operation::delete_profile::DeleteProfileInput).
     pub fn builder() -> crate::operation::delete_profile::builders::DeleteProfileInputBuilder {
         crate::operation::delete_profile::builders::DeleteProfileInputBuilder::default()
     }
@@ -32,19 +33,26 @@ impl DeleteProfileInputBuilder {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-    /// Consumes the builder and constructs a [`DeleteProfileInput`](crate::operation::delete_profile::DeleteProfileInput).
+
+    /// Consumes the builder and constructs a
+    /// [`DeleteProfileInput`](crate::operation::delete_profile::DeleteProfileInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::delete_profile::DeleteProfileInput, ::aws_smithy_types::error::operation::BuildError> {
+    ) -> ::std::result::Result<
+        crate::operation::delete_profile::DeleteProfileInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::delete_profile::DeleteProfileInput {
             profile_arn: self.profile_arn,
         })

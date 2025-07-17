@@ -12,7 +12,8 @@ pub struct DocV2GenerationEvent {
     pub number_of_generated_lines: i32,
     #[allow(missing_docs)] // documentation missing in model
     pub number_of_generated_files: i32,
-    /// Tracks whether user chose to generate a new document, update an existing one, or edit document
+    /// Tracks whether user chose to generate a new document, update an existing one, or edit
+    /// document
     pub interaction_type: ::std::option::Option<crate::types::DocInteractionType>,
     #[allow(missing_docs)] // documentation missing in model
     pub number_of_navigations: i32,
@@ -25,33 +26,41 @@ impl DocV2GenerationEvent {
         use std::ops::Deref;
         self.conversation_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_generated_chars(&self) -> i32 {
         self.number_of_generated_chars
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_generated_lines(&self) -> i32 {
         self.number_of_generated_lines
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_generated_files(&self) -> i32 {
         self.number_of_generated_files
     }
-    /// Tracks whether user chose to generate a new document, update an existing one, or edit document
+
+    /// Tracks whether user chose to generate a new document, update an existing one, or edit
+    /// document
     pub fn interaction_type(&self) -> ::std::option::Option<&crate::types::DocInteractionType> {
         self.interaction_type.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_navigations(&self) -> i32 {
         self.number_of_navigations
     }
+
     /// Specifies the folder depth level where the document should be generated
     pub fn folder_level(&self) -> ::std::option::Option<&crate::types::DocFolderLevel> {
         self.folder_level.as_ref()
     }
 }
 impl DocV2GenerationEvent {
-    /// Creates a new builder-style object to manufacture [`DocV2GenerationEvent`](crate::types::DocV2GenerationEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`DocV2GenerationEvent`](crate::types::DocV2GenerationEvent).
     pub fn builder() -> crate::types::builders::DocV2GenerationEventBuilder {
         crate::types::builders::DocV2GenerationEventBuilder::default()
     }
@@ -76,106 +85,134 @@ impl DocV2GenerationEventBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn number_of_generated_chars(mut self, input: i32) -> Self {
         self.number_of_generated_chars = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_number_of_generated_chars(mut self, input: ::std::option::Option<i32>) -> Self {
         self.number_of_generated_chars = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_number_of_generated_chars(&self) -> &::std::option::Option<i32> {
         &self.number_of_generated_chars
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn number_of_generated_lines(mut self, input: i32) -> Self {
         self.number_of_generated_lines = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_number_of_generated_lines(mut self, input: ::std::option::Option<i32>) -> Self {
         self.number_of_generated_lines = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_number_of_generated_lines(&self) -> &::std::option::Option<i32> {
         &self.number_of_generated_lines
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn number_of_generated_files(mut self, input: i32) -> Self {
         self.number_of_generated_files = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_number_of_generated_files(mut self, input: ::std::option::Option<i32>) -> Self {
         self.number_of_generated_files = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_number_of_generated_files(&self) -> &::std::option::Option<i32> {
         &self.number_of_generated_files
     }
-    /// Tracks whether user chose to generate a new document, update an existing one, or edit document
+
+    /// Tracks whether user chose to generate a new document, update an existing one, or edit
+    /// document
     pub fn interaction_type(mut self, input: crate::types::DocInteractionType) -> Self {
         self.interaction_type = ::std::option::Option::Some(input);
         self
     }
-    /// Tracks whether user chose to generate a new document, update an existing one, or edit document
+
+    /// Tracks whether user chose to generate a new document, update an existing one, or edit
+    /// document
     pub fn set_interaction_type(mut self, input: ::std::option::Option<crate::types::DocInteractionType>) -> Self {
         self.interaction_type = input;
         self
     }
-    /// Tracks whether user chose to generate a new document, update an existing one, or edit document
+
+    /// Tracks whether user chose to generate a new document, update an existing one, or edit
+    /// document
     pub fn get_interaction_type(&self) -> &::std::option::Option<crate::types::DocInteractionType> {
         &self.interaction_type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_navigations(mut self, input: i32) -> Self {
         self.number_of_navigations = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_number_of_navigations(mut self, input: ::std::option::Option<i32>) -> Self {
         self.number_of_navigations = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_number_of_navigations(&self) -> &::std::option::Option<i32> {
         &self.number_of_navigations
     }
+
     /// Specifies the folder depth level where the document should be generated
     pub fn folder_level(mut self, input: crate::types::DocFolderLevel) -> Self {
         self.folder_level = ::std::option::Option::Some(input);
         self
     }
+
     /// Specifies the folder depth level where the document should be generated
     pub fn set_folder_level(mut self, input: ::std::option::Option<crate::types::DocFolderLevel>) -> Self {
         self.folder_level = input;
         self
     }
+
     /// Specifies the folder depth level where the document should be generated
     pub fn get_folder_level(&self) -> &::std::option::Option<crate::types::DocFolderLevel> {
         &self.folder_level
     }
-    /// Consumes the builder and constructs a [`DocV2GenerationEvent`](crate::types::DocV2GenerationEvent).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`DocV2GenerationEvent`](crate::types::DocV2GenerationEvent). This method will fail if
+    /// any of the following fields are not set:
     /// - [`conversation_id`](crate::types::builders::DocV2GenerationEventBuilder::conversation_id)
-    pub fn build(self) -> ::std::result::Result<crate::types::DocV2GenerationEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::DocV2GenerationEvent, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::DocV2GenerationEvent {
             conversation_id: self.conversation_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

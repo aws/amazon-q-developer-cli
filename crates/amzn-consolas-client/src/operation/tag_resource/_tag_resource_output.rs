@@ -11,7 +11,8 @@ impl ::aws_types::request_id::RequestId for TagResourceOutput {
     }
 }
 impl TagResourceOutput {
-    /// Creates a new builder-style object to manufacture [`TagResourceOutput`](crate::operation::tag_resource::TagResourceOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`TagResourceOutput`](crate::operation::tag_resource::TagResourceOutput).
     pub fn builder() -> crate::operation::tag_resource::builders::TagResourceOutputBuilder {
         crate::operation::tag_resource::builders::TagResourceOutputBuilder::default()
     }
@@ -33,7 +34,9 @@ impl TagResourceOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`TagResourceOutput`](crate::operation::tag_resource::TagResourceOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`TagResourceOutput`](crate::operation::tag_resource::TagResourceOutput).
     pub fn build(self) -> crate::operation::tag_resource::TagResourceOutput {
         crate::operation::tag_resource::TagResourceOutput {
             _request_id: self._request_id,

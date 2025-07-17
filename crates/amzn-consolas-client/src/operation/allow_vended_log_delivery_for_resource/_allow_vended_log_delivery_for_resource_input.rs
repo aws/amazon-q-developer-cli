@@ -13,19 +13,26 @@ impl AllowVendedLogDeliveryForResourceInput {
     pub fn resource_arn_being_authorized(&self) -> ::std::option::Option<&str> {
         self.resource_arn_being_authorized.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn delivery_source_arn(&self) -> ::std::option::Option<&str> {
         self.delivery_source_arn.as_deref()
     }
 }
 impl AllowVendedLogDeliveryForResourceInput {
-    /// Creates a new builder-style object to manufacture [`AllowVendedLogDeliveryForResourceInput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput).
-    pub fn builder() -> crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceInputBuilder {
+    /// Creates a new builder-style object to manufacture
+    /// [`AllowVendedLogDeliveryForResourceInput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput).
+    ///
+    pub fn builder()
+    -> crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceInputBuilder
+    {
         crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceInputBuilder::default()
     }
 }
 
-/// A builder for [`AllowVendedLogDeliveryForResourceInput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput).
+/// A builder for
+/// [`AllowVendedLogDeliveryForResourceInput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct AllowVendedLogDeliveryForResourceInputBuilder {
@@ -39,31 +46,39 @@ impl AllowVendedLogDeliveryForResourceInputBuilder {
         self.resource_arn_being_authorized = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_resource_arn_being_authorized(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.resource_arn_being_authorized = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_resource_arn_being_authorized(&self) -> &::std::option::Option<::std::string::String> {
         &self.resource_arn_being_authorized
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn delivery_source_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.delivery_source_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_delivery_source_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.delivery_source_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_delivery_source_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.delivery_source_arn
     }
-    /// Consumes the builder and constructs a [`AllowVendedLogDeliveryForResourceInput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput).
+
+    /// Consumes the builder and constructs a
+    /// [`AllowVendedLogDeliveryForResourceInput`](crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput).
+    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<

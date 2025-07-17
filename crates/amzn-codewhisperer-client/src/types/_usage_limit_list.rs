@@ -17,21 +17,25 @@ impl UsageLimitList {
     pub fn r#type(&self) -> &crate::types::UsageLimitType {
         &self.r#type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn current_usage_limit(&self) -> i64 {
         self.current_usage_limit
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn total_usage_limit(&self) -> i64 {
         self.total_usage_limit
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn percent_used(&self) -> ::std::option::Option<f64> {
         self.percent_used
     }
 }
 impl UsageLimitList {
-    /// Creates a new builder-style object to manufacture [`UsageLimitList`](crate::types::UsageLimitList).
+    /// Creates a new builder-style object to manufacture
+    /// [`UsageLimitList`](crate::types::UsageLimitList).
     pub fn builder() -> crate::types::builders::UsageLimitListBuilder {
         crate::types::builders::UsageLimitListBuilder::default()
     }
@@ -53,65 +57,79 @@ impl UsageLimitListBuilder {
         self.r#type = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_type(mut self, input: ::std::option::Option<crate::types::UsageLimitType>) -> Self {
         self.r#type = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_type(&self) -> &::std::option::Option<crate::types::UsageLimitType> {
         &self.r#type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn current_usage_limit(mut self, input: i64) -> Self {
         self.current_usage_limit = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_current_usage_limit(mut self, input: ::std::option::Option<i64>) -> Self {
         self.current_usage_limit = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_current_usage_limit(&self) -> &::std::option::Option<i64> {
         &self.current_usage_limit
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn total_usage_limit(mut self, input: i64) -> Self {
         self.total_usage_limit = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_total_usage_limit(mut self, input: ::std::option::Option<i64>) -> Self {
         self.total_usage_limit = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_total_usage_limit(&self) -> &::std::option::Option<i64> {
         &self.total_usage_limit
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn percent_used(mut self, input: f64) -> Self {
         self.percent_used = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_percent_used(mut self, input: ::std::option::Option<f64>) -> Self {
         self.percent_used = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_percent_used(&self) -> &::std::option::Option<f64> {
         &self.percent_used
     }
+
     /// Consumes the builder and constructs a [`UsageLimitList`](crate::types::UsageLimitList).
     /// This method will fail if any of the following fields are not set:
     /// - [`r#type`](crate::types::builders::UsageLimitListBuilder::type)
     /// - [`current_usage_limit`](crate::types::builders::UsageLimitListBuilder::current_usage_limit)
     /// - [`total_usage_limit`](crate::types::builders::UsageLimitListBuilder::total_usage_limit)
-    pub fn build(self) -> ::std::result::Result<crate::types::UsageLimitList, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::UsageLimitList, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::UsageLimitList {
             r#type: self.r#type.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

@@ -24,33 +24,40 @@ impl CodeFixAcceptanceEvent {
         use std::ops::Deref;
         self.job_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn rule_id(&self) -> ::std::option::Option<&str> {
         self.rule_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn detector_id(&self) -> ::std::option::Option<&str> {
         self.detector_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn finding_id(&self) -> ::std::option::Option<&str> {
         self.finding_id.as_deref()
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> ::std::option::Option<&crate::types::ProgrammingLanguage> {
         self.programming_language.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_accepted(&self) -> ::std::option::Option<i32> {
         self.lines_of_code_accepted
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn chars_of_code_accepted(&self) -> ::std::option::Option<i32> {
         self.chars_of_code_accepted
     }
 }
 impl CodeFixAcceptanceEvent {
-    /// Creates a new builder-style object to manufacture [`CodeFixAcceptanceEvent`](crate::types::CodeFixAcceptanceEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`CodeFixAcceptanceEvent`](crate::types::CodeFixAcceptanceEvent).
     pub fn builder() -> crate::types::builders::CodeFixAcceptanceEventBuilder {
         crate::types::builders::CodeFixAcceptanceEventBuilder::default()
     }
@@ -75,103 +82,128 @@ impl CodeFixAcceptanceEventBuilder {
         self.job_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.job_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.job_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn rule_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.rule_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_rule_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.rule_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_rule_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.rule_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn detector_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.detector_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_detector_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.detector_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_detector_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.detector_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn finding_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.finding_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_finding_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.finding_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_finding_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.finding_id
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_accepted(mut self, input: i32) -> Self {
         self.lines_of_code_accepted = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_lines_of_code_accepted(mut self, input: ::std::option::Option<i32>) -> Self {
         self.lines_of_code_accepted = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_lines_of_code_accepted(&self) -> &::std::option::Option<i32> {
         &self.lines_of_code_accepted
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn chars_of_code_accepted(mut self, input: i32) -> Self {
         self.chars_of_code_accepted = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_chars_of_code_accepted(mut self, input: ::std::option::Option<i32>) -> Self {
         self.chars_of_code_accepted = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_chars_of_code_accepted(&self) -> &::std::option::Option<i32> {
         &self.chars_of_code_accepted
     }
-    /// Consumes the builder and constructs a [`CodeFixAcceptanceEvent`](crate::types::CodeFixAcceptanceEvent).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`CodeFixAcceptanceEvent`](crate::types::CodeFixAcceptanceEvent). This method will fail
+    /// if any of the following fields are not set:
     /// - [`job_id`](crate::types::builders::CodeFixAcceptanceEventBuilder::job_id)
-    pub fn build(self) -> ::std::result::Result<crate::types::CodeFixAcceptanceEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::CodeFixAcceptanceEvent, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::CodeFixAcceptanceEvent {
             job_id: self.job_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

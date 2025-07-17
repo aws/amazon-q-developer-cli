@@ -48,86 +48,107 @@ impl UserTriggerDecisionEvent {
         use std::ops::Deref;
         self.session_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn request_id(&self) -> &str {
         use std::ops::Deref;
         self.request_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn customization_arn(&self) -> ::std::option::Option<&str> {
         self.customization_arn.as_deref()
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> &crate::types::ProgrammingLanguage {
         &self.programming_language
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn completion_type(&self) -> &crate::types::CompletionType {
         &self.completion_type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn suggestion_state(&self) -> &crate::types::SuggestionState {
         &self.suggestion_state
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn recommendation_latency_milliseconds(&self) -> f64 {
         self.recommendation_latency_milliseconds
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(&self) -> &::aws_smithy_types::DateTime {
         &self.timestamp
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn trigger_to_response_latency_milliseconds(&self) -> ::std::option::Option<f64> {
         self.trigger_to_response_latency_milliseconds
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn suggestion_reference_count(&self) -> i32 {
         self.suggestion_reference_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn generated_line(&self) -> i32 {
         self.generated_line
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_recommendations(&self) -> i32 {
         self.number_of_recommendations
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn perceived_latency_milliseconds(&self) -> ::std::option::Option<f64> {
         self.perceived_latency_milliseconds
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn accepted_character_count(&self) -> i32 {
         self.accepted_character_count
     }
+
     /// List of IDE Diagnostics
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.added_ide_diagnostics.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.added_ide_diagnostics.is_none()`.
     pub fn added_ide_diagnostics(&self) -> &[crate::types::IdeDiagnostic] {
         self.added_ide_diagnostics.as_deref().unwrap_or_default()
     }
+
     /// List of IDE Diagnostics
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.removed_ide_diagnostics.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.removed_ide_diagnostics.is_none()`.
     pub fn removed_ide_diagnostics(&self) -> &[crate::types::IdeDiagnostic] {
         self.removed_ide_diagnostics.as_deref().unwrap_or_default()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn added_character_count(&self) -> i32 {
         self.added_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn deleted_character_count(&self) -> i32 {
         self.deleted_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn streak_length(&self) -> i32 {
         self.streak_length
     }
 }
 impl UserTriggerDecisionEvent {
-    /// Creates a new builder-style object to manufacture [`UserTriggerDecisionEvent`](crate::types::UserTriggerDecisionEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`UserTriggerDecisionEvent`](crate::types::UserTriggerDecisionEvent).
     pub fn builder() -> crate::types::builders::UserTriggerDecisionEventBuilder {
         crate::types::builders::UserTriggerDecisionEventBuilder::default()
     }
@@ -164,206 +185,249 @@ impl UserTriggerDecisionEventBuilder {
         self.session_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_session_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.session_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_session_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.session_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn request_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.request_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_request_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.request_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_request_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.request_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn customization_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.customization_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_customization_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.customization_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_customization_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.customization_arn
     }
+
     /// Programming Languages supported by CodeWhisperer
     /// This field is required.
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn completion_type(mut self, input: crate::types::CompletionType) -> Self {
         self.completion_type = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_completion_type(mut self, input: ::std::option::Option<crate::types::CompletionType>) -> Self {
         self.completion_type = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_completion_type(&self) -> &::std::option::Option<crate::types::CompletionType> {
         &self.completion_type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn suggestion_state(mut self, input: crate::types::SuggestionState) -> Self {
         self.suggestion_state = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_suggestion_state(mut self, input: ::std::option::Option<crate::types::SuggestionState>) -> Self {
         self.suggestion_state = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_suggestion_state(&self) -> &::std::option::Option<crate::types::SuggestionState> {
         &self.suggestion_state
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn recommendation_latency_milliseconds(mut self, input: f64) -> Self {
         self.recommendation_latency_milliseconds = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_recommendation_latency_milliseconds(mut self, input: ::std::option::Option<f64>) -> Self {
         self.recommendation_latency_milliseconds = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_recommendation_latency_milliseconds(&self) -> &::std::option::Option<f64> {
         &self.recommendation_latency_milliseconds
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.timestamp = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.timestamp = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.timestamp
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn trigger_to_response_latency_milliseconds(mut self, input: f64) -> Self {
         self.trigger_to_response_latency_milliseconds = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_trigger_to_response_latency_milliseconds(mut self, input: ::std::option::Option<f64>) -> Self {
         self.trigger_to_response_latency_milliseconds = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_trigger_to_response_latency_milliseconds(&self) -> &::std::option::Option<f64> {
         &self.trigger_to_response_latency_milliseconds
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn suggestion_reference_count(mut self, input: i32) -> Self {
         self.suggestion_reference_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_suggestion_reference_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.suggestion_reference_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_suggestion_reference_count(&self) -> &::std::option::Option<i32> {
         &self.suggestion_reference_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn generated_line(mut self, input: i32) -> Self {
         self.generated_line = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_generated_line(mut self, input: ::std::option::Option<i32>) -> Self {
         self.generated_line = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_generated_line(&self) -> &::std::option::Option<i32> {
         &self.generated_line
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn number_of_recommendations(mut self, input: i32) -> Self {
         self.number_of_recommendations = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_number_of_recommendations(mut self, input: ::std::option::Option<i32>) -> Self {
         self.number_of_recommendations = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_number_of_recommendations(&self) -> &::std::option::Option<i32> {
         &self.number_of_recommendations
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn perceived_latency_milliseconds(mut self, input: f64) -> Self {
         self.perceived_latency_milliseconds = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_perceived_latency_milliseconds(mut self, input: ::std::option::Option<f64>) -> Self {
         self.perceived_latency_milliseconds = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_perceived_latency_milliseconds(&self) -> &::std::option::Option<f64> {
         &self.perceived_latency_milliseconds
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn accepted_character_count(mut self, input: i32) -> Self {
         self.accepted_character_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_accepted_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.accepted_character_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_accepted_character_count(&self) -> &::std::option::Option<i32> {
         &self.accepted_character_count
     }
+
     /// Appends an item to `added_ide_diagnostics`.
     ///
-    /// To override the contents of this collection use [`set_added_ide_diagnostics`](Self::set_added_ide_diagnostics).
+    /// To override the contents of this collection use
+    /// [`set_added_ide_diagnostics`](Self::set_added_ide_diagnostics).
     ///
     /// List of IDE Diagnostics
     pub fn added_ide_diagnostics(mut self, input: crate::types::IdeDiagnostic) -> Self {
@@ -372,18 +436,25 @@ impl UserTriggerDecisionEventBuilder {
         self.added_ide_diagnostics = ::std::option::Option::Some(v);
         self
     }
+
     /// List of IDE Diagnostics
-    pub fn set_added_ide_diagnostics(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>) -> Self {
+    pub fn set_added_ide_diagnostics(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    ) -> Self {
         self.added_ide_diagnostics = input;
         self
     }
+
     /// List of IDE Diagnostics
     pub fn get_added_ide_diagnostics(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>> {
         &self.added_ide_diagnostics
     }
+
     /// Appends an item to `removed_ide_diagnostics`.
     ///
-    /// To override the contents of this collection use [`set_removed_ide_diagnostics`](Self::set_removed_ide_diagnostics).
+    /// To override the contents of this collection use
+    /// [`set_removed_ide_diagnostics`](Self::set_removed_ide_diagnostics).
     ///
     /// List of IDE Diagnostics
     pub fn removed_ide_diagnostics(mut self, input: crate::types::IdeDiagnostic) -> Self {
@@ -392,59 +463,75 @@ impl UserTriggerDecisionEventBuilder {
         self.removed_ide_diagnostics = ::std::option::Option::Some(v);
         self
     }
+
     /// List of IDE Diagnostics
-    pub fn set_removed_ide_diagnostics(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>) -> Self {
+    pub fn set_removed_ide_diagnostics(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>>,
+    ) -> Self {
         self.removed_ide_diagnostics = input;
         self
     }
+
     /// List of IDE Diagnostics
     pub fn get_removed_ide_diagnostics(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::IdeDiagnostic>> {
         &self.removed_ide_diagnostics
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn added_character_count(mut self, input: i32) -> Self {
         self.added_character_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_added_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.added_character_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_added_character_count(&self) -> &::std::option::Option<i32> {
         &self.added_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn deleted_character_count(mut self, input: i32) -> Self {
         self.deleted_character_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_deleted_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.deleted_character_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_deleted_character_count(&self) -> &::std::option::Option<i32> {
         &self.deleted_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn streak_length(mut self, input: i32) -> Self {
         self.streak_length = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_streak_length(mut self, input: ::std::option::Option<i32>) -> Self {
         self.streak_length = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_streak_length(&self) -> &::std::option::Option<i32> {
         &self.streak_length
     }
-    /// Consumes the builder and constructs a [`UserTriggerDecisionEvent`](crate::types::UserTriggerDecisionEvent).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`UserTriggerDecisionEvent`](crate::types::UserTriggerDecisionEvent). This method will
+    /// fail if any of the following fields are not set:
     /// - [`session_id`](crate::types::builders::UserTriggerDecisionEventBuilder::session_id)
     /// - [`request_id`](crate::types::builders::UserTriggerDecisionEventBuilder::request_id)
     /// - [`programming_language`](crate::types::builders::UserTriggerDecisionEventBuilder::programming_language)
@@ -452,7 +539,10 @@ impl UserTriggerDecisionEventBuilder {
     /// - [`suggestion_state`](crate::types::builders::UserTriggerDecisionEventBuilder::suggestion_state)
     /// - [`recommendation_latency_milliseconds`](crate::types::builders::UserTriggerDecisionEventBuilder::recommendation_latency_milliseconds)
     /// - [`timestamp`](crate::types::builders::UserTriggerDecisionEventBuilder::timestamp)
-    pub fn build(self) -> ::std::result::Result<crate::types::UserTriggerDecisionEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::UserTriggerDecisionEvent, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::UserTriggerDecisionEvent {
             session_id: self.session_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

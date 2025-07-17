@@ -13,7 +13,8 @@ impl WorkspaceContext {
     }
 }
 impl WorkspaceContext {
-    /// Creates a new builder-style object to manufacture [`WorkspaceContext`](crate::types::WorkspaceContext).
+    /// Creates a new builder-style object to manufacture
+    /// [`WorkspaceContext`](crate::types::WorkspaceContext).
     pub fn builder() -> crate::types::builders::WorkspaceContextBuilder {
         crate::types::builders::WorkspaceContextBuilder::default()
     }
@@ -32,19 +33,24 @@ impl WorkspaceContextBuilder {
         self.toggle = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_toggle(mut self, input: ::std::option::Option<crate::types::OptInFeatureToggle>) -> Self {
         self.toggle = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_toggle(&self) -> &::std::option::Option<crate::types::OptInFeatureToggle> {
         &self.toggle
     }
+
     /// Consumes the builder and constructs a [`WorkspaceContext`](crate::types::WorkspaceContext).
     /// This method will fail if any of the following fields are not set:
     /// - [`toggle`](crate::types::builders::WorkspaceContextBuilder::toggle)
-    pub fn build(self) -> ::std::result::Result<crate::types::WorkspaceContext, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::WorkspaceContext, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::WorkspaceContext {
             toggle: self.toggle.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

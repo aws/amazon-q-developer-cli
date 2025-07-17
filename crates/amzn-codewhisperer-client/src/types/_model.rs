@@ -18,17 +18,21 @@ impl Model {
         use std::ops::Deref;
         self.model_id.deref()
     }
+
     /// Description of the model
     pub fn description(&self) -> ::std::option::Option<&str> {
         self.description.as_deref()
     }
+
     /// Limits on token usage for this model
     pub fn token_limits(&self) -> ::std::option::Option<&crate::types::TokenLimits> {
         self.token_limits.as_ref()
     }
+
     /// List of input types supported by this model
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.supported_input_types.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.supported_input_types.is_none()`.
     pub fn supported_input_types(&self) -> &[crate::types::InputType] {
         self.supported_input_types.as_deref().unwrap_or_default()
     }
@@ -56,46 +60,56 @@ impl ModelBuilder {
         self.model_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Unique identifier for the model
     pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.model_id = input;
         self
     }
+
     /// Unique identifier for the model
     pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.model_id
     }
+
     /// Description of the model
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Description of the model
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
+
     /// Description of the model
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
+
     /// Limits on token usage for this model
     pub fn token_limits(mut self, input: crate::types::TokenLimits) -> Self {
         self.token_limits = ::std::option::Option::Some(input);
         self
     }
+
     /// Limits on token usage for this model
     pub fn set_token_limits(mut self, input: ::std::option::Option<crate::types::TokenLimits>) -> Self {
         self.token_limits = input;
         self
     }
+
     /// Limits on token usage for this model
     pub fn get_token_limits(&self) -> &::std::option::Option<crate::types::TokenLimits> {
         &self.token_limits
     }
+
     /// Appends an item to `supported_input_types`.
     ///
-    /// To override the contents of this collection use [`set_supported_input_types`](Self::set_supported_input_types).
+    /// To override the contents of this collection use
+    /// [`set_supported_input_types`](Self::set_supported_input_types).
     ///
     /// List of input types supported by this model
     pub fn supported_input_types(mut self, input: crate::types::InputType) -> Self {
@@ -104,15 +118,21 @@ impl ModelBuilder {
         self.supported_input_types = ::std::option::Option::Some(v);
         self
     }
+
     /// List of input types supported by this model
-    pub fn set_supported_input_types(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>) -> Self {
+    pub fn set_supported_input_types(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
+    ) -> Self {
         self.supported_input_types = input;
         self
     }
+
     /// List of input types supported by this model
     pub fn get_supported_input_types(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::InputType>> {
         &self.supported_input_types
     }
+
     /// Consumes the builder and constructs a [`Model`](crate::types::Model).
     /// This method will fail if any of the following fields are not set:
     /// - [`model_id`](crate::types::builders::ModelBuilder::model_id)

@@ -10,8 +10,7 @@ pub fn de_generated_code_from_commands_response_payload(
 > {
     let unmarshaller = crate::event_stream_serde::GenerateCodeFromCommandsResponseStreamUnmarshaller::new();
     let body = std::mem::replace(body, ::aws_smithy_types::body::SdkBody::taken());
-    Ok(crate::event_receiver::EventReceiver::new(::aws_smithy_http::event_stream::Receiver::new(
-        unmarshaller,
-        body,
-    )))
+    Ok(crate::event_receiver::EventReceiver::new(
+        ::aws_smithy_http::event_stream::Receiver::new(unmarshaller, body),
+    ))
 }

@@ -44,25 +44,37 @@
 /// Enum representing all possible step states, combining terminal and non-terminal states.
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
+    ::std::clone::Clone,
+    ::std::cmp::Eq,
+    ::std::cmp::Ord,
+    ::std::cmp::PartialEq,
+    ::std::cmp::PartialOrd,
+    ::std::fmt::Debug,
+    ::std::hash::Hash,
 )]
 pub enum StepState {
     /// Indicates a failure or issue that needs to be addressed.
     Failed,
-    /// Indicates that the step is currently being processed. This is a non-terminal state, meaning the process is active and ongoing.
+    /// Indicates that the step is currently being processed. This is a non-terminal state, meaning
+    /// the process is active and ongoing.
     InProgress,
-    /// Indicates that the step is being loaded or initialized. This is a non-terminal state, meaning the process is in the setup phase.
+    /// Indicates that the step is being loaded or initialized. This is a non-terminal state,
+    /// meaning the process is in the setup phase.
     Loading,
-    /// Indicates that the step is temporarily halted but can resume. This is a non-terminal state, representing a temporary pause.
+    /// Indicates that the step is temporarily halted but can resume. This is a non-terminal state,
+    /// representing a temporary pause.
     Paused,
-    /// Indicates that the step is waiting for some condition or input. This is a non-terminal state, meaning the process is paused but not complete.
+    /// Indicates that the step is waiting for some condition or input. This is a non-terminal
+    /// state, meaning the process is paused but not complete.
     Pending,
     /// Indicates that the step was stopped, either intentionally or unintentionally.
     Stopped,
     /// Indicates successful completion of the step.
     Succeeded,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
+    #[deprecated(
+        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
+    )]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for StepState {
@@ -75,7 +87,9 @@ impl ::std::convert::From<&str> for StepState {
             "PENDING" => StepState::Pending,
             "STOPPED" => StepState::Stopped,
             "SUCCEEDED" => StepState::Succeeded,
-            other => StepState::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
+            other => StepState::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
+                other.to_owned(),
+            )),
         }
     }
 }
@@ -100,9 +114,18 @@ impl StepState {
             StepState::Unknown(value) => value.as_str(),
         }
     }
+
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["FAILED", "IN_PROGRESS", "LOADING", "PAUSED", "PENDING", "STOPPED", "SUCCEEDED"]
+        &[
+            "FAILED",
+            "IN_PROGRESS",
+            "LOADING",
+            "PAUSED",
+            "PENDING",
+            "STOPPED",
+            "SUCCEEDED",
+        ]
     }
 }
 impl ::std::convert::AsRef<str> for StepState {

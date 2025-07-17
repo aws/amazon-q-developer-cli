@@ -14,7 +14,8 @@ impl InfrastructureUpdate {
     }
 }
 impl InfrastructureUpdate {
-    /// Creates a new builder-style object to manufacture [`InfrastructureUpdate`](crate::types::InfrastructureUpdate).
+    /// Creates a new builder-style object to manufacture
+    /// [`InfrastructureUpdate`](crate::types::InfrastructureUpdate).
     pub fn builder() -> crate::types::builders::InfrastructureUpdateBuilder {
         crate::types::builders::InfrastructureUpdateBuilder::default()
     }
@@ -32,17 +33,26 @@ impl InfrastructureUpdateBuilder {
         self.transition = ::std::option::Option::Some(input);
         self
     }
+
     /// Structure describing a transition between two states in an infrastructure update.
-    pub fn set_transition(mut self, input: ::std::option::Option<crate::types::InfrastructureUpdateTransition>) -> Self {
+    pub fn set_transition(
+        mut self,
+        input: ::std::option::Option<crate::types::InfrastructureUpdateTransition>,
+    ) -> Self {
         self.transition = input;
         self
     }
+
     /// Structure describing a transition between two states in an infrastructure update.
     pub fn get_transition(&self) -> &::std::option::Option<crate::types::InfrastructureUpdateTransition> {
         &self.transition
     }
-    /// Consumes the builder and constructs a [`InfrastructureUpdate`](crate::types::InfrastructureUpdate).
+
+    /// Consumes the builder and constructs a
+    /// [`InfrastructureUpdate`](crate::types::InfrastructureUpdate).
     pub fn build(self) -> crate::types::InfrastructureUpdate {
-        crate::types::InfrastructureUpdate { transition: self.transition }
+        crate::types::InfrastructureUpdate {
+            transition: self.transition,
+        }
     }
 }

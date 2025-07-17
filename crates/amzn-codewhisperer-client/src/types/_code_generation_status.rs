@@ -13,13 +13,15 @@ impl CodeGenerationStatus {
     pub fn status(&self) -> &crate::types::CodeGenerationWorkflowStatus {
         &self.status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn current_stage(&self) -> &crate::types::CodeGenerationWorkflowStage {
         &self.current_stage
     }
 }
 impl CodeGenerationStatus {
-    /// Creates a new builder-style object to manufacture [`CodeGenerationStatus`](crate::types::CodeGenerationStatus).
+    /// Creates a new builder-style object to manufacture
+    /// [`CodeGenerationStatus`](crate::types::CodeGenerationStatus).
     pub fn builder() -> crate::types::builders::CodeGenerationStatusBuilder {
         crate::types::builders::CodeGenerationStatusBuilder::default()
     }
@@ -39,35 +41,48 @@ impl CodeGenerationStatusBuilder {
         self.status = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_status(mut self, input: ::std::option::Option<crate::types::CodeGenerationWorkflowStatus>) -> Self {
         self.status = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_status(&self) -> &::std::option::Option<crate::types::CodeGenerationWorkflowStatus> {
         &self.status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn current_stage(mut self, input: crate::types::CodeGenerationWorkflowStage) -> Self {
         self.current_stage = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_current_stage(mut self, input: ::std::option::Option<crate::types::CodeGenerationWorkflowStage>) -> Self {
+    pub fn set_current_stage(
+        mut self,
+        input: ::std::option::Option<crate::types::CodeGenerationWorkflowStage>,
+    ) -> Self {
         self.current_stage = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_current_stage(&self) -> &::std::option::Option<crate::types::CodeGenerationWorkflowStage> {
         &self.current_stage
     }
-    /// Consumes the builder and constructs a [`CodeGenerationStatus`](crate::types::CodeGenerationStatus).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`CodeGenerationStatus`](crate::types::CodeGenerationStatus). This method will fail if
+    /// any of the following fields are not set:
     /// - [`status`](crate::types::builders::CodeGenerationStatusBuilder::status)
     /// - [`current_stage`](crate::types::builders::CodeGenerationStatusBuilder::current_stage)
-    pub fn build(self) -> ::std::result::Result<crate::types::CodeGenerationStatus, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::CodeGenerationStatus, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::CodeGenerationStatus {
             status: self.status.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

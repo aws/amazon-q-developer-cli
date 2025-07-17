@@ -36,7 +36,8 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for ResourceNotFo
     }
 }
 impl ResourceNotFoundError {
-    /// Creates a new builder-style object to manufacture [`ResourceNotFoundError`](crate::types::error::ResourceNotFoundError).
+    /// Creates a new builder-style object to manufacture
+    /// [`ResourceNotFoundError`](crate::types::error::ResourceNotFoundError).
     pub fn builder() -> crate::types::error::builders::ResourceNotFoundErrorBuilder {
         crate::types::error::builders::ResourceNotFoundErrorBuilder::default()
     }
@@ -56,15 +57,18 @@ impl ResourceNotFoundErrorBuilder {
         self.message = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.message
     }
+
     /// Sets error metadata
     pub fn meta(mut self, meta: ::aws_smithy_types::error::ErrorMetadata) -> Self {
         self.meta = Some(meta);
@@ -76,10 +80,17 @@ impl ResourceNotFoundErrorBuilder {
         self.meta = meta;
         self
     }
-    /// Consumes the builder and constructs a [`ResourceNotFoundError`](crate::types::error::ResourceNotFoundError).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`ResourceNotFoundError`](crate::types::error::ResourceNotFoundError). This method will
+    /// fail if any of the following fields are not set:
     /// - [`message`](crate::types::error::builders::ResourceNotFoundErrorBuilder::message)
-    pub fn build(self) -> ::std::result::Result<crate::types::error::ResourceNotFoundError, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::error::ResourceNotFoundError,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::error::ResourceNotFoundError {
             message: self.message.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

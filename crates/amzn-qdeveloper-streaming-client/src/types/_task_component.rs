@@ -4,7 +4,8 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct TaskComponent {
-    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include
+    /// Markdown formatting.
     pub text: ::std::option::Option<crate::types::Text>,
     /// Structure representing different types of infrastructure updates.
     pub infrastructure_update: ::std::option::Option<crate::types::InfrastructureUpdate>,
@@ -14,25 +15,30 @@ pub struct TaskComponent {
     pub progress: ::std::option::Option<crate::types::Progress>,
 }
 impl TaskComponent {
-    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include
+    /// Markdown formatting.
     pub fn text(&self) -> ::std::option::Option<&crate::types::Text> {
         self.text.as_ref()
     }
+
     /// Structure representing different types of infrastructure updates.
     pub fn infrastructure_update(&self) -> ::std::option::Option<&crate::types::InfrastructureUpdate> {
         self.infrastructure_update.as_ref()
     }
+
     /// Structure representing an alert with a type and content.
     pub fn alert(&self) -> ::std::option::Option<&crate::types::Alert> {
         self.alert.as_ref()
     }
+
     /// Structure representing a collection of steps in a process.
     pub fn progress(&self) -> ::std::option::Option<&crate::types::Progress> {
         self.progress.as_ref()
     }
 }
 impl TaskComponent {
-    /// Creates a new builder-style object to manufacture [`TaskComponent`](crate::types::TaskComponent).
+    /// Creates a new builder-style object to manufacture
+    /// [`TaskComponent`](crate::types::TaskComponent).
     pub fn builder() -> crate::types::builders::TaskComponentBuilder {
         crate::types::builders::TaskComponentBuilder::default()
     }
@@ -48,62 +54,80 @@ pub struct TaskComponentBuilder {
     pub(crate) progress: ::std::option::Option<crate::types::Progress>,
 }
 impl TaskComponentBuilder {
-    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
+    /// Structure representing a simple text component with sensitive content, which can include
+    /// Markdown formatting.
     pub fn text(mut self, input: crate::types::Text) -> Self {
         self.text = ::std::option::Option::Some(input);
         self
     }
-    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
+
+    /// Structure representing a simple text component with sensitive content, which can include
+    /// Markdown formatting.
     pub fn set_text(mut self, input: ::std::option::Option<crate::types::Text>) -> Self {
         self.text = input;
         self
     }
-    /// Structure representing a simple text component with sensitive content, which can include Markdown formatting.
+
+    /// Structure representing a simple text component with sensitive content, which can include
+    /// Markdown formatting.
     pub fn get_text(&self) -> &::std::option::Option<crate::types::Text> {
         &self.text
     }
+
     /// Structure representing different types of infrastructure updates.
     pub fn infrastructure_update(mut self, input: crate::types::InfrastructureUpdate) -> Self {
         self.infrastructure_update = ::std::option::Option::Some(input);
         self
     }
+
     /// Structure representing different types of infrastructure updates.
-    pub fn set_infrastructure_update(mut self, input: ::std::option::Option<crate::types::InfrastructureUpdate>) -> Self {
+    pub fn set_infrastructure_update(
+        mut self,
+        input: ::std::option::Option<crate::types::InfrastructureUpdate>,
+    ) -> Self {
         self.infrastructure_update = input;
         self
     }
+
     /// Structure representing different types of infrastructure updates.
     pub fn get_infrastructure_update(&self) -> &::std::option::Option<crate::types::InfrastructureUpdate> {
         &self.infrastructure_update
     }
+
     /// Structure representing an alert with a type and content.
     pub fn alert(mut self, input: crate::types::Alert) -> Self {
         self.alert = ::std::option::Option::Some(input);
         self
     }
+
     /// Structure representing an alert with a type and content.
     pub fn set_alert(mut self, input: ::std::option::Option<crate::types::Alert>) -> Self {
         self.alert = input;
         self
     }
+
     /// Structure representing an alert with a type and content.
     pub fn get_alert(&self) -> &::std::option::Option<crate::types::Alert> {
         &self.alert
     }
+
     /// Structure representing a collection of steps in a process.
     pub fn progress(mut self, input: crate::types::Progress) -> Self {
         self.progress = ::std::option::Option::Some(input);
         self
     }
+
     /// Structure representing a collection of steps in a process.
     pub fn set_progress(mut self, input: ::std::option::Option<crate::types::Progress>) -> Self {
         self.progress = input;
         self
     }
+
     /// Structure representing a collection of steps in a process.
     pub fn get_progress(&self) -> &::std::option::Option<crate::types::Progress> {
         &self.progress
     }
+
     /// Consumes the builder and constructs a [`TaskComponent`](crate::types::TaskComponent).
     pub fn build(self) -> crate::types::TaskComponent {
         crate::types::TaskComponent {

@@ -46,7 +46,13 @@
 /// Chat Message Interaction Type
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
+    ::std::clone::Clone,
+    ::std::cmp::Eq,
+    ::std::cmp::Ord,
+    ::std::cmp::PartialEq,
+    ::std::cmp::PartialOrd,
+    ::std::fmt::Debug,
+    ::std::hash::Hash,
 )]
 pub enum ChatMessageInteractionType {
     #[allow(missing_docs)] // documentation missing in model
@@ -68,7 +74,9 @@ pub enum ChatMessageInteractionType {
     #[allow(missing_docs)] // documentation missing in model
     Upvote,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
+    #[deprecated(
+        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
+    )]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for ChatMessageInteractionType {
@@ -83,7 +91,9 @@ impl ::std::convert::From<&str> for ChatMessageInteractionType {
             "HOVER_REFERENCE" => ChatMessageInteractionType::HoverReference,
             "INSERT_AT_CURSOR" => ChatMessageInteractionType::InsertAtCursor,
             "UPVOTE" => ChatMessageInteractionType::Upvote,
-            other => ChatMessageInteractionType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
+            other => ChatMessageInteractionType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
+                other.to_owned(),
+            )),
         }
     }
 }
@@ -110,6 +120,7 @@ impl ChatMessageInteractionType {
             ChatMessageInteractionType::Unknown(value) => value.as_str(),
         }
     }
+
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[

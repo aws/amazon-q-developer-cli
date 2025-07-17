@@ -14,7 +14,8 @@ pub fn de_generate_assistant_response_http_response(
     let _response_headers = response.headers();
     Ok({
         #[allow(unused_mut)]
-        let mut output = crate::operation::generate_assistant_response::builders::GenerateAssistantResponseOutputBuilder::default();
+        let mut output =
+            crate::operation::generate_assistant_response::builders::GenerateAssistantResponseOutputBuilder::default();
         output = output.set_generate_assistant_response_response(Some(
             crate::protocol_serde::shape_generate_assistant_response_output::de_generate_assistant_response_response_payload(_response_body)?,
         ));
@@ -35,87 +36,127 @@ pub fn de_generate_assistant_response_http_error(
     crate::operation::generate_assistant_response::GenerateAssistantResponseError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-        .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?;
+    let mut generic_builder =
+        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+            .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
         Some(code) => code,
         None => {
-            return Err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled(
-                generic,
-            ))
-        }
+            return Err(
+                crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled(generic),
+            );
+        },
     };
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "ThrottlingError" => crate::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+        "ThrottlingError" => {
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
-                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_error_correct_errors(output)
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                    output = crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::throttling_error_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "ValidationError" => {
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ValidationError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                    output = crate::protocol_serde::shape_validation_error::de_validation_error_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::validation_error_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "AccessDeniedError" => {
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::AccessDeniedError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                    output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::access_denied_error_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "InternalServerError" => {
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::InternalServerError({
+                #[allow(unused_mut)]
+                let mut tmp =
+                    {
+                        #[allow(unused_mut)]
+                        let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                        output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(
+                            _response_body,
+                            output,
+                        )
+                        .map_err(
+                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                        )?;
+                        let output = output.meta(generic);
+                        crate::serde_util::internal_server_error_correct_errors(output)
                     .build()
                     .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?
-            };
-            tmp
-        }),
-        "ValidationError" => crate::operation::generate_assistant_response::GenerateAssistantResponseError::ValidationError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
-                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::validation_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?
-            };
-            tmp
-        }),
-        "AccessDeniedError" => crate::operation::generate_assistant_response::GenerateAssistantResponseError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(_response_body, output)
-                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?
-            };
-            tmp
-        }),
-        "InternalServerError" => crate::operation::generate_assistant_response::GenerateAssistantResponseError::InternalServerError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(_response_body, output)
-                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::internal_server_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?
-            };
-            tmp
-        }),
+                    };
+                tmp
+            })
+        },
         _ => crate::operation::generate_assistant_response::GenerateAssistantResponseError::generic(generic),
     })
 }
 
 pub fn ser_generate_assistant_response_input(
     input: &crate::operation::generate_assistant_response::GenerateAssistantResponseInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
-    crate::protocol_serde::shape_generate_assistant_response_input::ser_generate_assistant_response_input_input(&mut object, input)?;
+    crate::protocol_serde::shape_generate_assistant_response_input::ser_generate_assistant_response_input_input(
+        &mut object,
+        input,
+    )?;
     object.finish();
     Ok(::aws_smithy_types::body::SdkBody::from(out))
 }

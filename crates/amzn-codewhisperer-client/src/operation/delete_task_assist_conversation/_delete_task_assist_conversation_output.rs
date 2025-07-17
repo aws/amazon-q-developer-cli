@@ -21,13 +21,19 @@ impl ::aws_types::request_id::RequestId for DeleteTaskAssistConversationOutput {
     }
 }
 impl DeleteTaskAssistConversationOutput {
-    /// Creates a new builder-style object to manufacture [`DeleteTaskAssistConversationOutput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput).
-    pub fn builder() -> crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder {
-        crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder::default()
+    /// Creates a new builder-style object to manufacture
+    /// [`DeleteTaskAssistConversationOutput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput).
+    ///
+    pub fn builder()
+    -> crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder {
+        crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder::default(
+        )
     }
 }
 
-/// A builder for [`DeleteTaskAssistConversationOutput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput).
+/// A builder for
+/// [`DeleteTaskAssistConversationOutput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteTaskAssistConversationOutputBuilder {
@@ -41,15 +47,18 @@ impl DeleteTaskAssistConversationOutputBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -59,7 +68,9 @@ impl DeleteTaskAssistConversationOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`DeleteTaskAssistConversationOutput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`DeleteTaskAssistConversationOutput`](crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`conversation_id`](crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder::conversation_id)
     pub fn build(

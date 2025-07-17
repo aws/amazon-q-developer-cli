@@ -16,20 +16,24 @@ impl TaskDetails {
     pub fn overview(&self) -> &crate::types::TaskOverview {
         &self.overview
     }
+
     /// Lists the components that can be used to form the task's content.
     pub fn content(&self) -> &[crate::types::TaskComponent] {
         use std::ops::Deref;
         self.content.deref()
     }
+
     /// Optional list of actions associated with the task.
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.actions.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.actions.is_none()`.
     pub fn actions(&self) -> &[crate::types::TaskAction] {
         self.actions.as_deref().unwrap_or_default()
     }
 }
 impl TaskDetails {
-    /// Creates a new builder-style object to manufacture [`TaskDetails`](crate::types::TaskDetails).
+    /// Creates a new builder-style object to manufacture
+    /// [`TaskDetails`](crate::types::TaskDetails).
     pub fn builder() -> crate::types::builders::TaskDetailsBuilder {
         crate::types::builders::TaskDetailsBuilder::default()
     }
@@ -50,15 +54,18 @@ impl TaskDetailsBuilder {
         self.overview = ::std::option::Option::Some(input);
         self
     }
+
     /// Structure representing an overview of a task, including a label and description.
     pub fn set_overview(mut self, input: ::std::option::Option<crate::types::TaskOverview>) -> Self {
         self.overview = input;
         self
     }
+
     /// Structure representing an overview of a task, including a label and description.
     pub fn get_overview(&self) -> &::std::option::Option<crate::types::TaskOverview> {
         &self.overview
     }
+
     /// Appends an item to `content`.
     ///
     /// To override the contents of this collection use [`set_content`](Self::set_content).
@@ -70,15 +77,18 @@ impl TaskDetailsBuilder {
         self.content = ::std::option::Option::Some(v);
         self
     }
+
     /// Lists the components that can be used to form the task's content.
     pub fn set_content(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::TaskComponent>>) -> Self {
         self.content = input;
         self
     }
+
     /// Lists the components that can be used to form the task's content.
     pub fn get_content(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::TaskComponent>> {
         &self.content
     }
+
     /// Appends an item to `actions`.
     ///
     /// To override the contents of this collection use [`set_actions`](Self::set_actions).
@@ -90,20 +100,25 @@ impl TaskDetailsBuilder {
         self.actions = ::std::option::Option::Some(v);
         self
     }
+
     /// Optional list of actions associated with the task.
     pub fn set_actions(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::TaskAction>>) -> Self {
         self.actions = input;
         self
     }
+
     /// Optional list of actions associated with the task.
     pub fn get_actions(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::TaskAction>> {
         &self.actions
     }
+
     /// Consumes the builder and constructs a [`TaskDetails`](crate::types::TaskDetails).
     /// This method will fail if any of the following fields are not set:
     /// - [`overview`](crate::types::builders::TaskDetailsBuilder::overview)
     /// - [`content`](crate::types::builders::TaskDetailsBuilder::content)
-    pub fn build(self) -> ::std::result::Result<crate::types::TaskDetails, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::TaskDetails, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TaskDetails {
             overview: self.overview.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

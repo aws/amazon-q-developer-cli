@@ -7,18 +7,21 @@ pub enum IdentityDetails {
     ExternalIdentityDetails(crate::types::ExternalIdentityDetails),
     #[allow(missing_docs)] // documentation missing in model
     SsoIdentityDetails(crate::types::SsoIdentityDetails),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
-    /// An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider
+    /// upgrading the SDK to the latest available version. An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
-    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has
+    /// not been updated. To investigate this, consider turning on debug logging to print the
+    /// raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl IdentityDetails {
-    /// Tries to convert the enum instance into [`ExternalIdentityDetails`](crate::types::IdentityDetails::ExternalIdentityDetails), extracting the inner [`ExternalIdentityDetails`](crate::types::ExternalIdentityDetails).
+    /// Tries to convert the enum instance into
+    /// [`ExternalIdentityDetails`](crate::types::IdentityDetails::ExternalIdentityDetails),
+    /// extracting the inner [`ExternalIdentityDetails`](crate::types::ExternalIdentityDetails).
     /// Returns `Err(&Self)` if it can't be converted.
     pub fn as_external_identity_details(&self) -> ::std::result::Result<&crate::types::ExternalIdentityDetails, &Self> {
         if let IdentityDetails::ExternalIdentityDetails(val) = &self {
@@ -27,12 +30,17 @@ impl IdentityDetails {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`ExternalIdentityDetails`](crate::types::IdentityDetails::ExternalIdentityDetails).
+
+    /// Returns true if this is a
+    /// [`ExternalIdentityDetails`](crate::types::IdentityDetails::ExternalIdentityDetails).
     pub fn is_external_identity_details(&self) -> bool {
         self.as_external_identity_details().is_ok()
     }
-    /// Tries to convert the enum instance into [`SsoIdentityDetails`](crate::types::IdentityDetails::SsoIdentityDetails), extracting the inner [`SsoIdentityDetails`](crate::types::SsoIdentityDetails).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`SsoIdentityDetails`](crate::types::IdentityDetails::SsoIdentityDetails), extracting the
+    /// inner [`SsoIdentityDetails`](crate::types::SsoIdentityDetails). Returns `Err(&Self)` if
+    /// it can't be converted.
     pub fn as_sso_identity_details(&self) -> ::std::result::Result<&crate::types::SsoIdentityDetails, &Self> {
         if let IdentityDetails::SsoIdentityDetails(val) = &self {
             ::std::result::Result::Ok(val)
@@ -40,10 +48,13 @@ impl IdentityDetails {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`SsoIdentityDetails`](crate::types::IdentityDetails::SsoIdentityDetails).
+
+    /// Returns true if this is a
+    /// [`SsoIdentityDetails`](crate::types::IdentityDetails::SsoIdentityDetails).
     pub fn is_sso_identity_details(&self) -> bool {
         self.as_sso_identity_details().is_ok()
     }
+
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

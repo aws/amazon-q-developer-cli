@@ -10,24 +10,29 @@ pub struct TransformationSourceCodeArtifactDescriptor {
 }
 impl TransformationSourceCodeArtifactDescriptor {
     #[allow(missing_docs)] // documentation missing in model
-    ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.languages.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.languages.is_none()`.
     pub fn languages(&self) -> &[crate::types::TransformationLanguage] {
         self.languages.as_deref().unwrap_or_default()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn runtime_env(&self) -> ::std::option::Option<&crate::types::TransformationRuntimeEnv> {
         self.runtime_env.as_ref()
     }
 }
 impl TransformationSourceCodeArtifactDescriptor {
-    /// Creates a new builder-style object to manufacture [`TransformationSourceCodeArtifactDescriptor`](crate::types::TransformationSourceCodeArtifactDescriptor).
+    /// Creates a new builder-style object to manufacture
+    /// [`TransformationSourceCodeArtifactDescriptor`](crate::types::TransformationSourceCodeArtifactDescriptor).
+    ///
     pub fn builder() -> crate::types::builders::TransformationSourceCodeArtifactDescriptorBuilder {
         crate::types::builders::TransformationSourceCodeArtifactDescriptorBuilder::default()
     }
 }
 
-/// A builder for [`TransformationSourceCodeArtifactDescriptor`](crate::types::TransformationSourceCodeArtifactDescriptor).
+/// A builder for
+/// [`TransformationSourceCodeArtifactDescriptor`](crate::types::TransformationSourceCodeArtifactDescriptor).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct TransformationSourceCodeArtifactDescriptorBuilder {
@@ -38,37 +43,47 @@ impl TransformationSourceCodeArtifactDescriptorBuilder {
     /// Appends an item to `languages`.
     ///
     /// To override the contents of this collection use [`set_languages`](Self::set_languages).
-    ///
     pub fn languages(mut self, input: crate::types::TransformationLanguage) -> Self {
         let mut v = self.languages.unwrap_or_default();
         v.push(input);
         self.languages = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_languages(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::TransformationLanguage>>) -> Self {
+    pub fn set_languages(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::TransformationLanguage>>,
+    ) -> Self {
         self.languages = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_languages(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::TransformationLanguage>> {
         &self.languages
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn runtime_env(mut self, input: crate::types::TransformationRuntimeEnv) -> Self {
         self.runtime_env = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_runtime_env(mut self, input: ::std::option::Option<crate::types::TransformationRuntimeEnv>) -> Self {
         self.runtime_env = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_runtime_env(&self) -> &::std::option::Option<crate::types::TransformationRuntimeEnv> {
         &self.runtime_env
     }
-    /// Consumes the builder and constructs a [`TransformationSourceCodeArtifactDescriptor`](crate::types::TransformationSourceCodeArtifactDescriptor).
+
+    /// Consumes the builder and constructs a
+    /// [`TransformationSourceCodeArtifactDescriptor`](crate::types::TransformationSourceCodeArtifactDescriptor).
+    ///
     pub fn build(self) -> crate::types::TransformationSourceCodeArtifactDescriptor {
         crate::types::TransformationSourceCodeArtifactDescriptor {
             languages: self.languages,

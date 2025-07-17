@@ -13,19 +13,22 @@ impl DeleteWorkspaceInput {
     pub fn workspace_id(&self) -> ::std::option::Option<&str> {
         self.workspace_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
 }
 impl DeleteWorkspaceInput {
-    /// Creates a new builder-style object to manufacture [`DeleteWorkspaceInput`](crate::operation::delete_workspace::DeleteWorkspaceInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`DeleteWorkspaceInput`](crate::operation::delete_workspace::DeleteWorkspaceInput).
     pub fn builder() -> crate::operation::delete_workspace::builders::DeleteWorkspaceInputBuilder {
         crate::operation::delete_workspace::builders::DeleteWorkspaceInputBuilder::default()
     }
 }
 
-/// A builder for [`DeleteWorkspaceInput`](crate::operation::delete_workspace::DeleteWorkspaceInput).
+/// A builder for
+/// [`DeleteWorkspaceInput`](crate::operation::delete_workspace::DeleteWorkspaceInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DeleteWorkspaceInputBuilder {
@@ -39,33 +42,43 @@ impl DeleteWorkspaceInputBuilder {
         self.workspace_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_workspace_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.workspace_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_workspace_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.workspace_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-    /// Consumes the builder and constructs a [`DeleteWorkspaceInput`](crate::operation::delete_workspace::DeleteWorkspaceInput).
+
+    /// Consumes the builder and constructs a
+    /// [`DeleteWorkspaceInput`](crate::operation::delete_workspace::DeleteWorkspaceInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::delete_workspace::DeleteWorkspaceInput, ::aws_smithy_types::error::operation::BuildError> {
+    ) -> ::std::result::Result<
+        crate::operation::delete_workspace::DeleteWorkspaceInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::delete_workspace::DeleteWorkspaceInput {
             workspace_id: self.workspace_id,
             profile_arn: self.profile_arn,

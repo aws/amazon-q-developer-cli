@@ -7,19 +7,21 @@ pub enum CustomizationPermission {
     Group(::std::string::String),
     #[allow(missing_docs)] // documentation missing in model
     User(::std::string::String),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
-    /// An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider
+    /// upgrading the SDK to the latest available version. An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
-    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has
+    /// not been updated. To investigate this, consider turning on debug logging to print the
+    /// raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl CustomizationPermission {
-    /// Tries to convert the enum instance into [`Group`](crate::types::CustomizationPermission::Group), extracting the inner [`String`](::std::string::String).
-    /// Returns `Err(&Self)` if it can't be converted.
+    /// Tries to convert the enum instance into
+    /// [`Group`](crate::types::CustomizationPermission::Group), extracting the inner
+    /// [`String`](::std::string::String). Returns `Err(&Self)` if it can't be converted.
     pub fn as_group(&self) -> ::std::result::Result<&::std::string::String, &Self> {
         if let CustomizationPermission::Group(val) = &self {
             ::std::result::Result::Ok(val)
@@ -27,12 +29,15 @@ impl CustomizationPermission {
             ::std::result::Result::Err(self)
         }
     }
+
     /// Returns true if this is a [`Group`](crate::types::CustomizationPermission::Group).
     pub fn is_group(&self) -> bool {
         self.as_group().is_ok()
     }
-    /// Tries to convert the enum instance into [`User`](crate::types::CustomizationPermission::User), extracting the inner [`String`](::std::string::String).
-    /// Returns `Err(&Self)` if it can't be converted.
+
+    /// Tries to convert the enum instance into
+    /// [`User`](crate::types::CustomizationPermission::User), extracting the inner
+    /// [`String`](::std::string::String). Returns `Err(&Self)` if it can't be converted.
     pub fn as_user(&self) -> ::std::result::Result<&::std::string::String, &Self> {
         if let CustomizationPermission::User(val) = &self {
             ::std::result::Result::Ok(val)
@@ -40,10 +45,12 @@ impl CustomizationPermission {
             ::std::result::Result::Err(self)
         }
     }
+
     /// Returns true if this is a [`User`](crate::types::CustomizationPermission::User).
     pub fn is_user(&self) -> bool {
         self.as_user().is_ok()
     }
+
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

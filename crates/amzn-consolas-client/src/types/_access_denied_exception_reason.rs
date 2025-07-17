@@ -39,7 +39,13 @@
 /// Reason for AccessDeniedException
 #[non_exhaustive]
 #[derive(
-    ::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash,
+    ::std::clone::Clone,
+    ::std::cmp::Eq,
+    ::std::cmp::Ord,
+    ::std::cmp::PartialEq,
+    ::std::cmp::PartialOrd,
+    ::std::fmt::Debug,
+    ::std::hash::Hash,
 )]
 pub enum AccessDeniedExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
@@ -47,15 +53,23 @@ pub enum AccessDeniedExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
     UnauthorizedWorkspaceContextFeatureAccess,
     /// `Unknown` contains new variants that have been added since this code was generated.
-    #[deprecated(note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants.")]
+    #[deprecated(
+        note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
+    )]
     Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue),
 }
 impl ::std::convert::From<&str> for AccessDeniedExceptionReason {
     fn from(s: &str) -> Self {
         match s {
-            "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS" => AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess,
-            "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS" => AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess,
-            other => AccessDeniedExceptionReason::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(other.to_owned())),
+            "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS" => {
+                AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess
+            },
+            "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS" => {
+                AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess
+            },
+            other => AccessDeniedExceptionReason::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
+                other.to_owned(),
+            )),
         }
     }
 }
@@ -70,11 +84,16 @@ impl AccessDeniedExceptionReason {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
-            AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS",
-            AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess => "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS",
+            AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => {
+                "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS"
+            },
+            AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess => {
+                "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS"
+            },
             AccessDeniedExceptionReason::Unknown(value) => value.as_str(),
         }
     }
+
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[
@@ -103,8 +122,12 @@ impl AccessDeniedExceptionReason {
 impl ::std::fmt::Display for AccessDeniedExceptionReason {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
-            AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => write!(f, "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS"),
-            AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess => write!(f, "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS"),
+            AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => {
+                write!(f, "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS")
+            },
+            AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess => {
+                write!(f, "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS")
+            },
             AccessDeniedExceptionReason::Unknown(value) => write!(f, "{}", value),
         }
     }

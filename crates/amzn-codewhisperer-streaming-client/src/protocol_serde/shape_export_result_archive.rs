@@ -15,9 +15,9 @@ pub fn de_export_result_archive_http_response(
     Ok({
         #[allow(unused_mut)]
         let mut output = crate::operation::export_result_archive::builders::ExportResultArchiveOutputBuilder::default();
-        output = output.set_body(Some(crate::protocol_serde::shape_export_result_archive_output::de_body_payload(
-            _response_body,
-        )?));
+        output = output.set_body(Some(
+            crate::protocol_serde::shape_export_result_archive_output::de_body_payload(_response_body)?,
+        ));
         output._set_request_id(::aws_types::request_id::RequestId::request_id(_response_headers).map(str::to_string));
         output
             .build()
@@ -35,8 +35,9 @@ pub fn de_export_result_archive_http_error(
     crate::operation::export_result_archive::ExportResultArchiveError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-        .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
+    let mut generic_builder =
+        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+            .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
@@ -51,8 +52,9 @@ pub fn de_export_result_archive_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
-                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
+                output =
+                    crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
+                        .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_error_correct_errors(output)
                     .build()
@@ -65,8 +67,9 @@ pub fn de_export_result_archive_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
-                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
+                output =
+                    crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
+                        .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_error_correct_errors(output)
                     .build()
@@ -79,8 +82,11 @@ pub fn de_export_result_archive_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(_response_body, output)
-                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
+                output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::access_denied_error_correct_errors(output)
                     .build()
@@ -93,8 +99,11 @@ pub fn de_export_result_archive_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ConflictErrorBuilder::default();
-                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
+                output = crate::protocol_serde::shape_conflict_exception::de_conflict_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::conflict_exception_correct_errors(output)
                     .build()
@@ -102,44 +111,55 @@ pub fn de_export_result_archive_http_error(
             };
             tmp
         }),
-        "InternalServerError" => crate::operation::export_result_archive::ExportResultArchiveError::InternalServerError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+        "InternalServerError" => {
+            crate::operation::export_result_archive::ExportResultArchiveError::InternalServerError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(_response_body, output)
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                    output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(
+                        _response_body,
+                        output,
+                    )
                     .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::internal_server_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?
-            };
-            tmp
-        }),
-        "ResourceNotFoundException" => crate::operation::export_result_archive::ExportResultArchiveError::ResourceNotFoundError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+                    let output = output.meta(generic);
+                    crate::serde_util::internal_server_error_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?
+                };
+                tmp
+            })
+        },
+        "ResourceNotFoundException" => {
+            crate::operation::export_result_archive::ExportResultArchiveError::ResourceNotFoundError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
                     .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::resource_not_found_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?
-            };
-            tmp
-        }),
+                    let output = output.meta(generic);
+                    crate::serde_util::resource_not_found_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?
+                };
+                tmp
+            })
+        },
         _ => crate::operation::export_result_archive::ExportResultArchiveError::generic(generic),
     })
 }
 
 pub fn ser_export_result_archive_input(
     input: &crate::operation::export_result_archive::ExportResultArchiveInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
-    crate::protocol_serde::shape_export_result_archive_input::ser_export_result_archive_input_input(&mut object, input)?;
+    crate::protocol_serde::shape_export_result_archive_input::ser_export_result_archive_input_input(
+        &mut object,
+        input,
+    )?;
     object.finish();
     Ok(::aws_smithy_types::body::SdkBody::from(out))
 }

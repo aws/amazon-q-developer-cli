@@ -9,91 +9,133 @@ pub fn de_list_customization_versions_http_error(
     crate::operation::list_customization_versions::ListCustomizationVersionsError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-        .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?;
+    let mut generic_builder =
+        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+            .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
         Some(code) => code,
         None => {
-            return Err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled(
-                generic,
-            ))
-        }
+            return Err(
+                crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled(generic),
+            );
+        },
     };
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "ValidationException" => crate::operation::list_customization_versions::ListCustomizationVersionsError::ValidationError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+        "ValidationException" => {
+            crate::operation::list_customization_versions::ListCustomizationVersionsError::ValidationError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::validation_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?
-            };
-            tmp
-        }),
-        "AccessDeniedException" => crate::operation::list_customization_versions::ListCustomizationVersionsError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                    output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::validation_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "AccessDeniedException" => {
+            crate::operation::list_customization_versions::ListCustomizationVersionsError::AccessDeniedError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?
-            };
-            tmp
-        }),
-        "InternalServerException" => crate::operation::list_customization_versions::ListCustomizationVersionsError::InternalServerError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::access_denied_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "InternalServerException" => {
+            crate::operation::list_customization_versions::ListCustomizationVersionsError::InternalServerError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::internal_server_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?
-            };
-            tmp
-        }),
-        "ThrottlingException" => crate::operation::list_customization_versions::ListCustomizationVersionsError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                    output =
+                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                            _response_body,
+                            output,
+                        )
+                        .map_err(
+                            crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled,
+                        )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::internal_server_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "ThrottlingException" => {
+            crate::operation::list_customization_versions::ListCustomizationVersionsError::ThrottlingError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?
-            };
-            tmp
-        }),
-        "ResourceNotFoundException" => crate::operation::list_customization_versions::ListCustomizationVersionsError::ResourceNotFoundError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                    output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::throttling_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "ResourceNotFoundException" => {
+            crate::operation::list_customization_versions::ListCustomizationVersionsError::ResourceNotFoundError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
-                output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ResourceNotFoundErrorBuilder::default();
+                    output = crate::protocol_serde::shape_resource_not_found_exception::de_resource_not_found_exception_json_err(_response_body, output)
                     .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::resource_not_found_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?
-            };
-            tmp
-        }),
+                    let output = output.meta(generic);
+                    crate::serde_util::resource_not_found_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
         _ => crate::operation::list_customization_versions::ListCustomizationVersionsError::generic(generic),
     })
 }
@@ -109,9 +151,13 @@ pub fn de_list_customization_versions_http_response(
 > {
     Ok({
         #[allow(unused_mut)]
-        let mut output = crate::operation::list_customization_versions::builders::ListCustomizationVersionsOutputBuilder::default();
-        output = crate::protocol_serde::shape_list_customization_versions::de_list_customization_versions(_response_body, output)
-            .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?;
+        let mut output =
+            crate::operation::list_customization_versions::builders::ListCustomizationVersionsOutputBuilder::default();
+        output = crate::protocol_serde::shape_list_customization_versions::de_list_customization_versions(
+            _response_body,
+            output,
+        )
+        .map_err(crate::operation::list_customization_versions::ListCustomizationVersionsError::unhandled)?;
         output._set_request_id(::aws_types::request_id::RequestId::request_id(_response_headers).map(str::to_string));
         crate::serde_util::list_customization_versions_output_output_correct_errors(output)
             .build()
@@ -121,10 +167,14 @@ pub fn de_list_customization_versions_http_response(
 
 pub fn ser_list_customization_versions_input(
     input: &crate::operation::list_customization_versions::ListCustomizationVersionsInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
-    crate::protocol_serde::shape_list_customization_versions_input::ser_list_customization_versions_input_input(&mut object, input)?;
+    crate::protocol_serde::shape_list_customization_versions_input::ser_list_customization_versions_input_input(
+        &mut object,
+        input,
+    )?;
     object.finish();
     Ok(::aws_smithy_types::body::SdkBody::from(out))
 }
@@ -136,7 +186,8 @@ pub(crate) fn de_list_customization_versions(
     crate::operation::list_customization_versions::builders::ListCustomizationVersionsOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned =
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -147,22 +198,21 @@ pub(crate) fn de_list_customization_versions(
                     builder = builder.set_versions(
                         crate::protocol_serde::shape_customization_version_summary_list::de_customization_version_summary_list(tokens)?,
                     );
-                }
+                },
                 "nextToken" => {
                     builder = builder.set_next_token(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
                             .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                             .transpose()?,
                     );
-                }
+                },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
-                    "expected object key or end object, found: {:?}",
-                    other
-                )))
-            }
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                    format!("expected object key or end object, found: {:?}", other),
+                ));
+            },
         }
     }
     if tokens.next().is_some() {

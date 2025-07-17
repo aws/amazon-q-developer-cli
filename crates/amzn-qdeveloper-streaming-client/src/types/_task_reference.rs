@@ -15,7 +15,8 @@ impl TaskReference {
     }
 }
 impl TaskReference {
-    /// Creates a new builder-style object to manufacture [`TaskReference`](crate::types::TaskReference).
+    /// Creates a new builder-style object to manufacture
+    /// [`TaskReference`](crate::types::TaskReference).
     pub fn builder() -> crate::types::builders::TaskReferenceBuilder {
         crate::types::builders::TaskReferenceBuilder::default()
     }
@@ -34,19 +35,24 @@ impl TaskReferenceBuilder {
         self.task_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Unique identifier for the task.
     pub fn set_task_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.task_id = input;
         self
     }
+
     /// Unique identifier for the task.
     pub fn get_task_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.task_id
     }
+
     /// Consumes the builder and constructs a [`TaskReference`](crate::types::TaskReference).
     /// This method will fail if any of the following fields are not set:
     /// - [`task_id`](crate::types::builders::TaskReferenceBuilder::task_id)
-    pub fn build(self) -> ::std::result::Result<crate::types::TaskReference, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::TaskReference, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TaskReference {
             task_id: self.task_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

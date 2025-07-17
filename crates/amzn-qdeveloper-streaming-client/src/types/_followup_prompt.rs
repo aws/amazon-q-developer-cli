@@ -15,6 +15,7 @@ impl FollowupPrompt {
         use std::ops::Deref;
         self.content.deref()
     }
+
     /// User Intent
     pub fn user_intent(&self) -> ::std::option::Option<&crate::types::UserIntent> {
         self.user_intent.as_ref()
@@ -29,7 +30,8 @@ impl ::std::fmt::Debug for FollowupPrompt {
     }
 }
 impl FollowupPrompt {
-    /// Creates a new builder-style object to manufacture [`FollowupPrompt`](crate::types::FollowupPrompt).
+    /// Creates a new builder-style object to manufacture
+    /// [`FollowupPrompt`](crate::types::FollowupPrompt).
     pub fn builder() -> crate::types::builders::FollowupPromptBuilder {
         crate::types::builders::FollowupPromptBuilder::default()
     }
@@ -49,33 +51,41 @@ impl FollowupPromptBuilder {
         self.content = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The content of the text message in markdown format.
     pub fn set_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.content = input;
         self
     }
+
     /// The content of the text message in markdown format.
     pub fn get_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.content
     }
+
     /// User Intent
     pub fn user_intent(mut self, input: crate::types::UserIntent) -> Self {
         self.user_intent = ::std::option::Option::Some(input);
         self
     }
+
     /// User Intent
     pub fn set_user_intent(mut self, input: ::std::option::Option<crate::types::UserIntent>) -> Self {
         self.user_intent = input;
         self
     }
+
     /// User Intent
     pub fn get_user_intent(&self) -> &::std::option::Option<crate::types::UserIntent> {
         &self.user_intent
     }
+
     /// Consumes the builder and constructs a [`FollowupPrompt`](crate::types::FollowupPrompt).
     /// This method will fail if any of the following fields are not set:
     /// - [`content`](crate::types::builders::FollowupPromptBuilder::content)
-    pub fn build(self) -> ::std::result::Result<crate::types::FollowupPrompt, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::FollowupPrompt, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::FollowupPrompt {
             content: self.content.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

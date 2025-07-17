@@ -15,6 +15,7 @@ impl InfrastructureUpdateTransition {
         use std::ops::Deref;
         self.current_state.deref()
     }
+
     /// The next state of the infrastructure following the update.
     pub fn next_state(&self) -> &str {
         use std::ops::Deref;
@@ -30,7 +31,8 @@ impl ::std::fmt::Debug for InfrastructureUpdateTransition {
     }
 }
 impl InfrastructureUpdateTransition {
-    /// Creates a new builder-style object to manufacture [`InfrastructureUpdateTransition`](crate::types::InfrastructureUpdateTransition).
+    /// Creates a new builder-style object to manufacture
+    /// [`InfrastructureUpdateTransition`](crate::types::InfrastructureUpdateTransition).
     pub fn builder() -> crate::types::builders::InfrastructureUpdateTransitionBuilder {
         crate::types::builders::InfrastructureUpdateTransitionBuilder::default()
     }
@@ -50,35 +52,47 @@ impl InfrastructureUpdateTransitionBuilder {
         self.current_state = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The current state of the infrastructure before the update.
     pub fn set_current_state(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.current_state = input;
         self
     }
+
     /// The current state of the infrastructure before the update.
     pub fn get_current_state(&self) -> &::std::option::Option<::std::string::String> {
         &self.current_state
     }
+
     /// The next state of the infrastructure following the update.
     /// This field is required.
     pub fn next_state(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_state = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The next state of the infrastructure following the update.
     pub fn set_next_state(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_state = input;
         self
     }
+
     /// The next state of the infrastructure following the update.
     pub fn get_next_state(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_state
     }
-    /// Consumes the builder and constructs a [`InfrastructureUpdateTransition`](crate::types::InfrastructureUpdateTransition).
+
+    /// Consumes the builder and constructs a
+    /// [`InfrastructureUpdateTransition`](crate::types::InfrastructureUpdateTransition).
     /// This method will fail if any of the following fields are not set:
     /// - [`current_state`](crate::types::builders::InfrastructureUpdateTransitionBuilder::current_state)
     /// - [`next_state`](crate::types::builders::InfrastructureUpdateTransitionBuilder::next_state)
-    pub fn build(self) -> ::std::result::Result<crate::types::InfrastructureUpdateTransition, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::InfrastructureUpdateTransition,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::InfrastructureUpdateTransition {
             current_state: self.current_state.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

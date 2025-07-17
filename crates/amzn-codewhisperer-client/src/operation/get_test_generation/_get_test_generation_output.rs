@@ -20,13 +20,15 @@ impl ::aws_types::request_id::RequestId for GetTestGenerationOutput {
     }
 }
 impl GetTestGenerationOutput {
-    /// Creates a new builder-style object to manufacture [`GetTestGenerationOutput`](crate::operation::get_test_generation::GetTestGenerationOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`GetTestGenerationOutput`](crate::operation::get_test_generation::GetTestGenerationOutput).
     pub fn builder() -> crate::operation::get_test_generation::builders::GetTestGenerationOutputBuilder {
         crate::operation::get_test_generation::builders::GetTestGenerationOutputBuilder::default()
     }
 }
 
-/// A builder for [`GetTestGenerationOutput`](crate::operation::get_test_generation::GetTestGenerationOutput).
+/// A builder for
+/// [`GetTestGenerationOutput`](crate::operation::get_test_generation::GetTestGenerationOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct GetTestGenerationOutputBuilder {
@@ -39,15 +41,18 @@ impl GetTestGenerationOutputBuilder {
         self.test_generation_job = ::std::option::Option::Some(input);
         self
     }
+
     /// Represents a test generation job
     pub fn set_test_generation_job(mut self, input: ::std::option::Option<crate::types::TestGenerationJob>) -> Self {
         self.test_generation_job = input;
         self
     }
+
     /// Represents a test generation job
     pub fn get_test_generation_job(&self) -> &::std::option::Option<crate::types::TestGenerationJob> {
         &self.test_generation_job
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -57,7 +62,9 @@ impl GetTestGenerationOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`GetTestGenerationOutput`](crate::operation::get_test_generation::GetTestGenerationOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`GetTestGenerationOutput`](crate::operation::get_test_generation::GetTestGenerationOutput).
     pub fn build(self) -> crate::operation::get_test_generation::GetTestGenerationOutput {
         crate::operation::get_test_generation::GetTestGenerationOutput {
             test_generation_job: self.test_generation_job,

@@ -16,10 +16,12 @@ impl CitationEvent {
     pub fn target(&self) -> &crate::types::CitationTarget {
         &self.target
     }
+
     /// The text inside the citation '1' in \[1\]
     pub fn citation_text(&self) -> ::std::option::Option<&str> {
         self.citation_text.as_deref()
     }
+
     /// The link to the document being cited
     pub fn citation_link(&self) -> &str {
         use std::ops::Deref;
@@ -36,7 +38,8 @@ impl ::std::fmt::Debug for CitationEvent {
     }
 }
 impl CitationEvent {
-    /// Creates a new builder-style object to manufacture [`CitationEvent`](crate::types::CitationEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`CitationEvent`](crate::types::CitationEvent).
     pub fn builder() -> crate::types::builders::CitationEventBuilder {
         crate::types::builders::CitationEventBuilder::default()
     }
@@ -57,49 +60,60 @@ impl CitationEventBuilder {
         self.target = ::std::option::Option::Some(input);
         self
     }
+
     /// The position or the range of the response text to be cited
     pub fn set_target(mut self, input: ::std::option::Option<crate::types::CitationTarget>) -> Self {
         self.target = input;
         self
     }
+
     /// The position or the range of the response text to be cited
     pub fn get_target(&self) -> &::std::option::Option<crate::types::CitationTarget> {
         &self.target
     }
+
     /// The text inside the citation '1' in \[1\]
     pub fn citation_text(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.citation_text = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The text inside the citation '1' in \[1\]
     pub fn set_citation_text(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.citation_text = input;
         self
     }
+
     /// The text inside the citation '1' in \[1\]
     pub fn get_citation_text(&self) -> &::std::option::Option<::std::string::String> {
         &self.citation_text
     }
+
     /// The link to the document being cited
     /// This field is required.
     pub fn citation_link(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.citation_link = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The link to the document being cited
     pub fn set_citation_link(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.citation_link = input;
         self
     }
+
     /// The link to the document being cited
     pub fn get_citation_link(&self) -> &::std::option::Option<::std::string::String> {
         &self.citation_link
     }
+
     /// Consumes the builder and constructs a [`CitationEvent`](crate::types::CitationEvent).
     /// This method will fail if any of the following fields are not set:
     /// - [`target`](crate::types::builders::CitationEventBuilder::target)
     /// - [`citation_link`](crate::types::builders::CitationEventBuilder::citation_link)
-    pub fn build(self) -> ::std::result::Result<crate::types::CitationEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::CitationEvent, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::CitationEvent {
             target: self.target.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

@@ -4,10 +4,14 @@ pub fn ser_transformation_export_context(
     input: &crate::types::TransformationExportContext,
 ) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     {
-        object.key("downloadArtifactId").string(input.download_artifact_id.as_str());
+        object
+            .key("downloadArtifactId")
+            .string(input.download_artifact_id.as_str());
     }
     {
-        object.key("downloadArtifactType").string(input.download_artifact_type.as_str());
+        object
+            .key("downloadArtifactType")
+            .string(input.download_artifact_type.as_str());
     }
     Ok(())
 }

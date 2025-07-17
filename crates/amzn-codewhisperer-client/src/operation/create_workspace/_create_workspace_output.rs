@@ -19,13 +19,15 @@ impl ::aws_types::request_id::RequestId for CreateWorkspaceOutput {
     }
 }
 impl CreateWorkspaceOutput {
-    /// Creates a new builder-style object to manufacture [`CreateWorkspaceOutput`](crate::operation::create_workspace::CreateWorkspaceOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`CreateWorkspaceOutput`](crate::operation::create_workspace::CreateWorkspaceOutput).
     pub fn builder() -> crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder {
         crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder::default()
     }
 }
 
-/// A builder for [`CreateWorkspaceOutput`](crate::operation::create_workspace::CreateWorkspaceOutput).
+/// A builder for
+/// [`CreateWorkspaceOutput`](crate::operation::create_workspace::CreateWorkspaceOutput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct CreateWorkspaceOutputBuilder {
@@ -39,15 +41,18 @@ impl CreateWorkspaceOutputBuilder {
         self.workspace = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_workspace(mut self, input: ::std::option::Option<crate::types::WorkspaceMetadata>) -> Self {
         self.workspace = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_workspace(&self) -> &::std::option::Option<crate::types::WorkspaceMetadata> {
         &self.workspace
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -57,12 +62,17 @@ impl CreateWorkspaceOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`CreateWorkspaceOutput`](crate::operation::create_workspace::CreateWorkspaceOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`CreateWorkspaceOutput`](crate::operation::create_workspace::CreateWorkspaceOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`workspace`](crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder::workspace)
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::create_workspace::CreateWorkspaceOutput, ::aws_smithy_types::error::operation::BuildError> {
+    ) -> ::std::result::Result<
+        crate::operation::create_workspace::CreateWorkspaceOutput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::create_workspace::CreateWorkspaceOutput {
             workspace: self.workspace.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

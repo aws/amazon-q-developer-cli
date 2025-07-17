@@ -19,17 +19,21 @@ impl TextDocument {
         use std::ops::Deref;
         self.relative_file_path.deref()
     }
+
     /// The text document's language identifier.
     pub fn programming_language(&self) -> ::std::option::Option<&crate::types::ProgrammingLanguage> {
         self.programming_language.as_ref()
     }
+
     /// Content of the text document
     pub fn text(&self) -> ::std::option::Option<&str> {
         self.text.as_deref()
     }
+
     /// DocumentSymbols parsed from a text document
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.document_symbols.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.document_symbols.is_none()`.
     pub fn document_symbols(&self) -> &[crate::types::DocumentSymbol] {
         self.document_symbols.as_deref().unwrap_or_default()
     }
@@ -45,7 +49,8 @@ impl ::std::fmt::Debug for TextDocument {
     }
 }
 impl TextDocument {
-    /// Creates a new builder-style object to manufacture [`TextDocument`](crate::types::TextDocument).
+    /// Creates a new builder-style object to manufacture
+    /// [`TextDocument`](crate::types::TextDocument).
     pub fn builder() -> crate::types::builders::TextDocumentBuilder {
         crate::types::builders::TextDocumentBuilder::default()
     }
@@ -67,46 +72,56 @@ impl TextDocumentBuilder {
         self.relative_file_path = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Filepath relative to the root of the workspace
     pub fn set_relative_file_path(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.relative_file_path = input;
         self
     }
+
     /// Filepath relative to the root of the workspace
     pub fn get_relative_file_path(&self) -> &::std::option::Option<::std::string::String> {
         &self.relative_file_path
     }
+
     /// The text document's language identifier.
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
+
     /// The text document's language identifier.
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
+
     /// The text document's language identifier.
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
+
     /// Content of the text document
     pub fn text(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.text = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Content of the text document
     pub fn set_text(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.text = input;
         self
     }
+
     /// Content of the text document
     pub fn get_text(&self) -> &::std::option::Option<::std::string::String> {
         &self.text
     }
+
     /// Appends an item to `document_symbols`.
     ///
-    /// To override the contents of this collection use [`set_document_symbols`](Self::set_document_symbols).
+    /// To override the contents of this collection use
+    /// [`set_document_symbols`](Self::set_document_symbols).
     ///
     /// DocumentSymbols parsed from a text document
     pub fn document_symbols(mut self, input: crate::types::DocumentSymbol) -> Self {
@@ -115,19 +130,27 @@ impl TextDocumentBuilder {
         self.document_symbols = ::std::option::Option::Some(v);
         self
     }
+
     /// DocumentSymbols parsed from a text document
-    pub fn set_document_symbols(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::DocumentSymbol>>) -> Self {
+    pub fn set_document_symbols(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::DocumentSymbol>>,
+    ) -> Self {
         self.document_symbols = input;
         self
     }
+
     /// DocumentSymbols parsed from a text document
     pub fn get_document_symbols(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::DocumentSymbol>> {
         &self.document_symbols
     }
+
     /// Consumes the builder and constructs a [`TextDocument`](crate::types::TextDocument).
     /// This method will fail if any of the following fields are not set:
     /// - [`relative_file_path`](crate::types::builders::TextDocumentBuilder::relative_file_path)
-    pub fn build(self) -> ::std::result::Result<crate::types::TextDocument, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::TextDocument, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TextDocument {
             relative_file_path: self.relative_file_path.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

@@ -6,20 +6,23 @@
 pub enum GenerateCodeFromCommandsResponseStream {
     /// Generated code snippet
     CodeEvent(crate::types::CodeEvent),
-    /// The `Unknown` variant represents cases where new union variant was received. Consider upgrading the SDK to the latest available version.
-    /// An unknown enum variant
+    /// The `Unknown` variant represents cases where new union variant was received. Consider
+    /// upgrading the SDK to the latest available version. An unknown enum variant
     ///
     /// _Note: If you encounter this error, consider upgrading your SDK to the latest version._
     /// The `Unknown` variant represents cases where the server sent a value that wasn't recognized
-    /// by the client. This can happen when the server adds new functionality, but the client has not been updated.
-    /// To investigate this, consider turning on debug logging to print the raw HTTP response.
+    /// by the client. This can happen when the server adds new functionality, but the client has
+    /// not been updated. To investigate this, consider turning on debug logging to print the
+    /// raw HTTP response.
     #[non_exhaustive]
     Unknown,
 }
 impl GenerateCodeFromCommandsResponseStream {
     #[allow(irrefutable_let_patterns)]
-    /// Tries to convert the enum instance into [`CodeEvent`](crate::types::GenerateCodeFromCommandsResponseStream::CodeEvent), extracting the inner [`CodeEvent`](crate::types::CodeEvent).
-    /// Returns `Err(&Self)` if it can't be converted.
+    /// Tries to convert the enum instance into
+    /// [`CodeEvent`](crate::types::GenerateCodeFromCommandsResponseStream::CodeEvent), extracting
+    /// the inner [`CodeEvent`](crate::types::CodeEvent). Returns `Err(&Self)` if it can't be
+    /// converted.
     pub fn as_code_event(&self) -> ::std::result::Result<&crate::types::CodeEvent, &Self> {
         if let GenerateCodeFromCommandsResponseStream::CodeEvent(val) = &self {
             ::std::result::Result::Ok(val)
@@ -27,10 +30,13 @@ impl GenerateCodeFromCommandsResponseStream {
             ::std::result::Result::Err(self)
         }
     }
-    /// Returns true if this is a [`CodeEvent`](crate::types::GenerateCodeFromCommandsResponseStream::CodeEvent).
+
+    /// Returns true if this is a
+    /// [`CodeEvent`](crate::types::GenerateCodeFromCommandsResponseStream::CodeEvent).
     pub fn is_code_event(&self) -> bool {
         self.as_code_event().is_ok()
     }
+
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)

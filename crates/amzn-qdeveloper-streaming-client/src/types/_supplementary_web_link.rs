@@ -17,11 +17,13 @@ impl SupplementaryWebLink {
         use std::ops::Deref;
         self.url.deref()
     }
+
     /// Title of the web reference link.
     pub fn title(&self) -> &str {
         use std::ops::Deref;
         self.title.deref()
     }
+
     /// Relevant text snippet from the link.
     pub fn snippet(&self) -> ::std::option::Option<&str> {
         self.snippet.as_deref()
@@ -37,7 +39,8 @@ impl ::std::fmt::Debug for SupplementaryWebLink {
     }
 }
 impl SupplementaryWebLink {
-    /// Creates a new builder-style object to manufacture [`SupplementaryWebLink`](crate::types::SupplementaryWebLink).
+    /// Creates a new builder-style object to manufacture
+    /// [`SupplementaryWebLink`](crate::types::SupplementaryWebLink).
     pub fn builder() -> crate::types::builders::SupplementaryWebLinkBuilder {
         crate::types::builders::SupplementaryWebLinkBuilder::default()
     }
@@ -58,49 +61,62 @@ impl SupplementaryWebLinkBuilder {
         self.url = ::std::option::Option::Some(input.into());
         self
     }
+
     /// URL of the web reference link.
     pub fn set_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.url = input;
         self
     }
+
     /// URL of the web reference link.
     pub fn get_url(&self) -> &::std::option::Option<::std::string::String> {
         &self.url
     }
+
     /// Title of the web reference link.
     /// This field is required.
     pub fn title(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.title = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Title of the web reference link.
     pub fn set_title(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.title = input;
         self
     }
+
     /// Title of the web reference link.
     pub fn get_title(&self) -> &::std::option::Option<::std::string::String> {
         &self.title
     }
+
     /// Relevant text snippet from the link.
     pub fn snippet(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.snippet = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Relevant text snippet from the link.
     pub fn set_snippet(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.snippet = input;
         self
     }
+
     /// Relevant text snippet from the link.
     pub fn get_snippet(&self) -> &::std::option::Option<::std::string::String> {
         &self.snippet
     }
-    /// Consumes the builder and constructs a [`SupplementaryWebLink`](crate::types::SupplementaryWebLink).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`SupplementaryWebLink`](crate::types::SupplementaryWebLink). This method will fail if
+    /// any of the following fields are not set:
     /// - [`url`](crate::types::builders::SupplementaryWebLinkBuilder::url)
     /// - [`title`](crate::types::builders::SupplementaryWebLinkBuilder::title)
-    pub fn build(self) -> ::std::result::Result<crate::types::SupplementaryWebLink, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::SupplementaryWebLink, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::SupplementaryWebLink {
             url: self.url.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

@@ -7,18 +7,24 @@ pub fn ser_export_context(
         crate::types::ExportContext::TransformationExportContext(inner) => {
             #[allow(unused_mut)]
             let mut object_1 = object_4.key("transformationExportContext").start_object();
-            crate::protocol_serde::shape_transformation_export_context::ser_transformation_export_context(&mut object_1, inner)?;
+            crate::protocol_serde::shape_transformation_export_context::ser_transformation_export_context(
+                &mut object_1,
+                inner,
+            )?;
             object_1.finish();
-        }
+        },
         crate::types::ExportContext::UnitTestGenerationExportContext(inner) => {
             #[allow(unused_mut)]
             let mut object_2 = object_4.key("unitTestGenerationExportContext").start_object();
-            crate::protocol_serde::shape_unit_test_generation_export_context::ser_unit_test_generation_export_context(&mut object_2, inner)?;
+            crate::protocol_serde::shape_unit_test_generation_export_context::ser_unit_test_generation_export_context(
+                &mut object_2,
+                inner,
+            )?;
             object_2.finish();
-        }
+        },
         crate::types::ExportContext::Unknown => {
-            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("ExportContext"))
-        }
+            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("ExportContext"));
+        },
     }
     Ok(())
 }

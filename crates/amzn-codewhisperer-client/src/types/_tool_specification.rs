@@ -16,11 +16,13 @@ impl ToolSpecification {
     pub fn input_schema(&self) -> &crate::types::ToolInputSchema {
         &self.input_schema
     }
+
     /// The name for the tool.
     pub fn name(&self) -> &str {
         use std::ops::Deref;
         self.name.deref()
     }
+
     /// The description for the tool.
     pub fn description(&self) -> ::std::option::Option<&str> {
         self.description.as_deref()
@@ -36,7 +38,8 @@ impl ::std::fmt::Debug for ToolSpecification {
     }
 }
 impl ToolSpecification {
-    /// Creates a new builder-style object to manufacture [`ToolSpecification`](crate::types::ToolSpecification).
+    /// Creates a new builder-style object to manufacture
+    /// [`ToolSpecification`](crate::types::ToolSpecification).
     pub fn builder() -> crate::types::builders::ToolSpecificationBuilder {
         crate::types::builders::ToolSpecificationBuilder::default()
     }
@@ -57,49 +60,61 @@ impl ToolSpecificationBuilder {
         self.input_schema = ::std::option::Option::Some(input);
         self
     }
+
     /// The input schema for the tool in JSON format.
     pub fn set_input_schema(mut self, input: ::std::option::Option<crate::types::ToolInputSchema>) -> Self {
         self.input_schema = input;
         self
     }
+
     /// The input schema for the tool in JSON format.
     pub fn get_input_schema(&self) -> &::std::option::Option<crate::types::ToolInputSchema> {
         &self.input_schema
     }
+
     /// The name for the tool.
     /// This field is required.
     pub fn name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.name = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The name for the tool.
     pub fn set_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.name = input;
         self
     }
+
     /// The name for the tool.
     pub fn get_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.name
     }
+
     /// The description for the tool.
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The description for the tool.
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
+
     /// The description for the tool.
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
-    /// Consumes the builder and constructs a [`ToolSpecification`](crate::types::ToolSpecification).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`ToolSpecification`](crate::types::ToolSpecification). This method will fail if any of
+    /// the following fields are not set:
     /// - [`input_schema`](crate::types::builders::ToolSpecificationBuilder::input_schema)
     /// - [`name`](crate::types::builders::ToolSpecificationBuilder::name)
-    pub fn build(self) -> ::std::result::Result<crate::types::ToolSpecification, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::ToolSpecification, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::ToolSpecification {
             input_schema: self.input_schema.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

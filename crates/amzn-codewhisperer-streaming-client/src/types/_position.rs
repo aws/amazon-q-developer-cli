@@ -14,6 +14,7 @@ impl Position {
     pub fn line(&self) -> i32 {
         self.line
     }
+
     /// Character offset on a line in a document (zero-based)
     pub fn character(&self) -> i32 {
         self.character
@@ -40,35 +41,43 @@ impl PositionBuilder {
         self.line = ::std::option::Option::Some(input);
         self
     }
+
     /// Line position in a document.
     pub fn set_line(mut self, input: ::std::option::Option<i32>) -> Self {
         self.line = input;
         self
     }
+
     /// Line position in a document.
     pub fn get_line(&self) -> &::std::option::Option<i32> {
         &self.line
     }
+
     /// Character offset on a line in a document (zero-based)
     /// This field is required.
     pub fn character(mut self, input: i32) -> Self {
         self.character = ::std::option::Option::Some(input);
         self
     }
+
     /// Character offset on a line in a document (zero-based)
     pub fn set_character(mut self, input: ::std::option::Option<i32>) -> Self {
         self.character = input;
         self
     }
+
     /// Character offset on a line in a document (zero-based)
     pub fn get_character(&self) -> &::std::option::Option<i32> {
         &self.character
     }
+
     /// Consumes the builder and constructs a [`Position`](crate::types::Position).
     /// This method will fail if any of the following fields are not set:
     /// - [`line`](crate::types::builders::PositionBuilder::line)
     /// - [`character`](crate::types::builders::PositionBuilder::character)
-    pub fn build(self) -> ::std::result::Result<crate::types::Position, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::Position, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::Position {
             line: self.line.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

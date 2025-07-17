@@ -14,6 +14,7 @@ impl ResourceList {
     pub fn action(&self) -> ::std::option::Option<&crate::types::Action> {
         self.action.as_ref()
     }
+
     /// List of resources
     pub fn items(&self) -> &[crate::types::Resource] {
         use std::ops::Deref;
@@ -21,7 +22,8 @@ impl ResourceList {
     }
 }
 impl ResourceList {
-    /// Creates a new builder-style object to manufacture [`ResourceList`](crate::types::ResourceList).
+    /// Creates a new builder-style object to manufacture
+    /// [`ResourceList`](crate::types::ResourceList).
     pub fn builder() -> crate::types::builders::ResourceListBuilder {
         crate::types::builders::ResourceListBuilder::default()
     }
@@ -40,15 +42,18 @@ impl ResourceListBuilder {
         self.action = ::std::option::Option::Some(input);
         self
     }
+
     /// Action associated with the list
     pub fn set_action(mut self, input: ::std::option::Option<crate::types::Action>) -> Self {
         self.action = input;
         self
     }
+
     /// Action associated with the list
     pub fn get_action(&self) -> &::std::option::Option<crate::types::Action> {
         &self.action
     }
+
     /// Appends an item to `items`.
     ///
     /// To override the contents of this collection use [`set_items`](Self::set_items).
@@ -60,19 +65,24 @@ impl ResourceListBuilder {
         self.items = ::std::option::Option::Some(v);
         self
     }
+
     /// List of resources
     pub fn set_items(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Resource>>) -> Self {
         self.items = input;
         self
     }
+
     /// List of resources
     pub fn get_items(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Resource>> {
         &self.items
     }
+
     /// Consumes the builder and constructs a [`ResourceList`](crate::types::ResourceList).
     /// This method will fail if any of the following fields are not set:
     /// - [`items`](crate::types::builders::ResourceListBuilder::items)
-    pub fn build(self) -> ::std::result::Result<crate::types::ResourceList, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::ResourceList, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::ResourceList {
             action: self.action,
             items: self.items.ok_or_else(|| {

@@ -17,17 +17,20 @@ impl WorkspaceState {
         use std::ops::Deref;
         self.upload_id.deref()
     }
+
     /// Primary programming language of the Workspace
     pub fn programming_language(&self) -> &crate::types::ProgrammingLanguage {
         &self.programming_language
     }
+
     /// Workspace context truncation schemes based on usecase
     pub fn context_truncation_scheme(&self) -> ::std::option::Option<&crate::types::ContextTruncationScheme> {
         self.context_truncation_scheme.as_ref()
     }
 }
 impl WorkspaceState {
-    /// Creates a new builder-style object to manufacture [`WorkspaceState`](crate::types::WorkspaceState).
+    /// Creates a new builder-style object to manufacture
+    /// [`WorkspaceState`](crate::types::WorkspaceState).
     pub fn builder() -> crate::types::builders::WorkspaceStateBuilder {
         crate::types::builders::WorkspaceStateBuilder::default()
     }
@@ -48,49 +51,63 @@ impl WorkspaceStateBuilder {
         self.upload_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Upload ID representing an Upload using a PreSigned URL
     pub fn set_upload_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.upload_id = input;
         self
     }
+
     /// Upload ID representing an Upload using a PreSigned URL
     pub fn get_upload_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.upload_id
     }
+
     /// Primary programming language of the Workspace
     /// This field is required.
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
+
     /// Primary programming language of the Workspace
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
+
     /// Primary programming language of the Workspace
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
+
     /// Workspace context truncation schemes based on usecase
     pub fn context_truncation_scheme(mut self, input: crate::types::ContextTruncationScheme) -> Self {
         self.context_truncation_scheme = ::std::option::Option::Some(input);
         self
     }
+
     /// Workspace context truncation schemes based on usecase
-    pub fn set_context_truncation_scheme(mut self, input: ::std::option::Option<crate::types::ContextTruncationScheme>) -> Self {
+    pub fn set_context_truncation_scheme(
+        mut self,
+        input: ::std::option::Option<crate::types::ContextTruncationScheme>,
+    ) -> Self {
         self.context_truncation_scheme = input;
         self
     }
+
     /// Workspace context truncation schemes based on usecase
     pub fn get_context_truncation_scheme(&self) -> &::std::option::Option<crate::types::ContextTruncationScheme> {
         &self.context_truncation_scheme
     }
+
     /// Consumes the builder and constructs a [`WorkspaceState`](crate::types::WorkspaceState).
     /// This method will fail if any of the following fields are not set:
     /// - [`upload_id`](crate::types::builders::WorkspaceStateBuilder::upload_id)
     /// - [`programming_language`](crate::types::builders::WorkspaceStateBuilder::programming_language)
-    pub fn build(self) -> ::std::result::Result<crate::types::WorkspaceState, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::WorkspaceState, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::WorkspaceState {
             upload_id: self.upload_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

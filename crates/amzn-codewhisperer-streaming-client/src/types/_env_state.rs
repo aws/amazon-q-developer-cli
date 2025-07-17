@@ -18,16 +18,20 @@ impl EnvState {
     pub fn operating_system(&self) -> ::std::option::Option<&str> {
         self.operating_system.as_deref()
     }
+
     /// The current working directory of the environment
     pub fn current_working_directory(&self) -> ::std::option::Option<&str> {
         self.current_working_directory.as_deref()
     }
+
     /// The environment variables set in the current environment
     ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.environment_variables.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.environment_variables.is_none()`.
     pub fn environment_variables(&self) -> &[crate::types::EnvironmentVariable] {
         self.environment_variables.as_deref().unwrap_or_default()
     }
+
     /// Local timezone offset of the client. For more information, see documentation https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
     pub fn timezone_offset(&self) -> ::std::option::Option<i32> {
         self.timezone_offset
@@ -65,32 +69,39 @@ impl EnvStateBuilder {
         self.operating_system = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The name of the operating system in use
     pub fn set_operating_system(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.operating_system = input;
         self
     }
+
     /// The name of the operating system in use
     pub fn get_operating_system(&self) -> &::std::option::Option<::std::string::String> {
         &self.operating_system
     }
+
     /// The current working directory of the environment
     pub fn current_working_directory(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.current_working_directory = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The current working directory of the environment
     pub fn set_current_working_directory(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.current_working_directory = input;
         self
     }
+
     /// The current working directory of the environment
     pub fn get_current_working_directory(&self) -> &::std::option::Option<::std::string::String> {
         &self.current_working_directory
     }
+
     /// Appends an item to `environment_variables`.
     ///
-    /// To override the contents of this collection use [`set_environment_variables`](Self::set_environment_variables).
+    /// To override the contents of this collection use
+    /// [`set_environment_variables`](Self::set_environment_variables).
     ///
     /// The environment variables set in the current environment
     pub fn environment_variables(mut self, input: crate::types::EnvironmentVariable) -> Self {
@@ -99,29 +110,40 @@ impl EnvStateBuilder {
         self.environment_variables = ::std::option::Option::Some(v);
         self
     }
+
     /// The environment variables set in the current environment
-    pub fn set_environment_variables(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::EnvironmentVariable>>) -> Self {
+    pub fn set_environment_variables(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::EnvironmentVariable>>,
+    ) -> Self {
         self.environment_variables = input;
         self
     }
+
     /// The environment variables set in the current environment
-    pub fn get_environment_variables(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::EnvironmentVariable>> {
+    pub fn get_environment_variables(
+        &self,
+    ) -> &::std::option::Option<::std::vec::Vec<crate::types::EnvironmentVariable>> {
         &self.environment_variables
     }
+
     /// Local timezone offset of the client. For more information, see documentation https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
     pub fn timezone_offset(mut self, input: i32) -> Self {
         self.timezone_offset = ::std::option::Option::Some(input);
         self
     }
+
     /// Local timezone offset of the client. For more information, see documentation https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
     pub fn set_timezone_offset(mut self, input: ::std::option::Option<i32>) -> Self {
         self.timezone_offset = input;
         self
     }
+
     /// Local timezone offset of the client. For more information, see documentation https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
     pub fn get_timezone_offset(&self) -> &::std::option::Option<i32> {
         &self.timezone_offset
     }
+
     /// Consumes the builder and constructs a [`EnvState`](crate::types::EnvState).
     pub fn build(self) -> crate::types::EnvState {
         crate::types::EnvState {

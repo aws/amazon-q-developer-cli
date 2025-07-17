@@ -22,31 +22,37 @@ impl TransformationProgressUpdate {
         use std::ops::Deref;
         self.name.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn status(&self) -> &crate::types::TransformationProgressUpdateStatus {
         &self.status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(&self) -> ::std::option::Option<&str> {
         self.description.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn start_time(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
         self.start_time.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn end_time(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
         self.end_time.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.download_artifacts.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.download_artifacts.is_none()`.
     pub fn download_artifacts(&self) -> &[crate::types::TransformationDownloadArtifact] {
         self.download_artifacts.as_deref().unwrap_or_default()
     }
 }
 impl TransformationProgressUpdate {
-    /// Creates a new builder-style object to manufacture [`TransformationProgressUpdate`](crate::types::TransformationProgressUpdate).
+    /// Creates a new builder-style object to manufacture
+    /// [`TransformationProgressUpdate`](crate::types::TransformationProgressUpdate).
     pub fn builder() -> crate::types::builders::TransformationProgressUpdateBuilder {
         crate::types::builders::TransformationProgressUpdateBuilder::default()
     }
@@ -70,96 +76,128 @@ impl TransformationProgressUpdateBuilder {
         self.name = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.name = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.name
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn status(mut self, input: crate::types::TransformationProgressUpdateStatus) -> Self {
         self.status = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_status(mut self, input: ::std::option::Option<crate::types::TransformationProgressUpdateStatus>) -> Self {
+    pub fn set_status(
+        mut self,
+        input: ::std::option::Option<crate::types::TransformationProgressUpdateStatus>,
+    ) -> Self {
         self.status = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_status(&self) -> &::std::option::Option<crate::types::TransformationProgressUpdateStatus> {
         &self.status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn start_time(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.start_time = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_start_time(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.start_time = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_start_time(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.start_time
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn end_time(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.end_time = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_end_time(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.end_time = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_end_time(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.end_time
     }
+
     /// Appends an item to `download_artifacts`.
     ///
-    /// To override the contents of this collection use [`set_download_artifacts`](Self::set_download_artifacts).
-    ///
+    /// To override the contents of this collection use
+    /// [`set_download_artifacts`](Self::set_download_artifacts).
     pub fn download_artifacts(mut self, input: crate::types::TransformationDownloadArtifact) -> Self {
         let mut v = self.download_artifacts.unwrap_or_default();
         v.push(input);
         self.download_artifacts = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_download_artifacts(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::TransformationDownloadArtifact>>) -> Self {
+    pub fn set_download_artifacts(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::TransformationDownloadArtifact>>,
+    ) -> Self {
         self.download_artifacts = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_download_artifacts(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::TransformationDownloadArtifact>> {
+    pub fn get_download_artifacts(
+        &self,
+    ) -> &::std::option::Option<::std::vec::Vec<crate::types::TransformationDownloadArtifact>> {
         &self.download_artifacts
     }
-    /// Consumes the builder and constructs a [`TransformationProgressUpdate`](crate::types::TransformationProgressUpdate).
+
+    /// Consumes the builder and constructs a
+    /// [`TransformationProgressUpdate`](crate::types::TransformationProgressUpdate).
     /// This method will fail if any of the following fields are not set:
     /// - [`name`](crate::types::builders::TransformationProgressUpdateBuilder::name)
     /// - [`status`](crate::types::builders::TransformationProgressUpdateBuilder::status)
-    pub fn build(self) -> ::std::result::Result<crate::types::TransformationProgressUpdate, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::TransformationProgressUpdate,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::TransformationProgressUpdate {
             name: self.name.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

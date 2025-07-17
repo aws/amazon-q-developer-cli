@@ -14,6 +14,7 @@ impl GetCodeFixJobOutput {
     pub fn job_status(&self) -> ::std::option::Option<&crate::types::CodeFixJobStatus> {
         self.job_status.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn suggested_fix(&self) -> ::std::option::Option<&crate::types::SuggestedFix> {
         self.suggested_fix.as_ref()
@@ -25,7 +26,8 @@ impl ::aws_types::request_id::RequestId for GetCodeFixJobOutput {
     }
 }
 impl GetCodeFixJobOutput {
-    /// Creates a new builder-style object to manufacture [`GetCodeFixJobOutput`](crate::operation::get_code_fix_job::GetCodeFixJobOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`GetCodeFixJobOutput`](crate::operation::get_code_fix_job::GetCodeFixJobOutput).
     pub fn builder() -> crate::operation::get_code_fix_job::builders::GetCodeFixJobOutputBuilder {
         crate::operation::get_code_fix_job::builders::GetCodeFixJobOutputBuilder::default()
     }
@@ -45,29 +47,35 @@ impl GetCodeFixJobOutputBuilder {
         self.job_status = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_job_status(mut self, input: ::std::option::Option<crate::types::CodeFixJobStatus>) -> Self {
         self.job_status = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_job_status(&self) -> &::std::option::Option<crate::types::CodeFixJobStatus> {
         &self.job_status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn suggested_fix(mut self, input: crate::types::SuggestedFix) -> Self {
         self.suggested_fix = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_suggested_fix(mut self, input: ::std::option::Option<crate::types::SuggestedFix>) -> Self {
         self.suggested_fix = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_suggested_fix(&self) -> &::std::option::Option<crate::types::SuggestedFix> {
         &self.suggested_fix
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -77,7 +85,9 @@ impl GetCodeFixJobOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`GetCodeFixJobOutput`](crate::operation::get_code_fix_job::GetCodeFixJobOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`GetCodeFixJobOutput`](crate::operation::get_code_fix_job::GetCodeFixJobOutput).
     pub fn build(self) -> crate::operation::get_code_fix_job::GetCodeFixJobOutput {
         crate::operation::get_code_fix_job::GetCodeFixJobOutput {
             job_status: self.job_status,

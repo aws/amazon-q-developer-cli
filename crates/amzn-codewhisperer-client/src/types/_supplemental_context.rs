@@ -18,15 +18,18 @@ impl SupplementalContext {
         use std::ops::Deref;
         self.file_path.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn content(&self) -> &str {
         use std::ops::Deref;
         self.content.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn r#type(&self) -> ::std::option::Option<&crate::types::SupplementalContextType> {
         self.r#type.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn metadata(&self) -> ::std::option::Option<&crate::types::SupplementalContextMetadata> {
         self.metadata.as_ref()
@@ -43,7 +46,8 @@ impl ::std::fmt::Debug for SupplementalContext {
     }
 }
 impl SupplementalContext {
-    /// Creates a new builder-style object to manufacture [`SupplementalContext`](crate::types::SupplementalContext).
+    /// Creates a new builder-style object to manufacture
+    /// [`SupplementalContext`](crate::types::SupplementalContext).
     pub fn builder() -> crate::types::builders::SupplementalContextBuilder {
         crate::types::builders::SupplementalContextBuilder::default()
     }
@@ -65,63 +69,79 @@ impl SupplementalContextBuilder {
         self.file_path = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_file_path(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.file_path = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_file_path(&self) -> &::std::option::Option<::std::string::String> {
         &self.file_path
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn content(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.content = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.content = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.content
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn r#type(mut self, input: crate::types::SupplementalContextType) -> Self {
         self.r#type = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_type(mut self, input: ::std::option::Option<crate::types::SupplementalContextType>) -> Self {
         self.r#type = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_type(&self) -> &::std::option::Option<crate::types::SupplementalContextType> {
         &self.r#type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn metadata(mut self, input: crate::types::SupplementalContextMetadata) -> Self {
         self.metadata = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_metadata(mut self, input: ::std::option::Option<crate::types::SupplementalContextMetadata>) -> Self {
         self.metadata = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_metadata(&self) -> &::std::option::Option<crate::types::SupplementalContextMetadata> {
         &self.metadata
     }
-    /// Consumes the builder and constructs a [`SupplementalContext`](crate::types::SupplementalContext).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`SupplementalContext`](crate::types::SupplementalContext). This method will fail if any
+    /// of the following fields are not set:
     /// - [`file_path`](crate::types::builders::SupplementalContextBuilder::file_path)
     /// - [`content`](crate::types::builders::SupplementalContextBuilder::content)
-    pub fn build(self) -> ::std::result::Result<crate::types::SupplementalContext, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::SupplementalContext, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::SupplementalContext {
             file_path: self.file_path.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

@@ -14,6 +14,7 @@ impl Alert {
     pub fn r#type(&self) -> &crate::types::AlertType {
         &self.r#type
     }
+
     /// Contains the content of the alert, which may include sensitive information.
     pub fn content(&self) -> &[crate::types::AlertComponent] {
         use std::ops::Deref;
@@ -41,15 +42,18 @@ impl AlertBuilder {
         self.r#type = ::std::option::Option::Some(input);
         self
     }
+
     /// Enum defining types of alerts that can be issued.
     pub fn set_type(mut self, input: ::std::option::Option<crate::types::AlertType>) -> Self {
         self.r#type = input;
         self
     }
+
     /// Enum defining types of alerts that can be issued.
     pub fn get_type(&self) -> &::std::option::Option<crate::types::AlertType> {
         &self.r#type
     }
+
     /// Appends an item to `content`.
     ///
     /// To override the contents of this collection use [`set_content`](Self::set_content).
@@ -61,15 +65,18 @@ impl AlertBuilder {
         self.content = ::std::option::Option::Some(v);
         self
     }
+
     /// Contains the content of the alert, which may include sensitive information.
     pub fn set_content(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::AlertComponent>>) -> Self {
         self.content = input;
         self
     }
+
     /// Contains the content of the alert, which may include sensitive information.
     pub fn get_content(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::AlertComponent>> {
         &self.content
     }
+
     /// Consumes the builder and constructs a [`Alert`](crate::types::Alert).
     /// This method will fail if any of the following fields are not set:
     /// - [`r#type`](crate::types::builders::AlertBuilder::type)

@@ -23,26 +23,34 @@ impl StartCodeFixJobInput {
     pub fn snippet_range(&self) -> ::std::option::Option<&crate::types::Range> {
         self.snippet_range.as_ref()
     }
+
     /// Upload ID returned by CreateUploadUrl API
     pub fn upload_id(&self) -> ::std::option::Option<&str> {
         self.upload_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(&self) -> ::std::option::Option<&str> {
         self.description.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn rule_id(&self) -> ::std::option::Option<&str> {
         self.rule_id.as_deref()
     }
+
     /// Code fix name
     pub fn code_fix_name(&self) -> ::std::option::Option<&str> {
         self.code_fix_name.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn reference_tracker_configuration(&self) -> ::std::option::Option<&crate::types::ReferenceTrackerConfiguration> {
+    pub fn reference_tracker_configuration(
+        &self,
+    ) -> ::std::option::Option<&crate::types::ReferenceTrackerConfiguration> {
         self.reference_tracker_configuration.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
@@ -62,13 +70,15 @@ impl ::std::fmt::Debug for StartCodeFixJobInput {
     }
 }
 impl StartCodeFixJobInput {
-    /// Creates a new builder-style object to manufacture [`StartCodeFixJobInput`](crate::operation::start_code_fix_job::StartCodeFixJobInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`StartCodeFixJobInput`](crate::operation::start_code_fix_job::StartCodeFixJobInput).
     pub fn builder() -> crate::operation::start_code_fix_job::builders::StartCodeFixJobInputBuilder {
         crate::operation::start_code_fix_job::builders::StartCodeFixJobInputBuilder::default()
     }
 }
 
-/// A builder for [`StartCodeFixJobInput`](crate::operation::start_code_fix_job::StartCodeFixJobInput).
+/// A builder for
+/// [`StartCodeFixJobInput`](crate::operation::start_code_fix_job::StartCodeFixJobInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct StartCodeFixJobInputBuilder {
@@ -87,104 +97,134 @@ impl StartCodeFixJobInputBuilder {
         self.snippet_range = ::std::option::Option::Some(input);
         self
     }
+
     /// Indicates Range / Span in a Text Document
     pub fn set_snippet_range(mut self, input: ::std::option::Option<crate::types::Range>) -> Self {
         self.snippet_range = input;
         self
     }
+
     /// Indicates Range / Span in a Text Document
     pub fn get_snippet_range(&self) -> &::std::option::Option<crate::types::Range> {
         &self.snippet_range
     }
+
     /// Upload ID returned by CreateUploadUrl API
     /// This field is required.
     pub fn upload_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.upload_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Upload ID returned by CreateUploadUrl API
     pub fn set_upload_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.upload_id = input;
         self
     }
+
     /// Upload ID returned by CreateUploadUrl API
     pub fn get_upload_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.upload_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn rule_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.rule_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_rule_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.rule_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_rule_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.rule_id
     }
+
     /// Code fix name
     pub fn code_fix_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.code_fix_name = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Code fix name
     pub fn set_code_fix_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.code_fix_name = input;
         self
     }
+
     /// Code fix name
     pub fn get_code_fix_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.code_fix_name
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn reference_tracker_configuration(mut self, input: crate::types::ReferenceTrackerConfiguration) -> Self {
         self.reference_tracker_configuration = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_reference_tracker_configuration(mut self, input: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>) -> Self {
+    pub fn set_reference_tracker_configuration(
+        mut self,
+        input: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
+    ) -> Self {
         self.reference_tracker_configuration = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_reference_tracker_configuration(&self) -> &::std::option::Option<crate::types::ReferenceTrackerConfiguration> {
+    pub fn get_reference_tracker_configuration(
+        &self,
+    ) -> &::std::option::Option<crate::types::ReferenceTrackerConfiguration> {
         &self.reference_tracker_configuration
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-    /// Consumes the builder and constructs a [`StartCodeFixJobInput`](crate::operation::start_code_fix_job::StartCodeFixJobInput).
+
+    /// Consumes the builder and constructs a
+    /// [`StartCodeFixJobInput`](crate::operation::start_code_fix_job::StartCodeFixJobInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::start_code_fix_job::StartCodeFixJobInput, ::aws_smithy_types::error::operation::BuildError> {
+    ) -> ::std::result::Result<
+        crate::operation::start_code_fix_job::StartCodeFixJobInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::start_code_fix_job::StartCodeFixJobInput {
             snippet_range: self.snippet_range,
             upload_id: self.upload_id,

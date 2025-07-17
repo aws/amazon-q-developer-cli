@@ -16,10 +16,12 @@ impl VendKeyGrantOutput {
     pub fn cmk_arn(&self) -> ::std::option::Option<&str> {
         self.cmk_arn.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn grant_id(&self) -> ::std::option::Option<&str> {
         self.grant_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn grant_token(&self) -> ::std::option::Option<&str> {
         self.grant_token.as_deref()
@@ -31,7 +33,8 @@ impl ::aws_types::request_id::RequestId for VendKeyGrantOutput {
     }
 }
 impl VendKeyGrantOutput {
-    /// Creates a new builder-style object to manufacture [`VendKeyGrantOutput`](crate::operation::vend_key_grant::VendKeyGrantOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`VendKeyGrantOutput`](crate::operation::vend_key_grant::VendKeyGrantOutput).
     pub fn builder() -> crate::operation::vend_key_grant::builders::VendKeyGrantOutputBuilder {
         crate::operation::vend_key_grant::builders::VendKeyGrantOutputBuilder::default()
     }
@@ -52,43 +55,52 @@ impl VendKeyGrantOutputBuilder {
         self.cmk_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_cmk_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.cmk_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_cmk_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.cmk_arn
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn grant_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.grant_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_grant_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.grant_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_grant_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.grant_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn grant_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.grant_token = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_grant_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.grant_token = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_grant_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.grant_token
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -98,7 +110,9 @@ impl VendKeyGrantOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`VendKeyGrantOutput`](crate::operation::vend_key_grant::VendKeyGrantOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`VendKeyGrantOutput`](crate::operation::vend_key_grant::VendKeyGrantOutput).
     pub fn build(self) -> crate::operation::vend_key_grant::VendKeyGrantOutput {
         crate::operation::vend_key_grant::VendKeyGrantOutput {
             cmk_arn: self.cmk_arn,

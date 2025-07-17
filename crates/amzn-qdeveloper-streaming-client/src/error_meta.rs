@@ -3,13 +3,16 @@
 #[non_exhaustive]
 #[derive(::std::fmt::Debug)]
 pub enum Error {
-    /// This exception is thrown when the user does not have sufficient access to perform this action.
+    /// This exception is thrown when the user does not have sufficient access to perform this
+    /// action.
     AccessDeniedError(crate::types::error::AccessDeniedError),
-    /// This exception is thrown when the action to perform could not be completed because the resource is in a conflicting state.
+    /// This exception is thrown when the action to perform could not be completed because the
+    /// resource is in a conflicting state.
     ConflictError(crate::types::error::ConflictError),
     /// This exception is translated to a 204 as it succeeded the IAM Auth.
     DryRunOperationError(crate::types::error::DryRunOperationError),
-    /// This exception is thrown when an unexpected error occurred during the processing of a request.
+    /// This exception is thrown when an unexpected error occurred during the processing of a
+    /// request.
     InternalServerError(crate::types::error::InternalServerError),
     /// This exception is thrown when describing a resource that does not exist.
     ResourceNotFoundError(crate::types::error::ResourceNotFoundError),
@@ -17,15 +20,19 @@ pub enum Error {
     ServiceQuotaExceededError(crate::types::error::ServiceQuotaExceededError),
     /// This exception is thrown when request was denied due to request throttling.
     ThrottlingError(crate::types::error::ThrottlingError),
-    /// This exception is thrown when the input fails to satisfy the constraints specified by the service.
+    /// This exception is thrown when the input fails to satisfy the constraints specified by the
+    /// service.
     ValidationError(crate::types::error::ValidationError),
-    /// An unexpected error occurred (e.g., invalid JSON returned by the service or an unknown error code).
-    #[deprecated(note = "Matching `Unhandled` directly is not forwards compatible. Instead, match using a \
+    /// An unexpected error occurred (e.g., invalid JSON returned by the service or an unknown error
+    /// code).
+    #[deprecated(
+        note = "Matching `Unhandled` directly is not forwards compatible. Instead, match using a \
     variable wildcard pattern and check `.code()`:
      \
     &nbsp;&nbsp;&nbsp;`err if err.code() == Some(\"SpecificExceptionCode\") => { /* handle the error */ }`
      \
-    See [`ProvideErrorMetadata`](#impl-ProvideErrorMetadata-for-Error) for what information is available for the error.")]
+    See [`ProvideErrorMetadata`](#impl-ProvideErrorMetadata-for-Error) for what information is available for the error."
+    )]
     Unhandled(crate::error::sealed_unhandled::Unhandled),
 }
 impl ::std::fmt::Display for Error {
@@ -40,12 +47,14 @@ impl ::std::fmt::Display for Error {
             Error::ThrottlingError(inner) => inner.fmt(f),
             Error::ValidationError(inner) => inner.fmt(f),
             Error::Unhandled(_) => {
-                if let ::std::option::Option::Some(code) = ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self) {
+                if let ::std::option::Option::Some(code) =
+                    ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self)
+                {
                     write!(f, "unhandled error ({code})")
                 } else {
                     f.write_str("unhandled error")
                 }
-            }
+            },
         }
     }
 }
@@ -72,13 +81,21 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for Error {
         }
     }
 }
-impl<R> From<::aws_smithy_runtime_api::client::result::SdkError<crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError, R>>
-    for Error
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError,
+            R,
+        >,
+    > for Error
 where
     R: Send + Sync + std::fmt::Debug + 'static,
 {
     fn from(
-        err: ::aws_smithy_runtime_api::client::result::SdkError<crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError, R>,
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError,
+            R,
+        >,
     ) -> Self {
         match err {
             ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
@@ -92,24 +109,35 @@ where
 impl From<crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError> for Error {
     fn from(err: crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError) -> Self {
         match err {
-            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::ServiceQuotaExceededError(inner) => {
-                Error::ServiceQuotaExceededError(inner)
-            }
-            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::ThrottlingError(inner) => Error::ThrottlingError(inner),
-            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::ValidationError(inner) => Error::ValidationError(inner),
-            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::AccessDeniedError(inner) => Error::AccessDeniedError(inner),
-            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            }
-            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::Unhandled(inner) => Error::Unhandled(inner),
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::ServiceQuotaExceededError(
+                inner,
+            ) => Error::ServiceQuotaExceededError(inner),
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::InternalServerError(
+                inner,
+            ) => Error::InternalServerError(inner),
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::Unhandled(inner) => {
+                Error::Unhandled(inner)
+            },
         }
     }
 }
-impl<R> From<::aws_smithy_runtime_api::client::result::SdkError<crate::operation::send_message::SendMessageError, R>> for Error
+impl<R> From<::aws_smithy_runtime_api::client::result::SdkError<crate::operation::send_message::SendMessageError, R>>
+    for Error
 where
     R: Send + Sync + std::fmt::Debug + 'static,
 {
-    fn from(err: ::aws_smithy_runtime_api::client::result::SdkError<crate::operation::send_message::SendMessageError, R>) -> Self {
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<crate::operation::send_message::SendMessageError, R>,
+    ) -> Self {
         match err {
             ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
             _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
@@ -122,23 +150,44 @@ where
 impl From<crate::operation::send_message::SendMessageError> for Error {
     fn from(err: crate::operation::send_message::SendMessageError) -> Self {
         match err {
-            crate::operation::send_message::SendMessageError::ServiceQuotaExceededError(inner) => Error::ServiceQuotaExceededError(inner),
+            crate::operation::send_message::SendMessageError::ServiceQuotaExceededError(inner) => {
+                Error::ServiceQuotaExceededError(inner)
+            },
             crate::operation::send_message::SendMessageError::ThrottlingError(inner) => Error::ThrottlingError(inner),
-            crate::operation::send_message::SendMessageError::DryRunOperationError(inner) => Error::DryRunOperationError(inner),
+            crate::operation::send_message::SendMessageError::DryRunOperationError(inner) => {
+                Error::DryRunOperationError(inner)
+            },
             crate::operation::send_message::SendMessageError::ValidationError(inner) => Error::ValidationError(inner),
-            crate::operation::send_message::SendMessageError::AccessDeniedError(inner) => Error::AccessDeniedError(inner),
+            crate::operation::send_message::SendMessageError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
             crate::operation::send_message::SendMessageError::ConflictError(inner) => Error::ConflictError(inner),
-            crate::operation::send_message::SendMessageError::InternalServerError(inner) => Error::InternalServerError(inner),
-            crate::operation::send_message::SendMessageError::ResourceNotFoundError(inner) => Error::ResourceNotFoundError(inner),
+            crate::operation::send_message::SendMessageError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::send_message::SendMessageError::ResourceNotFoundError(inner) => {
+                Error::ResourceNotFoundError(inner)
+            },
             crate::operation::send_message::SendMessageError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
 }
-impl<R> From<::aws_smithy_runtime_api::client::result::SdkError<crate::types::error::GenerateCodeFromCommandsResponseStreamError, R>> for Error
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::types::error::GenerateCodeFromCommandsResponseStreamError,
+            R,
+        >,
+    > for Error
 where
     R: Send + Sync + std::fmt::Debug + 'static,
 {
-    fn from(err: ::aws_smithy_runtime_api::client::result::SdkError<crate::types::error::GenerateCodeFromCommandsResponseStreamError, R>) -> Self {
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::types::error::GenerateCodeFromCommandsResponseStreamError,
+            R,
+        >,
+    ) -> Self {
         match err {
             ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
             _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
@@ -151,20 +200,29 @@ where
 impl From<crate::types::error::GenerateCodeFromCommandsResponseStreamError> for Error {
     fn from(err: crate::types::error::GenerateCodeFromCommandsResponseStreamError) -> Self {
         match err {
-            crate::types::error::GenerateCodeFromCommandsResponseStreamError::InternalServerError(inner) => Error::InternalServerError(inner),
+            crate::types::error::GenerateCodeFromCommandsResponseStreamError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
             crate::types::error::GenerateCodeFromCommandsResponseStreamError::ServiceQuotaExceededError(inner) => {
                 Error::ServiceQuotaExceededError(inner)
-            }
-            crate::types::error::GenerateCodeFromCommandsResponseStreamError::ValidationError(inner) => Error::ValidationError(inner),
-            crate::types::error::GenerateCodeFromCommandsResponseStreamError::Unhandled(inner) => Error::Unhandled(inner),
+            },
+            crate::types::error::GenerateCodeFromCommandsResponseStreamError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::types::error::GenerateCodeFromCommandsResponseStreamError::Unhandled(inner) => {
+                Error::Unhandled(inner)
+            },
         }
     }
 }
-impl<R> From<::aws_smithy_runtime_api::client::result::SdkError<crate::types::error::ChatResponseStreamError, R>> for Error
+impl<R> From<::aws_smithy_runtime_api::client::result::SdkError<crate::types::error::ChatResponseStreamError, R>>
+    for Error
 where
     R: Send + Sync + std::fmt::Debug + 'static,
 {
-    fn from(err: ::aws_smithy_runtime_api::client::result::SdkError<crate::types::error::ChatResponseStreamError, R>) -> Self {
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<crate::types::error::ChatResponseStreamError, R>,
+    ) -> Self {
         match err {
             ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
             _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
@@ -177,7 +235,9 @@ where
 impl From<crate::types::error::ChatResponseStreamError> for Error {
     fn from(err: crate::types::error::ChatResponseStreamError) -> Self {
         match err {
-            crate::types::error::ChatResponseStreamError::InternalServerError(inner) => Error::InternalServerError(inner),
+            crate::types::error::ChatResponseStreamError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
             crate::types::error::ChatResponseStreamError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }

@@ -31,42 +31,51 @@ impl TestGenerationJob {
         use std::ops::Deref;
         self.test_generation_job_id.deref()
     }
+
     /// Test generation job group name
     pub fn test_generation_job_group_name(&self) -> &str {
         use std::ops::Deref;
         self.test_generation_job_group_name.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn status(&self) -> &crate::types::TestGenerationJobStatus {
         &self.status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn short_answer(&self) -> ::std::option::Option<&str> {
         self.short_answer.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn creation_time(&self) -> &::aws_smithy_types::DateTime {
         &self.creation_time
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn progress_rate(&self) -> ::std::option::Option<i32> {
         self.progress_rate
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn job_status_reason(&self) -> ::std::option::Option<&str> {
         self.job_status_reason.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn job_summary(&self) -> ::std::option::Option<&str> {
         self.job_summary.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn job_plan(&self) -> ::std::option::Option<&str> {
         self.job_plan.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.package_info_list.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.package_info_list.is_none()`.
     pub fn package_info_list(&self) -> &[crate::types::PackageInfo] {
         self.package_info_list.as_deref().unwrap_or_default()
     }
@@ -88,7 +97,8 @@ impl ::std::fmt::Debug for TestGenerationJob {
     }
 }
 impl TestGenerationJob {
-    /// Creates a new builder-style object to manufacture [`TestGenerationJob`](crate::types::TestGenerationJob).
+    /// Creates a new builder-style object to manufacture
+    /// [`TestGenerationJob`](crate::types::TestGenerationJob).
     pub fn builder() -> crate::types::builders::TestGenerationJobBuilder {
         crate::types::builders::TestGenerationJobBuilder::default()
     }
@@ -116,156 +126,192 @@ impl TestGenerationJobBuilder {
         self.test_generation_job_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_test_generation_job_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.test_generation_job_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_test_generation_job_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.test_generation_job_id
     }
+
     /// Test generation job group name
     /// This field is required.
     pub fn test_generation_job_group_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.test_generation_job_group_name = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Test generation job group name
     pub fn set_test_generation_job_group_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.test_generation_job_group_name = input;
         self
     }
+
     /// Test generation job group name
     pub fn get_test_generation_job_group_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.test_generation_job_group_name
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn status(mut self, input: crate::types::TestGenerationJobStatus) -> Self {
         self.status = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_status(mut self, input: ::std::option::Option<crate::types::TestGenerationJobStatus>) -> Self {
         self.status = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_status(&self) -> &::std::option::Option<crate::types::TestGenerationJobStatus> {
         &self.status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn short_answer(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.short_answer = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_short_answer(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.short_answer = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_short_answer(&self) -> &::std::option::Option<::std::string::String> {
         &self.short_answer
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn creation_time(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.creation_time = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_creation_time(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.creation_time = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_creation_time(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.creation_time
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn progress_rate(mut self, input: i32) -> Self {
         self.progress_rate = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_progress_rate(mut self, input: ::std::option::Option<i32>) -> Self {
         self.progress_rate = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_progress_rate(&self) -> &::std::option::Option<i32> {
         &self.progress_rate
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn job_status_reason(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.job_status_reason = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_job_status_reason(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.job_status_reason = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_job_status_reason(&self) -> &::std::option::Option<::std::string::String> {
         &self.job_status_reason
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn job_summary(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.job_summary = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_job_summary(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.job_summary = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_job_summary(&self) -> &::std::option::Option<::std::string::String> {
         &self.job_summary
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn job_plan(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.job_plan = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_job_plan(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.job_plan = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_job_plan(&self) -> &::std::option::Option<::std::string::String> {
         &self.job_plan
     }
+
     /// Appends an item to `package_info_list`.
     ///
-    /// To override the contents of this collection use [`set_package_info_list`](Self::set_package_info_list).
-    ///
+    /// To override the contents of this collection use
+    /// [`set_package_info_list`](Self::set_package_info_list).
     pub fn package_info_list(mut self, input: crate::types::PackageInfo) -> Self {
         let mut v = self.package_info_list.unwrap_or_default();
         v.push(input);
         self.package_info_list = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_package_info_list(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::PackageInfo>>) -> Self {
+    pub fn set_package_info_list(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::PackageInfo>>,
+    ) -> Self {
         self.package_info_list = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_package_info_list(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::PackageInfo>> {
         &self.package_info_list
     }
-    /// Consumes the builder and constructs a [`TestGenerationJob`](crate::types::TestGenerationJob).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`TestGenerationJob`](crate::types::TestGenerationJob). This method will fail if any of
+    /// the following fields are not set:
     /// - [`test_generation_job_id`](crate::types::builders::TestGenerationJobBuilder::test_generation_job_id)
     /// - [`test_generation_job_group_name`](crate::types::builders::TestGenerationJobBuilder::test_generation_job_group_name)
     /// - [`status`](crate::types::builders::TestGenerationJobBuilder::status)
     /// - [`creation_time`](crate::types::builders::TestGenerationJobBuilder::creation_time)
-    pub fn build(self) -> ::std::result::Result<crate::types::TestGenerationJob, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::TestGenerationJob, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TestGenerationJob {
             test_generation_job_id: self.test_generation_job_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

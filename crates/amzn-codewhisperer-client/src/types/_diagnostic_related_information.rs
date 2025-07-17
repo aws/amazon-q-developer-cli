@@ -14,6 +14,7 @@ impl DiagnosticRelatedInformation {
     pub fn location(&self) -> &crate::types::DiagnosticLocation {
         &self.location
     }
+
     /// The message of this related diagnostic information.
     pub fn message(&self) -> &str {
         use std::ops::Deref;
@@ -29,7 +30,8 @@ impl ::std::fmt::Debug for DiagnosticRelatedInformation {
     }
 }
 impl DiagnosticRelatedInformation {
-    /// Creates a new builder-style object to manufacture [`DiagnosticRelatedInformation`](crate::types::DiagnosticRelatedInformation).
+    /// Creates a new builder-style object to manufacture
+    /// [`DiagnosticRelatedInformation`](crate::types::DiagnosticRelatedInformation).
     pub fn builder() -> crate::types::builders::DiagnosticRelatedInformationBuilder {
         crate::types::builders::DiagnosticRelatedInformationBuilder::default()
     }
@@ -49,35 +51,47 @@ impl DiagnosticRelatedInformationBuilder {
         self.location = ::std::option::Option::Some(input);
         self
     }
+
     /// The location of this related diagnostic information.
     pub fn set_location(mut self, input: ::std::option::Option<crate::types::DiagnosticLocation>) -> Self {
         self.location = input;
         self
     }
+
     /// The location of this related diagnostic information.
     pub fn get_location(&self) -> &::std::option::Option<crate::types::DiagnosticLocation> {
         &self.location
     }
+
     /// The message of this related diagnostic information.
     /// This field is required.
     pub fn message(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.message = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The message of this related diagnostic information.
     pub fn set_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.message = input;
         self
     }
+
     /// The message of this related diagnostic information.
     pub fn get_message(&self) -> &::std::option::Option<::std::string::String> {
         &self.message
     }
-    /// Consumes the builder and constructs a [`DiagnosticRelatedInformation`](crate::types::DiagnosticRelatedInformation).
+
+    /// Consumes the builder and constructs a
+    /// [`DiagnosticRelatedInformation`](crate::types::DiagnosticRelatedInformation).
     /// This method will fail if any of the following fields are not set:
     /// - [`location`](crate::types::builders::DiagnosticRelatedInformationBuilder::location)
     /// - [`message`](crate::types::builders::DiagnosticRelatedInformationBuilder::message)
-    pub fn build(self) -> ::std::result::Result<crate::types::DiagnosticRelatedInformation, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::DiagnosticRelatedInformation,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::DiagnosticRelatedInformation {
             location: self.location.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

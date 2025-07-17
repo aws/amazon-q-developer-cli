@@ -15,23 +15,30 @@ impl ListCustomizationPermissionsInput {
     pub fn identifier(&self) -> ::std::option::Option<&str> {
         self.identifier.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(&self) -> ::std::option::Option<i32> {
         self.max_results
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
 }
 impl ListCustomizationPermissionsInput {
-    /// Creates a new builder-style object to manufacture [`ListCustomizationPermissionsInput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsInput).
-    pub fn builder() -> crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsInputBuilder {
+    /// Creates a new builder-style object to manufacture
+    /// [`ListCustomizationPermissionsInput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsInput).
+    ///
+    pub fn builder()
+    -> crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsInputBuilder {
         crate::operation::list_customization_permissions::builders::ListCustomizationPermissionsInputBuilder::default()
     }
 }
 
-/// A builder for [`ListCustomizationPermissionsInput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsInput).
+/// A builder for
+/// [`ListCustomizationPermissionsInput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsInput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListCustomizationPermissionsInputBuilder {
@@ -46,54 +53,67 @@ impl ListCustomizationPermissionsInputBuilder {
         self.identifier = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_identifier(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.identifier = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_identifier(&self) -> &::std::option::Option<::std::string::String> {
         &self.identifier
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(mut self, input: i32) -> Self {
         self.max_results = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_max_results(mut self, input: ::std::option::Option<i32>) -> Self {
         self.max_results = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         &self.max_results
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-    /// Consumes the builder and constructs a [`ListCustomizationPermissionsInput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsInput).
+
+    /// Consumes the builder and constructs a
+    /// [`ListCustomizationPermissionsInput`](crate::operation::list_customization_permissions::ListCustomizationPermissionsInput).
+    ///
     pub fn build(
         self,
     ) -> ::std::result::Result<
         crate::operation::list_customization_permissions::ListCustomizationPermissionsInput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(crate::operation::list_customization_permissions::ListCustomizationPermissionsInput {
-            identifier: self.identifier,
-            max_results: self.max_results,
-            next_token: self.next_token,
-        })
+        ::std::result::Result::Ok(
+            crate::operation::list_customization_permissions::ListCustomizationPermissionsInput {
+                identifier: self.identifier,
+                max_results: self.max_results,
+                next_token: self.next_token,
+            },
+        )
     }
 }

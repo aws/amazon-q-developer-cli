@@ -9,14 +9,19 @@ pub fn ser_chat_message(
             let mut object_1 = object_6.key("userInputMessage").start_object();
             crate::protocol_serde::shape_user_input_message::ser_user_input_message(&mut object_1, inner)?;
             object_1.finish();
-        }
+        },
         crate::types::ChatMessage::AssistantResponseMessage(inner) => {
             #[allow(unused_mut)]
             let mut object_2 = object_6.key("assistantResponseMessage").start_object();
-            crate::protocol_serde::shape_assistant_response_message::ser_assistant_response_message(&mut object_2, inner)?;
+            crate::protocol_serde::shape_assistant_response_message::ser_assistant_response_message(
+                &mut object_2,
+                inner,
+            )?;
             object_2.finish();
-        }
-        crate::types::ChatMessage::Unknown => return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("ChatMessage")),
+        },
+        crate::types::ChatMessage::Unknown => {
+            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("ChatMessage"));
+        },
     }
     Ok(())
 }

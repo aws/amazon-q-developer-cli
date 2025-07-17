@@ -122,7 +122,9 @@ pub(crate) fn create_workspace_output_output_correct_errors(
     if builder.workspace.is_none() {
         builder.workspace = {
             let builder = crate::types::builders::WorkspaceMetadataBuilder::default();
-            crate::serde_util::workspace_metadata_correct_errors(builder).build().ok()
+            crate::serde_util::workspace_metadata_correct_errors(builder)
+                .build()
+                .ok()
         }
     }
     builder
@@ -155,7 +157,9 @@ pub(crate) fn get_task_assist_code_generation_output_output_correct_errors(
     if builder.code_generation_status.is_none() {
         builder.code_generation_status = {
             let builder = crate::types::builders::CodeGenerationStatusBuilder::default();
-            crate::serde_util::code_generation_status_correct_errors(builder).build().ok()
+            crate::serde_util::code_generation_status_correct_errors(builder)
+                .build()
+                .ok()
         }
     }
     builder
@@ -179,7 +183,9 @@ pub(crate) fn get_transformation_plan_output_output_correct_errors(
     if builder.transformation_plan.is_none() {
         builder.transformation_plan = {
             let builder = crate::types::builders::TransformationPlanBuilder::default();
-            crate::serde_util::transformation_plan_correct_errors(builder).build().ok()
+            crate::serde_util::transformation_plan_correct_errors(builder)
+                .build()
+                .ok()
         }
     }
     builder
@@ -336,12 +342,16 @@ pub(crate) fn update_usage_limits_output_output_correct_errors(
     mut builder: crate::operation::update_usage_limits::builders::UpdateUsageLimitsOutputBuilder,
 ) -> crate::operation::update_usage_limits::builders::UpdateUsageLimitsOutputBuilder {
     if builder.status.is_none() {
-        builder.status = "no value was set".parse::<crate::types::UsageLimitUpdateRequestStatus>().ok()
+        builder.status = "no value was set"
+            .parse::<crate::types::UsageLimitUpdateRequestStatus>()
+            .ok()
     }
     builder
 }
 
-pub(crate) fn memory_entry_correct_errors(mut builder: crate::types::builders::MemoryEntryBuilder) -> crate::types::builders::MemoryEntryBuilder {
+pub(crate) fn memory_entry_correct_errors(
+    mut builder: crate::types::builders::MemoryEntryBuilder,
+) -> crate::types::builders::MemoryEntryBuilder {
     if builder.id.is_none() {
         builder.id = Some(Default::default())
     }
@@ -351,7 +361,9 @@ pub(crate) fn memory_entry_correct_errors(mut builder: crate::types::builders::M
     if builder.metadata.is_none() {
         builder.metadata = {
             let builder = crate::types::builders::MemoryEntryMetadataBuilder::default();
-            crate::serde_util::memory_entry_metadata_correct_errors(builder).build().ok()
+            crate::serde_util::memory_entry_metadata_correct_errors(builder)
+                .build()
+                .ok()
         }
     }
     builder
@@ -373,10 +385,14 @@ pub(crate) fn code_generation_status_correct_errors(
     mut builder: crate::types::builders::CodeGenerationStatusBuilder,
 ) -> crate::types::builders::CodeGenerationStatusBuilder {
     if builder.status.is_none() {
-        builder.status = "no value was set".parse::<crate::types::CodeGenerationWorkflowStatus>().ok()
+        builder.status = "no value was set"
+            .parse::<crate::types::CodeGenerationWorkflowStatus>()
+            .ok()
     }
     if builder.current_stage.is_none() {
-        builder.current_stage = "no value was set".parse::<crate::types::CodeGenerationWorkflowStage>().ok()
+        builder.current_stage = "no value was set"
+            .parse::<crate::types::CodeGenerationWorkflowStage>()
+            .ok()
     }
     builder
 }
@@ -423,7 +439,9 @@ pub(crate) fn memory_entry_metadata_correct_errors(
     builder
 }
 
-pub(crate) fn completion_correct_errors(mut builder: crate::types::builders::CompletionBuilder) -> crate::types::builders::CompletionBuilder {
+pub(crate) fn completion_correct_errors(
+    mut builder: crate::types::builders::CompletionBuilder,
+) -> crate::types::builders::CompletionBuilder {
     if builder.content.is_none() {
         builder.content = Some(Default::default())
     }
@@ -439,7 +457,9 @@ pub(crate) fn customization_correct_errors(
     builder
 }
 
-pub(crate) fn event_correct_errors(mut builder: crate::types::builders::EventBuilder) -> crate::types::builders::EventBuilder {
+pub(crate) fn event_correct_errors(
+    mut builder: crate::types::builders::EventBuilder,
+) -> crate::types::builders::EventBuilder {
     if builder.event_id.is_none() {
         builder.event_id = Some(Default::default())
     }
@@ -473,14 +493,18 @@ pub(crate) fn feature_evaluation_correct_errors(
     builder
 }
 
-pub(crate) fn model_correct_errors(mut builder: crate::types::builders::ModelBuilder) -> crate::types::builders::ModelBuilder {
+pub(crate) fn model_correct_errors(
+    mut builder: crate::types::builders::ModelBuilder,
+) -> crate::types::builders::ModelBuilder {
     if builder.model_id.is_none() {
         builder.model_id = Some(Default::default())
     }
     builder
 }
 
-pub(crate) fn profile_correct_errors(mut builder: crate::types::builders::ProfileBuilder) -> crate::types::builders::ProfileBuilder {
+pub(crate) fn profile_correct_errors(
+    mut builder: crate::types::builders::ProfileBuilder,
+) -> crate::types::builders::ProfileBuilder {
     if builder.arn.is_none() {
         builder.arn = Some(Default::default())
     }
@@ -505,7 +529,9 @@ pub(crate) fn usage_limit_list_correct_errors(
     builder
 }
 
-pub(crate) fn edit_correct_errors(mut builder: crate::types::builders::EditBuilder) -> crate::types::builders::EditBuilder {
+pub(crate) fn edit_correct_errors(
+    mut builder: crate::types::builders::EditBuilder,
+) -> crate::types::builders::EditBuilder {
     if builder.content.is_none() {
         builder.content = Some(Default::default())
     }
@@ -516,7 +542,9 @@ pub(crate) fn reference_tracker_configuration_correct_errors(
     mut builder: crate::types::builders::ReferenceTrackerConfigurationBuilder,
 ) -> crate::types::builders::ReferenceTrackerConfigurationBuilder {
     if builder.recommendations_with_references.is_none() {
-        builder.recommendations_with_references = "no value was set".parse::<crate::types::RecommendationsWithReferencesPreference>().ok()
+        builder.recommendations_with_references = "no value was set"
+            .parse::<crate::types::RecommendationsWithReferencesPreference>()
+            .ok()
     }
     builder
 }
@@ -543,7 +571,9 @@ pub(crate) fn transformation_step_correct_errors(
         builder.description = Some(Default::default())
     }
     if builder.status.is_none() {
-        builder.status = "no value was set".parse::<crate::types::TransformationStepStatus>().ok()
+        builder.status = "no value was set"
+            .parse::<crate::types::TransformationStepStatus>()
+            .ok()
     }
     builder
 }
@@ -636,7 +666,9 @@ pub(crate) fn transformation_progress_update_correct_errors(
         builder.name = Some(Default::default())
     }
     if builder.status.is_none() {
-        builder.status = "no value was set".parse::<crate::types::TransformationProgressUpdateStatus>().ok()
+        builder.status = "no value was set"
+            .parse::<crate::types::TransformationProgressUpdateStatus>()
+            .ok()
     }
     builder
 }

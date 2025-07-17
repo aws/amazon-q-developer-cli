@@ -14,6 +14,7 @@ impl EnvironmentVariable {
     pub fn key(&self) -> ::std::option::Option<&str> {
         self.key.as_deref()
     }
+
     /// The value of an environment variable
     pub fn value(&self) -> ::std::option::Option<&str> {
         self.value.as_deref()
@@ -28,7 +29,8 @@ impl ::std::fmt::Debug for EnvironmentVariable {
     }
 }
 impl EnvironmentVariable {
-    /// Creates a new builder-style object to manufacture [`EnvironmentVariable`](crate::types::EnvironmentVariable).
+    /// Creates a new builder-style object to manufacture
+    /// [`EnvironmentVariable`](crate::types::EnvironmentVariable).
     pub fn builder() -> crate::types::builders::EnvironmentVariableBuilder {
         crate::types::builders::EnvironmentVariableBuilder::default()
     }
@@ -47,30 +49,37 @@ impl EnvironmentVariableBuilder {
         self.key = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The key of an environment variable
     pub fn set_key(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.key = input;
         self
     }
+
     /// The key of an environment variable
     pub fn get_key(&self) -> &::std::option::Option<::std::string::String> {
         &self.key
     }
+
     /// The value of an environment variable
     pub fn value(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.value = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The value of an environment variable
     pub fn set_value(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.value = input;
         self
     }
+
     /// The value of an environment variable
     pub fn get_value(&self) -> &::std::option::Option<::std::string::String> {
         &self.value
     }
-    /// Consumes the builder and constructs a [`EnvironmentVariable`](crate::types::EnvironmentVariable).
+
+    /// Consumes the builder and constructs a
+    /// [`EnvironmentVariable`](crate::types::EnvironmentVariable).
     pub fn build(self) -> crate::types::EnvironmentVariable {
         crate::types::EnvironmentVariable {
             key: self.key,

@@ -13,7 +13,8 @@ impl PreviousEditorStateMetadata {
     }
 }
 impl PreviousEditorStateMetadata {
-    /// Creates a new builder-style object to manufacture [`PreviousEditorStateMetadata`](crate::types::PreviousEditorStateMetadata).
+    /// Creates a new builder-style object to manufacture
+    /// [`PreviousEditorStateMetadata`](crate::types::PreviousEditorStateMetadata).
     pub fn builder() -> crate::types::builders::PreviousEditorStateMetadataBuilder {
         crate::types::builders::PreviousEditorStateMetadataBuilder::default()
     }
@@ -32,19 +33,28 @@ impl PreviousEditorStateMetadataBuilder {
         self.time_offset = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_time_offset(mut self, input: ::std::option::Option<i32>) -> Self {
         self.time_offset = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_time_offset(&self) -> &::std::option::Option<i32> {
         &self.time_offset
     }
-    /// Consumes the builder and constructs a [`PreviousEditorStateMetadata`](crate::types::PreviousEditorStateMetadata).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`PreviousEditorStateMetadata`](crate::types::PreviousEditorStateMetadata). This method
+    /// will fail if any of the following fields are not set:
     /// - [`time_offset`](crate::types::builders::PreviousEditorStateMetadataBuilder::time_offset)
-    pub fn build(self) -> ::std::result::Result<crate::types::PreviousEditorStateMetadata, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::PreviousEditorStateMetadata,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::PreviousEditorStateMetadata {
             time_offset: self.time_offset.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

@@ -21,26 +21,31 @@ impl TaskAssistPlanStep {
         use std::ops::Deref;
         self.file_path.deref()
     }
+
     /// Description on the step.
     pub fn description(&self) -> &str {
         use std::ops::Deref;
         self.description.deref()
     }
+
     /// Start line number of the related changes.
     pub fn start_line(&self) -> ::std::option::Option<i32> {
         self.start_line
     }
+
     /// End line number of the related changes.
     pub fn end_line(&self) -> ::std::option::Option<i32> {
         self.end_line
     }
+
     /// Type of the action.
     pub fn action(&self) -> ::std::option::Option<&crate::types::TaskAssistPlanStepAction> {
         self.action.as_ref()
     }
 }
 impl TaskAssistPlanStep {
-    /// Creates a new builder-style object to manufacture [`TaskAssistPlanStep`](crate::types::TaskAssistPlanStep).
+    /// Creates a new builder-style object to manufacture
+    /// [`TaskAssistPlanStep`](crate::types::TaskAssistPlanStep).
     pub fn builder() -> crate::types::builders::TaskAssistPlanStepBuilder {
         crate::types::builders::TaskAssistPlanStepBuilder::default()
     }
@@ -63,77 +68,95 @@ impl TaskAssistPlanStepBuilder {
         self.file_path = ::std::option::Option::Some(input.into());
         self
     }
+
     /// File path on which the step is working on.
     pub fn set_file_path(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.file_path = input;
         self
     }
+
     /// File path on which the step is working on.
     pub fn get_file_path(&self) -> &::std::option::Option<::std::string::String> {
         &self.file_path
     }
+
     /// Description on the step.
     /// This field is required.
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Description on the step.
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
+
     /// Description on the step.
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
+
     /// Start line number of the related changes.
     pub fn start_line(mut self, input: i32) -> Self {
         self.start_line = ::std::option::Option::Some(input);
         self
     }
+
     /// Start line number of the related changes.
     pub fn set_start_line(mut self, input: ::std::option::Option<i32>) -> Self {
         self.start_line = input;
         self
     }
+
     /// Start line number of the related changes.
     pub fn get_start_line(&self) -> &::std::option::Option<i32> {
         &self.start_line
     }
+
     /// End line number of the related changes.
     pub fn end_line(mut self, input: i32) -> Self {
         self.end_line = ::std::option::Option::Some(input);
         self
     }
+
     /// End line number of the related changes.
     pub fn set_end_line(mut self, input: ::std::option::Option<i32>) -> Self {
         self.end_line = input;
         self
     }
+
     /// End line number of the related changes.
     pub fn get_end_line(&self) -> &::std::option::Option<i32> {
         &self.end_line
     }
+
     /// Type of the action.
     pub fn action(mut self, input: crate::types::TaskAssistPlanStepAction) -> Self {
         self.action = ::std::option::Option::Some(input);
         self
     }
+
     /// Type of the action.
     pub fn set_action(mut self, input: ::std::option::Option<crate::types::TaskAssistPlanStepAction>) -> Self {
         self.action = input;
         self
     }
+
     /// Type of the action.
     pub fn get_action(&self) -> &::std::option::Option<crate::types::TaskAssistPlanStepAction> {
         &self.action
     }
-    /// Consumes the builder and constructs a [`TaskAssistPlanStep`](crate::types::TaskAssistPlanStep).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`TaskAssistPlanStep`](crate::types::TaskAssistPlanStep). This method will fail if any
+    /// of the following fields are not set:
     /// - [`file_path`](crate::types::builders::TaskAssistPlanStepBuilder::file_path)
     /// - [`description`](crate::types::builders::TaskAssistPlanStepBuilder::description)
-    pub fn build(self) -> ::std::result::Result<crate::types::TaskAssistPlanStep, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::TaskAssistPlanStep, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::TaskAssistPlanStep {
             file_path: self.file_path.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

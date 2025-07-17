@@ -8,6 +8,7 @@ impl StartCodeAnalysis {
     pub fn new() -> Self {
         Self
     }
+
     pub(crate) async fn orchestrate(
         runtime_plugins: &::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins,
         input: crate::operation::start_code_analysis::StartCodeAnalysisInput,
@@ -27,9 +28,13 @@ impl StartCodeAnalysis {
                     .expect("correct error type")
             })
         };
-        let context = Self::orchestrate_with_stop_point(runtime_plugins, input, ::aws_smithy_runtime::client::orchestrator::StopPoint::None)
-            .await
-            .map_err(map_err)?;
+        let context = Self::orchestrate_with_stop_point(
+            runtime_plugins,
+            input,
+            ::aws_smithy_runtime::client::orchestrator::StopPoint::None,
+        )
+        .await
+        .map_err(map_err)?;
         let output = context.finalize().map_err(map_err)?;
         ::std::result::Result::Ok(
             output
@@ -69,7 +74,8 @@ impl StartCodeAnalysis {
         runtime_plugins = runtime_plugins
             .with_operation_plugin(crate::client_idempotency_token::IdempotencyTokenRuntimePlugin::new(
                 |token_provider, input| {
-                    let input: &mut crate::operation::start_code_analysis::StartCodeAnalysisInput = input.downcast_mut().expect("correct type");
+                    let input: &mut crate::operation::start_code_analysis::StartCodeAnalysisInput =
+                        input.downcast_mut().expect("correct type");
                     if input.client_token.is_none() {
                         input.client_token = ::std::option::Option::Some(token_provider.make_idempotency_token());
                     }
@@ -98,13 +104,17 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for StartCo
         cfg.store_put(::aws_smithy_runtime_api::client::ser_de::SharedRequestSerializer::new(
             StartCodeAnalysisRequestSerializer,
         ));
-        cfg.store_put(::aws_smithy_runtime_api::client::ser_de::SharedResponseDeserializer::new(
-            StartCodeAnalysisResponseDeserializer,
-        ));
+        cfg.store_put(
+            ::aws_smithy_runtime_api::client::ser_de::SharedResponseDeserializer::new(
+                StartCodeAnalysisResponseDeserializer,
+            ),
+        );
 
-        cfg.store_put(::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
-            ::aws_smithy_runtime_api::client::auth::static_resolver::StaticAuthSchemeOptionResolverParams::new(),
-        ));
+        cfg.store_put(
+            ::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
+                ::aws_smithy_runtime_api::client::auth::static_resolver::StaticAuthSchemeOptionResolverParams::new(),
+            ),
+        );
 
         cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::SensitiveOutput);
         cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::Metadata::new(
@@ -120,18 +130,26 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for StartCo
         _: &::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder,
     ) -> ::std::borrow::Cow<'_, ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder> {
         #[allow(unused_mut)]
-        let mut rcb = ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder::new("StartCodeAnalysis")
-            .with_interceptor(::aws_smithy_runtime::client::stalled_stream_protection::StalledStreamProtectionInterceptor::default())
-            .with_interceptor(StartCodeAnalysisEndpointParamsInterceptor)
-            .with_retry_classifier(::aws_smithy_runtime::client::retries::classifiers::TransientErrorClassifier::<
+        let mut rcb = ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder::new(
+            "StartCodeAnalysis",
+        )
+        .with_interceptor(
+            ::aws_smithy_runtime::client::stalled_stream_protection::StalledStreamProtectionInterceptor::default(),
+        )
+        .with_interceptor(StartCodeAnalysisEndpointParamsInterceptor)
+        .with_retry_classifier(
+            ::aws_smithy_runtime::client::retries::classifiers::TransientErrorClassifier::<
                 crate::operation::start_code_analysis::StartCodeAnalysisError,
-            >::new())
-            .with_retry_classifier(::aws_smithy_runtime::client::retries::classifiers::ModeledAsRetryableClassifier::<
+            >::new(),
+        )
+        .with_retry_classifier(
+            ::aws_smithy_runtime::client::retries::classifiers::ModeledAsRetryableClassifier::<
                 crate::operation::start_code_analysis::StartCodeAnalysisError,
-            >::new())
-            .with_retry_classifier(::aws_runtime::retries::classifiers::AwsErrorCodeClassifier::<
-                crate::operation::start_code_analysis::StartCodeAnalysisError,
-            >::new());
+            >::new(),
+        )
+        .with_retry_classifier(::aws_runtime::retries::classifiers::AwsErrorCodeClassifier::<
+            crate::operation::start_code_analysis::StartCodeAnalysisError,
+        >::new());
 
         ::std::borrow::Cow::Owned(rcb)
     }
@@ -153,7 +171,9 @@ impl ::aws_smithy_runtime_api::client::ser_de::DeserializeResponse for StartCode
         let parse_result = if !success && status != 200 || force_error {
             crate::protocol_serde::shape_start_code_analysis::de_start_code_analysis_http_error(status, headers, body)
         } else {
-            crate::protocol_serde::shape_start_code_analysis::de_start_code_analysis_http_response(status, headers, body)
+            crate::protocol_serde::shape_start_code_analysis::de_start_code_analysis_http_response(
+                status, headers, body,
+            )
         };
         crate::protocol_serde::type_erase_result(parse_result)
     }
@@ -161,12 +181,20 @@ impl ::aws_smithy_runtime_api::client::ser_de::DeserializeResponse for StartCode
 #[derive(Debug)]
 struct StartCodeAnalysisRequestSerializer;
 impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for StartCodeAnalysisRequestSerializer {
-    #[allow(unused_mut, clippy::let_and_return, clippy::needless_borrow, clippy::useless_conversion)]
+    #[allow(
+        unused_mut,
+        clippy::let_and_return,
+        clippy::needless_borrow,
+        clippy::useless_conversion
+    )]
     fn serialize_input(
         &self,
         input: ::aws_smithy_runtime_api::client::interceptors::context::Input,
         _cfg: &mut ::aws_smithy_types::config_bag::ConfigBag,
-    ) -> ::std::result::Result<::aws_smithy_runtime_api::client::orchestrator::HttpRequest, ::aws_smithy_runtime_api::box_error::BoxError> {
+    ) -> ::std::result::Result<
+        ::aws_smithy_runtime_api::client::orchestrator::HttpRequest,
+        ::aws_smithy_runtime_api::box_error::BoxError,
+    > {
         let input = input
             .downcast::<crate::operation::start_code_analysis::StartCodeAnalysisInput>()
             .expect("correct type");
@@ -187,13 +215,18 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for StartCodeAna
             fn update_http_builder(
                 input: &crate::operation::start_code_analysis::StartCodeAnalysisInput,
                 builder: ::http::request::Builder,
-            ) -> ::std::result::Result<::http::request::Builder, ::aws_smithy_types::error::operation::BuildError> {
+            ) -> ::std::result::Result<::http::request::Builder, ::aws_smithy_types::error::operation::BuildError>
+            {
                 let mut uri = ::std::string::String::new();
                 uri_base(input, &mut uri)?;
                 ::std::result::Result::Ok(builder.method("POST").uri(uri))
             }
             let mut builder = update_http_builder(&input, ::http::request::Builder::new())?;
-            builder = _header_serialization_settings.set_default_header(builder, ::http::header::CONTENT_TYPE, "application/x-amz-json-1.0");
+            builder = _header_serialization_settings.set_default_header(
+                builder,
+                ::http::header::CONTENT_TYPE,
+                "application/x-amz-json-1.0",
+            );
             builder = _header_serialization_settings.set_default_header(
                 builder,
                 ::http::header::HeaderName::from_static("x-amz-target"),
@@ -201,10 +234,16 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for StartCodeAna
             );
             builder
         };
-        let body = ::aws_smithy_types::body::SdkBody::from(crate::protocol_serde::shape_start_code_analysis::ser_start_code_analysis_input(&input)?);
+        let body = ::aws_smithy_types::body::SdkBody::from(
+            crate::protocol_serde::shape_start_code_analysis::ser_start_code_analysis_input(&input)?,
+        );
         if let Some(content_length) = body.content_length() {
             let content_length = content_length.to_string();
-            request_builder = _header_serialization_settings.set_default_header(request_builder, ::http::header::CONTENT_LENGTH, &content_length);
+            request_builder = _header_serialization_settings.set_default_header(
+                request_builder,
+                ::http::header::CONTENT_LENGTH,
+                &content_length,
+            );
         }
         ::std::result::Result::Ok(request_builder.body(body).expect("valid request").try_into().unwrap())
     }
@@ -233,10 +272,15 @@ impl ::aws_smithy_runtime_api::client::interceptors::Intercept for StartCodeAnal
             .ok_or("failed to downcast to StartCodeAnalysisInput")?;
 
         let params = crate::config::endpoint::Params::builder().build().map_err(|err| {
-            ::aws_smithy_runtime_api::client::interceptors::error::ContextAttachedError::new("endpoint params could not be built", err)
+            ::aws_smithy_runtime_api::client::interceptors::error::ContextAttachedError::new(
+                "endpoint params could not be built",
+                err,
+            )
         })?;
         cfg.interceptor_state()
-            .store_put(::aws_smithy_runtime_api::client::endpoint::EndpointResolverParams::new(params));
+            .store_put(::aws_smithy_runtime_api::client::endpoint::EndpointResolverParams::new(
+                params,
+            ));
         ::std::result::Result::Ok(())
     }
 }
@@ -248,31 +292,40 @@ impl ::aws_smithy_runtime_api::client::interceptors::Intercept for StartCodeAnal
 #[non_exhaustive]
 #[derive(::std::fmt::Debug)]
 pub enum StartCodeAnalysisError {
-    /// This exception is thrown when the action to perform could not be completed because the resource is in a conflicting state.
+    /// This exception is thrown when the action to perform could not be completed because the
+    /// resource is in a conflicting state.
     ConflictError(crate::types::error::ConflictError),
-    /// This exception is thrown when the input fails to satisfy the constraints specified by the service.
+    /// This exception is thrown when the input fails to satisfy the constraints specified by the
+    /// service.
     ValidationError(crate::types::error::ValidationError),
-    /// This exception is thrown when the user does not have sufficient access to perform this action.
+    /// This exception is thrown when the user does not have sufficient access to perform this
+    /// action.
     AccessDeniedError(crate::types::error::AccessDeniedError),
     /// This exception is thrown when request was denied due to request throttling.
     ThrottlingError(crate::types::error::ThrottlingError),
     /// This exception is thrown when describing a resource that does not exist.
     ResourceNotFoundError(crate::types::error::ResourceNotFoundError),
-    /// This exception is thrown when an unexpected error occurred during the processing of a request.
+    /// This exception is thrown when an unexpected error occurred during the processing of a
+    /// request.
     InternalServerError(crate::types::error::InternalServerError),
-    /// An unexpected error occurred (e.g., invalid JSON returned by the service or an unknown error code).
-    #[deprecated(note = "Matching `Unhandled` directly is not forwards compatible. Instead, match using a \
+    /// An unexpected error occurred (e.g., invalid JSON returned by the service or an unknown error
+    /// code).
+    #[deprecated(
+        note = "Matching `Unhandled` directly is not forwards compatible. Instead, match using a \
     variable wildcard pattern and check `.code()`:
      \
     &nbsp;&nbsp;&nbsp;`err if err.code() == Some(\"SpecificExceptionCode\") => { /* handle the error */ }`
      \
-    See [`ProvideErrorMetadata`](#impl-ProvideErrorMetadata-for-StartCodeAnalysisError) for what information is available for the error.")]
+    See [`ProvideErrorMetadata`](#impl-ProvideErrorMetadata-for-StartCodeAnalysisError) for what information is available for the error."
+    )]
     Unhandled(crate::error::sealed_unhandled::Unhandled),
 }
 impl StartCodeAnalysisError {
     /// Creates the `StartCodeAnalysisError::Unhandled` variant from any error type.
     pub fn unhandled(
-        err: impl ::std::convert::Into<::std::boxed::Box<dyn ::std::error::Error + ::std::marker::Send + ::std::marker::Sync + 'static>>,
+        err: impl ::std::convert::Into<
+            ::std::boxed::Box<dyn ::std::error::Error + ::std::marker::Send + ::std::marker::Sync + 'static>,
+        >,
     ) -> Self {
         Self::Unhandled(crate::error::sealed_unhandled::Unhandled {
             source: err.into(),
@@ -280,17 +333,17 @@ impl StartCodeAnalysisError {
         })
     }
 
-    /// Creates the `StartCodeAnalysisError::Unhandled` variant from an [`ErrorMetadata`](::aws_smithy_types::error::ErrorMetadata).
+    /// Creates the `StartCodeAnalysisError::Unhandled` variant from an
+    /// [`ErrorMetadata`](::aws_smithy_types::error::ErrorMetadata).
     pub fn generic(err: ::aws_smithy_types::error::ErrorMetadata) -> Self {
         Self::Unhandled(crate::error::sealed_unhandled::Unhandled {
             source: err.clone().into(),
             meta: err,
         })
     }
-    ///
+
     /// Returns error metadata, which includes the error code, message,
     /// request ID, and potentially additional information.
-    ///
     pub fn meta(&self) -> &::aws_smithy_types::error::ErrorMetadata {
         match self {
             Self::ConflictError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),
@@ -302,26 +355,32 @@ impl StartCodeAnalysisError {
             Self::Unhandled(e) => &e.meta,
         }
     }
+
     /// Returns `true` if the error kind is `StartCodeAnalysisError::ConflictError`.
     pub fn is_conflict_error(&self) -> bool {
         matches!(self, Self::ConflictError(_))
     }
+
     /// Returns `true` if the error kind is `StartCodeAnalysisError::ValidationError`.
     pub fn is_validation_error(&self) -> bool {
         matches!(self, Self::ValidationError(_))
     }
+
     /// Returns `true` if the error kind is `StartCodeAnalysisError::AccessDeniedError`.
     pub fn is_access_denied_error(&self) -> bool {
         matches!(self, Self::AccessDeniedError(_))
     }
+
     /// Returns `true` if the error kind is `StartCodeAnalysisError::ThrottlingError`.
     pub fn is_throttling_error(&self) -> bool {
         matches!(self, Self::ThrottlingError(_))
     }
+
     /// Returns `true` if the error kind is `StartCodeAnalysisError::ResourceNotFoundError`.
     pub fn is_resource_not_found_error(&self) -> bool {
         matches!(self, Self::ResourceNotFoundError(_))
     }
+
     /// Returns `true` if the error kind is `StartCodeAnalysisError::InternalServerError`.
     pub fn is_internal_server_error(&self) -> bool {
         matches!(self, Self::InternalServerError(_))
@@ -350,12 +409,14 @@ impl ::std::fmt::Display for StartCodeAnalysisError {
             Self::ResourceNotFoundError(_inner) => _inner.fmt(f),
             Self::InternalServerError(_inner) => _inner.fmt(f),
             Self::Unhandled(_inner) => {
-                if let ::std::option::Option::Some(code) = ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self) {
+                if let ::std::option::Option::Some(code) =
+                    ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self)
+                {
                     write!(f, "unhandled error ({code})")
                 } else {
                     f.write_str("unhandled error")
                 }
-            }
+            },
         }
     }
 }
@@ -363,6 +424,7 @@ impl ::aws_smithy_types::retry::ProvideErrorKind for StartCodeAnalysisError {
     fn code(&self) -> ::std::option::Option<&str> {
         ::aws_smithy_types::error::metadata::ProvideErrorMetadata::code(self)
     }
+
     fn retryable_error_kind(&self) -> ::std::option::Option<::aws_smithy_types::retry::ErrorKind> {
         match self {
             Self::ThrottlingError(inner) => ::std::option::Option::Some(inner.retryable_error_kind()),
@@ -378,8 +440,12 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for StartCodeAnal
             Self::ValidationError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::AccessDeniedError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
             Self::ThrottlingError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
-            Self::ResourceNotFoundError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
-            Self::InternalServerError(_inner) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner),
+            Self::ResourceNotFoundError(_inner) => {
+                ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner)
+            },
+            Self::InternalServerError(_inner) => {
+                ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(_inner)
+            },
             Self::Unhandled(_inner) => &_inner.meta,
         }
     }
@@ -401,9 +467,8 @@ impl ::aws_types::request_id::RequestId for crate::operation::start_code_analysi
     }
 }
 
-pub use crate::operation::start_code_analysis::_start_code_analysis_output::StartCodeAnalysisOutput;
-
 pub use crate::operation::start_code_analysis::_start_code_analysis_input::StartCodeAnalysisInput;
+pub use crate::operation::start_code_analysis::_start_code_analysis_output::StartCodeAnalysisOutput;
 
 mod _start_code_analysis_input;
 

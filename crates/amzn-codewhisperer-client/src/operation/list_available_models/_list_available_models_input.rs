@@ -19,31 +19,38 @@ impl ListAvailableModelsInput {
     pub fn origin(&self) -> ::std::option::Option<&crate::types::Origin> {
         self.origin.as_ref()
     }
+
     /// Maximum number of models to return in a single response
     pub fn max_results(&self) -> ::std::option::Option<i32> {
         self.max_results
     }
+
     /// Token for retrieving the next page of results
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
+
     /// ARN of the profile to use for model filtering
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
+
     /// Provider of AI models
     pub fn model_provider(&self) -> ::std::option::Option<&crate::types::ModelProvider> {
         self.model_provider.as_ref()
     }
 }
 impl ListAvailableModelsInput {
-    /// Creates a new builder-style object to manufacture [`ListAvailableModelsInput`](crate::operation::list_available_models::ListAvailableModelsInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`ListAvailableModelsInput`](crate::operation::list_available_models::ListAvailableModelsInput).
+    ///
     pub fn builder() -> crate::operation::list_available_models::builders::ListAvailableModelsInputBuilder {
         crate::operation::list_available_models::builders::ListAvailableModelsInputBuilder::default()
     }
 }
 
-/// A builder for [`ListAvailableModelsInput`](crate::operation::list_available_models::ListAvailableModelsInput).
+/// A builder for
+/// [`ListAvailableModelsInput`](crate::operation::list_available_models::ListAvailableModelsInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListAvailableModelsInputBuilder {
@@ -60,76 +67,95 @@ impl ListAvailableModelsInputBuilder {
         self.origin = ::std::option::Option::Some(input);
         self
     }
+
     /// The origin context for which to list available models
     pub fn set_origin(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
         self.origin = input;
         self
     }
+
     /// The origin context for which to list available models
     pub fn get_origin(&self) -> &::std::option::Option<crate::types::Origin> {
         &self.origin
     }
+
     /// Maximum number of models to return in a single response
     pub fn max_results(mut self, input: i32) -> Self {
         self.max_results = ::std::option::Option::Some(input);
         self
     }
+
     /// Maximum number of models to return in a single response
     pub fn set_max_results(mut self, input: ::std::option::Option<i32>) -> Self {
         self.max_results = input;
         self
     }
+
     /// Maximum number of models to return in a single response
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         &self.max_results
     }
+
     /// Token for retrieving the next page of results
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Token for retrieving the next page of results
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
+
     /// Token for retrieving the next page of results
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
+
     /// ARN of the profile to use for model filtering
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ARN of the profile to use for model filtering
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
+
     /// ARN of the profile to use for model filtering
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
+
     /// Provider of AI models
     pub fn model_provider(mut self, input: crate::types::ModelProvider) -> Self {
         self.model_provider = ::std::option::Option::Some(input);
         self
     }
+
     /// Provider of AI models
     pub fn set_model_provider(mut self, input: ::std::option::Option<crate::types::ModelProvider>) -> Self {
         self.model_provider = input;
         self
     }
+
     /// Provider of AI models
     pub fn get_model_provider(&self) -> &::std::option::Option<crate::types::ModelProvider> {
         &self.model_provider
     }
-    /// Consumes the builder and constructs a [`ListAvailableModelsInput`](crate::operation::list_available_models::ListAvailableModelsInput).
+
+    /// Consumes the builder and constructs a
+    /// [`ListAvailableModelsInput`](crate::operation::list_available_models::ListAvailableModelsInput).
+    ///
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::list_available_models::ListAvailableModelsInput, ::aws_smithy_types::error::operation::BuildError>
-    {
+    ) -> ::std::result::Result<
+        crate::operation::list_available_models::ListAvailableModelsInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::list_available_models::ListAvailableModelsInput {
             origin: self.origin,
             max_results: self.max_results,

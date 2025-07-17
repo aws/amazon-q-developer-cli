@@ -22,30 +22,36 @@ impl CustomizationSummary {
         use std::ops::Deref;
         self.arn.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn version(&self) -> ::std::option::Option<i64> {
         self.version
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn customization_name(&self) -> &str {
         use std::ops::Deref;
         self.customization_name.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(&self) -> ::std::option::Option<&str> {
         self.description.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn status(&self) -> &crate::types::CustomizationStatus {
         &self.status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn updated_at(&self) -> &::aws_smithy_types::DateTime {
         &self.updated_at
     }
 }
 impl CustomizationSummary {
-    /// Creates a new builder-style object to manufacture [`CustomizationSummary`](crate::types::CustomizationSummary).
+    /// Creates a new builder-style object to manufacture
+    /// [`CustomizationSummary`](crate::types::CustomizationSummary).
     pub fn builder() -> crate::types::builders::CustomizationSummaryBuilder {
         crate::types::builders::CustomizationSummaryBuilder::default()
     }
@@ -69,95 +75,117 @@ impl CustomizationSummaryBuilder {
         self.arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.arn
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn version(mut self, input: i64) -> Self {
         self.version = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_version(mut self, input: ::std::option::Option<i64>) -> Self {
         self.version = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_version(&self) -> &::std::option::Option<i64> {
         &self.version
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn customization_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.customization_name = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_customization_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.customization_name = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_customization_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.customization_name
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn description(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.description = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_description(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.description = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn status(mut self, input: crate::types::CustomizationStatus) -> Self {
         self.status = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_status(mut self, input: ::std::option::Option<crate::types::CustomizationStatus>) -> Self {
         self.status = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_status(&self) -> &::std::option::Option<crate::types::CustomizationStatus> {
         &self.status
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn updated_at(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.updated_at = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_updated_at(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.updated_at = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_updated_at(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.updated_at
     }
-    /// Consumes the builder and constructs a [`CustomizationSummary`](crate::types::CustomizationSummary).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`CustomizationSummary`](crate::types::CustomizationSummary). This method will fail if
+    /// any of the following fields are not set:
     /// - [`arn`](crate::types::builders::CustomizationSummaryBuilder::arn)
     /// - [`customization_name`](crate::types::builders::CustomizationSummaryBuilder::customization_name)
     /// - [`status`](crate::types::builders::CustomizationSummaryBuilder::status)
     /// - [`updated_at`](crate::types::builders::CustomizationSummaryBuilder::updated_at)
-    pub fn build(self) -> ::std::result::Result<crate::types::CustomizationSummary, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::CustomizationSummary, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::CustomizationSummary {
             arn: self.arn.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

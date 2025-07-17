@@ -13,13 +13,15 @@ impl ByUserAnalytics {
     pub fn s3_uri(&self) -> ::std::option::Option<&str> {
         self.s3_uri.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn toggle(&self) -> &crate::types::OptInFeatureToggle {
         &self.toggle
     }
 }
 impl ByUserAnalytics {
-    /// Creates a new builder-style object to manufacture [`ByUserAnalytics`](crate::types::ByUserAnalytics).
+    /// Creates a new builder-style object to manufacture
+    /// [`ByUserAnalytics`](crate::types::ByUserAnalytics).
     pub fn builder() -> crate::types::builders::ByUserAnalyticsBuilder {
         crate::types::builders::ByUserAnalyticsBuilder::default()
     }
@@ -38,34 +40,42 @@ impl ByUserAnalyticsBuilder {
         self.s3_uri = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_s3_uri(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.s3_uri = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_s3_uri(&self) -> &::std::option::Option<::std::string::String> {
         &self.s3_uri
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn toggle(mut self, input: crate::types::OptInFeatureToggle) -> Self {
         self.toggle = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_toggle(mut self, input: ::std::option::Option<crate::types::OptInFeatureToggle>) -> Self {
         self.toggle = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_toggle(&self) -> &::std::option::Option<crate::types::OptInFeatureToggle> {
         &self.toggle
     }
+
     /// Consumes the builder and constructs a [`ByUserAnalytics`](crate::types::ByUserAnalytics).
     /// This method will fail if any of the following fields are not set:
     /// - [`toggle`](crate::types::builders::ByUserAnalyticsBuilder::toggle)
-    pub fn build(self) -> ::std::result::Result<crate::types::ByUserAnalytics, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::ByUserAnalytics, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::ByUserAnalytics {
             s3_uri: self.s3_uri,
             toggle: self.toggle.ok_or_else(|| {

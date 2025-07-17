@@ -24,44 +24,55 @@ pub struct TerminalUserInteractionEvent {
 }
 impl TerminalUserInteractionEvent {
     /// CodeWhisperer terminal Interaction Type
-    pub fn terminal_user_interaction_event_type(&self) -> ::std::option::Option<&crate::types::TerminalUserInteractionEventType> {
+    pub fn terminal_user_interaction_event_type(
+        &self,
+    ) -> ::std::option::Option<&crate::types::TerminalUserInteractionEventType> {
         self.terminal_user_interaction_event_type.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn terminal(&self) -> ::std::option::Option<&str> {
         self.terminal.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn terminal_version(&self) -> ::std::option::Option<&str> {
         self.terminal_version.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn shell(&self) -> ::std::option::Option<&str> {
         self.shell.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn shell_version(&self) -> ::std::option::Option<&str> {
         self.shell_version.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn duration(&self) -> ::std::option::Option<i32> {
         self.duration
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn time_to_suggestion(&self) -> ::std::option::Option<i32> {
         self.time_to_suggestion
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn is_completion_accepted(&self) -> ::std::option::Option<bool> {
         self.is_completion_accepted
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn cli_tool_command(&self) -> ::std::option::Option<&str> {
         self.cli_tool_command.as_deref()
     }
 }
 impl TerminalUserInteractionEvent {
-    /// Creates a new builder-style object to manufacture [`TerminalUserInteractionEvent`](crate::types::TerminalUserInteractionEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`TerminalUserInteractionEvent`](crate::types::TerminalUserInteractionEvent).
     pub fn builder() -> crate::types::builders::TerminalUserInteractionEventBuilder {
         crate::types::builders::TerminalUserInteractionEventBuilder::default()
     }
@@ -71,7 +82,8 @@ impl TerminalUserInteractionEvent {
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct TerminalUserInteractionEventBuilder {
-    pub(crate) terminal_user_interaction_event_type: ::std::option::Option<crate::types::TerminalUserInteractionEventType>,
+    pub(crate) terminal_user_interaction_event_type:
+        ::std::option::Option<crate::types::TerminalUserInteractionEventType>,
     pub(crate) terminal: ::std::option::Option<::std::string::String>,
     pub(crate) terminal_version: ::std::option::Option<::std::string::String>,
     pub(crate) shell: ::std::option::Option<::std::string::String>,
@@ -83,132 +95,168 @@ pub struct TerminalUserInteractionEventBuilder {
 }
 impl TerminalUserInteractionEventBuilder {
     /// CodeWhisperer terminal Interaction Type
-    pub fn terminal_user_interaction_event_type(mut self, input: crate::types::TerminalUserInteractionEventType) -> Self {
+    pub fn terminal_user_interaction_event_type(
+        mut self,
+        input: crate::types::TerminalUserInteractionEventType,
+    ) -> Self {
         self.terminal_user_interaction_event_type = ::std::option::Option::Some(input);
         self
     }
+
     /// CodeWhisperer terminal Interaction Type
-    pub fn set_terminal_user_interaction_event_type(mut self, input: ::std::option::Option<crate::types::TerminalUserInteractionEventType>) -> Self {
+    pub fn set_terminal_user_interaction_event_type(
+        mut self,
+        input: ::std::option::Option<crate::types::TerminalUserInteractionEventType>,
+    ) -> Self {
         self.terminal_user_interaction_event_type = input;
         self
     }
+
     /// CodeWhisperer terminal Interaction Type
-    pub fn get_terminal_user_interaction_event_type(&self) -> &::std::option::Option<crate::types::TerminalUserInteractionEventType> {
+    pub fn get_terminal_user_interaction_event_type(
+        &self,
+    ) -> &::std::option::Option<crate::types::TerminalUserInteractionEventType> {
         &self.terminal_user_interaction_event_type
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn terminal(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.terminal = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_terminal(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.terminal = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_terminal(&self) -> &::std::option::Option<::std::string::String> {
         &self.terminal
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn terminal_version(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.terminal_version = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_terminal_version(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.terminal_version = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_terminal_version(&self) -> &::std::option::Option<::std::string::String> {
         &self.terminal_version
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn shell(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.shell = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_shell(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.shell = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_shell(&self) -> &::std::option::Option<::std::string::String> {
         &self.shell
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn shell_version(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.shell_version = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_shell_version(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.shell_version = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_shell_version(&self) -> &::std::option::Option<::std::string::String> {
         &self.shell_version
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn duration(mut self, input: i32) -> Self {
         self.duration = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_duration(mut self, input: ::std::option::Option<i32>) -> Self {
         self.duration = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_duration(&self) -> &::std::option::Option<i32> {
         &self.duration
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn time_to_suggestion(mut self, input: i32) -> Self {
         self.time_to_suggestion = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_time_to_suggestion(mut self, input: ::std::option::Option<i32>) -> Self {
         self.time_to_suggestion = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_time_to_suggestion(&self) -> &::std::option::Option<i32> {
         &self.time_to_suggestion
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn is_completion_accepted(mut self, input: bool) -> Self {
         self.is_completion_accepted = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_is_completion_accepted(mut self, input: ::std::option::Option<bool>) -> Self {
         self.is_completion_accepted = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_is_completion_accepted(&self) -> &::std::option::Option<bool> {
         &self.is_completion_accepted
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn cli_tool_command(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.cli_tool_command = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_cli_tool_command(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.cli_tool_command = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_cli_tool_command(&self) -> &::std::option::Option<::std::string::String> {
         &self.cli_tool_command
     }
-    /// Consumes the builder and constructs a [`TerminalUserInteractionEvent`](crate::types::TerminalUserInteractionEvent).
+
+    /// Consumes the builder and constructs a
+    /// [`TerminalUserInteractionEvent`](crate::types::TerminalUserInteractionEvent).
     pub fn build(self) -> crate::types::TerminalUserInteractionEvent {
         crate::types::TerminalUserInteractionEvent {
             terminal_user_interaction_event_type: self.terminal_user_interaction_event_type,

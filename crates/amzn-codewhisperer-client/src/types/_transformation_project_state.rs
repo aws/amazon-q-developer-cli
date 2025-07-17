@@ -17,21 +17,25 @@ impl TransformationProjectState {
     pub fn language(&self) -> ::std::option::Option<&crate::types::TransformationLanguage> {
         self.language.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn runtime_env(&self) -> ::std::option::Option<&crate::types::TransformationRuntimeEnv> {
         self.runtime_env.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn platform_config(&self) -> ::std::option::Option<&crate::types::TransformationPlatformConfig> {
         self.platform_config.as_ref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn project_artifact(&self) -> ::std::option::Option<&crate::types::TransformationProjectArtifactDescriptor> {
         self.project_artifact.as_ref()
     }
 }
 impl TransformationProjectState {
-    /// Creates a new builder-style object to manufacture [`TransformationProjectState`](crate::types::TransformationProjectState).
+    /// Creates a new builder-style object to manufacture
+    /// [`TransformationProjectState`](crate::types::TransformationProjectState).
     pub fn builder() -> crate::types::builders::TransformationProjectStateBuilder {
         crate::types::builders::TransformationProjectStateBuilder::default()
     }
@@ -52,58 +56,79 @@ impl TransformationProjectStateBuilder {
         self.language = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_language(mut self, input: ::std::option::Option<crate::types::TransformationLanguage>) -> Self {
         self.language = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_language(&self) -> &::std::option::Option<crate::types::TransformationLanguage> {
         &self.language
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn runtime_env(mut self, input: crate::types::TransformationRuntimeEnv) -> Self {
         self.runtime_env = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_runtime_env(mut self, input: ::std::option::Option<crate::types::TransformationRuntimeEnv>) -> Self {
         self.runtime_env = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_runtime_env(&self) -> &::std::option::Option<crate::types::TransformationRuntimeEnv> {
         &self.runtime_env
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn platform_config(mut self, input: crate::types::TransformationPlatformConfig) -> Self {
         self.platform_config = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_platform_config(mut self, input: ::std::option::Option<crate::types::TransformationPlatformConfig>) -> Self {
+    pub fn set_platform_config(
+        mut self,
+        input: ::std::option::Option<crate::types::TransformationPlatformConfig>,
+    ) -> Self {
         self.platform_config = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_platform_config(&self) -> &::std::option::Option<crate::types::TransformationPlatformConfig> {
         &self.platform_config
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn project_artifact(mut self, input: crate::types::TransformationProjectArtifactDescriptor) -> Self {
         self.project_artifact = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_project_artifact(mut self, input: ::std::option::Option<crate::types::TransformationProjectArtifactDescriptor>) -> Self {
+    pub fn set_project_artifact(
+        mut self,
+        input: ::std::option::Option<crate::types::TransformationProjectArtifactDescriptor>,
+    ) -> Self {
         self.project_artifact = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_project_artifact(&self) -> &::std::option::Option<crate::types::TransformationProjectArtifactDescriptor> {
+    pub fn get_project_artifact(
+        &self,
+    ) -> &::std::option::Option<crate::types::TransformationProjectArtifactDescriptor> {
         &self.project_artifact
     }
-    /// Consumes the builder and constructs a [`TransformationProjectState`](crate::types::TransformationProjectState).
+
+    /// Consumes the builder and constructs a
+    /// [`TransformationProjectState`](crate::types::TransformationProjectState).
     pub fn build(self) -> crate::types::TransformationProjectState {
         crate::types::TransformationProjectState {
             language: self.language,

@@ -11,13 +11,17 @@ impl ::aws_types::request_id::RequestId for DisassociateCustomizationPermissionO
     }
 }
 impl DisassociateCustomizationPermissionOutput {
-    /// Creates a new builder-style object to manufacture [`DisassociateCustomizationPermissionOutput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput).
-    pub fn builder() -> crate::operation::disassociate_customization_permission::builders::DisassociateCustomizationPermissionOutputBuilder {
+    /// Creates a new builder-style object to manufacture
+    /// [`DisassociateCustomizationPermissionOutput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput).
+    ///
+    pub fn builder() -> crate::operation::disassociate_customization_permission::builders::DisassociateCustomizationPermissionOutputBuilder{
         crate::operation::disassociate_customization_permission::builders::DisassociateCustomizationPermissionOutputBuilder::default()
     }
 }
 
-/// A builder for [`DisassociateCustomizationPermissionOutput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput).
+/// A builder for
+/// [`DisassociateCustomizationPermissionOutput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct DisassociateCustomizationPermissionOutputBuilder {
@@ -33,8 +37,13 @@ impl DisassociateCustomizationPermissionOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`DisassociateCustomizationPermissionOutput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput).
-    pub fn build(self) -> crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput {
+
+    /// Consumes the builder and constructs a
+    /// [`DisassociateCustomizationPermissionOutput`](crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput).
+    ///
+    pub fn build(
+        self,
+    ) -> crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput {
         crate::operation::disassociate_customization_permission::DisassociateCustomizationPermissionOutput {
             _request_id: self._request_id,
         }

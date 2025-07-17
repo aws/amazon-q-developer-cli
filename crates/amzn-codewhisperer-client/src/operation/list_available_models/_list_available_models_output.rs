@@ -15,6 +15,7 @@ impl ListAvailableModelsOutput {
         use std::ops::Deref;
         self.models.deref()
     }
+
     /// Token for retrieving the next page of results
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
@@ -26,13 +27,17 @@ impl ::aws_types::request_id::RequestId for ListAvailableModelsOutput {
     }
 }
 impl ListAvailableModelsOutput {
-    /// Creates a new builder-style object to manufacture [`ListAvailableModelsOutput`](crate::operation::list_available_models::ListAvailableModelsOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`ListAvailableModelsOutput`](crate::operation::list_available_models::ListAvailableModelsOutput).
+    ///
     pub fn builder() -> crate::operation::list_available_models::builders::ListAvailableModelsOutputBuilder {
         crate::operation::list_available_models::builders::ListAvailableModelsOutputBuilder::default()
     }
 }
 
-/// A builder for [`ListAvailableModelsOutput`](crate::operation::list_available_models::ListAvailableModelsOutput).
+/// A builder for
+/// [`ListAvailableModelsOutput`](crate::operation::list_available_models::ListAvailableModelsOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListAvailableModelsOutputBuilder {
@@ -52,29 +57,35 @@ impl ListAvailableModelsOutputBuilder {
         self.models = ::std::option::Option::Some(v);
         self
     }
+
     /// List of available models
     pub fn set_models(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Model>>) -> Self {
         self.models = input;
         self
     }
+
     /// List of available models
     pub fn get_models(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Model>> {
         &self.models
     }
+
     /// Token for retrieving the next page of results
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Token for retrieving the next page of results
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
+
     /// Token for retrieving the next page of results
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -84,13 +95,17 @@ impl ListAvailableModelsOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`ListAvailableModelsOutput`](crate::operation::list_available_models::ListAvailableModelsOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`ListAvailableModelsOutput`](crate::operation::list_available_models::ListAvailableModelsOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`models`](crate::operation::list_available_models::builders::ListAvailableModelsOutputBuilder::models)
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::list_available_models::ListAvailableModelsOutput, ::aws_smithy_types::error::operation::BuildError>
-    {
+    ) -> ::std::result::Result<
+        crate::operation::list_available_models::ListAvailableModelsOutput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::list_available_models::ListAvailableModelsOutput {
             models: self.models.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

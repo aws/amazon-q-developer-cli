@@ -48,7 +48,10 @@ pub fn ser_text_document_diagnostic(
             {
                 #[allow(unused_mut)]
                 let mut object_12 = array_10.value().start_object();
-                crate::protocol_serde::shape_diagnostic_related_information::ser_diagnostic_related_information(&mut object_12, item_11)?;
+                crate::protocol_serde::shape_diagnostic_related_information::ser_diagnostic_related_information(
+                    &mut object_12,
+                    item_11,
+                )?;
                 object_12.finish();
             }
         }

@@ -9,8 +9,9 @@ pub fn de_send_telemetry_event_http_error(
     crate::operation::send_telemetry_event::SendTelemetryEventError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-        .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?;
+    let mut generic_builder =
+        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
+            .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
@@ -25,8 +26,11 @@ pub fn de_send_telemetry_event_http_error(
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?;
+                output = crate::protocol_serde::shape_validation_exception::de_validation_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::validation_exception_correct_errors(output)
                     .build()
@@ -34,41 +38,55 @@ pub fn de_send_telemetry_event_http_error(
             };
             tmp
         }),
-        "AccessDeniedException" => crate::operation::send_telemetry_event::SendTelemetryEventError::AccessDeniedError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+        "AccessDeniedException" => {
+            crate::operation::send_telemetry_event::SendTelemetryEventError::AccessDeniedError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(_response_body, output)
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                    output = crate::protocol_serde::shape_access_denied_exception::de_access_denied_exception_json_err(
+                        _response_body,
+                        output,
+                    )
                     .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::access_denied_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?
-            };
-            tmp
-        }),
-        "InternalServerException" => crate::operation::send_telemetry_event::SendTelemetryEventError::InternalServerError({
-            #[allow(unused_mut)]
-            let mut tmp = {
+                    let output = output.meta(generic);
+                    crate::serde_util::access_denied_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?
+                };
+                tmp
+            })
+        },
+        "InternalServerException" => {
+            crate::operation::send_telemetry_event::SendTelemetryEventError::InternalServerError({
                 #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                output = crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::internal_server_exception_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?
-            };
-            tmp
-        }),
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                    output =
+                        crate::protocol_serde::shape_internal_server_exception::de_internal_server_exception_json_err(
+                            _response_body,
+                            output,
+                        )
+                        .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::internal_server_exception_correct_errors(output)
+                        .build()
+                        .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?
+                };
+                tmp
+            })
+        },
         "ThrottlingException" => crate::operation::send_telemetry_event::SendTelemetryEventError::ThrottlingError({
             #[allow(unused_mut)]
             let mut tmp = {
                 #[allow(unused_mut)]
                 let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?;
+                output = crate::protocol_serde::shape_throttling_exception::de_throttling_exception_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::send_telemetry_event::SendTelemetryEventError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::throttling_exception_correct_errors(output)
                     .build()
@@ -99,7 +117,8 @@ pub fn de_send_telemetry_event_http_response(
 
 pub fn ser_send_telemetry_event_input(
     input: &crate::operation::send_telemetry_event::SendTelemetryEventInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_send_telemetry_event_input::ser_send_telemetry_event_input_input(&mut object, input)?;

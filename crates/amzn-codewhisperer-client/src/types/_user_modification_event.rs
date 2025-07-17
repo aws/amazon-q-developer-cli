@@ -30,46 +30,56 @@ impl UserModificationEvent {
         use std::ops::Deref;
         self.session_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn request_id(&self) -> &str {
         use std::ops::Deref;
         self.request_id.deref()
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> &crate::types::ProgrammingLanguage {
         &self.programming_language
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn modification_percentage(&self) -> f64 {
         self.modification_percentage
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn customization_arn(&self) -> ::std::option::Option<&str> {
         self.customization_arn.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn timestamp(&self) -> &::aws_smithy_types::DateTime {
         &self.timestamp
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn accepted_character_count(&self) -> i32 {
         self.accepted_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn unmodified_accepted_character_count(&self) -> i32 {
         self.unmodified_accepted_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn added_character_count(&self) -> i32 {
         self.added_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn unmodified_added_character_count(&self) -> i32 {
         self.unmodified_added_character_count
     }
 }
 impl UserModificationEvent {
-    /// Creates a new builder-style object to manufacture [`UserModificationEvent`](crate::types::UserModificationEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`UserModificationEvent`](crate::types::UserModificationEvent).
     pub fn builder() -> crate::types::builders::UserModificationEventBuilder {
         crate::types::builders::UserModificationEventBuilder::default()
     }
@@ -97,155 +107,189 @@ impl UserModificationEventBuilder {
         self.session_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_session_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.session_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_session_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.session_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn request_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.request_id = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_request_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.request_id = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_request_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.request_id
     }
+
     /// Programming Languages supported by CodeWhisperer
     /// This field is required.
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn modification_percentage(mut self, input: f64) -> Self {
         self.modification_percentage = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_modification_percentage(mut self, input: ::std::option::Option<f64>) -> Self {
         self.modification_percentage = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_modification_percentage(&self) -> &::std::option::Option<f64> {
         &self.modification_percentage
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn customization_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.customization_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_customization_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.customization_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_customization_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.customization_arn
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn timestamp(mut self, input: ::aws_smithy_types::DateTime) -> Self {
         self.timestamp = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_timestamp(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
         self.timestamp = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_timestamp(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
         &self.timestamp
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn accepted_character_count(mut self, input: i32) -> Self {
         self.accepted_character_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_accepted_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.accepted_character_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_accepted_character_count(&self) -> &::std::option::Option<i32> {
         &self.accepted_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn unmodified_accepted_character_count(mut self, input: i32) -> Self {
         self.unmodified_accepted_character_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_unmodified_accepted_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.unmodified_accepted_character_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_unmodified_accepted_character_count(&self) -> &::std::option::Option<i32> {
         &self.unmodified_accepted_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn added_character_count(mut self, input: i32) -> Self {
         self.added_character_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_added_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.added_character_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_added_character_count(&self) -> &::std::option::Option<i32> {
         &self.added_character_count
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn unmodified_added_character_count(mut self, input: i32) -> Self {
         self.unmodified_added_character_count = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_unmodified_added_character_count(mut self, input: ::std::option::Option<i32>) -> Self {
         self.unmodified_added_character_count = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_unmodified_added_character_count(&self) -> &::std::option::Option<i32> {
         &self.unmodified_added_character_count
     }
-    /// Consumes the builder and constructs a [`UserModificationEvent`](crate::types::UserModificationEvent).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`UserModificationEvent`](crate::types::UserModificationEvent). This method will fail if
+    /// any of the following fields are not set:
     /// - [`session_id`](crate::types::builders::UserModificationEventBuilder::session_id)
     /// - [`request_id`](crate::types::builders::UserModificationEventBuilder::request_id)
     /// - [`programming_language`](crate::types::builders::UserModificationEventBuilder::programming_language)
     /// - [`modification_percentage`](crate::types::builders::UserModificationEventBuilder::modification_percentage)
     /// - [`timestamp`](crate::types::builders::UserModificationEventBuilder::timestamp)
-    pub fn build(self) -> ::std::result::Result<crate::types::UserModificationEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::UserModificationEvent, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::UserModificationEvent {
             session_id: self.session_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

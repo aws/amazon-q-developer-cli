@@ -15,6 +15,7 @@ impl ListCustomizationVersionsOutput {
         use std::ops::Deref;
         self.versions.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
@@ -26,13 +27,18 @@ impl ::aws_types::request_id::RequestId for ListCustomizationVersionsOutput {
     }
 }
 impl ListCustomizationVersionsOutput {
-    /// Creates a new builder-style object to manufacture [`ListCustomizationVersionsOutput`](crate::operation::list_customization_versions::ListCustomizationVersionsOutput).
-    pub fn builder() -> crate::operation::list_customization_versions::builders::ListCustomizationVersionsOutputBuilder {
+    /// Creates a new builder-style object to manufacture
+    /// [`ListCustomizationVersionsOutput`](crate::operation::list_customization_versions::ListCustomizationVersionsOutput).
+    ///
+    pub fn builder() -> crate::operation::list_customization_versions::builders::ListCustomizationVersionsOutputBuilder
+    {
         crate::operation::list_customization_versions::builders::ListCustomizationVersionsOutputBuilder::default()
     }
 }
 
-/// A builder for [`ListCustomizationVersionsOutput`](crate::operation::list_customization_versions::ListCustomizationVersionsOutput).
+/// A builder for
+/// [`ListCustomizationVersionsOutput`](crate::operation::list_customization_versions::ListCustomizationVersionsOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListCustomizationVersionsOutputBuilder {
@@ -44,36 +50,44 @@ impl ListCustomizationVersionsOutputBuilder {
     /// Appends an item to `versions`.
     ///
     /// To override the contents of this collection use [`set_versions`](Self::set_versions).
-    ///
     pub fn versions(mut self, input: crate::types::CustomizationVersionSummary) -> Self {
         let mut v = self.versions.unwrap_or_default();
         v.push(input);
         self.versions = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_versions(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::CustomizationVersionSummary>>) -> Self {
+    pub fn set_versions(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::CustomizationVersionSummary>>,
+    ) -> Self {
         self.versions = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_versions(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::CustomizationVersionSummary>> {
         &self.versions
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -83,7 +97,9 @@ impl ListCustomizationVersionsOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`ListCustomizationVersionsOutput`](crate::operation::list_customization_versions::ListCustomizationVersionsOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`ListCustomizationVersionsOutput`](crate::operation::list_customization_versions::ListCustomizationVersionsOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`versions`](crate::operation::list_customization_versions::builders::ListCustomizationVersionsOutputBuilder::versions)
     pub fn build(
@@ -92,15 +108,17 @@ impl ListCustomizationVersionsOutputBuilder {
         crate::operation::list_customization_versions::ListCustomizationVersionsOutput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(crate::operation::list_customization_versions::ListCustomizationVersionsOutput {
-            versions: self.versions.ok_or_else(|| {
-                ::aws_smithy_types::error::operation::BuildError::missing_field(
-                    "versions",
-                    "versions was not specified but it is required when building ListCustomizationVersionsOutput",
-                )
-            })?,
-            next_token: self.next_token,
-            _request_id: self._request_id,
-        })
+        ::std::result::Result::Ok(
+            crate::operation::list_customization_versions::ListCustomizationVersionsOutput {
+                versions: self.versions.ok_or_else(|| {
+                    ::aws_smithy_types::error::operation::BuildError::missing_field(
+                        "versions",
+                        "versions was not specified but it is required when building ListCustomizationVersionsOutput",
+                    )
+                })?,
+                next_token: self.next_token,
+                _request_id: self._request_id,
+            },
+        )
     }
 }

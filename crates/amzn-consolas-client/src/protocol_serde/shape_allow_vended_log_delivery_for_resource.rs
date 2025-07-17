@@ -9,13 +9,19 @@ pub fn de_allow_vended_log_delivery_for_resource_http_error(
     crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError,
 > {
     #[allow(unused_mut)]
-    let mut generic_builder = crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body)
-        .map_err(crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::unhandled)?;
+    let mut generic_builder =
+        crate::protocol_serde::parse_http_error_metadata(_response_status, _response_headers, _response_body).map_err(
+            crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::unhandled,
+        )?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
     let error_code = match generic.code() {
         Some(code) => code,
-        None => return Err(crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::unhandled(generic)),
+        None => return Err(
+            crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceError::unhandled(
+                generic,
+            ),
+        ),
     };
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
@@ -124,7 +130,8 @@ pub fn de_allow_vended_log_delivery_for_resource_http_response(
 
 pub fn ser_allow_vended_log_delivery_for_resource_input(
     input: &crate::operation::allow_vended_log_delivery_for_resource::AllowVendedLogDeliveryForResourceInput,
-) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError> {
+) -> ::std::result::Result<::aws_smithy_types::body::SdkBody, ::aws_smithy_types::error::operation::SerializationError>
+{
     let mut out = String::new();
     let mut object = ::aws_smithy_json::serialize::JsonObjectWriter::new(&mut out);
     crate::protocol_serde::shape_allow_vended_log_delivery_for_resource_input::ser_allow_vended_log_delivery_for_resource_input_input(
@@ -142,7 +149,8 @@ pub(crate) fn de_allow_vended_log_delivery_for_resource(
     crate::operation::allow_vended_log_delivery_for_resource::builders::AllowVendedLogDeliveryForResourceOutputBuilder,
     ::aws_smithy_json::deserialize::error::DeserializeError,
 > {
-    let mut tokens_owned = ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
+    let mut tokens_owned =
+        ::aws_smithy_json::deserialize::json_token_iter(crate::protocol_serde::or_empty_doc(value)).peekable();
     let tokens = &mut tokens_owned;
     ::aws_smithy_json::deserialize::token::expect_start_object(tokens.next())?;
     loop {
@@ -155,15 +163,14 @@ pub(crate) fn de_allow_vended_log_delivery_for_resource(
                             .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                             .transpose()?,
                     );
-                }
+                },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {
-                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!(
-                    "expected object key or end object, found: {:?}",
-                    other
-                )))
-            }
+                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
+                    format!("expected object key or end object, found: {:?}", other),
+                ));
+            },
         }
     }
     if tokens.next().is_some() {

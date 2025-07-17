@@ -3,17 +3,20 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct GetUsageLimitsInput {
-    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder ID users.
+    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder
+    /// ID users.
     pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GetUsageLimitsInput {
-    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder ID users.
+    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder
+    /// ID users.
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
 }
 impl GetUsageLimitsInput {
-    /// Creates a new builder-style object to manufacture [`GetUsageLimitsInput`](crate::operation::get_usage_limits::GetUsageLimitsInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`GetUsageLimitsInput`](crate::operation::get_usage_limits::GetUsageLimitsInput).
     pub fn builder() -> crate::operation::get_usage_limits::builders::GetUsageLimitsInputBuilder {
         crate::operation::get_usage_limits::builders::GetUsageLimitsInputBuilder::default()
     }
@@ -26,24 +29,34 @@ pub struct GetUsageLimitsInputBuilder {
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl GetUsageLimitsInputBuilder {
-    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder ID users.
+    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder
+    /// ID users.
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
-    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder ID users.
+
+    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder
+    /// ID users.
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
-    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder ID users.
+
+    /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder
+    /// ID users.
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
-    /// Consumes the builder and constructs a [`GetUsageLimitsInput`](crate::operation::get_usage_limits::GetUsageLimitsInput).
+
+    /// Consumes the builder and constructs a
+    /// [`GetUsageLimitsInput`](crate::operation::get_usage_limits::GetUsageLimitsInput).
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::get_usage_limits::GetUsageLimitsInput, ::aws_smithy_types::error::operation::BuildError> {
+    ) -> ::std::result::Result<
+        crate::operation::get_usage_limits::GetUsageLimitsInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::get_usage_limits::GetUsageLimitsInput {
             profile_arn: self.profile_arn,
         })

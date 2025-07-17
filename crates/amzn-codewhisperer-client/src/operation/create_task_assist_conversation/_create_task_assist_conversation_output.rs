@@ -21,13 +21,19 @@ impl ::aws_types::request_id::RequestId for CreateTaskAssistConversationOutput {
     }
 }
 impl CreateTaskAssistConversationOutput {
-    /// Creates a new builder-style object to manufacture [`CreateTaskAssistConversationOutput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput).
-    pub fn builder() -> crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder {
-        crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder::default()
+    /// Creates a new builder-style object to manufacture
+    /// [`CreateTaskAssistConversationOutput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput).
+    ///
+    pub fn builder()
+    -> crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder {
+        crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder::default(
+        )
     }
 }
 
-/// A builder for [`CreateTaskAssistConversationOutput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput).
+/// A builder for
+/// [`CreateTaskAssistConversationOutput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct CreateTaskAssistConversationOutputBuilder {
@@ -41,15 +47,18 @@ impl CreateTaskAssistConversationOutputBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -59,7 +68,9 @@ impl CreateTaskAssistConversationOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`CreateTaskAssistConversationOutput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`CreateTaskAssistConversationOutput`](crate::operation::create_task_assist_conversation::CreateTaskAssistConversationOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`conversation_id`](crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder::conversation_id)
     pub fn build(

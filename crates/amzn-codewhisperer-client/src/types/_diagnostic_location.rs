@@ -15,6 +15,7 @@ impl DiagnosticLocation {
         use std::ops::Deref;
         self.uri.deref()
     }
+
     /// Indicates Range / Span in a Text Document
     pub fn range(&self) -> &crate::types::Range {
         &self.range
@@ -29,7 +30,8 @@ impl ::std::fmt::Debug for DiagnosticLocation {
     }
 }
 impl DiagnosticLocation {
-    /// Creates a new builder-style object to manufacture [`DiagnosticLocation`](crate::types::DiagnosticLocation).
+    /// Creates a new builder-style object to manufacture
+    /// [`DiagnosticLocation`](crate::types::DiagnosticLocation).
     pub fn builder() -> crate::types::builders::DiagnosticLocationBuilder {
         crate::types::builders::DiagnosticLocationBuilder::default()
     }
@@ -49,35 +51,44 @@ impl DiagnosticLocationBuilder {
         self.uri = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_uri(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.uri = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_uri(&self) -> &::std::option::Option<::std::string::String> {
         &self.uri
     }
+
     /// Indicates Range / Span in a Text Document
     /// This field is required.
     pub fn range(mut self, input: crate::types::Range) -> Self {
         self.range = ::std::option::Option::Some(input);
         self
     }
+
     /// Indicates Range / Span in a Text Document
     pub fn set_range(mut self, input: ::std::option::Option<crate::types::Range>) -> Self {
         self.range = input;
         self
     }
+
     /// Indicates Range / Span in a Text Document
     pub fn get_range(&self) -> &::std::option::Option<crate::types::Range> {
         &self.range
     }
-    /// Consumes the builder and constructs a [`DiagnosticLocation`](crate::types::DiagnosticLocation).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`DiagnosticLocation`](crate::types::DiagnosticLocation). This method will fail if any
+    /// of the following fields are not set:
     /// - [`uri`](crate::types::builders::DiagnosticLocationBuilder::uri)
     /// - [`range`](crate::types::builders::DiagnosticLocationBuilder::range)
-    pub fn build(self) -> ::std::result::Result<crate::types::DiagnosticLocation, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::DiagnosticLocation, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::DiagnosticLocation {
             uri: self.uri.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

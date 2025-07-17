@@ -14,13 +14,15 @@ impl SsoIdentitySource {
         use std::ops::Deref;
         self.instance_arn.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn sso_region(&self) -> ::std::option::Option<&str> {
         self.sso_region.as_deref()
     }
 }
 impl SsoIdentitySource {
-    /// Creates a new builder-style object to manufacture [`SsoIdentitySource`](crate::types::SsoIdentitySource).
+    /// Creates a new builder-style object to manufacture
+    /// [`SsoIdentitySource`](crate::types::SsoIdentitySource).
     pub fn builder() -> crate::types::builders::SsoIdentitySourceBuilder {
         crate::types::builders::SsoIdentitySourceBuilder::default()
     }
@@ -40,33 +42,42 @@ impl SsoIdentitySourceBuilder {
         self.instance_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_instance_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.instance_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_instance_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.instance_arn
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn sso_region(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.sso_region = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_sso_region(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.sso_region = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_sso_region(&self) -> &::std::option::Option<::std::string::String> {
         &self.sso_region
     }
-    /// Consumes the builder and constructs a [`SsoIdentitySource`](crate::types::SsoIdentitySource).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`SsoIdentitySource`](crate::types::SsoIdentitySource). This method will fail if any of
+    /// the following fields are not set:
     /// - [`instance_arn`](crate::types::builders::SsoIdentitySourceBuilder::instance_arn)
-    pub fn build(self) -> ::std::result::Result<crate::types::SsoIdentitySource, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::SsoIdentitySource, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::SsoIdentitySource {
             instance_arn: self.instance_arn.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

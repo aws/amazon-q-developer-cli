@@ -5,9 +5,13 @@ pub fn ser_image_source(
 ) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
     match input {
         crate::types::ImageSource::Bytes(inner) => {
-            object_1.key("bytes").string_unchecked(&::aws_smithy_types::base64::encode(inner));
-        }
-        crate::types::ImageSource::Unknown => return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("ImageSource")),
+            object_1
+                .key("bytes")
+                .string_unchecked(&::aws_smithy_types::base64::encode(inner));
+        },
+        crate::types::ImageSource::Unknown => {
+            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("ImageSource"));
+        },
     }
     Ok(())
 }

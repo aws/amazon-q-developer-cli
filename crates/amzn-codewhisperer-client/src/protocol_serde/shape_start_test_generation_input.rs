@@ -33,7 +33,10 @@ pub fn ser_start_test_generation_input_input(
     if let Some(var_10) = &input.reference_tracker_configuration {
         #[allow(unused_mut)]
         let mut object_11 = object.key("referenceTrackerConfiguration").start_object();
-        crate::protocol_serde::shape_reference_tracker_configuration::ser_reference_tracker_configuration(&mut object_11, var_10)?;
+        crate::protocol_serde::shape_reference_tracker_configuration::ser_reference_tracker_configuration(
+            &mut object_11,
+            var_10,
+        )?;
         object_11.finish();
     }
     Ok(())

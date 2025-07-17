@@ -9,14 +9,16 @@ pub fn ser_cursor_state(
             let mut object_1 = object_4.key("position").start_object();
             crate::protocol_serde::shape_position::ser_position(&mut object_1, inner)?;
             object_1.finish();
-        }
+        },
         crate::types::CursorState::Range(inner) => {
             #[allow(unused_mut)]
             let mut object_2 = object_4.key("range").start_object();
             crate::protocol_serde::shape_range::ser_range(&mut object_2, inner)?;
             object_2.finish();
-        }
-        crate::types::CursorState::Unknown => return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("CursorState")),
+        },
+        crate::types::CursorState::Unknown => {
+            return Err(::aws_smithy_types::error::operation::SerializationError::unknown_variant("CursorState"));
+        },
     }
     Ok(())
 }

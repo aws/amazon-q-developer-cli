@@ -17,11 +17,13 @@ impl CloudWatchTroubleshootingLink {
         use std::ops::Deref;
         self.label.deref()
     }
+
     /// Stringified JSON payload. See spec here https://code.amazon.com/packages/CloudWatchOdysseyModel/blobs/50c0832f0e393e4ab68827eb4f04d832366821c1/--/model/events.smithy#L28 .
     pub fn investigation_payload(&self) -> &str {
         use std::ops::Deref;
         self.investigation_payload.deref()
     }
+
     /// Fallback string, if target channel does not support the CloudWatchTroubleshootingLink.
     pub fn default_text(&self) -> ::std::option::Option<&str> {
         self.default_text.as_deref()
@@ -37,7 +39,8 @@ impl ::std::fmt::Debug for CloudWatchTroubleshootingLink {
     }
 }
 impl CloudWatchTroubleshootingLink {
-    /// Creates a new builder-style object to manufacture [`CloudWatchTroubleshootingLink`](crate::types::CloudWatchTroubleshootingLink).
+    /// Creates a new builder-style object to manufacture
+    /// [`CloudWatchTroubleshootingLink`](crate::types::CloudWatchTroubleshootingLink).
     pub fn builder() -> crate::types::builders::CloudWatchTroubleshootingLinkBuilder {
         crate::types::builders::CloudWatchTroubleshootingLinkBuilder::default()
     }
@@ -58,49 +61,64 @@ impl CloudWatchTroubleshootingLinkBuilder {
         self.label = ::std::option::Option::Some(input.into());
         self
     }
+
     /// A label for the link.
     pub fn set_label(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.label = input;
         self
     }
+
     /// A label for the link.
     pub fn get_label(&self) -> &::std::option::Option<::std::string::String> {
         &self.label
     }
+
     /// Stringified JSON payload. See spec here https://code.amazon.com/packages/CloudWatchOdysseyModel/blobs/50c0832f0e393e4ab68827eb4f04d832366821c1/--/model/events.smithy#L28 .
     /// This field is required.
     pub fn investigation_payload(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.investigation_payload = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Stringified JSON payload. See spec here https://code.amazon.com/packages/CloudWatchOdysseyModel/blobs/50c0832f0e393e4ab68827eb4f04d832366821c1/--/model/events.smithy#L28 .
     pub fn set_investigation_payload(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.investigation_payload = input;
         self
     }
+
     /// Stringified JSON payload. See spec here https://code.amazon.com/packages/CloudWatchOdysseyModel/blobs/50c0832f0e393e4ab68827eb4f04d832366821c1/--/model/events.smithy#L28 .
     pub fn get_investigation_payload(&self) -> &::std::option::Option<::std::string::String> {
         &self.investigation_payload
     }
+
     /// Fallback string, if target channel does not support the CloudWatchTroubleshootingLink.
     pub fn default_text(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.default_text = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Fallback string, if target channel does not support the CloudWatchTroubleshootingLink.
     pub fn set_default_text(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.default_text = input;
         self
     }
+
     /// Fallback string, if target channel does not support the CloudWatchTroubleshootingLink.
     pub fn get_default_text(&self) -> &::std::option::Option<::std::string::String> {
         &self.default_text
     }
-    /// Consumes the builder and constructs a [`CloudWatchTroubleshootingLink`](crate::types::CloudWatchTroubleshootingLink).
+
+    /// Consumes the builder and constructs a
+    /// [`CloudWatchTroubleshootingLink`](crate::types::CloudWatchTroubleshootingLink).
     /// This method will fail if any of the following fields are not set:
     /// - [`label`](crate::types::builders::CloudWatchTroubleshootingLinkBuilder::label)
     /// - [`investigation_payload`](crate::types::builders::CloudWatchTroubleshootingLinkBuilder::investigation_payload)
-    pub fn build(self) -> ::std::result::Result<crate::types::CloudWatchTroubleshootingLink, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::CloudWatchTroubleshootingLink,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::CloudWatchTroubleshootingLink {
             label: self.label.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

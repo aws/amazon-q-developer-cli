@@ -15,23 +15,29 @@ impl ListUserMemoryEntriesInput {
     pub fn max_results(&self) -> ::std::option::Option<i32> {
         self.max_results
     }
+
     /// ProfileArn for the managing Q Profile
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
     }
 }
 impl ListUserMemoryEntriesInput {
-    /// Creates a new builder-style object to manufacture [`ListUserMemoryEntriesInput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`ListUserMemoryEntriesInput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput).
+    ///
     pub fn builder() -> crate::operation::list_user_memory_entries::builders::ListUserMemoryEntriesInputBuilder {
         crate::operation::list_user_memory_entries::builders::ListUserMemoryEntriesInputBuilder::default()
     }
 }
 
-/// A builder for [`ListUserMemoryEntriesInput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput).
+/// A builder for
+/// [`ListUserMemoryEntriesInput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct ListUserMemoryEntriesInputBuilder {
@@ -45,48 +51,61 @@ impl ListUserMemoryEntriesInputBuilder {
         self.max_results = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_max_results(mut self, input: ::std::option::Option<i32>) -> Self {
         self.max_results = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         &self.max_results
     }
+
     /// ProfileArn for the managing Q Profile
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ProfileArn for the managing Q Profile
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
+
     /// ProfileArn for the managing Q Profile
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.next_token = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_next_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.next_token = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_next_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.next_token
     }
-    /// Consumes the builder and constructs a [`ListUserMemoryEntriesInput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput).
+
+    /// Consumes the builder and constructs a
+    /// [`ListUserMemoryEntriesInput`](crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput).
+    ///
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput, ::aws_smithy_types::error::operation::BuildError>
-    {
+    ) -> ::std::result::Result<
+        crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::list_user_memory_entries::ListUserMemoryEntriesInput {
             max_results: self.max_results,
             profile_arn: self.profile_arn,

@@ -14,6 +14,7 @@ impl Span {
     pub fn start(&self) -> ::std::option::Option<i32> {
         self.start
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn end(&self) -> ::std::option::Option<i32> {
         self.end
@@ -39,29 +40,35 @@ impl SpanBuilder {
         self.start = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_start(mut self, input: ::std::option::Option<i32>) -> Self {
         self.start = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_start(&self) -> &::std::option::Option<i32> {
         &self.start
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn end(mut self, input: i32) -> Self {
         self.end = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_end(mut self, input: ::std::option::Option<i32>) -> Self {
         self.end = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_end(&self) -> &::std::option::Option<i32> {
         &self.end
     }
+
     /// Consumes the builder and constructs a [`Span`](crate::types::Span).
     pub fn build(self) -> crate::types::Span {
         crate::types::Span {

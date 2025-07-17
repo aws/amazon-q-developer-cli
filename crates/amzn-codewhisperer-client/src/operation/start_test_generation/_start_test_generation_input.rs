@@ -24,30 +24,38 @@ impl StartTestGenerationInput {
     pub fn upload_id(&self) -> ::std::option::Option<&str> {
         self.upload_id.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.target_code_list.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.target_code_list.is_none()`.
     pub fn target_code_list(&self) -> &[crate::types::TargetCode] {
         self.target_code_list.as_deref().unwrap_or_default()
     }
+
     /// The content of user input.
     pub fn user_input(&self) -> ::std::option::Option<&str> {
         self.user_input.as_deref()
     }
+
     /// Test generation job group name
     pub fn test_generation_job_group_name(&self) -> ::std::option::Option<&str> {
         self.test_generation_job_group_name.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(&self) -> ::std::option::Option<&str> {
         self.client_token.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn reference_tracker_configuration(&self) -> ::std::option::Option<&crate::types::ReferenceTrackerConfiguration> {
+    pub fn reference_tracker_configuration(
+        &self,
+    ) -> ::std::option::Option<&crate::types::ReferenceTrackerConfiguration> {
         self.reference_tracker_configuration.as_ref()
     }
 }
@@ -65,13 +73,16 @@ impl ::std::fmt::Debug for StartTestGenerationInput {
     }
 }
 impl StartTestGenerationInput {
-    /// Creates a new builder-style object to manufacture [`StartTestGenerationInput`](crate::operation::start_test_generation::StartTestGenerationInput).
+    /// Creates a new builder-style object to manufacture
+    /// [`StartTestGenerationInput`](crate::operation::start_test_generation::StartTestGenerationInput).
+    ///
     pub fn builder() -> crate::operation::start_test_generation::builders::StartTestGenerationInputBuilder {
         crate::operation::start_test_generation::builders::StartTestGenerationInputBuilder::default()
     }
 }
 
-/// A builder for [`StartTestGenerationInput`](crate::operation::start_test_generation::StartTestGenerationInput).
+/// A builder for
+/// [`StartTestGenerationInput`](crate::operation::start_test_generation::StartTestGenerationInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct StartTestGenerationInputBuilder {
@@ -90,110 +101,143 @@ impl StartTestGenerationInputBuilder {
         self.upload_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Upload ID returned by CreateUploadUrl API
     pub fn set_upload_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.upload_id = input;
         self
     }
+
     /// Upload ID returned by CreateUploadUrl API
     pub fn get_upload_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.upload_id
     }
+
     /// Appends an item to `target_code_list`.
     ///
-    /// To override the contents of this collection use [`set_target_code_list`](Self::set_target_code_list).
-    ///
+    /// To override the contents of this collection use
+    /// [`set_target_code_list`](Self::set_target_code_list).
     pub fn target_code_list(mut self, input: crate::types::TargetCode) -> Self {
         let mut v = self.target_code_list.unwrap_or_default();
         v.push(input);
         self.target_code_list = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_target_code_list(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::TargetCode>>) -> Self {
+    pub fn set_target_code_list(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::TargetCode>>,
+    ) -> Self {
         self.target_code_list = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_target_code_list(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::TargetCode>> {
         &self.target_code_list
     }
+
     /// The content of user input.
     /// This field is required.
     pub fn user_input(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.user_input = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The content of user input.
     pub fn set_user_input(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.user_input = input;
         self
     }
+
     /// The content of user input.
     pub fn get_user_input(&self) -> &::std::option::Option<::std::string::String> {
         &self.user_input
     }
+
     /// Test generation job group name
     pub fn test_generation_job_group_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.test_generation_job_group_name = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Test generation job group name
     pub fn set_test_generation_job_group_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.test_generation_job_group_name = input;
         self
     }
+
     /// Test generation job group name
     pub fn get_test_generation_job_group_name(&self) -> &::std::option::Option<::std::string::String> {
         &self.test_generation_job_group_name
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.client_token = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_client_token(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.client_token = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_token
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.profile_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn reference_tracker_configuration(mut self, input: crate::types::ReferenceTrackerConfiguration) -> Self {
         self.reference_tracker_configuration = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_reference_tracker_configuration(mut self, input: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>) -> Self {
+    pub fn set_reference_tracker_configuration(
+        mut self,
+        input: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
+    ) -> Self {
         self.reference_tracker_configuration = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_reference_tracker_configuration(&self) -> &::std::option::Option<crate::types::ReferenceTrackerConfiguration> {
+    pub fn get_reference_tracker_configuration(
+        &self,
+    ) -> &::std::option::Option<crate::types::ReferenceTrackerConfiguration> {
         &self.reference_tracker_configuration
     }
-    /// Consumes the builder and constructs a [`StartTestGenerationInput`](crate::operation::start_test_generation::StartTestGenerationInput).
+
+    /// Consumes the builder and constructs a
+    /// [`StartTestGenerationInput`](crate::operation::start_test_generation::StartTestGenerationInput).
+    ///
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::start_test_generation::StartTestGenerationInput, ::aws_smithy_types::error::operation::BuildError>
-    {
+    ) -> ::std::result::Result<
+        crate::operation::start_test_generation::StartTestGenerationInput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::start_test_generation::StartTestGenerationInput {
             upload_id: self.upload_id,
             target_code_list: self.target_code_list,

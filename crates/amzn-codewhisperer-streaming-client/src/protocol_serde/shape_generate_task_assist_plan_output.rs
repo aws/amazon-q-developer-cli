@@ -2,13 +2,15 @@
 pub fn de_planning_response_stream_payload(
     body: &mut ::aws_smithy_types::body::SdkBody,
 ) -> std::result::Result<
-    crate::event_receiver::EventReceiver<crate::types::ChatResponseStream, crate::types::error::ChatResponseStreamError>,
+    crate::event_receiver::EventReceiver<
+        crate::types::ChatResponseStream,
+        crate::types::error::ChatResponseStreamError,
+    >,
     crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError,
 > {
     let unmarshaller = crate::event_stream_serde::ChatResponseStreamUnmarshaller::new();
     let body = std::mem::replace(body, ::aws_smithy_types::body::SdkBody::taken());
-    Ok(crate::event_receiver::EventReceiver::new(::aws_smithy_http::event_stream::Receiver::new(
-        unmarshaller,
-        body,
-    )))
+    Ok(crate::event_receiver::EventReceiver::new(
+        ::aws_smithy_http::event_stream::Receiver::new(unmarshaller, body),
+    ))
 }

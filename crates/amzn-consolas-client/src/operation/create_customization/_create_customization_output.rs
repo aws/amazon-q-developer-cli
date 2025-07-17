@@ -20,13 +20,17 @@ impl ::aws_types::request_id::RequestId for CreateCustomizationOutput {
     }
 }
 impl CreateCustomizationOutput {
-    /// Creates a new builder-style object to manufacture [`CreateCustomizationOutput`](crate::operation::create_customization::CreateCustomizationOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`CreateCustomizationOutput`](crate::operation::create_customization::CreateCustomizationOutput).
+    ///
     pub fn builder() -> crate::operation::create_customization::builders::CreateCustomizationOutputBuilder {
         crate::operation::create_customization::builders::CreateCustomizationOutputBuilder::default()
     }
 }
 
-/// A builder for [`CreateCustomizationOutput`](crate::operation::create_customization::CreateCustomizationOutput).
+/// A builder for
+/// [`CreateCustomizationOutput`](crate::operation::create_customization::CreateCustomizationOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct CreateCustomizationOutputBuilder {
@@ -40,15 +44,18 @@ impl CreateCustomizationOutputBuilder {
         self.customization_arn = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_customization_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.customization_arn = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_customization_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.customization_arn
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -58,13 +65,17 @@ impl CreateCustomizationOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`CreateCustomizationOutput`](crate::operation::create_customization::CreateCustomizationOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`CreateCustomizationOutput`](crate::operation::create_customization::CreateCustomizationOutput).
     /// This method will fail if any of the following fields are not set:
     /// - [`customization_arn`](crate::operation::create_customization::builders::CreateCustomizationOutputBuilder::customization_arn)
     pub fn build(
         self,
-    ) -> ::std::result::Result<crate::operation::create_customization::CreateCustomizationOutput, ::aws_smithy_types::error::operation::BuildError>
-    {
+    ) -> ::std::result::Result<
+        crate::operation::create_customization::CreateCustomizationOutput,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::operation::create_customization::CreateCustomizationOutput {
             customization_arn: self.customization_arn.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

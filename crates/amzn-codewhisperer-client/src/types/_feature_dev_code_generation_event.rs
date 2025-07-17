@@ -18,21 +18,25 @@ impl FeatureDevCodeGenerationEvent {
         use std::ops::Deref;
         self.conversation_id.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn lines_of_code_generated(&self) -> i32 {
         self.lines_of_code_generated
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn characters_of_code_generated(&self) -> i32 {
         self.characters_of_code_generated
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(&self) -> ::std::option::Option<&crate::types::ProgrammingLanguage> {
         self.programming_language.as_ref()
     }
 }
 impl FeatureDevCodeGenerationEvent {
-    /// Creates a new builder-style object to manufacture [`FeatureDevCodeGenerationEvent`](crate::types::FeatureDevCodeGenerationEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`FeatureDevCodeGenerationEvent`](crate::types::FeatureDevCodeGenerationEvent).
     pub fn builder() -> crate::types::builders::FeatureDevCodeGenerationEventBuilder {
         crate::types::builders::FeatureDevCodeGenerationEventBuilder::default()
     }
@@ -54,63 +58,81 @@ impl FeatureDevCodeGenerationEventBuilder {
         self.conversation_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn set_conversation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.conversation_id = input;
         self
     }
+
     /// ID which represents a multi-turn conversation
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn lines_of_code_generated(mut self, input: i32) -> Self {
         self.lines_of_code_generated = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_lines_of_code_generated(mut self, input: ::std::option::Option<i32>) -> Self {
         self.lines_of_code_generated = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_lines_of_code_generated(&self) -> &::std::option::Option<i32> {
         &self.lines_of_code_generated
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn characters_of_code_generated(mut self, input: i32) -> Self {
         self.characters_of_code_generated = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_characters_of_code_generated(mut self, input: ::std::option::Option<i32>) -> Self {
         self.characters_of_code_generated = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_characters_of_code_generated(&self) -> &::std::option::Option<i32> {
         &self.characters_of_code_generated
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn programming_language(mut self, input: crate::types::ProgrammingLanguage) -> Self {
         self.programming_language = ::std::option::Option::Some(input);
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn set_programming_language(mut self, input: ::std::option::Option<crate::types::ProgrammingLanguage>) -> Self {
         self.programming_language = input;
         self
     }
+
     /// Programming Languages supported by CodeWhisperer
     pub fn get_programming_language(&self) -> &::std::option::Option<crate::types::ProgrammingLanguage> {
         &self.programming_language
     }
-    /// Consumes the builder and constructs a [`FeatureDevCodeGenerationEvent`](crate::types::FeatureDevCodeGenerationEvent).
+
+    /// Consumes the builder and constructs a
+    /// [`FeatureDevCodeGenerationEvent`](crate::types::FeatureDevCodeGenerationEvent).
     /// This method will fail if any of the following fields are not set:
     /// - [`conversation_id`](crate::types::builders::FeatureDevCodeGenerationEventBuilder::conversation_id)
-    pub fn build(self) -> ::std::result::Result<crate::types::FeatureDevCodeGenerationEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<
+        crate::types::FeatureDevCodeGenerationEvent,
+        ::aws_smithy_types::error::operation::BuildError,
+    > {
         ::std::result::Result::Ok(crate::types::FeatureDevCodeGenerationEvent {
             conversation_id: self.conversation_id.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

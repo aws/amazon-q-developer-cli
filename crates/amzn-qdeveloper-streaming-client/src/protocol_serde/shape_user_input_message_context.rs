@@ -57,7 +57,10 @@ pub fn ser_user_input_message_context(
             {
                 #[allow(unused_mut)]
                 let mut object_20 = array_18.value().start_object();
-                crate::protocol_serde::shape_additional_content_entry::ser_additional_content_entry(&mut object_20, item_19)?;
+                crate::protocol_serde::shape_additional_content_entry::ser_additional_content_entry(
+                    &mut object_20,
+                    item_19,
+                )?;
                 object_20.finish();
             }
         }

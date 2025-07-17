@@ -13,7 +13,8 @@ impl ToolResultEvent {
     }
 }
 impl ToolResultEvent {
-    /// Creates a new builder-style object to manufacture [`ToolResultEvent`](crate::types::ToolResultEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`ToolResultEvent`](crate::types::ToolResultEvent).
     pub fn builder() -> crate::types::builders::ToolResultEventBuilder {
         crate::types::builders::ToolResultEventBuilder::default()
     }
@@ -31,15 +32,18 @@ impl ToolResultEventBuilder {
         self.tool_result = ::std::option::Option::Some(input);
         self
     }
+
     /// A tool result that contains the results for a tool request that was previously made.
     pub fn set_tool_result(mut self, input: ::std::option::Option<crate::types::ToolResult>) -> Self {
         self.tool_result = input;
         self
     }
+
     /// A tool result that contains the results for a tool request that was previously made.
     pub fn get_tool_result(&self) -> &::std::option::Option<crate::types::ToolResult> {
         &self.tool_result
     }
+
     /// Consumes the builder and constructs a [`ToolResultEvent`](crate::types::ToolResultEvent).
     pub fn build(self) -> crate::types::ToolResultEvent {
         crate::types::ToolResultEvent {

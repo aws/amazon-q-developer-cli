@@ -4,7 +4,8 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq)]
 pub struct Section {
-    /// Contains text content that may include sensitive information and can support Markdown formatting.
+    /// Contains text content that may include sensitive information and can support Markdown
+    /// formatting.
     pub title: ::std::string::String,
     /// Contains a list of interaction components e.g Text, Alert, List, etc.
     pub content: ::std::vec::Vec<crate::types::SectionComponent>,
@@ -12,16 +13,19 @@ pub struct Section {
     pub action: ::std::option::Option<crate::types::Action>,
 }
 impl Section {
-    /// Contains text content that may include sensitive information and can support Markdown formatting.
+    /// Contains text content that may include sensitive information and can support Markdown
+    /// formatting.
     pub fn title(&self) -> &str {
         use std::ops::Deref;
         self.title.deref()
     }
+
     /// Contains a list of interaction components e.g Text, Alert, List, etc.
     pub fn content(&self) -> &[crate::types::SectionComponent] {
         use std::ops::Deref;
         self.content.deref()
     }
+
     /// Action associated with the Section
     pub fn action(&self) -> ::std::option::Option<&crate::types::Action> {
         self.action.as_ref()
@@ -52,21 +56,26 @@ pub struct SectionBuilder {
     pub(crate) action: ::std::option::Option<crate::types::Action>,
 }
 impl SectionBuilder {
-    /// Contains text content that may include sensitive information and can support Markdown formatting.
-    /// This field is required.
+    /// Contains text content that may include sensitive information and can support Markdown
+    /// formatting. This field is required.
     pub fn title(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.title = ::std::option::Option::Some(input.into());
         self
     }
-    /// Contains text content that may include sensitive information and can support Markdown formatting.
+
+    /// Contains text content that may include sensitive information and can support Markdown
+    /// formatting.
     pub fn set_title(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.title = input;
         self
     }
-    /// Contains text content that may include sensitive information and can support Markdown formatting.
+
+    /// Contains text content that may include sensitive information and can support Markdown
+    /// formatting.
     pub fn get_title(&self) -> &::std::option::Option<::std::string::String> {
         &self.title
     }
+
     /// Appends an item to `content`.
     ///
     /// To override the contents of this collection use [`set_content`](Self::set_content).
@@ -78,34 +87,45 @@ impl SectionBuilder {
         self.content = ::std::option::Option::Some(v);
         self
     }
+
     /// Contains a list of interaction components e.g Text, Alert, List, etc.
-    pub fn set_content(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::SectionComponent>>) -> Self {
+    pub fn set_content(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::SectionComponent>>,
+    ) -> Self {
         self.content = input;
         self
     }
+
     /// Contains a list of interaction components e.g Text, Alert, List, etc.
     pub fn get_content(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::SectionComponent>> {
         &self.content
     }
+
     /// Action associated with the Section
     pub fn action(mut self, input: crate::types::Action) -> Self {
         self.action = ::std::option::Option::Some(input);
         self
     }
+
     /// Action associated with the Section
     pub fn set_action(mut self, input: ::std::option::Option<crate::types::Action>) -> Self {
         self.action = input;
         self
     }
+
     /// Action associated with the Section
     pub fn get_action(&self) -> &::std::option::Option<crate::types::Action> {
         &self.action
     }
+
     /// Consumes the builder and constructs a [`Section`](crate::types::Section).
     /// This method will fail if any of the following fields are not set:
     /// - [`title`](crate::types::builders::SectionBuilder::title)
     /// - [`content`](crate::types::builders::SectionBuilder::content)
-    pub fn build(self) -> ::std::result::Result<crate::types::Section, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::Section, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::Section {
             title: self.title.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

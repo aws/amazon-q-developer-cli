@@ -13,13 +13,15 @@ impl TokenLimits {
     pub fn max_input_tokens(&self) -> ::std::option::Option<i32> {
         self.max_input_tokens
     }
+
     /// Maximum number of output tokens the model can produce
     pub fn max_output_tokens(&self) -> ::std::option::Option<i32> {
         self.max_output_tokens
     }
 }
 impl TokenLimits {
-    /// Creates a new builder-style object to manufacture [`TokenLimits`](crate::types::TokenLimits).
+    /// Creates a new builder-style object to manufacture
+    /// [`TokenLimits`](crate::types::TokenLimits).
     pub fn builder() -> crate::types::builders::TokenLimitsBuilder {
         crate::types::builders::TokenLimitsBuilder::default()
     }
@@ -38,29 +40,35 @@ impl TokenLimitsBuilder {
         self.max_input_tokens = ::std::option::Option::Some(input);
         self
     }
+
     /// Maximum number of input tokens the model can process
     pub fn set_max_input_tokens(mut self, input: ::std::option::Option<i32>) -> Self {
         self.max_input_tokens = input;
         self
     }
+
     /// Maximum number of input tokens the model can process
     pub fn get_max_input_tokens(&self) -> &::std::option::Option<i32> {
         &self.max_input_tokens
     }
+
     /// Maximum number of output tokens the model can produce
     pub fn max_output_tokens(mut self, input: i32) -> Self {
         self.max_output_tokens = ::std::option::Option::Some(input);
         self
     }
+
     /// Maximum number of output tokens the model can produce
     pub fn set_max_output_tokens(mut self, input: ::std::option::Option<i32>) -> Self {
         self.max_output_tokens = input;
         self
     }
+
     /// Maximum number of output tokens the model can produce
     pub fn get_max_output_tokens(&self) -> &::std::option::Option<i32> {
         &self.max_output_tokens
     }
+
     /// Consumes the builder and constructs a [`TokenLimits`](crate::types::TokenLimits).
     pub fn build(self) -> crate::types::TokenLimits {
         crate::types::TokenLimits {

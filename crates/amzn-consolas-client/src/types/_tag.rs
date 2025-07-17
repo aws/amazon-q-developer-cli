@@ -14,6 +14,7 @@ impl Tag {
         use std::ops::Deref;
         self.key.deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn value(&self) -> &str {
         use std::ops::Deref;
@@ -41,30 +42,36 @@ impl TagBuilder {
         self.key = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_key(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.key = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_key(&self) -> &::std::option::Option<::std::string::String> {
         &self.key
     }
+
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
     pub fn value(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.value = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_value(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.value = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_value(&self) -> &::std::option::Option<::std::string::String> {
         &self.value
     }
+
     /// Consumes the builder and constructs a [`Tag`](crate::types::Tag).
     /// This method will fail if any of the following fields are not set:
     /// - [`key`](crate::types::builders::TagBuilder::key)
@@ -72,7 +79,10 @@ impl TagBuilder {
     pub fn build(self) -> ::std::result::Result<crate::types::Tag, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::Tag {
             key: self.key.ok_or_else(|| {
-                ::aws_smithy_types::error::operation::BuildError::missing_field("key", "key was not specified but it is required when building Tag")
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "key",
+                    "key was not specified but it is required when building Tag",
+                )
             })?,
             value: self.value.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

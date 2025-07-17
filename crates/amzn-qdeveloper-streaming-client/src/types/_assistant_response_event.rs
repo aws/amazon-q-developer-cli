@@ -15,6 +15,7 @@ impl AssistantResponseEvent {
         use std::ops::Deref;
         self.content.deref()
     }
+
     /// Unique identifier for the model used to generate this response
     pub fn model_id(&self) -> ::std::option::Option<&str> {
         self.model_id.as_deref()
@@ -29,7 +30,8 @@ impl ::std::fmt::Debug for AssistantResponseEvent {
     }
 }
 impl AssistantResponseEvent {
-    /// Creates a new builder-style object to manufacture [`AssistantResponseEvent`](crate::types::AssistantResponseEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`AssistantResponseEvent`](crate::types::AssistantResponseEvent).
     pub fn builder() -> crate::types::builders::AssistantResponseEventBuilder {
         crate::types::builders::AssistantResponseEventBuilder::default()
     }
@@ -49,33 +51,43 @@ impl AssistantResponseEventBuilder {
         self.content = ::std::option::Option::Some(input.into());
         self
     }
+
     /// The content of the text message in markdown format.
     pub fn set_content(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.content = input;
         self
     }
+
     /// The content of the text message in markdown format.
     pub fn get_content(&self) -> &::std::option::Option<::std::string::String> {
         &self.content
     }
+
     /// Unique identifier for the model used to generate this response
     pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.model_id = ::std::option::Option::Some(input.into());
         self
     }
+
     /// Unique identifier for the model used to generate this response
     pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.model_id = input;
         self
     }
+
     /// Unique identifier for the model used to generate this response
     pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.model_id
     }
-    /// Consumes the builder and constructs a [`AssistantResponseEvent`](crate::types::AssistantResponseEvent).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`AssistantResponseEvent`](crate::types::AssistantResponseEvent). This method will fail
+    /// if any of the following fields are not set:
     /// - [`content`](crate::types::builders::AssistantResponseEventBuilder::content)
-    pub fn build(self) -> ::std::result::Result<crate::types::AssistantResponseEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::AssistantResponseEvent, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::AssistantResponseEvent {
             content: self.content.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

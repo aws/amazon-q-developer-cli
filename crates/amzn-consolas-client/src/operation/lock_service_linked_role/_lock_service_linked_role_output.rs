@@ -16,13 +16,15 @@ impl LockServiceLinkedRoleOutput {
     pub fn can_be_deleted(&self) -> bool {
         self.can_be_deleted
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn reason_of_failure(&self) -> ::std::option::Option<&str> {
         self.reason_of_failure.as_deref()
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    ///
-    /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.related_resources.is_none()`.
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.related_resources.is_none()`.
     pub fn related_resources(&self) -> &[::std::string::String] {
         self.related_resources.as_deref().unwrap_or_default()
     }
@@ -33,13 +35,17 @@ impl ::aws_types::request_id::RequestId for LockServiceLinkedRoleOutput {
     }
 }
 impl LockServiceLinkedRoleOutput {
-    /// Creates a new builder-style object to manufacture [`LockServiceLinkedRoleOutput`](crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput).
+    /// Creates a new builder-style object to manufacture
+    /// [`LockServiceLinkedRoleOutput`](crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput).
+    ///
     pub fn builder() -> crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder {
         crate::operation::lock_service_linked_role::builders::LockServiceLinkedRoleOutputBuilder::default()
     }
 }
 
-/// A builder for [`LockServiceLinkedRoleOutput`](crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput).
+/// A builder for
+/// [`LockServiceLinkedRoleOutput`](crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput).
+///
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct LockServiceLinkedRoleOutputBuilder {
@@ -55,48 +61,60 @@ impl LockServiceLinkedRoleOutputBuilder {
         self.can_be_deleted = ::std::option::Option::Some(input);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_can_be_deleted(mut self, input: ::std::option::Option<bool>) -> Self {
         self.can_be_deleted = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_can_be_deleted(&self) -> &::std::option::Option<bool> {
         &self.can_be_deleted
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn reason_of_failure(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.reason_of_failure = ::std::option::Option::Some(input.into());
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn set_reason_of_failure(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
         self.reason_of_failure = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_reason_of_failure(&self) -> &::std::option::Option<::std::string::String> {
         &self.reason_of_failure
     }
+
     /// Appends an item to `related_resources`.
     ///
-    /// To override the contents of this collection use [`set_related_resources`](Self::set_related_resources).
-    ///
+    /// To override the contents of this collection use
+    /// [`set_related_resources`](Self::set_related_resources).
     pub fn related_resources(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         let mut v = self.related_resources.unwrap_or_default();
         v.push(input.into());
         self.related_resources = ::std::option::Option::Some(v);
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_related_resources(mut self, input: ::std::option::Option<::std::vec::Vec<::std::string::String>>) -> Self {
+    pub fn set_related_resources(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+    ) -> Self {
         self.related_resources = input;
         self
     }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_related_resources(&self) -> &::std::option::Option<::std::vec::Vec<::std::string::String>> {
         &self.related_resources
     }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -106,7 +124,10 @@ impl LockServiceLinkedRoleOutputBuilder {
         self._request_id = request_id;
         self
     }
-    /// Consumes the builder and constructs a [`LockServiceLinkedRoleOutput`](crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput).
+
+    /// Consumes the builder and constructs a
+    /// [`LockServiceLinkedRoleOutput`](crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput).
+    ///
     pub fn build(self) -> crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput {
         crate::operation::lock_service_linked_role::LockServiceLinkedRoleOutput {
             can_be_deleted: self.can_be_deleted.unwrap_or_default(),

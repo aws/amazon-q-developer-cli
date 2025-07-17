@@ -15,7 +15,8 @@ impl InteractionComponentsEvent {
     }
 }
 impl InteractionComponentsEvent {
-    /// Creates a new builder-style object to manufacture [`InteractionComponentsEvent`](crate::types::InteractionComponentsEvent).
+    /// Creates a new builder-style object to manufacture
+    /// [`InteractionComponentsEvent`](crate::types::InteractionComponentsEvent).
     pub fn builder() -> crate::types::builders::InteractionComponentsEventBuilder {
         crate::types::builders::InteractionComponentsEventBuilder::default()
     }
@@ -25,12 +26,14 @@ impl InteractionComponentsEvent {
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct InteractionComponentsEventBuilder {
-    pub(crate) interaction_component_entries: ::std::option::Option<::std::vec::Vec<crate::types::InteractionComponentEntry>>,
+    pub(crate) interaction_component_entries:
+        ::std::option::Option<::std::vec::Vec<crate::types::InteractionComponentEntry>>,
 }
 impl InteractionComponentsEventBuilder {
     /// Appends an item to `interaction_component_entries`.
     ///
-    /// To override the contents of this collection use [`set_interaction_component_entries`](Self::set_interaction_component_entries).
+    /// To override the contents of this collection use
+    /// [`set_interaction_component_entries`](Self::set_interaction_component_entries).
     ///
     /// List of identifiable interaction components
     pub fn interaction_component_entries(mut self, input: crate::types::InteractionComponentEntry) -> Self {
@@ -39,6 +42,7 @@ impl InteractionComponentsEventBuilder {
         self.interaction_component_entries = ::std::option::Option::Some(v);
         self
     }
+
     /// List of identifiable interaction components
     pub fn set_interaction_component_entries(
         mut self,
@@ -47,14 +51,22 @@ impl InteractionComponentsEventBuilder {
         self.interaction_component_entries = input;
         self
     }
+
     /// List of identifiable interaction components
-    pub fn get_interaction_component_entries(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::InteractionComponentEntry>> {
+    pub fn get_interaction_component_entries(
+        &self,
+    ) -> &::std::option::Option<::std::vec::Vec<crate::types::InteractionComponentEntry>> {
         &self.interaction_component_entries
     }
-    /// Consumes the builder and constructs a [`InteractionComponentsEvent`](crate::types::InteractionComponentsEvent).
-    /// This method will fail if any of the following fields are not set:
+
+    /// Consumes the builder and constructs a
+    /// [`InteractionComponentsEvent`](crate::types::InteractionComponentsEvent). This method
+    /// will fail if any of the following fields are not set:
     /// - [`interaction_component_entries`](crate::types::builders::InteractionComponentsEventBuilder::interaction_component_entries)
-    pub fn build(self) -> ::std::result::Result<crate::types::InteractionComponentsEvent, ::aws_smithy_types::error::operation::BuildError> {
+    pub fn build(
+        self,
+    ) -> ::std::result::Result<crate::types::InteractionComponentsEvent, ::aws_smithy_types::error::operation::BuildError>
+    {
         ::std::result::Result::Ok(crate::types::InteractionComponentsEvent {
             interaction_component_entries: self.interaction_component_entries.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
