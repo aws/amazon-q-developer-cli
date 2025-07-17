@@ -1,5 +1,6 @@
 use std::collections::{
     BTreeSet,
+    HashMap,
     HashSet,
 };
 use std::io::Write;
@@ -41,6 +42,9 @@ impl ToolsArgs {
         if let Some(subcommand) = self.subcommand {
             return subcommand.execute(session).await;
         }
+
+        // Force conversation update to ensure we have the latest tools from MCP servers
+        session.conversation.update_state(false).await;
 
         // No subcommand - print the current tools and their permissions.
         // Determine how to format the output nicely.
@@ -94,6 +98,14 @@ impl ToolsArgs {
         });
 
         for (origin, tools) in origin_tools.iter() {
+            // Check if this is a disabled MCP server
+            let is_server_disabled = match origin {
+                ToolOrigin::McpServer(server_name) => {
+                    session.conversation.tool_manager.is_session_disabled(server_name).await
+                },
+                ToolOrigin::Native => false,
+            };
+
             // Note that Tool is model facing and thus would have names recognized by model.
             // Here we need to convert them to their host / user facing counter part.
             let tn_map = &session.conversation.tool_manager.tn_map;
@@ -112,12 +124,18 @@ impl ToolsArgs {
 
             let to_display = sorted_tools.iter().fold(String::new(), |mut acc, tool_name| {
                 let width = longest - tool_name.len() + 4;
+                let permission_label = if is_server_disabled {
+                    "* disabled".to_string()
+                } else {
+                    session.conversation.agents.display_label(tool_name, origin)
+                };
+                
                 acc.push_str(
                     format!(
                         "- {}{:>width$}{}\n",
                         tool_name,
                         "",
-                        session.conversation.agents.display_label(tool_name, origin),
+                        permission_label,
                         width = width
                     )
                     .as_str(),
@@ -125,10 +143,20 @@ impl ToolsArgs {
                 acc
             });
 
+            // Display the origin with disabled indicator if applicable
+            let origin_display = if is_server_disabled {
+                match origin {
+                    ToolOrigin::McpServer(server_name) => format!("{} (disabled for session)", server_name),
+                    ToolOrigin::Native => format!("{}", origin),
+                }
+            } else {
+                format!("{}", origin)
+            };
+
             let _ = queue!(
                 session.stderr,
                 style::SetAttribute(Attribute::Bold),
-                style::Print(format!("{}:\n", origin)),
+                style::Print(format!("{}:\n", origin_display)),
                 style::SetAttribute(Attribute::Reset),
                 style::Print(to_display),
                 style::Print("\n")
@@ -227,7 +255,24 @@ impl ToolsSubcommand {
 
         match self {
             Self::Schema => {
-                let schema_json = serde_json::to_string_pretty(&session.conversation.tool_manager.schema)
+                // Filter out tools from disabled servers to avoid consuming unnecessary context
+                let mut filtered_schema = HashMap::new();
+                
+                for (model_tool_name, tool_spec) in &session.conversation.tool_manager.schema {
+                    let should_include = if let Some(tool_info) = session.conversation.tool_manager.tn_map.get(model_tool_name) {
+                        // This is an MCP server tool - check if the server is disabled
+                        !session.conversation.tool_manager.is_session_disabled(&tool_info.server_name).await
+                    } else {
+                        // This is a native tool - always include it
+                        true
+                    };
+                    
+                    if should_include {
+                        filtered_schema.insert(model_tool_name.clone(), tool_spec.clone());
+                    }
+                }
+                
+                let schema_json = serde_json::to_string_pretty(&filtered_schema)
                     .map_err(|e| ChatError::Custom(format!("Error converting tool schema to string: {e}").into()))?;
                 queue!(session.stderr, style::Print(schema_json), style::Print("\n"))?;
             },
