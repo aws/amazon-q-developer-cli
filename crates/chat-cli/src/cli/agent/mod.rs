@@ -81,10 +81,10 @@ pub use root_command_args::*;
 /// had created in said file. This field is thus populated during its parsing.
 ///
 /// Another example is the mcp config. To support backwards compatibility of users existing global
-/// mcp.json, we allow users to supply a list of mcp server names they want the agent to
-/// instantiate. But in order for this config to actually be useful to the CLI, it needs to contain
-/// actual information about the command, not just the list of names. Thus the "warm" state in this
-/// field would be a filtered version of [McpServerConfig], while the "cold" state could be either.
+/// mcp.json, we allow users to supply a flag to denote whether they would want to include servers
+/// from the legacy global mcp.json. If this flag exists, we would need to read the legacy mcp
+/// config and merge it with what is in the agent mcp servers field. Conversely, when we write this
+/// config to file, we would want to filter out the servers that belong only in the mcp.json.
 ///
 /// Where agents are instantiated from their config, we would need to convert them from "cold" to
 /// "warm".
