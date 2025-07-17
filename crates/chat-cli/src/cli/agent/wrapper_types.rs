@@ -13,7 +13,6 @@ use serde::{
     Serialize,
 };
 
-use super::McpServerConfig;
 use crate::cli::chat::cli::hooks::Hook;
 
 /// Subject of the tool name change. For tools in mcp servers, you would need to prefix them with
@@ -122,36 +121,4 @@ pub fn tool_settings_schema(generator: &mut SchemaGenerator) -> Schema {
             "description": key_description
         }
     })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
-#[serde(untagged)]
-pub enum McpServerConfigWrapper {
-    /// Array of servers to instantiate in accordance to what is in the global mcp.json
-    List(Vec<String>),
-    /// A map of mcp server configurations, identical in format to the value of mcpServers in
-    /// the global mcp.json
-    Map(McpServerConfig),
-}
-
-impl Default for McpServerConfigWrapper {
-    fn default() -> Self {
-        Self::List(vec!["*".to_string()])
-    }
-}
-
-impl McpServerConfigWrapper {
-    pub fn get_server_names(&self) -> Vec<&str> {
-        match self {
-            Self::List(list) => list.iter().map(|name| name.as_str()).collect::<Vec<_>>(),
-            Self::Map(config) => config.mcp_servers.keys().map(|name| name.as_str()).collect::<Vec<_>>(),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Self::List(list) => list.is_empty(),
-            Self::Map(config) => config.mcp_servers.is_empty(),
-        }
-    }
 }

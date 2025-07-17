@@ -25,7 +25,6 @@ use crossterm::{
 };
 use eyre::bail;
 pub use mcp_config::McpServerConfig;
-use mcp_config::OriginalForm;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{
@@ -39,7 +38,6 @@ use tracing::{
 };
 pub use wrapper_types::{
     CreateHooks,
-    McpServerConfigWrapper,
     OriginalToolName,
     PromptHooks,
     ToolSettingTarget,
@@ -107,7 +105,7 @@ pub struct Agent {
     pub prompt: Option<String>,
     /// Configuration for Model Context Protocol (MCP) servers
     #[serde(default)]
-    pub mcp_servers: McpServerConfigWrapper,
+    pub mcp_servers: McpServerConfig,
     /// List of tools the agent can see. Use \"@{MCP_SERVER_NAME}/tool_name\" to specify tools from
     /// mcp servers. To include all tools from a server, use \"@{MCP_SERVER_NAME}\"
     #[serde(default)]
@@ -133,6 +131,11 @@ pub struct Agent {
     #[serde(default)]
     #[schemars(schema_with = "tool_settings_schema")]
     pub tools_settings: HashMap<ToolSettingTarget, serde_json::Value>,
+    /// Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent
+    /// You can reference tools brought in by these servers as just as you would with the servers
+    /// you configure in the mcpServers field in this config
+    #[serde(default)]
+    pub use_legacy_mcp_json: bool,
     #[serde(skip)]
     pub path: Option<PathBuf>,
 }
@@ -159,6 +162,7 @@ impl Default for Agent {
             create_hooks: Default::default(),
             prompt_hooks: Default::default(),
             tools_settings: Default::default(),
+            use_legacy_mcp_json: true,
             path: None,
         }
     }
@@ -171,27 +175,9 @@ impl Agent {
     pub fn freeze(&mut self) -> eyre::Result<()> {
         let Self { mcp_servers, .. } = self;
 
-        if let McpServerConfigWrapper::Map(servers) = mcp_servers {
-            match servers.original_config_form {
-                OriginalForm::All => {
-                    *mcp_servers = McpServerConfigWrapper::List(vec!["*".to_string()]);
-                },
-                OriginalForm::List => {
-                    *mcp_servers = McpServerConfigWrapper::List({
-                        servers
-                            .mcp_servers
-                            .iter()
-                            .fold(Vec::<String>::new(), |mut acc, (name, _)| {
-                                acc.push(name.clone());
-                                acc
-                            })
-                    });
-                },
-                OriginalForm::Map => {
-                    // noop
-                },
-            }
-        }
+        mcp_servers
+            .mcp_servers
+            .retain(|_name, config| !config.is_from_legacy_mcp_json);
 
         Ok(())
     }
@@ -211,35 +197,29 @@ impl Agent {
 
         self.name = name.clone();
 
-        if let McpServerConfigWrapper::List(selected_servers) = mcp_servers {
-            let include_all =
-                selected_servers.len() == 1 && selected_servers.first().is_some_and(|s| s.as_str() == "*");
-            let filtered_config = if let Some(global_mcp_config) = global_mcp_config {
-                global_mcp_config
-                    .mcp_servers
-                    .iter()
-                    .filter_map(|(name, config)| {
-                        if selected_servers.contains(name) || include_all {
-                            Some((name.clone(), config.clone()))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<HashMap<_, _>>()
-            } else {
-                bail!(
-                    "Error converting agent {name} to usable state. Mcp config is given as list but global mcp config is missing. Aborting"
-                );
-            };
-
-            *mcp_servers = McpServerConfigWrapper::Map(McpServerConfig {
-                mcp_servers: filtered_config,
-                original_config_form: if include_all {
-                    OriginalForm::All
-                } else {
-                    OriginalForm::Map
-                },
-            });
+        if let (true, Some(global_mcp_config)) = (self.use_legacy_mcp_json, global_mcp_config) {
+            let mut stderr = std::io::stderr();
+            for (name, legacy_server) in &global_mcp_config.mcp_servers {
+                if mcp_servers.mcp_servers.contains_key(name) {
+                    let _ = queue!(
+                        stderr,
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print("WARNING: "),
+                        style::ResetColor,
+                        style::Print("MCP server '"),
+                        style::SetForegroundColor(Color::Green),
+                        style::Print(name),
+                        style::ResetColor,
+                        style::Print(
+                            "' is already configured in agent config. Skipping duplicate from legacy mcp.json.\n"
+                        )
+                    );
+                    continue;
+                }
+                let mut server_clone = legacy_server.clone();
+                server_clone.is_from_legacy_mcp_json = true;
+                mcp_servers.mcp_servers.insert(name.clone(), server_clone);
+            }
         }
 
         Ok(())
@@ -685,19 +665,23 @@ async fn load_agents_from_entries(
                 },
             };
 
-            if matches!(agent.mcp_servers, McpServerConfigWrapper::List(_)) && global_mcp_config.is_none() {
-                let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
-                    tracing::error!("Error obtaining legacy mcp json path. Skipping");
-                    continue;
-                };
-                let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
-                    Ok(config) => config,
-                    Err(e) => {
-                        tracing::error!("Error loading global mcp json path: {e}. Skipping");
-                        continue;
-                    },
-                };
-                global_mcp_config.replace(legacy_mcp_config);
+            // The agent config could have use_legacy_mcp_json set to true but not have a valid
+            // global mcp.json. We would still need to carry on loading the config.
+            'load_legacy_mcp_json: {
+                if agent.use_legacy_mcp_json && global_mcp_config.is_none() {
+                    let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
+                        tracing::error!("Error obtaining legacy mcp json path. Skipping");
+                        break 'load_legacy_mcp_json;
+                    };
+                    let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+                        Ok(config) => config,
+                        Err(e) => {
+                            tracing::error!("Error loading global mcp json path: {e}. Skipping");
+                            break 'load_legacy_mcp_json;
+                        },
+                    };
+                    global_mcp_config.replace(legacy_mcp_config);
+                }
             }
 
             if let Err(e) = agent.thaw(file_path, global_mcp_config.as_ref()) {
@@ -796,11 +780,8 @@ mod tests {
     #[test]
     fn test_deser() {
         let agent = serde_json::from_str::<Agent>(INPUT).expect("Deserializtion failed");
-        assert!(matches!(agent.mcp_servers, McpServerConfigWrapper::Map(_)));
-        if let McpServerConfigWrapper::Map(config) = &agent.mcp_servers {
-            assert!(config.mcp_servers.contains_key("fetch"));
-            assert!(config.mcp_servers.contains_key("git"));
-        }
+        assert!(agent.mcp_servers.mcp_servers.contains_key("fetch"));
+        assert!(agent.mcp_servers.mcp_servers.contains_key("git"));
         assert!(agent.alias.contains_key("@gits/some_tool"));
     }
 

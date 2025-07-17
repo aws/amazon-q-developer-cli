@@ -22,7 +22,6 @@ use super::agent::{
     Agents,
     McpServerConfig,
 };
-use crate::cli::agent::McpServerConfigWrapper;
 use crate::cli::chat::tool_manager::{
     global_mcp_config_path,
     workspace_mcp_config_path,
@@ -113,11 +112,7 @@ impl AddArgs {
         match self.agent.as_deref() {
             Some(agent_name) => {
                 let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
-                let mcp_servers = if let McpServerConfigWrapper::Map(config) = &mut agent.mcp_servers {
-                    &mut config.mcp_servers
-                } else {
-                    bail!("Mcp server config not found on agent");
-                };
+                let mcp_servers = &mut agent.mcp_servers.mcp_servers;
 
                 if mcp_servers.contains_key(&self.name) && !self.force {
                     bail!(
@@ -198,11 +193,7 @@ impl RemoveArgs {
                     return Ok(());
                 }
 
-                let config = if let McpServerConfigWrapper::Map(config) = &mut agent.mcp_servers {
-                    &mut config.mcp_servers
-                } else {
-                    bail!("Mcp server config not found on agent");
-                };
+                let config = &mut agent.mcp_servers.mcp_servers;
 
                 match config.remove(&self.name) {
                     Some(_) => {
@@ -405,13 +396,12 @@ async fn get_mcp_server_configs(
         } else {
             Scope::Workspace
         };
-        if let McpServerConfigWrapper::Map(config) = agent.mcp_servers {
-            results.push((
-                scope,
-                agent.path.ok_or(eyre::eyre!("Agent missing path info"))?,
-                Some(config),
-            ));
-        }
+
+        results.push((
+            scope,
+            agent.path.ok_or(eyre::eyre!("Agent missing path info"))?,
+            Some(agent.mcp_servers),
+        ));
     }
     Ok(results)
 }

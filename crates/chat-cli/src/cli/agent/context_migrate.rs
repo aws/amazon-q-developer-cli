@@ -14,7 +14,6 @@ use super::{
 };
 use crate::cli::agent::{
     CreateHooks,
-    McpServerConfigWrapper,
     PromptHooks,
 };
 use crate::cli::chat::cli::hooks::{
@@ -223,7 +222,7 @@ impl ContextMigrate<'c'> {
                     agent.name
                 );
             }
-            agent.mcp_servers = McpServerConfigWrapper::Map(mcp_servers.clone().unwrap_or_default());
+            agent.mcp_servers = mcp_servers.clone().unwrap_or_default();
         }
 
         let legacy_profile_config_path = directories::chat_profiles_dir(os)?;

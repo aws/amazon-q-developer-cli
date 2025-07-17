@@ -54,6 +54,9 @@ pub struct CustomToolConfig {
     /// A boolean flag to denote whether or not to load this mcp server
     #[serde(default)]
     pub disabled: bool,
+    /// A flag to denote whether this is a server from the legacy mcp.json
+    #[serde(skip)]
+    pub is_from_legacy_mcp_json: bool,
 }
 
 pub fn default_timeout() -> u64 {
@@ -79,6 +82,7 @@ impl CustomToolClient {
             env,
             timeout,
             disabled: _,
+            ..
         } = config;
         let mcp_client_config = McpClientConfig {
             server_name: server_name.clone(),

@@ -10,28 +10,11 @@ use serde::{
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::os::Os;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub enum OriginalForm {
-    /// The mcp config has been written in isolation, with no reference to global mcp.json
-    #[default]
-    Map,
-    /// The mcp config has been written as an include-all array, i.e. '["*"]'
-    All,
-    /// The mcp config has been written as an array containing a list of mcp servers to include
-    /// from global mcp.json
-    List,
-}
-
 // This is to mirror claude's config set up
 #[derive(Clone, Serialize, Deserialize, Debug, Default, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", transparent)]
 pub struct McpServerConfig {
     pub mcp_servers: HashMap<String, CustomToolConfig>,
-    /// This field keeps track of how the mcp server field is configured as seen on the user's
-    /// config file. This is important because when we write the config to file, we want to
-    /// preserve its behavior the next time it is read.
-    #[serde(skip)]
-    pub original_config_form: OriginalForm,
 }
 
 impl McpServerConfig {

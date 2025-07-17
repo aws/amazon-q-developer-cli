@@ -61,7 +61,6 @@ use crate::api_client::model::{
 use crate::cli::agent::{
     Agent,
     McpServerConfig,
-    McpServerConfigWrapper,
 };
 use crate::cli::chat::cli::prompts::GetPromptError;
 use crate::cli::chat::message::AssistantToolUse;
@@ -150,7 +149,6 @@ pub enum LoadingRecord {
 
 #[derive(Default)]
 pub struct ToolManagerBuilder {
-    mcp_server_config: Option<McpServerConfig>,
     prompt_list_sender: Option<std::sync::mpsc::Sender<Vec<String>>>,
     prompt_list_receiver: Option<std::sync::mpsc::Receiver<Option<String>>>,
     conversation_id: Option<String>,
@@ -174,14 +172,6 @@ impl ToolManagerBuilder {
     }
 
     pub fn agent(mut self, agent: Agent) -> Self {
-        if let McpServerConfigWrapper::Map(config) = &agent.mcp_servers {
-            self.mcp_server_config.replace(config.clone());
-        } else {
-            error!(
-                "No valid mcp config valid in agent {}, no mcp config loaded",
-                &agent.name
-            );
-        }
         self.agent.replace(agent);
         self
     }
@@ -192,7 +182,7 @@ impl ToolManagerBuilder {
         mut output: Box<dyn Write + Send + Sync + 'static>,
         interactive: bool,
     ) -> eyre::Result<ToolManager> {
-        let McpServerConfig { mcp_servers, .. } = self.mcp_server_config.unwrap_or_default();
+        let McpServerConfig { mcp_servers } = self.agent.as_ref().map(|a| a.mcp_servers.clone()).unwrap_or_default();
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
 
