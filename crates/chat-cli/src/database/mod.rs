@@ -60,6 +60,7 @@ const START_URL_KEY: &str = "auth.idc.start-url";
 const IDC_REGION_KEY: &str = "auth.idc.region";
 // We include this key to remove for backwards compatibility
 const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
+const PROFILE_MIGRATION_KEY: &str = "profile.Migrated";
 
 const MIGRATIONS: &[Migration] = migrations![
     "000_migration_table",
@@ -298,6 +299,16 @@ impl Database {
     pub fn set_idc_region(&mut self, region: String) -> Result<usize, DatabaseError> {
         // Annoyingly, this is encoded as a JSON string on older clients
         self.set_json_entry(Table::State, IDC_REGION_KEY, region)
+    }
+
+    /// Get if user has already completed a migration
+    pub fn get_has_migrated(&self) -> Result<Option<bool>, DatabaseError> {
+        self.get_entry::<bool>(Table::State, PROFILE_MIGRATION_KEY)
+    }
+
+    /// Set if user has already completed a migration
+    pub fn set_has_migrated(&self) -> Result<usize, DatabaseError> {
+        self.set_entry(Table::State, PROFILE_MIGRATION_KEY, true)
     }
 
     // /// Get the model id used for last conversation state.

@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 
+use crossterm::{
+    execute,
+    style,
+};
 use dialoguer::Select;
 use eyre::bail;
 use tracing::{
@@ -34,6 +38,11 @@ pub(in crate::cli::agent) struct ContextMigrate<const S: char> {
 
 impl ContextMigrate<'a'> {
     pub async fn scan(os: &Os) -> eyre::Result<ContextMigrate<'b'>> {
+        let has_migrated = os.database.get_has_migrated()?;
+        if has_migrated.is_some_and(|has_migrated| has_migrated) {
+            bail!("Nothing to migrate");
+        }
+
         let legacy_global_context_path = directories::chat_global_context_path(os)?;
         let legacy_global_context: Option<ContextConfig> = 'global: {
             let Ok(content) = os.fs.read(&legacy_global_context_path).await else {
@@ -143,6 +152,15 @@ impl ContextMigrate<'b'> {
                 new_agents,
             })
         } else {
+            let _ = execute!(
+                std::io::stdout(),
+                style::SetForegroundColor(style::Color::Yellow),
+                style::Print("WARNING: "),
+                style::ResetColor,
+                style::Print(
+                    "Migration aborted. Context in profiles will need to be migrated to agents manually as profiles are no longer supported."
+                ),
+            );
             bail!("Aborting migration")
         }
     }
@@ -160,8 +178,6 @@ impl ContextMigrate<'c'> {
             mcp_servers,
             mut new_agents,
         } = self;
-
-        let has_global_context = legacy_global_context.is_some();
 
         // Migration of global context
         if let Some(context) = legacy_global_context {
@@ -225,27 +241,7 @@ impl ContextMigrate<'c'> {
             agent.mcp_servers = mcp_servers.clone().unwrap_or_default();
         }
 
-        let legacy_profile_config_path = directories::chat_profiles_dir(os)?;
-        let profile_backup_path = legacy_profile_config_path
-            .parent()
-            .ok_or(eyre::eyre!("Failed to obtain profile config parent path"))?
-            .join("profiles.bak");
-        os.fs.rename(legacy_profile_config_path, profile_backup_path).await?;
-
-        if has_global_context {
-            let legacy_global_config_path = directories::chat_global_context_path(os)?;
-            let legacy_global_config_file_name = legacy_global_config_path
-                .file_name()
-                .ok_or(eyre::eyre!("Failed to obtain legacy global config name"))?
-                .to_string_lossy();
-            let global_context_backup_path = legacy_global_config_path
-                .parent()
-                .ok_or(eyre::eyre!("Failed to obtain parent path for global context"))?
-                .join(format!("{}.bak", legacy_global_config_file_name));
-            os.fs
-                .rename(legacy_global_config_path, global_context_backup_path)
-                .await?;
-        }
+        os.database.set_has_migrated()?;
 
         Ok(ContextMigrate {
             legacy_global_context: None,
