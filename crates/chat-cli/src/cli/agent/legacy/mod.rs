@@ -21,6 +21,11 @@ use crate::os::Os;
 use crate::util::directories;
 
 pub async fn migrate(os: &mut Os) -> eyre::Result<Vec<Agent>> {
+    let has_migrated = os.database.get_has_migrated()?;
+    if has_migrated.is_some_and(|has_migrated| has_migrated) {
+        bail!("Nothing to migrate");
+    }
+
     let legacy_global_context_path = directories::chat_global_context_path(os)?;
     let legacy_global_context: Option<LegacyContextConfig> = 'global: {
         let Ok(content) = os.fs.read(&legacy_global_context_path).await else {
@@ -70,7 +75,12 @@ pub async fn migrate(os: &mut Os) -> eyre::Result<Vec<Agent>> {
         let config_path = directories::chat_legacy_mcp_config(os)?;
         if os.fs.exists(&config_path) {
             match McpServerConfig::load_from_file(os, config_path).await {
-                Ok(config) => Some(config),
+                Ok(mut config) => {
+                    config.mcp_servers.iter_mut().for_each(|(_name, config)| {
+                        config.is_from_legacy_mcp_json = true;
+                    });
+                    Some(config)
+                },
                 Err(e) => {
                     error!("Malformed legacy global mcp config detected: {e}. Skipping mcp migration.");
                     None
@@ -82,6 +92,7 @@ pub async fn migrate(os: &mut Os) -> eyre::Result<Vec<Agent>> {
     };
 
     if legacy_global_context.is_none() && legacy_profiles.is_empty() {
+        os.database.set_has_migrated()?;
         bail!("Nothing to migrate");
     }
 
@@ -112,8 +123,6 @@ pub async fn migrate(os: &mut Os) -> eyre::Result<Vec<Agent>> {
     const LEGACY_GLOBAL_AGENT_NAME: &str = "migrated_agent_from_global_context";
     const DEFAULT_DESC: &str = "This is an agent migrated from global context";
     const PROFILE_DESC: &str = "This is an agent migrated from profile context";
-
-    let has_global_context = legacy_global_context.is_some();
 
     // Migration of global context
     let mut new_agents = vec![];
@@ -192,20 +201,8 @@ pub async fn migrate(os: &mut Os) -> eyre::Result<Vec<Agent>> {
         os.fs.create_dir_all(&global_agent_path).await?;
     }
 
-    let formatted_server_list = mcp_servers
-        .map(|config| {
-            config
-                .mcp_servers
-                .keys()
-                .map(|server_name| format!("@{server_name}"))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
     for agent in &mut new_agents {
-        agent.tools.extend(formatted_server_list.clone());
-
-        let content = serde_json::to_string_pretty(agent)?;
+        let content = agent.to_str_pretty()?;
         if let Some(path) = agent.path.as_ref() {
             info!("Agent {} peristed in path {}", agent.name, path.to_string_lossy());
             os.fs.write(path, content).await?;
@@ -217,27 +214,7 @@ pub async fn migrate(os: &mut Os) -> eyre::Result<Vec<Agent>> {
         }
     }
 
-    let legacy_profile_config_path = directories::chat_profiles_dir(os)?;
-    let profile_backup_path = legacy_profile_config_path
-        .parent()
-        .ok_or(eyre::eyre!("Failed to obtain profile config parent path"))?
-        .join("profiles.bak");
-    os.fs.rename(legacy_profile_config_path, profile_backup_path).await?;
-
-    if has_global_context {
-        let legacy_global_config_path = directories::chat_global_context_path(os)?;
-        let legacy_global_config_file_name = legacy_global_config_path
-            .file_name()
-            .ok_or(eyre::eyre!("Failed to obtain legacy global config name"))?
-            .to_string_lossy();
-        let global_context_backup_path = legacy_global_config_path
-            .parent()
-            .ok_or(eyre::eyre!("Failed to obtain parent path for global context"))?
-            .join(format!("{}.bak", legacy_global_config_file_name));
-        os.fs
-            .rename(legacy_global_config_path, global_context_backup_path)
-            .await?;
-    }
+    os.database.set_has_migrated()?;
 
     Ok(new_agents)
 }

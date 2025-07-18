@@ -63,8 +63,6 @@ use crate::util::{
     directories,
 };
 
-mod context_migrate;
-
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
 /// impacting q chat in via influenicng [ContextManager] and [ToolManager].
 /// Changes made to [ContextManager] and [ToolManager] do not persist across sessions.
