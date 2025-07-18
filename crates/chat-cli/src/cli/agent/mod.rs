@@ -96,7 +96,7 @@ pub struct Agent {
     pub allowed_tools: HashSet<String>,
     /// Files to include in the agent's context
     #[serde(default)]
-    pub included_files: Vec<String>,
+    pub resources: Vec<String>,
     /// Commands to run when a chat session is created
     #[serde(default)]
     pub hooks: HashMap<HookTrigger, Vec<Hook>>,
@@ -124,7 +124,7 @@ impl Default for Agent {
                 set.extend(default_approve);
                 set
             },
-            included_files: vec!["AmazonQ.md", "README.md", ".amazonq/rules/**/*.md"]
+            resources: vec!["file://AmazonQ.md", "file://README.md", "file://.amazonq/rules/**/*.md"]
                 .into_iter()
                 .map(str::to_string)
                 .collect::<Vec<_>>(),
@@ -604,8 +604,8 @@ mod tests {
                 "@fetch",
                 "@gits/git_status"
               ],
-              "includedFiles": [                        
-                "~/my-genai-prompts/unittest.md"
+              "resources": [                        
+                "file://~/my-genai-prompts/unittest.md"
               ],
               "createHooks": [                         
                 "pwd && tree"

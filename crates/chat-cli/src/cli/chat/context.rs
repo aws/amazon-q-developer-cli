@@ -39,10 +39,17 @@ pub struct ContextManager {
 
 impl ContextManager {
     pub fn from_agent(agent: &Agent, max_context_files_size: Option<usize>) -> Result<Self> {
+        let paths = agent
+            .resources
+            .iter()
+            .filter(|resource| resource.starts_with("file://"))
+            .map(|s| s.trim_start_matches("file://").to_string())
+            .collect::<Vec<_>>();
+
         Ok(Self {
             max_context_files_size: max_context_files_size.unwrap_or(CONTEXT_FILES_MAX_SIZE),
             current_profile: agent.name.clone(),
-            paths: agent.included_files.clone(),
+            paths,
             hooks: agent.hooks.clone(),
             hook_executor: HookExecutor::new(),
         })
