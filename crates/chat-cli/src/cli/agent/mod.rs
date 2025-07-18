@@ -514,6 +514,7 @@ impl Agents {
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
             "thinking" => "trusted (prerelease)".dark_green().bold(),
+            "launch_agent" => "not trusted (prerelease)".dark_green().bold(),
             _ if self.trust_all_tools => "trusted".dark_grey().bold(),
             _ => "not trusted".dark_grey(),
         };
