@@ -28,18 +28,24 @@ use crossterm::{
     style,
 };
 use eyre::bail;
+use jsonschema::error::ValidationErrorKind;
 pub use mcp_config::McpServerConfig;
 pub use root_command_args::*;
-use schemars::JsonSchema;
+use schemars::{
+    JsonSchema,
+    schema_for,
+};
 use serde::{
     Deserialize,
     Serialize,
 };
+use thiserror::Error;
 use tokio::fs::ReadDir;
 use tracing::{
     error,
     warn,
 };
+use wrapper_types::ResourcePath;
 pub use wrapper_types::{
     OriginalToolName,
     ToolSettingTarget,
@@ -59,9 +65,122 @@ use crate::cli::agent::hook::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::{
+    self,
     MCP_SERVER_TOOL_DELIMITER,
     directories,
 };
+
+#[derive(Debug, Error)]
+pub enum AgentConfigError {
+    #[error("Json supplied is invalid: {0}")]
+    InvalidJson(#[from] serde_json::Error),
+    #[error(
+        "Schema validation failed with error type '{kind}' on instance location {instance_path} due to mismiatch on schema location '{schema_path}'"
+    )]
+    SchemaMismatch {
+        kind: String,
+        instance_path: String,
+        schema_path: String,
+    },
+    #[error("Enounctered directory error: {0}")]
+    Directories(#[from] util::directories::DirectoryError),
+    #[error("Encountered io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Agent path missing file name")]
+    MissingFilename,
+    #[error("Failed to parse legacy mcp config: {0}")]
+    BadLegacyMcpConfig(#[from] eyre::Report),
+}
+
+impl From<jsonschema::ValidationError<'static>> for AgentConfigError {
+    fn from(error: jsonschema::ValidationError<'static>) -> Self {
+        let jsonschema::ValidationError {
+            kind,
+            instance_path,
+            schema_path,
+            ..
+        } = error;
+
+        let kind = match kind {
+            ValidationErrorKind::AdditionalItems { limit } => {
+                format!("The input array contain more items than expected ({limit})")
+            },
+            ValidationErrorKind::AdditionalProperties { unexpected } => {
+                format!("Contains unexpected properties: {:?}", unexpected)
+            },
+            ValidationErrorKind::AnyOf => {
+                "The input value is not valid under any of the schemas listed in the 'anyOf' keyword.".to_string()
+            },
+            ValidationErrorKind::BacktrackLimitExceeded { error: _ } => "Backtrack limit exceeded".to_string(),
+            ValidationErrorKind::Constant { expected_value } => {
+                format!("The input value doesn't match expected constant. Expected value: {expected_value}")
+            },
+            ValidationErrorKind::Contains => {
+                "The input array doesn't contain items conforming to the specified schema".to_string()
+            },
+            ValidationErrorKind::ContentEncoding { content_encoding } => format!(
+                "The input value does not respect the defined contentEncoding: {}",
+                content_encoding
+            ),
+            ValidationErrorKind::ContentMediaType { content_media_type } => format!(
+                "The input value does not respect the defined contentMediaType: {}",
+                content_media_type
+            ),
+            ValidationErrorKind::Custom { message } => {
+                format!("Custom error message for user-defined validation: {}", message)
+            },
+            ValidationErrorKind::Enum { options } => {
+                format!("The input value doesn't match any of specified options: {}", options)
+            },
+            ValidationErrorKind::ExclusiveMaximum { limit } => format!("Value is too large: limit is {}", limit),
+            ValidationErrorKind::ExclusiveMinimum { limit } => format!("Value is too small: limit is {}", limit),
+            ValidationErrorKind::FalseSchema => "Everything is invalid for `false` schema".to_string(),
+            ValidationErrorKind::Format { format } => {
+                format!("The input doesn't match to the specified format: {}", format)
+            },
+            ValidationErrorKind::FromUtf8 { error } => format!(
+                "May happen in `contentEncoding` validation if `base64` encoded data is invalid: {}",
+                error
+            ),
+            ValidationErrorKind::MaxItems { limit } => format!("Too many items in an array: {}", limit),
+            ValidationErrorKind::Maximum { limit } => format!("Value is too large: {}", limit),
+            ValidationErrorKind::MaxLength { limit } => format!("String is too long: {}", limit),
+            ValidationErrorKind::MaxProperties { limit } => format!("Too many properties in an object: {}", limit),
+            ValidationErrorKind::MinItems { limit } => format!("Too few items in an array: {}", limit),
+            ValidationErrorKind::Minimum { limit } => format!("Value is too small: {}", limit),
+            ValidationErrorKind::MinLength { limit } => format!("String is too short: {}", limit),
+            ValidationErrorKind::MinProperties { limit } => format!("Not enough properties in an object: {}", limit),
+            ValidationErrorKind::MultipleOf { multiple_of } => {
+                format!("Some number is not a multiple of another number: {}", multiple_of)
+            },
+            ValidationErrorKind::Not { schema } => format!("Negated schema failed validation: {}", schema),
+            ValidationErrorKind::OneOfMultipleValid => {
+                "The given schema is valid under more than one of the schemas listed in the 'oneOf' keyword".to_string()
+            },
+            ValidationErrorKind::OneOfNotValid => {
+                "The given schema is not valid under any of the schemas listed in the 'oneOf' keyword".to_string()
+            },
+            ValidationErrorKind::Pattern { pattern } => format!("Object property names are invalid: {}", pattern),
+            ValidationErrorKind::PropertyNames { error } => format!("error: Box<ValidationError<'static>>: {}", error),
+            ValidationErrorKind::Required { property } => format!("A required property is missing: {}", property),
+            ValidationErrorKind::Type { kind: _ } => {
+                "The input value doesn't match one or multiple required types".to_string()
+            },
+            ValidationErrorKind::UnevaluatedItems { unexpected } => format!("Unexpected items: {:?}", unexpected),
+            ValidationErrorKind::UnevaluatedProperties { unexpected } => {
+                format!("Unexpected properties: {:?}", unexpected)
+            },
+            ValidationErrorKind::UniqueItems => "The input array has non-unique elements".to_string(),
+            ValidationErrorKind::Referencing(_) => "Error during schema ref resolution".to_string(),
+        };
+
+        Self::SchemaMismatch {
+            kind,
+            instance_path: instance_path.to_string(),
+            schema_path: schema_path.to_string(),
+        }
+    }
+}
 
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
 /// impacting q chat in via influenicng [ContextManager] and [ToolManager].
@@ -118,7 +237,7 @@ pub struct Agent {
     pub allowed_tools: HashSet<String>,
     /// Files to include in the agent's context
     #[serde(default)]
-    pub resources: Vec<String>,
+    pub resources: Vec<ResourcePath>,
     /// Commands to run when a chat session is created
     #[serde(default)]
     pub hooks: HashMap<HookTrigger, Vec<Hook>>,
@@ -153,7 +272,7 @@ impl Default for Agent {
             },
             resources: vec!["file://AmazonQ.md", "file://README.md", "file://.amazonq/rules/**/*.md"]
                 .into_iter()
-                .map(str::to_string)
+                .map(Into::into)
                 .collect::<Vec<_>>(),
             hooks: Default::default(),
             tools_settings: Default::default(),
@@ -167,26 +286,24 @@ impl Agent {
     /// This function mutates the agent to a state that is writable.
     /// Practically this means reverting some fields back to their original values as they were
     /// written in the config.
-    fn freeze(&mut self) -> eyre::Result<()> {
+    fn freeze(&mut self) {
         let Self { mcp_servers, .. } = self;
 
         mcp_servers
             .mcp_servers
             .retain(|_name, config| !config.is_from_legacy_mcp_json);
-
-        Ok(())
     }
 
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
     /// For example, we populate the agent with its file name, convert the mcp array to actual
     /// mcp config and populate the agent file path.
-    fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> eyre::Result<()> {
+    fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         let name = path
             .file_stem()
-            .ok_or(eyre::eyre!("Missing valid file name"))?
+            .ok_or(AgentConfigError::MissingFilename)?
             .to_string_lossy()
             .to_string();
 
@@ -222,7 +339,7 @@ impl Agent {
 
     pub fn to_str_pretty(&self) -> eyre::Result<String> {
         let mut agent_clone = self.clone();
-        agent_clone.freeze()?;
+        agent_clone.freeze();
         Ok(serde_json::to_string_pretty(&agent_clone)?)
     }
 
@@ -262,6 +379,36 @@ impl Agent {
             },
             _ => bail!("Agent {agent_name} does not exist"),
         }
+    }
+
+    pub async fn load(
+        os: &Os,
+        schema: Option<&serde_json::Value>,
+        agent_path: impl AsRef<Path>,
+        global_mcp_config: &mut Option<McpServerConfig>,
+    ) -> Result<Agent, AgentConfigError> {
+        let content = os.fs.read(&agent_path).await?;
+        let mut agent = serde_json::from_slice::<Agent>(&content)?;
+
+        if let Some(schema) = schema {
+            let instance = serde_json::to_value(&agent)?;
+            jsonschema::validate(schema, &instance).map_err(|e| e.to_owned())?;
+        }
+
+        if agent.use_legacy_mcp_json && global_mcp_config.is_none() {
+            let global_mcp_path = directories::chat_legacy_mcp_config(os)?;
+            let legacy_mcp_config = if global_mcp_path.exists() {
+                McpServerConfig::load_from_file(os, global_mcp_path)
+                    .await
+                    .map_err(AgentConfigError::BadLegacyMcpConfig)?
+            } else {
+                McpServerConfig::default()
+            };
+            global_mcp_config.replace(legacy_mcp_config);
+        }
+
+        agent.thaw(agent_path.as_ref(), global_mcp_config.as_ref())?;
+        Ok(agent)
     }
 }
 
@@ -412,7 +559,25 @@ impl Agents {
             let Ok(files) = os.fs.read_dir(path).await else {
                 break 'local Vec::<Agent>::new();
             };
-            load_agents_from_entries(files, os, &mut global_mcp_config).await
+
+            let mut agents = Vec::<Agent>::new();
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            for result in results {
+                match result {
+                    Ok(agent) => agents.push(agent),
+                    Err(e) => {
+                        let _ = queue!(
+                            output,
+                            style::Print("Error: "),
+                            style::Print(""),
+                            style::Print(e.to_string()),
+                            style::Print("\n"),
+                        );
+                    },
+                }
+            }
+
+            agents
         };
 
         let mut global_agents = 'global: {
@@ -430,7 +595,19 @@ impl Agents {
                     break 'global Vec::<Agent>::new();
                 },
             };
-            load_agents_from_entries(files, os, &mut global_mcp_config).await
+
+            let mut agents = Vec::<Agent>::new();
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            for result in results {
+                match result {
+                    Ok(agent) => agents.push(agent),
+                    Err(e) => {
+                        let _ = queue!(output, style::Print(e.to_string()), style::Print("\n"),);
+                    },
+                }
+            }
+
+            agents
         }
         .into_iter()
         .chain(new_agents)
@@ -614,8 +791,18 @@ async fn load_agents_from_entries(
     mut files: ReadDir,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
-) -> Vec<Agent> {
-    let mut res = Vec::<Agent>::new();
+) -> Vec<Result<Agent, AgentConfigError>> {
+    let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
+    let schema = {
+        let schema = schema_for!(Agent);
+        match serde_json::to_value(schema) {
+            Ok(schema) => Some(schema),
+            Err(e) => {
+                error!("Failed to convert agent definition to schema: {e}. Skipping validation");
+                None
+            },
+        }
+    };
 
     while let Ok(Some(file)) = files.next_entry().await {
         let file_path = &file.path();
@@ -624,56 +811,10 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            let content = match tokio::fs::read(file_path).await {
-                Ok(content) => content,
-                Err(e) => {
-                    let file_path = file_path.to_string_lossy();
-                    tracing::error!("Error reading agent file {file_path}: {:?}", e);
-                    continue;
-                },
-            };
-
-            let mut agent = match serde_json::from_slice::<Agent>(&content) {
-                Ok(mut agent) => {
-                    agent.path = Some(file_path.clone());
-                    agent
-                },
-                Err(e) => {
-                    let file_path = file_path.to_string_lossy();
-                    tracing::error!("Error deserializing agent file {file_path}: {:?}", e);
-                    continue;
-                },
-            };
-
-            // The agent config could have use_legacy_mcp_json set to true but not have a valid
-            // global mcp.json. We would still need to carry on loading the config.
-            'load_legacy_mcp_json: {
-                if agent.use_legacy_mcp_json && global_mcp_config.is_none() {
-                    let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
-                        tracing::error!("Error obtaining legacy mcp json path. Skipping");
-                        break 'load_legacy_mcp_json;
-                    };
-                    let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
-                        Ok(config) => config,
-                        Err(e) => {
-                            tracing::error!("Error loading global mcp json path: {e}. Skipping");
-                            break 'load_legacy_mcp_json;
-                        },
-                    };
-                    global_mcp_config.replace(legacy_mcp_config);
-                }
-            }
-
-            if let Err(e) = agent.thaw(file_path, global_mcp_config.as_ref()) {
-                tracing::error!(
-                    "Error transforming agent at {} to usable state: {e}. Skipping",
-                    file_path.display()
-                );
-            };
-
-            res.push(agent);
+            res.push(Agent::load(os, schema.as_ref(), file_path, global_mcp_config).await);
         }
     }
+
     res
 }
 
@@ -697,6 +838,8 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use schemars::schema_for;
+
     use super::*;
 
     const INPUT: &str = r#"
@@ -709,7 +852,7 @@ mod tests {
               },
               "tools": [                                    
                 "@git",                                     
-                "fs_read"
+                3
               ],
               "toolAliases": {
                   "@gits/some_tool": "some_tool2"
@@ -920,5 +1063,16 @@ mod tests {
         assert!(validate_agent_name("_invalid").is_err());
         assert!(validate_agent_name("invalid!").is_err());
         assert!(validate_agent_name("invalid space").is_err());
+    }
+
+    #[test]
+    fn test_schema_validate() {
+        let schema = {
+            let schema = schema_for!(Agent);
+            serde_json::to_value(schema).unwrap()
+        };
+        let instance = serde_json::from_str(INPUT).unwrap();
+        let validate_res = jsonschema::validate(&schema, &instance);
+        println!("{:#?}", validate_res);
     }
 }
