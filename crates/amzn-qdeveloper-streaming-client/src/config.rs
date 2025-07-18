@@ -623,6 +623,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_qdeveloper_streaming_client::Client::from_conf(config);
     /// ```
+
     pub fn identity_cache(mut self, identity_cache: impl crate::config::ResolveCachedIdentity + 'static) -> Self {
         self.set_identity_cache(identity_cache);
         self
@@ -670,6 +671,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_qdeveloper_streaming_client::Client::from_conf(config);
     /// ```
+
     pub fn set_identity_cache(
         &mut self,
         identity_cache: impl crate::config::ResolveCachedIdentity + 'static,
@@ -1145,6 +1147,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_qdeveloper_streaming_client::Client::from_conf(config);
     /// ```
+
     pub fn behavior_version(mut self, behavior_version: crate::config::BehaviorVersion) -> Self {
         self.set_behavior_version(Some(behavior_version));
         self
@@ -1180,6 +1183,7 @@ impl Builder {
     ///     .build();
     /// let client = amzn_qdeveloper_streaming_client::Client::from_conf(config);
     /// ```
+
     pub fn set_behavior_version(&mut self, behavior_version: Option<crate::config::BehaviorVersion>) -> &mut Self {
         self.behavior_version = behavior_version;
         self
@@ -1308,6 +1312,7 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for Service
 }
 
 /// Cross-operation shared-state singletons
+
 /// A plugin that enables configuration for a single operation invocation
 ///
 /// The `config` method will return a `FrozenLayer` by storing values from `config_override`.
