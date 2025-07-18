@@ -1,4 +1,9 @@
-#![allow(dead_code)]
+pub mod hook;
+mod legacy;
+mod mcp_config;
+mod root_command_args;
+mod wrapper_types;
+
 use std::borrow::Borrow;
 use std::collections::{
     HashMap,
@@ -14,7 +19,6 @@ use std::path::{
     PathBuf,
 };
 
-use context_migrate::ContextMigrate;
 use crossterm::style::{
     Color,
     Stylize as _,
@@ -25,7 +29,7 @@ use crossterm::{
 };
 use eyre::bail;
 pub use mcp_config::McpServerConfig;
-use regex::Regex;
+pub use root_command_args::*;
 use schemars::JsonSchema;
 use serde::{
     Deserialize,
@@ -37,9 +41,7 @@ use tracing::{
     warn,
 };
 pub use wrapper_types::{
-    CreateHooks,
     OriginalToolName,
-    PromptHooks,
     ToolSettingTarget,
     alias_schema,
     tool_settings_schema,
@@ -50,19 +52,16 @@ use super::chat::tools::{
     NATIVE_TOOLS,
     ToolOrigin,
 };
+use crate::cli::agent::hook::{
+    Hook,
+    HookTrigger,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
     directories,
 };
-
-mod context_migrate;
-mod mcp_config;
-mod root_command_args;
-mod wrapper_types;
-
-pub use root_command_args::*;
 
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
 /// impacting q chat in via influenicng [ContextManager] and [ToolManager].
@@ -91,7 +90,7 @@ pub struct Agent {
     /// Tool aliases for remapping tool names
     #[serde(default)]
     #[schemars(schema_with = "alias_schema")]
-    pub alias: HashMap<OriginalToolName, String>,
+    pub tool_aliases: HashMap<OriginalToolName, String>,
     /// List of tools the agent is explicitly allowed to use
     #[serde(default)]
     pub allowed_tools: HashSet<String>,
@@ -100,10 +99,7 @@ pub struct Agent {
     pub included_files: Vec<String>,
     /// Commands to run when a chat session is created
     #[serde(default)]
-    pub create_hooks: CreateHooks,
-    /// Commands to run before processing each prompt
-    #[serde(default)]
-    pub prompt_hooks: PromptHooks,
+    pub hooks: HashMap<HookTrigger, Vec<Hook>>,
     /// Settings for specific tools. These are mostly for native tools. The actual schema differs by
     /// tools and is documented in detail in our documentation
     #[serde(default)]
@@ -121,7 +117,7 @@ impl Default for Agent {
             prompt: Default::default(),
             mcp_servers: Default::default(),
             tools: NATIVE_TOOLS.iter().copied().map(str::to_string).collect::<Vec<_>>(),
-            alias: Default::default(),
+            tool_aliases: Default::default(),
             allowed_tools: {
                 let mut set = HashSet::<String>::new();
                 let default_approve = DEFAULT_APPROVE.iter().copied().map(str::to_string);
@@ -132,8 +128,7 @@ impl Default for Agent {
                 .into_iter()
                 .map(str::to_string)
                 .collect::<Vec<_>>(),
-            create_hooks: Default::default(),
-            prompt_hooks: Default::default(),
+            hooks: Default::default(),
             tools_settings: Default::default(),
             path: None,
         }
@@ -236,21 +231,14 @@ impl Agents {
             .ok_or(eyre::eyre!("No agent with name {name} found"))
     }
 
-    /// Migrated from [reload_profiles] from context.rs. It loads the active agent from disk and
-    /// replaces its in-memory counterpart with it.
-    pub async fn reload_agents(&mut self, os: &mut Os, output: &mut impl Write) -> eyre::Result<()> {
-        let persona_name = self.get_active().map(|a| a.name.as_str());
-        let mut new_self = Self::load(os, persona_name, true, output).await;
-        std::mem::swap(self, &mut new_self);
-        Ok(())
-    }
-
+    #[cfg(test)]
     pub fn list_agents(&self) -> eyre::Result<Vec<String>> {
         Ok(self.agents.keys().cloned().collect::<Vec<_>>())
     }
 
     /// Migrated from [create_profile] from context.rs, which was creating profiles under the
     /// global directory. We shall preserve this implicit behavior for now until further notice.
+    #[cfg(test)]
     pub async fn create_agent(&mut self, os: &Os, name: &str) -> eyre::Result<()> {
         validate_agent_name(name)?;
 
@@ -279,6 +267,7 @@ impl Agents {
 
     /// Migrated from [delete_profile] from context.rs, which was deleting profiles under the
     /// global directory. We shall preserve this implicit behavior for now until further notice.
+    #[cfg(test)]
     pub async fn delete_agent(&mut self, os: &Os, name: &str) -> eyre::Result<()> {
         if name == self.active_idx.as_str() {
             eyre::bail!("Cannot delete the active agent. Switch to another agent first");
@@ -305,27 +294,18 @@ impl Agents {
     /// notice.
     /// In addition to loading, this function also calls the function responsible for migrating
     /// existing context into agent.
-    pub async fn load(
-        os: &mut Os,
-        mut agent_name: Option<&str>,
-        skip_migration: bool,
-        output: &mut impl Write,
-    ) -> Self {
-        let (chosen_name, new_agents) = if !skip_migration {
-            match migrate(os).await {
-                Ok((i, new_agents)) => (i, new_agents),
+    pub async fn load(os: &mut Os, agent_name: Option<&str>, skip_migration: bool, output: &mut impl Write) -> Self {
+        let new_agents = if !skip_migration {
+            match legacy::migrate(os).await {
+                Ok(new_agents) => new_agents,
                 Err(e) => {
                     warn!("Migration did not happen for the following reason: {e}. This is not necessarily an error");
-                    (None, vec![])
+                    vec![]
                 },
             }
         } else {
-            (None, vec![])
+            vec![]
         };
-
-        if let Some(name) = chosen_name.as_ref() {
-            agent_name.replace(name.as_str());
-        }
 
         let mut local_agents = 'local: {
             // We could be launching from the home dir, in which case the global and local agents
@@ -582,6 +562,7 @@ async fn load_agents_from_entries(mut files: ReadDir) -> Vec<Agent> {
     res
 }
 
+#[cfg(test)]
 fn validate_agent_name(name: &str) -> eyre::Result<()> {
     // Check if name is empty
     if name.is_empty() {
@@ -589,7 +570,7 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
     }
 
     // Check if name contains only allowed characters and starts with an alphanumeric character
-    let re = Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")?;
+    let re = regex::Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")?;
     if !re.is_match(name) {
         eyre::bail!(
             "Agent name must start with an alphanumeric character and can only contain alphanumeric characters, hyphens, and underscores"
@@ -599,32 +580,9 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn migrate(os: &mut Os) -> eyre::Result<(Option<String>, Vec<Agent>)> {
-    ContextMigrate::<'a'>::scan(os)
-        .await?
-        .prompt_migrate()
-        .await?
-        .migrate(os)
-        .await?
-        .prompt_set_default(os)
-        .await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct NullWriter;
-
-    impl Write for NullWriter {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
 
     const INPUT: &str = r#"
             {
@@ -638,7 +596,7 @@ mod tests {
                 "@git",                                     
                 "fs_read"
               ],
-              "alias": {
+              "toolAliases": {
                   "@gits/some_tool": "some_tool2"
               },
               "allowedTools": [                           
@@ -667,7 +625,7 @@ mod tests {
         let agent = serde_json::from_str::<Agent>(INPUT).expect("Deserializtion failed");
         assert!(agent.mcp_servers.mcp_servers.contains_key("fetch"));
         assert!(agent.mcp_servers.mcp_servers.contains_key("git"));
-        assert!(agent.alias.contains_key("@gits/some_tool"));
+        assert!(agent.tool_aliases.contains_key("@gits/some_tool"));
     }
 
     #[test]

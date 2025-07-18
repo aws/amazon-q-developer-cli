@@ -417,7 +417,7 @@ impl ToolManagerBuilder {
                             };
 
                             let server_prefix = format!("@{server_name}");
-                            let alias_list = agent_lock.alias.iter().fold(
+                            let alias_list = agent_lock.tool_aliases.iter().fold(
                                 HashMap::<HostToolName, ModelToolName>::new(),
                                 |mut acc, (full_path, model_tool_name)| {
                                     if full_path.starts_with(&server_prefix) {

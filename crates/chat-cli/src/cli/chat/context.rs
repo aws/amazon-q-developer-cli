@@ -14,102 +14,36 @@ use serde::{
 
 use super::consts::CONTEXT_FILES_MAX_SIZE;
 use super::util::drop_matched_context_files;
-use crate::cli::agent::{
-    Agent,
-    CreateHooks,
-    PromptHooks,
-};
-use crate::cli::chat::ChatError;
-use crate::cli::chat::cli::hooks::{
+use crate::cli::agent::Agent;
+use crate::cli::agent::hook::{
     Hook,
-    HookExecutor,
     HookTrigger,
 };
+use crate::cli::chat::ChatError;
+use crate::cli::chat::cli::hooks::HookExecutor;
 use crate::os::Os;
 
-/// Configuration for context files, containing paths to include in the context.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct ContextConfig {
-    /// List of file paths or glob patterns to include in the context.
-    pub paths: Vec<String>,
-
-    /// Map of Hook Name to [`Hook`]. The hook name serves as the hook's ID.
-    pub hooks: HashMap<String, Hook>,
-}
-
-impl TryFrom<&Agent> for ContextConfig {
-    type Error = eyre::Report;
-
-    fn try_from(value: &Agent) -> Result<Self, Self::Error> {
-        Ok(Self {
-            paths: value.included_files.clone(),
-            hooks: {
-                let mut hooks = HashMap::<String, Hook>::new();
-
-                match &value.prompt_hooks {
-                    PromptHooks::List(list) => {
-                        list.clone()
-                            .into_iter()
-                            .map(|command| Hook::new_inline_hook(HookTrigger::PerPrompt, command))
-                            .enumerate()
-                            .for_each(|(i, hook)| {
-                                hooks.insert(format!("per_prompt_hook_{i}"), hook);
-                            });
-                    },
-                    PromptHooks::Map(map) => {
-                        hooks.extend(map.clone());
-                    },
-                }
-
-                match &value.create_hooks {
-                    CreateHooks::List(list) => {
-                        list.clone()
-                            .into_iter()
-                            .map(|command| Hook::new_inline_hook(HookTrigger::ConversationStart, command))
-                            .enumerate()
-                            .for_each(|(i, hook)| {
-                                hooks.insert(format!("start_hook_{i}"), hook);
-                            });
-                    },
-                    CreateHooks::Map(map) => {
-                        hooks.extend(map.clone());
-                    },
-                }
-
-                hooks
-            },
-        })
-    }
-}
-
-#[allow(dead_code)]
 /// Manager for context files and profiles.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextManager {
     max_context_files_size: usize,
-
     /// Name of the current active profile.
     pub current_profile: String,
-
-    /// Context configuration for the current profile.
-    pub profile_config: ContextConfig,
-
+    /// List of file paths or glob patterns to include in the context.
+    pub paths: Vec<String>,
+    /// Map of Hook Name to [`Hook`]. The hook name serves as the hook's ID.
+    pub hooks: HashMap<HookTrigger, Vec<Hook>>,
     #[serde(skip)]
     pub hook_executor: HookExecutor,
 }
 
 impl ContextManager {
     pub fn from_agent(agent: &Agent, max_context_files_size: Option<usize>) -> Result<Self> {
-        let max_context_files_size = max_context_files_size.unwrap_or(CONTEXT_FILES_MAX_SIZE);
-
-        let current_profile = agent.name.clone();
-        let profile_config = ContextConfig::try_from(agent)?;
-
         Ok(Self {
-            max_context_files_size,
-            current_profile,
-            profile_config,
+            max_context_files_size: max_context_files_size.unwrap_or(CONTEXT_FILES_MAX_SIZE),
+            current_profile: agent.name.clone(),
+            paths: agent.included_files.clone(),
+            hooks: agent.hooks.clone(),
             hook_executor: HookExecutor::new(),
         })
     }
@@ -140,10 +74,10 @@ impl ContextManager {
 
         // Add each path, checking for duplicates
         for path in paths {
-            if self.profile_config.paths.contains(&path) {
+            if self.paths.contains(&path) {
                 return Err(eyre!("Rule '{}' already exists.", path));
             }
-            self.profile_config.paths.push(path);
+            self.paths.push(path);
         }
 
         Ok(())
@@ -158,10 +92,10 @@ impl ContextManager {
     /// A Result indicating success or an error
     pub fn remove_paths(&mut self, paths: Vec<String>) -> Result<()> {
         // Remove each path if it exists
-        let old_path_num = self.profile_config.paths.len();
-        self.profile_config.paths.retain(|p| !paths.contains(p));
+        let old_path_num = self.paths.len();
+        self.paths.retain(|p| !paths.contains(p));
 
-        if old_path_num == self.profile_config.paths.len() {
+        if old_path_num == self.paths.len() {
             return Err(eyre!("None of the specified paths were found in the context"));
         }
 
@@ -170,7 +104,7 @@ impl ContextManager {
 
     /// Clear all paths from the context configuration.
     pub fn clear(&mut self) {
-        self.profile_config.paths.clear();
+        self.paths.clear();
     }
 
     /// Get all context files (global + profile-specific).
@@ -187,8 +121,7 @@ impl ContextManager {
     pub async fn get_context_files(&self, os: &Os) -> Result<Vec<(String, String)>> {
         let mut context_files = Vec::new();
 
-        self.collect_context_files(os, &self.profile_config.paths, &mut context_files)
-            .await?;
+        self.collect_context_files(os, &self.paths, &mut context_files).await?;
 
         context_files.sort_by(|a, b| a.0.cmp(&b.0));
         context_files.dedup_by(|a, b| a.0 == b.0);
@@ -231,44 +164,6 @@ impl ContextManager {
         Ok(())
     }
 
-    /// Add hooks to the context config. If another hook with the same name already exists, throw an
-    /// error.
-    pub fn add_hook(&mut self, name: String, hook: Hook) -> Result<()> {
-        if self.profile_config.hooks.contains_key(&name) {
-            return Err(eyre!("name already exists."));
-        }
-        self.profile_config.hooks.insert(name, hook);
-        Ok(())
-    }
-
-    /// Delete hook(s) by name
-    pub fn remove_hook(&mut self, name: &str) -> Result<()> {
-        if !self.profile_config.hooks.contains_key(name) {
-            return Err(eyre!("does not exist."));
-        }
-        self.profile_config.hooks.remove(name);
-        Ok(())
-    }
-
-    /// Sets the "disabled" field on any [`Hook`] with the given name
-    pub fn set_hook_disabled(&mut self, name: &str, disable: bool) -> Result<()> {
-        if let Some(hook) = self.profile_config.hooks.get_mut(name) {
-            hook.disabled = disable;
-        } else {
-            return Err(eyre!("does not exist."));
-        }
-
-        Ok(())
-    }
-
-    /// Sets the "disabled" field on all [`Hook`]s
-    pub fn set_all_hooks_disabled(&mut self, disable: bool) {
-        self.profile_config
-            .hooks
-            .iter_mut()
-            .for_each(|(_, h)| h.disabled = disable);
-    }
-
     /// Run all the currently enabled hooks from both the global and profile contexts.
     /// # Returns
     /// A vector containing pairs of a [`Hook`] definition and its execution output
@@ -276,17 +171,8 @@ impl ContextManager {
         &mut self,
         output: &mut impl Write,
         prompt: Option<&str>,
-    ) -> Result<Vec<(Hook, String)>, ChatError> {
-        let hooks = self
-            .profile_config
-            .hooks
-            .iter_mut()
-            .map(|(name, hook)| {
-                hook.name = name.clone();
-                hook as &Hook
-            })
-            .collect::<Vec<_>>();
-        self.hook_executor.run_hooks(hooks, output, prompt).await
+    ) -> Result<Vec<((HookTrigger, Hook), String)>, ChatError> {
+        self.hook_executor.run_hooks(self.hooks.clone(), output, prompt).await
     }
 }
 
