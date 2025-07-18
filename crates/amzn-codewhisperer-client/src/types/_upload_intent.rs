@@ -12,6 +12,7 @@
 /// ```text
 /// # let uploadintent = unimplemented!();
 /// match uploadintent {
+///     UploadIntent::AgenticCodeReview => { /* ... */ },
 ///     UploadIntent::AutomaticFileSecurityScan => { /* ... */ },
 ///     UploadIntent::CodeFixGeneration => { /* ... */ },
 ///     UploadIntent::FullProjectSecurityScan => { /* ... */ },
@@ -53,6 +54,8 @@
     ::std::hash::Hash,
 )]
 pub enum UploadIntent {
+    /// Agentic Code Review
+    AgenticCodeReview,
     /// Automatic File Security Scan
     AutomaticFileSecurityScan,
     /// Code Fix Generation
@@ -76,6 +79,7 @@ pub enum UploadIntent {
 impl ::std::convert::From<&str> for UploadIntent {
     fn from(s: &str) -> Self {
         match s {
+            "AGENTIC_CODE_REVIEW" => UploadIntent::AgenticCodeReview,
             "AUTOMATIC_FILE_SECURITY_SCAN" => UploadIntent::AutomaticFileSecurityScan,
             "CODE_FIX_GENERATION" => UploadIntent::CodeFixGeneration,
             "FULL_PROJECT_SECURITY_SCAN" => UploadIntent::FullProjectSecurityScan,
@@ -100,6 +104,7 @@ impl UploadIntent {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            UploadIntent::AgenticCodeReview => "AGENTIC_CODE_REVIEW",
             UploadIntent::AutomaticFileSecurityScan => "AUTOMATIC_FILE_SECURITY_SCAN",
             UploadIntent::CodeFixGeneration => "CODE_FIX_GENERATION",
             UploadIntent::FullProjectSecurityScan => "FULL_PROJECT_SECURITY_SCAN",
@@ -114,6 +119,7 @@ impl UploadIntent {
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[
+            "AGENTIC_CODE_REVIEW",
             "AUTOMATIC_FILE_SECURITY_SCAN",
             "CODE_FIX_GENERATION",
             "FULL_PROJECT_SECURITY_SCAN",
@@ -144,6 +150,7 @@ impl UploadIntent {
 impl ::std::fmt::Display for UploadIntent {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            UploadIntent::AgenticCodeReview => write!(f, "AGENTIC_CODE_REVIEW"),
             UploadIntent::AutomaticFileSecurityScan => write!(f, "AUTOMATIC_FILE_SECURITY_SCAN"),
             UploadIntent::CodeFixGeneration => write!(f, "CODE_FIX_GENERATION"),
             UploadIntent::FullProjectSecurityScan => write!(f, "FULL_PROJECT_SECURITY_SCAN"),

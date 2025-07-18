@@ -55,6 +55,9 @@ pub mod get_usage_limits;
 /// Types for the `ListAvailableCustomizations` operation.
 pub mod list_available_customizations;
 
+/// Types for the `ListAvailableModels` operation.
+pub mod list_available_models;
+
 /// Types for the `ListAvailableProfiles` operation.
 pub mod list_available_profiles;
 

@@ -6,6 +6,8 @@
 pub struct AssistantResponseEvent {
     /// The content of the text message in markdown format.
     pub content: ::std::string::String,
+    /// Unique identifier for the model used to generate this response
+    pub model_id: ::std::option::Option<::std::string::String>,
 }
 impl AssistantResponseEvent {
     /// The content of the text message in markdown format.
@@ -13,11 +15,17 @@ impl AssistantResponseEvent {
         use std::ops::Deref;
         self.content.deref()
     }
+
+    /// Unique identifier for the model used to generate this response
+    pub fn model_id(&self) -> ::std::option::Option<&str> {
+        self.model_id.as_deref()
+    }
 }
 impl ::std::fmt::Debug for AssistantResponseEvent {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("AssistantResponseEvent");
         formatter.field("content", &"*** Sensitive Data Redacted ***");
+        formatter.field("model_id", &self.model_id);
         formatter.finish()
     }
 }
@@ -34,6 +42,7 @@ impl AssistantResponseEvent {
 #[non_exhaustive]
 pub struct AssistantResponseEventBuilder {
     pub(crate) content: ::std::option::Option<::std::string::String>,
+    pub(crate) model_id: ::std::option::Option<::std::string::String>,
 }
 impl AssistantResponseEventBuilder {
     /// The content of the text message in markdown format.
@@ -54,6 +63,23 @@ impl AssistantResponseEventBuilder {
         &self.content
     }
 
+    /// Unique identifier for the model used to generate this response
+    pub fn model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.model_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unique identifier for the model used to generate this response
+    pub fn set_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.model_id = input;
+        self
+    }
+
+    /// Unique identifier for the model used to generate this response
+    pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.model_id
+    }
+
     /// Consumes the builder and constructs a
     /// [`AssistantResponseEvent`](crate::types::AssistantResponseEvent). This method will fail
     /// if any of the following fields are not set:
@@ -69,6 +95,7 @@ impl AssistantResponseEventBuilder {
                     "content was not specified but it is required when building AssistantResponseEvent",
                 )
             })?,
+            model_id: self.model_id,
         })
     }
 }
@@ -76,6 +103,7 @@ impl ::std::fmt::Debug for AssistantResponseEventBuilder {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         let mut formatter = f.debug_struct("AssistantResponseEventBuilder");
         formatter.field("content", &"*** Sensitive Data Redacted ***");
+        formatter.field("model_id", &self.model_id);
         formatter.finish()
     }
 }

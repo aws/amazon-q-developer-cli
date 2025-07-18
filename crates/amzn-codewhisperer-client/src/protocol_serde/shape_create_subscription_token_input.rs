@@ -3,11 +3,11 @@ pub fn ser_create_subscription_token_input_input(
     object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
     input: &crate::operation::create_subscription_token::CreateSubscriptionTokenInput,
 ) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
-    if let Some(var_1) = &input.account_id {
-        object.key("accountId").string(var_1.as_str());
+    if let Some(var_1) = &input.client_token {
+        object.key("clientToken").string(var_1.as_str());
     }
-    if let Some(var_2) = &input.client_token {
-        object.key("clientToken").string(var_2.as_str());
+    if let Some(var_2) = &input.status_only {
+        object.key("statusOnly").boolean(*var_2);
     }
     Ok(())
 }

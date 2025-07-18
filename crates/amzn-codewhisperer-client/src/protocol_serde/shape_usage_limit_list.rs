@@ -29,8 +29,15 @@ where
                                     .transpose()?,
                             );
                         },
-                        "value" => {
-                            builder = builder.set_value(
+                        "currentUsageLimit" => {
+                            builder = builder.set_current_usage_limit(
+                                ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                    .map(i64::try_from)
+                                    .transpose()?,
+                            );
+                        },
+                        "totalUsageLimit" => {
+                            builder = builder.set_total_usage_limit(
                                 ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                                     .map(i64::try_from)
                                     .transpose()?,

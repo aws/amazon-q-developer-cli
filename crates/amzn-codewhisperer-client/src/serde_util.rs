@@ -59,12 +59,6 @@ pub(crate) fn conflict_exception_correct_errors(
 pub(crate) fn create_subscription_token_output_output_correct_errors(
     mut builder: crate::operation::create_subscription_token::builders::CreateSubscriptionTokenOutputBuilder,
 ) -> crate::operation::create_subscription_token::builders::CreateSubscriptionTokenOutputBuilder {
-    if builder.encoded_verification_url.is_none() {
-        builder.encoded_verification_url = Some(Default::default())
-    }
-    if builder.token.is_none() {
-        builder.token = Some(Default::default())
-    }
     if builder.status.is_none() {
         builder.status = "no value was set".parse::<crate::types::SubscriptionStatus>().ok()
     }
@@ -214,6 +208,15 @@ pub(crate) fn list_available_customizations_output_output_correct_errors(
 ) -> crate::operation::list_available_customizations::builders::ListAvailableCustomizationsOutputBuilder {
     if builder.customizations.is_none() {
         builder.customizations = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn list_available_models_output_output_correct_errors(
+    mut builder: crate::operation::list_available_models::builders::ListAvailableModelsOutputBuilder,
+) -> crate::operation::list_available_models::builders::ListAvailableModelsOutputBuilder {
+    if builder.models.is_none() {
+        builder.models = Some(Default::default())
     }
     builder
 }
@@ -490,6 +493,15 @@ pub(crate) fn feature_evaluation_correct_errors(
     builder
 }
 
+pub(crate) fn model_correct_errors(
+    mut builder: crate::types::builders::ModelBuilder,
+) -> crate::types::builders::ModelBuilder {
+    if builder.model_id.is_none() {
+        builder.model_id = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn profile_correct_errors(
     mut builder: crate::types::builders::ProfileBuilder,
 ) -> crate::types::builders::ProfileBuilder {
@@ -508,8 +520,11 @@ pub(crate) fn usage_limit_list_correct_errors(
     if builder.r#type.is_none() {
         builder.r#type = "no value was set".parse::<crate::types::UsageLimitType>().ok()
     }
-    if builder.value.is_none() {
-        builder.value = Some(Default::default())
+    if builder.current_usage_limit.is_none() {
+        builder.current_usage_limit = Some(Default::default())
+    }
+    if builder.total_usage_limit.is_none() {
+        builder.total_usage_limit = Some(Default::default())
     }
     builder
 }

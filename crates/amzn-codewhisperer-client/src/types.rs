@@ -84,12 +84,16 @@ pub use crate::types::_image_source::ImageSource;
 pub use crate::types::_import::Import;
 pub use crate::types::_inline_chat_event::InlineChatEvent;
 pub use crate::types::_inline_chat_user_decision::InlineChatUserDecision;
+pub use crate::types::_input_type::InputType;
 pub use crate::types::_intent::Intent;
 pub use crate::types::_intent_context::IntentContext;
+pub use crate::types::_internal_server_exception_reason::InternalServerExceptionReason;
 pub use crate::types::_memory_entry::MemoryEntry;
 pub use crate::types::_memory_entry_metadata::MemoryEntryMetadata;
 pub use crate::types::_memory_status::MemoryStatus;
 pub use crate::types::_metric_data::MetricData;
+pub use crate::types::_model::Model;
+pub use crate::types::_model_provider::ModelProvider;
 pub use crate::types::_notifications_feature::NotificationsFeature;
 pub use crate::types::_operating_system::OperatingSystem;
 pub use crate::types::_opt_in_feature_toggle::OptInFeatureToggle;
@@ -141,6 +145,7 @@ pub use crate::types::_test_generation_job_status::TestGenerationJobStatus;
 pub use crate::types::_text_document::TextDocument;
 pub use crate::types::_text_document_diagnostic::TextDocumentDiagnostic;
 pub use crate::types::_throttling_exception_reason::ThrottlingExceptionReason;
+pub use crate::types::_token_limits::TokenLimits;
 pub use crate::types::_tool::Tool;
 pub use crate::types::_tool_input_schema::ToolInputSchema;
 pub use crate::types::_tool_result::ToolResult;
@@ -362,9 +367,13 @@ mod _inline_chat_event;
 
 mod _inline_chat_user_decision;
 
+mod _input_type;
+
 mod _intent;
 
 mod _intent_context;
+
+mod _internal_server_exception_reason;
 
 mod _memory_entry;
 
@@ -373,6 +382,10 @@ mod _memory_entry_metadata;
 mod _memory_status;
 
 mod _metric_data;
+
+mod _model;
+
+mod _model_provider;
 
 mod _notifications_feature;
 
@@ -475,6 +488,8 @@ mod _text_document;
 mod _text_document_diagnostic;
 
 mod _throttling_exception_reason;
+
+mod _token_limits;
 
 mod _tool;
 

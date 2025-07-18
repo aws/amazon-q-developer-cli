@@ -64,6 +64,8 @@ pub(crate) mod shape_get_usage_limits;
 
 pub(crate) mod shape_list_available_customizations;
 
+pub(crate) mod shape_list_available_models;
+
 pub(crate) mod shape_list_available_profiles;
 
 pub(crate) mod shape_list_code_analysis_findings;
@@ -142,6 +144,8 @@ pub(crate) mod shape_internal_server_exception;
 
 pub(crate) mod shape_list_available_customizations_input;
 
+pub(crate) mod shape_list_available_models_input;
+
 pub(crate) mod shape_list_available_profiles_input;
 
 pub(crate) mod shape_list_code_analysis_findings_input;
@@ -205,6 +209,8 @@ pub(crate) mod shape_intent_context;
 pub(crate) mod shape_memory_entry;
 
 pub(crate) mod shape_memory_entry_list;
+
+pub(crate) mod shape_models;
 
 pub(crate) mod shape_predictions;
 
@@ -304,6 +310,8 @@ pub(crate) mod shape_memory_entry_metadata;
 
 pub(crate) mod shape_metric_data;
 
+pub(crate) mod shape_model;
+
 pub(crate) mod shape_package_info_list;
 
 pub(crate) mod shape_position;
@@ -375,6 +383,10 @@ pub(crate) mod shape_previous_editor_state_metadata;
 pub(crate) mod shape_reference;
 
 pub(crate) mod shape_resource_policy;
+
+pub(crate) mod shape_supported_input_types_list;
+
+pub(crate) mod shape_token_limits;
 
 pub(crate) mod shape_transformation_platform_config;
 

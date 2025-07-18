@@ -119,23 +119,6 @@ impl CreateSubscriptionTokenFluentBuilder {
         self
     }
 
-    /// Represents the AWS account ID of the customer
-    pub fn account_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
-        self.inner = self.inner.account_id(input.into());
-        self
-    }
-
-    /// Represents the AWS account ID of the customer
-    pub fn set_account_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
-        self.inner = self.inner.set_account_id(input);
-        self
-    }
-
-    /// Represents the AWS account ID of the customer
-    pub fn get_account_id(&self) -> &::std::option::Option<::std::string::String> {
-        self.inner.get_account_id()
-    }
-
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.inner = self.inner.client_token(input.into());
@@ -151,5 +134,22 @@ impl CreateSubscriptionTokenFluentBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_token(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_client_token()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn status_only(mut self, input: bool) -> Self {
+        self.inner = self.inner.status_only(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_status_only(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.inner = self.inner.set_status_only(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_status_only(&self) -> &::std::option::Option<bool> {
+        self.inner.get_status_only()
     }
 }

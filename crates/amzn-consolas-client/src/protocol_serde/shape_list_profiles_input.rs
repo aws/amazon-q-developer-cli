@@ -9,8 +9,11 @@ pub fn ser_list_profiles_input_input(
             ::aws_smithy_types::Number::NegInt((*var_1).into()),
         );
     }
-    if let Some(var_2) = &input.next_token {
-        object.key("nextToken").string(var_2.as_str());
+    if let Some(var_2) = &input.include_management_account {
+        object.key("includeManagementAccount").boolean(*var_2);
+    }
+    if let Some(var_3) = &input.next_token {
+        object.key("nextToken").string(var_3.as_str());
     }
     Ok(())
 }

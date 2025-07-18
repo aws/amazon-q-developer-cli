@@ -105,7 +105,7 @@ impl SlashCommand {
                 })
             },
             Self::Prompts(args) => args.execute(session).await,
-            Self::Hooks(args) => args.execute(os, session).await,
+            Self::Hooks(args) => args.execute(session).await,
             Self::Usage(args) => args.execute(os, session).await,
             Self::Mcp(args) => args.execute(session).await,
             Self::Model(args) => args.execute(session).await,
@@ -154,7 +154,6 @@ impl SlashCommand {
             SlashCommand::Knowledge(sub) => Some(sub.name()),
             SlashCommand::Tools(arg) => arg.subcommand_name(),
             SlashCommand::Prompts(arg) => arg.subcommand_name(),
-            SlashCommand::Hooks(arg) => arg.subcommand_name(),
             _ => None,
         }
     }

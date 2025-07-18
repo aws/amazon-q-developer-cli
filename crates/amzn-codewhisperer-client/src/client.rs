@@ -115,6 +115,8 @@ mod get_usage_limits;
 
 mod list_available_customizations;
 
+mod list_available_models;
+
 mod list_available_profiles;
 
 mod list_code_analysis_findings;

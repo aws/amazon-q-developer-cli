@@ -142,13 +142,10 @@ impl GhIssue {
 
         os_str.push_str(&format!("current_profile={}\n", os_manager.current_profile));
 
-        if os_manager.profile_config.paths.is_empty() {
+        if os_manager.paths.is_empty() {
             os_str.push_str("profile_context=none\n\n");
         } else {
-            os_str.push_str(&format!(
-                "profile_context=\n{}\n\n",
-                &os_manager.profile_config.paths.join("\n")
-            ));
+            os_str.push_str(&format!("profile_context=\n{}\n\n", &os_manager.paths.join("\n")));
         }
 
         // Handle context files

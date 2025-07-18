@@ -54,11 +54,11 @@ use crate::api_client::model::{
     UserInputMessage,
 };
 use crate::cli::agent::Agents;
-use crate::cli::chat::ChatError;
-use crate::cli::chat::cli::hooks::{
+use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
 };
+use crate::cli::chat::ChatError;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 
@@ -364,11 +364,11 @@ impl ConversationState {
             let user_prompt = self.next_message.as_ref().and_then(|m| m.prompt());
             let hook_results = cm.run_hooks(output, user_prompt).await?;
 
-            conversation_start_context = Some(format_hook_context(hook_results.iter(), HookTrigger::ConversationStart));
+            conversation_start_context = Some(format_hook_context(&hook_results, HookTrigger::AgentSpawn));
 
             // add per prompt content to next_user_message if available
             if let Some(next_message) = self.next_message.as_mut() {
-                next_message.additional_context = format_hook_context(hook_results.iter(), HookTrigger::PerPrompt);
+                next_message.additional_context = format_hook_context(&hook_results, HookTrigger::UserPromptSubmit);
             }
         }
 
@@ -720,18 +720,18 @@ impl From<InputSchema> for ToolInputSchema {
     }
 }
 
-fn format_hook_context<'a>(hook_results: impl IntoIterator<Item = &'a (Hook, String)>, trigger: HookTrigger) -> String {
+fn format_hook_context(hook_results: &[((HookTrigger, Hook), String)], trigger: HookTrigger) -> String {
     let mut context_content = String::new();
 
     context_content.push_str(CONTEXT_ENTRY_START_HEADER);
     context_content.push_str("This section (like others) contains important information that I want you to use in your responses. I have gathered this context from valuable programmatic script hooks. You must follow any requests and consider all of the information in this section");
-    if trigger == HookTrigger::ConversationStart {
+    if trigger == HookTrigger::AgentSpawn {
         context_content.push_str(" for the entire conversation");
     }
     context_content.push_str("\n\n");
 
-    for (hook, output) in hook_results.into_iter().filter(|(h, _)| h.trigger == trigger) {
-        context_content.push_str(&format!("'{}': {output}\n\n", &hook.name));
+    for (_, output) in hook_results.iter().filter(|((h_trigger, _), _)| *h_trigger == trigger) {
+        context_content.push_str(&format!("{output}\n\n"));
     }
     context_content.push_str(CONTEXT_ENTRY_END_HEADER);
     context_content
@@ -876,8 +876,6 @@ fn enforce_tool_use_history_invariants(
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-
     use super::super::message::AssistantToolUse;
     use super::*;
     use crate::api_client::model::{
@@ -887,24 +885,10 @@ mod tests {
     use crate::cli::agent::{
         Agent,
         Agents,
-        CreateHooks,
-        PromptHooks,
     };
     use crate::cli::chat::tool_manager::ToolManager;
 
     const AMAZONQ_FILENAME: &str = "AmazonQ.md";
-
-    struct NullWriter;
-
-    impl Write for NullWriter {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
@@ -998,7 +982,7 @@ mod tests {
     async fn test_conversation_state_history_handling_truncation() {
         let mut os = Os::new().await.unwrap();
         let agents = Agents::default();
-        let mut output = NullWriter;
+        let mut output = vec![];
 
         let mut tool_manager = ToolManager::default();
         let mut conversation = ConversationState::new(
@@ -1102,13 +1086,13 @@ mod tests {
         let agents = {
             let mut agents = Agents::default();
             let mut agent = Agent::default();
-            agent.included_files.push(AMAZONQ_FILENAME.to_string());
+            agent.resources.push(AMAZONQ_FILENAME.to_string());
             agents.agents.insert("TestAgent".to_string(), agent);
             agents.switch("TestAgent").expect("Agent switch failed");
             agents
         };
         os.fs.write(AMAZONQ_FILENAME, "test context").await.unwrap();
-        let mut output = NullWriter;
+        let mut output = vec![];
 
         let mut tool_manager = ToolManager::default();
         let mut conversation = ConversationState::new(
@@ -1145,79 +1129,6 @@ mod tests {
             }
 
             assert_conversation_state_invariants(s, i);
-
-            conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()));
-            conversation.set_next_user_message(i.to_string()).await;
-        }
-    }
-
-    #[tokio::test]
-    async fn test_conversation_state_additional_context() {
-        let mut os = Os::new().await.unwrap();
-        let conversation_start_context = "conversation start context";
-        let prompt_context = "prompt context";
-        let agents = {
-            let mut agents = Agents::default();
-            let create_hooks = {
-                let mut map = HashMap::<String, Hook>::new();
-                let hook = Hook::new_inline_hook(
-                    HookTrigger::ConversationStart,
-                    format!("echo {}", conversation_start_context),
-                );
-                map.insert("test_conversation_start".to_string(), hook);
-                CreateHooks::Map(map)
-            };
-            let prompt_hooks = {
-                let mut map = HashMap::<String, Hook>::new();
-                let hook = Hook::new_inline_hook(HookTrigger::PerPrompt, format!("echo {}", prompt_context));
-                map.insert("test_per_prompt".to_string(), hook);
-                PromptHooks::Map(map)
-            };
-            let agent = Agent {
-                create_hooks,
-                prompt_hooks,
-                ..Default::default()
-            };
-            agents.agents.insert("TestAgent".to_string(), agent);
-            agents.switch("TestAgent").expect("Agent switch failed");
-            agents
-        };
-        let mut output = NullWriter;
-
-        let mut tool_manager = ToolManager::default();
-        let mut conversation = ConversationState::new(
-            "fake_conv_id",
-            agents,
-            tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
-            tool_manager,
-            None,
-        )
-        .await;
-
-        // Simulate conversation flow
-        conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=5 {
-            let s = conversation
-                .as_sendable_conversation_state(&os, &mut vec![], true)
-                .await
-                .unwrap();
-            let hist = s.history.as_ref().unwrap();
-            #[allow(clippy::match_wildcard_for_single_variants)]
-            match &hist[0] {
-                ChatMessage::UserInputMessage(user) => {
-                    assert!(
-                        user.content.contains(conversation_start_context),
-                        "expected to contain '{conversation_start_context}', instead found: {}",
-                        user.content
-                    );
-                },
-                _ => panic!("Expected user message."),
-            }
-            assert!(
-                s.user_input_message.content.contains(prompt_context),
-                "expected to contain '{prompt_context}', instead found: {}",
-                s.user_input_message.content
-            );
 
             conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()));
             conversation.set_next_user_message(i.to_string()).await;

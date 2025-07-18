@@ -19,6 +19,7 @@ pub use crate::types::_functionality_name::FunctionalityName;
 pub use crate::types::_identity_details::IdentityDetails;
 pub use crate::types::_identity_source::IdentitySource;
 pub use crate::types::_import::Import;
+pub use crate::types::_internal_server_exception_reason::InternalServerExceptionReason;
 pub use crate::types::_notifications_feature::NotificationsFeature;
 pub use crate::types::_opt_in_feature_toggle::OptInFeatureToggle;
 pub use crate::types::_opt_in_features::OptInFeatures;
@@ -87,6 +88,8 @@ mod _identity_details;
 mod _identity_source;
 
 mod _import;
+
+mod _internal_server_exception_reason;
 
 mod _notifications_feature;
 
