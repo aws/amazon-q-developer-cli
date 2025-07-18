@@ -4,7 +4,10 @@ pub mod definitions;
 pub mod endpoint;
 mod install_method;
 
-use core::ToolUseEventBuilder;
+use core::{
+    ChatAddedMessageParams,
+    ToolUseEventBuilder,
+};
 use std::str::FromStr;
 
 use amzn_codewhisperer_client::types::{
@@ -257,25 +260,13 @@ impl TelemetryThread {
         &self,
         database: &Database,
         conversation_id: String,
-        message_id: Option<String>,
-        request_id: Option<String>,
-        context_file_length: Option<usize>,
         result: TelemetryResult,
-        reason: Option<String>,
-        reason_desc: Option<String>,
-        status_code: Option<u16>,
-        model: Option<String>,
+        data: ChatAddedMessageParams,
     ) -> Result<(), TelemetryError> {
         let mut event = Event::new(EventType::ChatAddedMessage {
             conversation_id,
-            message_id,
-            request_id,
-            context_file_length,
             result,
-            reason,
-            reason_desc,
-            status_code,
-            model,
+            data,
         });
         set_start_url_and_region(database, &mut event).await;
 
@@ -473,8 +464,15 @@ impl TelemetryClient {
 
         if let EventType::ChatAddedMessage {
             conversation_id,
-            message_id,
-            model,
+            data:
+                ChatAddedMessageParams {
+                    message_id,
+                    model,
+                    time_to_first_chunk_ms,
+                    time_between_chunks_ms,
+                    assistant_response_length,
+                    ..
+                },
             ..
         } = &event.ty
         {
@@ -483,6 +481,9 @@ impl TelemetryClient {
             let chat_add_message_event = match ChatAddMessageEvent::builder()
                 .conversation_id(conversation_id)
                 .message_id(message_id.clone().unwrap_or("not_set".to_string()))
+                .set_time_to_first_chunk_milliseconds(*time_to_first_chunk_ms)
+                .set_time_between_chunks(time_between_chunks_ms.clone())
+                .set_response_length(*assistant_response_length)
                 .build()
             {
                 Ok(event) => event,
@@ -653,14 +654,12 @@ mod test {
             .send_chat_added_message(
                 &database,
                 "conv_id".to_owned(),
-                Some("message_id".to_owned()),
-                Some("req_id".to_owned()),
-                Some(123),
                 TelemetryResult::Succeeded,
-                None,
-                None,
-                None,
-                None,
+                ChatAddedMessageParams {
+                    message_id: Some("message_id".to_owned()),
+                    context_file_length: Some(123),
+                    ..Default::default()
+                },
             )
             .await
             .ok();
