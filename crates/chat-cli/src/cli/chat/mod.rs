@@ -776,12 +776,33 @@ impl ChatSession {
                     ("Amazon Q is having trouble responding right now", eyre!(err), false)
                 },
                 ApiClientError::ModelOverloadedError { request_id, .. } => {
-                    let model_instruction = if self.interactive {
-                        "Please use '/model' to select a different model and try again."
-                    } else {
-                        "Please relaunch with '--model <model_id>' to use a different model."
-                    };
+                    if self.interactive {
+                        execute!(
+                            self.stderr,
+                            style::SetAttribute(Attribute::Bold),
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(
+                                "\nThe model you've selected is temporarily unavailable. Please select a different model and try again.\n"
+                            ),
+                            style::SetAttribute(Attribute::Reset),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
 
+                        if let Some(id) = request_id {
+                            self.conversation
+                                .append_transcript(format!("Model unavailable (Request ID: {})", id));
+                        }
+
+                        // trigger /model for user
+                        self.inner = Some(ChatState::HandleInput {
+                            input: "/model".to_string(),
+                        });
+
+                        return Ok(());
+                    }
+
+                    // non-interactive throws this error
+                    let model_instruction = "Please relaunch with '--model <model_id>' to use a different model.";
                     let err = format!(
                         "The model you've selected is temporarily unavailable. {}{}\n\n",
                         model_instruction,
