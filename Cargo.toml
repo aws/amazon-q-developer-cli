@@ -128,6 +128,8 @@ windows = { version = "0.61.1", features = ["Foundation", "Win32_System_ProcessS
 winnow = "=0.6.2"
 winreg = "0.55.0"
 schemars = "1.0.4"
+notify = "6.1"
+notify-debouncer-mini = "0.4"
 
 [workspace.lints.rust]
 future_incompatible = "warn"

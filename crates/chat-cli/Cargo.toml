@@ -121,6 +121,8 @@ webpki-roots.workspace = true
 whoami.workspace = true
 winnow.workspace = true
 schemars.workspace = true
+notify.workspace = true
+notify-debouncer-mini.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
