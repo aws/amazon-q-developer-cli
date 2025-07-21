@@ -789,8 +789,6 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use schemars::schema_for;
-
     use super::*;
 
     const INPUT: &str = r#"
@@ -802,8 +800,7 @@ mod tests {
                 "git": { "command": "git-mcp", "args": [] }
               },
               "tools": [                                    
-                "@git",                                     
-                3
+                "@git"
               ],
               "toolAliases": {
                   "@gits/some_tool": "some_tool2"
@@ -815,12 +812,6 @@ mod tests {
               ],
               "resources": [                        
                 "file://~/my-genai-prompts/unittest.md"
-              ],
-              "createHooks": [                         
-                "pwd && tree"
-              ],
-              "promptHooks": [                        
-                "git status"
               ],
               "toolsSettings": {                     
                 "fs_write": { "allowedPaths": ["~/**"] },
@@ -1014,16 +1005,5 @@ mod tests {
         assert!(validate_agent_name("_invalid").is_err());
         assert!(validate_agent_name("invalid!").is_err());
         assert!(validate_agent_name("invalid space").is_err());
-    }
-
-    #[test]
-    fn test_schema_validate() {
-        let schema = {
-            let schema = schema_for!(Agent);
-            serde_json::to_value(schema).unwrap()
-        };
-        let instance = serde_json::from_str(INPUT).unwrap();
-        let validate_res = jsonschema::validate(&schema, &instance);
-        println!("{:#?}", validate_res);
     }
 }
