@@ -148,7 +148,7 @@ Resources are data and content that your agent has access to. As of today, only 
 
 ### The `hooks` field
 
-The `hooks` field invokes functions at specific trigger points. The output of these functions is persisted into context according to the lifetime rules of the trigger. Hooks that run once, on `agentSpawn` for example, will be added to persistant context while shorter lived hooks like `userPromptSubmit` exist inside of the rolling context window.  
+The `hooks` field invokes functions at specific trigger points. The output of these functions is persisted into context according to the lifetime rules of the trigger. Hooks that run once, on `agentSpawn` for example, will be added to persistent context while shorter lived hooks like `userPromptSubmit` exist inside of the rolling context window.  
 
 ```json
 {
