@@ -81,7 +81,7 @@ pub enum AgentConfigError {
         #[from]
         error: Box<jsonschema::ValidationError<'static>>,
     },
-    #[error("Enounctered directory error: {0}")]
+    #[error("Encountered directory error: {0}")]
     Directories(#[from] util::directories::DirectoryError),
     #[error("Encountered io error: {0}")]
     Io(#[from] std::io::Error),
