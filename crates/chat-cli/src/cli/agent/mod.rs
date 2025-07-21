@@ -72,8 +72,8 @@ use crate::util::{
 
 #[derive(Debug, Error)]
 pub enum AgentConfigError {
-    #[error("Json supplied is invalid: {0}")]
-    InvalidJson(#[from] serde_json::Error),
+    #[error("Json supplied at {} is invalid: {}", path.display(), error)]
+    InvalidJson { error: serde_json::Error, path: PathBuf },
     #[error(
         "Agent config is malformed at {}: {}", error.instance_path, error
     )]
@@ -300,12 +300,18 @@ impl Agent {
         // If json is malformed it will result in parsing error, in which case we should early
         // return since this is unrecoverable
         let content = os.fs.read(&agent_path).await?;
-        let mut agent = serde_json::from_slice::<Agent>(&content)?;
+        let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
+            error: e,
+            path: agent_path.as_ref().to_path_buf(),
+        })?;
 
         // If the json is valid, we need to validate the config beyond type accurateness
         // The failure mode here depends on the field that fails. But none of them should be fatal.
         if let Some(schema) = schema {
-            let instance = serde_json::to_value(&agent)?;
+            let instance = serde_json::to_value(&agent).map_err(|e| AgentConfigError::InvalidJson {
+                error: e,
+                path: agent_path.as_ref().to_path_buf(),
+            })?;
             if let Err(e) = jsonschema::validate(schema, &instance).map_err(|e| e.to_owned()) {
                 let path_buf = agent_path.as_ref().to_path_buf();
                 let name = path_buf.file_stem().and_then(|name| name.to_str());
@@ -321,6 +327,7 @@ impl Agent {
                     } else {
                         "of an unknown name"
                     }),
+                    style::ResetColor,
                     style::Print(" is malformed at "),
                     style::SetForegroundColor(Color::Yellow),
                     style::Print(&e.instance_path),
@@ -503,9 +510,10 @@ impl Agents {
                     Err(e) => {
                         let _ = queue!(
                             output,
+                            style::SetForegroundColor(Color::Red),
                             style::Print("Error: "),
-                            style::Print(""),
-                            style::Print(e.to_string()),
+                            style::ResetColor,
+                            style::Print(e),
                             style::Print("\n"),
                         );
                     },
@@ -537,7 +545,14 @@ impl Agents {
                 match result {
                     Ok(agent) => agents.push(agent),
                     Err(e) => {
-                        let _ = queue!(output, style::Print(e.to_string()), style::Print("\n"),);
+                        let _ = queue!(
+                            output,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(e),
+                            style::Print("\n"),
+                        );
                     },
                 }
             }

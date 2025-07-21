@@ -91,7 +91,7 @@ pub fn tool_settings_schema(generator: &mut SchemaGenerator) -> Schema {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, Hash, PartialEq, JsonSchema)]
 pub struct ResourcePath(
-    // You can extend this list via |. e.g. r"^(file://|database://)"
+    // You can extend this list via "|". e.g. r"^(file://|database://)"
     #[schemars(regex(pattern = r"^(file://)"))]
     String,
 );
