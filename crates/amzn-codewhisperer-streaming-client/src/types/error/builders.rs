@@ -5,5 +5,6 @@ pub use crate::types::error::_dry_run_operation_exception::DryRunOperationErrorB
 pub use crate::types::error::_internal_server_error::InternalServerErrorBuilder;
 pub use crate::types::error::_resource_not_found_exception::ResourceNotFoundErrorBuilder;
 pub use crate::types::error::_service_quota_exceeded_error::ServiceQuotaExceededErrorBuilder;
+pub use crate::types::error::_service_unavailable_exception::ServiceUnavailableErrorBuilder;
 pub use crate::types::error::_throttling_error::ThrottlingErrorBuilder;
 pub use crate::types::error::_validation_error::ValidationErrorBuilder;

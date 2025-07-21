@@ -37,6 +37,12 @@ pub mod get_code_analysis;
 /// Types for the `GetCodeFixJob` operation.
 pub mod get_code_fix_job;
 
+/// Types for the `GetProfile` operation.
+pub mod get_profile;
+
+/// Types for the `GetRetrievals` operation.
+pub mod get_retrievals;
+
 /// Types for the `GetTaskAssistCodeGeneration` operation.
 pub mod get_task_assist_code_generation;
 

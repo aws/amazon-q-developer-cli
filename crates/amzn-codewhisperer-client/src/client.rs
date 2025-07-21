@@ -103,6 +103,10 @@ mod get_code_analysis;
 
 mod get_code_fix_job;
 
+mod get_profile;
+
+mod get_retrievals;
+
 mod get_task_assist_code_generation;
 
 mod get_test_generation;

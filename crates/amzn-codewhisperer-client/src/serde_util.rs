@@ -148,6 +148,27 @@ pub(crate) fn get_code_analysis_output_output_correct_errors(
     builder
 }
 
+pub(crate) fn get_profile_output_output_correct_errors(
+    mut builder: crate::operation::get_profile::builders::GetProfileOutputBuilder,
+) -> crate::operation::get_profile::builders::GetProfileOutputBuilder {
+    if builder.profile.is_none() {
+        builder.profile = {
+            let builder = crate::types::builders::ProfileInfoBuilder::default();
+            crate::serde_util::profile_info_correct_errors(builder).build().ok()
+        }
+    }
+    builder
+}
+
+pub(crate) fn get_retrievals_output_output_correct_errors(
+    mut builder: crate::operation::get_retrievals::builders::GetRetrievalsOutputBuilder,
+) -> crate::operation::get_retrievals::builders::GetRetrievalsOutputBuilder {
+    if builder.retrieval_map.is_none() {
+        builder.retrieval_map = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn get_task_assist_code_generation_output_output_correct_errors(
     mut builder: crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder,
 ) -> crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder {
@@ -381,6 +402,15 @@ pub(crate) fn workspace_metadata_correct_errors(
     builder
 }
 
+pub(crate) fn profile_info_correct_errors(
+    mut builder: crate::types::builders::ProfileInfoBuilder,
+) -> crate::types::builders::ProfileInfoBuilder {
+    if builder.arn.is_none() {
+        builder.arn = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn code_generation_status_correct_errors(
     mut builder: crate::types::builders::CodeGenerationStatusBuilder,
 ) -> crate::types::builders::CodeGenerationStatusBuilder {
@@ -402,6 +432,24 @@ pub(crate) fn transformation_plan_correct_errors(
 ) -> crate::types::builders::TransformationPlanBuilder {
     if builder.transformation_steps.is_none() {
         builder.transformation_steps = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn overage_configuration_correct_errors(
+    mut builder: crate::types::builders::OverageConfigurationBuilder,
+) -> crate::types::builders::OverageConfigurationBuilder {
+    if builder.overage_status.is_none() {
+        builder.overage_status = "no value was set".parse::<crate::types::OverageStatus>().ok()
+    }
+    builder
+}
+
+pub(crate) fn subscription_info_correct_errors(
+    mut builder: crate::types::builders::SubscriptionInfoBuilder,
+) -> crate::types::builders::SubscriptionInfoBuilder {
+    if builder.r#type.is_none() {
+        builder.r#type = "no value was set".parse::<crate::types::SubscriptionType>().ok()
     }
     builder
 }
@@ -520,11 +568,29 @@ pub(crate) fn usage_limit_list_correct_errors(
     if builder.r#type.is_none() {
         builder.r#type = "no value was set".parse::<crate::types::UsageLimitType>().ok()
     }
-    if builder.current_usage_limit.is_none() {
-        builder.current_usage_limit = Some(Default::default())
+    if builder.current_usage.is_none() {
+        builder.current_usage = Some(Default::default())
     }
     if builder.total_usage_limit.is_none() {
         builder.total_usage_limit = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn by_user_analytics_correct_errors(
+    mut builder: crate::types::builders::ByUserAnalyticsBuilder,
+) -> crate::types::builders::ByUserAnalyticsBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
+pub(crate) fn dashboard_analytics_correct_errors(
+    mut builder: crate::types::builders::DashboardAnalyticsBuilder,
+) -> crate::types::builders::DashboardAnalyticsBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
     }
     builder
 }
@@ -534,6 +600,27 @@ pub(crate) fn edit_correct_errors(
 ) -> crate::types::builders::EditBuilder {
     if builder.content.is_none() {
         builder.content = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn mcp_configuration_correct_errors(
+    mut builder: crate::types::builders::McpConfigurationBuilder,
+) -> crate::types::builders::McpConfigurationBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
+pub(crate) fn prompt_logging_correct_errors(
+    mut builder: crate::types::builders::PromptLoggingBuilder,
+) -> crate::types::builders::PromptLoggingBuilder {
+    if builder.s3_uri.is_none() {
+        builder.s3_uri = Some(Default::default())
+    }
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
     }
     builder
 }
@@ -558,6 +645,15 @@ pub(crate) fn resource_policy_correct_errors(
     builder
 }
 
+pub(crate) fn retrieval_correct_errors(
+    mut builder: crate::types::builders::RetrievalBuilder,
+) -> crate::types::builders::RetrievalBuilder {
+    if builder.content.is_none() {
+        builder.content = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn transformation_step_correct_errors(
     mut builder: crate::types::builders::TransformationStepBuilder,
 ) -> crate::types::builders::TransformationStepBuilder {
@@ -574,6 +670,15 @@ pub(crate) fn transformation_step_correct_errors(
         builder.status = "no value was set"
             .parse::<crate::types::TransformationStepStatus>()
             .ok()
+    }
+    builder
+}
+
+pub(crate) fn workspace_context_correct_errors(
+    mut builder: crate::types::builders::WorkspaceContextBuilder,
+) -> crate::types::builders::WorkspaceContextBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
     }
     builder
 }
@@ -596,29 +701,11 @@ pub(crate) fn application_properties_correct_errors(
     builder
 }
 
-pub(crate) fn by_user_analytics_correct_errors(
-    mut builder: crate::types::builders::ByUserAnalyticsBuilder,
-) -> crate::types::builders::ByUserAnalyticsBuilder {
-    if builder.toggle.is_none() {
-        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
-    }
-    builder
-}
-
-pub(crate) fn dashboard_analytics_correct_errors(
-    mut builder: crate::types::builders::DashboardAnalyticsBuilder,
-) -> crate::types::builders::DashboardAnalyticsBuilder {
-    if builder.toggle.is_none() {
-        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
-    }
-    builder
-}
-
-pub(crate) fn prompt_logging_correct_errors(
-    mut builder: crate::types::builders::PromptLoggingBuilder,
-) -> crate::types::builders::PromptLoggingBuilder {
-    if builder.s3_uri.is_none() {
-        builder.s3_uri = Some(Default::default())
+pub(crate) fn notifications_feature_correct_errors(
+    mut builder: crate::types::builders::NotificationsFeatureBuilder,
+) -> crate::types::builders::NotificationsFeatureBuilder {
+    if builder.feature.is_none() {
+        builder.feature = Some(Default::default())
     }
     if builder.toggle.is_none() {
         builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
@@ -634,27 +721,6 @@ pub(crate) fn sso_identity_details_correct_errors(
     }
     if builder.oidc_client_id.is_none() {
         builder.oidc_client_id = Some(Default::default())
-    }
-    builder
-}
-
-pub(crate) fn workspace_context_correct_errors(
-    mut builder: crate::types::builders::WorkspaceContextBuilder,
-) -> crate::types::builders::WorkspaceContextBuilder {
-    if builder.toggle.is_none() {
-        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
-    }
-    builder
-}
-
-pub(crate) fn notifications_feature_correct_errors(
-    mut builder: crate::types::builders::NotificationsFeatureBuilder,
-) -> crate::types::builders::NotificationsFeatureBuilder {
-    if builder.feature.is_none() {
-        builder.feature = Some(Default::default())
-    }
-    if builder.toggle.is_none() {
-        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
     }
     builder
 }

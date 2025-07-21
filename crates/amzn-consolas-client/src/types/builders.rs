@@ -10,8 +10,10 @@ pub use crate::types::_external_identity_details::ExternalIdentityDetailsBuilder
 pub use crate::types::_external_identity_source::ExternalIdentitySourceBuilder;
 pub use crate::types::_file_context::FileContextBuilder;
 pub use crate::types::_import::ImportBuilder;
+pub use crate::types::_mcp_configuration::McpConfigurationBuilder;
 pub use crate::types::_notifications_feature::NotificationsFeatureBuilder;
 pub use crate::types::_opt_in_features::OptInFeaturesBuilder;
+pub use crate::types::_overage_configuration::OverageConfigurationBuilder;
 pub use crate::types::_previous_editor_state_metadata::PreviousEditorStateMetadataBuilder;
 pub use crate::types::_profile::ProfileBuilder;
 pub use crate::types::_programming_language::ProgrammingLanguageBuilder;

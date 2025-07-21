@@ -29,8 +29,8 @@ where
                                     .transpose()?,
                             );
                         },
-                        "currentUsageLimit" => {
-                            builder = builder.set_current_usage_limit(
+                        "currentUsage" => {
+                            builder = builder.set_current_usage(
                                 ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                                     .map(i64::try_from)
                                     .transpose()?,

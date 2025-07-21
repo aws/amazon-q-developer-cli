@@ -6,7 +6,7 @@ pub struct UsageLimitList {
     #[allow(missing_docs)] // documentation missing in model
     pub r#type: crate::types::UsageLimitType,
     #[allow(missing_docs)] // documentation missing in model
-    pub current_usage_limit: i64,
+    pub current_usage: i64,
     #[allow(missing_docs)] // documentation missing in model
     pub total_usage_limit: i64,
     #[allow(missing_docs)] // documentation missing in model
@@ -19,8 +19,8 @@ impl UsageLimitList {
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn current_usage_limit(&self) -> i64 {
-        self.current_usage_limit
+    pub fn current_usage(&self) -> i64 {
+        self.current_usage
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -46,7 +46,7 @@ impl UsageLimitList {
 #[non_exhaustive]
 pub struct UsageLimitListBuilder {
     pub(crate) r#type: ::std::option::Option<crate::types::UsageLimitType>,
-    pub(crate) current_usage_limit: ::std::option::Option<i64>,
+    pub(crate) current_usage: ::std::option::Option<i64>,
     pub(crate) total_usage_limit: ::std::option::Option<i64>,
     pub(crate) percent_used: ::std::option::Option<f64>,
 }
@@ -71,20 +71,20 @@ impl UsageLimitListBuilder {
 
     #[allow(missing_docs)] // documentation missing in model
     /// This field is required.
-    pub fn current_usage_limit(mut self, input: i64) -> Self {
-        self.current_usage_limit = ::std::option::Option::Some(input);
+    pub fn current_usage(mut self, input: i64) -> Self {
+        self.current_usage = ::std::option::Option::Some(input);
         self
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn set_current_usage_limit(mut self, input: ::std::option::Option<i64>) -> Self {
-        self.current_usage_limit = input;
+    pub fn set_current_usage(mut self, input: ::std::option::Option<i64>) -> Self {
+        self.current_usage = input;
         self
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn get_current_usage_limit(&self) -> &::std::option::Option<i64> {
-        &self.current_usage_limit
+    pub fn get_current_usage(&self) -> &::std::option::Option<i64> {
+        &self.current_usage
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -125,7 +125,7 @@ impl UsageLimitListBuilder {
     /// Consumes the builder and constructs a [`UsageLimitList`](crate::types::UsageLimitList).
     /// This method will fail if any of the following fields are not set:
     /// - [`r#type`](crate::types::builders::UsageLimitListBuilder::type)
-    /// - [`current_usage_limit`](crate::types::builders::UsageLimitListBuilder::current_usage_limit)
+    /// - [`current_usage`](crate::types::builders::UsageLimitListBuilder::current_usage)
     /// - [`total_usage_limit`](crate::types::builders::UsageLimitListBuilder::total_usage_limit)
     pub fn build(
         self,
@@ -137,10 +137,10 @@ impl UsageLimitListBuilder {
                     "r#type was not specified but it is required when building UsageLimitList",
                 )
             })?,
-            current_usage_limit: self.current_usage_limit.ok_or_else(|| {
+            current_usage: self.current_usage.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
-                    "current_usage_limit",
-                    "current_usage_limit was not specified but it is required when building UsageLimitList",
+                    "current_usage",
+                    "current_usage was not specified but it is required when building UsageLimitList",
                 )
             })?,
             total_usage_limit: self.total_usage_limit.ok_or_else(|| {
