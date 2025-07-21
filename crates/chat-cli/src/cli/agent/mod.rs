@@ -24,11 +24,11 @@ use crossterm::style::{
     Stylize as _,
 };
 use crossterm::{
+    execute,
     queue,
     style,
 };
 use eyre::bail;
-use jsonschema::error::ValidationErrorKind;
 pub use mcp_config::McpServerConfig;
 pub use root_command_args::*;
 use schemars::{
@@ -75,12 +75,11 @@ pub enum AgentConfigError {
     #[error("Json supplied is invalid: {0}")]
     InvalidJson(#[from] serde_json::Error),
     #[error(
-        "Schema validation failed with error type '{kind}' on instance location {instance_path} due to mismiatch on schema location '{schema_path}'"
+        "Agent config is malformed at {}: {}", error.instance_path, error
     )]
     SchemaMismatch {
-        kind: String,
-        instance_path: String,
-        schema_path: String,
+        #[from]
+        error: Box<jsonschema::ValidationError<'static>>,
     },
     #[error("Enounctered directory error: {0}")]
     Directories(#[from] util::directories::DirectoryError),
@@ -90,96 +89,6 @@ pub enum AgentConfigError {
     MissingFilename,
     #[error("Failed to parse legacy mcp config: {0}")]
     BadLegacyMcpConfig(#[from] eyre::Report),
-}
-
-impl From<jsonschema::ValidationError<'static>> for AgentConfigError {
-    fn from(error: jsonschema::ValidationError<'static>) -> Self {
-        let jsonschema::ValidationError {
-            kind,
-            instance_path,
-            schema_path,
-            ..
-        } = error;
-
-        let kind = match kind {
-            ValidationErrorKind::AdditionalItems { limit } => {
-                format!("The input array contain more items than expected ({limit})")
-            },
-            ValidationErrorKind::AdditionalProperties { unexpected } => {
-                format!("Contains unexpected properties: {:?}", unexpected)
-            },
-            ValidationErrorKind::AnyOf => {
-                "The input value is not valid under any of the schemas listed in the 'anyOf' keyword.".to_string()
-            },
-            ValidationErrorKind::BacktrackLimitExceeded { error: _ } => "Backtrack limit exceeded".to_string(),
-            ValidationErrorKind::Constant { expected_value } => {
-                format!("The input value doesn't match expected constant. Expected value: {expected_value}")
-            },
-            ValidationErrorKind::Contains => {
-                "The input array doesn't contain items conforming to the specified schema".to_string()
-            },
-            ValidationErrorKind::ContentEncoding { content_encoding } => format!(
-                "The input value does not respect the defined contentEncoding: {}",
-                content_encoding
-            ),
-            ValidationErrorKind::ContentMediaType { content_media_type } => format!(
-                "The input value does not respect the defined contentMediaType: {}",
-                content_media_type
-            ),
-            ValidationErrorKind::Custom { message } => {
-                format!("Custom error message for user-defined validation: {}", message)
-            },
-            ValidationErrorKind::Enum { options } => {
-                format!("The input value doesn't match any of specified options: {}", options)
-            },
-            ValidationErrorKind::ExclusiveMaximum { limit } => format!("Value is too large: limit is {}", limit),
-            ValidationErrorKind::ExclusiveMinimum { limit } => format!("Value is too small: limit is {}", limit),
-            ValidationErrorKind::FalseSchema => "Everything is invalid for `false` schema".to_string(),
-            ValidationErrorKind::Format { format } => {
-                format!("The input doesn't match to the specified format: {}", format)
-            },
-            ValidationErrorKind::FromUtf8 { error } => format!(
-                "May happen in `contentEncoding` validation if `base64` encoded data is invalid: {}",
-                error
-            ),
-            ValidationErrorKind::MaxItems { limit } => format!("Too many items in an array: {}", limit),
-            ValidationErrorKind::Maximum { limit } => format!("Value is too large: {}", limit),
-            ValidationErrorKind::MaxLength { limit } => format!("String is too long: {}", limit),
-            ValidationErrorKind::MaxProperties { limit } => format!("Too many properties in an object: {}", limit),
-            ValidationErrorKind::MinItems { limit } => format!("Too few items in an array: {}", limit),
-            ValidationErrorKind::Minimum { limit } => format!("Value is too small: {}", limit),
-            ValidationErrorKind::MinLength { limit } => format!("String is too short: {}", limit),
-            ValidationErrorKind::MinProperties { limit } => format!("Not enough properties in an object: {}", limit),
-            ValidationErrorKind::MultipleOf { multiple_of } => {
-                format!("Some number is not a multiple of another number: {}", multiple_of)
-            },
-            ValidationErrorKind::Not { schema } => format!("Negated schema failed validation: {}", schema),
-            ValidationErrorKind::OneOfMultipleValid => {
-                "The given schema is valid under more than one of the schemas listed in the 'oneOf' keyword".to_string()
-            },
-            ValidationErrorKind::OneOfNotValid => {
-                "The given schema is not valid under any of the schemas listed in the 'oneOf' keyword".to_string()
-            },
-            ValidationErrorKind::Pattern { pattern } => format!("Object property names are invalid: {}", pattern),
-            ValidationErrorKind::PropertyNames { error } => format!("error: Box<ValidationError<'static>>: {}", error),
-            ValidationErrorKind::Required { property } => format!("A required property is missing: {}", property),
-            ValidationErrorKind::Type { kind: _ } => {
-                "The input value doesn't match one or multiple required types".to_string()
-            },
-            ValidationErrorKind::UnevaluatedItems { unexpected } => format!("Unexpected items: {:?}", unexpected),
-            ValidationErrorKind::UnevaluatedProperties { unexpected } => {
-                format!("Unexpected properties: {:?}", unexpected)
-            },
-            ValidationErrorKind::UniqueItems => "The input array has non-unique elements".to_string(),
-            ValidationErrorKind::Referencing(_) => "Error during schema ref resolution".to_string(),
-        };
-
-        Self::SchemaMismatch {
-            kind,
-            instance_path: instance_path.to_string(),
-            schema_path: schema_path.to_string(),
-        }
-    }
 }
 
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
@@ -386,13 +295,39 @@ impl Agent {
         schema: Option<&serde_json::Value>,
         agent_path: impl AsRef<Path>,
         global_mcp_config: &mut Option<McpServerConfig>,
+        output: &mut impl Write,
     ) -> Result<Agent, AgentConfigError> {
+        // If json is malformed it will result in parsing error, in which case we should early
+        // return since this is unrecoverable
         let content = os.fs.read(&agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content)?;
 
+        // If the json is valid, we need to validate the config beyond type accurateness
+        // The failure mode here depends on the field that fails. But none of them should be fatal.
         if let Some(schema) = schema {
             let instance = serde_json::to_value(&agent)?;
-            jsonschema::validate(schema, &instance).map_err(|e| e.to_owned())?;
+            if let Err(e) = jsonschema::validate(schema, &instance).map_err(|e| e.to_owned()) {
+                let path_buf = agent_path.as_ref().to_path_buf();
+                let name = path_buf.file_stem().and_then(|name| name.to_str());
+                let _ = execute!(
+                    output,
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("WARNING "),
+                    style::ResetColor,
+                    style::Print("Agent config "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(if let Some(name) = name.as_ref() {
+                        name
+                    } else {
+                        "of an unknown name"
+                    }),
+                    style::Print(" is malformed at "),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(&e.instance_path),
+                    style::ResetColor,
+                    style::Print(format!(": {e}")),
+                );
+            }
         }
 
         if agent.use_legacy_mcp_json && global_mcp_config.is_none() {
@@ -561,7 +496,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -597,7 +532,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -791,6 +726,7 @@ async fn load_agents_from_entries(
     mut files: ReadDir,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
+    output: &mut impl Write,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
     let schema = {
@@ -811,7 +747,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, schema.as_ref(), file_path, global_mcp_config).await);
+            res.push(Agent::load(os, schema.as_ref(), file_path, global_mcp_config, output).await);
         }
     }
 
