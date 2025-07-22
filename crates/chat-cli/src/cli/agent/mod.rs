@@ -374,7 +374,7 @@ impl Agents {
     /// 2. Loads local agents
     /// 3. Loads global agents
     /// 4. Resolve agent conflicts and merge the two sets of agents
-    /// 5. Validates the active agent config and surfaces errro to output accordingly
+    /// 5. Validates the active agent config and surfaces error to output accordingly
     ///
     /// # Arguments
     /// * `os` - Operating system interface for file system operations and database access
