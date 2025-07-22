@@ -70,6 +70,7 @@ indicatif.workspace = true
 indoc.workspace = true
 insta.workspace = true
 libc.workspace = true
+libproc = "0.14.10"
 mimalloc.workspace = true
 nix.workspace = true
 owo-colors.workspace = true

@@ -281,5 +281,45 @@
         "command"
       ]
     }
+  },
+  "launch_agent": {
+  "name": "launch_agent",
+  "description": "Launches one or more Q chat subagent instances to perform tasks in parallel. Each subagent runs as a separate process with its own context and capabilities, allowing for concurrent execution of different tasks. Subagents can perform research, generate content, analyze data, or solve problems independently, and will report back their findings as summaries to the parent agent. Use this tool when you need to divide complex work into separate, parallel tasks that preserve your context window. CAUTION: Only use for complex tasks that benefit from parallelization - using subagents for simple tasks creates unnecessary overhead and inefficiency.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "subagents": {
+          "type": "array",
+          "description": "List of subagents to launch, each with its own prompt and optional model specification",
+          "items": {
+            "type": "object",
+            "properties": {
+              "agent_display_name": {
+                "type": "string",
+                "description": "Brief 3-5 word description of the subagent's role, which uniquely identifies the task it is completing. Ensure the last word is always 'Agent'."
+              },
+              "prompt": {
+                "type": "string",
+                "description": "Detailed, actionable instructions for the subagent's task. Include specific goals, required outputs, methodology, and any constraints. Be precise about what information or artifacts the subagent should produce and how they should be formatted. Each subagent should have a clearly defined, focused responsibility. Ensure that the prompting also indicates that they are a subagent so that they can act accordingly."
+              },
+              "agent_cli_name": {
+              "type": "string",
+              "description": "REQUIRED: First check available agents by running `ls -la ~/.aws/amazonq/agents`. Then select the most suitable specialized agent for this specific task by omitting the .json from the filename. Only specify this field if a relevant specialized agent exists. If no agent particularly matches the task requirements, omit this field to use the default agent. Always verify agent availability before selection."
+              },
+              "prompt_summary": {
+                "type": "string",
+                "description":"A short 1-2 sentence summarizing the associated prompt field that will be displayed to the user."
+              },
+              "max_timeout_sec": {
+                "type": "integer",
+                "description":"Set a generous timeout in seconds of how long it would take to complete the prompt assigned to the subagent. Tasks often take longer than expected due to API rate limits, complex processing, and model thinking time. Be realistic but generous because the subagent will be terminated if they do not complete their task within this max timeout, indicating something went wrong (errors, etc). Never set a timeout below 90 seconds to account for subagent setup time."
+              }
+            },
+            "required": ["prompt", "prompt_summary", "max_timeout_sec"]
+          }
+        }
+      },
+      "required": ["subagents"]
+    }
   }
 }

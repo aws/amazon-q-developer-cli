@@ -4,6 +4,7 @@ pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
 pub mod knowledge;
+pub mod launch_agent;
 pub mod thinking;
 pub mod use_aws;
 
@@ -26,6 +27,10 @@ use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
 use knowledge::Knowledge;
+use launch_agent::{
+    SubAgent,
+    SubAgentWrapper,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -42,7 +47,7 @@ use crate::cli::agent::{
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
-pub const NATIVE_TOOLS: [&str; 7] = [
+pub const NATIVE_TOOLS: [&str; 8] = [
     "fs_read",
     "fs_write",
     #[cfg(windows)]
@@ -53,6 +58,7 @@ pub const NATIVE_TOOLS: [&str; 7] = [
     "gh_issue",
     "knowledge",
     "thinking",
+    "launch_agent",
 ];
 
 /// Represents an executable tool use.
@@ -67,6 +73,7 @@ pub enum Tool {
     GhIssue(GhIssue),
     Knowledge(Knowledge),
     Thinking(Thinking),
+    SubAgentWrapper(Vec<SubAgent>),
 }
 
 impl Tool {
@@ -84,6 +91,7 @@ impl Tool {
             Tool::GhIssue(_) => "gh_issue",
             Tool::Knowledge(_) => "knowledge",
             Tool::Thinking(_) => "thinking (prerelease)",
+            Tool::SubAgentWrapper(_) => "launch_agent",
         }
         .to_owned()
     }
@@ -99,6 +107,7 @@ impl Tool {
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(_) => PermissionEvalResult::Ask,
+            Tool::SubAgentWrapper(_) => PermissionEvalResult::Ask,
         }
     }
 
@@ -113,6 +122,12 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
+            Tool::SubAgentWrapper(sub_agents) => {
+                let wrapper = SubAgentWrapper {
+                    subagents: sub_agents.clone(),
+                };
+                wrapper.invoke(stdout).await
+            },
         }
     }
 
@@ -127,6 +142,12 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
             Tool::Thinking(thinking) => thinking.queue_description(output),
+            Tool::SubAgentWrapper(sub_agents) => {
+                let wrapper = SubAgentWrapper {
+                    subagents: sub_agents.clone(),
+                };
+                wrapper.queue_description(output)
+            },
         }
     }
 
@@ -141,6 +162,13 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
+            Tool::SubAgentWrapper(sub_agents) => {
+                // Validate all agents in the vector
+                for agent in sub_agents.iter() {
+                    agent.validate(os).await?;
+                }
+                Ok(())
+            },
         }
     }
 }
