@@ -116,7 +116,7 @@ pub enum AgentConfigError {
 /// Where agents are instantiated from their config, we would need to convert them from "cold" to
 /// "warm".
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
     /// Agent names are derived from the file name. Thus they are skipped for
