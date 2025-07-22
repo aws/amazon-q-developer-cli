@@ -6,14 +6,21 @@ use clap::{
     Args,
     Subcommand,
 };
+use crossterm::style::Color;
+use crossterm::{
+    queue,
+    style,
+};
 use eyre::{
     Result,
     bail,
 };
+use schemars::schema_for;
 
 use super::{
     Agent,
     Agents,
+    McpServerConfig,
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
@@ -50,6 +57,11 @@ pub enum AgentSubcommands {
         #[arg(long, short)]
         from: Option<String>,
     },
+    /// Validate a config with the given path
+    Validate {
+        #[arg(long, short)]
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
@@ -61,9 +73,9 @@ pub struct AgentArgs {
 impl AgentArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         let mut stderr = std::io::stderr();
-        let mut agents = Agents::load(os, None, true, &mut stderr).await;
         match self.cmd {
             Some(AgentSubcommands::List) | None => {
+                let agents = Agents::load(os, None, true, &mut stderr).await;
                 let agent_with_path =
                     agents
                         .agents
@@ -88,6 +100,7 @@ impl AgentArgs {
                 writeln!(stderr, "{}", output_str)?;
             },
             Some(AgentSubcommands::Create { name, directory, from }) => {
+                let mut agents = Agents::load(os, None, true, &mut stderr).await;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from).await?;
                 let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
                 let mut cmd = std::process::Command::new(editor_cmd);
@@ -118,8 +131,75 @@ impl AgentArgs {
                 )?;
             },
             Some(AgentSubcommands::Rename { agent, new_name }) => {
+                let mut agents = Agents::load(os, None, true, &mut stderr).await;
                 rename_agent(os, &mut agents, agent.clone(), new_name.clone()).await?;
                 writeln!(stderr, "\n✓ Renamed agent '{}' to '{}'\n", agent, new_name)?;
+            },
+            Some(AgentSubcommands::Validate { path }) => {
+                let mut global_mcp_config = None::<McpServerConfig>;
+                let agent = Agent::load(os, path.as_str(), &mut global_mcp_config).await;
+
+                'validate: {
+                    match agent {
+                        Ok(agent) => {
+                            let Ok(instance) = serde_json::to_value(&agent) else {
+                                queue!(
+                                    stderr,
+                                    style::SetForegroundColor(style::Color::Red),
+                                    style::Print("Error: "),
+                                    style::ResetColor,
+                                    style::Print("failed to obtain value from agent provided. Aborting validation"),
+                                )?;
+                                break 'validate;
+                            };
+
+                            let schema = match serde_json::to_value(schema_for!(Agent)) {
+                                Ok(schema) => schema,
+                                Err(e) => {
+                                    queue!(
+                                        stderr,
+                                        style::SetForegroundColor(style::Color::Red),
+                                        style::Print("Error: "),
+                                        style::ResetColor,
+                                        style::Print(format!("failed to obtain schema: {e}. Aborting validation"))
+                                    )?;
+                                    break 'validate;
+                                },
+                            };
+
+                            if let Err(e) = jsonschema::validate(&schema, &instance).map_err(|e| e.to_owned()) {
+                                let name = &agent.name;
+                                queue!(
+                                    stderr,
+                                    style::SetForegroundColor(Color::Yellow),
+                                    style::Print("WARNING "),
+                                    style::ResetColor,
+                                    style::Print("Agent config "),
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print(name),
+                                    style::ResetColor,
+                                    style::Print(" is malformed at "),
+                                    style::SetForegroundColor(Color::Yellow),
+                                    style::Print(&e.instance_path),
+                                    style::ResetColor,
+                                    style::Print(format!(": {e}\n")),
+                                )?;
+                            }
+                        },
+                        Err(e) => {
+                            let _ = queue!(
+                                stderr,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print("Error: "),
+                                style::ResetColor,
+                                style::Print(e),
+                                style::Print("\n"),
+                            );
+                        },
+                    }
+                }
+
+                stderr.flush()?;
             },
         }
         Ok(ExitCode::SUCCESS)
