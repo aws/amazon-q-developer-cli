@@ -369,70 +369,19 @@ impl Agents {
             .ok_or(eyre::eyre!("No agent with name {name} found"))
     }
 
-    #[cfg(test)]
-    pub fn list_agents(&self) -> eyre::Result<Vec<String>> {
-        Ok(self.agents.keys().cloned().collect::<Vec<_>>())
-    }
-
-    /// Migrated from [create_profile] from context.rs, which was creating profiles under the
-    /// global directory. We shall preserve this implicit behavior for now until further notice.
-    #[cfg(test)]
-    pub async fn create_agent(&mut self, os: &Os, name: &str) -> eyre::Result<()> {
-        validate_agent_name(name)?;
-
-        let agent_path = directories::chat_global_agent_path(os)?.join(format!("{name}.json"));
-        if agent_path.exists() {
-            return Err(eyre::eyre!("Agent '{}' already exists", name));
-        }
-
-        let agent = Agent {
-            name: name.to_string(),
-            path: Some(agent_path.clone()),
-            ..Default::default()
-        };
-        let contents = agent
-            .to_str_pretty()
-            .map_err(|e| eyre::eyre!("Failed to serialize profile configuration: {}", e))?;
-
-        if let Some(parent) = agent_path.parent() {
-            os.fs.create_dir_all(parent).await?;
-        }
-        os.fs.write(&agent_path, contents).await?;
-
-        self.agents.insert(name.to_string(), agent);
-
-        Ok(())
-    }
-
-    /// Migrated from [delete_profile] from context.rs, which was deleting profiles under the
-    /// global directory. We shall preserve this implicit behavior for now until further notice.
-    #[cfg(test)]
-    pub async fn delete_agent(&mut self, os: &Os, name: &str) -> eyre::Result<()> {
-        if name == self.active_idx.as_str() {
-            eyre::bail!("Cannot delete the active agent. Switch to another agent first");
-        }
-
-        let to_delete = self
-            .agents
-            .get(name)
-            .ok_or(eyre::eyre!("Agent '{name}' does not exist"))?;
-        match to_delete.path.as_ref() {
-            Some(path) if path.exists() => {
-                os.fs.remove_file(path).await?;
-            },
-            _ => eyre::bail!("Agent {name} does not have an associated path"),
-        }
-
-        self.agents.remove(name);
-
-        Ok(())
-    }
-
-    /// Migrated from [load] from context.rs, which was loading profiles under the
-    /// local and global directory. We shall preserve this implicit behavior for now until further
-    /// notice.
-    /// In addition to loading, this function also calls the function responsible for migrating
-    /// existing context into agent.
+    /// This function does a number of things in the following order:
+    /// 1. Migrates old profiles if applicable
+    /// 2. Loads local agents
+    /// 3. Loads global agents
+    /// 4. Resolve agent conflicts and merge the two sets of agents
+    /// 5. Validates the active agent config and surfaces errro to output accordingly
+    ///
+    /// # Arguments
+    /// * `os` - Operating system interface for file system operations and database access
+    /// * `agent_name` - Optional specific agent name to activate; if None, falls back to default
+    ///   agent selection
+    /// * `skip_migration` - If true, skips migration of old profiles to new format
+    /// * `output` - Writer for outputting warnings, errors, and status messages during loading
     pub async fn load(os: &mut Os, agent_name: Option<&str>, skip_migration: bool, output: &mut impl Write) -> Self {
         let new_agents = if !skip_migration {
             match legacy::migrate(os).await {
@@ -597,6 +546,7 @@ impl Agents {
         });
 
         local_agents.append(&mut global_agents);
+        let mut all_agents = local_agents;
 
         // Assume agent in the following order of priority:
         // 1. The agent name specified by the start command via --agent (this is the agent_name that's
@@ -605,7 +555,7 @@ impl Agents {
         // 3. If the above is missing or invalid, assume the in-memory default
         let active_idx = 'active_idx: {
             if let Some(name) = agent_name {
-                if local_agents.iter().any(|a| a.name.as_str() == name) {
+                if all_agents.iter().any(|a| a.name.as_str() == name) {
                     break 'active_idx name.to_string();
                 }
                 let _ = queue!(
@@ -623,7 +573,7 @@ impl Agents {
             }
 
             if let Some(user_set_default) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
-                if local_agents.iter().any(|a| a.name == user_set_default) {
+                if all_agents.iter().any(|a| a.name == user_set_default) {
                     break 'active_idx user_set_default;
                 }
                 let _ = queue!(
@@ -640,7 +590,7 @@ impl Agents {
                 );
             }
 
-            local_agents.push(Agent::default());
+            all_agents.push(Agent::default());
             "default".to_string()
         };
 
@@ -648,7 +598,7 @@ impl Agents {
 
         // Post parsing validation here
         let schema = schema_for!(Agent);
-        let agents = local_agents
+        let agents = all_agents
             .into_iter()
             .map(|a| (a.name.clone(), a))
             .collect::<HashMap<_, _>>();
@@ -878,110 +828,6 @@ mod tests {
         let result = collection.switch("nonexistent");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "No agent with name nonexistent found");
-    }
-
-    #[tokio::test]
-    async fn test_list_agents() {
-        let mut collection = Agents::default();
-
-        // Add two agents
-        let default_agent = Agent::default();
-        let dev_agent = Agent {
-            name: "dev".to_string(),
-            description: Some("Developer agent".to_string()),
-            ..Default::default()
-        };
-
-        collection.agents.insert("default".to_string(), default_agent);
-        collection.agents.insert("dev".to_string(), dev_agent);
-
-        let result = collection.list_agents();
-        assert!(result.is_ok());
-
-        let agents = result.unwrap();
-        assert_eq!(agents.len(), 2);
-        assert!(agents.contains(&"default".to_string()));
-        assert!(agents.contains(&"dev".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_create_agent() {
-        let mut collection = Agents::default();
-        let ctx = Os::new().await.unwrap();
-
-        let agent_name = "test_agent";
-        let result = collection.create_agent(&ctx, agent_name).await;
-        assert!(result.is_ok());
-        let agent_path = directories::chat_global_agent_path(&ctx)
-            .expect("Error obtaining global agent path")
-            .join(format!("{agent_name}.json"));
-        assert!(agent_path.exists());
-        assert!(collection.agents.contains_key(agent_name));
-
-        // Test with creating a agent with the same name
-        let result = collection.create_agent(&ctx, agent_name).await;
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            format!("Agent '{agent_name}' already exists")
-        );
-
-        // Test invalid agent names
-        let result = collection.create_agent(&ctx, "").await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Agent name cannot be empty");
-
-        let result = collection.create_agent(&ctx, "123-invalid!").await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_delete_agent() {
-        let mut collection = Agents::default();
-        let ctx = Os::new().await.unwrap();
-
-        let agent_name_one = "test_agent_one";
-        collection
-            .create_agent(&ctx, agent_name_one)
-            .await
-            .expect("Failed to create agent");
-        let agent_name_two = "test_agent_two";
-        collection
-            .create_agent(&ctx, agent_name_two)
-            .await
-            .expect("Failed to create agent");
-
-        collection.switch(agent_name_one).expect("Failed to switch agent");
-
-        // Should not be able to delete active agent
-        let active = collection
-            .get_active()
-            .expect("Failed to obtain active agent")
-            .name
-            .clone();
-        let result = collection.delete_agent(&ctx, &active).await;
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Cannot delete the active agent. Switch to another agent first"
-        );
-
-        // Should be able to delete inactive agent
-        let agent_two_path = collection
-            .agents
-            .get(agent_name_two)
-            .expect("Failed to obtain agent that's yet to be deleted")
-            .path
-            .clone()
-            .expect("agent should have path");
-        let result = collection.delete_agent(&ctx, agent_name_two).await;
-        assert!(result.is_ok());
-        assert!(!collection.agents.contains_key(agent_name_two));
-        assert!(!agent_two_path.exists());
-
-        let result = collection.delete_agent(&ctx, "nonexistent").await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Agent 'nonexistent' does not exist");
     }
 
     #[test]
