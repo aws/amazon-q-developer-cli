@@ -24,22 +24,28 @@ use crossterm::style::{
     Stylize as _,
 };
 use crossterm::{
+    execute,
     queue,
     style,
 };
 use eyre::bail;
 pub use mcp_config::McpServerConfig;
 pub use root_command_args::*;
-use schemars::JsonSchema;
+use schemars::{
+    JsonSchema,
+    schema_for,
+};
 use serde::{
     Deserialize,
     Serialize,
 };
+use thiserror::Error;
 use tokio::fs::ReadDir;
 use tracing::{
     error,
     warn,
 };
+use wrapper_types::ResourcePath;
 pub use wrapper_types::{
     OriginalToolName,
     ToolSettingTarget,
@@ -59,9 +65,31 @@ use crate::cli::agent::hook::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::{
+    self,
     MCP_SERVER_TOOL_DELIMITER,
     directories,
 };
+
+#[derive(Debug, Error)]
+pub enum AgentConfigError {
+    #[error("Json supplied at {} is invalid: {}", path.display(), error)]
+    InvalidJson { error: serde_json::Error, path: PathBuf },
+    #[error(
+        "Agent config is malformed at {}: {}", error.instance_path, error
+    )]
+    SchemaMismatch {
+        #[from]
+        error: Box<jsonschema::ValidationError<'static>>,
+    },
+    #[error("Encountered directory error: {0}")]
+    Directories(#[from] util::directories::DirectoryError),
+    #[error("Encountered io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Agent path missing file name")]
+    MissingFilename,
+    #[error("Failed to parse legacy mcp config: {0}")]
+    BadLegacyMcpConfig(#[from] eyre::Report),
+}
 
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
 /// impacting q chat in via influenicng [ContextManager] and [ToolManager].
@@ -88,7 +116,7 @@ use crate::util::{
 /// Where agents are instantiated from their config, we would need to convert them from "cold" to
 /// "warm".
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
     /// Agent names are derived from the file name. Thus they are skipped for
@@ -118,7 +146,7 @@ pub struct Agent {
     pub allowed_tools: HashSet<String>,
     /// Files to include in the agent's context
     #[serde(default)]
-    pub resources: Vec<String>,
+    pub resources: Vec<ResourcePath>,
     /// Commands to run when a chat session is created
     #[serde(default)]
     pub hooks: HashMap<HookTrigger, Vec<Hook>>,
@@ -153,7 +181,7 @@ impl Default for Agent {
             },
             resources: vec!["file://AmazonQ.md", "file://README.md", "file://.amazonq/rules/**/*.md"]
                 .into_iter()
-                .map(str::to_string)
+                .map(Into::into)
                 .collect::<Vec<_>>(),
             hooks: Default::default(),
             tools_settings: Default::default(),
@@ -167,26 +195,24 @@ impl Agent {
     /// This function mutates the agent to a state that is writable.
     /// Practically this means reverting some fields back to their original values as they were
     /// written in the config.
-    fn freeze(&mut self) -> eyre::Result<()> {
+    fn freeze(&mut self) {
         let Self { mcp_servers, .. } = self;
 
         mcp_servers
             .mcp_servers
             .retain(|_name, config| !config.is_from_legacy_mcp_json);
-
-        Ok(())
     }
 
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
     /// For example, we populate the agent with its file name, convert the mcp array to actual
     /// mcp config and populate the agent file path.
-    fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> eyre::Result<()> {
+    fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         let name = path
             .file_stem()
-            .ok_or(eyre::eyre!("Missing valid file name"))?
+            .ok_or(AgentConfigError::MissingFilename)?
             .to_string_lossy()
             .to_string();
 
@@ -222,7 +248,7 @@ impl Agent {
 
     pub fn to_str_pretty(&self) -> eyre::Result<String> {
         let mut agent_clone = self.clone();
-        agent_clone.freeze()?;
+        agent_clone.freeze();
         Ok(serde_json::to_string_pretty(&agent_clone)?)
     }
 
@@ -262,6 +288,33 @@ impl Agent {
             },
             _ => bail!("Agent {agent_name} does not exist"),
         }
+    }
+
+    pub async fn load(
+        os: &Os,
+        agent_path: impl AsRef<Path>,
+        global_mcp_config: &mut Option<McpServerConfig>,
+    ) -> Result<Agent, AgentConfigError> {
+        let content = os.fs.read(&agent_path).await?;
+        let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
+            error: e,
+            path: agent_path.as_ref().to_path_buf(),
+        })?;
+
+        if agent.use_legacy_mcp_json && global_mcp_config.is_none() {
+            let global_mcp_path = directories::chat_legacy_mcp_config(os)?;
+            let legacy_mcp_config = if global_mcp_path.exists() {
+                McpServerConfig::load_from_file(os, global_mcp_path)
+                    .await
+                    .map_err(AgentConfigError::BadLegacyMcpConfig)?
+            } else {
+                McpServerConfig::default()
+            };
+            global_mcp_config.replace(legacy_mcp_config);
+        }
+
+        agent.thaw(agent_path.as_ref(), global_mcp_config.as_ref())?;
+        Ok(agent)
     }
 }
 
@@ -316,70 +369,19 @@ impl Agents {
             .ok_or(eyre::eyre!("No agent with name {name} found"))
     }
 
-    #[cfg(test)]
-    pub fn list_agents(&self) -> eyre::Result<Vec<String>> {
-        Ok(self.agents.keys().cloned().collect::<Vec<_>>())
-    }
-
-    /// Migrated from [create_profile] from context.rs, which was creating profiles under the
-    /// global directory. We shall preserve this implicit behavior for now until further notice.
-    #[cfg(test)]
-    pub async fn create_agent(&mut self, os: &Os, name: &str) -> eyre::Result<()> {
-        validate_agent_name(name)?;
-
-        let agent_path = directories::chat_global_agent_path(os)?.join(format!("{name}.json"));
-        if agent_path.exists() {
-            return Err(eyre::eyre!("Agent '{}' already exists", name));
-        }
-
-        let agent = Agent {
-            name: name.to_string(),
-            path: Some(agent_path.clone()),
-            ..Default::default()
-        };
-        let contents = agent
-            .to_str_pretty()
-            .map_err(|e| eyre::eyre!("Failed to serialize profile configuration: {}", e))?;
-
-        if let Some(parent) = agent_path.parent() {
-            os.fs.create_dir_all(parent).await?;
-        }
-        os.fs.write(&agent_path, contents).await?;
-
-        self.agents.insert(name.to_string(), agent);
-
-        Ok(())
-    }
-
-    /// Migrated from [delete_profile] from context.rs, which was deleting profiles under the
-    /// global directory. We shall preserve this implicit behavior for now until further notice.
-    #[cfg(test)]
-    pub async fn delete_agent(&mut self, os: &Os, name: &str) -> eyre::Result<()> {
-        if name == self.active_idx.as_str() {
-            eyre::bail!("Cannot delete the active agent. Switch to another agent first");
-        }
-
-        let to_delete = self
-            .agents
-            .get(name)
-            .ok_or(eyre::eyre!("Agent '{name}' does not exist"))?;
-        match to_delete.path.as_ref() {
-            Some(path) if path.exists() => {
-                os.fs.remove_file(path).await?;
-            },
-            _ => eyre::bail!("Agent {name} does not have an associated path"),
-        }
-
-        self.agents.remove(name);
-
-        Ok(())
-    }
-
-    /// Migrated from [load] from context.rs, which was loading profiles under the
-    /// local and global directory. We shall preserve this implicit behavior for now until further
-    /// notice.
-    /// In addition to loading, this function also calls the function responsible for migrating
-    /// existing context into agent.
+    /// This function does a number of things in the following order:
+    /// 1. Migrates old profiles if applicable
+    /// 2. Loads local agents
+    /// 3. Loads global agents
+    /// 4. Resolve agent conflicts and merge the two sets of agents
+    /// 5. Validates the active agent config and surfaces error to output accordingly
+    ///
+    /// # Arguments
+    /// * `os` - Operating system interface for file system operations and database access
+    /// * `agent_name` - Optional specific agent name to activate; if None, falls back to default
+    ///   agent selection
+    /// * `skip_migration` - If true, skips migration of old profiles to new format
+    /// * `output` - Writer for outputting warnings, errors, and status messages during loading
     pub async fn load(os: &mut Os, agent_name: Option<&str>, skip_migration: bool, output: &mut impl Write) -> Self {
         let new_agents = if !skip_migration {
             match legacy::migrate(os).await {
@@ -412,7 +414,26 @@ impl Agents {
             let Ok(files) = os.fs.read_dir(path).await else {
                 break 'local Vec::<Agent>::new();
             };
-            load_agents_from_entries(files, os, &mut global_mcp_config).await
+
+            let mut agents = Vec::<Agent>::new();
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            for result in results {
+                match result {
+                    Ok(agent) => agents.push(agent),
+                    Err(e) => {
+                        let _ = queue!(
+                            output,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(e),
+                            style::Print("\n"),
+                        );
+                    },
+                }
+            }
+
+            agents
         };
 
         let mut global_agents = 'global: {
@@ -430,7 +451,26 @@ impl Agents {
                     break 'global Vec::<Agent>::new();
                 },
             };
-            load_agents_from_entries(files, os, &mut global_mcp_config).await
+
+            let mut agents = Vec::<Agent>::new();
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            for result in results {
+                match result {
+                    Ok(agent) => agents.push(agent),
+                    Err(e) => {
+                        let _ = queue!(
+                            output,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(e),
+                            style::Print("\n"),
+                        );
+                    },
+                }
+            }
+
+            agents
         }
         .into_iter()
         .chain(new_agents)
@@ -506,6 +546,7 @@ impl Agents {
         });
 
         local_agents.append(&mut global_agents);
+        let mut all_agents = local_agents;
 
         // Assume agent in the following order of priority:
         // 1. The agent name specified by the start command via --agent (this is the agent_name that's
@@ -514,7 +555,7 @@ impl Agents {
         // 3. If the above is missing or invalid, assume the in-memory default
         let active_idx = 'active_idx: {
             if let Some(name) = agent_name {
-                if local_agents.iter().any(|a| a.name.as_str() == name) {
+                if all_agents.iter().any(|a| a.name.as_str() == name) {
                     break 'active_idx name.to_string();
                 }
                 let _ = queue!(
@@ -532,7 +573,7 @@ impl Agents {
             }
 
             if let Some(user_set_default) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
-                if local_agents.iter().any(|a| a.name == user_set_default) {
+                if all_agents.iter().any(|a| a.name == user_set_default) {
                     break 'active_idx user_set_default;
                 }
                 let _ = queue!(
@@ -549,7 +590,7 @@ impl Agents {
                 );
             }
 
-            local_agents.push({
+            all_agents.push({
                 let mut agent = Agent::default();
                 'load_legacy_mcp_json: {
                     if global_mcp_config.is_none() {
@@ -574,16 +615,58 @@ impl Agents {
 
                 agent
             });
+
             "default".to_string()
         };
 
         let _ = output.flush();
 
+        // Post parsing validation here
+        let schema = schema_for!(Agent);
+        let agents = all_agents
+            .into_iter()
+            .map(|a| (a.name.clone(), a))
+            .collect::<HashMap<_, _>>();
+        let active_agent = agents.get(&active_idx);
+
+        'validate: {
+            match (serde_json::to_value(schema), active_agent) {
+                (Ok(schema), Some(agent)) => {
+                    let Ok(instance) = serde_json::to_value(agent) else {
+                        let name = &agent.name;
+                        error!("Error converting active agent {name} to value for validation. Skipping");
+                        break 'validate;
+                    };
+                    if let Err(e) = jsonschema::validate(&schema, &instance).map_err(|e| e.to_owned()) {
+                        let name = &agent.name;
+                        let _ = execute!(
+                            output,
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print("WARNING "),
+                            style::ResetColor,
+                            style::Print("Agent config "),
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(name),
+                            style::ResetColor,
+                            style::Print(" is malformed at "),
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print(&e.instance_path),
+                            style::ResetColor,
+                            style::Print(format!(": {e}\n")),
+                        );
+                    }
+                },
+                (Err(e), _) => {
+                    error!("Failed to convert agent definition to schema: {e}. Skipping validation");
+                },
+                (_, None) => {
+                    warn!("Skipping config validation because there is no active agent");
+                },
+            }
+        }
+
         Self {
-            agents: local_agents
-                .into_iter()
-                .map(|a| (a.name.clone(), a))
-                .collect::<HashMap<_, _>>(),
+            agents,
             active_idx,
             ..Default::default()
         }
@@ -638,8 +721,8 @@ async fn load_agents_from_entries(
     mut files: ReadDir,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
-) -> Vec<Agent> {
-    let mut res = Vec::<Agent>::new();
+) -> Vec<Result<Agent, AgentConfigError>> {
+    let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
 
     while let Ok(Some(file)) = files.next_entry().await {
         let file_path = &file.path();
@@ -648,56 +731,10 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            let content = match tokio::fs::read(file_path).await {
-                Ok(content) => content,
-                Err(e) => {
-                    let file_path = file_path.to_string_lossy();
-                    tracing::error!("Error reading agent file {file_path}: {:?}", e);
-                    continue;
-                },
-            };
-
-            let mut agent = match serde_json::from_slice::<Agent>(&content) {
-                Ok(mut agent) => {
-                    agent.path = Some(file_path.clone());
-                    agent
-                },
-                Err(e) => {
-                    let file_path = file_path.to_string_lossy();
-                    tracing::error!("Error deserializing agent file {file_path}: {:?}", e);
-                    continue;
-                },
-            };
-
-            // The agent config could have use_legacy_mcp_json set to true but not have a valid
-            // global mcp.json. We would still need to carry on loading the config.
-            'load_legacy_mcp_json: {
-                if agent.use_legacy_mcp_json && global_mcp_config.is_none() {
-                    let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
-                        tracing::error!("Error obtaining legacy mcp json path. Skipping");
-                        break 'load_legacy_mcp_json;
-                    };
-                    let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
-                        Ok(config) => config,
-                        Err(e) => {
-                            tracing::error!("Error loading global mcp json path: {e}. Skipping");
-                            break 'load_legacy_mcp_json;
-                        },
-                    };
-                    global_mcp_config.replace(legacy_mcp_config);
-                }
-            }
-
-            if let Err(e) = agent.thaw(file_path, global_mcp_config.as_ref()) {
-                tracing::error!(
-                    "Error transforming agent at {} to usable state: {e}. Skipping",
-                    file_path.display()
-                );
-            };
-
-            res.push(agent);
+            res.push(Agent::load(os, file_path, global_mcp_config).await);
         }
     }
+
     res
 }
 
@@ -732,8 +769,7 @@ mod tests {
                 "git": { "command": "git-mcp", "args": [] }
               },
               "tools": [                                    
-                "@git",                                     
-                "fs_read"
+                "@git"
               ],
               "toolAliases": {
                   "@gits/some_tool": "some_tool2"
@@ -745,12 +781,6 @@ mod tests {
               ],
               "resources": [                        
                 "file://~/my-genai-prompts/unittest.md"
-              ],
-              "createHooks": [                         
-                "pwd && tree"
-              ],
-              "promptHooks": [                        
-                "git status"
               ],
               "toolsSettings": {                     
                 "fs_write": { "allowedPaths": ["~/**"] },
@@ -823,110 +853,6 @@ mod tests {
         let result = collection.switch("nonexistent");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "No agent with name nonexistent found");
-    }
-
-    #[tokio::test]
-    async fn test_list_agents() {
-        let mut collection = Agents::default();
-
-        // Add two agents
-        let default_agent = Agent::default();
-        let dev_agent = Agent {
-            name: "dev".to_string(),
-            description: Some("Developer agent".to_string()),
-            ..Default::default()
-        };
-
-        collection.agents.insert("default".to_string(), default_agent);
-        collection.agents.insert("dev".to_string(), dev_agent);
-
-        let result = collection.list_agents();
-        assert!(result.is_ok());
-
-        let agents = result.unwrap();
-        assert_eq!(agents.len(), 2);
-        assert!(agents.contains(&"default".to_string()));
-        assert!(agents.contains(&"dev".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_create_agent() {
-        let mut collection = Agents::default();
-        let ctx = Os::new().await.unwrap();
-
-        let agent_name = "test_agent";
-        let result = collection.create_agent(&ctx, agent_name).await;
-        assert!(result.is_ok());
-        let agent_path = directories::chat_global_agent_path(&ctx)
-            .expect("Error obtaining global agent path")
-            .join(format!("{agent_name}.json"));
-        assert!(agent_path.exists());
-        assert!(collection.agents.contains_key(agent_name));
-
-        // Test with creating a agent with the same name
-        let result = collection.create_agent(&ctx, agent_name).await;
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            format!("Agent '{agent_name}' already exists")
-        );
-
-        // Test invalid agent names
-        let result = collection.create_agent(&ctx, "").await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Agent name cannot be empty");
-
-        let result = collection.create_agent(&ctx, "123-invalid!").await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_delete_agent() {
-        let mut collection = Agents::default();
-        let ctx = Os::new().await.unwrap();
-
-        let agent_name_one = "test_agent_one";
-        collection
-            .create_agent(&ctx, agent_name_one)
-            .await
-            .expect("Failed to create agent");
-        let agent_name_two = "test_agent_two";
-        collection
-            .create_agent(&ctx, agent_name_two)
-            .await
-            .expect("Failed to create agent");
-
-        collection.switch(agent_name_one).expect("Failed to switch agent");
-
-        // Should not be able to delete active agent
-        let active = collection
-            .get_active()
-            .expect("Failed to obtain active agent")
-            .name
-            .clone();
-        let result = collection.delete_agent(&ctx, &active).await;
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Cannot delete the active agent. Switch to another agent first"
-        );
-
-        // Should be able to delete inactive agent
-        let agent_two_path = collection
-            .agents
-            .get(agent_name_two)
-            .expect("Failed to obtain agent that's yet to be deleted")
-            .path
-            .clone()
-            .expect("agent should have path");
-        let result = collection.delete_agent(&ctx, agent_name_two).await;
-        assert!(result.is_ok());
-        assert!(!collection.agents.contains_key(agent_name_two));
-        assert!(!agent_two_path.exists());
-
-        let result = collection.delete_agent(&ctx, "nonexistent").await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Agent 'nonexistent' does not exist");
     }
 
     #[test]

@@ -79,7 +79,7 @@ pub fn tool_settings_schema(generator: &mut SchemaGenerator) -> Schema {
     json_schema!({
         "type": "object",
         "additionalProperties": {
-            "type": "string",
+            "type": "object",
             "description": "Settings for tools. Refer to our documentations to see how to configure them"
         },
         "propertyNames": {
@@ -87,4 +87,37 @@ pub fn tool_settings_schema(generator: &mut SchemaGenerator) -> Schema {
             "description": key_description
         }
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, Hash, PartialEq, JsonSchema)]
+pub struct ResourcePath(
+    // You can extend this list via "|". e.g. r"^(file://|database://)"
+    #[schemars(regex(pattern = r"^(file://)"))]
+    String,
+);
+
+impl Deref for ResourcePath {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Borrow<str> for ResourcePath {
+    fn borrow(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<&str> for ResourcePath {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl From<String> for ResourcePath {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
 }
