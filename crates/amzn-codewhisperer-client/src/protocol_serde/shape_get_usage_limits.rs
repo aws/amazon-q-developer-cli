@@ -154,6 +154,11 @@ pub(crate) fn de_get_usage_limits(
                             .transpose()?,
                     );
                 },
+                "usageBreakdown" => {
+                    builder = builder.set_usage_breakdown(
+                        crate::protocol_serde::shape_usage_breakdown::de_usage_breakdown(tokens)?,
+                    );
+                },
                 "subscriptionInfo" => {
                     builder = builder.set_subscription_info(
                         crate::protocol_serde::shape_subscription_info::de_subscription_info(tokens)?,

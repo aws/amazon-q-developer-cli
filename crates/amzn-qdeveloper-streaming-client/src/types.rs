@@ -8,11 +8,14 @@ pub use crate::types::_alert_type::AlertType;
 pub use crate::types::_app_studio_state::AppStudioState;
 pub use crate::types::_assistant_response_event::AssistantResponseEvent;
 pub use crate::types::_assistant_response_message::AssistantResponseMessage;
+pub use crate::types::_cache_point::CachePoint;
+pub use crate::types::_cache_point_type::CachePointType;
 pub use crate::types::_chat_message::ChatMessage;
 pub use crate::types::_chat_response_stream::ChatResponseStream;
 pub use crate::types::_chat_trigger_type::ChatTriggerType;
 pub use crate::types::_citation_event::CitationEvent;
 pub use crate::types::_citation_target::CitationTarget;
+pub use crate::types::_client_cache_config::ClientCacheConfig;
 pub use crate::types::_cloud_watch_troubleshooting_link::CloudWatchTroubleshootingLink;
 pub use crate::types::_code_description::CodeDescription;
 pub use crate::types::_code_event::CodeEvent;
@@ -125,6 +128,10 @@ mod _assistant_response_event;
 
 mod _assistant_response_message;
 
+mod _cache_point;
+
+mod _cache_point_type;
+
 mod _chat_message;
 
 mod _chat_response_stream;
@@ -134,6 +141,8 @@ mod _chat_trigger_type;
 mod _citation_event;
 
 mod _citation_target;
+
+mod _client_cache_config;
 
 mod _cloud_watch_troubleshooting_link;
 

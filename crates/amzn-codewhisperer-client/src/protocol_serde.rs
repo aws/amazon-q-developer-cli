@@ -262,6 +262,8 @@ pub(crate) mod shape_transformation_spec;
 
 pub(crate) mod shape_upload_context;
 
+pub(crate) mod shape_usage_breakdown;
+
 pub(crate) mod shape_usage_limits;
 
 pub(crate) mod shape_user_context;
@@ -433,6 +435,10 @@ pub(crate) mod shape_user_input_message;
 pub(crate) mod shape_workspace_context;
 
 pub(crate) mod shape_application_properties;
+
+pub(crate) mod shape_cache_point;
+
+pub(crate) mod shape_client_cache_config;
 
 pub(crate) mod shape_external_identity_details;
 

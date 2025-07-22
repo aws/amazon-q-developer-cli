@@ -472,6 +472,24 @@ pub(crate) fn test_generation_job_correct_errors(
     builder
 }
 
+pub(crate) fn usage_breakdown_correct_errors(
+    mut builder: crate::types::builders::UsageBreakdownBuilder,
+) -> crate::types::builders::UsageBreakdownBuilder {
+    if builder.current_usage.is_none() {
+        builder.current_usage = Some(Default::default())
+    }
+    if builder.current_overages.is_none() {
+        builder.current_overages = Some(Default::default())
+    }
+    if builder.usage_limit.is_none() {
+        builder.usage_limit = Some(Default::default())
+    }
+    if builder.overage_charges.is_none() {
+        builder.overage_charges = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn memory_entry_metadata_correct_errors(
     mut builder: crate::types::builders::MemoryEntryMetadataBuilder,
 ) -> crate::types::builders::MemoryEntryMetadataBuilder {

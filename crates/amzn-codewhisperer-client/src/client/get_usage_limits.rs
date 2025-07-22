@@ -12,6 +12,7 @@ impl super::Client {
     ///   field(s):
     ///   - [`limits(Vec::<UsageLimitList>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::limits): (undocumented)
     ///   - [`days_until_reset(i32)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::days_until_reset): Number of days remaining until the usage metrics reset
+    ///   - [`usage_breakdown(Option<UsageBreakdown>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::usage_breakdown): Usage breakdown by SKU type
     ///   - [`subscription_info(Option<SubscriptionInfo>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::subscription_info): Subscription Info
     ///   - [`overage_configuration(Option<OverageConfiguration>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::overage_configuration): Overage Configuration
     /// - On failure, responds with

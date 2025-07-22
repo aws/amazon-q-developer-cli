@@ -7,6 +7,8 @@ pub struct GetUsageLimitsOutput {
     pub limits: ::std::vec::Vec<crate::types::UsageLimitList>,
     /// Number of days remaining until the usage metrics reset
     pub days_until_reset: i32,
+    /// Usage breakdown by SKU type
+    pub usage_breakdown: ::std::option::Option<crate::types::UsageBreakdown>,
     /// Subscription Info
     pub subscription_info: ::std::option::Option<crate::types::SubscriptionInfo>,
     /// Overage Configuration
@@ -23,6 +25,11 @@ impl GetUsageLimitsOutput {
     /// Number of days remaining until the usage metrics reset
     pub fn days_until_reset(&self) -> i32 {
         self.days_until_reset
+    }
+
+    /// Usage breakdown by SKU type
+    pub fn usage_breakdown(&self) -> ::std::option::Option<&crate::types::UsageBreakdown> {
+        self.usage_breakdown.as_ref()
     }
 
     /// Subscription Info
@@ -55,6 +62,7 @@ impl GetUsageLimitsOutput {
 pub struct GetUsageLimitsOutputBuilder {
     pub(crate) limits: ::std::option::Option<::std::vec::Vec<crate::types::UsageLimitList>>,
     pub(crate) days_until_reset: ::std::option::Option<i32>,
+    pub(crate) usage_breakdown: ::std::option::Option<crate::types::UsageBreakdown>,
     pub(crate) subscription_info: ::std::option::Option<crate::types::SubscriptionInfo>,
     pub(crate) overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
     _request_id: Option<String>,
@@ -97,6 +105,23 @@ impl GetUsageLimitsOutputBuilder {
     /// Number of days remaining until the usage metrics reset
     pub fn get_days_until_reset(&self) -> &::std::option::Option<i32> {
         &self.days_until_reset
+    }
+
+    /// Usage breakdown by SKU type
+    pub fn usage_breakdown(mut self, input: crate::types::UsageBreakdown) -> Self {
+        self.usage_breakdown = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Usage breakdown by SKU type
+    pub fn set_usage_breakdown(mut self, input: ::std::option::Option<crate::types::UsageBreakdown>) -> Self {
+        self.usage_breakdown = input;
+        self
+    }
+
+    /// Usage breakdown by SKU type
+    pub fn get_usage_breakdown(&self) -> &::std::option::Option<crate::types::UsageBreakdown> {
+        &self.usage_breakdown
     }
 
     /// Subscription Info
@@ -170,6 +195,7 @@ impl GetUsageLimitsOutputBuilder {
                     "days_until_reset was not specified but it is required when building GetUsageLimitsOutput",
                 )
             })?,
+            usage_breakdown: self.usage_breakdown,
             subscription_info: self.subscription_info,
             overage_configuration: self.overage_configuration,
             _request_id: self._request_id,

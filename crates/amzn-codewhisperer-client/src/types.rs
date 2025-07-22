@@ -7,6 +7,8 @@ pub use crate::types::_application_properties::ApplicationProperties;
 pub use crate::types::_artifact_type::ArtifactType;
 pub use crate::types::_assistant_response_message::AssistantResponseMessage;
 pub use crate::types::_by_user_analytics::ByUserAnalytics;
+pub use crate::types::_cache_point::CachePoint;
+pub use crate::types::_cache_point_type::CachePointType;
 pub use crate::types::_change_log_granularity_type::ChangeLogGranularityType;
 pub use crate::types::_change_log_options::ChangeLogOptions;
 pub use crate::types::_chat_add_message_event::ChatAddMessageEvent;
@@ -15,6 +17,7 @@ pub use crate::types::_chat_message::ChatMessage;
 pub use crate::types::_chat_message_interaction_type::ChatMessageInteractionType;
 pub use crate::types::_chat_trigger_type::ChatTriggerType;
 pub use crate::types::_chat_user_modification_event::ChatUserModificationEvent;
+pub use crate::types::_client_cache_config::ClientCacheConfig;
 pub use crate::types::_code_analysis_findings_schema::CodeAnalysisFindingsSchema;
 pub use crate::types::_code_analysis_scope::CodeAnalysisScope;
 pub use crate::types::_code_analysis_status::CodeAnalysisStatus;
@@ -189,6 +192,7 @@ pub use crate::types::_transformation_upload_context::TransformationUploadContex
 pub use crate::types::_transformation_user_action_status::TransformationUserActionStatus;
 pub use crate::types::_upload_context::UploadContext;
 pub use crate::types::_upload_intent::UploadIntent;
+pub use crate::types::_usage_breakdown::UsageBreakdown;
 pub use crate::types::_usage_limit_list::UsageLimitList;
 pub use crate::types::_usage_limit_type::UsageLimitType;
 pub use crate::types::_usage_limit_update_request_status::UsageLimitUpdateRequestStatus;
@@ -222,6 +226,10 @@ mod _assistant_response_message;
 
 mod _by_user_analytics;
 
+mod _cache_point;
+
+mod _cache_point_type;
+
 mod _change_log_granularity_type;
 
 mod _change_log_options;
@@ -237,6 +245,8 @@ mod _chat_message_interaction_type;
 mod _chat_trigger_type;
 
 mod _chat_user_modification_event;
+
+mod _client_cache_config;
 
 mod _code_analysis_findings_schema;
 
@@ -585,6 +595,8 @@ mod _transformation_user_action_status;
 mod _upload_context;
 
 mod _upload_intent;
+
+mod _usage_breakdown;
 
 mod _usage_limit_list;
 
