@@ -687,7 +687,7 @@ impl ChatSession {
             },
             ChatState::RetryModelOverload => tokio::select! {
                 res = self.retry_model_overload(os) => res,
-                Ok(_) = ctrl_c_stream => {
+                Ok(_) = ctrl_c_stream.recv() => {
                     Err(ChatError::Interrupted { tool_uses: None })
                 }
             },
@@ -2330,17 +2330,14 @@ impl ChatSession {
             Err(err) => return Err(err),
         }
 
-        let conv_state = self
-            .conversation
-            .as_sendable_conversation_state(os, &mut self.stderr, true)
-            .await?;
-
         if self.interactive {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
         }
 
         Ok(ChatState::HandleResponseStream(
-            os.client.send_message(conv_state).await?,
+            self.conversation
+                .as_sendable_conversation_state(os, &mut self.stderr, true)
+                .await?,
         ))
     }
 
