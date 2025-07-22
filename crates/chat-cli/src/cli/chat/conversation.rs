@@ -32,6 +32,7 @@ use super::message::{
     ToolUseResult,
     UserMessage,
 };
+use super::parser::RequestMetadata;
 use super::token_counter::{
     CharCount,
     CharCounter,
@@ -65,6 +66,14 @@ use crate::os::Os;
 const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    user: UserMessage,
+    assistant: AssistantMessage,
+    #[serde(default)]
+    request_metadata: Option<RequestMetadata>,
+}
+
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationState {
@@ -73,7 +82,7 @@ pub struct ConversationState {
     /// The next user message to be sent as part of the conversation. Required to be [Some] before
     /// calling [Self::as_sendable_conversation_state].
     next_message: Option<UserMessage>,
-    history: VecDeque<(UserMessage, AssistantMessage)>,
+    history: VecDeque<HistoryEntry>,
     /// The range in the history sendable to the backend (start inclusive, end exclusive).
     valid_history_range: (usize, usize),
     /// Similar to history in that stores user and assistant responses, except that it is not used
@@ -90,7 +99,7 @@ pub struct ConversationState {
     /// Cached value representing the length of the user context message.
     context_message_length: Option<usize>,
     /// Stores the latest conversation summary created by /compact
-    latest_summary: Option<String>,
+    latest_summary: Option<(String, RequestMetadata)>,
     #[serde(skip)]
     pub agents: Agents,
     /// Model explicitly selected by the user in this conversation state via `/model`.
@@ -141,10 +150,10 @@ impl ConversationState {
     }
 
     pub fn latest_summary(&self) -> Option<&str> {
-        self.latest_summary.as_deref()
+        self.latest_summary.as_ref().map(|(s, _)| s.as_str())
     }
 
-    pub fn history(&self) -> &VecDeque<(UserMessage, AssistantMessage)> {
+    pub fn history(&self) -> &VecDeque<HistoryEntry> {
         &self.history
     }
 
@@ -177,10 +186,14 @@ impl ConversationState {
                 },
             }
             if candidate_asst.is_some() && candidate_user.is_some() {
-                let asst = candidate_asst.take().unwrap();
+                let assistant = candidate_asst.take().unwrap();
                 let user = candidate_user.take().unwrap();
-                self.append_assistant_transcript(&asst);
-                self.history.push_back((user, asst));
+                self.append_assistant_transcript(&assistant);
+                self.history.push_back(HistoryEntry {
+                    user,
+                    assistant,
+                    request_metadata: None,
+                });
             }
         }
         Some(last_msg.content.to_string())
@@ -212,12 +225,21 @@ impl ConversationState {
     }
 
     /// Sets the response message according to the currently set [Self::next_message].
-    pub fn push_assistant_message(&mut self, os: &mut Os, message: AssistantMessage) {
+    pub fn push_assistant_message(
+        &mut self,
+        os: &mut Os,
+        message: AssistantMessage,
+        request_metadata: Option<RequestMetadata>,
+    ) {
         debug_assert!(self.next_message.is_some(), "next_message should exist");
         let next_user_message = self.next_message.take().expect("next user message should exist");
 
         self.append_assistant_transcript(&message);
-        self.history.push_back((next_user_message, message));
+        self.history.push_back(HistoryEntry {
+            user: next_user_message,
+            assistant: message,
+            request_metadata,
+        });
 
         if let Ok(cwd) = std::env::current_dir() {
             os.database.set_conversation_by_path(cwd, self).ok();
@@ -233,7 +255,23 @@ impl ConversationState {
     ///
     /// This is equivalent to `utterance_id` in the Q API.
     pub fn message_id(&self) -> Option<&str> {
-        self.history.back().and_then(|(_, msg)| msg.message_id())
+        self.history
+            .back()
+            .and_then(|HistoryEntry { assistant, .. }| assistant.message_id())
+    }
+
+    pub fn latest_tool_use_ids(&self) -> Option<String> {
+        self.history
+            .back()
+            .and_then(|HistoryEntry { assistant, .. }| assistant.tool_uses())
+            .map(|tools| (tools.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(",")))
+    }
+
+    pub fn latest_tool_use_names(&self) -> Option<String> {
+        self.history
+            .back()
+            .and_then(|HistoryEntry { assistant, .. }| assistant.tool_uses())
+            .map(|tools| (tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(",")))
     }
 
     /// Updates the history so that, when non-empty, the following invariants are in place:
@@ -440,7 +478,7 @@ impl ConversationState {
                         FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
             },
         };
-        if let Some(summary) = &self.latest_summary {
+        if let Some((summary, _)) = &self.latest_summary {
             summary_content.push_str("\n\n");
             summary_content.push_str(CONTEXT_ENTRY_START_HEADER);
             summary_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST be sure to include this information when creating your summarization document.\n\n");
@@ -457,8 +495,8 @@ impl ConversationState {
         let mut history = conv_state.history.cloned().collect::<VecDeque<_>>();
         history.drain((history.len().saturating_sub(strategy.messages_to_exclude))..);
         if strategy.truncate_large_messages {
-            for (user_message, _) in &mut history {
-                user_message.truncate_safe(strategy.max_message_length);
+            for HistoryEntry { user, .. } in &mut history {
+                user.truncate_safe(strategy.max_message_length);
             }
         }
 
@@ -488,10 +526,15 @@ impl ConversationState {
 
     /// `strategy` - The [CompactStrategy] used for the corresponding
     /// [ConversationState::create_summary_request].
-    pub fn replace_history_with_summary(&mut self, summary: String, strategy: CompactStrategy) {
+    pub fn replace_history_with_summary(
+        &mut self,
+        summary: String,
+        strategy: CompactStrategy,
+        request_metadata: RequestMetadata,
+    ) {
         self.history
             .drain(..(self.history.len().saturating_sub(strategy.messages_to_exclude)));
-        self.latest_summary = Some(summary);
+        self.latest_summary = Some((summary, request_metadata));
     }
 
     pub fn current_profile(&self) -> Option<&str> {
@@ -514,10 +557,10 @@ impl ConversationState {
         &mut self,
         os: &Os,
         conversation_start_context: Option<String>,
-    ) -> (Option<Vec<(UserMessage, AssistantMessage)>>, Vec<(String, String)>) {
+    ) -> (Option<Vec<HistoryEntry>>, Vec<(String, String)>) {
         let mut context_content = String::new();
         let mut dropped_context_files = Vec::new();
-        if let Some(summary) = &self.latest_summary {
+        if let Some((summary, _)) = &self.latest_summary {
             context_content.push_str(CONTEXT_ENTRY_START_HEADER);
             context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\n");
             context_content.push_str("SUMMARY CONTENT:\n");
@@ -554,9 +597,16 @@ impl ConversationState {
 
         if !context_content.is_empty() {
             self.context_message_length = Some(context_content.len());
-            let user_msg = UserMessage::new_prompt(context_content);
-            let assistant_msg = AssistantMessage::new_response(None, "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into());
-            (Some(vec![(user_msg, assistant_msg)]), dropped_context_files)
+            let user = UserMessage::new_prompt(context_content);
+            let assistant = AssistantMessage::new_response(None, "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into());
+            (
+                Some(vec![HistoryEntry {
+                    user,
+                    assistant,
+                    request_metadata: None,
+                }]),
+                dropped_context_files,
+            )
         } else {
             (None, dropped_context_files)
         }
@@ -611,11 +661,8 @@ impl ConversationState {
 ///
 /// This is intended to provide us ways to accurately assess the exact state that is sent to the
 /// model without having to needlessly clone and mutate [ConversationState] in strange ways.
-pub type BackendConversationState<'a> = BackendConversationStateImpl<
-    'a,
-    std::collections::vec_deque::Iter<'a, (UserMessage, AssistantMessage)>,
-    Option<Vec<(UserMessage, AssistantMessage)>>,
->;
+pub type BackendConversationState<'a> =
+    BackendConversationStateImpl<'a, std::collections::vec_deque::Iter<'a, HistoryEntry>, Option<Vec<HistoryEntry>>>;
 
 /// See [BackendConversationState]
 #[derive(Debug, Clone)]
@@ -629,13 +676,7 @@ pub struct BackendConversationStateImpl<'a, T, U> {
     pub model_id: Option<&'a str>,
 }
 
-impl
-    BackendConversationStateImpl<
-        '_,
-        std::collections::vec_deque::Iter<'_, (UserMessage, AssistantMessage)>,
-        Option<Vec<(UserMessage, AssistantMessage)>>,
-    >
-{
+impl BackendConversationStateImpl<'_, std::collections::vec_deque::Iter<'_, HistoryEntry>, Option<Vec<HistoryEntry>>> {
     fn into_fig_conversation_state(self) -> eyre::Result<FigConversationState> {
         let history = flatten_history(self.context_messages.unwrap_or_default().iter().chain(self.history));
         let user_input_message: UserInputMessage = self
@@ -659,7 +700,7 @@ impl
         // Count the chars used by the messages in the history.
         // this clone is cheap
         let history = self.history.clone();
-        for (user, assistant) in history {
+        for HistoryEntry { user, assistant, .. } in history {
             user_chars += *user.char_count();
             assistant_chars += *assistant.char_count();
         }
@@ -669,7 +710,7 @@ impl
             .context_messages
             .as_ref()
             .map(|v| {
-                v.iter().fold(0, |acc, (user, assistant)| {
+                v.iter().fold(0, |acc, HistoryEntry { user, assistant, .. }| {
                     acc + *user.char_count() + *assistant.char_count()
                 })
             })
@@ -694,9 +735,9 @@ pub struct ConversationSize {
 /// Converts a list of user/assistant message pairs into a flattened list of ChatMessage.
 fn flatten_history<'a, T>(history: T) -> Vec<ChatMessage>
 where
-    T: Iterator<Item = &'a (UserMessage, AssistantMessage)>,
+    T: Iterator<Item = &'a HistoryEntry>,
 {
-    history.fold(Vec::new(), |mut acc, (user, assistant)| {
+    history.fold(Vec::new(), |mut acc, HistoryEntry { user, assistant, .. }| {
         acc.push(ChatMessage::UserInputMessage(user.clone().into_history_entry()));
         acc.push(ChatMessage::AssistantResponseMessage(assistant.clone().into()));
         acc
@@ -738,7 +779,7 @@ fn format_hook_context(hook_results: &[((HookTrigger, Hook), String)], trigger: 
 }
 
 fn enforce_conversation_invariants(
-    history: &mut VecDeque<(UserMessage, AssistantMessage)>,
+    history: &mut VecDeque<HistoryEntry>,
     next_message: &mut Option<UserMessage>,
     tools: &HashMap<ToolOrigin, Vec<Tool>>,
 ) -> (usize, usize) {
@@ -755,7 +796,7 @@ fn enforce_conversation_invariants(
             .iter()
             .enumerate()
             .skip(1)
-            .find(|(_, (m, _))| -> bool { !m.has_tool_use_results() })
+            .find(|(_, HistoryEntry { user, .. })| -> bool { !user.has_tool_use_results() })
             .map(|v| v.0)
         {
             Some(i) => {
@@ -779,7 +820,7 @@ fn enforce_conversation_invariants(
 
     // If the first message contains tool results, then we add the results to the content field
     // instead. This is required to avoid validation errors.
-    if let Some((user, _)) = history.front_mut() {
+    if let Some(HistoryEntry { user, .. }) = history.front_mut() {
         if user.has_tool_use_results() {
             user.replace_content_with_tool_use_results();
         }
@@ -792,7 +833,12 @@ fn enforce_conversation_invariants(
         history.range(valid_history_range.0..valid_history_range.1).last(),
     ) {
         (Some(next_message), prev_msg) if next_message.has_tool_use_results() => match prev_msg {
-            None | Some((_, AssistantMessage::Response { .. })) => {
+            // None | Some((_, AssistantMessage::Response { .. }, _)) => {
+            None
+            | Some(HistoryEntry {
+                assistant: AssistantMessage::Response { .. },
+                ..
+            }) => {
                 next_message.replace_content_with_tool_use_results();
             },
             _ => (),
@@ -802,7 +848,13 @@ fn enforce_conversation_invariants(
 
     // If the last message from the assistant contains tool uses AND next_message is set, we need to
     // ensure that next_message contains tool results.
-    if let (Some((_, AssistantMessage::ToolUse { tool_uses, .. })), Some(user_msg)) = (
+    if let (
+        Some(HistoryEntry {
+            assistant: AssistantMessage::ToolUse { tool_uses, .. },
+            ..
+        }),
+        Some(user_msg),
+    ) = (
         history.range(valid_history_range.0..valid_history_range.1).last(),
         next_message,
     ) {
@@ -822,10 +874,7 @@ fn enforce_conversation_invariants(
     valid_history_range
 }
 
-fn enforce_tool_use_history_invariants(
-    history: &mut VecDeque<(UserMessage, AssistantMessage)>,
-    tools: &HashMap<ToolOrigin, Vec<Tool>>,
-) {
+fn enforce_tool_use_history_invariants(history: &mut VecDeque<HistoryEntry>, tools: &HashMap<ToolOrigin, Vec<Tool>>) {
     let tool_names: HashSet<_> = tools
         .values()
         .flat_map(|tools| {
@@ -836,7 +885,7 @@ fn enforce_tool_use_history_invariants(
         .filter(|name| *name != DUMMY_TOOL_NAME)
         .collect();
 
-    for (_, assistant) in history {
+    for HistoryEntry { assistant, .. } in history {
         if let AssistantMessage::ToolUse { tool_uses, .. } = assistant {
             for tool_use in tool_uses {
                 if tool_names.contains(tool_use.name.as_str()) {
@@ -1003,7 +1052,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_conversation_state_invariants(s, i);
-            conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()));
+            conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()), None);
             conversation.set_next_user_message(i.to_string()).await;
         }
     }
@@ -1040,6 +1089,7 @@ mod tests {
                     args: serde_json::Value::Null,
                     ..Default::default()
                 }]),
+                None,
             );
             conversation.add_tool_results(vec![ToolUseResult {
                 tool_use_id: "tool_id".to_string(),
@@ -1067,6 +1117,7 @@ mod tests {
                         args: serde_json::Value::Null,
                         ..Default::default()
                     }]),
+                    None,
                 );
                 conversation.add_tool_results(vec![ToolUseResult {
                     tool_use_id: "tool_id".to_string(),
@@ -1074,7 +1125,7 @@ mod tests {
                     status: ToolResultStatus::Success,
                 }]);
             } else {
-                conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()));
+                conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()), None);
                 conversation.set_next_user_message(i.to_string()).await;
             }
         }
@@ -1130,7 +1181,7 @@ mod tests {
 
             assert_conversation_state_invariants(s, i);
 
-            conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()));
+            conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()), None);
             conversation.set_next_user_message(i.to_string()).await;
         }
     }

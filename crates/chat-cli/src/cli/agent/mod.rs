@@ -590,7 +590,32 @@ impl Agents {
                 );
             }
 
-            all_agents.push(Agent::default());
+            all_agents.push({
+                let mut agent = Agent::default();
+                'load_legacy_mcp_json: {
+                    if global_mcp_config.is_none() {
+                        let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
+                            tracing::error!("Error obtaining legacy mcp json path. Skipping");
+                            break 'load_legacy_mcp_json;
+                        };
+                        let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+                            Ok(config) => config,
+                            Err(e) => {
+                                tracing::error!("Error loading global mcp json path: {e}. Skipping");
+                                break 'load_legacy_mcp_json;
+                            },
+                        };
+                        global_mcp_config.replace(legacy_mcp_config);
+                    }
+                }
+
+                if let Some(config) = &global_mcp_config {
+                    agent.mcp_servers = config.clone();
+                }
+
+                agent
+            });
+
             "default".to_string()
         };
 
@@ -627,7 +652,7 @@ impl Agents {
                             style::SetForegroundColor(Color::Yellow),
                             style::Print(&e.instance_path),
                             style::ResetColor,
-                            style::Print(format!(": {e}")),
+                            style::Print(format!(": {e}\n")),
                         );
                     }
                 },

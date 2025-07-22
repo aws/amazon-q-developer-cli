@@ -32,8 +32,20 @@ impl McpServerConfig {
     }
 
     pub async fn save_to_file(&self, os: &Os, path: impl AsRef<Path>) -> eyre::Result<()> {
-        let json = serde_json::to_string_pretty(self)?;
+        let json = self.to_non_transparent_json_pretty()?;
         os.fs.write(path.as_ref(), json).await?;
         Ok(())
+    }
+
+    /// Because we had annotated [McpServerConfig] with transparent, when writing the config alone
+    /// to its legacy location (as opposed to writing it along with its agent config), we would
+    /// need to call this function to stringify it otherwise we would be writing only the inner
+    /// hashmap.
+    fn to_non_transparent_json_pretty(&self) -> eyre::Result<String> {
+        let transparent_json = serde_json::to_value(self)?;
+        let non_transparent_json = serde_json::json!({
+            "mcpServers": transparent_json
+        });
+        Ok(serde_json::to_string_pretty(&non_transparent_json)?)
     }
 }

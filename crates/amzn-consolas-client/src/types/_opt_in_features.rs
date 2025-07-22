@@ -13,6 +13,10 @@ pub struct OptInFeatures {
     pub notifications: ::std::option::Option<::std::vec::Vec<crate::types::NotificationsFeature>>,
     #[allow(missing_docs)] // documentation missing in model
     pub workspace_context: ::std::option::Option<crate::types::WorkspaceContext>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub mcp_configuration: ::std::option::Option<crate::types::McpConfiguration>,
 }
 impl OptInFeatures {
     #[allow(missing_docs)] // documentation missing in model
@@ -41,6 +45,16 @@ impl OptInFeatures {
     pub fn workspace_context(&self) -> ::std::option::Option<&crate::types::WorkspaceContext> {
         self.workspace_context.as_ref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn overage_configuration(&self) -> ::std::option::Option<&crate::types::OverageConfiguration> {
+        self.overage_configuration.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn mcp_configuration(&self) -> ::std::option::Option<&crate::types::McpConfiguration> {
+        self.mcp_configuration.as_ref()
+    }
 }
 impl OptInFeatures {
     /// Creates a new builder-style object to manufacture
@@ -59,6 +73,8 @@ pub struct OptInFeaturesBuilder {
     pub(crate) dashboard_analytics: ::std::option::Option<crate::types::DashboardAnalytics>,
     pub(crate) notifications: ::std::option::Option<::std::vec::Vec<crate::types::NotificationsFeature>>,
     pub(crate) workspace_context: ::std::option::Option<crate::types::WorkspaceContext>,
+    pub(crate) overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
+    pub(crate) mcp_configuration: ::std::option::Option<crate::types::McpConfiguration>,
 }
 impl OptInFeaturesBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -154,6 +170,43 @@ impl OptInFeaturesBuilder {
         &self.workspace_context
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn overage_configuration(mut self, input: crate::types::OverageConfiguration) -> Self {
+        self.overage_configuration = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_overage_configuration(
+        mut self,
+        input: ::std::option::Option<crate::types::OverageConfiguration>,
+    ) -> Self {
+        self.overage_configuration = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_overage_configuration(&self) -> &::std::option::Option<crate::types::OverageConfiguration> {
+        &self.overage_configuration
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn mcp_configuration(mut self, input: crate::types::McpConfiguration) -> Self {
+        self.mcp_configuration = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_mcp_configuration(mut self, input: ::std::option::Option<crate::types::McpConfiguration>) -> Self {
+        self.mcp_configuration = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_mcp_configuration(&self) -> &::std::option::Option<crate::types::McpConfiguration> {
+        &self.mcp_configuration
+    }
+
     /// Consumes the builder and constructs a [`OptInFeatures`](crate::types::OptInFeatures).
     pub fn build(self) -> crate::types::OptInFeatures {
         crate::types::OptInFeatures {
@@ -162,6 +215,8 @@ impl OptInFeaturesBuilder {
             dashboard_analytics: self.dashboard_analytics,
             notifications: self.notifications,
             workspace_context: self.workspace_context,
+            overage_configuration: self.overage_configuration,
+            mcp_configuration: self.mcp_configuration,
         }
     }
 }

@@ -208,6 +208,11 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GetUsageLimi
                         query.push_kv("profileArn", &::aws_smithy_http::query::fmt_string(inner_1));
                     }
                 }
+                if let ::std::option::Option::Some(inner_2) = &_input.resource_type {
+                    {
+                        query.push_kv("resourceType", &::aws_smithy_http::query::fmt_string(inner_2));
+                    }
+                }
                 ::std::result::Result::Ok(())
             }
             #[allow(clippy::unnecessary_wraps)]

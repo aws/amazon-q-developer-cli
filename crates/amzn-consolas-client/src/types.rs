@@ -20,9 +20,12 @@ pub use crate::types::_identity_details::IdentityDetails;
 pub use crate::types::_identity_source::IdentitySource;
 pub use crate::types::_import::Import;
 pub use crate::types::_internal_server_exception_reason::InternalServerExceptionReason;
+pub use crate::types::_mcp_configuration::McpConfiguration;
 pub use crate::types::_notifications_feature::NotificationsFeature;
 pub use crate::types::_opt_in_feature_toggle::OptInFeatureToggle;
 pub use crate::types::_opt_in_features::OptInFeatures;
+pub use crate::types::_overage_configuration::OverageConfiguration;
+pub use crate::types::_overage_status::OverageStatus;
 pub use crate::types::_previous_editor_state_metadata::PreviousEditorStateMetadata;
 pub use crate::types::_profile::Profile;
 pub use crate::types::_profile_status::ProfileStatus;
@@ -91,11 +94,17 @@ mod _import;
 
 mod _internal_server_exception_reason;
 
+mod _mcp_configuration;
+
 mod _notifications_feature;
 
 mod _opt_in_feature_toggle;
 
 mod _opt_in_features;
+
+mod _overage_configuration;
+
+mod _overage_status;
 
 mod _previous_editor_state_metadata;
 

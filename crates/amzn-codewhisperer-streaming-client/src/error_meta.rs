@@ -18,6 +18,8 @@ pub enum Error {
     ResourceNotFoundError(crate::types::error::ResourceNotFoundError),
     /// This exception is thrown when request was denied due to caller exceeding their usage limits
     ServiceQuotaExceededError(crate::types::error::ServiceQuotaExceededError),
+    /// This exception is thrown when the service is unavailable
+    ServiceUnavailableError(crate::types::error::ServiceUnavailableError),
     /// This exception is thrown when request was denied due to request throttling.
     ThrottlingError(crate::types::error::ThrottlingError),
     /// This exception is thrown when the input fails to satisfy the constraints specified by the
@@ -44,6 +46,7 @@ impl ::std::fmt::Display for Error {
             Error::InternalServerError(inner) => inner.fmt(f),
             Error::ResourceNotFoundError(inner) => inner.fmt(f),
             Error::ServiceQuotaExceededError(inner) => inner.fmt(f),
+            Error::ServiceUnavailableError(inner) => inner.fmt(f),
             Error::ThrottlingError(inner) => inner.fmt(f),
             Error::ValidationError(inner) => inner.fmt(f),
             Error::Unhandled(_) => {
@@ -75,6 +78,7 @@ impl ::aws_smithy_types::error::metadata::ProvideErrorMetadata for Error {
             Self::InternalServerError(inner) => inner.meta(),
             Self::ResourceNotFoundError(inner) => inner.meta(),
             Self::ServiceQuotaExceededError(inner) => inner.meta(),
+            Self::ServiceUnavailableError(inner) => inner.meta(),
             Self::ThrottlingError(inner) => inner.meta(),
             Self::ValidationError(inner) => inner.meta(),
             Self::Unhandled(inner) => &inner.meta,
@@ -161,21 +165,21 @@ where
 impl From<crate::operation::generate_assistant_response::GenerateAssistantResponseError> for Error {
     fn from(err: crate::operation::generate_assistant_response::GenerateAssistantResponseError) -> Self {
         match err {
-            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
-            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ServiceQuotaExceededError(inner) => {
+                Error::ServiceQuotaExceededError(inner)
+            }
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ServiceUnavailableError(inner) => {
+                Error::ServiceUnavailableError(inner)
+            }
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError(inner) => Error::ThrottlingError(inner),
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ValidationError(inner) => Error::ValidationError(inner),
             crate::operation::generate_assistant_response::GenerateAssistantResponseError::AccessDeniedError(inner) => {
                 Error::AccessDeniedError(inner)
-            },
-            crate::operation::generate_assistant_response::GenerateAssistantResponseError::InternalServerError(
-                inner,
-            ) => Error::InternalServerError(inner),
-            crate::operation::generate_assistant_response::GenerateAssistantResponseError::Unhandled(inner) => {
-                Error::Unhandled(inner)
-            },
+            }
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            }
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
 }
@@ -339,6 +343,7 @@ impl ::std::error::Error for Error {
             Error::InternalServerError(inner) => inner.source(),
             Error::ResourceNotFoundError(inner) => inner.source(),
             Error::ServiceQuotaExceededError(inner) => inner.source(),
+            Error::ServiceUnavailableError(inner) => inner.source(),
             Error::ThrottlingError(inner) => inner.source(),
             Error::ValidationError(inner) => inner.source(),
             Error::Unhandled(inner) => ::std::option::Option::Some(&*inner.source),
@@ -354,6 +359,7 @@ impl ::aws_types::request_id::RequestId for Error {
             Self::InternalServerError(e) => e.request_id(),
             Self::ResourceNotFoundError(e) => e.request_id(),
             Self::ServiceQuotaExceededError(e) => e.request_id(),
+            Self::ServiceUnavailableError(e) => e.request_id(),
             Self::ThrottlingError(e) => e.request_id(),
             Self::ValidationError(e) => e.request_id(),
             Self::Unhandled(e) => e.meta.request_id(),

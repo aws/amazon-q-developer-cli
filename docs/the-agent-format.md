@@ -8,9 +8,11 @@ Every manifest file consists of the following sections:
 - [`version`](#the-version-field) — The version of the agent.
 - [`description`](#the-description-field) — A description of the agent.
 - [`mcpServers`](#the-mcp-servers-field) — The MCP servers the agent has access to.
-- [`tools`](#the-tools-field) --- The tools available to the agent.
+- [`tools`](#the-tools-field) — The tools available to the agent.
 - [`allowedTools`](#the-allowed-tools-field) — Tools that can be used without prompting.
 - [`toolsSettings`](#the-tools-settings-field) — Configuration for specific tools.
+- [`resources`](#the-resources-field) — Resources available to the agent.
+- [`hooks`](#the-hooks-field) — Commands ran at specific trigger points.
 
 ### The `name` field
 
@@ -123,6 +125,39 @@ The `toolsSettings` field provides configuration for specific tools. Each tool h
     },
     "@my-enterprise-mcp.my-tool": {
       "some-configuration-value": true
+    }
+  }
+}
+```
+
+### The `resources` field
+
+The `resources` field gives an agent access to local resources.
+
+Resources are data and content that your agent has access to. As of today, only local file resources are supported, however the intention is to support surfacing MCP resources to agents as well.
+
+```json
+{
+  "resources": [
+    "file://AmazonQ.md",
+    "file://~/Documents/my-repo/README.md",
+    "file:///tmp/my-application-logs.txt"
+  ]
+}
+```
+
+### The `hooks` field
+
+The `hooks` field invokes functions at specific trigger points. The output of these functions is persisted into context according to the lifetime rules of the trigger. Hooks that run once, on `agentSpawn` for example, will be added to persistent context while shorter lived hooks like `userPromptSubmit` exist inside of the rolling context window.  
+
+```json
+{
+  "hooks": {
+    "agentSpawn": {
+      "command": "git status",
+    },
+    "userPromptSubmit": {
+      "command": "ls",
     }
   }
 }

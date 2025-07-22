@@ -21,6 +21,7 @@ pub use crate::types::_code_analysis_status::CodeAnalysisStatus;
 pub use crate::types::_code_analysis_upload_context::CodeAnalysisUploadContext;
 pub use crate::types::_code_coverage_event::CodeCoverageEvent;
 pub use crate::types::_code_description::CodeDescription;
+pub use crate::types::_code_diff_metadata::CodeDiffMetadata;
 pub use crate::types::_code_fix_acceptance_event::CodeFixAcceptanceEvent;
 pub use crate::types::_code_fix_generation_event::CodeFixGenerationEvent;
 pub use crate::types::_code_fix_job_status::CodeFixJobStatus;
@@ -88,6 +89,7 @@ pub use crate::types::_input_type::InputType;
 pub use crate::types::_intent::Intent;
 pub use crate::types::_intent_context::IntentContext;
 pub use crate::types::_internal_server_exception_reason::InternalServerExceptionReason;
+pub use crate::types::_mcp_configuration::McpConfiguration;
 pub use crate::types::_memory_entry::MemoryEntry;
 pub use crate::types::_memory_entry_metadata::MemoryEntryMetadata;
 pub use crate::types::_memory_status::MemoryStatus;
@@ -100,12 +102,15 @@ pub use crate::types::_opt_in_feature_toggle::OptInFeatureToggle;
 pub use crate::types::_opt_in_features::OptInFeatures;
 pub use crate::types::_opt_out_preference::OptOutPreference;
 pub use crate::types::_origin::Origin;
+pub use crate::types::_overage_configuration::OverageConfiguration;
+pub use crate::types::_overage_status::OverageStatus;
 pub use crate::types::_package_info::PackageInfo;
 pub use crate::types::_position::Position;
 pub use crate::types::_prediction::Prediction;
 pub use crate::types::_prediction_type::PredictionType;
 pub use crate::types::_previous_editor_state_metadata::PreviousEditorStateMetadata;
 pub use crate::types::_profile::Profile;
+pub use crate::types::_profile_info::ProfileInfo;
 pub use crate::types::_profile_status::ProfileStatus;
 pub use crate::types::_profile_type::ProfileType;
 pub use crate::types::_programming_language::ProgrammingLanguage;
@@ -117,13 +122,17 @@ pub use crate::types::_reference_tracker_configuration::ReferenceTrackerConfigur
 pub use crate::types::_relevant_text_document::RelevantTextDocument;
 pub use crate::types::_resource_policy::ResourcePolicy;
 pub use crate::types::_resource_policy_effect::ResourcePolicyEffect;
+pub use crate::types::_resource_type::ResourceType;
+pub use crate::types::_retrieval::Retrieval;
 pub use crate::types::_runtime_diagnostic::RuntimeDiagnostic;
 pub use crate::types::_service_quota_exceeded_exception_reason::ServiceQuotaExceededExceptionReason;
 pub use crate::types::_shell_history_entry::ShellHistoryEntry;
 pub use crate::types::_shell_state::ShellState;
 pub use crate::types::_span::Span;
 pub use crate::types::_sso_identity_details::SsoIdentityDetails;
+pub use crate::types::_subscription_info::SubscriptionInfo;
 pub use crate::types::_subscription_status::SubscriptionStatus;
+pub use crate::types::_subscription_type::SubscriptionType;
 pub use crate::types::_suggested_fix::SuggestedFix;
 pub use crate::types::_suggestion_state::SuggestionState;
 pub use crate::types::_supplemental_context::SupplementalContext;
@@ -240,6 +249,8 @@ mod _code_analysis_upload_context;
 mod _code_coverage_event;
 
 mod _code_description;
+
+mod _code_diff_metadata;
 
 mod _code_fix_acceptance_event;
 
@@ -375,6 +386,8 @@ mod _intent_context;
 
 mod _internal_server_exception_reason;
 
+mod _mcp_configuration;
+
 mod _memory_entry;
 
 mod _memory_entry_metadata;
@@ -399,6 +412,10 @@ mod _opt_out_preference;
 
 mod _origin;
 
+mod _overage_configuration;
+
+mod _overage_status;
+
 mod _package_info;
 
 mod _position;
@@ -410,6 +427,8 @@ mod _prediction_type;
 mod _previous_editor_state_metadata;
 
 mod _profile;
+
+mod _profile_info;
 
 mod _profile_status;
 
@@ -433,6 +452,10 @@ mod _resource_policy;
 
 mod _resource_policy_effect;
 
+mod _resource_type;
+
+mod _retrieval;
+
 mod _runtime_diagnostic;
 
 mod _service_quota_exceeded_exception_reason;
@@ -445,7 +468,11 @@ mod _span;
 
 mod _sso_identity_details;
 
+mod _subscription_info;
+
 mod _subscription_status;
+
+mod _subscription_type;
 
 mod _suggested_fix;
 

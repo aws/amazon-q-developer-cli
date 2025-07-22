@@ -159,8 +159,7 @@ impl AddArgs {
                 }))?;
 
                 mcp_servers.mcp_servers.insert(self.name.clone(), tool);
-                let json = serde_json::to_string_pretty(&mcp_servers)?;
-                os.fs.write(&global_config_path, json).await?;
+                mcp_servers.save_to_file(os, &global_config_path).await?;
                 writeln!(
                     output,
                     "✓ Added MCP server '{}' to global config in {}\n",
@@ -220,8 +219,7 @@ impl RemoveArgs {
 
                 match config.mcp_servers.remove(&self.name) {
                     Some(_) => {
-                        let json = serde_json::to_string_pretty(&config)?;
-                        os.fs.write(&global_config_path, json).await?;
+                        config.save_to_file(os, &global_config_path).await?;
                         writeln!(
                             output,
                             "\n✓ Removed MCP server '{}' from global config (path {})\n",
