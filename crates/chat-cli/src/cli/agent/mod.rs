@@ -292,50 +292,14 @@ impl Agent {
 
     pub async fn load(
         os: &Os,
-        schema: Option<&serde_json::Value>,
         agent_path: impl AsRef<Path>,
         global_mcp_config: &mut Option<McpServerConfig>,
-        output: &mut impl Write,
     ) -> Result<Agent, AgentConfigError> {
-        // If json is malformed it will result in parsing error, in which case we should early
-        // return since this is unrecoverable
         let content = os.fs.read(&agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
             error: e,
             path: agent_path.as_ref().to_path_buf(),
         })?;
-
-        // If the json is valid, we need to validate the config beyond type accurateness
-        // The failure mode here depends on the field that fails. But none of them should be fatal.
-        if let Some(schema) = schema {
-            let instance = serde_json::to_value(&agent).map_err(|e| AgentConfigError::InvalidJson {
-                error: e,
-                path: agent_path.as_ref().to_path_buf(),
-            })?;
-            if let Err(e) = jsonschema::validate(schema, &instance).map_err(|e| e.to_owned()) {
-                let path_buf = agent_path.as_ref().to_path_buf();
-                let name = path_buf.file_stem().and_then(|name| name.to_str());
-                let _ = execute!(
-                    output,
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print("WARNING "),
-                    style::ResetColor,
-                    style::Print("Agent config "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(if let Some(name) = name.as_ref() {
-                        name
-                    } else {
-                        "of an unknown name"
-                    }),
-                    style::ResetColor,
-                    style::Print(" is malformed at "),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(&e.instance_path),
-                    style::ResetColor,
-                    style::Print(format!(": {e}")),
-                );
-            }
-        }
 
         if agent.use_legacy_mcp_json && global_mcp_config.is_none() {
             let global_mcp_path = directories::chat_legacy_mcp_config(os)?;
@@ -503,7 +467,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, output).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -540,7 +504,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, output).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -682,11 +646,52 @@ impl Agents {
 
         let _ = output.flush();
 
+        // Post parsing validation here
+        let schema = schema_for!(Agent);
+        let agents = local_agents
+            .into_iter()
+            .map(|a| (a.name.clone(), a))
+            .collect::<HashMap<_, _>>();
+        let active_agent = agents.get(&active_idx);
+
+        'validate: {
+            match (serde_json::to_value(schema), active_agent) {
+                (Ok(schema), Some(agent)) => {
+                    let Ok(instance) = serde_json::to_value(agent) else {
+                        let name = &agent.name;
+                        error!("Error converting active agent {name} to value for validation. Skipping");
+                        break 'validate;
+                    };
+                    if let Err(e) = jsonschema::validate(&schema, &instance).map_err(|e| e.to_owned()) {
+                        let name = &agent.name;
+                        let _ = execute!(
+                            output,
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print("WARNING "),
+                            style::ResetColor,
+                            style::Print("Agent config "),
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(name),
+                            style::ResetColor,
+                            style::Print(" is malformed at "),
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print(&e.instance_path),
+                            style::ResetColor,
+                            style::Print(format!(": {e}")),
+                        );
+                    }
+                },
+                (Err(e), _) => {
+                    error!("Failed to convert agent definition to schema: {e}. Skipping validation");
+                },
+                (_, None) => {
+                    warn!("Skipping config validation because there is no active agent");
+                },
+            }
+        }
+
         Self {
-            agents: local_agents
-                .into_iter()
-                .map(|a| (a.name.clone(), a))
-                .collect::<HashMap<_, _>>(),
+            agents,
             active_idx,
             ..Default::default()
         }
@@ -741,19 +746,8 @@ async fn load_agents_from_entries(
     mut files: ReadDir,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
-    output: &mut impl Write,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
-    let schema = {
-        let schema = schema_for!(Agent);
-        match serde_json::to_value(schema) {
-            Ok(schema) => Some(schema),
-            Err(e) => {
-                error!("Failed to convert agent definition to schema: {e}. Skipping validation");
-                None
-            },
-        }
-    };
 
     while let Ok(Some(file)) = files.next_entry().await {
         let file_path = &file.path();
@@ -762,7 +756,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, schema.as_ref(), file_path, global_mcp_config, output).await);
+            res.push(Agent::load(os, file_path, global_mcp_config).await);
         }
     }
 
