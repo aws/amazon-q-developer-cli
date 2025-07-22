@@ -39,7 +39,7 @@ anyhow = "1.0"
 candle-core = { version = "0.9.1", features = [] }
 candle-nn = "0.9.1"
 candle-transformers = "0.9.1"
-tokenizers = "0.21.1"
+tokenizers = "0.21.2"
 hf-hub = { version = "0.4.2", default-features = false, features = ["rustls-tls", "tokio", "ureq"] }
 
 # Conditionally enable Metal on macOS
