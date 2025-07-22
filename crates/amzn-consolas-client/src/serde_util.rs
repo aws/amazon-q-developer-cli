@@ -301,6 +301,24 @@ pub(crate) fn dashboard_analytics_correct_errors(
     builder
 }
 
+pub(crate) fn mcp_configuration_correct_errors(
+    mut builder: crate::types::builders::McpConfigurationBuilder,
+) -> crate::types::builders::McpConfigurationBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
+pub(crate) fn overage_configuration_correct_errors(
+    mut builder: crate::types::builders::OverageConfigurationBuilder,
+) -> crate::types::builders::OverageConfigurationBuilder {
+    if builder.overage_status.is_none() {
+        builder.overage_status = "no value was set".parse::<crate::types::OverageStatus>().ok()
+    }
+    builder
+}
+
 pub(crate) fn prompt_logging_correct_errors(
     mut builder: crate::types::builders::PromptLoggingBuilder,
 ) -> crate::types::builders::PromptLoggingBuilder {

@@ -5,13 +5,13 @@ impl super::Client {
     /// operation.
     ///
     /// - The fluent builder is configurable:
-    ///   - [`account_id(impl Into<String>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::account_id) / [`set_account_id(Option<String>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::set_account_id):<br>required: **true**<br>Represents the AWS account ID of the customer<br>
     ///   - [`client_token(impl Into<String>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::client_token) / [`set_client_token(Option<String>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::set_client_token):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`status_only(bool)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::status_only) / [`set_status_only(Option<bool>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::set_status_only):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`CreateSubscriptionTokenOutput`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput)
     ///   with field(s):
-    ///   - [`encoded_verification_url(String)`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput::encoded_verification_url): (undocumented)
-    ///   - [`token(String)`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput::token): (undocumented)
+    ///   - [`encoded_verification_url(Option<String>)`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput::encoded_verification_url): (undocumented)
+    ///   - [`token(Option<String>)`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput::token): (undocumented)
     ///   - [`status(SubscriptionStatus)`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput::status): (undocumented)
     /// - On failure, responds with
     ///   [`SdkError<CreateSubscriptionTokenError>`](crate::operation::create_subscription_token::CreateSubscriptionTokenError)

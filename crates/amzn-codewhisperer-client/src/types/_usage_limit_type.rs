@@ -12,14 +12,10 @@
 /// ```text
 /// # let usagelimittype = unimplemented!();
 /// match usagelimittype {
+///     UsageLimitType::AgenticRequest => { /* ... */ },
 ///     UsageLimitType::AiEditor => { /* ... */ },
-///     UsageLimitType::Chat => { /* ... */ },
-///     UsageLimitType::CodeScan => { /* ... */ },
-///     UsageLimitType::GumbyTransform => { /* ... */ },
-///     UsageLimitType::ProactiveCodeScan => { /* ... */ },
-///     UsageLimitType::Qsda => { /* ... */ },
-///     UsageLimitType::Recommendations => { /* ... */ },
-///     UsageLimitType::WeaverbirdConversation => { /* ... */ },
+///     UsageLimitType::CodeCompletions => { /* ... */ },
+///     UsageLimitType::Transform => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
 /// }
@@ -53,22 +49,14 @@
     ::std::hash::Hash,
 )]
 pub enum UsageLimitType {
-    /// AI editor service usage metric
+    /// Agentic request usage metric
+    AgenticRequest,
+    /// KIRO usage metric
     AiEditor,
-    /// Chat service usage metric
-    Chat,
-    /// Code scanning service usage metric
-    CodeScan,
-    /// Code transformation service usage metric
-    GumbyTransform,
-    /// Proactive code scanning service usage metric
-    ProactiveCodeScan,
-    /// QSDA usage metric
-    Qsda,
     /// Inline recommendations service usage metric
-    Recommendations,
-    /// Weaverbird conversation service usage metric
-    WeaverbirdConversation,
+    CodeCompletions,
+    /// Transform service usage metric
+    Transform,
     /// `Unknown` contains new variants that have been added since this code was generated.
     #[deprecated(
         note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
@@ -78,14 +66,10 @@ pub enum UsageLimitType {
 impl ::std::convert::From<&str> for UsageLimitType {
     fn from(s: &str) -> Self {
         match s {
+            "AGENTIC_REQUEST" => UsageLimitType::AgenticRequest,
             "AI_EDITOR" => UsageLimitType::AiEditor,
-            "CHAT" => UsageLimitType::Chat,
-            "CODE_SCAN" => UsageLimitType::CodeScan,
-            "GUMBY_TRANSFORM" => UsageLimitType::GumbyTransform,
-            "PROACTIVE_CODE_SCAN" => UsageLimitType::ProactiveCodeScan,
-            "QSDA" => UsageLimitType::Qsda,
-            "RECOMMENDATIONS" => UsageLimitType::Recommendations,
-            "WEAVERBIRD_CONVERSATION" => UsageLimitType::WeaverbirdConversation,
+            "CODE_COMPLETIONS" => UsageLimitType::CodeCompletions,
+            "TRANSFORM" => UsageLimitType::Transform,
             other => UsageLimitType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
             )),
@@ -103,30 +87,17 @@ impl UsageLimitType {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            UsageLimitType::AgenticRequest => "AGENTIC_REQUEST",
             UsageLimitType::AiEditor => "AI_EDITOR",
-            UsageLimitType::Chat => "CHAT",
-            UsageLimitType::CodeScan => "CODE_SCAN",
-            UsageLimitType::GumbyTransform => "GUMBY_TRANSFORM",
-            UsageLimitType::ProactiveCodeScan => "PROACTIVE_CODE_SCAN",
-            UsageLimitType::Qsda => "QSDA",
-            UsageLimitType::Recommendations => "RECOMMENDATIONS",
-            UsageLimitType::WeaverbirdConversation => "WEAVERBIRD_CONVERSATION",
+            UsageLimitType::CodeCompletions => "CODE_COMPLETIONS",
+            UsageLimitType::Transform => "TRANSFORM",
             UsageLimitType::Unknown(value) => value.as_str(),
         }
     }
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &[
-            "AI_EDITOR",
-            "CHAT",
-            "CODE_SCAN",
-            "GUMBY_TRANSFORM",
-            "PROACTIVE_CODE_SCAN",
-            "QSDA",
-            "RECOMMENDATIONS",
-            "WEAVERBIRD_CONVERSATION",
-        ]
+        &["AGENTIC_REQUEST", "AI_EDITOR", "CODE_COMPLETIONS", "TRANSFORM"]
     }
 }
 impl ::std::convert::AsRef<str> for UsageLimitType {
@@ -149,14 +120,10 @@ impl UsageLimitType {
 impl ::std::fmt::Display for UsageLimitType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            UsageLimitType::AgenticRequest => write!(f, "AGENTIC_REQUEST"),
             UsageLimitType::AiEditor => write!(f, "AI_EDITOR"),
-            UsageLimitType::Chat => write!(f, "CHAT"),
-            UsageLimitType::CodeScan => write!(f, "CODE_SCAN"),
-            UsageLimitType::GumbyTransform => write!(f, "GUMBY_TRANSFORM"),
-            UsageLimitType::ProactiveCodeScan => write!(f, "PROACTIVE_CODE_SCAN"),
-            UsageLimitType::Qsda => write!(f, "QSDA"),
-            UsageLimitType::Recommendations => write!(f, "RECOMMENDATIONS"),
-            UsageLimitType::WeaverbirdConversation => write!(f, "WEAVERBIRD_CONVERSATION"),
+            UsageLimitType::CodeCompletions => write!(f, "CODE_COMPLETIONS"),
+            UsageLimitType::Transform => write!(f, "TRANSFORM"),
             UsageLimitType::Unknown(value) => write!(f, "{}", value),
         }
     }

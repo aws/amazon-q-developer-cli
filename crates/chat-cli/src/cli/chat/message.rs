@@ -153,7 +153,7 @@ impl UserMessage {
     /// [api_client::model::ConversationState].
     pub fn into_history_entry(self) -> UserInputMessage {
         UserInputMessage {
-            images: None,
+            images: self.images.clone(),
             content: self.prompt().unwrap_or_default().to_string(),
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,

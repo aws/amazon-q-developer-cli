@@ -103,6 +103,10 @@ mod get_code_analysis;
 
 mod get_code_fix_job;
 
+mod get_profile;
+
+mod get_retrievals;
+
 mod get_task_assist_code_generation;
 
 mod get_test_generation;
@@ -114,6 +118,8 @@ mod get_transformation_plan;
 mod get_usage_limits;
 
 mod list_available_customizations;
+
+mod list_available_models;
 
 mod list_available_profiles;
 

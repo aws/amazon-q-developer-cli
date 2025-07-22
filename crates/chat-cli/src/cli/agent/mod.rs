@@ -1,4 +1,9 @@
-#![allow(dead_code)]
+pub mod hook;
+mod legacy;
+mod mcp_config;
+mod root_command_args;
+mod wrapper_types;
+
 use std::borrow::Borrow;
 use std::collections::{
     HashMap,
@@ -14,7 +19,6 @@ use std::path::{
     PathBuf,
 };
 
-use context_migrate::ContextMigrate;
 use crossterm::style::{
     Color,
     Stylize as _,
@@ -25,7 +29,7 @@ use crossterm::{
 };
 use eyre::bail;
 pub use mcp_config::McpServerConfig;
-use regex::Regex;
+pub use root_command_args::*;
 use schemars::JsonSchema;
 use serde::{
     Deserialize,
@@ -37,9 +41,7 @@ use tracing::{
     warn,
 };
 pub use wrapper_types::{
-    CreateHooks,
     OriginalToolName,
-    PromptHooks,
     ToolSettingTarget,
     alias_schema,
     tool_settings_schema,
@@ -50,6 +52,10 @@ use super::chat::tools::{
     NATIVE_TOOLS,
     ToolOrigin,
 };
+use crate::cli::agent::hook::{
+    Hook,
+    HookTrigger,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::{
@@ -57,18 +63,33 @@ use crate::util::{
     directories,
 };
 
-mod context_migrate;
-mod mcp_config;
-mod root_command_args;
-mod wrapper_types;
-
-pub use root_command_args::*;
-
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
 /// impacting q chat in via influenicng [ContextManager] and [ToolManager].
 /// Changes made to [ContextManager] and [ToolManager] do not persist across sessions.
+///
+/// To increase the usability of the agent config, (both from the perspective of CLI and the users
+/// who would need to write these config), the agent config has two states of existence: "cold" and
+/// "warm".
+///
+/// A "cold" state describes the config as it is written. And a "warm" state is an alternate form
+/// of the same config, modified for the convenience of the business logic that relies on it in the
+/// application.
+///
+/// For example, the "cold" state does not require the field of "path" to be populated. This is
+/// because it would be redundant and tedious for user to have to write the path of the file they
+/// had created in said file. This field is thus populated during its parsing.
+///
+/// Another example is the mcp config. To support backwards compatibility of users existing global
+/// mcp.json, we allow users to supply a flag to denote whether they would want to include servers
+/// from the legacy global mcp.json. If this flag exists, we would need to read the legacy mcp
+/// config and merge it with what is in the agent mcp servers field. Conversely, when we write this
+/// config to file, we would want to filter out the servers that belong only in the mcp.json.
+///
+/// Where agents are instantiated from their config, we would need to convert them from "cold" to
+/// "warm".
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
     /// Agent names are derived from the file name. Thus they are skipped for
     /// serializing
@@ -91,24 +112,26 @@ pub struct Agent {
     /// Tool aliases for remapping tool names
     #[serde(default)]
     #[schemars(schema_with = "alias_schema")]
-    pub alias: HashMap<OriginalToolName, String>,
+    pub tool_aliases: HashMap<OriginalToolName, String>,
     /// List of tools the agent is explicitly allowed to use
     #[serde(default)]
     pub allowed_tools: HashSet<String>,
     /// Files to include in the agent's context
     #[serde(default)]
-    pub included_files: Vec<String>,
+    pub resources: Vec<String>,
     /// Commands to run when a chat session is created
     #[serde(default)]
-    pub create_hooks: CreateHooks,
-    /// Commands to run before processing each prompt
-    #[serde(default)]
-    pub prompt_hooks: PromptHooks,
+    pub hooks: HashMap<HookTrigger, Vec<Hook>>,
     /// Settings for specific tools. These are mostly for native tools. The actual schema differs by
     /// tools and is documented in detail in our documentation
     #[serde(default)]
     #[schemars(schema_with = "tool_settings_schema")]
     pub tools_settings: HashMap<ToolSettingTarget, serde_json::Value>,
+    /// Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent
+    /// You can reference tools brought in by these servers as just as you would with the servers
+    /// you configure in the mcpServers field in this config
+    #[serde(default)]
+    pub use_legacy_mcp_json: bool,
     #[serde(skip)]
     pub path: Option<PathBuf>,
 }
@@ -120,35 +143,97 @@ impl Default for Agent {
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
             mcp_servers: Default::default(),
-            tools: NATIVE_TOOLS.iter().copied().map(str::to_string).collect::<Vec<_>>(),
-            alias: Default::default(),
+            tools: vec!["*".to_string()],
+            tool_aliases: Default::default(),
             allowed_tools: {
                 let mut set = HashSet::<String>::new();
                 let default_approve = DEFAULT_APPROVE.iter().copied().map(str::to_string);
                 set.extend(default_approve);
                 set
             },
-            included_files: vec!["AmazonQ.md", "README.md", ".amazonq/rules/**/*.md"]
+            resources: vec!["file://AmazonQ.md", "file://README.md", "file://.amazonq/rules/**/*.md"]
                 .into_iter()
                 .map(str::to_string)
                 .collect::<Vec<_>>(),
-            create_hooks: Default::default(),
-            prompt_hooks: Default::default(),
+            hooks: Default::default(),
             tools_settings: Default::default(),
+            use_legacy_mcp_json: true,
             path: None,
         }
     }
 }
 
 impl Agent {
+    /// This function mutates the agent to a state that is writable.
+    /// Practically this means reverting some fields back to their original values as they were
+    /// written in the config.
+    fn freeze(&mut self) -> eyre::Result<()> {
+        let Self { mcp_servers, .. } = self;
+
+        mcp_servers
+            .mcp_servers
+            .retain(|_name, config| !config.is_from_legacy_mcp_json);
+
+        Ok(())
+    }
+
+    /// This function mutates the agent to a state that is usable for runtime.
+    /// Practically this means to convert some of the fields value to their usable counterpart.
+    /// For example, we populate the agent with its file name, convert the mcp array to actual
+    /// mcp config and populate the agent file path.
+    fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> eyre::Result<()> {
+        let Self { mcp_servers, .. } = self;
+
+        let name = path
+            .file_stem()
+            .ok_or(eyre::eyre!("Missing valid file name"))?
+            .to_string_lossy()
+            .to_string();
+
+        self.name = name.clone();
+
+        if let (true, Some(global_mcp_config)) = (self.use_legacy_mcp_json, global_mcp_config) {
+            let mut stderr = std::io::stderr();
+            for (name, legacy_server) in &global_mcp_config.mcp_servers {
+                if mcp_servers.mcp_servers.contains_key(name) {
+                    let _ = queue!(
+                        stderr,
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print("WARNING: "),
+                        style::ResetColor,
+                        style::Print("MCP server '"),
+                        style::SetForegroundColor(Color::Green),
+                        style::Print(name),
+                        style::ResetColor,
+                        style::Print(
+                            "' is already configured in agent config. Skipping duplicate from legacy mcp.json.\n"
+                        )
+                    );
+                    continue;
+                }
+                let mut server_clone = legacy_server.clone();
+                server_clone.is_from_legacy_mcp_json = true;
+                mcp_servers.mcp_servers.insert(name.clone(), server_clone);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn to_str_pretty(&self) -> eyre::Result<String> {
+        let mut agent_clone = self.clone();
+        agent_clone.freeze()?;
+        Ok(serde_json::to_string_pretty(&agent_clone)?)
+    }
+
     /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
     /// and falling back to global dir if it does not exist in local.
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
-            let local_config_dir = directories::chat_local_agent_dir()?.join(agent_name);
+            let local_config_dir = directories::chat_local_agent_dir()?.join(format!("{agent_name}.json"));
             if os.fs.exists(&local_config_dir) {
-                break 'config Ok::<PathBuf, PathBuf>(local_config_dir);
+                break 'config Ok(local_config_dir);
             }
 
             let global_config_dir = directories::chat_global_agent_path(os)?.join(format!("{agent_name}.json"));
@@ -162,23 +247,18 @@ impl Agent {
         match config_path {
             Ok(config_path) => {
                 let content = os.fs.read(&config_path).await?;
-                Ok((serde_json::from_slice::<Agent>(&content)?, config_path))
-            },
-            Err(global_config_dir) if agent_name == "default" => {
-                os.fs
-                    .create_dir_all(
-                        global_config_dir
-                            .parent()
-                            .ok_or(eyre::eyre!("Failed to retrieve global agent config parent path"))?,
-                    )
-                    .await?;
-                os.fs.create_new(&global_config_dir).await?;
+                let mut agent = serde_json::from_slice::<Agent>(&content)?;
 
-                let default_agent = Agent::default();
-                let content = serde_json::to_string_pretty(&default_agent)?;
-                os.fs.write(&global_config_dir, content.as_bytes()).await?;
-
-                Ok((default_agent, global_config_dir))
+                let global_mcp_path = directories::chat_legacy_mcp_config(os)?;
+                let global_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+                    Ok(config) => Some(config),
+                    Err(e) => {
+                        tracing::error!("Error loading global mcp json path: {e}.");
+                        None
+                    },
+                };
+                agent.thaw(&config_path, global_mcp_config.as_ref())?;
+                Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
         }
@@ -236,21 +316,14 @@ impl Agents {
             .ok_or(eyre::eyre!("No agent with name {name} found"))
     }
 
-    /// Migrated from [reload_profiles] from context.rs. It loads the active agent from disk and
-    /// replaces its in-memory counterpart with it.
-    pub async fn reload_agents(&mut self, os: &mut Os, output: &mut impl Write) -> eyre::Result<()> {
-        let persona_name = self.get_active().map(|a| a.name.as_str());
-        let mut new_self = Self::load(os, persona_name, true, output).await;
-        std::mem::swap(self, &mut new_self);
-        Ok(())
-    }
-
+    #[cfg(test)]
     pub fn list_agents(&self) -> eyre::Result<Vec<String>> {
         Ok(self.agents.keys().cloned().collect::<Vec<_>>())
     }
 
     /// Migrated from [create_profile] from context.rs, which was creating profiles under the
     /// global directory. We shall preserve this implicit behavior for now until further notice.
+    #[cfg(test)]
     pub async fn create_agent(&mut self, os: &Os, name: &str) -> eyre::Result<()> {
         validate_agent_name(name)?;
 
@@ -264,7 +337,8 @@ impl Agents {
             path: Some(agent_path.clone()),
             ..Default::default()
         };
-        let contents = serde_json::to_string_pretty(&agent)
+        let contents = agent
+            .to_str_pretty()
             .map_err(|e| eyre::eyre!("Failed to serialize profile configuration: {}", e))?;
 
         if let Some(parent) = agent_path.parent() {
@@ -279,6 +353,7 @@ impl Agents {
 
     /// Migrated from [delete_profile] from context.rs, which was deleting profiles under the
     /// global directory. We shall preserve this implicit behavior for now until further notice.
+    #[cfg(test)]
     pub async fn delete_agent(&mut self, os: &Os, name: &str) -> eyre::Result<()> {
         if name == self.active_idx.as_str() {
             eyre::bail!("Cannot delete the active agent. Switch to another agent first");
@@ -305,27 +380,20 @@ impl Agents {
     /// notice.
     /// In addition to loading, this function also calls the function responsible for migrating
     /// existing context into agent.
-    pub async fn load(
-        os: &mut Os,
-        mut agent_name: Option<&str>,
-        skip_migration: bool,
-        output: &mut impl Write,
-    ) -> Self {
-        let (chosen_name, new_agents) = if !skip_migration {
-            match migrate(os).await {
-                Ok((i, new_agents)) => (i, new_agents),
+    pub async fn load(os: &mut Os, agent_name: Option<&str>, skip_migration: bool, output: &mut impl Write) -> Self {
+        let new_agents = if !skip_migration {
+            match legacy::migrate(os).await {
+                Ok(new_agents) => new_agents,
                 Err(e) => {
                     warn!("Migration did not happen for the following reason: {e}. This is not necessarily an error");
-                    (None, vec![])
+                    vec![]
                 },
             }
         } else {
-            (None, vec![])
+            vec![]
         };
 
-        if let Some(name) = chosen_name.as_ref() {
-            agent_name.replace(name.as_str());
-        }
+        let mut global_mcp_config = None::<McpServerConfig>;
 
         let mut local_agents = 'local: {
             // We could be launching from the home dir, in which case the global and local agents
@@ -344,7 +412,7 @@ impl Agents {
             let Ok(files) = os.fs.read_dir(path).await else {
                 break 'local Vec::<Agent>::new();
             };
-            load_agents_from_entries(files).await
+            load_agents_from_entries(files, os, &mut global_mcp_config).await
         };
 
         let mut global_agents = 'global: {
@@ -362,7 +430,7 @@ impl Agents {
                     break 'global Vec::<Agent>::new();
                 },
             };
-            load_agents_from_entries(files).await
+            load_agents_from_entries(files, os, &mut global_mcp_config).await
         }
         .into_iter()
         .chain(new_agents)
@@ -405,7 +473,7 @@ impl Agents {
                 },
                 ..Default::default()
             };
-            let Ok(content) = serde_json::to_string_pretty(&example_agent) else {
+            let Ok(content) = example_agent.to_str_pretty() else {
                 error!("Error serializing example agent config");
                 break 'example_config;
             };
@@ -481,7 +549,31 @@ impl Agents {
                 );
             }
 
-            local_agents.push(Agent::default());
+            local_agents.push({
+                let mut agent = Agent::default();
+                'load_legacy_mcp_json: {
+                    if global_mcp_config.is_none() {
+                        let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
+                            tracing::error!("Error obtaining legacy mcp json path. Skipping");
+                            break 'load_legacy_mcp_json;
+                        };
+                        let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+                            Ok(config) => config,
+                            Err(e) => {
+                                tracing::error!("Error loading global mcp json path: {e}. Skipping");
+                                break 'load_legacy_mcp_json;
+                            },
+                        };
+                        global_mcp_config.replace(legacy_mcp_config);
+                    }
+                }
+
+                if let Some(config) = &global_mcp_config {
+                    agent.mcp_servers = config.clone();
+                }
+
+                agent
+            });
             "default".to_string()
         };
 
@@ -542,8 +634,13 @@ impl Agents {
     }
 }
 
-async fn load_agents_from_entries(mut files: ReadDir) -> Vec<Agent> {
+async fn load_agents_from_entries(
+    mut files: ReadDir,
+    os: &Os,
+    global_mcp_config: &mut Option<McpServerConfig>,
+) -> Vec<Agent> {
     let mut res = Vec::<Agent>::new();
+
     while let Ok(Some(file)) = files.next_entry().await {
         let file_path = &file.path();
         if file_path
@@ -559,6 +656,7 @@ async fn load_agents_from_entries(mut files: ReadDir) -> Vec<Agent> {
                     continue;
                 },
             };
+
             let mut agent = match serde_json::from_slice::<Agent>(&content) {
                 Ok(mut agent) => {
                     agent.path = Some(file_path.clone());
@@ -570,18 +668,40 @@ async fn load_agents_from_entries(mut files: ReadDir) -> Vec<Agent> {
                     continue;
                 },
             };
-            if let Some(name) = Path::new(&file.file_name()).file_stem() {
-                agent.name = name.to_string_lossy().to_string();
-                res.push(agent);
-            } else {
-                let file_path = file_path.to_string_lossy();
-                tracing::error!("Unable to determine agent name from config file at {file_path}, skipping");
+
+            // The agent config could have use_legacy_mcp_json set to true but not have a valid
+            // global mcp.json. We would still need to carry on loading the config.
+            'load_legacy_mcp_json: {
+                if agent.use_legacy_mcp_json && global_mcp_config.is_none() {
+                    let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
+                        tracing::error!("Error obtaining legacy mcp json path. Skipping");
+                        break 'load_legacy_mcp_json;
+                    };
+                    let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+                        Ok(config) => config,
+                        Err(e) => {
+                            tracing::error!("Error loading global mcp json path: {e}. Skipping");
+                            break 'load_legacy_mcp_json;
+                        },
+                    };
+                    global_mcp_config.replace(legacy_mcp_config);
+                }
             }
+
+            if let Err(e) = agent.thaw(file_path, global_mcp_config.as_ref()) {
+                tracing::error!(
+                    "Error transforming agent at {} to usable state: {e}. Skipping",
+                    file_path.display()
+                );
+            };
+
+            res.push(agent);
         }
     }
     res
 }
 
+#[cfg(test)]
 fn validate_agent_name(name: &str) -> eyre::Result<()> {
     // Check if name is empty
     if name.is_empty() {
@@ -589,7 +709,7 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
     }
 
     // Check if name contains only allowed characters and starts with an alphanumeric character
-    let re = Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")?;
+    let re = regex::Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")?;
     if !re.is_match(name) {
         eyre::bail!(
             "Agent name must start with an alphanumeric character and can only contain alphanumeric characters, hyphens, and underscores"
@@ -599,32 +719,9 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn migrate(os: &mut Os) -> eyre::Result<(Option<String>, Vec<Agent>)> {
-    ContextMigrate::<'a'>::scan(os)
-        .await?
-        .prompt_migrate()
-        .await?
-        .migrate(os)
-        .await?
-        .prompt_set_default(os)
-        .await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct NullWriter;
-
-    impl Write for NullWriter {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
 
     const INPUT: &str = r#"
             {
@@ -638,7 +735,7 @@ mod tests {
                 "@git",                                     
                 "fs_read"
               ],
-              "alias": {
+              "toolAliases": {
                   "@gits/some_tool": "some_tool2"
               },
               "allowedTools": [                           
@@ -646,8 +743,8 @@ mod tests {
                 "@fetch",
                 "@gits/git_status"
               ],
-              "includedFiles": [                        
-                "~/my-genai-prompts/unittest.md"
+              "resources": [                        
+                "file://~/my-genai-prompts/unittest.md"
               ],
               "createHooks": [                         
                 "pwd && tree"
@@ -667,7 +764,7 @@ mod tests {
         let agent = serde_json::from_str::<Agent>(INPUT).expect("Deserializtion failed");
         assert!(agent.mcp_servers.mcp_servers.contains_key("fetch"));
         assert!(agent.mcp_servers.mcp_servers.contains_key("git"));
-        assert!(agent.alias.contains_key("@gits/some_tool"));
+        assert!(agent.tool_aliases.contains_key("@gits/some_tool"));
     }
 
     #[test]
@@ -847,12 +944,5 @@ mod tests {
         assert!(validate_agent_name("_invalid").is_err());
         assert!(validate_agent_name("invalid!").is_err());
         assert!(validate_agent_name("invalid space").is_err());
-    }
-
-    #[test]
-    fn test_schema_gen() {
-        use schemars::schema_for;
-        let schema = schema_for!(Agent);
-        println!("Schema for agent: {}", serde_json::to_string_pretty(&schema).unwrap());
     }
 }

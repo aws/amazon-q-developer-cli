@@ -28,8 +28,14 @@ pub fn ser_start_code_analysis_input_input(
     if let Some(var_9) = &input.code_scan_name {
         object.key("codeScanName").string(var_9.as_str());
     }
-    if let Some(var_10) = &input.profile_arn {
-        object.key("profileArn").string(var_10.as_str());
+    if let Some(var_10) = &input.code_diff_metadata {
+        #[allow(unused_mut)]
+        let mut object_11 = object.key("codeDiffMetadata").start_object();
+        crate::protocol_serde::shape_code_diff_metadata::ser_code_diff_metadata(&mut object_11, var_10)?;
+        object_11.finish();
+    }
+    if let Some(var_12) = &input.profile_arn {
+        object.key("profileArn").string(var_12.as_str());
     }
     Ok(())
 }

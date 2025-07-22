@@ -189,9 +189,6 @@ pub struct ChatArgs {
     pub no_interactive: bool,
     /// The first question to ask
     pub input: Option<String>,
-    /// Run migration of legacy profiles to agents if applicable
-    #[arg(long)]
-    pub migrate: bool,
 }
 
 impl ChatArgs {
@@ -240,7 +237,7 @@ impl ChatArgs {
         }
 
         let agents = {
-            let skip_migration = self.no_interactive || !self.migrate;
+            let skip_migration = self.no_interactive;
             let mut agents = Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr).await;
             agents.trust_all_tools = self.trust_all_tools;
 
@@ -2646,7 +2643,7 @@ mod tests {
             ..Default::default()
         };
         if let Ok(false) = os.fs.try_exists(AGENT_PATH).await {
-            let content = serde_json::to_string_pretty(&agent).expect("Failed to serialize test agent to file");
+            let content = agent.to_str_pretty().expect("Failed to serialize test agent to file");
             let agent_path = PathBuf::from(AGENT_PATH);
             os.fs
                 .create_dir_all(

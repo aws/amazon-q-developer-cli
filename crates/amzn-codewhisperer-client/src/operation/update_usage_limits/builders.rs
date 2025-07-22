@@ -153,6 +153,23 @@ impl UpdateUsageLimitsFluentBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn directory_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.directory_id(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_directory_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_directory_id(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_directory_id(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_directory_id()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn feature_type(mut self, input: crate::types::UsageLimitType) -> Self {
         self.inner = self.inner.feature_type(input);
         self

@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::ops::Deref;
 
 use schemars::{
@@ -12,8 +11,6 @@ use serde::{
     Deserialize,
     Serialize,
 };
-
-use crate::cli::chat::cli::hooks::Hook;
 
 /// Subject of the tool name change. For tools in mcp servers, you would need to prefix them with
 /// their server names
@@ -52,37 +49,6 @@ pub fn alias_schema(generator: &mut SchemaGenerator) -> Schema {
             "description": key_description
         }
     })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
-#[serde(untagged)]
-pub enum CreateHooks {
-    /// Array of command to execute before the start of the conversation
-    List(Vec<String>),
-    /// Object mapping hook names to command strings for command to run at the start of the
-    /// conversation
-    Map(HashMap<String, Hook>),
-}
-
-impl Default for CreateHooks {
-    fn default() -> Self {
-        Self::List(Vec::new())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
-#[serde(untagged)]
-pub enum PromptHooks {
-    /// Array of command to execute before exchange
-    List(Vec<String>),
-    /// Object mapping hook names to command strings for command to be ran before each exchange
-    Map(HashMap<String, Hook>),
-}
-
-impl Default for PromptHooks {
-    fn default() -> Self {
-        Self::List(Vec::new())
-    }
 }
 
 /// The name of the tool to be configured

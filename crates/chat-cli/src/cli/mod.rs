@@ -362,7 +362,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
-                migrate: false,
             })),
             verbose: 2,
             help_all: false,
@@ -402,7 +401,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
-                migrate: false,
             })
         );
     }
@@ -419,7 +417,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
-                migrate: false,
             })
         );
     }
@@ -436,7 +433,6 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
-                migrate: false,
             })
         );
     }
@@ -453,7 +449,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
-                migrate: false,
             })
         );
         assert_parse!(
@@ -466,7 +461,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
-                migrate: false,
             })
         );
     }
@@ -483,7 +477,6 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
-                migrate: false,
             })
         );
     }
@@ -500,7 +493,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["".to_string()]),
                 no_interactive: false,
-                migrate: false,
             })
         );
     }
@@ -517,7 +509,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
                 no_interactive: false,
-                migrate: false,
             })
         );
     }

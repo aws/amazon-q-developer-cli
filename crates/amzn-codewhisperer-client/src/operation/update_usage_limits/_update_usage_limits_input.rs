@@ -8,6 +8,8 @@ pub struct UpdateUsageLimitsInput {
     #[allow(missing_docs)] // documentation missing in model
     pub accountless_user_id: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
+    pub directory_id: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
     pub feature_type: ::std::option::Option<crate::types::UsageLimitType>,
     #[allow(missing_docs)] // documentation missing in model
     pub requested_limit: ::std::option::Option<i64>,
@@ -23,6 +25,11 @@ impl UpdateUsageLimitsInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn accountless_user_id(&self) -> ::std::option::Option<&str> {
         self.accountless_user_id.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn directory_id(&self) -> ::std::option::Option<&str> {
+        self.directory_id.as_deref()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -55,6 +62,7 @@ impl UpdateUsageLimitsInput {
 pub struct UpdateUsageLimitsInputBuilder {
     pub(crate) account_id: ::std::option::Option<::std::string::String>,
     pub(crate) accountless_user_id: ::std::option::Option<::std::string::String>,
+    pub(crate) directory_id: ::std::option::Option<::std::string::String>,
     pub(crate) feature_type: ::std::option::Option<crate::types::UsageLimitType>,
     pub(crate) requested_limit: ::std::option::Option<i64>,
     pub(crate) justification: ::std::option::Option<::std::string::String>,
@@ -93,6 +101,23 @@ impl UpdateUsageLimitsInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_accountless_user_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.accountless_user_id
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn directory_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.directory_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_directory_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.directory_id = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_directory_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.directory_id
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -159,6 +184,7 @@ impl UpdateUsageLimitsInputBuilder {
         ::std::result::Result::Ok(crate::operation::update_usage_limits::UpdateUsageLimitsInput {
             account_id: self.account_id,
             accountless_user_id: self.accountless_user_id,
+            directory_id: self.directory_id,
             feature_type: self.feature_type,
             requested_limit: self.requested_limit,
             justification: self.justification,

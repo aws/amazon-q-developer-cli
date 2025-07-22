@@ -163,7 +163,7 @@ pub async fn create_agent(
 
     let prepopulated_content = if let Some(from) = from {
         let agent_to_copy = agents.switch(from.as_str())?;
-        serde_json::to_string_pretty(agent_to_copy)?
+        agent_to_copy.to_str_pretty()?
     } else {
         Default::default()
     };
