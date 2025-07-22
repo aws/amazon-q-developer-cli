@@ -39,7 +39,6 @@ use clap::{
 };
 use cli::compact::CompactStrategy;
 use cli::model::select_model;
-use context::ContextManager;
 pub use conversation::ConversationState;
 use conversation::TokenWarningLevel;
 use crossterm::style::{
