@@ -595,6 +595,10 @@ impl ConversationState {
             context_content.push_str(&context);
         }
 
+        if let Some(agent_prompt) = self.agents.get_active().and_then(|a| a.prompt.as_ref()) {
+            context_content.push_str(&format!("Follow this instruction: {}", agent_prompt));
+        }
+
         if !context_content.is_empty() {
             self.context_message_length = Some(context_content.len());
             let user = UserMessage::new_prompt(context_content);
