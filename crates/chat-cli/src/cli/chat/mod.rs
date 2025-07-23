@@ -791,6 +791,11 @@ impl ChatSession {
                             show_summary: false,
                             strategy: CompactStrategy {
                                 truncate_large_messages: self.conversation.history().len() <= 2,
+                                max_message_length: if self.conversation.history().len() <= 2 {
+                                    25_000
+                                } else {
+                                    Default::default()
+                                },
                                 ..Default::default()
                             },
                         });
