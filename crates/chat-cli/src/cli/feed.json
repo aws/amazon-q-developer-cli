@@ -12,6 +12,22 @@
     },
     {
       "type": "release",
+      "date": "2025-07-09",
+      "version": "1.12.4",
+      "title": "Version 1.12.4",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Extra options for history compaction in `q chat` - see `/compact --help` - [#402](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/402)"
+        },
+        {
+          "type": "fixed",
+          "description": "Issues with `/compact` - [#407](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/407)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-07-03",
       "version": "1.12.3",
       "title": "Version 1.12.3",

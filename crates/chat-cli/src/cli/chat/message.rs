@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 
 use serde::{
@@ -9,10 +10,14 @@ use tracing::{
     warn,
 };
 
-use super::consts::MAX_CURRENT_WORKING_DIRECTORY_LEN;
+use super::consts::{
+    MAX_CURRENT_WORKING_DIRECTORY_LEN,
+    MAX_USER_MESSAGE_SIZE,
+};
 use super::tools::{
     InvokeOutput,
     OutputKind,
+    ToolOrigin,
 };
 use super::util::{
     document_to_serde_value,
@@ -24,6 +29,7 @@ use crate::api_client::model::{
     AssistantResponseMessage,
     EnvState,
     ImageBlock,
+    Tool,
     ToolResult,
     ToolResultContentBlock,
     ToolResultStatus,
@@ -60,24 +66,30 @@ pub enum UserMessageContent {
 }
 
 impl UserMessageContent {
+    pub const TRUNCATED_SUFFIX: &str = "...content truncated due to length";
+
     fn truncate_safe(&mut self, max_bytes: usize) {
         match self {
             UserMessageContent::Prompt { prompt } => {
-                truncate_safe_in_place(prompt, max_bytes);
+                truncate_safe_in_place(prompt, max_bytes, Self::TRUNCATED_SUFFIX);
             },
             UserMessageContent::CancelledToolUses {
                 prompt,
                 tool_use_results,
             } => {
                 if let Some(prompt) = prompt {
-                    truncate_safe_in_place(prompt, max_bytes / 2);
-                    truncate_safe_tool_use_results(tool_use_results.as_mut_slice(), max_bytes / 2);
+                    truncate_safe_in_place(prompt, max_bytes / 2, Self::TRUNCATED_SUFFIX);
+                    truncate_safe_tool_use_results(
+                        tool_use_results.as_mut_slice(),
+                        max_bytes / 2,
+                        Self::TRUNCATED_SUFFIX,
+                    );
                 } else {
-                    truncate_safe_tool_use_results(tool_use_results.as_mut_slice(), max_bytes);
+                    truncate_safe_tool_use_results(tool_use_results.as_mut_slice(), max_bytes, Self::TRUNCATED_SUFFIX);
                 }
             },
             UserMessageContent::ToolUseResults { tool_use_results } => {
-                truncate_safe_tool_use_results(tool_use_results.as_mut_slice(), max_bytes);
+                truncate_safe_tool_use_results(tool_use_results.as_mut_slice(), max_bytes, Self::TRUNCATED_SUFFIX);
             },
         }
     }
@@ -141,7 +153,7 @@ impl UserMessage {
     /// [api_client::model::ConversationState].
     pub fn into_history_entry(self) -> UserInputMessage {
         UserInputMessage {
-            images: None,
+            images: self.images.clone(),
             content: self.prompt().unwrap_or_default().to_string(),
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
@@ -162,7 +174,11 @@ impl UserMessage {
 
     /// Converts this message into a [UserInputMessage] to be sent as
     /// [FigConversationState::user_input_message].
-    pub fn into_user_input_message(self) -> UserInputMessage {
+    pub fn into_user_input_message(
+        self,
+        model_id: Option<String>,
+        tools: &HashMap<ToolOrigin, Vec<Tool>>,
+    ) -> UserInputMessage {
         let formatted_prompt = match self.prompt() {
             Some(prompt) if !prompt.is_empty() => {
                 format!("{}{}{}", USER_ENTRY_START_HEADER, prompt, USER_ENTRY_END_HEADER)
@@ -183,11 +199,15 @@ impl UserMessage {
                     },
                     UserMessageContent::Prompt { .. } => None,
                 },
-                tools: None,
+                tools: if tools.is_empty() {
+                    None
+                } else {
+                    Some(tools.values().flatten().cloned().collect::<Vec<_>>())
+                },
                 ..Default::default()
             }),
             user_intent: None,
-            model_id: None,
+            model_id,
         }
     }
 
@@ -223,11 +243,32 @@ impl UserMessage {
     }
 
     /// Truncates the content contained in this user message to a maximum length of `max_bytes`.
-    ///
-    /// This isn't a perfect truncation - JSON tool use results are ignored, and only the content
-    /// of the user message is truncated, ignoring extra context fields.
     pub fn truncate_safe(&mut self, max_bytes: usize) {
         self.content.truncate_safe(max_bytes);
+    }
+
+    pub fn replace_content_with_tool_use_results(&mut self) {
+        if let Some(tool_results) = self.tool_use_results() {
+            let tool_content: Vec<String> = tool_results
+                .iter()
+                .flat_map(|tr| {
+                    tr.content.iter().map(|c| match c {
+                        ToolUseResultBlock::Json(document) => serde_json::to_string(&document)
+                            .map_err(|err| error!(?err, "failed to serialize tool result"))
+                            .unwrap_or_default(),
+                        ToolUseResultBlock::Text(s) => s.clone(),
+                    })
+                })
+                .collect::<_>();
+            let mut tool_content = tool_content.join(" ");
+            if tool_content.is_empty() {
+                // To avoid validation errors with empty content, we need to make sure
+                // something is set.
+                tool_content.push_str("<tool result redacted>");
+            }
+            let prompt = truncate_safe(&tool_content, MAX_USER_MESSAGE_SIZE).to_string();
+            self.content = UserMessageContent::Prompt { prompt };
+        }
     }
 }
 
@@ -261,15 +302,26 @@ impl From<ToolUseResult> for ToolResult {
     }
 }
 
-fn truncate_safe_tool_use_results(tool_use_results: &mut [ToolUseResult], max_bytes: usize) {
+fn truncate_safe_tool_use_results(tool_use_results: &mut [ToolUseResult], max_bytes: usize, truncated_suffix: &str) {
     let max_bytes = max_bytes / tool_use_results.len();
     for result in tool_use_results {
         for content in &mut result.content {
             match content {
-                ToolUseResultBlock::Json(_) => {
-                    warn!("Unable to truncate JSON safely");
+                ToolUseResultBlock::Json(value) => match serde_json::to_string(value) {
+                    Ok(mut value_str) => {
+                        if value_str.len() > max_bytes {
+                            truncate_safe_in_place(&mut value_str, max_bytes, truncated_suffix);
+                            *content = ToolUseResultBlock::Text(value_str);
+                            return;
+                        }
+                    },
+                    Err(err) => {
+                        warn!(?err, "Unable to truncate JSON");
+                    },
                 },
-                ToolUseResultBlock::Text(t) => truncate_safe_in_place(t, max_bytes),
+                ToolUseResultBlock::Text(t) => {
+                    truncate_safe_in_place(t, max_bytes, truncated_suffix);
+                },
             }
         }
     }

@@ -1,0 +1,84 @@
+# This is a terminal-bench workflow that is manually triggered
+# Template taken from https://github.com/actions/starter-workflows/blob/main/automation/manual.yml for reference 
+
+name: Terminal-Bench
+
+# Controls when the action will run. Workflow runs when manually triggered using the UI
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'Run terminal-bench workflow to test Q CLI in real terminal environments.' 
+        default: 'all'
+        required: true
+        type: string
+        
+jobs:
+  run-benchmark:
+    # avoids disk storage issues
+    runs-on: ubuntu-latest
+    # makes these env vars available in main.py
+    env:
+      CHAT_DOWNLOAD_ROLE_ARN: ${{ secrets.CHAT_DOWNLOAD_ROLE_ARN }}
+      CHAT_BUILD_BUCKET_NAME: ${{ secrets.CHAT_BUILD_BUCKET_NAME }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+
+    # clear unnecessary storage to ensure docker containers have space
+    - name: Cleanup and free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/share/swift
+        sudo apt-get clean
+        df -h
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Captures git hash of branch to query specific S3 bucket
+    - name: Set git hash
+      run: |
+        if [ -n "$GITHUB_SHA" ]; then
+          git_hash=$(git rev-parse "$GITHUB_SHA")
+        else
+          git_hash="latest"
+        fi
+        # appends to github_env file
+        echo "GIT_HASH=$git_hash" >> $GITHUB_ENV
+        echo "Git hash set to: $git_hash"
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install terminal-bench
+    
+    # OIDC enabled for github for ArjunPersonal
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_TB_ROLE }}
+        aws-region: us-east-1
+
+    - name: Run terminal benchmark
+      run: |
+        cd terminal-bench-test
+        tb run --agent-import-path main:AmazonQCLIAgent --dataset-name terminal-bench-core --dataset-version head
+
+    # uploads results if run fails as well to allow for easy log inspection
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: terminal-bench-test/runs/

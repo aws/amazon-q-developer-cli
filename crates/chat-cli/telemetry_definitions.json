@@ -36,6 +36,16 @@
       "description": "A codewhisperer CLI subcommand"
     },
     {
+      "name": "codewhispererterminal_chatSlashCommand",
+      "type": "string",
+      "description": "The slash command that was executed (e.g., 'context', 'compact', 'model')"
+    },
+    {
+      "name": "codewhispererterminal_chatSlashSubcommand",
+      "type": "string",
+      "description": "The subcommand of the slash command, if applicable (e.g., 'list' for '/prompts list')"
+    },
+    {
       "name": "codewhispererterminal_inCloudshell",
       "type": "boolean",
       "description": "Whether the CLI is running in the AWS CloudShell environment"
@@ -78,12 +88,12 @@
     {
       "name": "codewhispererterminal_toolUseId",
       "type": "string",
-      "description": "The id assigned to the client by the model representing a tool use event"
+      "description": "Comma-delimited id(s) of the tool uses requested by the model."
     },
     {
       "name": "codewhispererterminal_toolName",
       "type": "string",
-      "description": "The name associated with a tool"
+      "description": "Comma-delimited tool name(s) of the tool uses requested by the model."
     },
     {
       "name": "codewhispererterminal_isToolUseAccepted",
@@ -98,7 +108,7 @@
     {
       "name": "codewhispererterminal_utteranceId",
       "type": "string",
-      "description": "Id associated with a given response from the model"
+      "description": "Id associated with a given response from the model. If multiple responses are included, then the id's are comma-delimited in sequential order."
     },
     {
       "name": "codewhispererterminal_userInputId",
@@ -146,9 +156,58 @@
       "description": "Custom tool call latency in seconds"
     },
     {
+      "name": "codewhispererterminal_toolExecutionDurationMs",
+      "type": "int",
+      "description": "The amount of time taken to execute a tool. In milliseconds (ms)."
+    },
+    {
+      "name": "codewhispererterminal_toolTurnDurationMs",
+      "type": "int",
+      "description": "Total amount of time the tool turn took, including waiting for user input if required. In milliseconds (ms)."
+    },
+    {
+      "name": "codewhispererterminal_isToolUseTrusted",
+      "type": "int",
+      "description": "The amount of time taken to execute a tool. In milliseconds (ms)."
+    },
+    {
       "name": "codewhispererterminal_model",
       "type": "string",
       "description": "The underlying LLM used by the service, set by the client"
+    },
+    {
+      "name": "codewhispererterminal_timeToFirstChunkMs",
+      "type": "int",
+      "description": "Time from sending the request to reading the first chunk in the stream. In milliseconds (ms)."
+    },
+    {
+      "name": "codewhispererterminal_timeBetweenChunksMs",
+      "type": "string",
+      "description": "Comma-delimited times between reading each chunk, starting from the first chunk. In milliseconds (ms)."
+    },
+    {
+      "name": "codewhispererterminal_chatConversationType",
+      "type": "string",
+      "allowedValues": [
+          "NotToolUse",
+          "ToolUse"
+      ],
+      "description": "Identifies the role of the message in the conversation."
+    },
+    {
+      "name": "codewhispererterminal_assistantResponseLength",
+      "type": "int",
+      "description": "Total length of the assistant response, in bytes. When used to represent multiple responses (e.g. when recording a user turn), then this is the total length of all assistant responses."
+    },
+    {
+      "name": "codewhispererterminal_followUpCount",
+      "type": "int",
+      "description": "Number of cycles in the user turn (ie, number of tool use and tool use result pairs)."
+    },
+    {
+      "name": "codewhispererterminal_userTurnDurationSeconds",
+      "type": "int",
+      "description": "Total time spent in the user turn, starting from when the first request is sent."
     }
   ],
   "metrics": [
@@ -165,6 +224,30 @@
     {
       "name": "codewhispererterminal_addChatMessage",
       "description": "Captures active usage with Q Chat in shell",
+      "metadata": [
+        { "type": "amazonqConversationId" },
+        { "type": "codewhispererterminal_utteranceId" },
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "ssoRegion", "required": false },
+        { "type": "codewhispererterminal_inCloudshell" },
+        { "type": "codewhispererterminal_contextFileLength", "required": false },
+        { "type": "requestId" },
+        { "type": "result", "required": true },
+        { "type": "reason", "required": false },
+        { "type": "reasonDesc", "required": false },
+        { "type": "statusCode", "required": false },
+        { "type": "codewhispererterminal_model" },
+        { "type": "codewhispererterminal_timeToFirstChunkMs", "required": false },
+        { "type": "codewhispererterminal_timeBetweenChunksMs", "required": false },
+        { "type": "codewhispererterminal_chatConversationType", "required": false },
+        { "type": "codewhispererterminal_toolUseId", "required": false },
+        { "type": "codewhispererterminal_toolName", "required": false },
+        { "type": "codewhispererterminal_assistantResponseLength", "required": false }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_recordUserTurnCompletion",
+      "description": "Captures information regarding a user turn (the chain of messages beginning with a user prompt, and ending with either an assistant stop event, or a tool use denial). Emitted once at the end of every user turn.",
       "metadata": [
         { "type": "amazonqConversationId" },
         { "type": "codewhispererterminal_utteranceId" },
@@ -223,6 +306,21 @@
       ]
     },
     {
+      "name": "codewhispererterminal_chatSlashCommandExecuted",
+      "description": "Emitted when a slash command is executed in Q Chat",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "ssoRegion", "required": false },
+        { "type": "amazonqConversationId" },
+        { "type": "codewhispererterminal_chatSlashCommand" },
+        { "type": "codewhispererterminal_chatSlashSubcommand", "required": false }, 
+        { "type": "result" },
+        { "type": "reason", "required": false },
+        { "type": "codewhispererterminal_inCloudshell" }
+      ]
+    },
+    {
       "name": "codewhispererterminal_toolUseSuggested",
       "description": "Emitted once per tool use to report outcome of tool use suggested",
       "passive": false,
@@ -246,7 +344,10 @@
           "required": false
         },
         { "type": "codewhispererterminal_customToolLatency", "required": false },
-        { "type": "codewhispererterminal_model" }
+        { "type": "codewhispererterminal_model" },
+        { "type": "codewhispererterminal_toolExecutionDurationMs", "required": false },
+        { "type": "codewhispererterminal_toolTurnDurationMs", "required": false },
+        { "type": "codewhispererterminal_isToolUseTrusted", "required": false }
       ]
     },
     {

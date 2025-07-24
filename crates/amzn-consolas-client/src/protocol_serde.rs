@@ -184,7 +184,11 @@ pub(crate) mod shape_dashboard_analytics;
 
 pub(crate) mod shape_external_identity_source;
 
+pub(crate) mod shape_mcp_configuration;
+
 pub(crate) mod shape_notifications_feature;
+
+pub(crate) mod shape_overage_configuration;
 
 pub(crate) mod shape_profile;
 

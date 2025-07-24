@@ -10,11 +10,14 @@ pub use crate::types::_assistant_response_event::AssistantResponseEvent;
 pub use crate::types::_assistant_response_message::AssistantResponseMessage;
 pub use crate::types::_binary_metadata_event::BinaryMetadataEvent;
 pub use crate::types::_binary_payload_event::BinaryPayloadEvent;
+pub use crate::types::_cache_point::CachePoint;
+pub use crate::types::_cache_point_type::CachePointType;
 pub use crate::types::_chat_message::ChatMessage;
 pub use crate::types::_chat_response_stream::ChatResponseStream;
 pub use crate::types::_chat_trigger_type::ChatTriggerType;
 pub use crate::types::_citation_event::CitationEvent;
 pub use crate::types::_citation_target::CitationTarget;
+pub use crate::types::_client_cache_config::ClientCacheConfig;
 pub use crate::types::_cloud_watch_troubleshooting_link::CloudWatchTroubleshootingLink;
 pub use crate::types::_code_description::CodeDescription;
 pub use crate::types::_code_event::CodeEvent;
@@ -52,6 +55,7 @@ pub use crate::types::_intents_event::IntentsEvent;
 pub use crate::types::_interaction_component::InteractionComponent;
 pub use crate::types::_interaction_component_entry::InteractionComponentEntry;
 pub use crate::types::_interaction_components_event::InteractionComponentsEvent;
+pub use crate::types::_internal_server_exception_reason::InternalServerExceptionReason;
 pub use crate::types::_invalid_state_event::InvalidStateEvent;
 pub use crate::types::_invalid_state_reason::InvalidStateReason;
 pub use crate::types::_message_metadata_event::MessageMetadataEvent;
@@ -136,6 +140,10 @@ mod _binary_metadata_event;
 
 mod _binary_payload_event;
 
+mod _cache_point;
+
+mod _cache_point_type;
+
 mod _chat_message;
 
 mod _chat_response_stream;
@@ -145,6 +153,8 @@ mod _chat_trigger_type;
 mod _citation_event;
 
 mod _citation_target;
+
+mod _client_cache_config;
 
 mod _cloud_watch_troubleshooting_link;
 
@@ -219,6 +229,8 @@ mod _interaction_component;
 mod _interaction_component_entry;
 
 mod _interaction_components_event;
+
+mod _internal_server_exception_reason;
 
 mod _invalid_state_event;
 

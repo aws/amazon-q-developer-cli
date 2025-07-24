@@ -10,11 +10,6 @@ use crossterm::{
     style,
 };
 
-use crate::cli::chat::cli::hooks::{
-    HookTrigger,
-    map_chat_error,
-    print_hook_section,
-};
 use crate::cli::chat::consts::CONTEXT_FILES_MAX_SIZE;
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::cli::chat::util::drop_matched_context_files;
@@ -29,15 +24,15 @@ use crate::os::Os;
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
     before_long_help = "Context rules determine which files are included in your Amazon Q session. 
+They are derived from the current active agent.
 The files matched by these rules provide Amazon Q with additional information 
 about your project or environment. Adding relevant files helps Q generate 
 more accurate and helpful responses.
 
 Notes:
 • You can add specific files or use glob patterns (e.g., \"*.py\", \"src/**/*.js\")
-• Profile rules apply only to the current profile
-• Global rules apply across all profiles
-• Context is preserved between chat sessions"
+• Agent rules apply only to the current agent 
+• Context changes are NOT preserved between chat sessions. To make these changes permanent, edit the agent config file."
 )]
 pub enum ContextSubcommand {
     /// Display the context rule configuration and matched files
@@ -89,11 +84,11 @@ impl ContextSubcommand {
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     style::SetForegroundColor(Color::Magenta),
-                    style::Print(format!("\n👤 profile ({}):\n", context_manager.current_profile)),
+                    style::Print(format!("\n👤 Agent ({}):\n", context_manager.current_profile)),
                     style::SetAttribute(Attribute::Reset),
                 )?;
 
-                if context_manager.profile_config.paths.is_empty() {
+                if context_manager.paths.is_empty() {
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::DarkGrey),
@@ -101,7 +96,7 @@ impl ContextSubcommand {
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 } else {
-                    for path in &context_manager.profile_config.paths {
+                    for path in &context_manager.paths {
                         execute!(session.stderr, style::Print(format!("    {} ", path)))?;
                         if let Ok(context_files) = context_manager.get_context_files_by_path(os, path).await {
                             execute!(
@@ -117,28 +112,6 @@ impl ContextSubcommand {
                         }
                         execute!(session.stderr, style::Print("\n"))?;
                     }
-                    execute!(session.stderr, style::Print("\n"))?;
-                }
-
-                if expand {
-                    execute!(
-                        session.stderr,
-                        style::SetAttribute(Attribute::Bold),
-                        style::SetForegroundColor(Color::DarkYellow),
-                        style::Print("    🔧 Hooks:\n")
-                    )?;
-                    print_hook_section(
-                        &mut session.stderr,
-                        &context_manager.profile_config.hooks,
-                        HookTrigger::ConversationStart,
-                    )
-                    .map_err(map_chat_error)?;
-                    print_hook_section(
-                        &mut session.stderr,
-                        &context_manager.profile_config.hooks,
-                        HookTrigger::PerPrompt,
-                    )
-                    .map_err(map_chat_error)?;
                     execute!(session.stderr, style::Print("\n"))?;
                 }
 
@@ -321,5 +294,15 @@ impl ContextSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ContextSubcommand::Show { .. } => "show",
+            ContextSubcommand::Add { .. } => "add",
+            ContextSubcommand::Remove { .. } => "remove",
+            ContextSubcommand::Clear => "clear",
+            ContextSubcommand::Hooks => "hooks",
+        }
     }
 }

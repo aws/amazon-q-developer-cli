@@ -200,6 +200,10 @@ impl PromptsArgs {
             skip_printing_tools: true,
         })
     }
+
+    pub fn subcommand_name(&self) -> Option<&'static str> {
+        self.subcommand.as_ref().map(|s| s.name())
+    }
 }
 
 #[deny(missing_docs)]
@@ -304,5 +308,12 @@ impl PromptsSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            PromptsSubcommand::List { .. } => "list",
+            PromptsSubcommand::Get { .. } => "get",
+        }
     }
 }

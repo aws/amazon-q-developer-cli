@@ -62,6 +62,15 @@ pub(crate) fn service_quota_exceeded_error_correct_errors(
     builder
 }
 
+pub(crate) fn service_unavailable_exception_correct_errors(
+    mut builder: crate::types::error::builders::ServiceUnavailableErrorBuilder,
+) -> crate::types::error::builders::ServiceUnavailableErrorBuilder {
+    if builder.message.is_none() {
+        builder.message = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn assistant_response_event_correct_errors(
     mut builder: crate::types::builders::AssistantResponseEventBuilder,
 ) -> crate::types::builders::AssistantResponseEventBuilder {

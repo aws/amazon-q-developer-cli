@@ -166,6 +166,10 @@ impl ToolsArgs {
 
         Ok(ChatState::default())
     }
+
+    pub fn subcommand_name(&self) -> Option<&'static str> {
+        self.subcommand.as_ref().map(|s| s.name())
+    }
 }
 
 #[deny(missing_docs)]
@@ -347,7 +351,9 @@ impl ToolsSubcommand {
                 if let Some(path) = active_agent_path {
                     let result = async {
                         let content = tokio::fs::read(&path).await?;
-                        let orig_agent: Agent = serde_json::from_slice(&content)?;
+                        let orig_agent = serde_json::from_slice::<Agent>(&content)?;
+                        // since all we're doing here is swapping the tool list, it's okay if we
+                        // don't thaw it here
                         Ok::<Agent, Box<dyn std::error::Error>>(orig_agent)
                     }
                     .await;
@@ -382,5 +388,15 @@ impl ToolsSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ToolsSubcommand::Schema => "schema",
+            ToolsSubcommand::Trust { .. } => "trust",
+            ToolsSubcommand::Untrust { .. } => "untrust",
+            ToolsSubcommand::TrustAll => "trust-all",
+            ToolsSubcommand::Reset => "reset",
+        }
     }
 }

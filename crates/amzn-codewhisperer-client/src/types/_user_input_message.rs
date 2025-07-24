@@ -16,6 +16,10 @@ pub struct UserInputMessage {
     pub images: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>,
     /// Unique identifier for the model used in this conversation
     pub model_id: ::std::option::Option<::std::string::String>,
+    /// Indicates whether to add a cache point after the current message
+    pub cache_point: ::std::option::Option<crate::types::CachePoint>,
+    /// Client cache config
+    pub client_cache_config: ::std::option::Option<crate::types::ClientCacheConfig>,
 }
 impl UserInputMessage {
     /// The content of the chat message.
@@ -51,6 +55,16 @@ impl UserInputMessage {
     pub fn model_id(&self) -> ::std::option::Option<&str> {
         self.model_id.as_deref()
     }
+
+    /// Indicates whether to add a cache point after the current message
+    pub fn cache_point(&self) -> ::std::option::Option<&crate::types::CachePoint> {
+        self.cache_point.as_ref()
+    }
+
+    /// Client cache config
+    pub fn client_cache_config(&self) -> ::std::option::Option<&crate::types::ClientCacheConfig> {
+        self.client_cache_config.as_ref()
+    }
 }
 impl ::std::fmt::Debug for UserInputMessage {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -61,6 +75,8 @@ impl ::std::fmt::Debug for UserInputMessage {
         formatter.field("origin", &self.origin);
         formatter.field("images", &self.images);
         formatter.field("model_id", &self.model_id);
+        formatter.field("cache_point", &self.cache_point);
+        formatter.field("client_cache_config", &self.client_cache_config);
         formatter.finish()
     }
 }
@@ -82,6 +98,8 @@ pub struct UserInputMessageBuilder {
     pub(crate) origin: ::std::option::Option<crate::types::Origin>,
     pub(crate) images: ::std::option::Option<::std::vec::Vec<crate::types::ImageBlock>>,
     pub(crate) model_id: ::std::option::Option<::std::string::String>,
+    pub(crate) cache_point: ::std::option::Option<crate::types::CachePoint>,
+    pub(crate) client_cache_config: ::std::option::Option<crate::types::ClientCacheConfig>,
 }
 impl UserInputMessageBuilder {
     /// The content of the chat message.
@@ -196,6 +214,40 @@ impl UserInputMessageBuilder {
         &self.model_id
     }
 
+    /// Indicates whether to add a cache point after the current message
+    pub fn cache_point(mut self, input: crate::types::CachePoint) -> Self {
+        self.cache_point = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Indicates whether to add a cache point after the current message
+    pub fn set_cache_point(mut self, input: ::std::option::Option<crate::types::CachePoint>) -> Self {
+        self.cache_point = input;
+        self
+    }
+
+    /// Indicates whether to add a cache point after the current message
+    pub fn get_cache_point(&self) -> &::std::option::Option<crate::types::CachePoint> {
+        &self.cache_point
+    }
+
+    /// Client cache config
+    pub fn client_cache_config(mut self, input: crate::types::ClientCacheConfig) -> Self {
+        self.client_cache_config = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Client cache config
+    pub fn set_client_cache_config(mut self, input: ::std::option::Option<crate::types::ClientCacheConfig>) -> Self {
+        self.client_cache_config = input;
+        self
+    }
+
+    /// Client cache config
+    pub fn get_client_cache_config(&self) -> &::std::option::Option<crate::types::ClientCacheConfig> {
+        &self.client_cache_config
+    }
+
     /// Consumes the builder and constructs a [`UserInputMessage`](crate::types::UserInputMessage).
     /// This method will fail if any of the following fields are not set:
     /// - [`content`](crate::types::builders::UserInputMessageBuilder::content)
@@ -214,6 +266,8 @@ impl UserInputMessageBuilder {
             origin: self.origin,
             images: self.images,
             model_id: self.model_id,
+            cache_point: self.cache_point,
+            client_cache_config: self.client_cache_config,
         })
     }
 }
@@ -226,6 +280,8 @@ impl ::std::fmt::Debug for UserInputMessageBuilder {
         formatter.field("origin", &self.origin);
         formatter.field("images", &self.images);
         formatter.field("model_id", &self.model_id);
+        formatter.field("cache_point", &self.cache_point);
+        formatter.field("client_cache_config", &self.client_cache_config);
         formatter.finish()
     }
 }

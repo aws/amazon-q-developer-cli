@@ -122,7 +122,7 @@ fn main() {
 
                 quote::quote!(
                     #[doc = #description]
-                    #[derive(Debug, Clone, PartialEq)]
+                    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                     #[non_exhaustive]
                     pub enum #name {
                         #(

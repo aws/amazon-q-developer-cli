@@ -154,6 +154,21 @@ pub(crate) fn de_get_usage_limits(
                             .transpose()?,
                     );
                 },
+                "usageBreakdown" => {
+                    builder = builder.set_usage_breakdown(
+                        crate::protocol_serde::shape_usage_breakdown::de_usage_breakdown(tokens)?,
+                    );
+                },
+                "subscriptionInfo" => {
+                    builder = builder.set_subscription_info(
+                        crate::protocol_serde::shape_subscription_info::de_subscription_info(tokens)?,
+                    );
+                },
+                "overageConfiguration" => {
+                    builder = builder.set_overage_configuration(
+                        crate::protocol_serde::shape_overage_configuration::de_overage_configuration(tokens)?,
+                    );
+                },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {

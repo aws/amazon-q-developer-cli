@@ -146,6 +146,23 @@ impl ListProfilesFluentBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn include_management_account(mut self, input: bool) -> Self {
+        self.inner = self.inner.include_management_account(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_include_management_account(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.inner = self.inner.set_include_management_account(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_include_management_account(&self) -> &::std::option::Option<bool> {
+        self.inner.get_include_management_account()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.inner = self.inner.next_token(input.into());
         self

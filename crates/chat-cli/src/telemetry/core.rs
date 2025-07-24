@@ -7,6 +7,7 @@ use strum::{
     EnumString,
 };
 
+use super::definitions::types::CodewhispererterminalChatConversationType;
 use crate::telemetry::definitions::IntoMetricDatum;
 use crate::telemetry::definitions::metrics::{
     AmazonqDidSelectProfile,
@@ -15,6 +16,7 @@ use crate::telemetry::definitions::metrics::{
     AmazonqProfileState,
     AmazonqStartChat,
     CodewhispererterminalAddChatMessage,
+    CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
     CodewhispererterminalRefreshCredentials,
@@ -103,6 +105,27 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::ChatSlashCommandExecuted {
+                conversation_id,
+                command,
+                subcommand,
+                result,
+                reason,
+            } => Some(
+                CodewhispererterminalChatSlashCommandExecuted {
+                    create_time: self.created_time,
+                    value: None,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    sso_region: self.sso_region.map(Into::into),
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_chat_slash_command: Some(command.into()),
+                    codewhispererterminal_chat_slash_subcommand: subcommand.map(Into::into),
+                    result: Some(result.to_string().into()),
+                    reason: reason.map(Into::into),
+                    codewhispererterminal_in_cloudshell: None,
+                }
+                .into_metric_datum(),
+            ),
             EventType::ChatStart { conversation_id, model } => Some(
                 AmazonqStartChat {
                     create_time: self.created_time,
@@ -127,15 +150,23 @@ impl Event {
             ),
             EventType::ChatAddedMessage {
                 conversation_id,
-                context_file_length,
-                message_id,
-                request_id,
                 result,
-                reason,
-                reason_desc,
-                status_code,
-                model,
-                ..
+                data:
+                    ChatAddedMessageParams {
+                        context_file_length,
+                        message_id,
+                        request_id,
+                        reason,
+                        reason_desc,
+                        status_code,
+                        model,
+                        time_to_first_chunk_ms,
+                        time_between_chunks_ms,
+                        chat_conversation_type,
+                        tool_name,
+                        tool_use_id,
+                        assistant_response_length,
+                    },
             } => Some(
                 CodewhispererterminalAddChatMessage {
                     create_time: self.created_time,
@@ -152,6 +183,18 @@ impl Event {
                     reason_desc: reason_desc.map(Into::into),
                     status_code: status_code.map(|v| v as i64).map(Into::into),
                     codewhispererterminal_model: model.map(Into::into),
+                    codewhispererterminal_time_to_first_chunk_ms: time_to_first_chunk_ms
+                        .map(|v| v as i64)
+                        .map(Into::into),
+                    codewhispererterminal_time_between_chunks_ms: time_between_chunks_ms
+                        .map(|v| v.iter().map(|v| format!("{:.3}", v)).collect::<Vec<_>>().join(","))
+                        .map(Into::into),
+                    codewhispererterminal_chat_conversation_type: chat_conversation_type.map(Into::into),
+                    codewhispererterminal_tool_name: tool_name.map(Into::into),
+                    codewhispererterminal_tool_use_id: tool_use_id.map(Into::into),
+                    codewhispererterminal_assistant_response_length: assistant_response_length
+                        .map(|v| v as i64)
+                        .map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -190,6 +233,12 @@ impl Event {
                     codewhispererterminal_custom_tool_latency: custom_tool_call_latency
                         .map(|l| CodewhispererterminalCustomToolLatency(l as i64)),
                     codewhispererterminal_model: model.map(Into::into),
+                    // codewhispererterminal_is_tool_use_trusted: todo!(),
+                    // codewhispererterminal_tool_execution_duration_ms: todo!(),
+                    // codewhispererterminal_tool_turn_duration_ms: todo!(),
+                    codewhispererterminal_is_tool_use_trusted: None,
+                    codewhispererterminal_tool_execution_duration_ms: None,
+                    codewhispererterminal_tool_turn_duration_ms: None,
                 }
                 .into_metric_datum(),
             ),
@@ -273,6 +322,40 @@ impl Event {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumString, Display, serde::Serialize, serde::Deserialize)]
+pub enum ChatConversationType {
+    // Names are as requested by science
+    NotToolUse,
+    ToolUse,
+}
+
+impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
+    fn from(value: ChatConversationType) -> Self {
+        match value {
+            ChatConversationType::NotToolUse => Self::NotToolUse,
+            ChatConversationType::ToolUse => Self::ToolUse,
+        }
+    }
+}
+
+/// Optional fields to add for a chatAddedMessage telemetry event.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+pub struct ChatAddedMessageParams {
+    pub message_id: Option<String>,
+    pub request_id: Option<String>,
+    pub context_file_length: Option<usize>,
+    pub reason: Option<String>,
+    pub reason_desc: Option<String>,
+    pub status_code: Option<u16>,
+    pub model: Option<String>,
+    pub time_to_first_chunk_ms: Option<f64>,
+    pub time_between_chunks_ms: Option<Vec<f64>>,
+    pub chat_conversation_type: Option<ChatConversationType>,
+    pub tool_name: Option<String>,
+    pub tool_use_id: Option<String>,
+    pub assistant_response_length: Option<i32>,
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
@@ -287,6 +370,13 @@ pub enum EventType {
     CliSubcommandExecuted {
         subcommand: String,
     },
+    ChatSlashCommandExecuted {
+        conversation_id: String,
+        command: String,
+        subcommand: Option<String>,
+        result: TelemetryResult,
+        reason: Option<String>,
+    },
     ChatStart {
         conversation_id: String,
         model: Option<String>,
@@ -297,14 +387,8 @@ pub enum EventType {
     },
     ChatAddedMessage {
         conversation_id: String,
-        message_id: Option<String>,
-        request_id: Option<String>,
-        context_file_length: Option<usize>,
         result: TelemetryResult,
-        reason: Option<String>,
-        reason_desc: Option<String>,
-        status_code: Option<u16>,
-        model: Option<String>,
+        data: ChatAddedMessageParams,
     },
     ToolUseSuggested {
         conversation_id: String,

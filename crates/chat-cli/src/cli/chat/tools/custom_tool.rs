@@ -10,6 +10,7 @@ use crossterm::{
 };
 use eyre::Result;
 use regex::Regex;
+use schemars::JsonSchema;
 use serde::{
     Deserialize,
     Serialize,
@@ -39,17 +40,25 @@ use crate::mcp_client::{
 use crate::os::Os;
 
 // TODO: support http transport type
-#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 pub struct CustomToolConfig {
+    /// The command string used to initialize the mcp server
     pub command: String,
+    /// A list of arguments to be used to run the command with
     #[serde(default)]
     pub args: Vec<String>,
+    /// A list of environment variables to run the command with
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, String>>,
+    /// Timeout for each mcp request in ms
     #[serde(default = "default_timeout")]
     pub timeout: u64,
+    /// A boolean flag to denote whether or not to load this mcp server
     #[serde(default)]
     pub disabled: bool,
+    /// A flag to denote whether this is a server from the legacy mcp.json
+    #[serde(skip)]
+    pub is_from_legacy_mcp_json: bool,
 }
 
 pub fn default_timeout() -> u64 {
@@ -95,6 +104,7 @@ impl CustomToolClient {
             env,
             timeout,
             disabled: _,
+            ..
         } = config;
 
         // Process environment variables if present

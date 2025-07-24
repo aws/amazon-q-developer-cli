@@ -8,6 +8,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`max_results(i32)`](crate::operation::list_profiles::builders::ListProfilesFluentBuilder::max_results) / [`set_max_results(Option<i32>)`](crate::operation::list_profiles::builders::ListProfilesFluentBuilder::set_max_results):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`include_management_account(bool)`](crate::operation::list_profiles::builders::ListProfilesFluentBuilder::include_management_account) / [`set_include_management_account(Option<bool>)`](crate::operation::list_profiles::builders::ListProfilesFluentBuilder::set_include_management_account):<br>required: **false**<br>(undocumented)<br>
     ///   - [`next_token(impl Into<String>)`](crate::operation::list_profiles::builders::ListProfilesFluentBuilder::next_token) / [`set_next_token(Option<String>)`](crate::operation::list_profiles::builders::ListProfilesFluentBuilder::set_next_token):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`ListProfilesOutput`](crate::operation::list_profiles::ListProfilesOutput) with field(s):

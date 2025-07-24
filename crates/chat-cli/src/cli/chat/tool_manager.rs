@@ -149,7 +149,6 @@ pub enum LoadingRecord {
 
 #[derive(Default)]
 pub struct ToolManagerBuilder {
-    mcp_server_config: Option<McpServerConfig>,
     prompt_list_sender: Option<std::sync::mpsc::Sender<Vec<String>>>,
     prompt_list_receiver: Option<std::sync::mpsc::Receiver<Option<String>>>,
     conversation_id: Option<String>,
@@ -173,7 +172,6 @@ impl ToolManagerBuilder {
     }
 
     pub fn agent(mut self, agent: Agent) -> Self {
-        self.mcp_server_config.replace(agent.mcp_servers.clone());
         self.agent.replace(agent);
         self
     }
@@ -184,7 +182,7 @@ impl ToolManagerBuilder {
         mut output: Box<dyn Write + Send + Sync + 'static>,
         interactive: bool,
     ) -> eyre::Result<ToolManager> {
-        let McpServerConfig { mcp_servers } = self.mcp_server_config.ok_or(eyre::eyre!("Missing mcp server config"))?;
+        let McpServerConfig { mcp_servers } = self.agent.as_ref().map(|a| a.mcp_servers.clone()).unwrap_or_default();
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
 
@@ -205,9 +203,31 @@ impl ToolManagerBuilder {
                 if server_name.contains(MCP_SERVER_TOOL_DELIMITER) {
                     let _ = queue!(
                         output,
-                        style::Print(format!(
-                            "Invalid server name {server_name}. Server name cannot contain {MCP_SERVER_TOOL_DELIMITER}\n"
-                        ))
+                        style::SetForegroundColor(style::Color::Red),
+                        style::Print("✗ Invalid server name "),
+                        style::SetForegroundColor(style::Color::Blue),
+                        style::Print(&server_name),
+                        style::ResetColor,
+                        style::Print(". Server name cannot contain "),
+                        style::SetForegroundColor(style::Color::Yellow),
+                        style::Print(MCP_SERVER_TOOL_DELIMITER),
+                        style::ResetColor,
+                        style::Print("\n")
+                    );
+                    None
+                } else if server_name == "builtin" {
+                    let _ = queue!(
+                        output,
+                        style::SetForegroundColor(style::Color::Red),
+                        style::Print("✗ Invalid server name "),
+                        style::SetForegroundColor(style::Color::Blue),
+                        style::Print(&server_name),
+                        style::ResetColor,
+                        style::Print(". Server name cannot contain reserved word "),
+                        style::SetForegroundColor(style::Color::Yellow),
+                        style::Print("builtin"),
+                        style::ResetColor,
+                        style::Print(" (it is used to denote native tools)\n")
                     );
                     None
                 } else {
@@ -417,7 +437,7 @@ impl ToolManagerBuilder {
                             };
 
                             let server_prefix = format!("@{server_name}");
-                            let alias_list = agent_lock.alias.iter().fold(
+                            let alias_list = agent_lock.tool_aliases.iter().fold(
                                 HashMap::<HostToolName, ModelToolName>::new(),
                                 |mut acc, (full_path, model_tool_name)| {
                                     if full_path.starts_with(&server_prefix) {
@@ -865,11 +885,16 @@ impl ToolManager {
         let notify = self.notify.take();
         self.schema = {
             let tool_list = &self.agent.lock().await.tools;
+            let is_allow_all = tool_list.len() == 1 && tool_list.first().is_some_and(|n| n == "*");
+            let is_allow_native = tool_list.iter().any(|t| t.as_str() == "@builtin");
             let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?
                     .into_iter()
                     .filter(|(name, _)| {
-                        tool_list.len() == 1 && tool_list.first().is_some_and(|n| n == "*") || tool_list.contains(name)
+                        is_allow_all
+                            || is_allow_native
+                            || tool_list.contains(name)
+                            || tool_list.contains(&format!("@builtin/{name}"))
                     })
                     .collect::<HashMap<_, _>>();
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled(os) {

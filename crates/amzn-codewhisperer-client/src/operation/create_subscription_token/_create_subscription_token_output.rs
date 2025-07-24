@@ -4,24 +4,22 @@
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct CreateSubscriptionTokenOutput {
     #[allow(missing_docs)] // documentation missing in model
-    pub encoded_verification_url: ::std::string::String,
+    pub encoded_verification_url: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
-    pub token: ::std::string::String,
+    pub token: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub status: crate::types::SubscriptionStatus,
     _request_id: Option<String>,
 }
 impl CreateSubscriptionTokenOutput {
     #[allow(missing_docs)] // documentation missing in model
-    pub fn encoded_verification_url(&self) -> &str {
-        use std::ops::Deref;
-        self.encoded_verification_url.deref()
+    pub fn encoded_verification_url(&self) -> ::std::option::Option<&str> {
+        self.encoded_verification_url.as_deref()
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn token(&self) -> &str {
-        use std::ops::Deref;
-        self.token.deref()
+    pub fn token(&self) -> ::std::option::Option<&str> {
+        self.token.as_deref()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -54,7 +52,6 @@ pub struct CreateSubscriptionTokenOutputBuilder {
 }
 impl CreateSubscriptionTokenOutputBuilder {
     #[allow(missing_docs)] // documentation missing in model
-    /// This field is required.
     pub fn encoded_verification_url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.encoded_verification_url = ::std::option::Option::Some(input.into());
         self
@@ -72,7 +69,6 @@ impl CreateSubscriptionTokenOutputBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    /// This field is required.
     pub fn token(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.token = ::std::option::Option::Some(input.into());
         self
@@ -120,8 +116,6 @@ impl CreateSubscriptionTokenOutputBuilder {
     /// Consumes the builder and constructs a
     /// [`CreateSubscriptionTokenOutput`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput).
     /// This method will fail if any of the following fields are not set:
-    /// - [`encoded_verification_url`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenOutputBuilder::encoded_verification_url)
-    /// - [`token`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenOutputBuilder::token)
     /// - [`status`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenOutputBuilder::status)
     pub fn build(
         self,
@@ -129,26 +123,18 @@ impl CreateSubscriptionTokenOutputBuilder {
         crate::operation::create_subscription_token::CreateSubscriptionTokenOutput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(crate::operation::create_subscription_token::CreateSubscriptionTokenOutput {
-            encoded_verification_url: self.encoded_verification_url.ok_or_else(|| {
-                ::aws_smithy_types::error::operation::BuildError::missing_field(
-                    "encoded_verification_url",
-                    "encoded_verification_url was not specified but it is required when building CreateSubscriptionTokenOutput",
-                )
-            })?,
-            token: self.token.ok_or_else(|| {
-                ::aws_smithy_types::error::operation::BuildError::missing_field(
-                    "token",
-                    "token was not specified but it is required when building CreateSubscriptionTokenOutput",
-                )
-            })?,
-            status: self.status.ok_or_else(|| {
-                ::aws_smithy_types::error::operation::BuildError::missing_field(
-                    "status",
-                    "status was not specified but it is required when building CreateSubscriptionTokenOutput",
-                )
-            })?,
-            _request_id: self._request_id,
-        })
+        ::std::result::Result::Ok(
+            crate::operation::create_subscription_token::CreateSubscriptionTokenOutput {
+                encoded_verification_url: self.encoded_verification_url,
+                token: self.token,
+                status: self.status.ok_or_else(|| {
+                    ::aws_smithy_types::error::operation::BuildError::missing_field(
+                        "status",
+                        "status was not specified but it is required when building CreateSubscriptionTokenOutput",
+                    )
+                })?,
+                _request_id: self._request_id,
+            },
+        )
     }
 }

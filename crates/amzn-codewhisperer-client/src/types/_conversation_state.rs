@@ -6,6 +6,8 @@
 pub struct ConversationState {
     /// Unique identifier for the chat conversation stream
     pub conversation_id: ::std::option::Option<::std::string::String>,
+    /// Unique identifier for remote workspace
+    pub workspace_id: ::std::option::Option<::std::string::String>,
     /// Holds the history of chat messages.
     pub history: ::std::option::Option<::std::vec::Vec<crate::types::ChatMessage>>,
     /// Holds the current message being processed or displayed.
@@ -19,6 +21,11 @@ impl ConversationState {
     /// Unique identifier for the chat conversation stream
     pub fn conversation_id(&self) -> ::std::option::Option<&str> {
         self.conversation_id.as_deref()
+    }
+
+    /// Unique identifier for remote workspace
+    pub fn workspace_id(&self) -> ::std::option::Option<&str> {
+        self.workspace_id.as_deref()
     }
 
     /// Holds the history of chat messages.
@@ -57,6 +64,7 @@ impl ConversationState {
 #[non_exhaustive]
 pub struct ConversationStateBuilder {
     pub(crate) conversation_id: ::std::option::Option<::std::string::String>,
+    pub(crate) workspace_id: ::std::option::Option<::std::string::String>,
     pub(crate) history: ::std::option::Option<::std::vec::Vec<crate::types::ChatMessage>>,
     pub(crate) current_message: ::std::option::Option<crate::types::ChatMessage>,
     pub(crate) chat_trigger_type: ::std::option::Option<crate::types::ChatTriggerType>,
@@ -78,6 +86,23 @@ impl ConversationStateBuilder {
     /// Unique identifier for the chat conversation stream
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
+    }
+
+    /// Unique identifier for remote workspace
+    pub fn workspace_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.workspace_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unique identifier for remote workspace
+    pub fn set_workspace_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.workspace_id = input;
+        self
+    }
+
+    /// Unique identifier for remote workspace
+    pub fn get_workspace_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.workspace_id
     }
 
     /// Appends an item to `history`.
@@ -166,6 +191,7 @@ impl ConversationStateBuilder {
     ) -> ::std::result::Result<crate::types::ConversationState, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::ConversationState {
             conversation_id: self.conversation_id,
+            workspace_id: self.workspace_id,
             history: self.history,
             current_message: self.current_message.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(

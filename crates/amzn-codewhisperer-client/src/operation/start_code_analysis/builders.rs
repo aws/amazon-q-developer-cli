@@ -216,6 +216,23 @@ impl StartCodeAnalysisFluentBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn code_diff_metadata(mut self, input: crate::types::CodeDiffMetadata) -> Self {
+        self.inner = self.inner.code_diff_metadata(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_code_diff_metadata(mut self, input: ::std::option::Option<crate::types::CodeDiffMetadata>) -> Self {
+        self.inner = self.inner.set_code_diff_metadata(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_code_diff_metadata(&self) -> &::std::option::Option<crate::types::CodeDiffMetadata> {
+        self.inner.get_code_diff_metadata()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.inner = self.inner.profile_arn(input.into());
         self
