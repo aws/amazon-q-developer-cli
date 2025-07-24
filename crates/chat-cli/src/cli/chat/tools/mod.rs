@@ -4,6 +4,7 @@ pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
 pub mod knowledge;
+pub mod session_task;
 pub mod thinking;
 pub mod use_aws;
 
@@ -30,6 +31,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use session_task::TaskTool;
 use thinking::Thinking;
 use use_aws::UseAws;
 
@@ -42,7 +44,7 @@ use crate::cli::agent::{
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
-pub const NATIVE_TOOLS: [&str; 7] = [
+pub const NATIVE_TOOLS: [&str; 8] = [
     "fs_read",
     "fs_write",
     #[cfg(windows)]
@@ -53,6 +55,7 @@ pub const NATIVE_TOOLS: [&str; 7] = [
     "gh_issue",
     "knowledge",
     "thinking",
+    "task",
 ];
 
 /// Represents an executable tool use.
@@ -67,6 +70,7 @@ pub enum Tool {
     GhIssue(GhIssue),
     Knowledge(Knowledge),
     Thinking(Thinking),
+    Task(TaskTool),
 }
 
 impl Tool {
@@ -84,6 +88,7 @@ impl Tool {
             Tool::GhIssue(_) => "gh_issue",
             Tool::Knowledge(_) => "knowledge",
             Tool::Thinking(_) => "thinking (prerelease)",
+            Tool::Task(_) => "task",
         }
         .to_owned()
     }
@@ -99,6 +104,7 @@ impl Tool {
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(_) => PermissionEvalResult::Ask,
+            Tool::Task(_) => PermissionEvalResult::Allow,
         }
     }
 
@@ -113,6 +119,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
+            Tool::Task(task) => task.invoke(os, stdout).await,
         }
     }
 
@@ -127,6 +134,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
             Tool::Thinking(thinking) => thinking.queue_description(output),
+            Tool::Task(task) => task.queue_description(output),
         }
     }
 
@@ -141,6 +149,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
+            Tool::Task(task) => task.validate(os).await,
         }
     }
 }
