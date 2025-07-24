@@ -6,6 +6,7 @@ mod install_method;
 
 use core::{
     ChatAddedMessageParams,
+    RecordUserTurnCompletionArgs,
     ToolUseEventBuilder,
 };
 use std::str::FromStr;
@@ -273,6 +274,22 @@ impl TelemetryThread {
         Ok(self.tx.send(event)?)
     }
 
+    pub async fn send_record_user_turn_completion(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        result: TelemetryResult,
+        args: RecordUserTurnCompletionArgs,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::RecordUserTurnCompletion {
+            conversation_id,
+            result,
+            args,
+        });
+        set_start_url_and_region(database, &mut event).await;
+        Ok(self.tx.send(event)?)
+    }
+
     pub fn send_tool_use_suggested(&self, event: ToolUseEventBuilder) -> Result<(), TelemetryError> {
         Ok(self.tx.send(Event::new(EventType::ToolUseSuggested {
             conversation_id: event.conversation_id,
@@ -282,6 +299,7 @@ impl TelemetryThread {
             tool_name: event.tool_name,
             is_accepted: event.is_accepted,
             is_success: event.is_success,
+            reason_desc: event.reason_desc,
             is_valid: event.is_valid,
             is_custom_tool: event.is_custom_tool,
             input_token_size: event.input_token_size,
@@ -294,11 +312,13 @@ impl TelemetryThread {
     pub fn send_mcp_server_init(
         &self,
         conversation_id: String,
+        server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
     ) -> Result<(), TelemetryError> {
         Ok(self.tx.send(Event::new(crate::telemetry::EventType::McpServerInit {
             conversation_id,
+            server_name,
             init_failure_reason,
             number_of_tools,
         }))?)
@@ -346,6 +366,8 @@ impl TelemetryThread {
         reason: Option<String>,
         reason_desc: Option<String>,
         status_code: Option<u16>,
+        request_id: Option<String>,
+        message_id: Option<String>,
     ) -> Result<(), TelemetryError> {
         let mut event = Event::new(EventType::MessageResponseError {
             result,
@@ -354,6 +376,8 @@ impl TelemetryThread {
             status_code,
             conversation_id,
             context_file_length,
+            request_id,
+            message_id,
         });
         set_start_url_and_region(database, &mut event).await;
 

@@ -57,6 +57,10 @@ impl CompactArgs {
             Some(self.prompt.join(" "))
         };
 
+        // Compact interrupts the current conversation so this will always result in a new user
+        // turn.
+        session.reset_user_turn();
+
         session
             .compact_history(os, prompt, self.show_summary, CompactStrategy {
                 messages_to_exclude: self.messages_to_exclude.unwrap_or(default.messages_to_exclude),

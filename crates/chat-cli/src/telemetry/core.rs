@@ -7,6 +7,7 @@ use strum::{
     EnumString,
 };
 
+use super::definitions::metrics::CodewhispererterminalRecordUserTurnCompletion;
 use super::definitions::types::CodewhispererterminalChatConversationType;
 use crate::telemetry::definitions::IntoMetricDatum;
 use crate::telemetry::definitions::metrics::{
@@ -166,6 +167,7 @@ impl Event {
                         tool_name,
                         tool_use_id,
                         assistant_response_length,
+                        message_meta_tags,
                     },
             } => Some(
                 CodewhispererterminalAddChatMessage {
@@ -183,8 +185,8 @@ impl Event {
                     reason_desc: reason_desc.map(Into::into),
                     status_code: status_code.map(|v| v as i64).map(Into::into),
                     codewhispererterminal_model: model.map(Into::into),
-                    codewhispererterminal_time_to_first_chunk_ms: time_to_first_chunk_ms
-                        .map(|v| v as i64)
+                    codewhispererterminal_time_to_first_chunks_ms: time_to_first_chunk_ms
+                        .map(|v| format!("{:.3}", v))
                         .map(Into::into),
                     codewhispererterminal_time_between_chunks_ms: time_between_chunks_ms
                         .map(|v| v.iter().map(|v| format!("{:.3}", v)).collect::<Vec<_>>().join(","))
@@ -195,6 +197,78 @@ impl Event {
                     codewhispererterminal_assistant_response_length: assistant_response_length
                         .map(|v| v as i64)
                         .map(Into::into),
+                    codewhispererterminal_chat_message_meta_tags: Some(
+                        message_meta_tags
+                            .into_iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                            .into(),
+                    ),
+                }
+                .into_metric_datum(),
+            ),
+            EventType::RecordUserTurnCompletion {
+                conversation_id,
+                result,
+                args:
+                    RecordUserTurnCompletionArgs {
+                        message_ids,
+                        request_ids,
+                        reason,
+                        reason_desc,
+                        status_code,
+                        time_to_first_chunks_ms,
+                        chat_conversation_type,
+                        assistant_response_length,
+                        user_turn_duration_seconds,
+                        follow_up_count,
+                        user_prompt_length,
+                        message_meta_tags,
+                    },
+            } => Some(
+                CodewhispererterminalRecordUserTurnCompletion {
+                    create_time: self.created_time,
+                    value: None,
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    request_id: Some(
+                        request_ids
+                            .into_iter()
+                            .map(|id| id.unwrap_or("null".to_string()))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                            .into(),
+                    ),
+                    codewhispererterminal_utterance_id: Some(message_ids.join(",").into()),
+
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    sso_region: self.sso_region.map(Into::into),
+                    codewhispererterminal_in_cloudshell: None,
+                    result: result.to_string().into(),
+                    reason: reason.map(Into::into),
+                    reason_desc: reason_desc.map(Into::into),
+                    status_code: status_code.map(|v| v as i64).map(Into::into),
+                    codewhispererterminal_chat_conversation_type: chat_conversation_type.map(Into::into),
+                    codewhispererterminal_time_to_first_chunks_ms: Some(
+                        time_to_first_chunks_ms
+                            .into_iter()
+                            .map(|v| v.map_or("null".to_string(), |v| format!("{:.3}", v)))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                            .into(),
+                    ),
+                    codewhispererterminal_assistant_response_length: Some(assistant_response_length.into()),
+                    codewhispererterminal_user_turn_duration_seconds: Some(user_turn_duration_seconds.into()),
+                    codewhispererterminal_follow_up_count: Some(follow_up_count.into()),
+                    codewhispererterminal_user_prompt_length: Some(user_prompt_length.into()),
+                    codewhispererterminal_chat_message_meta_tags: Some(
+                        message_meta_tags
+                            .into_iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                            .into(),
+                    ),
                 }
                 .into_metric_datum(),
             ),
@@ -207,6 +281,7 @@ impl Event {
                 is_accepted,
                 is_valid,
                 is_success,
+                reason_desc,
                 is_custom_tool,
                 input_token_size,
                 output_token_size,
@@ -225,6 +300,7 @@ impl Event {
                     codewhispererterminal_is_tool_use_accepted: Some(is_accepted.into()),
                     codewhispererterminal_is_tool_valid: is_valid.map(CodewhispererterminalIsToolValid),
                     codewhispererterminal_tool_use_is_success: is_success.map(CodewhispererterminalToolUseIsSuccess),
+                    reason_desc: reason_desc.map(Into::into),
                     codewhispererterminal_is_custom_tool: Some(is_custom_tool.into()),
                     codewhispererterminal_custom_tool_input_token_size: input_token_size
                         .map(|s| CodewhispererterminalCustomToolInputTokenSize(s as i64)),
@@ -244,6 +320,7 @@ impl Event {
             ),
             EventType::McpServerInit {
                 conversation_id,
+                server_name,
                 init_failure_reason,
                 number_of_tools,
             } => Some(
@@ -252,6 +329,7 @@ impl Event {
                     credential_start_url: self.credential_start_url.map(Into::into),
                     value: None,
                     amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_mcp_server_name: Some(server_name.into()),
                     codewhispererterminal_mcp_server_init_failure_reason: init_failure_reason
                         .map(CodewhispererterminalMcpServerInitFailureReason),
                     codewhispererterminal_tools_per_mcp_server: Some(CodewhispererterminalToolsPerMcpServer(
@@ -303,6 +381,8 @@ impl Event {
                 reason,
                 reason_desc,
                 status_code,
+                request_id,
+                message_id,
             } => Some(
                 AmazonqMessageResponseError {
                     create_time: self.created_time,
@@ -315,6 +395,8 @@ impl Event {
                     reason: reason.map(Into::into),
                     reason_desc: reason_desc.map(Into::into),
                     status_code: status_code.map(|v| v as i64).map(Into::into),
+                    request_id: request_id.map(Into::into),
+                    codewhispererterminal_utterance_id: message_id.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -338,6 +420,13 @@ impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
     }
 }
 
+/// A metadata tag that can be used to annotate a request.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumString, Display, serde::Serialize, serde::Deserialize)]
+pub enum MessageMetaTag {
+    /// A /compact request
+    Compact,
+}
+
 /// Optional fields to add for a chatAddedMessage telemetry event.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub struct ChatAddedMessageParams {
@@ -354,6 +443,23 @@ pub struct ChatAddedMessageParams {
     pub tool_name: Option<String>,
     pub tool_use_id: Option<String>,
     pub assistant_response_length: Option<i32>,
+    pub message_meta_tags: Vec<MessageMetaTag>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+pub struct RecordUserTurnCompletionArgs {
+    pub request_ids: Vec<Option<String>>,
+    pub message_ids: Vec<String>,
+    pub reason: Option<String>,
+    pub reason_desc: Option<String>,
+    pub status_code: Option<u16>,
+    pub time_to_first_chunks_ms: Vec<Option<f64>>,
+    pub chat_conversation_type: Option<ChatConversationType>,
+    pub user_prompt_length: i64,
+    pub assistant_response_length: i64,
+    pub user_turn_duration_seconds: i64,
+    pub follow_up_count: i64,
+    pub message_meta_tags: Vec<MessageMetaTag>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -390,6 +496,11 @@ pub enum EventType {
         result: TelemetryResult,
         data: ChatAddedMessageParams,
     },
+    RecordUserTurnCompletion {
+        conversation_id: String,
+        result: TelemetryResult,
+        args: RecordUserTurnCompletionArgs,
+    },
     ToolUseSuggested {
         conversation_id: String,
         utterance_id: Option<String>,
@@ -398,6 +509,7 @@ pub enum EventType {
         tool_name: Option<String>,
         is_accepted: bool,
         is_success: Option<bool>,
+        reason_desc: Option<String>,
         is_valid: Option<bool>,
         is_custom_tool: bool,
         input_token_size: Option<usize>,
@@ -407,6 +519,7 @@ pub enum EventType {
     },
     McpServerInit {
         conversation_id: String,
+        server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
     },
@@ -429,6 +542,8 @@ pub enum EventType {
         reason_desc: Option<String>,
         status_code: Option<u16>,
         conversation_id: String,
+        request_id: Option<String>,
+        message_id: Option<String>,
         context_file_length: Option<usize>,
     },
 }
@@ -442,6 +557,7 @@ pub struct ToolUseEventBuilder {
     pub tool_name: Option<String>,
     pub is_accepted: bool,
     pub is_success: Option<bool>,
+    pub reason_desc: Option<String>,
     pub is_valid: Option<bool>,
     pub is_custom_tool: bool,
     pub input_token_size: Option<usize>,
@@ -460,6 +576,7 @@ impl ToolUseEventBuilder {
             tool_name: None,
             is_accepted: false,
             is_success: None,
+            reason_desc: None,
             is_valid: None,
             is_custom_tool: false,
             input_token_size: None,

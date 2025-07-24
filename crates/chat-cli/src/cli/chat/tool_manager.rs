@@ -611,7 +611,7 @@ impl ToolManagerBuilder {
                 Err(e) => {
                     error!("Error initializing mcp client for server {}: {:?}", name, &e);
                     os.telemetry
-                        .send_mcp_server_init(conversation_id.clone(), Some(e.to_string()), 0)
+                        .send_mcp_server_init(conversation_id.clone(), name, Some(e.to_string()), 0)
                         .ok();
                     let _ = messenger.send_tools_list_result(Err(e)).await;
                 },
@@ -1401,7 +1401,7 @@ fn process_tool_specs(
     specs.retain(|spec| !matches!(spec.tool_origin, ToolOrigin::Native));
     // Send server load success metric datum
     let conversation_id = conversation_id.to_string();
-    let _ = telemetry.send_mcp_server_init(conversation_id, None, number_of_tools);
+    let _ = telemetry.send_mcp_server_init(conversation_id, server_name.to_string(), None, number_of_tools);
     // Tool name translation. This is beyond of the scope of what is
     // considered a "server load". Reasoning being:
     // - Failures here are not related to server load

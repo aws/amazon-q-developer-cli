@@ -2,6 +2,8 @@ use std::sync::Arc;
 use std::time::{
     Duration,
     Instant,
+    SystemTime,
+    UNIX_EPOCH,
 };
 
 use eyre::Result;
@@ -37,8 +39,43 @@ use crate::api_client::{
     ApiClientError,
 };
 use crate::telemetry::ReasonCode;
-use crate::telemetry::core::ChatConversationType;
+use crate::telemetry::core::{
+    ChatConversationType,
+    MessageMetaTag,
+};
 
+/// Error from sending a SendMessage request.
+#[derive(Debug, Error)]
+pub struct SendMessageError {
+    #[source]
+    pub source: ApiClientError,
+    pub request_metadata: RequestMetadata,
+}
+
+impl SendMessageError {
+    pub fn status_code(&self) -> Option<u16> {
+        self.source.status_code()
+    }
+}
+
+impl ReasonCode for SendMessageError {
+    fn reason_code(&self) -> String {
+        self.source.reason_code()
+    }
+}
+
+impl std::fmt::Display for SendMessageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Failed to send the request: ")?;
+        if let Some(request_id) = self.request_metadata.request_id.as_ref() {
+            write!(f, "request_id: {}, error: ", request_id)?;
+        }
+        write!(f, "{}", self.source)?;
+        Ok(())
+    }
+}
+
+/// Errors associated with consuming the response stream.
 #[derive(Debug, Error)]
 pub struct RecvError {
     #[source]
@@ -163,16 +200,36 @@ impl SendMessageStream {
         client: &ApiClient,
         conversation_state: ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
-    ) -> Result<Self, ApiClientError> {
+        message_meta_tags: Option<Vec<MessageMetaTag>>,
+    ) -> Result<Self, SendMessageError> {
         let message_id = uuid::Uuid::new_v4().to_string();
         info!(?message_id, "Generated new message id");
+        let user_prompt_length = conversation_state.user_input_message.content.len();
+        let model_id = conversation_state.user_input_message.model_id.clone();
+        let message_meta_tags = message_meta_tags.unwrap_or_default();
 
         let cancel_token = CancellationToken::new();
         let cancel_token_clone = cancel_token.clone();
 
         let start_time = Instant::now();
+        let start_time_sys = SystemTime::now();
         debug!(?start_time, "sending send_message request");
-        let response = client.send_message(conversation_state).await?;
+        let response = client
+            .send_message(conversation_state)
+            .await
+            .map_err(|err| SendMessageError {
+                source: err,
+                request_metadata: RequestMetadata {
+                    message_id: message_id.clone(),
+                    request_start_timestamp_ms: system_time_to_unix_ms(start_time_sys),
+                    stream_end_timestamp_ms: system_time_to_unix_ms(SystemTime::now()),
+                    model_id: model_id.clone(),
+                    user_prompt_length,
+                    message_meta_tags: message_meta_tags.clone(),
+                    // Other fields are irrelevant if we can't get a successful response
+                    ..Default::default()
+                },
+            })?;
         let elapsed = start_time.elapsed();
         debug!(?elapsed, "send_message succeeded");
 
@@ -182,8 +239,12 @@ impl SendMessageStream {
             ResponseParser::new(
                 response,
                 message_id,
+                model_id,
+                user_prompt_length,
+                message_meta_tags,
                 ev_tx,
                 start_time,
+                start_time_sys,
                 cancel_token_clone,
                 request_metadata_lock,
             )
@@ -221,9 +282,8 @@ struct ResponseParser {
 
     /// Message identifier for the assistant's response. Randomly generated on creation.
     message_id: String,
-
+    /// Whether or not the stream has completed.
     ended: bool,
-
     /// Buffer to hold the next event in [SendMessageOutput].
     peek: Option<ChatResponseStream>,
     /// Buffer for holding the accumulated assistant response.
@@ -238,8 +298,16 @@ struct ResponseParser {
     cancel_token: CancellationToken,
 
     // metadata fields
-    /// Time immediately after sending the request.
-    start_time: Instant,
+    /// Id of the model used with this request.
+    model_id: Option<String>,
+    /// Length of the user prompt for the initial request.
+    user_prompt_length: usize,
+    /// Meta tags for the initial request.
+    message_meta_tags: Vec<MessageMetaTag>,
+    /// Time immediately before sending the request.
+    request_start_time: Instant,
+    /// Time immediately before sending the request, as a [SystemTime].
+    request_start_time_sys: SystemTime,
     /// Total size (in bytes) of the response received so far.
     received_response_size: usize,
     time_to_first_chunk: Option<Duration>,
@@ -247,24 +315,33 @@ struct ResponseParser {
 }
 
 impl ResponseParser {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         response: SendMessageOutput,
         message_id: String,
+        model_id: Option<String>,
+        user_prompt_length: usize,
+        message_meta_tags: Vec<MessageMetaTag>,
         event_tx: mpsc::Sender<Result<ResponseEvent, RecvError>>,
-        start_time: Instant,
+        request_start_time: Instant,
+        request_start_time_sys: SystemTime,
         cancel_token: CancellationToken,
         request_metadata: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Self {
         Self {
             response,
             message_id,
+            model_id,
+            user_prompt_length,
+            message_meta_tags,
             ended: false,
             event_tx,
             peek: None,
             assistant_text: String::new(),
             tool_uses: Vec::new(),
             parsing_tool_use: None,
-            start_time,
+            request_start_time,
+            request_start_time_sys,
             received_response_size: 0,
             time_to_first_chunk: None,
             time_between_chunks: Vec::new(),
@@ -481,7 +558,7 @@ impl ResponseParser {
 
                 // Track metadata about the chunk.
                 self.time_to_first_chunk
-                    .get_or_insert_with(|| self.start_time.elapsed());
+                    .get_or_insert_with(|| self.request_start_time.elapsed());
                 self.time_between_chunks.push(duration);
                 if let Some(r) = ev.as_ref() {
                     match r {
@@ -510,10 +587,6 @@ impl ResponseParser {
         }
     }
 
-    fn request_id(&self) -> Option<&str> {
-        self.response.request_id()
-    }
-
     /// Helper to create a new [RecvError] populated with the associated request id for the stream.
     fn error(&self, source: impl Into<RecvErrorKind>) -> RecvError {
         RecvError {
@@ -524,11 +597,24 @@ impl ResponseParser {
 
     fn make_metadata(&self, chat_conversation_type: Option<ChatConversationType>) -> RequestMetadata {
         RequestMetadata {
-            request_id: self.request_id().map(String::from),
+            request_id: self.response.request_id().map(String::from),
+            message_id: self.message_id.clone(),
             time_to_first_chunk: self.time_to_first_chunk,
             time_between_chunks: self.time_between_chunks.clone(),
             response_size: self.received_response_size,
             chat_conversation_type,
+            request_start_timestamp_ms: system_time_to_unix_ms(self.request_start_time_sys),
+            // We always end the stream when this method is called, so just set the end timestamp
+            // here.
+            stream_end_timestamp_ms: system_time_to_unix_ms(SystemTime::now()),
+            user_prompt_length: self.user_prompt_length,
+            message_meta_tags: self.message_meta_tags.clone(),
+            tool_use_ids_and_names: self
+                .tool_uses
+                .iter()
+                .map(|t| (t.id.clone(), t.name.clone()))
+                .collect::<_>(),
+            model_id: self.model_id.clone(),
         }
     }
 }
@@ -554,18 +640,40 @@ pub enum ResponseEvent {
 }
 
 /// Metadata about the sent request and associated response stream.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RequestMetadata {
     /// The request id associated with the [SendMessageOutput] stream.
     pub request_id: Option<String>,
+    /// The randomly-generated id associated with the request. Equivalent to utterance id.
+    pub message_id: String,
+    /// Unix timestamp (milliseconds) immediately before sending the request.
+    pub request_start_timestamp_ms: u64,
+    /// Unix timestamp (milliseconds) once the stream has either completed or ended in an error.
+    pub stream_end_timestamp_ms: u64,
     /// Time until the first chunk was received.
     pub time_to_first_chunk: Option<Duration>,
     /// Time between each received chunk in the stream.
     pub time_between_chunks: Vec<Duration>,
+    /// Total size (in bytes) of the user prompt associated with the request.
+    pub user_prompt_length: usize,
     /// Total size (in bytes) of the response.
     pub response_size: usize,
     /// [ChatConversationType] for the returned assistant message.
     pub chat_conversation_type: Option<ChatConversationType>,
+    /// Tool uses returned by the assistant for this request.
+    pub tool_use_ids_and_names: Vec<(String, String)>,
+    /// Model id.
+    pub model_id: Option<String>,
+    /// Meta tags for the request.
+    pub message_meta_tags: Vec<MessageMetaTag>,
+}
+
+fn system_time_to_unix_ms(time: SystemTime) -> u64 {
+    (time
+        .duration_since(UNIX_EPOCH)
+        .expect("time should never be before unix epoch")
+        .as_secs_f64()
+        * 1000.0) as u64
 }
 
 #[cfg(test)]
@@ -623,8 +731,12 @@ mod tests {
         let mut parser = ResponseParser::new(
             mock,
             "".to_string(),
+            None,
+            1,
+            vec![],
             mpsc::channel(32).0,
             Instant::now(),
+            SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
         );

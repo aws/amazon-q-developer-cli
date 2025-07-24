@@ -139,6 +139,9 @@ use crate::mcp_client::Prompt;
 use crate::os::Os;
 use crate::telemetry::core::{
     ChatAddedMessageParams,
+    ChatConversationType,
+    MessageMetaTag,
+    RecordUserTurnCompletionArgs,
     ToolUseEventBuilder,
 };
 use crate::telemetry::{
@@ -403,6 +406,8 @@ pub enum ChatError {
     #[error("{0}")]
     Auth(#[from] AuthError),
     #[error("{0}")]
+    SendMessage(Box<parser::SendMessageError>),
+    #[error("{0}")]
     ResponseStream(Box<parser::RecvError>),
     #[error("{0}")]
     Std(#[from] std::io::Error),
@@ -427,6 +432,7 @@ impl ChatError {
         match self {
             ChatError::Client(e) => e.status_code(),
             ChatError::Auth(_) => None,
+            ChatError::SendMessage(e) => e.status_code(),
             ChatError::ResponseStream(_) => None,
             ChatError::Std(_) => None,
             ChatError::Readline(_) => None,
@@ -443,6 +449,7 @@ impl ReasonCode for ChatError {
     fn reason_code(&self) -> String {
         match self {
             ChatError::Client(e) => e.reason_code(),
+            ChatError::SendMessage(e) => e.reason_code(),
             ChatError::ResponseStream(e) => e.reason_code(),
             ChatError::Std(_) => "StdIoError".to_string(),
             ChatError::Readline(_) => "ReadlineError".to_string(),
@@ -459,6 +466,12 @@ impl ReasonCode for ChatError {
 impl From<ApiClientError> for ChatError {
     fn from(value: ApiClientError) -> Self {
         Self::Client(Box::new(value))
+    }
+}
+
+impl From<parser::SendMessageError> for ChatError {
+    fn from(value: parser::SendMessageError) -> Self {
+        Self::SendMessage(Box::new(value))
     }
 }
 
@@ -484,7 +497,7 @@ pub struct ChatSession {
     conversation: ConversationState,
     tool_uses: Vec<QueuedTool>,
     /// [RequestMetadata] about the ongoing operation.
-    current_request_metadata: Option<RequestMetadata>,
+    user_turn_request_metadata: Vec<RequestMetadata>,
     pending_tool_index: Option<usize>,
     /// Telemetry events to be sent as part of the conversation. The HashMap key is tool_use_id.
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
@@ -607,7 +620,7 @@ impl ChatSession {
             spinner: None,
             conversation,
             tool_uses: vec![],
-            current_request_metadata: None,
+            user_turn_request_metadata: vec![],
             pending_tool_index: None,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
@@ -660,12 +673,9 @@ impl ChatSession {
                     Ok(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: Some(tool_uses_clone) })
                 }
             },
-            ChatState::ValidateTools {
-                tool_uses,
-                request_metadata,
-            } => {
+            ChatState::ValidateTools { tool_uses } => {
                 tokio::select! {
-                    res = self.validate_tools(os, tool_uses, request_metadata) => res,
+                    res = self.validate_tools(os, tool_uses) => res,
                     Ok(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: None })
                 }
             },
@@ -679,8 +689,10 @@ impl ChatSession {
                         debug!(?request_metadata, "ctrlc received");
                         // Wait for handle_response to finish handling the ctrlc.
                         tokio::time::sleep(Duration::from_millis(5)).await;
-                        let request_metadata = request_metadata.lock().await.take();
-                        self.send_chat_telemetry(os, TelemetryResult::Cancelled, None, None, None, request_metadata.as_ref()).await;
+                        if let Some(request_metadata) = request_metadata.lock().await.take() {
+                            self.user_turn_request_metadata.push(request_metadata);
+                        }
+                        self.send_chat_telemetry(os, TelemetryResult::Cancelled, None, None, None, true).await;
                         Err(ChatError::Interrupted { tool_uses: None })
                     }
                 }
@@ -966,7 +978,7 @@ impl ChatSession {
         self.conversation.enforce_conversation_invariants();
         self.conversation.reset_next_user_message();
         self.pending_tool_index = None;
-        self.current_request_metadata = None;
+        self.reset_user_turn();
 
         self.inner = Some(ChatState::PromptUser {
             skip_printing_tools: false,
@@ -1009,11 +1021,7 @@ pub enum ChatState {
     /// Handle the user input, depending on if any tools require execution.
     HandleInput { input: String },
     /// Validate the list of tool uses provided by the model.
-    ValidateTools {
-        tool_uses: Vec<AssistantToolUse>,
-        /// The [RequestMetadata] about the request used which requested the tool uses.
-        request_metadata: Option<RequestMetadata>,
-    },
+    ValidateTools { tool_uses: Vec<AssistantToolUse> },
     /// Execute the list of tools.
     ExecuteTools,
     /// Consume the response stream and display to the user.
@@ -1048,8 +1056,11 @@ impl ChatSession {
         os: &mut Os,
         conversation_state: api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
+        message_meta_tags: Option<Vec<MessageMetaTag>>,
     ) -> Result<SendMessageStream, ChatError> {
-        match SendMessageStream::send_message(&os.client, conversation_state, request_metadata_lock).await {
+        match SendMessageStream::send_message(&os.client, conversation_state, request_metadata_lock, message_meta_tags)
+            .await
+        {
             Ok(res) => Ok(res),
             Err(err) => {
                 let (reason, reason_desc) = get_error_reason(&err);
@@ -1059,7 +1070,7 @@ impl ChatSession {
                     Some(reason),
                     Some(reason_desc),
                     err.status_code(),
-                    None,
+                    true, // We never retry failed requests, so this always ends the current turn.
                 )
                 .await;
                 Err(err.into())
@@ -1181,14 +1192,16 @@ impl ChatSession {
                 debug!(?request_metadata, "ctrlc received in compact history");
                 // Wait for handle_response to finish handling the ctrlc.
                 tokio::time::sleep(Duration::from_millis(5)).await;
-                let request_metadata = request_metadata.lock().await.take();
+                if let Some(request_metadata) = request_metadata.lock().await.take() {
+                    self.user_turn_request_metadata.push(request_metadata);
+                }
                 self.send_chat_telemetry(
                     os,
                     TelemetryResult::Cancelled,
                     None,
                     None,
                     None,
-                    request_metadata.as_ref(),
+                    true,
                 )
                 .await;
                 Err(ChatError::Interrupted { tool_uses: Some(self.tool_uses.clone()) })
@@ -1243,7 +1256,15 @@ impl ChatSession {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
         }
 
-        let mut response = match self.send_message(os, summary_state, request_metadata_lock).await {
+        let mut response = match self
+            .send_message(
+                os,
+                summary_state,
+                request_metadata_lock,
+                Some(vec![MessageMetaTag::Compact]),
+            )
+            .await
+        {
             Ok(res) => res,
             Err(err) => {
                 if self.interactive {
@@ -1315,6 +1336,7 @@ impl ChatSession {
                         message,
                         request_metadata,
                     })) => {
+                        self.user_turn_request_metadata.push(request_metadata.clone());
                         break (message.content().to_string(), request_metadata);
                     },
                     Some(Ok(_)) => (),
@@ -1323,6 +1345,8 @@ impl ChatSession {
                             self.failed_request_ids.push(request_id.clone());
                         };
 
+                        self.user_turn_request_metadata.push(err.request_metadata.clone());
+
                         let (reason, reason_desc) = get_error_reason(&err);
                         self.send_chat_telemetry(
                             os,
@@ -1330,7 +1354,7 @@ impl ChatSession {
                             Some(reason),
                             Some(reason_desc),
                             err.status_code(),
-                            Some(&err.request_metadata),
+                            true,
                         )
                         .await;
 
@@ -1355,17 +1379,14 @@ impl ChatSession {
         }
 
         self.conversation
-            .replace_history_with_summary(summary.clone(), strategy, request_metadata.clone());
+            .replace_history_with_summary(summary.clone(), strategy, request_metadata);
 
-        self.send_chat_telemetry(
-            os,
-            TelemetryResult::Succeeded,
-            None,
-            None,
-            None,
-            Some(&request_metadata),
-        )
-        .await;
+        // If a next message is set, then retry the request.
+        let should_retry = self.conversation.next_user_message().is_some();
+
+        // If we retry, then don't end the current turn.
+        self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, !should_retry)
+            .await;
 
         // Print output to the user.
         {
@@ -1423,8 +1444,7 @@ impl ChatSession {
             }
         }
 
-        // If a next message is set, then retry the request.
-        if self.conversation.next_user_message().is_some() {
+        if should_retry {
             Ok(ChatState::HandleResponseStream(
                 self.conversation
                     .as_sendable_conversation_state(os, &mut self.stderr, false)
@@ -1716,6 +1736,8 @@ impl ChatSession {
                 self.conversation.set_next_user_message(user_input).await;
             }
 
+            self.reset_user_turn();
+
             let conv_state = self
                 .conversation
                 .as_sendable_conversation_state(os, &mut self.stderr, true)
@@ -1857,7 +1879,7 @@ impl ChatSession {
                     tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
                     if let Tool::Custom(_) = &tool.tool {
                         tool_telemetry
-                            .and_modify(|ev| ev.output_token_size = Some(TokenCounter::count_tokens(result.as_str())));
+                            .and_modify(|ev| ev.output_token_size = Some(TokenCounter::count_tokens(&result.as_str())));
                     }
                     tool_results.push(ToolUseResult {
                         tool_use_id: tool.id.clone(),
@@ -1881,7 +1903,10 @@ impl ChatSession {
                         style::Print("\n\n"),
                     )?;
 
-                    tool_telemetry.and_modify(|ev| ev.is_success = Some(false));
+                    tool_telemetry.and_modify(|ev| {
+                        ev.is_success = Some(false);
+                        ev.reason_desc = Some(err.to_string());
+                    });
                     tool_results.push(ToolUseResult {
                         tool_use_id: tool.id.clone(),
                         content: vec![ToolUseResultBlock::Text(format!(
@@ -1920,15 +1945,8 @@ impl ChatSession {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
         }
 
-        self.send_chat_telemetry(
-            os,
-            TelemetryResult::Succeeded,
-            None,
-            None,
-            None,
-            self.current_request_metadata.as_ref(),
-        )
-        .await;
+        self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
+            .await;
         self.send_tool_use_telemetry(os).await;
         return Ok(ChatState::HandleResponseStream(
             self.conversation
@@ -1950,7 +1968,7 @@ impl ChatSession {
         state: crate::api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
-        let mut rx = self.send_message(os, state, request_metadata_lock).await?;
+        let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
 
         let request_id = rx.request_id().map(String::from);
 
@@ -1962,7 +1980,6 @@ impl ChatSession {
 
         let mut tool_uses = Vec::new();
         let mut tool_name_being_recvd: Option<String> = None;
-        let mut request_metadata = None;
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
@@ -2019,7 +2036,7 @@ impl ChatSession {
                                 error!(?request_id, ?message, "Encountered an unexpected model response");
                             }
                             self.conversation.push_assistant_message(os, message, Some(rm.clone()));
-                            request_metadata = Some(rm);
+                            self.user_turn_request_metadata.push(rm);
                             ended = true;
                         },
                     }
@@ -2029,19 +2046,23 @@ impl ChatSession {
                         self.failed_request_ids.push(request_id.clone());
                     };
 
+                    self.user_turn_request_metadata
+                        .push(recv_error.request_metadata.clone());
                     let (reason, reason_desc) = get_error_reason(&recv_error);
-                    self.send_chat_telemetry(
-                        os,
-                        TelemetryResult::Failed,
-                        Some(reason),
-                        Some(reason_desc),
-                        recv_error.status_code(),
-                        Some(&recv_error.request_metadata),
-                    )
-                    .await;
+                    let status_code = recv_error.status_code();
 
                     match recv_error.source {
                         RecvErrorKind::StreamTimeout { source, duration } => {
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some(reason),
+                                Some(reason_desc),
+                                status_code,
+                                false, // We retry the request, so don't end the current turn yet.
+                            )
+                            .await;
+
                             error!(
                                 recv_error.request_metadata.request_id,
                                 ?source,
@@ -2078,6 +2099,16 @@ impl ChatSession {
                             message,
                             ..
                         } => {
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some(reason),
+                                Some(reason_desc),
+                                status_code,
+                                false, // We retry the request, so don't end the current turn yet.
+                            )
+                            .await;
+
                             error!(
                                 recv_error.request_metadata.request_id,
                                 tool_use_id, name, "The response stream ended before the entire tool use was received"
@@ -2099,7 +2130,19 @@ impl ChatSession {
                                     .await?,
                             ));
                         },
-                        _ => return Err(recv_error.into()),
+                        _ => {
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some(reason),
+                                Some(reason_desc),
+                                status_code,
+                                true, // Hard fail -> end the current user turn.
+                            )
+                            .await;
+
+                            return Err(recv_error.into());
+                        },
                     }
                 },
                 None => {
@@ -2185,18 +2228,13 @@ impl ChatSession {
         }
 
         if !tool_uses.is_empty() {
-            Ok(ChatState::ValidateTools {
-                tool_uses,
-                request_metadata,
-            })
+            Ok(ChatState::ValidateTools { tool_uses })
         } else {
             self.tool_uses.clear();
             self.pending_tool_index = None;
 
-            // TODO(telem) send recordUserTurnCompletion
-            // self.send_chat_telemetry(os, request_id, TelemetryResult::Succeeded, None, None, None)
-            //     .await;
-            // self.send_record_user_turn_completion();
+            self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
+                .await;
 
             Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
@@ -2204,12 +2242,7 @@ impl ChatSession {
         }
     }
 
-    async fn validate_tools(
-        &mut self,
-        os: &Os,
-        tool_uses: Vec<AssistantToolUse>,
-        request_metadata: Option<RequestMetadata>,
-    ) -> Result<ChatState, ChatError> {
+    async fn validate_tools(&mut self, os: &Os, tool_uses: Vec<AssistantToolUse>) -> Result<ChatState, ChatError> {
         let conv_id = self.conversation.conversation_id().to_owned();
         debug!(?tool_uses, "Validating tool uses");
         let mut queued_tools: Vec<QueuedTool> = Vec::new();
@@ -2289,15 +2322,8 @@ impl ChatSession {
             }
 
             self.conversation.add_tool_results(tool_results);
-            self.send_chat_telemetry(
-                os,
-                TelemetryResult::Succeeded,
-                None,
-                None,
-                None,
-                request_metadata.as_ref(),
-            )
-            .await;
+            self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
+                .await;
             self.send_tool_use_telemetry(os).await;
             if let ToolUseStatus::Idle = self.tool_use_status {
                 self.tool_use_status = ToolUseStatus::RetryInProgress(
@@ -2315,7 +2341,6 @@ impl ChatSession {
         }
 
         self.tool_uses = queued_tools;
-        self.current_request_metadata = request_metadata;
         self.pending_tool_index = Some(0);
         Ok(ChatState::ExecuteTools)
     }
@@ -2496,6 +2521,15 @@ impl ChatSession {
         Ok(())
     }
 
+    /// Resets state associated with the active user turn.
+    ///
+    /// This should *always* be called whenever a new user prompt is sent to the backend. Note
+    /// that includes tool use rejections.
+    fn reset_user_turn(&mut self) {
+        info!(?self.user_turn_request_metadata, "Resetting the current user turn");
+        self.user_turn_request_metadata.clear();
+    }
+
     /// Sends an "codewhispererterminal_addChatMessage" telemetry event.
     ///
     /// This *MUST* be called in the following cases:
@@ -2504,8 +2538,8 @@ impl ChatSession {
     /// 3. After an error was encountered during the handling of the response stream, tool use
     ///    validation, or tool use execution.
     ///
-    /// Note: whether or not to send telemetry should be derived from the chat history rather than
-    /// having to be manually invoked, although that would require more substantial changes.
+    /// [Self::user_turn_request_metadata] must contain the [RequestMetadata] associated with the
+    /// current user turn.
     #[allow(clippy::too_many_arguments)]
     async fn send_chat_telemetry(
         &self,
@@ -2514,15 +2548,19 @@ impl ChatSession {
         reason: Option<String>,
         reason_desc: Option<String>,
         status_code: Option<u16>,
-        md: Option<&RequestMetadata>,
+        is_end_turn: bool,
     ) {
+        // Get metadata for the most recent request.
+        let md = self.user_turn_request_metadata.last();
+
+        let conversation_id = self.conversation.conversation_id().to_owned();
         let data = ChatAddedMessageParams {
             request_id: md.and_then(|md| md.request_id.clone()),
-            message_id: self.conversation.message_id().map(|s| s.to_owned()),
+            message_id: md.map(|md| md.message_id.clone()),
             context_file_length: self.conversation.context_message_length(),
-            model: self.conversation.model.clone(),
-            reason,
-            reason_desc,
+            model: md.and_then(|m| m.model_id.clone()),
+            reason: reason.clone(),
+            reason_desc: reason_desc.clone(),
             status_code,
             time_to_first_chunk_ms: md.and_then(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0)),
             time_between_chunks_ms: md.map(|md| {
@@ -2535,16 +2573,49 @@ impl ChatSession {
             tool_use_id: self.conversation.latest_tool_use_ids(),
             tool_name: self.conversation.latest_tool_use_names(),
             assistant_response_length: md.map(|md| md.response_size as i32),
+            message_meta_tags: md.map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
         };
         os.telemetry
-            .send_chat_added_message(
-                &os.database,
-                self.conversation.conversation_id().to_owned(),
-                result,
-                data,
-            )
+            .send_chat_added_message(&os.database, conversation_id.clone(), result, data)
             .await
             .ok();
+
+        if is_end_turn {
+            let mds = &self.user_turn_request_metadata;
+
+            // Get the user turn duration.
+            let start_time = mds.first().map(|md| md.request_start_timestamp_ms);
+            let end_time = mds.last().map(|md| md.stream_end_timestamp_ms);
+            let user_turn_duration_seconds = match (start_time, end_time) {
+                // Convert ms back to seconds
+                (Some(start), Some(end)) => end.saturating_sub(start) as i64 / 1000,
+                _ => 0,
+            };
+
+            os.telemetry
+                .send_record_user_turn_completion(&os.database, conversation_id, result, RecordUserTurnCompletionArgs {
+                    message_ids: mds.iter().map(|md| md.message_id.clone()).collect::<_>(),
+                    request_ids: mds.iter().map(|md| md.request_id.clone()).collect::<_>(),
+                    reason,
+                    reason_desc,
+                    status_code,
+                    time_to_first_chunks_ms: mds
+                        .iter()
+                        .map(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0))
+                        .collect::<_>(),
+                    chat_conversation_type: md.and_then(|md| md.chat_conversation_type),
+                    assistant_response_length: mds.iter().map(|md| md.response_size as i64).sum(),
+                    message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
+                    user_prompt_length: mds.first().map(|md| md.user_prompt_length).unwrap_or_default() as i64,
+                    user_turn_duration_seconds,
+                    follow_up_count: mds
+                        .iter()
+                        .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
+                        .count() as i64,
+                })
+                .await
+                .ok();
+        }
     }
 
     async fn send_error_telemetry(
@@ -2554,6 +2625,7 @@ impl ChatSession {
         reason_desc: Option<String>,
         status_code: Option<u16>,
     ) {
+        let md = self.user_turn_request_metadata.last();
         os.telemetry
             .send_response_error(
                 &os.database,
@@ -2563,6 +2635,8 @@ impl ChatSession {
                 Some(reason),
                 reason_desc,
                 status_code,
+                md.and_then(|md| md.request_id.clone()),
+                md.map(|md| md.message_id.clone()),
             )
             .await
             .ok();
