@@ -158,17 +158,19 @@ pub fn chat_local_agent_dir() -> Result<PathBuf> {
     Ok(cwd.join(".amazonq").join("agents"))
 }
 
-/// The relative path to the agent configuration directory
+/// Derives the absolute path to an agent config directory given a "workspace directory".
+/// A workspace directory is a directory where q chat is to be launched
 ///
-/// This directory contains agent configuration files for Amazon Q.
-/// The path is relative and should be joined with either the home directory
-/// for global agents or the current working directory for local agents.
-pub fn agent_config_dir(os: &Os, path: PathBuf) -> Result<PathBuf> {
+/// For example, if the given path is /path/one, then the derived config path would be
+/// `/path/one/.amazonq/agents`
+/// This is different for home directory, where the agents are expected to be stored in
+/// `~/.aws/amazonq/agents`
+pub fn agent_config_dir(os: &Os, workspace_dir: PathBuf) -> Result<PathBuf> {
     const GLOBAL_CONFIG_SEGMENT: &str = ".aws/amazonq/agents";
     const LOCAL_CONFIG_SEGMENT: &str = ".amazonq/agents";
 
     let home_path = home_dir(os)?;
-    let path_as_str = path.to_str().ok_or(DirectoryError::PathToStr)?;
+    let path_as_str = workspace_dir.to_str().ok_or(DirectoryError::PathToStr)?;
     let expanded_path = PathBuf::from(shellexpand::tilde(path_as_str).as_ref() as &str);
     let remainder = expanded_path.strip_prefix(&home_path)?;
     let remainder_as_str = remainder.to_str().ok_or(DirectoryError::PathToStr)?;
@@ -178,14 +180,9 @@ pub fn agent_config_dir(os: &Os, path: PathBuf) -> Result<PathBuf> {
         return Ok(home_path.join(GLOBAL_CONFIG_SEGMENT));
     }
 
-    // The path given is already the config path
-    if remainder_as_str == GLOBAL_CONFIG_SEGMENT || remainder_as_str.ends_with(LOCAL_CONFIG_SEGMENT) {
-        return Ok(path);
-    }
-
     // The path given is local workspace directory, in which case we should append the path given
     // with a local config segment
-    Ok(path.join(LOCAL_CONFIG_SEGMENT))
+    Ok(workspace_dir.join(LOCAL_CONFIG_SEGMENT))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.

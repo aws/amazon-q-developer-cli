@@ -214,7 +214,10 @@ pub async fn create_agent(
     from: Option<String>,
 ) -> Result<PathBuf> {
     let path = if let Some(path) = path {
-        let path = PathBuf::from(path);
+        let mut path = PathBuf::from(path);
+        if path.is_relative() {
+            path = os.env.current_dir()?.join(path);
+        }
 
         if !path.is_dir() {
             bail!("Path must be a directory");
