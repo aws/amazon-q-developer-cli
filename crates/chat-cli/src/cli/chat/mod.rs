@@ -1541,6 +1541,17 @@ impl ChatSession {
         if let Some(chat_state) = does_input_reference_file(input) {
             return Ok(chat_state);
         }
+
+        // Handle custom command execution (/project:name syntax)
+        if let Some(command_part) = input.strip_prefix("/project:") {
+            return self.handle_custom_command_execution(command_part, os, false).await;
+        }
+
+        // Handle user command execution (/user:name or /user:namespace:name syntax)
+        if let Some(command_part) = input.strip_prefix("/user:") {
+            return self.handle_custom_command_execution(command_part, os, true).await;
+        }
+
         if let Some(mut args) = input.strip_prefix("/").and_then(shlex::split) {
             // Required for printing errors correctly.
             let orig_args = args.clone();
@@ -1754,6 +1765,160 @@ impl ChatSession {
 
             Ok(ChatState::HandleResponseStream(conv_state))
         }
+    }
+
+    async fn handle_custom_command_execution(
+        &mut self,
+        command_part: &str,
+        os: &mut Os,
+        is_user_command: bool,
+    ) -> Result<ChatState, ChatError> {
+        use crate::util::command_manager::CommandManager;
+
+        // Check if commands feature is enabled
+        if !CommandManager::is_enabled(os) {
+            queue!(
+                self.stderr,
+                style::SetForegroundColor(Color::Red),
+                style::Print("\n❌ Commands tool is disabled. Enable it with: q settings chat.enableCommands true\n\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
+        // Parse command name and arguments
+        let (command_name, args) = if is_user_command {
+            // Handle /user:namespace:name or /user:name syntax
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+            let command_spec = parts[0];
+            let args = parts.get(1).copied();
+
+            // Parse namespace:name or just name
+            let name_parts: Vec<&str> = command_spec.splitn(2, ':').collect();
+            let command_name = if name_parts.len() == 2 {
+                // namespace:name format
+                format!("{}/{}", name_parts[0], name_parts[1])
+            } else {
+                // just name format
+                name_parts[0].to_string()
+            };
+
+            (command_name, args)
+        } else {
+            // Handle /project:name syntax
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+            let command_name = parts[0].to_string();
+            let args = parts.get(1).copied();
+            (command_name, args)
+        };
+
+        if command_name.is_empty() {
+            queue!(
+                self.stderr,
+                style::SetForegroundColor(Color::Red),
+                style::Print("\n❌ Command name cannot be empty\n\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
+        // Load and execute the command
+        let mut manager = match CommandManager::new(os) {
+            Ok(manager) => manager,
+            Err(e) => {
+                queue!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print(format!("\n❌ Failed to initialize command manager: {}\n\n", e)),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            },
+        };
+
+        let command_content = if is_user_command {
+            match manager.execute_user_command_with_args(&command_name, args, os) {
+                Ok(content) => content,
+                Err(e) => {
+                    let error_msg = match e {
+                        crate::util::command_types::CommandError::NotFound(name) => {
+                            format!(
+                                "❌ User command '{}' not found.\n\nUse '/commands add {}' to create it in ~/.amazonq/commands/.",
+                                name, name
+                            )
+                        },
+                        crate::util::command_types::CommandError::SecurityViolation(msg) => {
+                            format!("🔒 Security violation: {}", msg)
+                        },
+                        _ => format!("❌ Failed to execute user command '{}': {}", command_name, e),
+                    };
+
+                    queue!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("\n{}\n\n", error_msg)),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                },
+            }
+        } else {
+            match manager.execute_command_with_args(&command_name, args, os) {
+                Ok(content) => content,
+                Err(e) => {
+                    let error_msg = match e {
+                        crate::util::command_types::CommandError::NotFound(name) => {
+                            format!(
+                                "❌ Command '{}' not found in project scope.\n\nUse '/commands add {}' to create it.",
+                                name, name
+                            )
+                        },
+                        crate::util::command_types::CommandError::SecurityViolation(msg) => {
+                            format!("🔒 Security violation: {}", msg)
+                        },
+                        _ => format!("❌ Failed to execute command '{}': {}", command_name, e),
+                    };
+
+                    queue!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("\n{}\n\n", error_msg)),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                },
+            }
+        };
+
+        // Show execution indicator
+        let command_display = if is_user_command {
+            format!("user:{}", command_name)
+        } else {
+            format!("project:{}", command_name)
+        };
+
+        queue!(
+            self.stderr,
+            style::SetForegroundColor(Color::Green),
+            style::Print(format!("🚀 Executing command: {}\n", command_display)),
+            style::SetForegroundColor(Color::Reset)
+        )?;
+
+        // Inject the command content as user input
+        self.conversation.append_user_transcript(&command_content);
+
+        // Process the command content as if it were user input
+        Ok(ChatState::HandleInput { input: command_content })
     }
 
     async fn tool_use_execute(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {

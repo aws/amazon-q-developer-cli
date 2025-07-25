@@ -22,6 +22,7 @@ pub enum Setting {
     ShareCodeWhispererContent,
     EnabledThinking,
     EnabledKnowledge,
+    EnabledCommands, // NEW: Add custom commands setting
     SkimCommandKey,
     ChatGreetingEnabled,
     ApiTimeout,
@@ -46,6 +47,7 @@ impl AsRef<str> for Setting {
             Self::ShareCodeWhispererContent => "codeWhisperer.shareCodeWhispererContentWithAWS",
             Self::EnabledThinking => "chat.enableThinking",
             Self::EnabledKnowledge => "chat.enableKnowledge",
+            Self::EnabledCommands => "chat.enableCommands", // NEW: Add commands setting key
             Self::SkimCommandKey => "chat.skimCommandKey",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
@@ -80,6 +82,7 @@ impl TryFrom<&str> for Setting {
             "codeWhisperer.shareCodeWhispererContentWithAWS" => Ok(Self::ShareCodeWhispererContent),
             "chat.enableThinking" => Ok(Self::EnabledThinking),
             "chat.enableKnowledge" => Ok(Self::EnabledKnowledge),
+            "chat.enableCommands" => Ok(Self::EnabledCommands), // NEW: Add commands setting parsing
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),

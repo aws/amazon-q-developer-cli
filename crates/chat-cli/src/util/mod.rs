@@ -1,3 +1,5 @@
+pub mod command_manager; // NEW: Add command manager module
+pub mod command_types; // NEW: Add command types module
 pub mod consts;
 pub mod directories;
 pub mod knowledge_store;

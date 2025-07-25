@@ -903,6 +903,10 @@ impl ToolManager {
             if !crate::cli::chat::tools::knowledge::Knowledge::is_enabled(os) {
                 tool_specs.remove("knowledge");
             }
+            if !crate::cli::chat::tools::commands::Commands::is_enabled(os) {
+                // NEW: Add commands filtering
+                tool_specs.remove("commands");
+            }
 
             #[cfg(windows)]
             {
@@ -1059,6 +1063,9 @@ impl ToolManager {
             "report_issue" => Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
             "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
+            "commands" => Tool::Commands(
+                serde_json::from_value::<crate::cli::chat::tools::commands::Commands>(value.args).map_err(map_err)?,
+            ), // NEW: Add commands parsing
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
