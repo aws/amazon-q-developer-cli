@@ -75,7 +75,7 @@ impl AgentArgs {
         let mut stderr = std::io::stderr();
         match self.cmd {
             Some(AgentSubcommands::List) | None => {
-                let agents = Agents::load(os, None, true, &mut stderr).await;
+                let agents = Agents::load(os, None, true, &mut stderr).await.0;
                 let agent_with_path =
                     agents
                         .agents
@@ -100,7 +100,7 @@ impl AgentArgs {
                 writeln!(stderr, "{}", output_str)?;
             },
             Some(AgentSubcommands::Create { name, directory, from }) => {
-                let mut agents = Agents::load(os, None, true, &mut stderr).await;
+                let mut agents = Agents::load(os, None, true, &mut stderr).await.0;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from).await?;
                 let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
                 let mut cmd = std::process::Command::new(editor_cmd);
@@ -131,7 +131,7 @@ impl AgentArgs {
                 )?;
             },
             Some(AgentSubcommands::Rename { agent, new_name }) => {
-                let mut agents = Agents::load(os, None, true, &mut stderr).await;
+                let mut agents = Agents::load(os, None, true, &mut stderr).await.0;
                 rename_agent(os, &mut agents, agent.clone(), new_name.clone()).await?;
                 writeln!(stderr, "\n✓ Renamed agent '{}' to '{}'\n", agent, new_name)?;
             },

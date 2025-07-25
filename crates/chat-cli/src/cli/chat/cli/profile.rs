@@ -133,7 +133,7 @@ impl AgentSubcommand {
                     .map_err(|e| ChatError::Custom(format!("Error printing agent schema: {e}").into()))?;
             },
             Self::Create { name, directory, from } => {
-                let mut agents = Agents::load(os, None, true, &mut session.stderr).await;
+                let mut agents = Agents::load(os, None, true, &mut session.stderr).await.0;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from)
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
@@ -177,7 +177,7 @@ impl AgentSubcommand {
                 )?;
             },
             Self::Rename { agent, new_name } => {
-                let mut agents = Agents::load(os, None, true, &mut session.stderr).await;
+                let mut agents = Agents::load(os, None, true, &mut session.stderr).await.0;
                 rename_agent(os, &mut agents, agent.clone(), new_name.clone())
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;

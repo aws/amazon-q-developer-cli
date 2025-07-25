@@ -101,6 +101,11 @@
       "description": "Denotes if a tool use event has been fulfilled"
     },
     {
+      "name": "codewhispererterminal_isToolUseTrusted",
+      "type": "boolean",
+      "description": "Whether or not the tool use was automatically trusted (instead of manually approved)"
+    },
+    {
       "name": "codewhispererterminal_toolUseIsSuccess",
       "type": "boolean",
       "description": "The outcome of a tool use"
@@ -171,11 +176,6 @@
       "description": "Total amount of time the tool turn took, including waiting for user input if required. In milliseconds (ms)."
     },
     {
-      "name": "codewhispererterminal_isToolUseTrusted",
-      "type": "int",
-      "description": "The amount of time taken to execute a tool. In milliseconds (ms)."
-    },
-    {
       "name": "codewhispererterminal_model",
       "type": "string",
       "description": "The underlying LLM used by the service, set by the client"
@@ -223,6 +223,31 @@
       "name": "codewhispererterminal_userTurnDurationSeconds",
       "type": "int",
       "description": "Total time spent in the user turn, starting from when the first request is sent."
+    },
+    {
+      "name": "codewhispererterminal_agentsLoadedCount",
+      "type": "int",
+      "description": "The number of agents loaded"
+    },
+    {
+      "name": "codewhispererterminal_agentsFailedToLoadCount",
+      "type": "int",
+      "description": "The number of agents that failed to load"
+    },
+    {
+      "name": "codewhispererterminal_legacyProfileMigrationExecuted",
+      "type": "boolean",
+      "description": "Whether or not the legacy profile configuration migration was executed"
+    },
+    {
+      "name": "codewhispererterminal_legacyProfileMigratedCount",
+      "type": "int",
+      "description": "The number of agent configs created from a legacy profile migration"
+    },
+    {
+      "name": "codewhispererterminal_launchedAgent",
+      "type": "string",
+      "description": "The name of the agent launched by the user on startup"
     }
   ],
   "metrics": [
@@ -385,6 +410,20 @@
           "required": false
         },
         { "type": "codewhispererterminal_toolsPerMcpServer" }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_agentConfigInit",
+      "description": "Emitted once when starting a new q chat session after agent configuration is initialized",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl" },
+        { "type": "amazonqConversationId" },
+        { "type": "codewhispererterminal_agentsLoadedCount" },
+        { "type": "codewhispererterminal_agentsFailedToLoadCount" },
+        { "type": "codewhispererterminal_legacyProfileMigrationExecuted", "required": false },
+        { "type": "codewhispererterminal_legacyProfileMigratedCount", "required": false },
+        { "type": "codewhispererterminal_launchedAgent", "required": false }
       ]
     },
     {

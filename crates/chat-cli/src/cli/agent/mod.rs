@@ -43,6 +43,7 @@ use thiserror::Error;
 use tokio::fs::ReadDir;
 use tracing::{
     error,
+    info,
     warn,
 };
 use wrapper_types::ResourcePath;
@@ -382,12 +383,33 @@ impl Agents {
     ///   agent selection
     /// * `skip_migration` - If true, skips migration of old profiles to new format
     /// * `output` - Writer for outputting warnings, errors, and status messages during loading
-    pub async fn load(os: &mut Os, agent_name: Option<&str>, skip_migration: bool, output: &mut impl Write) -> Self {
+    pub async fn load(
+        os: &mut Os,
+        agent_name: Option<&str>,
+        skip_migration: bool,
+        output: &mut impl Write,
+    ) -> (Self, AgentsLoadMetadata) {
+        // Tracking metadata about the performed load operation.
+        let mut load_metadata = AgentsLoadMetadata {
+            launched_agent: agent_name.map(Into::into),
+            ..Default::default()
+        };
+
         let new_agents = if !skip_migration {
             match legacy::migrate(os).await {
-                Ok(new_agents) => new_agents,
+                Ok(Some(new_agents)) => {
+                    let migrated_count = new_agents.len();
+                    info!(migrated_count, "Profile migration successful");
+                    load_metadata.migration_performed = true;
+                    load_metadata.migrated_count = migrated_count as u32;
+                    new_agents
+                },
+                Ok(None) => {
+                    info!("Migration was not performed");
+                    vec![]
+                },
                 Err(e) => {
-                    warn!("Migration did not happen for the following reason: {e}. This is not necessarily an error");
+                    error!("Migration did not happen for the following reason: {e}");
                     vec![]
                 },
             }
@@ -421,6 +443,7 @@ impl Agents {
                 match result {
                     Ok(agent) => agents.push(agent),
                     Err(e) => {
+                        load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
                             style::SetForegroundColor(Color::Red),
@@ -458,6 +481,7 @@ impl Agents {
                 match result {
                     Ok(agent) => agents.push(agent),
                     Err(e) => {
+                        load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
                             style::SetForegroundColor(Color::Red),
@@ -665,11 +689,14 @@ impl Agents {
             }
         }
 
-        Self {
-            agents,
-            active_idx,
-            ..Default::default()
-        }
+        (
+            Self {
+                agents,
+                active_idx,
+                ..Default::default()
+            },
+            load_metadata,
+        )
     }
 
     /// Returns a label to describe the permission status for a given tool.
@@ -715,6 +742,16 @@ impl Agents {
 
         format!("{} {label}", "*".reset())
     }
+}
+
+/// Metadata from the executed [Agents::load] operation.
+#[derive(Debug, Clone, Default)]
+pub struct AgentsLoadMetadata {
+    pub migration_performed: bool,
+    pub migrated_count: u32,
+    pub load_count: u32,
+    pub load_failed_count: u32,
+    pub launched_agent: Option<String>,
 }
 
 async fn load_agents_from_entries(
