@@ -169,7 +169,7 @@ pub fn agent_config_dir(os: &Os, path: PathBuf) -> Result<PathBuf> {
 
     let home_path = home_dir(os)?;
     let path_as_str = path.to_str().ok_or(DirectoryError::PathToStr)?;
-    let expanded_path = PathBuf::from(shellexpand::tilde(path_as_str).as_ref());
+    let expanded_path = PathBuf::from(shellexpand::tilde(path_as_str).as_ref() as &str);
     let remainder = expanded_path.strip_prefix(&home_path)?;
     let remainder_as_str = remainder.to_str().ok_or(DirectoryError::PathToStr)?;
 
