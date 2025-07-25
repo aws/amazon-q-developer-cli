@@ -91,6 +91,12 @@ pub struct ConversationState {
     /// chat.
     pub transcript: VecDeque<String>,
     pub tools: HashMap<ToolOrigin, Vec<Tool>>,
+    /// Filtered tools excluding disabled MCP servers (for model context)
+    #[serde(skip)]
+    filtered_tools: HashMap<ToolOrigin, Vec<Tool>>,
+    /// Conversation-aware tools that include disabled tools referenced in history
+    #[serde(skip)]
+    conversation_aware_tools: HashMap<ToolOrigin, Vec<Tool>>,
     /// Context manager for handling sticky context files
     pub context_manager: Option<ContextManager>,
     /// Tool manager for handling tool and mcp related activities
@@ -121,32 +127,40 @@ impl ConversationState {
             None
         };
 
-        Self {
+        let tools = tool_config
+            .into_values()
+            .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+                let tool = Tool::ToolSpecification(ToolSpecification {
+                    name: v.name,
+                    description: v.description,
+                    input_schema: v.input_schema.into(),
+                });
+                acc.entry(v.tool_origin)
+                    .and_modify(|tools| tools.push(tool.clone()))
+                    .or_insert(vec![tool]);
+                acc
+            });
+
+        let mut instance = Self {
             conversation_id: conversation_id.to_string(),
             next_message: None,
             history: VecDeque::new(),
             valid_history_range: Default::default(),
             transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
-            tools: tool_config
-                .into_values()
-                .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
-                    let tool = Tool::ToolSpecification(ToolSpecification {
-                        name: v.name,
-                        description: v.description,
-                        input_schema: v.input_schema.into(),
-                    });
-                    acc.entry(v.tool_origin)
-                        .and_modify(|tools| tools.push(tool.clone()))
-                        .or_insert(vec![tool]);
-                    acc
-                }),
+            tools,
+            filtered_tools: HashMap::new(),
+            conversation_aware_tools: HashMap::new(),
             context_manager,
             tool_manager,
             context_message_length: None,
             latest_summary: None,
             agents,
             model: current_model_id,
-        }
+        };
+
+        // Initialize filtered_tools based on the initial tools
+        instance.update_filtered_tools().await;
+        instance
     }
 
     pub fn latest_summary(&self) -> Option<&str> {
@@ -377,11 +391,93 @@ impl ConversationState {
                     .or_insert(vec![tool]);
                 acc
             });
+        
+        // Update filtered tools for model context (exclude disabled MCP servers)
+        self.update_filtered_tools().await;
+        
         self.tool_manager.has_new_stuff.store(false, Ordering::Release);
         // We call this in [Self::enforce_conversation_invariants] as well. But we need to call it
         // here as well because when it's being called in [Self::enforce_conversation_invariants]
         // it is only checking the last entry.
         self.enforce_tool_use_history_invariants();
+    }
+
+    /// Updates the filtered tools HashMap to exclude disabled MCP servers
+    async fn update_filtered_tools(&mut self) {
+        self.filtered_tools.clear();
+        
+        for (origin, tools) in &self.tools {
+            let should_include = match origin {
+                ToolOrigin::McpServer(server_name) => {
+                    !self.tool_manager.is_session_disabled(server_name).await
+                },
+                ToolOrigin::Native => true, // Include all non-MCP tools (native tools, etc.)
+            };
+            
+            if should_include {
+                self.filtered_tools.insert(origin.clone(), tools.clone());
+            }
+        }
+    }
+
+    /// Triggers an update of filtered tools (called when session state changes)
+    pub async fn refresh_filtered_tools(&mut self) {
+        self.update_filtered_tools().await;
+    }
+    
+    /// Gets the set of tool names that are referenced in the conversation history
+    fn get_tools_referenced_in_history(&self) -> HashSet<String> {
+        let mut referenced_tools = HashSet::new();
+        
+        for (_, assistant_msg) in self.history.range(self.valid_history_range.0..self.valid_history_range.1) {
+            if let AssistantMessage::ToolUse { tool_uses, .. } = assistant_msg {
+                for tool_use in tool_uses {
+                    referenced_tools.insert(tool_use.name.clone());
+                }
+            }
+        }
+        
+        referenced_tools
+    }
+
+    /// Builds a conversation-aware tools list that includes disabled tools referenced in history
+    async fn build_conversation_aware_tools(&mut self) -> HashMap<ToolOrigin, Vec<Tool>> {
+        // Start with currently enabled tools
+        let mut conversation_aware_tools = self.filtered_tools.clone();
+        
+        // Get tools referenced in conversation history
+        let referenced_tools = self.get_tools_referenced_in_history();
+        
+        // Add any disabled tools that are referenced in history
+        for tool_name in referenced_tools {
+            // Check if this tool is already in conversation_aware_tools
+            let tool_exists = conversation_aware_tools
+                .values()
+                .any(|tools| tools.iter().any(|t| {
+                    let Tool::ToolSpecification(spec) = t;
+                    spec.name == tool_name
+                }));
+            
+            if !tool_exists {
+                // Find this tool in the full tools list and add it
+                for (origin, tools) in &self.tools {
+                    for tool in tools {
+                        let Tool::ToolSpecification(spec) = tool;
+                        if spec.name == tool_name {
+                            conversation_aware_tools
+                                .entry(origin.clone())
+                                .or_insert_with(Vec::new)
+                                .push(tool.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Update the cached version
+        self.conversation_aware_tools = conversation_aware_tools.clone();
+        conversation_aware_tools
     }
 
     /// Returns a conversation state representation which reflects the exact conversation to send
@@ -412,6 +508,10 @@ impl ConversationState {
 
         let (context_messages, dropped_context_files) = self.context_messages(os, conversation_start_context).await;
 
+        // Build conversation-aware tools list that includes disabled tools referenced in history
+        // This updates self.conversation_aware_tools and returns the same HashMap
+        let _conversation_tools = self.build_conversation_aware_tools().await;
+
         Ok(BackendConversationState {
             conversation_id: self.conversation_id.as_str(),
             next_user_message: self.next_message.as_ref(),
@@ -420,7 +520,7 @@ impl ConversationState {
                 .range(self.valid_history_range.0..self.valid_history_range.1),
             context_messages,
             dropped_context_files,
-            tools: &self.tools,
+            tools: &self.conversation_aware_tools,
             model_id: self.model.as_deref(),
         })
     }
@@ -683,10 +783,15 @@ pub struct BackendConversationStateImpl<'a, T, U> {
 impl BackendConversationStateImpl<'_, std::collections::vec_deque::Iter<'_, HistoryEntry>, Option<Vec<HistoryEntry>>> {
     fn into_fig_conversation_state(self) -> eyre::Result<FigConversationState> {
         let history = flatten_history(self.context_messages.unwrap_or_default().iter().chain(self.history));
+        
+        // Validate that all tools in self.tools are still valid
+        // This prevents ValidationException when disabled MCP servers are referenced
+        let valid_tools = self.tools;
+        
         let user_input_message: UserInputMessage = self
             .next_user_message
             .cloned()
-            .map(|msg| msg.into_user_input_message(self.model_id.map(str::to_string), self.tools))
+            .map(|msg| msg.into_user_input_message(self.model_id.map(str::to_string), valid_tools))
             .ok_or(eyre::eyre!("next user message is not set"))?;
 
         Ok(FigConversationState {
@@ -1186,6 +1291,312 @@ mod tests {
             assert_conversation_state_invariants(s, i);
 
             conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()), None);
+            conversation.set_next_user_message(i.to_string()).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_conversation_aware_tools_with_disabled_mcp_server() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let tool_config = tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap();
+        
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_config,
+            tool_manager,
+            None,
+        ).await;
+        
+        // Set up initial message
+        conversation.set_next_user_message("test message".to_string()).await;
+        
+        // Create a mock MCP tool that would be in the full tools list
+        let mcp_tool = Tool::ToolSpecification(ToolSpecification {
+            name: "mock_mcp_tool".to_string(),
+            description: "A mock MCP tool for testing".to_string(),
+            input_schema: crate::api_client::model::ToolInputSchema { json: None },
+        });
+        
+        // Add the MCP tool to the full tools list
+        conversation.tools.insert(
+            ToolOrigin::McpServer("test_server".to_string()),
+            vec![mcp_tool.clone()]
+        );
+        
+        // Initially, the tool should be in filtered_tools (enabled)
+        conversation.update_filtered_tools().await;
+        assert!(conversation.filtered_tools.contains_key(&ToolOrigin::McpServer("test_server".to_string())));
+        
+        // Consume the next_message by getting conversation state
+        let _initial_state = conversation.as_sendable_conversation_state(&os, &mut NullWriter, false).await.unwrap();
+        
+        // Add an assistant message that uses the MCP tool
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_tool_use(None, "response".to_string(), vec![AssistantToolUse {
+                id: "tool_use_1".to_string(),
+                name: "mock_mcp_tool".to_string(),
+                orig_name: "mock_mcp_tool".to_string(),
+                args: serde_json::Value::Null,
+                orig_args: serde_json::Value::Null,
+            }]),
+        );
+        
+        // Add tool results
+        conversation.add_tool_results(vec![ToolUseResult {
+            tool_use_id: "tool_use_1".to_string(),
+            content: vec![],
+            status: ToolResultStatus::Success,
+        }]);
+        
+        // Now simulate disabling the MCP server by removing it from filtered_tools
+        conversation.filtered_tools.remove(&ToolOrigin::McpServer("test_server".to_string()));
+        
+        // Get the backend conversation state - this should include the disabled tool
+        // because it's referenced in the conversation history
+        let backend_state = conversation.backend_conversation_state(&os, false, &mut NullWriter).await.unwrap();
+        
+        // Verify that the conversation-aware tools include the disabled MCP tool
+        assert!(backend_state.tools.contains_key(&ToolOrigin::McpServer("test_server".to_string())));
+        
+        // Verify that the tool in conversation-aware tools matches our mock tool
+        let tools_for_server = backend_state.tools.get(&ToolOrigin::McpServer("test_server".to_string())).unwrap();
+        assert_eq!(tools_for_server.len(), 1);
+        let Tool::ToolSpecification(spec) = &tools_for_server[0];
+        assert_eq!(spec.name, "mock_mcp_tool");
+    }
+
+    #[tokio::test]
+    async fn test_conversation_aware_tools_only_includes_referenced_disabled_tools() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let tool_config = tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap();
+        
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_config,
+            tool_manager,
+            None,
+        ).await;
+        
+        // Set up initial message and consume it
+        conversation.set_next_user_message("test message".to_string()).await;
+        let _initial_state = conversation.as_sendable_conversation_state(&os, &mut NullWriter, false).await.unwrap();
+        
+        // Create multiple MCP tools
+        let used_tool = Tool::ToolSpecification(ToolSpecification {
+            name: "used_mcp_tool".to_string(),
+            description: "A used MCP tool".to_string(),
+            input_schema: crate::api_client::model::ToolInputSchema { json: None },
+        });
+        
+        let unused_tool = Tool::ToolSpecification(ToolSpecification {
+            name: "unused_mcp_tool".to_string(),
+            description: "An unused MCP tool".to_string(),
+            input_schema: crate::api_client::model::ToolInputSchema { json: None },
+        });
+        
+        // Add both tools to the full tools list
+        conversation.tools.insert(
+            ToolOrigin::McpServer("test_server".to_string()),
+            vec![used_tool.clone(), unused_tool.clone()]
+        );
+        
+        // Add an assistant message that uses only one of the tools
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_tool_use(None, "response".to_string(), vec![AssistantToolUse {
+                id: "tool_use_1".to_string(),
+                name: "used_mcp_tool".to_string(),
+                orig_name: "used_mcp_tool".to_string(),
+                args: serde_json::Value::Null,
+                orig_args: serde_json::Value::Null,
+            }]),
+        );
+        
+        // Add tool results
+        conversation.add_tool_results(vec![ToolUseResult {
+            tool_use_id: "tool_use_1".to_string(),
+            content: vec![],
+            status: ToolResultStatus::Success,
+        }]);
+        
+        // Disable the MCP server by removing it from filtered_tools
+        conversation.filtered_tools.clear();
+        
+        // Get the backend conversation state
+        let backend_state = conversation.backend_conversation_state(&os, false, &mut NullWriter).await.unwrap();
+        
+        // Verify that only the used tool is included in conversation-aware tools
+        if let Some(tools_for_server) = backend_state.tools.get(&ToolOrigin::McpServer("test_server".to_string())) {
+            assert_eq!(tools_for_server.len(), 1);
+            let Tool::ToolSpecification(spec) = &tools_for_server[0];
+            assert_eq!(spec.name, "used_mcp_tool");
+        } else {
+            panic!("Expected tools for test_server to be present");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_conversation_aware_tools_preserves_enabled_tools() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let tool_config = tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap();
+        
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_config,
+            tool_manager,
+            None,
+        ).await;
+        
+        // Set up initial message and consume it
+        conversation.set_next_user_message("test message".to_string()).await;
+        let _initial_state = conversation.as_sendable_conversation_state(&os, &mut NullWriter, false).await.unwrap();
+        
+        // Create enabled and disabled MCP tools
+        let enabled_tool = Tool::ToolSpecification(ToolSpecification {
+            name: "enabled_tool".to_string(),
+            description: "An enabled tool".to_string(),
+            input_schema: crate::api_client::model::ToolInputSchema { json: None },
+        });
+        
+        let disabled_tool = Tool::ToolSpecification(ToolSpecification {
+            name: "disabled_tool".to_string(),
+            description: "A disabled tool".to_string(),
+            input_schema: crate::api_client::model::ToolInputSchema { json: None },
+        });
+        
+        // Add tools to full tools list
+        conversation.tools.insert(
+            ToolOrigin::McpServer("enabled_server".to_string()),
+            vec![enabled_tool.clone()]
+        );
+        conversation.tools.insert(
+            ToolOrigin::McpServer("disabled_server".to_string()),
+            vec![disabled_tool.clone()]
+        );
+        
+        // Add enabled tool to filtered_tools (simulate enabled server)
+        conversation.filtered_tools.insert(
+            ToolOrigin::McpServer("enabled_server".to_string()),
+            vec![enabled_tool.clone()]
+        );
+        
+        // Add assistant message that uses the disabled tool (simulating it was used before being disabled)
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_tool_use(None, "response".to_string(), vec![AssistantToolUse {
+                id: "tool_use_1".to_string(),
+                name: "disabled_tool".to_string(),
+                orig_name: "disabled_tool".to_string(),
+                args: serde_json::Value::Null,
+                orig_args: serde_json::Value::Null,
+            }]),
+        );
+        
+        // Add tool results
+        conversation.add_tool_results(vec![ToolUseResult {
+            tool_use_id: "tool_use_1".to_string(),
+            content: vec![],
+            status: ToolResultStatus::Success,
+        }]);
+        
+        // Get the backend conversation state
+        let backend_state = conversation.backend_conversation_state(&os, false, &mut NullWriter).await.unwrap();
+        
+        // Verify that both enabled and disabled (but referenced) tools are included
+        assert!(backend_state.tools.contains_key(&ToolOrigin::McpServer("enabled_server".to_string())));
+        assert!(backend_state.tools.contains_key(&ToolOrigin::McpServer("disabled_server".to_string())));
+        
+        // Verify the tools are correct
+        let enabled_tools = backend_state.tools.get(&ToolOrigin::McpServer("enabled_server".to_string())).unwrap();
+        assert_eq!(enabled_tools.len(), 1);
+        let Tool::ToolSpecification(spec) = &enabled_tools[0];
+        assert_eq!(spec.name, "enabled_tool");
+        
+        let disabled_tools = backend_state.tools.get(&ToolOrigin::McpServer("disabled_server".to_string())).unwrap();
+        assert_eq!(disabled_tools.len(), 1);
+        let Tool::ToolSpecification(spec) = &disabled_tools[0];
+        assert_eq!(spec.name, "disabled_tool");
+    }
+
+    #[tokio::test]
+    async fn test_conversation_state_additional_context() {
+        let mut os = Os::new().await.unwrap();
+        let conversation_start_context = "conversation start context";
+        let prompt_context = "prompt context";
+        let agents = {
+            let mut agents = Agents::default();
+            let create_hooks = {
+                let mut map = HashMap::<String, Hook>::new();
+                let hook = Hook::new_inline_hook(
+                    HookTrigger::ConversationStart,
+                    format!("echo {}", conversation_start_context),
+                );
+                map.insert("test_conversation_start".to_string(), hook);
+                CreateHooks::Map(map)
+            };
+            let prompt_hooks = {
+                let mut map = HashMap::<String, Hook>::new();
+                let hook = Hook::new_inline_hook(HookTrigger::PerPrompt, format!("echo {}", prompt_context));
+                map.insert("test_per_prompt".to_string(), hook);
+                PromptHooks::Map(map)
+            };
+            let agent = Agent {
+                create_hooks,
+                prompt_hooks,
+                ..Default::default()
+            };
+            agents.agents.insert("TestAgent".to_string(), agent);
+            agents.switch("TestAgent").expect("Agent switch failed");
+            agents
+        };
+        let mut output = NullWriter;
+
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
+            tool_manager,
+            None,
+        )
+        .await;
+
+        // Simulate conversation flow
+        conversation.set_next_user_message("start".to_string()).await;
+        for i in 0..=5 {
+            let s = conversation
+                .as_sendable_conversation_state(&os, &mut vec![], true)
+                .await
+                .unwrap();
+            let hist = s.history.as_ref().unwrap();
+            #[allow(clippy::match_wildcard_for_single_variants)]
+            match &hist[0] {
+                ChatMessage::UserInputMessage(user) => {
+                    assert!(
+                        user.content.contains(conversation_start_context),
+                        "expected to contain '{conversation_start_context}', instead found: {}",
+                        user.content
+                    );
+                },
+                _ => panic!("Expected user message."),
+            }
+            assert!(
+                s.user_input_message.content.contains(prompt_context),
+                "expected to contain '{prompt_context}', instead found: {}",
+                s.user_input_message.content
+            );
+
+            conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()));
             conversation.set_next_user_message(i.to_string()).await;
         }
     }

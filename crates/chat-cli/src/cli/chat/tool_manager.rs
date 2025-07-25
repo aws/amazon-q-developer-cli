@@ -68,6 +68,7 @@ use crate::cli::chat::server_messenger::{
     ServerMessengerBuilder,
     UpdateEventMessage,
 };
+use crate::cli::chat::session_state::SessionServerState;
 use crate::cli::chat::tools::custom_tool::{
     CustomTool,
     CustomToolClient,
@@ -409,17 +410,15 @@ impl ToolManagerBuilder {
                         let (tool_filter, alias_list) = {
                             let agent_lock = agent_clone.lock().await;
 
-                            // We will assume all tools are allowed if the tool list consists of 1
-                            // element and it's a *
-                            let tool_filter = if agent_lock.tools.len() == 1
-                                && agent_lock.tools.first().map(String::as_str).is_some_and(|c| c == "*")
-                            {
+                            // We will assume all tools are allowed if the tool list contains "*"
+                            let tool_filter = if agent_lock.tools.contains(&"*".to_string()) {
                                 ToolFilter::All
                             } else {
+                                let server_prefix = format!("@{server_name}");
                                 let set = agent_lock
                                     .tools
                                     .iter()
-                                    .filter(|tool_name| tool_name.starts_with(&format!("@{server_name}")))
+                                    .filter(|tool_name| tool_name.starts_with(&server_prefix))
                                     .map(|full_name| {
                                         match full_name.split_once(MCP_SERVER_TOOL_DELIMITER) {
                                             Some((_, tool_name)) if !tool_name.is_empty() => tool_name,
@@ -721,6 +720,7 @@ impl ToolManagerBuilder {
             mcp_load_record: load_record,
             agent,
             disabled_servers: disabled_servers_display,
+            session_state: Arc::new(Mutex::new(SessionServerState::new())),
             ..Default::default()
         })
     }
@@ -852,6 +852,10 @@ pub struct ToolManager {
     /// List of disabled MCP server names for display purposes
     disabled_servers: Vec<String>,
 
+    /// Session-only server state management for enable/disable operations.
+    /// This tracks temporary server state changes that don't persist across application restarts.
+    pub session_state: Arc<Mutex<SessionServerState>>,
+
     /// A collection of preferences that pertains to the conversation.
     /// As far as tool manager goes, this is relevant for tool and server filters
     pub agent: Arc<Mutex<Agent>>,
@@ -870,6 +874,7 @@ impl Clone for ToolManager {
             is_interactive: self.is_interactive,
             mcp_load_record: self.mcp_load_record.clone(),
             disabled_servers: self.disabled_servers.clone(),
+            session_state: self.session_state.clone(),
             ..Default::default()
         }
     }
@@ -1116,8 +1121,8 @@ impl ToolManager {
             let mut new_tool_specs = self.new_tool_specs.lock().await;
             new_tool_specs.drain().fold(
                 HashMap::<ServerName, (HashMap<ModelToolName, ToolInfo>, Vec<ToolSpec>)>::new(),
-                |mut acc, (server_name, v)| {
-                    acc.insert(server_name, v);
+                |mut acc, (server_name, (tool_name_map, specs))| {
+                    acc.insert(server_name, (tool_name_map, specs));
                     acc
                 },
             )
@@ -1345,6 +1350,129 @@ impl ToolManager {
 
     pub async fn pending_clients(&self) -> Vec<String> {
         self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>()
+    }
+
+    /// Session State Management Methods
+    ///
+    /// Disables a server for this session only.
+    pub async fn disable_server_for_session(&self, server_name: String) {
+        let mut session_state = self.session_state.lock().await;
+        session_state.disable_server(server_name);
+    }
+    
+    /// Enables a server for this session only.
+    pub async fn enable_server_for_session(&self, server_name: String) {
+        let mut session_state = self.session_state.lock().await;
+        session_state.enable_server(server_name);
+    }
+    
+    /// Returns whether a server has been disabled for this session.
+    pub async fn is_session_disabled(&self, server_name: &str) -> bool {
+        let session_state = self.session_state.lock().await;
+        session_state.is_session_disabled(server_name)
+    }
+    
+    /// Returns whether a server has any session-level overrides.
+    pub async fn has_session_override(&self, server_name: &str) -> bool {
+        let session_state = self.session_state.lock().await;
+        session_state.has_session_override(server_name)
+    }
+    
+    /// Gets all servers that have been disabled for this session.
+    pub async fn get_session_disabled_servers(&self) -> HashSet<String> {
+        let session_state = self.session_state.lock().await;
+        session_state.get_disabled_servers().clone()
+    }
+    
+    /// Gets all servers that have been enabled for this session.
+    pub async fn get_session_enabled_servers(&self) -> HashSet<String> {
+        let session_state = self.session_state.lock().await;
+        session_state.get_enabled_servers().clone()
+    }
+    
+    /// Gets a list of all configured server names from the agent configuration.
+    /// This is useful for validation and displaying available servers.
+    pub async fn get_configured_server_names(&self) -> Vec<String> {
+        // Try to get from agent first (for currently loaded servers)
+        let agent_servers = {
+            let agent = self.agent.lock().await;
+            agent.mcp_servers.mcp_servers.keys().cloned().collect::<Vec<_>>()
+        };
+        
+        // If we have servers from agent, return those
+        if !agent_servers.is_empty() {
+            return agent_servers;
+        }
+        
+        // Otherwise, try to read from config files directly
+        // This is a fallback for when agent doesn't have the config loaded
+        let mut all_servers = std::collections::HashSet::new();
+        
+        // Try workspace config
+        if let Ok(os) = crate::os::Os::new().await {
+            if let Ok(workspace_path) = workspace_mcp_config_path(&os) {
+                if os.fs.exists(&workspace_path) {
+                    if let Ok(workspace_config) = crate::cli::agent::McpServerConfig::load_from_file(&os, &workspace_path).await {
+                        all_servers.extend(workspace_config.mcp_servers.keys().cloned());
+                    }
+                }
+            }
+            
+            // Try global config
+            if let Ok(global_path) = global_mcp_config_path(&os) {
+                if os.fs.exists(&global_path) {
+                    if let Ok(global_config) = crate::cli::agent::McpServerConfig::load_from_file(&os, &global_path).await {
+                        all_servers.extend(global_config.mcp_servers.keys().cloned());
+                    }
+                }
+            }
+        }
+        
+        all_servers.into_iter().collect()
+    }
+    
+    /// Checks if a server exists in the configuration.
+    pub async fn has_server_config(&self, server_name: &str) -> bool {
+        let configured_servers = self.get_configured_server_names().await;
+        configured_servers.contains(&server_name.to_string())
+    }
+    
+    /// Checks if a server is disabled in its configuration
+    pub async fn is_server_config_disabled(&self, server_name: &str) -> bool {
+        // Check the agent configuration first
+        let agent = self.agent.lock().await;
+        if let Some(server_config) = agent.mcp_servers.mcp_servers.get(server_name) {
+            return server_config.disabled;
+        }
+        drop(agent);
+        
+        // If not found in agent, try to read from config files directly
+        if let Ok(os) = crate::os::Os::new().await {
+            // Try workspace config first
+            if let Ok(workspace_path) = workspace_mcp_config_path(&os) {
+                if os.fs.exists(&workspace_path) {
+                    if let Ok(workspace_config) = crate::cli::agent::McpServerConfig::load_from_file(&os, &workspace_path).await {
+                        if let Some(server_config) = workspace_config.mcp_servers.get(server_name) {
+                            return server_config.disabled;
+                        }
+                    }
+                }
+            }
+            
+            // Try global config
+            if let Ok(global_path) = global_mcp_config_path(&os) {
+                if os.fs.exists(&global_path) {
+                    if let Ok(global_config) = crate::cli::agent::McpServerConfig::load_from_file(&os, &global_path).await {
+                        if let Some(server_config) = global_config.mcp_servers.get(server_name) {
+                            return server_config.disabled;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Default to false if we can't find the server config
+        false
     }
 }
 
