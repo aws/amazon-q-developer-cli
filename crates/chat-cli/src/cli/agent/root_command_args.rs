@@ -216,17 +216,11 @@ pub async fn create_agent(
     let path = if let Some(path) = path {
         let path = PathBuf::from(path);
 
-        // If path points to a file, strip the filename to get the directory
         if !path.is_dir() {
             bail!("Path must be a directory");
         }
 
-        let last_three_segments = agent_config_dir();
-        if path.ends_with(&last_three_segments) {
-            path
-        } else {
-            path.join(&last_three_segments)
-        }
+        agent_config_dir(os, path)?
     } else {
         directories::chat_global_agent_path(os)?
     };

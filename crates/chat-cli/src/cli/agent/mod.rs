@@ -217,6 +217,7 @@ impl Agent {
             .to_string();
 
         self.name = name.clone();
+        self.path = Some(path.to_path_buf());
 
         if let (true, Some(global_mcp_config)) = (self.use_legacy_mcp_json, global_mcp_config) {
             let mut stderr = std::io::stderr();
