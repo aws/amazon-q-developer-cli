@@ -145,20 +145,26 @@ impl AgentSubcommand {
                     return Err(ChatError::Custom("Editor process did not exit with success".into()));
                 }
 
-                let Ok(content) = os.fs.read(&path_with_file_name).await else {
-                    return Err(ChatError::Custom(
-                        format!(
-                            "Post write validation failed. Error opening {}. Aborting",
-                            path_with_file_name.display()
-                        )
-                        .into(),
-                    ));
-                };
-                if let Err(e) = serde_json::from_slice::<Agent>(&content) {
-                    return Err(ChatError::Custom(
-                        format!("Post write validation failed for agent '{name}'. Malformed config detected: {e}")
-                            .into(),
-                    ));
+                let new_agent = Agent::load(os, &path_with_file_name, &mut None).await;
+                match new_agent {
+                    Ok(agent) => {
+                        session.conversation.agents.agents.insert(agent.name.clone(), agent);
+                    },
+                    Err(e) => {
+                        execute!(
+                            session.stderr,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(&e),
+                            style::Print("\n"),
+                        )?;
+
+                        return Err(ChatError::Custom(
+                            format!("Post write validation failed for agent '{name}'. Malformed config detected: {e}")
+                                .into(),
+                        ));
+                    },
                 }
 
                 execute!(
