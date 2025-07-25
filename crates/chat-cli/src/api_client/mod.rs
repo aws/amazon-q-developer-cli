@@ -31,6 +31,7 @@ pub use endpoints::Endpoint;
 pub use error::ApiClientError;
 use parking_lot::Mutex;
 pub use profile::list_available_profiles;
+use rand;
 use serde_json::Map;
 use tracing::{
     debug,
@@ -249,177 +250,219 @@ impl ApiClient {
     }
 
     pub async fn send_message(&self, conversation: ConversationState) -> Result<SendMessageOutput, ApiClientError> {
-        debug!("Sending conversation: {:#?}", conversation);
+        // Count message delivery tries as the system is sometimes overload
+        const MAX_RETRIES: u32 = 10;
+        const INITIAL_BACKOFF_MS: u64 = 500; // Start with 500ms
+        
+        let mut attempt = 0;
+        let original_conversation = conversation.clone();
+        
+        loop {
+            attempt += 1;
+            debug!("Sending conversation: {:#?}", original_conversation);
 
-        let ConversationState {
-            conversation_id,
-            user_input_message,
-            history,
-        } = conversation;
+            let ConversationState {
+                conversation_id,
+                user_input_message,
+                history,
+            } = original_conversation.clone();
 
-        let model_id_opt: Option<String> = user_input_message.model_id.clone();
+            let model_id_opt: Option<String> = user_input_message.model_id.clone();
 
-        if let Some(client) = &self.streaming_client {
-            let conversation_state = amzn_codewhisperer_streaming_client::types::ConversationState::builder()
-                .set_conversation_id(conversation_id)
-                .current_message(
-                    amzn_codewhisperer_streaming_client::types::ChatMessage::UserInputMessage(
+            if let Some(client) = &self.streaming_client {
+                let conversation_state = amzn_codewhisperer_streaming_client::types::ConversationState::builder()
+                    .set_conversation_id(conversation_id)
+                    .current_message(
+                        amzn_codewhisperer_streaming_client::types::ChatMessage::UserInputMessage(
+                            user_input_message.into(),
+                        ),
+                    )
+                    .chat_trigger_type(amzn_codewhisperer_streaming_client::types::ChatTriggerType::Manual)
+                    .set_history(
+                        history
+                            .map(|v| v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>())
+                            .transpose()?,
+                    )
+                    .build()
+                    .expect("building conversation should not fail");
+
+                match client
+                    .generate_assistant_response()
+                    .conversation_state(conversation_state)
+                    .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+                    .send()
+                    .await
+                {
+                    Ok(response) => return Ok(SendMessageOutput::Codewhisperer(response)),
+                    Err(err) => {
+                        let status_code = err.raw_response().map(|res| res.status().as_u16());
+                        let is_quota_breach = status_code.is_some_and(|status| status == 429);
+                        let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
+                            matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
+                        });
+
+                        let is_model_unavailable = model_id_opt.is_some()
+                            && status_code.is_some_and(|status| status == 500)
+                            && err.as_service_error().is_some_and(|err| {
+                                err.meta().message()
+                                    == Some(
+                                        "Encountered unexpectedly high load when processing the request, please try again.",
+                                    )
+                            });
+
+                        let is_monthly_limit_err = err
+                            .raw_response()
+                            .and_then(|resp| resp.body().bytes())
+                            .and_then(|bytes| match String::from_utf8(bytes.to_vec()) {
+                                Ok(s) => Some(s.contains("MONTHLY_REQUEST_COUNT")),
+                                Err(_) => None,
+                            })
+                            .unwrap_or(false);
+
+                        if is_quota_breach {
+                            return Err(ApiClientError::QuotaBreach {
+                                message: "quota has reached its limit",
+                                status_code,
+                            });
+                        }
+
+                        if is_context_window_overflow {
+                            return Err(ApiClientError::ContextWindowOverflow { status_code });
+                        }
+
+                        if is_model_unavailable {
+                            if attempt > MAX_RETRIES {
+                                debug!("Model Overloaded: Maximum retry attempts ({}) reached", MAX_RETRIES);
+                                return Err(ApiClientError::ModelOverloadedError {
+                                    request_id: err
+                                        .as_service_error()
+                                        .and_then(|err| err.meta().request_id())
+                                        .map(|s| s.to_string()),
+                                    status_code,
+                                });
+                            }
+                            
+                            // Calculate exponential backoff with jitter
+                            let backoff_ms = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
+                            let jitter = rand::random::<u64>() % (backoff_ms / 4); // Add up to 25% jitter
+                            let sleep_duration = Duration::from_millis(backoff_ms + jitter);
+                            
+                            debug!(
+                                "Model overloaded. Retrying attempt {}/{} after {}ms",
+                                attempt, MAX_RETRIES, sleep_duration.as_millis()
+                            );
+                            
+                            tokio::time::sleep(sleep_duration).await;
+                            continue;
+                        }
+
+                        if is_monthly_limit_err {
+                            return Err(ApiClientError::MonthlyLimitReached { status_code });
+                        }
+
+                        return Err(err.into());
+                    },
+                }
+            } else if let Some(client) = &self.sigv4_streaming_client {
+                let conversation_state = amzn_qdeveloper_streaming_client::types::ConversationState::builder()
+                    .set_conversation_id(conversation_id)
+                    .current_message(amzn_qdeveloper_streaming_client::types::ChatMessage::UserInputMessage(
                         user_input_message.into(),
-                    ),
-                )
-                .chat_trigger_type(amzn_codewhisperer_streaming_client::types::ChatTriggerType::Manual)
-                .set_history(
-                    history
-                        .map(|v| v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>())
-                        .transpose()?,
-                )
-                .build()
-                .expect("building conversation should not fail");
+                    ))
+                    .chat_trigger_type(amzn_qdeveloper_streaming_client::types::ChatTriggerType::Manual)
+                    .set_history(
+                        history
+                            .map(|v| v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>())
+                            .transpose()?,
+                    )
+                    .build()
+                    .expect("building conversation_state should not fail");
 
-            match client
-                .generate_assistant_response()
-                .conversation_state(conversation_state)
-                .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
-                .send()
-                .await
-            {
-                Ok(response) => Ok(SendMessageOutput::Codewhisperer(response)),
-                Err(err) => {
-                    let status_code = err.raw_response().map(|res| res.status().as_u16());
-                    let is_quota_breach = status_code.is_some_and(|status| status == 429);
-                    let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
-                        matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
-                    });
-
-                    let is_model_unavailable = model_id_opt.is_some()
-                        && status_code.is_some_and(|status| status == 500)
-                        && err.as_service_error().is_some_and(|err| {
-                            err.meta().message()
-                                == Some(
-                                    "Encountered unexpectedly high load when processing the request, please try again.",
-                                )
+                match client
+                    .send_message()
+                    .conversation_state(conversation_state)
+                    .set_source(Some(Origin::from("CLI")))
+                    .send()
+                    .await
+                {
+                    Ok(response) => return Ok(SendMessageOutput::QDeveloper(response)),
+                    Err(err) => {
+                        let status_code = err.raw_response().map(|res| res.status().as_u16());
+                        let is_quota_breach = status_code.is_some_and(|status| status == 429);
+                        let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
+                            matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
                         });
 
-                    let is_monthly_limit_err = err
-                        .raw_response()
-                        .and_then(|resp| resp.body().bytes())
-                        .and_then(|bytes| match String::from_utf8(bytes.to_vec()) {
-                            Ok(s) => Some(s.contains("MONTHLY_REQUEST_COUNT")),
-                            Err(_) => None,
-                        })
-                        .unwrap_or(false);
+                        let is_model_unavailable = model_id_opt.is_some()
+                            && status_code.is_some_and(|status| status == 500)
+                            && err.as_service_error().is_some_and(|err| {
+                                err.meta().message()
+                                    == Some(
+                                        "Encountered unexpectedly high load when processing the request, please try again.",
+                                    )
+                            });
 
-                    if is_quota_breach {
-                        return Err(ApiClientError::QuotaBreach {
-                            message: "quota has reached its limit",
-                            status_code,
-                        });
-                    }
+                        let is_monthly_limit_err = err
+                            .raw_response()
+                            .and_then(|resp| resp.body().bytes())
+                            .and_then(|bytes| match String::from_utf8(bytes.to_vec()) {
+                                Ok(s) => Some(s.contains("MONTHLY_REQUEST_COUNT")),
+                                Err(_) => None,
+                            })
+                            .unwrap_or(false);
 
-                    if is_context_window_overflow {
-                        return Err(ApiClientError::ContextWindowOverflow { status_code });
-                    }
+                        if is_quota_breach {
+                            return Err(ApiClientError::QuotaBreach {
+                                message: "quota has reached its limit",
+                                status_code,
+                            });
+                        }
 
-                    if is_model_unavailable {
-                        return Err(ApiClientError::ModelOverloadedError {
-                            request_id: err
-                                .as_service_error()
-                                .and_then(|err| err.meta().request_id())
-                                .map(|s| s.to_string()),
-                            status_code,
-                        });
-                    }
+                        if is_context_window_overflow {
+                            return Err(ApiClientError::ContextWindowOverflow { status_code });
+                        }
 
-                    if is_monthly_limit_err {
-                        return Err(ApiClientError::MonthlyLimitReached { status_code });
-                    }
+                        if is_model_unavailable {
+                            if attempt > MAX_RETRIES {
+                                debug!("Model Overloaded: Maximum retry attempts ({}) reached", MAX_RETRIES);
+                                return Err(ApiClientError::ModelOverloadedError {
+                                    request_id: err
+                                        .as_service_error()
+                                        .and_then(|err| err.meta().request_id())
+                                        .map(|s| s.to_string()),
+                                    status_code,
+                                });
+                            }
+                            
+                            // Calculate exponential backoff with jitter
+                            let backoff_ms = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
+                            let jitter = rand::random::<u64>() % (backoff_ms / 4); // Add up to 25% jitter
+                            let sleep_duration = Duration::from_millis(backoff_ms + jitter);
+                            
+                            debug!(
+                                "Model overloaded. Retrying attempt {}/{} after {}ms",
+                                attempt, MAX_RETRIES, sleep_duration.as_millis()
+                            );
+                            
+                            tokio::time::sleep(sleep_duration).await;
+                            continue;
+                        }
 
-                    Err(err.into())
-                },
+                        if is_monthly_limit_err {
+                            return Err(ApiClientError::MonthlyLimitReached { status_code });
+                        }
+
+                        return Err(err.into());
+                    },
+                }
+            } else if let Some(client) = &self.mock_client {
+                let mut new_events = client.lock().next().unwrap_or_default().clone();
+                new_events.reverse();
+
+                return Ok(SendMessageOutput::Mock(new_events));
+            } else {
+                unreachable!("One of the clients must be created by this point");
             }
-        } else if let Some(client) = &self.sigv4_streaming_client {
-            let conversation_state = amzn_qdeveloper_streaming_client::types::ConversationState::builder()
-                .set_conversation_id(conversation_id)
-                .current_message(amzn_qdeveloper_streaming_client::types::ChatMessage::UserInputMessage(
-                    user_input_message.into(),
-                ))
-                .chat_trigger_type(amzn_qdeveloper_streaming_client::types::ChatTriggerType::Manual)
-                .set_history(
-                    history
-                        .map(|v| v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>())
-                        .transpose()?,
-                )
-                .build()
-                .expect("building conversation_state should not fail");
-
-            match client
-                .send_message()
-                .conversation_state(conversation_state)
-                .set_source(Some(Origin::from("CLI")))
-                .send()
-                .await
-            {
-                Ok(response) => Ok(SendMessageOutput::QDeveloper(response)),
-                Err(err) => {
-                    let status_code = err.raw_response().map(|res| res.status().as_u16());
-                    let is_quota_breach = status_code.is_some_and(|status| status == 429);
-                    let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
-                        matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
-                    });
-
-                    let is_model_unavailable = model_id_opt.is_some()
-                        && status_code.is_some_and(|status| status == 500)
-                        && err.as_service_error().is_some_and(|err| {
-                            err.meta().message()
-                                == Some(
-                                    "Encountered unexpectedly high load when processing the request, please try again.",
-                                )
-                        });
-
-                    let is_monthly_limit_err = err
-                        .raw_response()
-                        .and_then(|resp| resp.body().bytes())
-                        .and_then(|bytes| match String::from_utf8(bytes.to_vec()) {
-                            Ok(s) => Some(s.contains("MONTHLY_REQUEST_COUNT")),
-                            Err(_) => None,
-                        })
-                        .unwrap_or(false);
-
-                    if is_quota_breach {
-                        return Err(ApiClientError::QuotaBreach {
-                            message: "quota has reached its limit",
-                            status_code,
-                        });
-                    }
-
-                    if is_context_window_overflow {
-                        return Err(ApiClientError::ContextWindowOverflow { status_code });
-                    }
-
-                    if is_model_unavailable {
-                        return Err(ApiClientError::ModelOverloadedError {
-                            request_id: err
-                                .as_service_error()
-                                .and_then(|err| err.meta().request_id())
-                                .map(|s| s.to_string()),
-                            status_code,
-                        });
-                    }
-
-                    if is_monthly_limit_err {
-                        return Err(ApiClientError::MonthlyLimitReached { status_code });
-                    }
-
-                    Err(err.into())
-                },
-            }
-        } else if let Some(client) = &self.mock_client {
-            let mut new_events = client.lock().next().unwrap_or_default().clone();
-            new_events.reverse();
-
-            return Ok(SendMessageOutput::Mock(new_events));
-        } else {
-            unreachable!("One of the clients must be created by this point");
         }
     }
 
