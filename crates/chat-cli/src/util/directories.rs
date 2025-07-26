@@ -28,8 +28,6 @@ pub enum DirectoryError {
     IntoString(#[from] std::ffi::IntoStringError),
     #[error(transparent)]
     StripPrefix(#[from] StripPrefixError),
-    #[error("Error converting path to str")]
-    PathToStr,
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
