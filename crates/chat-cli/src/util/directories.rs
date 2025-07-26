@@ -163,26 +163,8 @@ pub fn chat_local_agent_dir() -> Result<PathBuf> {
 ///
 /// For example, if the given path is /path/one, then the derived config path would be
 /// `/path/one/.amazonq/agents`
-/// This is different for home directory, where the agents are expected to be stored in
-/// `~/.aws/amazonq/agents`
-pub fn agent_config_dir(os: &Os, workspace_dir: PathBuf) -> Result<PathBuf> {
-    const GLOBAL_CONFIG_SEGMENT: &str = ".aws/amazonq/agents";
-    const LOCAL_CONFIG_SEGMENT: &str = ".amazonq/agents";
-
-    let home_path = home_dir(os)?;
-    let path_as_str = workspace_dir.to_str().ok_or(DirectoryError::PathToStr)?;
-    let expanded_path = PathBuf::from(shellexpand::tilde(path_as_str).as_ref() as &str);
-    let remainder = expanded_path.strip_prefix(&home_path)?;
-    let remainder_as_str = remainder.to_str().ok_or(DirectoryError::PathToStr)?;
-
-    // The path given is the home directory
-    if remainder_as_str.is_empty() {
-        return Ok(home_path.join(GLOBAL_CONFIG_SEGMENT));
-    }
-
-    // The path given is local workspace directory, in which case we should append the path given
-    // with a local config segment
-    Ok(workspace_dir.join(LOCAL_CONFIG_SEGMENT))
+pub fn agent_config_dir(workspace_dir: PathBuf) -> Result<PathBuf> {
+    Ok(workspace_dir.join(".amazonq/agents"))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.

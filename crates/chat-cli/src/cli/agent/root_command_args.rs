@@ -223,7 +223,7 @@ pub async fn create_agent(
             bail!("Path must be a directory");
         }
 
-        agent_config_dir(os, path)?
+        agent_config_dir(path)?
     } else {
         directories::chat_global_agent_path(os)?
     };
