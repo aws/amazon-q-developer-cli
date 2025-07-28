@@ -119,9 +119,8 @@ pub enum AgentConfigError {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
-    /// Agent names are derived from the file name. Thus they are skipped for
-    /// serializing
-    #[serde(skip)]
+    /// Agent names are optional. If they are not provided they are derived from the file name
+    #[serde(default)]
     pub name: String,
     /// This field is not model facing and is mostly here for users to discern between agents
     #[serde(default)]
@@ -210,13 +209,15 @@ impl Agent {
     fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
-        let name = path
-            .file_stem()
-            .ok_or(AgentConfigError::MissingFilename)?
-            .to_string_lossy()
-            .to_string();
+        if self.name.is_empty() {
+            let name = path
+                .file_stem()
+                .ok_or(AgentConfigError::MissingFilename)?
+                .to_string_lossy()
+                .to_string();
 
-        self.name = name.clone();
+            self.name = name;
+        }
 
         if let (true, Some(global_mcp_config)) = (self.use_legacy_mcp_json, global_mcp_config) {
             let mut stderr = std::io::stderr();
