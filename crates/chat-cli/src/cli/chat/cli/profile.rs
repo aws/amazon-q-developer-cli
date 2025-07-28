@@ -133,7 +133,7 @@ impl AgentSubcommand {
                     .map_err(|e| ChatError::Custom(format!("Error printing agent schema: {e}").into()))?;
             },
             Self::Create { name, directory, from } => {
-                let mut agents = Agents::load(os, None, true, &mut session.stderr).await;
+                let mut agents = Agents::load(os, None, true, &mut session.stderr).await.0;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from)
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
@@ -145,20 +145,26 @@ impl AgentSubcommand {
                     return Err(ChatError::Custom("Editor process did not exit with success".into()));
                 }
 
-                let Ok(content) = os.fs.read(&path_with_file_name).await else {
-                    return Err(ChatError::Custom(
-                        format!(
-                            "Post write validation failed. Error opening {}. Aborting",
-                            path_with_file_name.display()
-                        )
-                        .into(),
-                    ));
-                };
-                if let Err(e) = serde_json::from_slice::<Agent>(&content) {
-                    return Err(ChatError::Custom(
-                        format!("Post write validation failed for agent '{name}'. Malformed config detected: {e}")
-                            .into(),
-                    ));
+                let new_agent = Agent::load(os, &path_with_file_name, &mut None).await;
+                match new_agent {
+                    Ok(agent) => {
+                        session.conversation.agents.agents.insert(agent.name.clone(), agent);
+                    },
+                    Err(e) => {
+                        execute!(
+                            session.stderr,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(&e),
+                            style::Print("\n"),
+                        )?;
+
+                        return Err(ChatError::Custom(
+                            format!("Post write validation failed for agent '{name}'. Malformed config detected: {e}")
+                                .into(),
+                        ));
+                    },
                 }
 
                 execute!(
@@ -177,7 +183,7 @@ impl AgentSubcommand {
                 )?;
             },
             Self::Rename { agent, new_name } => {
-                let mut agents = Agents::load(os, None, true, &mut session.stderr).await;
+                let mut agents = Agents::load(os, None, true, &mut session.stderr).await.0;
                 rename_agent(os, &mut agents, agent.clone(), new_name.clone())
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;

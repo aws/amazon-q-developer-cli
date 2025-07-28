@@ -285,20 +285,36 @@ impl ApiClient {
             {
                 Ok(response) => Ok(SendMessageOutput::Codewhisperer(response)),
                 Err(err) => {
+                    use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError as OperationThrottlingError;
+                    use amzn_codewhisperer_streaming_client::types::ThrottlingExceptionReason;
+                    use amzn_codewhisperer_streaming_client::types::error::ThrottlingError;
+
                     let status_code = err.raw_response().map(|res| res.status().as_u16());
                     let is_quota_breach = status_code.is_some_and(|status| status == 429);
                     let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
                         matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
                     });
 
-                    let is_model_unavailable = model_id_opt.is_some()
-                        && status_code.is_some_and(|status| status == 500)
-                        && err.as_service_error().is_some_and(|err| {
-                            err.meta().message()
-                                == Some(
-                                    "Encountered unexpectedly high load when processing the request, please try again.",
-                                )
-                        });
+                    let is_model_unavailable =
+                        // Handling the updated error response
+                        err.as_service_error().is_some_and(|err| {
+                            matches!(
+                                err,
+                                OperationThrottlingError(ThrottlingError {
+                                    reason: Some(ThrottlingExceptionReason::InsufficientModelCapacity),
+                                    ..
+                                })
+                            )
+                        })
+                        // Legacy error response
+                        || (model_id_opt.is_some()
+                            && status_code.is_some_and(|status| status == 500)
+                            && err.as_service_error().is_some_and(|err| {
+                                err.meta().message()
+                                    == Some(
+                                        "Encountered unexpectedly high load when processing the request, please try again.",
+                                    )
+                            }));
 
                     let is_monthly_limit_err = err
                         .raw_response()
@@ -361,20 +377,36 @@ impl ApiClient {
             {
                 Ok(response) => Ok(SendMessageOutput::QDeveloper(response)),
                 Err(err) => {
+                    use amzn_qdeveloper_streaming_client::operation::send_message::SendMessageError::ThrottlingError as OperationThrottlingError;
+                    use amzn_qdeveloper_streaming_client::types::ThrottlingExceptionReason;
+                    use amzn_qdeveloper_streaming_client::types::error::ThrottlingError;
+
                     let status_code = err.raw_response().map(|res| res.status().as_u16());
                     let is_quota_breach = status_code.is_some_and(|status| status == 429);
                     let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
                         matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
                     });
 
-                    let is_model_unavailable = model_id_opt.is_some()
-                        && status_code.is_some_and(|status| status == 500)
-                        && err.as_service_error().is_some_and(|err| {
-                            err.meta().message()
-                                == Some(
-                                    "Encountered unexpectedly high load when processing the request, please try again.",
-                                )
-                        });
+                    let is_model_unavailable =
+                        // Handling the updated error response
+                        err.as_service_error().is_some_and(|err| {
+                            matches!(
+                                err,
+                                OperationThrottlingError(ThrottlingError {
+                                    reason: Some(ThrottlingExceptionReason::InsufficientModelCapacity),
+                                    ..
+                                })
+                            )
+                        })
+                        // Legacy error response
+                        || (model_id_opt.is_some()
+                            && status_code.is_some_and(|status| status == 500)
+                            && err.as_service_error().is_some_and(|err| {
+                                err.meta().message()
+                                    == Some(
+                                        "Encountered unexpectedly high load when processing the request, please try again.",
+                                    )
+                            }));
 
                     let is_monthly_limit_err = err
                         .raw_response()

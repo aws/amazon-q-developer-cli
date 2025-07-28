@@ -67,6 +67,9 @@ pub mod list_available_models;
 /// Types for the `ListAvailableProfiles` operation.
 pub mod list_available_profiles;
 
+/// Types for the `ListAvailableSubscriptions` operation.
+pub mod list_available_subscriptions;
+
 /// Types for the `ListCodeAnalysisFindings` operation.
 pub mod list_code_analysis_findings;
 
@@ -90,6 +93,9 @@ pub mod resume_transformation;
 
 /// Types for the `SendTelemetryEvent` operation.
 pub mod send_telemetry_event;
+
+/// Types for the `SetUserPreference` operation.
+pub mod set_user_preference;
 
 /// Types for the `StartCodeAnalysis` operation.
 pub mod start_code_analysis;

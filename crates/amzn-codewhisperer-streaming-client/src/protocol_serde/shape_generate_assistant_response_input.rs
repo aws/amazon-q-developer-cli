@@ -12,5 +12,8 @@ pub fn ser_generate_assistant_response_input_input(
     if let Some(var_3) = &input.profile_arn {
         object.key("profileArn").string(var_3.as_str());
     }
+    if let Some(var_4) = &input.agent_mode {
+        object.key("agentMode").string(var_4.as_str());
+    }
     Ok(())
 }

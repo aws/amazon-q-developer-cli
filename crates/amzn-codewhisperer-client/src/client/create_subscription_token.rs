@@ -7,6 +7,8 @@ impl super::Client {
     /// - The fluent builder is configurable:
     ///   - [`client_token(impl Into<String>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::client_token) / [`set_client_token(Option<String>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::set_client_token):<br>required: **false**<br>(undocumented)<br>
     ///   - [`status_only(bool)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::status_only) / [`set_status_only(Option<bool>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::set_status_only):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`provider(SubscriptionProvider)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::provider) / [`set_provider(Option<SubscriptionProvider>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::set_provider):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`subscription_type(SubscriptionType)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::subscription_type) / [`set_subscription_type(Option<SubscriptionType>)`](crate::operation::create_subscription_token::builders::CreateSubscriptionTokenFluentBuilder::set_subscription_type):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`CreateSubscriptionTokenOutput`](crate::operation::create_subscription_token::CreateSubscriptionTokenOutput)
     ///   with field(s):

@@ -57,3 +57,13 @@ where
         )),
     }
 }
+
+pub fn ser_overage_configuration(
+    object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
+    input: &crate::types::OverageConfiguration,
+) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
+    {
+        object.key("overageStatus").string(input.overage_status.as_str());
+    }
+    Ok(())
+}

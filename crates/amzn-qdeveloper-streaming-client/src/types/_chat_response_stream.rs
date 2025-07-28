@@ -24,6 +24,8 @@ pub enum ChatResponseStream {
     InvalidStateEvent(crate::types::InvalidStateEvent),
     /// Message Metadata event
     MessageMetadataEvent(crate::types::MessageMetadataEvent),
+    /// Metadata event
+    MetadataEvent(crate::types::MetadataEvent),
     /// Web Reference links event
     SupplementaryWebLinksEvent(crate::types::SupplementaryWebLinksEvent),
     /// Tool use result
@@ -220,6 +222,24 @@ impl ChatResponseStream {
     /// [`MessageMetadataEvent`](crate::types::ChatResponseStream::MessageMetadataEvent).
     pub fn is_message_metadata_event(&self) -> bool {
         self.as_message_metadata_event().is_ok()
+    }
+
+    /// Tries to convert the enum instance into
+    /// [`MetadataEvent`](crate::types::ChatResponseStream::MetadataEvent), extracting the inner
+    /// [`MetadataEvent`](crate::types::MetadataEvent). Returns `Err(&Self)` if it can't be
+    /// converted.
+    pub fn as_metadata_event(&self) -> ::std::result::Result<&crate::types::MetadataEvent, &Self> {
+        if let ChatResponseStream::MetadataEvent(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`MetadataEvent`](crate::types::ChatResponseStream::MetadataEvent).
+    pub fn is_metadata_event(&self) -> bool {
+        self.as_metadata_event().is_ok()
     }
 
     /// Tries to convert the enum instance into

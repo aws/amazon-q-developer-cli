@@ -14,6 +14,8 @@
 /// match subscriptiontype {
 ///     SubscriptionType::QDeveloperStandalone => { /* ... */ },
 ///     SubscriptionType::QDeveloperStandaloneFree => { /* ... */ },
+///     SubscriptionType::QDeveloperStandalonePower => { /* ... */ },
+///     SubscriptionType::QDeveloperStandalonePro => { /* ... */ },
 ///     SubscriptionType::QDeveloperStandaloneProPlus => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
@@ -53,6 +55,10 @@ pub enum SubscriptionType {
     #[allow(missing_docs)] // documentation missing in model
     QDeveloperStandaloneFree,
     #[allow(missing_docs)] // documentation missing in model
+    QDeveloperStandalonePower,
+    #[allow(missing_docs)] // documentation missing in model
+    QDeveloperStandalonePro,
+    #[allow(missing_docs)] // documentation missing in model
     QDeveloperStandaloneProPlus,
     /// `Unknown` contains new variants that have been added since this code was generated.
     #[deprecated(
@@ -65,6 +71,8 @@ impl ::std::convert::From<&str> for SubscriptionType {
         match s {
             "Q_DEVELOPER_STANDALONE" => SubscriptionType::QDeveloperStandalone,
             "Q_DEVELOPER_STANDALONE_FREE" => SubscriptionType::QDeveloperStandaloneFree,
+            "Q_DEVELOPER_STANDALONE_POWER" => SubscriptionType::QDeveloperStandalonePower,
+            "Q_DEVELOPER_STANDALONE_PRO" => SubscriptionType::QDeveloperStandalonePro,
             "Q_DEVELOPER_STANDALONE_PRO_PLUS" => SubscriptionType::QDeveloperStandaloneProPlus,
             other => SubscriptionType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
@@ -85,6 +93,8 @@ impl SubscriptionType {
         match self {
             SubscriptionType::QDeveloperStandalone => "Q_DEVELOPER_STANDALONE",
             SubscriptionType::QDeveloperStandaloneFree => "Q_DEVELOPER_STANDALONE_FREE",
+            SubscriptionType::QDeveloperStandalonePower => "Q_DEVELOPER_STANDALONE_POWER",
+            SubscriptionType::QDeveloperStandalonePro => "Q_DEVELOPER_STANDALONE_PRO",
             SubscriptionType::QDeveloperStandaloneProPlus => "Q_DEVELOPER_STANDALONE_PRO_PLUS",
             SubscriptionType::Unknown(value) => value.as_str(),
         }
@@ -95,6 +105,8 @@ impl SubscriptionType {
         &[
             "Q_DEVELOPER_STANDALONE",
             "Q_DEVELOPER_STANDALONE_FREE",
+            "Q_DEVELOPER_STANDALONE_POWER",
+            "Q_DEVELOPER_STANDALONE_PRO",
             "Q_DEVELOPER_STANDALONE_PRO_PLUS",
         ]
     }
@@ -121,6 +133,8 @@ impl ::std::fmt::Display for SubscriptionType {
         match self {
             SubscriptionType::QDeveloperStandalone => write!(f, "Q_DEVELOPER_STANDALONE"),
             SubscriptionType::QDeveloperStandaloneFree => write!(f, "Q_DEVELOPER_STANDALONE_FREE"),
+            SubscriptionType::QDeveloperStandalonePower => write!(f, "Q_DEVELOPER_STANDALONE_POWER"),
+            SubscriptionType::QDeveloperStandalonePro => write!(f, "Q_DEVELOPER_STANDALONE_PRO"),
             SubscriptionType::QDeveloperStandaloneProPlus => write!(f, "Q_DEVELOPER_STANDALONE_PRO_PLUS"),
             SubscriptionType::Unknown(value) => write!(f, "{}", value),
         }

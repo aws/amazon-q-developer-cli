@@ -1,5 +1,8 @@
 use std::fmt::Debug;
-use std::time::SystemTime;
+use std::time::{
+    Duration,
+    SystemTime,
+};
 
 pub use amzn_toolkit_telemetry_client::types::MetricDatum;
 use strum::{
@@ -17,6 +20,7 @@ use crate::telemetry::definitions::metrics::{
     AmazonqProfileState,
     AmazonqStartChat,
     CodewhispererterminalAddChatMessage,
+    CodewhispererterminalAgentConfigInit,
     CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
@@ -279,6 +283,7 @@ impl Event {
                 tool_use_id,
                 tool_name,
                 is_accepted,
+                is_trusted,
                 is_valid,
                 is_success,
                 reason_desc,
@@ -287,6 +292,8 @@ impl Event {
                 output_token_size,
                 custom_tool_call_latency,
                 model,
+                execution_duration,
+                turn_duration,
             } => Some(
                 CodewhispererterminalToolUseSuggested {
                     create_time: self.created_time,
@@ -309,12 +316,13 @@ impl Event {
                     codewhispererterminal_custom_tool_latency: custom_tool_call_latency
                         .map(|l| CodewhispererterminalCustomToolLatency(l as i64)),
                     codewhispererterminal_model: model.map(Into::into),
-                    // codewhispererterminal_is_tool_use_trusted: todo!(),
-                    // codewhispererterminal_tool_execution_duration_ms: todo!(),
-                    // codewhispererterminal_tool_turn_duration_ms: todo!(),
-                    codewhispererterminal_is_tool_use_trusted: None,
-                    codewhispererterminal_tool_execution_duration_ms: None,
-                    codewhispererterminal_tool_turn_duration_ms: None,
+                    codewhispererterminal_is_tool_use_trusted: Some(is_trusted.into()),
+                    codewhispererterminal_tool_execution_duration_ms: execution_duration
+                        .map(|d| d.as_millis() as i64)
+                        .map(Into::into),
+                    codewhispererterminal_tool_turn_duration_ms: turn_duration
+                        .map(|d| d.as_millis() as i64)
+                        .map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -335,6 +343,32 @@ impl Event {
                     codewhispererterminal_tools_per_mcp_server: Some(CodewhispererterminalToolsPerMcpServer(
                         number_of_tools as i64,
                     )),
+                }
+                .into_metric_datum(),
+            ),
+            EventType::AgentConfigInit {
+                conversation_id,
+                args:
+                    AgentConfigInitArgs {
+                        agents_loaded_count,
+                        agents_loaded_failed_count,
+                        legacy_profile_migration_executed,
+                        legacy_profile_migrated_count,
+                        launched_agent,
+                    },
+            } => Some(
+                CodewhispererterminalAgentConfigInit {
+                    create_time: self.created_time,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    value: None,
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_agents_loaded_count: Some(agents_loaded_count.into()),
+                    codewhispererterminal_agents_failed_to_load_count: Some(agents_loaded_failed_count.into()),
+                    codewhispererterminal_legacy_profile_migration_executed: Some(
+                        legacy_profile_migration_executed.into(),
+                    ),
+                    codewhispererterminal_legacy_profile_migrated_count: Some(legacy_profile_migrated_count.into()),
+                    codewhispererterminal_launched_agent: launched_agent.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -462,6 +496,15 @@ pub struct RecordUserTurnCompletionArgs {
     pub message_meta_tags: Vec<MessageMetaTag>,
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+pub struct AgentConfigInitArgs {
+    pub agents_loaded_count: i64,
+    pub agents_loaded_failed_count: i64,
+    pub legacy_profile_migration_executed: bool,
+    pub legacy_profile_migrated_count: i64,
+    pub launched_agent: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
@@ -508,6 +551,7 @@ pub enum EventType {
         tool_use_id: Option<String>,
         tool_name: Option<String>,
         is_accepted: bool,
+        is_trusted: bool,
         is_success: Option<bool>,
         reason_desc: Option<String>,
         is_valid: Option<bool>,
@@ -516,12 +560,18 @@ pub enum EventType {
         output_token_size: Option<usize>,
         custom_tool_call_latency: Option<usize>,
         model: Option<String>,
+        execution_duration: Option<Duration>,
+        turn_duration: Option<Duration>,
     },
     McpServerInit {
         conversation_id: String,
         server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
+    },
+    AgentConfigInit {
+        conversation_id: String,
+        args: AgentConfigInitArgs,
     },
     DidSelectProfile {
         source: QProfileSwitchIntent,
@@ -556,6 +606,7 @@ pub struct ToolUseEventBuilder {
     pub tool_use_id: Option<String>,
     pub tool_name: Option<String>,
     pub is_accepted: bool,
+    pub is_trusted: bool,
     pub is_success: Option<bool>,
     pub reason_desc: Option<String>,
     pub is_valid: Option<bool>,
@@ -564,6 +615,8 @@ pub struct ToolUseEventBuilder {
     pub output_token_size: Option<usize>,
     pub custom_tool_call_latency: Option<usize>,
     pub model: Option<String>,
+    pub execution_duration: Option<Duration>,
+    pub turn_duration: Option<Duration>,
 }
 
 impl ToolUseEventBuilder {
@@ -575,6 +628,7 @@ impl ToolUseEventBuilder {
             tool_use_id: Some(tool_use_id),
             tool_name: None,
             is_accepted: false,
+            is_trusted: false,
             is_success: None,
             reason_desc: None,
             is_valid: None,
@@ -583,6 +637,8 @@ impl ToolUseEventBuilder {
             output_token_size: None,
             custom_tool_call_latency: None,
             model,
+            execution_duration: None,
+            turn_duration: None,
         }
     }
 

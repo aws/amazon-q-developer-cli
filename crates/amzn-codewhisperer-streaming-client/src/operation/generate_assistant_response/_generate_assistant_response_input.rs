@@ -8,6 +8,8 @@ pub struct GenerateAssistantResponseInput {
     pub conversation_state: ::std::option::Option<crate::types::ConversationState>,
     #[allow(missing_docs)] // documentation missing in model
     pub profile_arn: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub agent_mode: ::std::option::Option<::std::string::String>,
 }
 impl GenerateAssistantResponseInput {
     /// Structure to represent the current state of a chat conversation.
@@ -18,6 +20,11 @@ impl GenerateAssistantResponseInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn agent_mode(&self) -> ::std::option::Option<&str> {
+        self.agent_mode.as_deref()
     }
 }
 impl GenerateAssistantResponseInput {
@@ -35,6 +42,7 @@ impl GenerateAssistantResponseInput {
 pub struct GenerateAssistantResponseInputBuilder {
     pub(crate) conversation_state: ::std::option::Option<crate::types::ConversationState>,
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) agent_mode: ::std::option::Option<::std::string::String>,
 }
 impl GenerateAssistantResponseInputBuilder {
     /// Structure to represent the current state of a chat conversation.
@@ -72,6 +80,23 @@ impl GenerateAssistantResponseInputBuilder {
         &self.profile_arn
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn agent_mode(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.agent_mode = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_agent_mode(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.agent_mode = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_agent_mode(&self) -> &::std::option::Option<::std::string::String> {
+        &self.agent_mode
+    }
+
     /// Consumes the builder and constructs a
     /// [`GenerateAssistantResponseInput`](crate::operation::generate_assistant_response::GenerateAssistantResponseInput).
     pub fn build(
@@ -84,6 +109,7 @@ impl GenerateAssistantResponseInputBuilder {
             crate::operation::generate_assistant_response::GenerateAssistantResponseInput {
                 conversation_state: self.conversation_state,
                 profile_arn: self.profile_arn,
+                agent_mode: self.agent_mode,
             },
         )
     }

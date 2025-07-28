@@ -12,6 +12,7 @@
 /// ```text
 /// # let accessdeniedexceptionreason = unimplemented!();
 /// match accessdeniedexceptionreason {
+///     AccessDeniedExceptionReason::TemporarilySuspended => { /* ... */ },
 ///     AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => { /* ... */ },
 ///     AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
@@ -49,6 +50,8 @@
 )]
 pub enum AccessDeniedExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
+    TemporarilySuspended,
+    #[allow(missing_docs)] // documentation missing in model
     UnauthorizedCustomizationResourceAccess,
     #[allow(missing_docs)] // documentation missing in model
     UnauthorizedWorkspaceContextFeatureAccess,
@@ -61,6 +64,7 @@ pub enum AccessDeniedExceptionReason {
 impl ::std::convert::From<&str> for AccessDeniedExceptionReason {
     fn from(s: &str) -> Self {
         match s {
+            "TEMPORARILY_SUSPENDED" => AccessDeniedExceptionReason::TemporarilySuspended,
             "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS" => {
                 AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess
             },
@@ -84,6 +88,7 @@ impl AccessDeniedExceptionReason {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            AccessDeniedExceptionReason::TemporarilySuspended => "TEMPORARILY_SUSPENDED",
             AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => {
                 "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS"
             },
@@ -97,6 +102,7 @@ impl AccessDeniedExceptionReason {
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[
+            "TEMPORARILY_SUSPENDED",
             "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS",
             "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS",
         ]
@@ -122,6 +128,7 @@ impl AccessDeniedExceptionReason {
 impl ::std::fmt::Display for AccessDeniedExceptionReason {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            AccessDeniedExceptionReason::TemporarilySuspended => write!(f, "TEMPORARILY_SUSPENDED"),
             AccessDeniedExceptionReason::UnauthorizedCustomizationResourceAccess => {
                 write!(f, "UNAUTHORIZED_CUSTOMIZATION_RESOURCE_ACCESS")
             },

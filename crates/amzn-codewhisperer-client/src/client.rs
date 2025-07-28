@@ -123,6 +123,8 @@ mod list_available_models;
 
 mod list_available_profiles;
 
+mod list_available_subscriptions;
+
 mod list_code_analysis_findings;
 
 mod list_events;
@@ -138,6 +140,8 @@ mod push_telemetry_event;
 mod resume_transformation;
 
 mod send_telemetry_event;
+
+mod set_user_preference;
 
 mod start_code_analysis;
 

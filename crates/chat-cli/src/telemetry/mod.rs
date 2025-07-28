@@ -5,6 +5,7 @@ pub mod endpoint;
 mod install_method;
 
 use core::{
+    AgentConfigInitArgs,
     ChatAddedMessageParams,
     RecordUserTurnCompletionArgs,
     ToolUseEventBuilder,
@@ -298,6 +299,7 @@ impl TelemetryThread {
             tool_use_id: event.tool_use_id,
             tool_name: event.tool_name,
             is_accepted: event.is_accepted,
+            is_trusted: event.is_trusted,
             is_success: event.is_success,
             reason_desc: event.reason_desc,
             is_valid: event.is_valid,
@@ -306,22 +308,38 @@ impl TelemetryThread {
             output_token_size: event.output_token_size,
             custom_tool_call_latency: event.custom_tool_call_latency,
             model: event.model,
+            execution_duration: event.execution_duration,
+            turn_duration: event.turn_duration,
         }))?)
     }
 
-    pub fn send_mcp_server_init(
+    pub async fn send_mcp_server_init(
         &self,
+        database: &Database,
         conversation_id: String,
         server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
     ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(crate::telemetry::EventType::McpServerInit {
+        let mut event = Event::new(crate::telemetry::EventType::McpServerInit {
             conversation_id,
             server_name,
             init_failure_reason,
             number_of_tools,
-        }))?)
+        });
+        set_start_url_and_region(database, &mut event).await;
+        Ok(self.tx.send(event)?)
+    }
+
+    pub async fn send_agent_config_init(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        args: AgentConfigInitArgs,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(crate::telemetry::EventType::AgentConfigInit { conversation_id, args });
+        set_start_url_and_region(database, &mut event).await;
+        Ok(self.tx.send(event)?)
     }
 
     pub fn send_did_select_profile(

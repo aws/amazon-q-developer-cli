@@ -5,6 +5,8 @@
 pub struct ListAvailableModelsOutput {
     /// List of available models
     pub models: ::std::vec::Vec<crate::types::Model>,
+    /// Default model set by the client
+    pub default_model: ::std::option::Option<crate::types::Model>,
     /// Token for retrieving the next page of results
     pub next_token: ::std::option::Option<::std::string::String>,
     _request_id: Option<String>,
@@ -14,6 +16,11 @@ impl ListAvailableModelsOutput {
     pub fn models(&self) -> &[crate::types::Model] {
         use std::ops::Deref;
         self.models.deref()
+    }
+
+    /// Default model set by the client
+    pub fn default_model(&self) -> ::std::option::Option<&crate::types::Model> {
+        self.default_model.as_ref()
     }
 
     /// Token for retrieving the next page of results
@@ -40,6 +47,7 @@ impl ListAvailableModelsOutput {
 #[non_exhaustive]
 pub struct ListAvailableModelsOutputBuilder {
     pub(crate) models: ::std::option::Option<::std::vec::Vec<crate::types::Model>>,
+    pub(crate) default_model: ::std::option::Option<crate::types::Model>,
     pub(crate) next_token: ::std::option::Option<::std::string::String>,
     _request_id: Option<String>,
 }
@@ -65,6 +73,23 @@ impl ListAvailableModelsOutputBuilder {
     /// List of available models
     pub fn get_models(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Model>> {
         &self.models
+    }
+
+    /// Default model set by the client
+    pub fn default_model(mut self, input: crate::types::Model) -> Self {
+        self.default_model = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Default model set by the client
+    pub fn set_default_model(mut self, input: ::std::option::Option<crate::types::Model>) -> Self {
+        self.default_model = input;
+        self
+    }
+
+    /// Default model set by the client
+    pub fn get_default_model(&self) -> &::std::option::Option<crate::types::Model> {
+        &self.default_model
     }
 
     /// Token for retrieving the next page of results
@@ -111,6 +136,7 @@ impl ListAvailableModelsOutputBuilder {
                     "models was not specified but it is required when building ListAvailableModelsOutput",
                 )
             })?,
+            default_model: self.default_model,
             next_token: self.next_token,
             _request_id: self._request_id,
         })

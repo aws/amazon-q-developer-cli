@@ -113,6 +113,8 @@ pub(crate) mod shape_invalid_state_event;
 
 pub(crate) mod shape_message_metadata_event;
 
+pub(crate) mod shape_metadata_event;
+
 pub(crate) mod shape_programming_language;
 
 pub(crate) mod shape_supplementary_web_links_event;
@@ -150,6 +152,8 @@ pub(crate) mod shape_references;
 pub(crate) mod shape_supplementary_web_link;
 
 pub(crate) mod shape_supplementary_web_links;
+
+pub(crate) mod shape_token_usage;
 
 pub(crate) mod shape_tool_result;
 

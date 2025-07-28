@@ -30,7 +30,10 @@ use std::io::{
 };
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use amzn_codewhisperer_client::types::SubscriptionStatus;
 use clap::{
@@ -138,6 +141,7 @@ use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 use crate::telemetry::core::{
+    AgentConfigInitArgs,
     ChatAddedMessageParams,
     ChatConversationType,
     MessageMetaTag,
@@ -240,10 +244,25 @@ impl ChatArgs {
             )?;
         }
 
+        let conversation_id = uuid::Uuid::new_v4().to_string();
+        info!(?conversation_id, "Generated new conversation id");
+
         let agents = {
             let skip_migration = self.no_interactive;
-            let mut agents = Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr).await;
+            let (mut agents, md) = Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr).await;
             agents.trust_all_tools = self.trust_all_tools;
+
+            os.telemetry
+                .send_agent_config_init(&os.database, conversation_id.clone(), AgentConfigInitArgs {
+                    agents_loaded_count: md.load_count as i64,
+                    agents_loaded_failed_count: md.load_failed_count as i64,
+                    legacy_profile_migration_executed: md.migration_performed,
+                    legacy_profile_migrated_count: md.migrated_count as i64,
+                    launched_agent: md.launched_agent,
+                })
+                .await
+                .map_err(|err| error!(?err, "failed to send agent config init telemetry"))
+                .ok();
 
             if agents
                 .get_active()
@@ -287,8 +306,6 @@ impl ChatArgs {
             None
         };
 
-        let conversation_id = uuid::Uuid::new_v4().to_string();
-        info!(?conversation_id, "Generated new conversation id");
         let (prompt_request_sender, prompt_request_receiver) = std::sync::mpsc::channel::<Option<String>>();
         let (prompt_response_sender, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
         let mut tool_manager = ToolManagerBuilder::default()
@@ -495,10 +512,17 @@ pub struct ChatSession {
     spinner: Option<Spinner>,
     /// [ConversationState].
     conversation: ConversationState,
+    /// Tool uses requested by the model that are actively being handled.
     tool_uses: Vec<QueuedTool>,
+    /// An index into [Self::tool_uses] to represent the current tool use being handled.
+    pending_tool_index: Option<usize>,
+    /// The time immediately after having received valid tool uses from the model.
+    ///
+    /// Used to track the time taken from initially prompting the user to tool execute
+    /// completion.
+    tool_turn_start_time: Option<Instant>,
     /// [RequestMetadata] about the ongoing operation.
     user_turn_request_metadata: Vec<RequestMetadata>,
-    pending_tool_index: Option<usize>,
     /// Telemetry events to be sent as part of the conversation. The HashMap key is tool_use_id.
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
     /// State used to keep track of tool use relation
@@ -622,6 +646,7 @@ impl ChatSession {
             tool_uses: vec![],
             user_turn_request_metadata: vec![],
             pending_tool_index: None,
+            tool_turn_start_time: None,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
             failed_request_ids: Vec::new(),
@@ -978,6 +1003,7 @@ impl ChatSession {
         self.conversation.enforce_conversation_invariants();
         self.conversation.reset_next_user_message();
         self.pending_tool_index = None;
+        self.tool_turn_start_time = None;
         self.reset_user_turn();
 
         self.inner = Some(ChatState::PromptUser {
@@ -1806,6 +1832,9 @@ impl ChatSession {
 
             if allowed {
                 tool.accepted = true;
+                self.tool_use_telemetry_events
+                    .entry(tool.id.clone())
+                    .and_modify(|ev| ev.is_trusted = true);
                 continue;
             }
 
@@ -1821,10 +1850,12 @@ impl ChatSession {
         let mut image_blocks: Vec<RichImageBlock> = Vec::new();
 
         for tool in &self.tool_uses {
-            let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
-            tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_accepted = true);
-
             let tool_start = std::time::Instant::now();
+            let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
+            tool_telemetry = tool_telemetry.and_modify(|ev| {
+                ev.is_accepted = true;
+            });
+
             let invoke_result = tool.tool.invoke(os, &mut self.stdout).await;
 
             if self.spinner.is_some() {
@@ -1837,12 +1868,18 @@ impl ChatSession {
             }
             execute!(self.stdout, style::Print("\n"))?;
 
-            let tool_time = std::time::Instant::now().duration_since(tool_start);
+            let tool_end_time = Instant::now();
+            let tool_time = tool_end_time.duration_since(tool_start);
+            tool_telemetry = tool_telemetry.and_modify(|ev| {
+                ev.execution_duration = Some(tool_time);
+                ev.turn_duration = self.tool_turn_start_time.map(|t| tool_end_time.duration_since(t));
+            });
             if let Tool::Custom(ct) = &tool.tool {
                 tool_telemetry = tool_telemetry.and_modify(|ev| {
+                    ev.is_custom_tool = true;
+                    // legacy fields previously implemented for only MCP tools
                     ev.custom_tool_call_latency = Some(tool_time.as_secs() as usize);
                     ev.input_token_size = Some(ct.get_input_token_size());
-                    ev.is_custom_tool = true;
                 });
             }
             let tool_time = format!("{}.{}", tool_time.as_secs(), tool_time.subsec_millis());
@@ -1975,7 +2012,10 @@ impl ChatSession {
         let mut buf = String::new();
         let mut offset = 0;
         let mut ended = false;
-        let mut state = ParseState::new(Some(self.terminal_width()));
+        let mut state = ParseState::new(
+            Some(self.terminal_width()),
+            os.database.settings.get_bool(Setting::ChatDisableMarkdownRendering),
+        );
         let mut response_prefix_printed = false;
 
         let mut tool_uses = Vec::new();
@@ -2005,10 +2045,13 @@ impl ChatSession {
                         },
                         parser::ResponseEvent::AssistantText(text) => {
                             // Add Q response prefix before the first assistant text.
-                            // This must be markdown - using a code tick, which is printed
-                            // as green.
                             if !response_prefix_printed && !text.trim().is_empty() {
-                                buf.push_str("`>` ");
+                                queue!(
+                                    self.stdout,
+                                    style::SetForegroundColor(Color::Green),
+                                    style::Print("> "),
+                                    style::SetForegroundColor(Color::Reset)
+                                )?;
                                 response_prefix_printed = true;
                             }
                             buf.push_str(&text);
@@ -2232,6 +2275,7 @@ impl ChatSession {
         } else {
             self.tool_uses.clear();
             self.pending_tool_index = None;
+            self.tool_turn_start_time = None;
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
@@ -2342,6 +2386,7 @@ impl ChatSession {
 
         self.tool_uses = queued_tools;
         self.pending_tool_index = Some(0);
+        self.tool_turn_start_time = Some(Instant::now());
         Ok(ChatState::ExecuteTools)
     }
 
@@ -2353,6 +2398,7 @@ impl ChatSession {
                 self.conversation.enforce_conversation_invariants();
                 self.conversation.reset_next_user_message();
                 self.pending_tool_index = None;
+                self.tool_turn_start_time = None;
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: false,
                 });

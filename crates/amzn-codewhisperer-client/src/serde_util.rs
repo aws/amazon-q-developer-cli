@@ -212,18 +212,6 @@ pub(crate) fn get_transformation_plan_output_output_correct_errors(
     builder
 }
 
-pub(crate) fn get_usage_limits_output_output_correct_errors(
-    mut builder: crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder,
-) -> crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder {
-    if builder.limits.is_none() {
-        builder.limits = Some(Default::default())
-    }
-    if builder.days_until_reset.is_none() {
-        builder.days_until_reset = Some(Default::default())
-    }
-    builder
-}
-
 pub(crate) fn list_available_customizations_output_output_correct_errors(
     mut builder: crate::operation::list_available_customizations::builders::ListAvailableCustomizationsOutputBuilder,
 ) -> crate::operation::list_available_customizations::builders::ListAvailableCustomizationsOutputBuilder {
@@ -247,6 +235,15 @@ pub(crate) fn list_available_profiles_output_output_correct_errors(
 ) -> crate::operation::list_available_profiles::builders::ListAvailableProfilesOutputBuilder {
     if builder.profiles.is_none() {
         builder.profiles = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn list_available_subscriptions_output_output_correct_errors(
+    mut builder: crate::operation::list_available_subscriptions::builders::ListAvailableSubscriptionsOutputBuilder,
+) -> crate::operation::list_available_subscriptions::builders::ListAvailableSubscriptionsOutputBuilder {
+    if builder.subscription_plans.is_none() {
+        builder.subscription_plans = Some(Default::default())
     }
     builder
 }
@@ -436,6 +433,15 @@ pub(crate) fn transformation_plan_correct_errors(
     builder
 }
 
+pub(crate) fn model_correct_errors(
+    mut builder: crate::types::builders::ModelBuilder,
+) -> crate::types::builders::ModelBuilder {
+    if builder.model_id.is_none() {
+        builder.model_id = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn overage_configuration_correct_errors(
     mut builder: crate::types::builders::OverageConfigurationBuilder,
 ) -> crate::types::builders::OverageConfigurationBuilder {
@@ -486,6 +492,21 @@ pub(crate) fn usage_breakdown_correct_errors(
     }
     if builder.overage_charges.is_none() {
         builder.overage_charges = Some(Default::default())
+    }
+    if builder.currency.is_none() {
+        builder.currency = "no value was set".parse::<crate::types::Currency>().ok()
+    }
+    builder
+}
+
+pub(crate) fn user_info_correct_errors(
+    mut builder: crate::types::builders::UserInfoBuilder,
+) -> crate::types::builders::UserInfoBuilder {
+    if builder.user_id.is_none() {
+        builder.user_id = Some(Default::default())
+    }
+    if builder.email.is_none() {
+        builder.email = Some(Default::default())
     }
     builder
 }
@@ -559,15 +580,6 @@ pub(crate) fn feature_evaluation_correct_errors(
     builder
 }
 
-pub(crate) fn model_correct_errors(
-    mut builder: crate::types::builders::ModelBuilder,
-) -> crate::types::builders::ModelBuilder {
-    if builder.model_id.is_none() {
-        builder.model_id = Some(Default::default())
-    }
-    builder
-}
-
 pub(crate) fn profile_correct_errors(
     mut builder: crate::types::builders::ProfileBuilder,
 ) -> crate::types::builders::ProfileBuilder {
@@ -576,6 +588,21 @@ pub(crate) fn profile_correct_errors(
     }
     if builder.profile_name.is_none() {
         builder.profile_name = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn subscription_plan_correct_errors(
+    mut builder: crate::types::builders::SubscriptionPlanBuilder,
+) -> crate::types::builders::SubscriptionPlanBuilder {
+    if builder.name.is_none() {
+        builder.name = "no value was set".parse::<crate::types::SubscriptionName>().ok()
+    }
+    if builder.pricing.is_none() {
+        builder.pricing = {
+            let builder = crate::types::builders::PricingInfoBuilder::default();
+            crate::serde_util::pricing_info_correct_errors(builder).build().ok()
+        }
     }
     builder
 }
@@ -627,6 +654,18 @@ pub(crate) fn mcp_configuration_correct_errors(
 ) -> crate::types::builders::McpConfigurationBuilder {
     if builder.toggle.is_none() {
         builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
+pub(crate) fn pricing_info_correct_errors(
+    mut builder: crate::types::builders::PricingInfoBuilder,
+) -> crate::types::builders::PricingInfoBuilder {
+    if builder.amount.is_none() {
+        builder.amount = Some(Default::default())
+    }
+    if builder.currency.is_none() {
+        builder.currency = "no value was set".parse::<crate::types::Currency>().ok()
     }
     builder
 }

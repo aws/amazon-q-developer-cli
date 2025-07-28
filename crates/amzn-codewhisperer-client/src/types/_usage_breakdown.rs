@@ -3,18 +3,35 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct UsageBreakdown {
+    /// The resource or dimension being billed, e.g. VIBE or SPEC
+    pub resource_type: ::std::option::Option<crate::types::ResourceType>,
     /// Current usage count for the billing period
     pub current_usage: i32,
     /// Current overages count for the billing period
     pub current_overages: i32,
     /// Usage limit based on subscription tier
     pub usage_limit: i32,
+    /// Unit of measurement for the resource, e.g. INVOCATIONS
+    pub unit: ::std::option::Option<::std::string::String>,
     /// Total overage charges
     pub overage_charges: f64,
+    /// The currency used for overage charges
+    pub currency: crate::types::Currency,
+    /// Overage rate for the resource per 1 unit
+    pub overage_rate: ::std::option::Option<f64>,
     /// The next reset date in UTC timezone.
     pub next_date_reset: ::std::option::Option<::aws_smithy_types::DateTime>,
+    /// The maximum amount of usage allowed beyond the included quota in a billing period
+    pub overage_cap: ::std::option::Option<i32>,
+    /// User's free trial info
+    pub free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
 }
 impl UsageBreakdown {
+    /// The resource or dimension being billed, e.g. VIBE or SPEC
+    pub fn resource_type(&self) -> ::std::option::Option<&crate::types::ResourceType> {
+        self.resource_type.as_ref()
+    }
+
     /// Current usage count for the billing period
     pub fn current_usage(&self) -> i32 {
         self.current_usage
@@ -30,14 +47,39 @@ impl UsageBreakdown {
         self.usage_limit
     }
 
+    /// Unit of measurement for the resource, e.g. INVOCATIONS
+    pub fn unit(&self) -> ::std::option::Option<&str> {
+        self.unit.as_deref()
+    }
+
     /// Total overage charges
     pub fn overage_charges(&self) -> f64 {
         self.overage_charges
     }
 
+    /// The currency used for overage charges
+    pub fn currency(&self) -> &crate::types::Currency {
+        &self.currency
+    }
+
+    /// Overage rate for the resource per 1 unit
+    pub fn overage_rate(&self) -> ::std::option::Option<f64> {
+        self.overage_rate
+    }
+
     /// The next reset date in UTC timezone.
     pub fn next_date_reset(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
         self.next_date_reset.as_ref()
+    }
+
+    /// The maximum amount of usage allowed beyond the included quota in a billing period
+    pub fn overage_cap(&self) -> ::std::option::Option<i32> {
+        self.overage_cap
+    }
+
+    /// User's free trial info
+    pub fn free_trial_info(&self) -> ::std::option::Option<&crate::types::FreeTrialInfo> {
+        self.free_trial_info.as_ref()
     }
 }
 impl UsageBreakdown {
@@ -52,13 +94,36 @@ impl UsageBreakdown {
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
 pub struct UsageBreakdownBuilder {
+    pub(crate) resource_type: ::std::option::Option<crate::types::ResourceType>,
     pub(crate) current_usage: ::std::option::Option<i32>,
     pub(crate) current_overages: ::std::option::Option<i32>,
     pub(crate) usage_limit: ::std::option::Option<i32>,
+    pub(crate) unit: ::std::option::Option<::std::string::String>,
     pub(crate) overage_charges: ::std::option::Option<f64>,
+    pub(crate) currency: ::std::option::Option<crate::types::Currency>,
+    pub(crate) overage_rate: ::std::option::Option<f64>,
     pub(crate) next_date_reset: ::std::option::Option<::aws_smithy_types::DateTime>,
+    pub(crate) overage_cap: ::std::option::Option<i32>,
+    pub(crate) free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
 }
 impl UsageBreakdownBuilder {
+    /// The resource or dimension being billed, e.g. VIBE or SPEC
+    pub fn resource_type(mut self, input: crate::types::ResourceType) -> Self {
+        self.resource_type = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The resource or dimension being billed, e.g. VIBE or SPEC
+    pub fn set_resource_type(mut self, input: ::std::option::Option<crate::types::ResourceType>) -> Self {
+        self.resource_type = input;
+        self
+    }
+
+    /// The resource or dimension being billed, e.g. VIBE or SPEC
+    pub fn get_resource_type(&self) -> &::std::option::Option<crate::types::ResourceType> {
+        &self.resource_type
+    }
+
     /// Current usage count for the billing period
     /// This field is required.
     pub fn current_usage(mut self, input: i32) -> Self {
@@ -113,6 +178,23 @@ impl UsageBreakdownBuilder {
         &self.usage_limit
     }
 
+    /// Unit of measurement for the resource, e.g. INVOCATIONS
+    pub fn unit(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.unit = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unit of measurement for the resource, e.g. INVOCATIONS
+    pub fn set_unit(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.unit = input;
+        self
+    }
+
+    /// Unit of measurement for the resource, e.g. INVOCATIONS
+    pub fn get_unit(&self) -> &::std::option::Option<::std::string::String> {
+        &self.unit
+    }
+
     /// Total overage charges
     /// This field is required.
     pub fn overage_charges(mut self, input: f64) -> Self {
@@ -129,6 +211,41 @@ impl UsageBreakdownBuilder {
     /// Total overage charges
     pub fn get_overage_charges(&self) -> &::std::option::Option<f64> {
         &self.overage_charges
+    }
+
+    /// The currency used for overage charges
+    /// This field is required.
+    pub fn currency(mut self, input: crate::types::Currency) -> Self {
+        self.currency = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The currency used for overage charges
+    pub fn set_currency(mut self, input: ::std::option::Option<crate::types::Currency>) -> Self {
+        self.currency = input;
+        self
+    }
+
+    /// The currency used for overage charges
+    pub fn get_currency(&self) -> &::std::option::Option<crate::types::Currency> {
+        &self.currency
+    }
+
+    /// Overage rate for the resource per 1 unit
+    pub fn overage_rate(mut self, input: f64) -> Self {
+        self.overage_rate = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Overage rate for the resource per 1 unit
+    pub fn set_overage_rate(mut self, input: ::std::option::Option<f64>) -> Self {
+        self.overage_rate = input;
+        self
+    }
+
+    /// Overage rate for the resource per 1 unit
+    pub fn get_overage_rate(&self) -> &::std::option::Option<f64> {
+        &self.overage_rate
     }
 
     /// The next reset date in UTC timezone.
@@ -148,16 +265,52 @@ impl UsageBreakdownBuilder {
         &self.next_date_reset
     }
 
+    /// The maximum amount of usage allowed beyond the included quota in a billing period
+    pub fn overage_cap(mut self, input: i32) -> Self {
+        self.overage_cap = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The maximum amount of usage allowed beyond the included quota in a billing period
+    pub fn set_overage_cap(mut self, input: ::std::option::Option<i32>) -> Self {
+        self.overage_cap = input;
+        self
+    }
+
+    /// The maximum amount of usage allowed beyond the included quota in a billing period
+    pub fn get_overage_cap(&self) -> &::std::option::Option<i32> {
+        &self.overage_cap
+    }
+
+    /// User's free trial info
+    pub fn free_trial_info(mut self, input: crate::types::FreeTrialInfo) -> Self {
+        self.free_trial_info = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// User's free trial info
+    pub fn set_free_trial_info(mut self, input: ::std::option::Option<crate::types::FreeTrialInfo>) -> Self {
+        self.free_trial_info = input;
+        self
+    }
+
+    /// User's free trial info
+    pub fn get_free_trial_info(&self) -> &::std::option::Option<crate::types::FreeTrialInfo> {
+        &self.free_trial_info
+    }
+
     /// Consumes the builder and constructs a [`UsageBreakdown`](crate::types::UsageBreakdown).
     /// This method will fail if any of the following fields are not set:
     /// - [`current_usage`](crate::types::builders::UsageBreakdownBuilder::current_usage)
     /// - [`current_overages`](crate::types::builders::UsageBreakdownBuilder::current_overages)
     /// - [`usage_limit`](crate::types::builders::UsageBreakdownBuilder::usage_limit)
     /// - [`overage_charges`](crate::types::builders::UsageBreakdownBuilder::overage_charges)
+    /// - [`currency`](crate::types::builders::UsageBreakdownBuilder::currency)
     pub fn build(
         self,
     ) -> ::std::result::Result<crate::types::UsageBreakdown, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::UsageBreakdown {
+            resource_type: self.resource_type,
             current_usage: self.current_usage.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
                     "current_usage",
@@ -176,13 +329,23 @@ impl UsageBreakdownBuilder {
                     "usage_limit was not specified but it is required when building UsageBreakdown",
                 )
             })?,
+            unit: self.unit,
             overage_charges: self.overage_charges.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
                     "overage_charges",
                     "overage_charges was not specified but it is required when building UsageBreakdown",
                 )
             })?,
+            currency: self.currency.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "currency",
+                    "currency was not specified but it is required when building UsageBreakdown",
+                )
+            })?,
+            overage_rate: self.overage_rate,
             next_date_reset: self.next_date_reset,
+            overage_cap: self.overage_cap,
+            free_trial_info: self.free_trial_info,
         })
     }
 }
