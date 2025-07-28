@@ -16,6 +16,7 @@ impl super::Client {
     ///   [`ListAvailableModelsOutput`](crate::operation::list_available_models::ListAvailableModelsOutput)
     ///   with field(s):
     ///   - [`models(Vec::<Model>)`](crate::operation::list_available_models::ListAvailableModelsOutput::models): List of available models
+    ///   - [`default_model(Option<Model>)`](crate::operation::list_available_models::ListAvailableModelsOutput::default_model): Default model set by the client
     ///   - [`next_token(Option<String>)`](crate::operation::list_available_models::ListAvailableModelsOutput::next_token): Token for retrieving the next page of results
     /// - On failure, responds with
     ///   [`SdkError<ListAvailableModelsError>`](crate::operation::list_available_models::ListAvailableModelsError)

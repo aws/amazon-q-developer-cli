@@ -151,6 +151,9 @@ pub(crate) fn de_list_available_models(
                 "models" => {
                     builder = builder.set_models(crate::protocol_serde::shape_models::de_models(tokens)?);
                 },
+                "defaultModel" => {
+                    builder = builder.set_default_model(crate::protocol_serde::shape_model::de_model(tokens)?);
+                },
                 "nextToken" => {
                     builder = builder.set_next_token(
                         ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?

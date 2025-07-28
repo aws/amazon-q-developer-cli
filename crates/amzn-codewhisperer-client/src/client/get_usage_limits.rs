@@ -10,11 +10,14 @@ impl super::Client {
     /// - On success, responds with
     ///   [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput) with
     ///   field(s):
-    ///   - [`limits(Vec::<UsageLimitList>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::limits): (undocumented)
-    ///   - [`days_until_reset(i32)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::days_until_reset): Number of days remaining until the usage metrics reset
+    ///   - [`limits(Option<Vec::<UsageLimitList>>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::limits): (undocumented)
+    ///   - [`days_until_reset(Option<i32>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::days_until_reset): Number of days remaining until the usage metrics reset
     ///   - [`usage_breakdown(Option<UsageBreakdown>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::usage_breakdown): Usage breakdown by SKU type
+    ///   - [`usage_breakdown_list(Option<Vec::<UsageBreakdown>>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::usage_breakdown_list): List of usage by resource type
     ///   - [`subscription_info(Option<SubscriptionInfo>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::subscription_info): Subscription Info
     ///   - [`overage_configuration(Option<OverageConfiguration>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::overage_configuration): Overage Configuration
+    ///   - [`user_info(Option<UserInfo>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::user_info): User Information
+    ///   - [`free_trial_info(Option<FreeTrialInfo>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::free_trial_info): User's free trial info
     /// - On failure, responds with
     ///   [`SdkError<GetUsageLimitsError>`](crate::operation::get_usage_limits::GetUsageLimitsError)
     pub fn get_usage_limits(&self) -> crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder {

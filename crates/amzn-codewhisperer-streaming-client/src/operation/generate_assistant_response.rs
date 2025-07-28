@@ -223,6 +223,10 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GenerateAssi
             {
                 let mut uri = ::std::string::String::new();
                 uri_base(input, &mut uri)?;
+                let builder =
+                    crate::protocol_serde::shape_generate_assistant_response::ser_generate_assistant_response_headers(
+                        input, builder,
+                    )?;
                 ::std::result::Result::Ok(builder.method("POST").uri(uri))
             }
             let mut builder = update_http_builder(&input, ::http::request::Builder::new())?;

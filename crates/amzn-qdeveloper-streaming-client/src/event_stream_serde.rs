@@ -295,6 +295,19 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::types::ChatResponseStream::ToolResultEvent(parsed),
                     ))
                 },
+                "metadataEvent" => {
+                    let parsed =
+                        crate::protocol_serde::shape_metadata_event::de_metadata_event_payload(&message.payload()[..])
+                            .map_err(|err| {
+                                ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
+                                    "failed to unmarshall MetadataEvent: {}",
+                                    err
+                                ))
+                            })?;
+                    Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
+                        crate::types::ChatResponseStream::MetadataEvent(parsed),
+                    ))
+                },
                 "citationEvent" => {
                     let parsed =
                         crate::protocol_serde::shape_citation_event::de_citation_event_payload(&message.payload()[..])

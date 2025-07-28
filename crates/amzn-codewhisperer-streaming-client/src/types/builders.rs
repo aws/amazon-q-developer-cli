@@ -36,6 +36,7 @@ pub use crate::types::_interaction_component_entry::InteractionComponentEntryBui
 pub use crate::types::_interaction_components_event::InteractionComponentsEventBuilder;
 pub use crate::types::_invalid_state_event::InvalidStateEventBuilder;
 pub use crate::types::_message_metadata_event::MessageMetadataEventBuilder;
+pub use crate::types::_metadata_event::MetadataEventBuilder;
 pub use crate::types::_module_link::ModuleLinkBuilder;
 pub use crate::types::_position::PositionBuilder;
 pub use crate::types::_programming_language::ProgrammingLanguageBuilder;
@@ -68,6 +69,7 @@ pub use crate::types::_task_reference::TaskReferenceBuilder;
 pub use crate::types::_text::TextBuilder;
 pub use crate::types::_text_document::TextDocumentBuilder;
 pub use crate::types::_text_document_diagnostic::TextDocumentDiagnosticBuilder;
+pub use crate::types::_token_usage::TokenUsageBuilder;
 pub use crate::types::_tool_input_schema::ToolInputSchemaBuilder;
 pub use crate::types::_tool_result::ToolResultBuilder;
 pub use crate::types::_tool_result_event::ToolResultEventBuilder;

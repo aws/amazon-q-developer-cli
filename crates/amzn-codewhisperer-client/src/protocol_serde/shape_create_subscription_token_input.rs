@@ -9,5 +9,11 @@ pub fn ser_create_subscription_token_input_input(
     if let Some(var_2) = &input.status_only {
         object.key("statusOnly").boolean(*var_2);
     }
+    if let Some(var_3) = &input.provider {
+        object.key("provider").string(var_3.as_str());
+    }
+    if let Some(var_4) = &input.subscription_type {
+        object.key("subscriptionType").string(var_4.as_str());
+    }
     Ok(())
 }

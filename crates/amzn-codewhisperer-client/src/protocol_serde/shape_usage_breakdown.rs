@@ -20,6 +20,13 @@ where
                     Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
                     Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
                         match key.to_unescaped()?.as_ref() {
+                            "resourceType" => {
+                                builder = builder.set_resource_type(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| crate::types::ResourceType::from(u.as_ref())))
+                                        .transpose()?,
+                                );
+                            },
                             "currentUsage" => {
                                 builder = builder.set_current_usage(
                                     ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
@@ -41,8 +48,28 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "unit" => {
+                                builder = builder.set_unit(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
+                                );
+                            },
                             "overageCharges" => {
                                 builder = builder.set_overage_charges(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f64_lossy()),
+                                );
+                            },
+                            "currency" => {
+                                builder = builder.set_currency(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| crate::types::Currency::from(u.as_ref())))
+                                        .transpose()?,
+                                );
+                            },
+                            "overageRate" => {
+                                builder = builder.set_overage_rate(
                                     ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                                         .map(|v| v.to_f64_lossy()),
                                 );
@@ -53,6 +80,18 @@ where
                                         tokens.next(),
                                         ::aws_smithy_types::date_time::Format::EpochSeconds,
                                     )?,
+                                );
+                            },
+                            "overageCap" => {
+                                builder = builder.set_overage_cap(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(i32::try_from)
+                                        .transpose()?,
+                                );
+                            },
+                            "freeTrialInfo" => {
+                                builder = builder.set_free_trial_info(
+                                    crate::protocol_serde::shape_free_trial_info::de_free_trial_info(tokens)?,
                                 );
                             },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,

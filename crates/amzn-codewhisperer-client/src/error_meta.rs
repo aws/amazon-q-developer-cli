@@ -1094,6 +1094,52 @@ impl From<crate::operation::list_available_profiles::ListAvailableProfilesError>
 impl<R>
     From<
         ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError,
+            R,
+        >,
+    > for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError> for Error {
+    fn from(err: crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError) -> Self {
+        match err {
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::AccessDeniedError(
+                inner,
+            ) => Error::AccessDeniedError(inner),
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::InternalServerError(
+                inner,
+            ) => Error::InternalServerError(inner),
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::Unhandled(inner) => {
+                Error::Unhandled(inner)
+            },
+        }
+    }
+}
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
             crate::operation::list_code_analysis_findings::ListCodeAnalysisFindingsError,
             R,
         >,
@@ -1449,6 +1495,50 @@ impl From<crate::operation::send_telemetry_event::SendTelemetryEventError> for E
             crate::operation::send_telemetry_event::SendTelemetryEventError::Unhandled(inner) => {
                 Error::Unhandled(inner)
             },
+        }
+    }
+}
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::set_user_preference::SetUserPreferenceError,
+            R,
+        >,
+    > for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::set_user_preference::SetUserPreferenceError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::set_user_preference::SetUserPreferenceError> for Error {
+    fn from(err: crate::operation::set_user_preference::SetUserPreferenceError) -> Self {
+        match err {
+            crate::operation::set_user_preference::SetUserPreferenceError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::set_user_preference::SetUserPreferenceError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::set_user_preference::SetUserPreferenceError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::set_user_preference::SetUserPreferenceError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::set_user_preference::SetUserPreferenceError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
 }

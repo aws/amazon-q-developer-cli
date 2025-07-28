@@ -152,4 +152,38 @@ impl CreateSubscriptionTokenFluentBuilder {
     pub fn get_status_only(&self) -> &::std::option::Option<bool> {
         self.inner.get_status_only()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn provider(mut self, input: crate::types::SubscriptionProvider) -> Self {
+        self.inner = self.inner.provider(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_provider(mut self, input: ::std::option::Option<crate::types::SubscriptionProvider>) -> Self {
+        self.inner = self.inner.set_provider(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_provider(&self) -> &::std::option::Option<crate::types::SubscriptionProvider> {
+        self.inner.get_provider()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn subscription_type(mut self, input: crate::types::SubscriptionType) -> Self {
+        self.inner = self.inner.subscription_type(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_subscription_type(mut self, input: ::std::option::Option<crate::types::SubscriptionType>) -> Self {
+        self.inner = self.inner.set_subscription_type(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_subscription_type(&self) -> &::std::option::Option<crate::types::SubscriptionType> {
+        self.inner.get_subscription_type()
+    }
 }

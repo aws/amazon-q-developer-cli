@@ -55,6 +55,7 @@ pub use crate::types::_internal_server_exception_reason::InternalServerException
 pub use crate::types::_invalid_state_event::InvalidStateEvent;
 pub use crate::types::_invalid_state_reason::InvalidStateReason;
 pub use crate::types::_message_metadata_event::MessageMetadataEvent;
+pub use crate::types::_metadata_event::MetadataEvent;
 pub use crate::types::_module_link::ModuleLink;
 pub use crate::types::_origin::Origin;
 pub use crate::types::_output_format::OutputFormat;
@@ -94,6 +95,7 @@ pub use crate::types::_text::Text;
 pub use crate::types::_text_document::TextDocument;
 pub use crate::types::_text_document_diagnostic::TextDocumentDiagnostic;
 pub use crate::types::_throttling_exception_reason::ThrottlingExceptionReason;
+pub use crate::types::_token_usage::TokenUsage;
 pub use crate::types::_tool::Tool;
 pub use crate::types::_tool_input_schema::ToolInputSchema;
 pub use crate::types::_tool_result::ToolResult;
@@ -222,6 +224,8 @@ mod _invalid_state_reason;
 
 mod _message_metadata_event;
 
+mod _metadata_event;
+
 mod _module_link;
 
 mod _origin;
@@ -299,6 +303,8 @@ mod _text_document;
 mod _text_document_diagnostic;
 
 mod _throttling_exception_reason;
+
+mod _token_usage;
 
 mod _tool;
 

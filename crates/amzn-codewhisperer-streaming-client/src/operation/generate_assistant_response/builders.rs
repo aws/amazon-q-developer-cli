@@ -155,4 +155,21 @@ impl GenerateAssistantResponseFluentBuilder {
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_profile_arn()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn agent_mode(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.agent_mode(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_agent_mode(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_agent_mode(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_agent_mode(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_agent_mode()
+    }
 }
