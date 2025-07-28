@@ -542,7 +542,81 @@ impl ChatSession {
             true => {
                 let mut cs = previous_conversation.unwrap();
                 existing_conversation = true;
-                input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
+                
+                // Extract last exchange (user question + assistant response)
+                let resume_prompt = if let Some((user_msg, assistant_msg)) = cs.history().back() {
+                    let user_question = match &user_msg.content {
+                        message::UserMessageContent::Prompt { prompt } => prompt.clone(),
+                        message::UserMessageContent::CancelledToolUses { prompt, .. } => {
+                            prompt.clone().unwrap_or_else(|| "[Tool use cancelled]".to_string())
+                        },
+                        message::UserMessageContent::ToolUseResults { .. } => "[Tool results provided]".to_string(),
+                    };
+
+                    let assistant_response = assistant_msg.content();
+                    let tool_summary = assistant_msg
+                        .tool_uses()
+                        .filter(|tools| !tools.is_empty())
+                        .map(|tools| {
+                            tools
+                                .iter()
+                                .map(|tool| {
+                                    let purpose = tool
+                                        .args
+                                        .get("summary")
+                                        .or_else(|| tool.args.get("description"))
+                                        .or_else(|| tool.args.get("command"))
+                                        .or_else(|| tool.args.get("path"))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("perform an action");
+                                    format!("- Used tool '{}' to: {}", tool.name, purpose)
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        });
+
+                    if user_question.trim().is_empty() || assistant_response.trim().is_empty() {
+                        "In a few words, summarize our conversation so far.".to_string()
+                    } else {
+                        // Smart truncation - keep meaningful length but not overwhelming
+                        let max_question_len = 800;
+                        let max_response_len = 1200;
+
+                        let truncated_question = if user_question.len() > max_question_len {
+                            format!("{}...", &user_question[..max_question_len].trim())
+                        } else {
+                            user_question
+                        };
+
+                        let truncated_response = if assistant_response.len() > max_response_len {
+                            format!("{}...", &assistant_response[..max_response_len].trim())
+                        } else {
+                            assistant_response.to_string()
+                        };
+
+                        let mut parts = vec![
+                            "Please show our last exchange, then provide a summary:\n".to_string(),
+                            "--- Resuming from our last conversation ---".to_string(),
+                            format!("User prompt:\n{}", truncated_question),
+                            format!("Amazon Q response:\n{}", truncated_response),
+                        ];
+
+                        if let Some(tools) = tool_summary {
+                            parts.push(format!("Tool actions performed:\n{}", tools));
+                        }
+
+                        parts.extend([
+                            "--- End of previous conversation ---".to_string(),
+                            "Now provide a brief summary of our conversation so far.".to_string(),
+                        ]);
+
+                        parts.join("\n\n")
+                    }
+                } else {
+                    "In a few words, summarize our conversation so far.".to_string()
+                };
+
+                input = Some(input.unwrap_or(resume_prompt));
                 cs.tool_manager = tool_manager;
                 if let Some(profile) = cs.current_profile() {
                     if agents.switch(profile).is_err() {
