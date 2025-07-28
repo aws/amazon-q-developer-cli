@@ -542,7 +542,7 @@ impl ChatSession {
             true => {
                 let mut cs = previous_conversation.unwrap();
                 existing_conversation = true;
-                
+
                 // Extract last exchange (user question + assistant response)
                 let resume_prompt = if let Some((user_msg, assistant_msg)) = cs.history().back() {
                     let user_question = match &user_msg.content {
