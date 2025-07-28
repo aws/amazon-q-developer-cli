@@ -284,9 +284,15 @@ impl Validator for MultiLineValidator {
     fn validate(&self, os: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
         let input = os.input();
 
-        // Check for explicit multi-line markers
-        if input.starts_with("```") && !input.ends_with("```") {
-            return Ok(ValidationResult::Incomplete);
+        // Check for code block markers
+        if input.contains("```") {
+            // Count the number of ``` occurrences
+            let triple_backtick_count = input.matches("```").count();
+
+            // If we have an odd number of ```, we're in an incomplete code block
+            if triple_backtick_count % 2 == 1 {
+                return Ok(ValidationResult::Incomplete);
+            }
         }
 
         // Check for backslash continuation

@@ -20,10 +20,15 @@ use crate::cli::agent::legacy::context::LegacyContextConfig;
 use crate::os::Os;
 use crate::util::directories;
 
-pub async fn migrate(os: &mut Os) -> eyre::Result<Vec<Agent>> {
+/// Performs the migration from legacy profile configuration to agent configuration if it hasn't
+/// already been done.
+///
+/// Returns [Some] with the newly migrated agents if the migration was performed, [None] if the
+/// migration was already done previously.
+pub async fn migrate(os: &mut Os) -> eyre::Result<Option<Vec<Agent>>> {
     let has_migrated = os.database.get_has_migrated()?;
     if has_migrated.is_some_and(|has_migrated| has_migrated) {
-        bail!("Nothing to migrate");
+        return Ok(None);
     }
 
     let legacy_global_context_path = directories::chat_global_context_path(os)?;
@@ -216,5 +221,5 @@ pub async fn migrate(os: &mut Os) -> eyre::Result<Vec<Agent>> {
 
     os.database.set_has_migrated()?;
 
-    Ok(new_agents)
+    Ok(Some(new_agents))
 }

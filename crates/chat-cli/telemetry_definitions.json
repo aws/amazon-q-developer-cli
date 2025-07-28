@@ -58,7 +58,7 @@
     {
       "name": "requestId",
       "type": "string",
-      "description": "The id assigned to an AWS request"
+      "description": "The id assigned to an AWS request. If referring to multiple requests, then the request id's are comma-delimited."
     },
     {
       "name": "oauthFlow",
@@ -101,6 +101,11 @@
       "description": "Denotes if a tool use event has been fulfilled"
     },
     {
+      "name": "codewhispererterminal_isToolUseTrusted",
+      "type": "boolean",
+      "description": "Whether or not the tool use was automatically trusted (instead of manually approved)"
+    },
+    {
       "name": "codewhispererterminal_toolUseIsSuccess",
       "type": "boolean",
       "description": "The outcome of a tool use"
@@ -124,6 +129,11 @@
       "name": "codewhispererterminal_contextFileLength",
       "type": "int",
       "description": "The length of the files included as part of context management"
+    },
+    {
+      "name": "codewhispererterminal_mcpServerName",
+      "type": "string",
+      "description": "Name of the MCP server"
     },
     {
       "name": "codewhispererterminal_mcpServerInitFailureReason",
@@ -166,24 +176,24 @@
       "description": "Total amount of time the tool turn took, including waiting for user input if required. In milliseconds (ms)."
     },
     {
-      "name": "codewhispererterminal_isToolUseTrusted",
-      "type": "int",
-      "description": "The amount of time taken to execute a tool. In milliseconds (ms)."
-    },
-    {
       "name": "codewhispererterminal_model",
       "type": "string",
       "description": "The underlying LLM used by the service, set by the client"
     },
     {
-      "name": "codewhispererterminal_timeToFirstChunkMs",
-      "type": "int",
-      "description": "Time from sending the request to reading the first chunk in the stream. In milliseconds (ms)."
+      "name": "codewhispererterminal_timeToFirstChunksMs",
+      "type": "string",
+      "description": "Time from sending the request to reading the first chunk in the stream. If referring to multiple requests (e.g. when recording a user turn), then each time is comma-delimited. In milliseconds (ms)."
     },
     {
       "name": "codewhispererterminal_timeBetweenChunksMs",
       "type": "string",
       "description": "Comma-delimited times between reading each chunk, starting from the first chunk. In milliseconds (ms)."
+    },
+    {
+      "name": "codewhispererterminal_chatMessageMetaTags",
+      "type": "string",
+      "description": "Comma-delimited tags to optionally assign to a message. If recorded in the context of a user turn, then this refers to the last message in the turn."
     },
     {
       "name": "codewhispererterminal_chatConversationType",
@@ -192,7 +202,12 @@
           "NotToolUse",
           "ToolUse"
       ],
-      "description": "Identifies the role of the message in the conversation."
+      "description": "Identifies the role of the message in the conversation. If recorded in the context of a user turn, then this refers to the last message in the turn."
+    },
+    {
+      "name": "codewhispererterminal_userPromptLength",
+      "type": "int",
+      "description": "Total length of the user prompt, in bytes."
     },
     {
       "name": "codewhispererterminal_assistantResponseLength",
@@ -208,6 +223,31 @@
       "name": "codewhispererterminal_userTurnDurationSeconds",
       "type": "int",
       "description": "Total time spent in the user turn, starting from when the first request is sent."
+    },
+    {
+      "name": "codewhispererterminal_agentsLoadedCount",
+      "type": "int",
+      "description": "The number of agents loaded"
+    },
+    {
+      "name": "codewhispererterminal_agentsFailedToLoadCount",
+      "type": "int",
+      "description": "The number of agents that failed to load"
+    },
+    {
+      "name": "codewhispererterminal_legacyProfileMigrationExecuted",
+      "type": "boolean",
+      "description": "Whether or not the legacy profile configuration migration was executed"
+    },
+    {
+      "name": "codewhispererterminal_legacyProfileMigratedCount",
+      "type": "int",
+      "description": "The number of agent configs created from a legacy profile migration"
+    },
+    {
+      "name": "codewhispererterminal_launchedAgent",
+      "type": "string",
+      "description": "The name of the agent launched by the user on startup"
     }
   ],
   "metrics": [
@@ -237,30 +277,36 @@
         { "type": "reasonDesc", "required": false },
         { "type": "statusCode", "required": false },
         { "type": "codewhispererterminal_model" },
-        { "type": "codewhispererterminal_timeToFirstChunkMs", "required": false },
+        { "type": "codewhispererterminal_timeToFirstChunksMs", "required": false },
         { "type": "codewhispererterminal_timeBetweenChunksMs", "required": false },
         { "type": "codewhispererterminal_chatConversationType", "required": false },
         { "type": "codewhispererterminal_toolUseId", "required": false },
         { "type": "codewhispererterminal_toolName", "required": false },
-        { "type": "codewhispererterminal_assistantResponseLength", "required": false }
+        { "type": "codewhispererterminal_assistantResponseLength", "required": false },
+        { "type": "codewhispererterminal_chatMessageMetaTags", "required": false }
       ]
     },
     {
       "name": "codewhispererterminal_recordUserTurnCompletion",
-      "description": "Captures information regarding a user turn (the chain of messages beginning with a user prompt, and ending with either an assistant stop event, or a tool use denial). Emitted once at the end of every user turn.",
+      "description": "Captures information regarding a user turn (the chain of messages beginning with a user prompt, and ending with either an assistant stop event, tool use denial, or a non-retryable error). Emitted once at the end of every user turn.",
       "metadata": [
         { "type": "amazonqConversationId" },
-        { "type": "codewhispererterminal_utteranceId" },
         { "type": "credentialStartUrl", "required": false },
         { "type": "ssoRegion", "required": false },
         { "type": "codewhispererterminal_inCloudshell" },
-        { "type": "codewhispererterminal_contextFileLength", "required": false },
         { "type": "requestId" },
+        { "type": "codewhispererterminal_utteranceId" },
         { "type": "result", "required": true },
         { "type": "reason", "required": false },
         { "type": "reasonDesc", "required": false },
         { "type": "statusCode", "required": false },
-        { "type": "codewhispererterminal_model" }
+        { "type": "codewhispererterminal_chatConversationType", "required": false },
+        { "type": "codewhispererterminal_timeToFirstChunksMs" },
+        { "type": "codewhispererterminal_userPromptLength" },
+        { "type": "codewhispererterminal_assistantResponseLength" },
+        { "type": "codewhispererterminal_userTurnDurationSeconds" },
+        { "type": "codewhispererterminal_followUpCount" },
+        { "type": "codewhispererterminal_chatMessageMetaTags", "required": false }
       ]
     },
     {
@@ -334,6 +380,7 @@
         { "type": "codewhispererterminal_isToolUseAccepted" },
         { "type": "codewhispererterminal_isToolValid" },
         { "type": "codewhispererterminal_toolUseIsSuccess", "required": false },
+        { "type": "reasonDesc", "required": false },
         { "type": "codewhispererterminal_isCustomTool" },
         {
           "type": "codewhispererterminal_customToolInputTokenSize",
@@ -357,11 +404,26 @@
       "metadata": [
         { "type": "credentialStartUrl" },
         { "type": "amazonqConversationId" },
+        { "type": "codewhispererterminal_mcpServerName" },
         {
           "type": "codewhispererterminal_mcpServerInitFailureReason",
           "required": false
         },
         { "type": "codewhispererterminal_toolsPerMcpServer" }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_agentConfigInit",
+      "description": "Emitted once when starting a new q chat session after agent configuration is initialized",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl" },
+        { "type": "amazonqConversationId" },
+        { "type": "codewhispererterminal_agentsLoadedCount" },
+        { "type": "codewhispererterminal_agentsFailedToLoadCount" },
+        { "type": "codewhispererterminal_legacyProfileMigrationExecuted", "required": false },
+        { "type": "codewhispererterminal_legacyProfileMigratedCount", "required": false },
+        { "type": "codewhispererterminal_launchedAgent", "required": false }
       ]
     },
     {
@@ -396,6 +458,8 @@
           { "type": "credentialStartUrl", "required": false },
           { "type": "ssoRegion", "required": false },
           { "type": "amazonqConversationId" },
+          { "type": "requestId", "required": false },
+          { "type": "codewhispererterminal_utteranceId", "required": false },
           { "type": "codewhispererterminal_contextFileLength", "required": false },
           { "type": "result" },
           { "type": "reason", "required": false },
