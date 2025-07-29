@@ -21,6 +21,7 @@ use super::{
     Agent,
     Agents,
     McpServerConfig,
+    legacy,
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
@@ -61,6 +62,13 @@ pub enum AgentSubcommands {
     Validate {
         #[arg(long, short)]
         path: String,
+    },
+    /// Migrate profiles to agent
+    /// Note that doing this is potentially destructive to agents that are already in the global
+    /// agent directories
+    Migrate {
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -201,7 +209,61 @@ impl AgentArgs {
 
                 stderr.flush()?;
             },
+            Some(AgentSubcommands::Migrate { force }) => {
+                if !force {
+                    let _ = queue!(
+                        stderr,
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print("WARNING: "),
+                        style::ResetColor,
+                        style::Print(
+                            "manual migrate is potentially destructive to existing agent configs with name collision. Use"
+                        ),
+                        style::SetForegroundColor(Color::Cyan),
+                        style::Print(" --force "),
+                        style::ResetColor,
+                        style::Print("to run"),
+                        style::Print("\n"),
+                    );
+                    return Ok(ExitCode::SUCCESS);
+                }
+
+                match legacy::migrate(os, force).await {
+                    Ok(Some(new_agents)) => {
+                        let migrated_count = new_agents.len();
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("✓ Success: "),
+                            style::ResetColor,
+                            style::Print(format!(
+                                "Profile migration successful. Migrated {} agent(s)\n",
+                                migrated_count
+                            )),
+                        );
+                    },
+                    Ok(None) => {
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Blue),
+                            style::Print("Info: "),
+                            style::ResetColor,
+                            style::Print("Migration was not performed. Nothing to migrate\n"),
+                        );
+                    },
+                    Err(e) => {
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(format!("Migration did not happen for the following reason: {e}\n")),
+                        );
+                    },
+                }
+            },
         }
+
         Ok(ExitCode::SUCCESS)
     }
 }

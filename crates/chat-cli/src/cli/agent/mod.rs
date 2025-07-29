@@ -399,7 +399,7 @@ impl Agents {
         };
 
         let new_agents = if !skip_migration {
-            match legacy::migrate(os).await {
+            match legacy::migrate(os, false).await {
                 Ok(Some(new_agents)) => {
                     let migrated_count = new_agents.len();
                     info!(migrated_count, "Profile migration successful");
