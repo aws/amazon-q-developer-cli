@@ -1198,7 +1198,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chat_cli"
-version = "1.12.4"
+version = "1.13.0"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -5525,7 +5525,7 @@ dependencies = [
 
 [[package]]
 name = "semantic_search_client"
-version = "1.12.4"
+version = "1.13.0"
 dependencies = [
  "anyhow",
  "bm25",
