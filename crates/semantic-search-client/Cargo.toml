@@ -29,7 +29,7 @@ tokio-util.workspace = true
 hnsw_rs = "=0.3.1"
 
 # BM25 implementation - works on all platforms including ARM
-bm25 = { version = "2.2.1", features = ["language_detection"] }
+bm25 = { version = "2.3.0", features = ["language_detection"] }
 
 # Common dependencies for all platforms
 anyhow = "1.0"
