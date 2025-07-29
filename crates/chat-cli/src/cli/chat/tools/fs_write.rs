@@ -112,7 +112,7 @@ impl FsWrite {
                 path, old_str, new_str, ..
             } => {
                 let path = sanitize_path_tool_arg(os, path);
-                let file = os.fs.read_to_string(&path).await?;
+                let file = os.fs.read_to_string_lossy(&path).await?;
                 let matches = file.match_indices(old_str).collect::<Vec<_>>();
                 queue!(
                     output,
@@ -139,7 +139,7 @@ impl FsWrite {
                 ..
             } => {
                 let path = sanitize_path_tool_arg(os, path);
-                let mut file = os.fs.read_to_string(&path).await?;
+                let mut file = os.fs.read_to_string_lossy(&path).await?;
                 queue!(
                     output,
                     style::Print("Updating: "),
@@ -173,7 +173,7 @@ impl FsWrite {
                     style::Print("\n"),
                 )?;
 
-                let mut file = os.fs.read_to_string(&path).await?;
+                let mut file = os.fs.read_to_string_lossy(&path).await?;
                 if !file.ends_with_newline() {
                     file.push('\n');
                 }
@@ -193,7 +193,7 @@ impl FsWrite {
                 let path = sanitize_path_tool_arg(os, path);
                 let relative_path = format_path(cwd, &path);
                 let prev = if os.fs.exists(&path) {
-                    let file = os.fs.read_to_string_sync(&path)?;
+                    let file = os.fs.read_to_string_lossy_sync(&path)?;
                     stylize_output_if_able(os, &path, &file)
                 } else {
                     Default::default()
@@ -214,7 +214,7 @@ impl FsWrite {
             } => {
                 let path = sanitize_path_tool_arg(os, path);
                 let relative_path = format_path(cwd, &path);
-                let file = os.fs.read_to_string_sync(&path)?;
+                let file = os.fs.read_to_string_lossy_sync(&path)?;
 
                 // Diff the old with the new by adding extra context around the line being inserted
                 // at.
@@ -240,7 +240,7 @@ impl FsWrite {
             } => {
                 let path = sanitize_path_tool_arg(os, path);
                 let relative_path = format_path(cwd, &path);
-                let file = os.fs.read_to_string_sync(&path)?;
+                let file = os.fs.read_to_string_lossy_sync(&path)?;
                 let (start_line, _) = match line_number_at(&file, old_str) {
                     Some((start_line, end_line)) => (start_line, end_line),
                     _ => (0, 0),
@@ -257,7 +257,7 @@ impl FsWrite {
             FsWrite::Append { path, new_str, .. } => {
                 let path = sanitize_path_tool_arg(os, path);
                 let relative_path = format_path(cwd, &path);
-                let start_line = os.fs.read_to_string_sync(&path)?.lines().count() + 1;
+                let start_line = os.fs.read_to_string_lossy_sync(&path)?.lines().count() + 1;
                 let file = stylize_output_if_able(os, &relative_path, new_str);
                 print_diff(output, &Default::default(), &file, start_line)?;
 

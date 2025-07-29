@@ -193,6 +193,68 @@ impl Fs {
         }
     }
 
+    /// This function is just like [read_to_string] except it uses String::from_utf8_lossy instead
+    /// of [fs::read_to_string]. This is necessitated by the fact that sometimes files asked to be
+    /// written to contains characters that are not valid utf8. While the model would have no
+    /// trouble reading it (because fs_read actually leverages [String::from_utf8_lossy]), it will
+    /// fail here because the model will more than likely reference what's already in the file and
+    /// write to it with invalid utf8 characters.
+    pub async fn read_to_string_lossy(&self, path: impl AsRef<Path>) -> io::Result<String> {
+        match self {
+            Self::Real => {
+                let bytes = fs::read(&path).await?;
+                Ok(String::from_utf8_lossy(&bytes).into_owned())
+            },
+            Self::Chroot(root) => {
+                let bytes = fs::read(append(root.path(), path)).await?;
+                Ok(String::from_utf8_lossy(&bytes).into_owned())
+            },
+            Self::Fake(map) => {
+                let Ok(lock) = map.lock() else {
+                    return Err(io::Error::other("poisoned lock"));
+                };
+                let Some(data) = lock.get(path.as_ref()) else {
+                    return Err(io::Error::new(io::ErrorKind::NotFound, "not found"));
+                };
+                match String::from_utf8(data.clone()) {
+                    Ok(string) => Ok(string),
+                    Err(err) => Err(io::Error::new(io::ErrorKind::InvalidData, err)),
+                }
+            },
+        }
+    }
+
+    /// This function is just like [read_to_string] except it uses String::from_utf8_lossy instead
+    /// of [fs::read_to_string]. This is necessitated by the fact that sometimes files asked to be
+    /// written to contains characters that are not valid utf8. While the model would have no
+    /// trouble reading it (because fs_read actually leverages [String::from_utf8_lossy]), it will
+    /// fail here because the model will more than likely reference what's already in the file and
+    /// write to it with invalid utf8 characters.
+    pub fn read_to_string_lossy_sync(&self, path: impl AsRef<Path>) -> io::Result<String> {
+        match self {
+            Self::Real => {
+                let bytes = std::fs::read(&path)?;
+                Ok(String::from_utf8_lossy(&bytes).into_owned())
+            },
+            Self::Chroot(root) => {
+                let bytes = std::fs::read(append(root.path(), path))?;
+                Ok(String::from_utf8_lossy(&bytes).into_owned())
+            },
+            Self::Fake(map) => {
+                let Ok(lock) = map.lock() else {
+                    return Err(io::Error::other("poisoned lock"));
+                };
+                let Some(data) = lock.get(path.as_ref()) else {
+                    return Err(io::Error::new(io::ErrorKind::NotFound, "not found"));
+                };
+                match String::from_utf8(data.clone()) {
+                    Ok(string) => Ok(string),
+                    Err(err) => Err(io::Error::new(io::ErrorKind::InvalidData, err)),
+                }
+            },
+        }
+    }
+
     pub fn read_to_string_sync(&self, path: impl AsRef<Path>) -> io::Result<String> {
         match self {
             Self::Real => std::fs::read_to_string(path),
