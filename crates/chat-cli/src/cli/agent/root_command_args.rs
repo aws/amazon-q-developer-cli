@@ -301,7 +301,8 @@ pub async fn create_agent(
     }
 
     let prepopulated_content = if let Some(from) = from {
-        let agent_to_copy = agents.switch(from.as_str())?;
+        let mut agent_to_copy = agents.switch(from.as_str())?.clone();
+        agent_to_copy.name = name.clone();
         agent_to_copy.to_str_pretty()?
     } else {
         Default::default()

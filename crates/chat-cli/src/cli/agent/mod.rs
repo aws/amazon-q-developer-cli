@@ -86,8 +86,6 @@ pub enum AgentConfigError {
     Directories(#[from] util::directories::DirectoryError),
     #[error("Encountered io error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Agent path missing file name")]
-    MissingFilename,
     #[error("Failed to parse legacy mcp config: {0}")]
     BadLegacyMcpConfig(#[from] eyre::Report),
 }
@@ -120,8 +118,7 @@ pub enum AgentConfigError {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
-    /// Agent names are optional. If they are not provided they are derived from the file name
-    #[serde(default)]
+    /// Name of the agent
     pub name: String,
     /// This field is not model facing and is mostly here for users to discern between agents
     #[serde(default)]
@@ -167,7 +164,7 @@ pub struct Agent {
 impl Default for Agent {
     fn default() -> Self {
         Self {
-            name: "default".to_string(),
+            name: "q_cli_default".to_string(),
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
             mcp_servers: Default::default(),
@@ -205,20 +202,9 @@ impl Agent {
 
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
-    /// For example, we populate the agent with its file name, convert the mcp array to actual
-    /// mcp config and populate the agent file path.
+    /// For example, converting the mcp array to actual mcp config and populate the agent file path.
     fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
-
-        if self.name.is_empty() {
-            let name = path
-                .file_stem()
-                .ok_or(AgentConfigError::MissingFilename)?
-                .to_string_lossy()
-                .to_string();
-
-            self.name = name;
-        }
 
         self.path = Some(path.to_path_buf());
 

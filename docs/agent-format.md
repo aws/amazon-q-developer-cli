@@ -18,7 +18,7 @@ Every agent configuration file can include the following sections:
 
 ## Name Field
 
-The `name` field specifies the name of the agent. This is used for identification and display purposes. If not specified, the name is derived from the filename (without the `.json` extension).
+The `name` field specifies the name of the agent. This is used for identification and display purposes. 
 
 ```json
 {
