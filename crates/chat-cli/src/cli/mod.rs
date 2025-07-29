@@ -362,6 +362,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                web_server: false,
             })),
             verbose: 2,
             help_all: false,
@@ -401,6 +402,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                web_server: false,
             })
         );
     }
@@ -417,6 +419,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                web_server: false,
             })
         );
     }
@@ -433,6 +436,7 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
+                web_server: false,
             })
         );
     }
@@ -449,6 +453,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
+                web_server: false,
             })
         );
         assert_parse!(
@@ -461,6 +466,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
+                web_server: false,
             })
         );
     }
@@ -477,6 +483,7 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
+                web_server: false,
             })
         );
     }
@@ -493,6 +500,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["".to_string()]),
                 no_interactive: false,
+                web_server: false,
             })
         );
     }
@@ -509,6 +517,24 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
                 no_interactive: false,
+                web_server: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_web_server() {
+        assert_parse!(
+            ["chat", "--web-server"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                web_server: true,
             })
         );
     }
