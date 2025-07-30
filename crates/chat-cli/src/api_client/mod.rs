@@ -2,9 +2,11 @@ mod credentials;
 pub mod customization;
 mod endpoints;
 mod error;
+mod error_classifier;
 pub mod model;
 mod opt_out;
 pub mod profile;
+mod retry_classifier;
 pub mod send_message_output;
 
 use std::sync::Arc;
@@ -38,6 +40,7 @@ use tracing::{
 };
 
 use crate::api_client::credentials::CredentialsChain;
+use crate::api_client::error_classifier::ErrorClassifier;
 use crate::api_client::model::{
     ChatResponseStream,
     ConversationState,
@@ -73,6 +76,7 @@ pub struct ApiClient {
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
     profile: Option<AuthProfile>,
+    error_classifier: ErrorClassifier,
 }
 
 impl ApiClient {
@@ -112,6 +116,7 @@ impl ApiClient {
                 sigv4_streaming_client: None,
                 mock_client: None,
                 profile: None,
+                error_classifier: ErrorClassifier::new(),
             };
 
             if let Ok(json) = env.get("Q_MOCK_CHAT_RESPONSE") {
@@ -147,6 +152,7 @@ impl ApiClient {
                     .app_name(app_name())
                     .endpoint_url(endpoint.url())
                     .stalled_stream_protection(stalled_stream_protection_config())
+                    .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                     .build(),
                 ));
             },
@@ -160,6 +166,7 @@ impl ApiClient {
                         .app_name(app_name())
                         .endpoint_url(endpoint.url())
                         .stalled_stream_protection(stalled_stream_protection_config())
+                        .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                         .build(),
                 ));
             },
@@ -179,6 +186,7 @@ impl ApiClient {
             sigv4_streaming_client,
             mock_client: None,
             profile,
+            error_classifier: ErrorClassifier::new(),
         })
     }
 
@@ -257,8 +265,6 @@ impl ApiClient {
             history,
         } = conversation;
 
-        let model_id_opt: Option<String> = user_input_message.model_id.clone();
-
         if let Some(client) = &self.streaming_client {
             let conversation_state = amzn_codewhisperer_streaming_client::types::ConversationState::builder()
                 .set_conversation_id(conversation_id)
@@ -285,69 +291,27 @@ impl ApiClient {
             {
                 Ok(response) => Ok(SendMessageOutput::Codewhisperer(response)),
                 Err(err) => {
-                    use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError as OperationThrottlingError;
-                    use amzn_codewhisperer_streaming_client::types::ThrottlingExceptionReason;
-                    use amzn_codewhisperer_streaming_client::types::error::ThrottlingError;
-
-                    let status_code = err.raw_response().map(|res| res.status().as_u16());
-                    let is_quota_breach = status_code.is_some_and(|status| status == 429);
-                    let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
-                        matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
-                    });
-
-                    let is_model_unavailable =
-                        // Handling the updated error response
-                        err.as_service_error().is_some_and(|err| {
-                            matches!(
-                                err,
-                                OperationThrottlingError(ThrottlingError {
-                                    reason: Some(ThrottlingExceptionReason::InsufficientModelCapacity),
-                                    ..
-                                })
-                            )
-                        })
-                        // Legacy error response
-                        || (model_id_opt.is_some()
-                            && status_code.is_some_and(|status| status == 500)
-                            && err.as_service_error().is_some_and(|err| {
-                                err.meta().message()
-                                    == Some(
-                                        "Encountered unexpectedly high load when processing the request, please try again.",
-                                    )
-                            }));
-
-                    let is_monthly_limit_err = err
+                    // Use consolidated error classifier
+                    let status_code = err.raw_response().map_or(0, |res| res.status().as_u16());
+                    let response_body = err
                         .raw_response()
                         .and_then(|resp| resp.body().bytes())
-                        .and_then(|bytes| match String::from_utf8(bytes.to_vec()) {
-                            Ok(s) => Some(s.contains("MONTHLY_REQUEST_COUNT")),
-                            Err(_) => None,
-                        })
-                        .unwrap_or(false);
+                        .and_then(|bytes| std::str::from_utf8(bytes).ok());
+                    let error_code = err.as_service_error().and_then(|se| se.meta().code());
+                    let error_message = err.as_service_error().and_then(|se| se.meta().message());
+                    let request_id = err
+                        .as_service_error()
+                        .and_then(|se| se.meta().request_id())
+                        .map(|s| s.to_string());
 
-                    if is_quota_breach {
-                        return Err(ApiClientError::QuotaBreach {
-                            message: "quota has reached its limit",
-                            status_code,
-                        });
-                    }
-
-                    if is_context_window_overflow {
-                        return Err(ApiClientError::ContextWindowOverflow { status_code });
-                    }
-
-                    if is_model_unavailable {
-                        return Err(ApiClientError::ModelOverloadedError {
-                            request_id: err
-                                .as_service_error()
-                                .and_then(|err| err.meta().request_id())
-                                .map(|s| s.to_string()),
-                            status_code,
-                        });
-                    }
-
-                    if is_monthly_limit_err {
-                        return Err(ApiClientError::MonthlyLimitReached { status_code });
+                    if let Some(classified_error) = self.error_classifier.classify_error(
+                        status_code,
+                        response_body,
+                        error_code,
+                        error_message,
+                        request_id,
+                    ) {
+                        return Err(classified_error);
                     }
 
                     Err(err.into())
@@ -377,69 +341,27 @@ impl ApiClient {
             {
                 Ok(response) => Ok(SendMessageOutput::QDeveloper(response)),
                 Err(err) => {
-                    use amzn_qdeveloper_streaming_client::operation::send_message::SendMessageError::ThrottlingError as OperationThrottlingError;
-                    use amzn_qdeveloper_streaming_client::types::ThrottlingExceptionReason;
-                    use amzn_qdeveloper_streaming_client::types::error::ThrottlingError;
-
-                    let status_code = err.raw_response().map(|res| res.status().as_u16());
-                    let is_quota_breach = status_code.is_some_and(|status| status == 429);
-                    let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
-                        matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
-                    });
-
-                    let is_model_unavailable =
-                        // Handling the updated error response
-                        err.as_service_error().is_some_and(|err| {
-                            matches!(
-                                err,
-                                OperationThrottlingError(ThrottlingError {
-                                    reason: Some(ThrottlingExceptionReason::InsufficientModelCapacity),
-                                    ..
-                                })
-                            )
-                        })
-                        // Legacy error response
-                        || (model_id_opt.is_some()
-                            && status_code.is_some_and(|status| status == 500)
-                            && err.as_service_error().is_some_and(|err| {
-                                err.meta().message()
-                                    == Some(
-                                        "Encountered unexpectedly high load when processing the request, please try again.",
-                                    )
-                            }));
-
-                    let is_monthly_limit_err = err
+                    // Use consolidated error classifier
+                    let status_code = err.raw_response().map_or(0, |res| res.status().as_u16());
+                    let response_body = err
                         .raw_response()
                         .and_then(|resp| resp.body().bytes())
-                        .and_then(|bytes| match String::from_utf8(bytes.to_vec()) {
-                            Ok(s) => Some(s.contains("MONTHLY_REQUEST_COUNT")),
-                            Err(_) => None,
-                        })
-                        .unwrap_or(false);
+                        .and_then(|bytes| std::str::from_utf8(bytes).ok());
+                    let error_code = err.as_service_error().and_then(|se| se.meta().code());
+                    let error_message = err.as_service_error().and_then(|se| se.meta().message());
+                    let request_id = err
+                        .as_service_error()
+                        .and_then(|se| se.meta().request_id())
+                        .map(|s| s.to_string());
 
-                    if is_quota_breach {
-                        return Err(ApiClientError::QuotaBreach {
-                            message: "quota has reached its limit",
-                            status_code,
-                        });
-                    }
-
-                    if is_context_window_overflow {
-                        return Err(ApiClientError::ContextWindowOverflow { status_code });
-                    }
-
-                    if is_model_unavailable {
-                        return Err(ApiClientError::ModelOverloadedError {
-                            request_id: err
-                                .as_service_error()
-                                .and_then(|err| err.meta().request_id())
-                                .map(|s| s.to_string()),
-                            status_code,
-                        });
-                    }
-
-                    if is_monthly_limit_err {
-                        return Err(ApiClientError::MonthlyLimitReached { status_code });
+                    if let Some(classified_error) = self.error_classifier.classify_error(
+                        status_code,
+                        response_body,
+                        error_code,
+                        error_message,
+                        request_id,
+                    ) {
+                        return Err(classified_error);
                     }
 
                     Err(err.into())
@@ -496,7 +418,9 @@ fn timeout_config(database: &Database) -> TimeoutConfig {
 }
 
 fn retry_config() -> RetryConfig {
-    RetryConfig::standard().with_max_attempts(1)
+    RetryConfig::adaptive()
+        .with_max_attempts(3)
+        .with_max_backoff(Duration::from_secs(10))
 }
 
 pub fn stalled_stream_protection_config() -> StalledStreamProtectionConfig {
