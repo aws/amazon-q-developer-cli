@@ -19,7 +19,10 @@ use crossterm::{
 
 use crate::api_client::model::Tool as FigTool;
 use crate::cli::agent::Agent;
-use crate::cli::chat::consts::DUMMY_TOOL_NAME;
+use crate::cli::chat::consts::{
+    AGENT_FORMAT_TOOLS_DOC_URL,
+    DUMMY_TOOL_NAME,
+};
 use crate::cli::chat::tools::ToolOrigin;
 use crate::cli::chat::{
     ChatError,
@@ -150,19 +153,19 @@ impl ToolsArgs {
             }
         }
 
-        queue!(
-            session.stderr,
-            style::Print("\nTrusted tools will run without confirmation."),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print(format!("\n{}\n", "* Default settings")),
-            style::Print("\n💡 Use "),
-            style::SetForegroundColor(Color::Green),
-            style::Print("/tools help"),
-            style::SetForegroundColor(Color::Reset),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print(" to edit permissions.\n\n"),
-            style::SetForegroundColor(Color::Reset),
-        )?;
+        if origin_tools.is_empty() {
+            queue!(
+                session.stderr,
+                style::Print(
+                    "\nNo tools are currently enabled.\n\nRefer to the documentation for how to add tools to your agent: "
+                ),
+                style::SetForegroundColor(Color::Green),
+                style::Print(AGENT_FORMAT_TOOLS_DOC_URL),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+        }
 
         Ok(ChatState::default())
     }
@@ -176,7 +179,9 @@ impl ToolsArgs {
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
     before_long_help = "By default, Amazon Q will ask for your permission to use certain tools. You can control which tools you
-trust so that no confirmation is required. These settings will last only for this session."
+trust so that no confirmation is required.
+
+Refer to the documentation for how to configure tools with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#tools-field"
 )]
 pub enum ToolsSubcommand {
     /// Show the input schema for all available tools

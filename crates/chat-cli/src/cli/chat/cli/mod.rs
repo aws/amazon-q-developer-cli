@@ -62,13 +62,13 @@ pub enum SlashCommand {
     PromptEditor(EditorArgs),
     /// Summarize the conversation to free up context space
     Compact(CompactArgs),
-    /// View and manage tools and permissions
+    /// View tools and permissions
     Tools(ToolsArgs),
     /// Create a new Github issue or make a feature request
     Issue(issue::IssueArgs),
     /// View and retrieve prompts
     Prompts(PromptsArgs),
-    /// View and manage context hooks
+    /// View context hooks
     Hooks(HooksArgs),
     /// Show current session's context window usage
     Usage(UsageArgs),

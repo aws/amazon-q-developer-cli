@@ -176,10 +176,13 @@ impl ContextManager {
     /// A vector containing pairs of a [`Hook`] definition and its execution output
     pub async fn run_hooks(
         &mut self,
+        trigger: HookTrigger,
         output: &mut impl Write,
         prompt: Option<&str>,
     ) -> Result<Vec<((HookTrigger, Hook), String)>, ChatError> {
-        self.hook_executor.run_hooks(self.hooks.clone(), output, prompt).await
+        let mut hooks = self.hooks.clone();
+        hooks.retain(|t, _| *t == trigger);
+        self.hook_executor.run_hooks(hooks, output, prompt).await
     }
 }
 
