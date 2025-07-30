@@ -70,6 +70,11 @@ pub enum AgentSubcommands {
         #[arg(long)]
         force: bool,
     },
+    /// Define a default agent to use when q chat launches
+    SetDefault {
+        #[arg(long, short)]
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
@@ -258,6 +263,35 @@ impl AgentArgs {
                             style::Print("Error: "),
                             style::ResetColor,
                             style::Print(format!("Migration did not happen for the following reason: {e}\n")),
+                        );
+                    },
+                }
+            },
+            Some(AgentSubcommands::SetDefault { name }) => {
+                let mut agents = Agents::load(os, None, true, &mut stderr).await.0;
+                match agents.switch(&name) {
+                    Ok(agent) => {
+                        os.database
+                            .settings
+                            .set(Setting::ChatDefaultAgent, agent.name.clone())
+                            .await?;
+
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("✓ Default agent set to '"),
+                            style::Print(&agent.name),
+                            style::Print("'. This will take effect the next time q chat is launched.\n"),
+                            style::ResetColor,
+                        );
+                    },
+                    Err(e) => {
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(format!("Failed to set default agent: {e}\n")),
                         );
                     },
                 }
