@@ -25,10 +25,7 @@ use super::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::directories::{
-    self,
-    agent_config_dir,
-};
+use crate::util::directories;
 
 #[derive(Clone, Debug, Subcommand, PartialEq, Eq)]
 pub enum AgentSubcommands {
@@ -69,6 +66,11 @@ pub enum AgentSubcommands {
     Migrate {
         #[arg(long)]
         force: bool,
+    },
+    /// Define a default agent to use when q chat launches
+    SetDefault {
+        #[arg(long, short)]
+        name: String,
     },
 }
 
@@ -262,6 +264,35 @@ impl AgentArgs {
                     },
                 }
             },
+            Some(AgentSubcommands::SetDefault { name }) => {
+                let mut agents = Agents::load(os, None, true, &mut stderr).await.0;
+                match agents.switch(&name) {
+                    Ok(agent) => {
+                        os.database
+                            .settings
+                            .set(Setting::ChatDefaultAgent, agent.name.clone())
+                            .await?;
+
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("✓ Default agent set to '"),
+                            style::Print(&agent.name),
+                            style::Print("'. This will take effect the next time q chat is launched.\n"),
+                            style::ResetColor,
+                        );
+                    },
+                    Err(e) => {
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(format!("Failed to set default agent: {e}\n")),
+                        );
+                    },
+                }
+            },
         }
 
         Ok(ExitCode::SUCCESS)
@@ -285,7 +316,7 @@ pub async fn create_agent(
             bail!("Path must be a directory");
         }
 
-        agent_config_dir(path)?
+        directories::agent_config_dir(path)?
     } else {
         directories::chat_global_agent_path(os)?
     };
@@ -301,11 +332,17 @@ pub async fn create_agent(
     }
 
     let prepopulated_content = if let Some(from) = from {
-        let agent_to_copy = agents.switch(from.as_str())?;
-        agent_to_copy.to_str_pretty()?
+        let mut agent_to_copy = agents.switch(from.as_str())?.clone();
+        agent_to_copy.name = name.clone();
+        agent_to_copy
     } else {
-        Default::default()
-    };
+        Agent {
+            name: name.clone(),
+            description: Some(Default::default()),
+            ..Default::default()
+        }
+    }
+    .to_str_pretty()?;
     let path_with_file_name = path.join(format!("{name}.json"));
 
     if !path.exists() {

@@ -5,6 +5,7 @@ The agent configuration file for each agent is a JSON file. The filename (withou
 Every agent configuration file can include the following sections:
 
 - [`name`](#name-field) — The name of the agent (optional, derived from filename if not specified).
+- [`version`](#version-field) - The version of the agent config.
 - [`description`](#description-field) — A description of the agent.
 - [`prompt`](#prompt-field) — High-level context for the agent (not yet implemented).
 - [`mcpServers`](#mcpservers-field) — The MCP servers the agent has access to.
@@ -18,7 +19,7 @@ Every agent configuration file can include the following sections:
 
 ## Name Field
 
-The `name` field specifies the name of the agent. This is used for identification and display purposes. If not specified, the name is derived from the filename (without the `.json` extension).
+The `name` field specifies the name of the agent. This is used for identification and display purposes. 
 
 ```json
 {
@@ -27,6 +28,17 @@ The `name` field specifies the name of the agent. This is used for identificatio
 ```
 
 Note: While this field can be included in the configuration file, it will be overridden by the filename when the agent is loaded.
+
+## Version Field
+
+The `version` field specifies the version of the agent config. This is currently not being utilized though you must specify it.
+Currently, the default version is "0.1.0"
+
+```json
+{
+  "version": "0.1.0"
+}
+```
 
 ## Description Field
 

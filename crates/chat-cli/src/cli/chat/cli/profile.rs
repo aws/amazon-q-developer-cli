@@ -33,6 +33,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_global_agent_path;
 
@@ -82,6 +83,11 @@ pub enum AgentSubcommand {
     },
     /// Show agent config schema
     Schema,
+    /// Define a default agent to use when q chat launches
+    SetDefault {
+        #[arg(long, short)]
+        name: String,
+    },
 }
 
 impl AgentSubcommand {
@@ -225,6 +231,33 @@ impl AgentSubcommand {
                     style::SetAttribute(Attribute::Reset)
                 )?;
             },
+            Self::SetDefault { name } => match session.conversation.agents.agents.get(&name) {
+                Some(agent) => {
+                    os.database
+                        .settings
+                        .set(Setting::ChatDefaultAgent, agent.name.clone())
+                        .await
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?;
+
+                    execute!(
+                        session.stderr,
+                        style::SetForegroundColor(Color::Green),
+                        style::Print("✓ Default agent set to '"),
+                        style::Print(&agent.name),
+                        style::Print("'. This will take effect the next time q chat is launched.\n"),
+                        style::ResetColor,
+                    )?;
+                },
+                None => {
+                    execute!(
+                        session.stderr,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("Error: "),
+                        style::ResetColor,
+                        style::Print(format!("No agent with name {name} found\n")),
+                    )?;
+                },
+            },
         }
 
         Ok(ChatState::PromptUser {
@@ -240,6 +273,7 @@ impl AgentSubcommand {
             Self::Set { .. } => "set",
             Self::Rename { .. } => "rename",
             Self::Schema => "schema",
+            Self::SetDefault { .. } => "set_default",
         }
     }
 }
