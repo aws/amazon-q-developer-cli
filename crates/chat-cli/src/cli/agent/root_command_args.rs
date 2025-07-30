@@ -25,10 +25,7 @@ use super::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::directories::{
-    self,
-    agent_config_dir,
-};
+use crate::util::directories;
 
 #[derive(Clone, Debug, Subcommand, PartialEq, Eq)]
 pub enum AgentSubcommands {
@@ -319,7 +316,7 @@ pub async fn create_agent(
             bail!("Path must be a directory");
         }
 
-        agent_config_dir(path)?
+        directories::agent_config_dir(path)?
     } else {
         directories::chat_global_agent_path(os)?
     };

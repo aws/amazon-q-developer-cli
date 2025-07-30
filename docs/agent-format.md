@@ -5,6 +5,7 @@ The agent configuration file for each agent is a JSON file. The filename (withou
 Every agent configuration file can include the following sections:
 
 - [`name`](#name-field) — The name of the agent (optional, derived from filename if not specified).
+- [`version`](#version-field) - The version of the agent config.
 - [`description`](#description-field) — A description of the agent.
 - [`prompt`](#prompt-field) — High-level context for the agent (not yet implemented).
 - [`mcpServers`](#mcpservers-field) — The MCP servers the agent has access to.
