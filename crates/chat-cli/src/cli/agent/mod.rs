@@ -252,7 +252,7 @@ impl Agent {
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
-            let local_config_dir = directories::chat_local_agent_dir()?.join(format!("{agent_name}.json"));
+            let local_config_dir = directories::chat_local_agent_dir(os)?.join(format!("{agent_name}.json"));
             if os.fs.exists(&local_config_dir) {
                 break 'config Ok(local_config_dir);
             }
@@ -424,7 +424,7 @@ impl Agents {
                 },
             }
 
-            let Ok(path) = directories::chat_local_agent_dir() else {
+            let Ok(path) = directories::chat_local_agent_dir(os) else {
                 break 'local Vec::<Agent>::new();
             };
             let Ok(files) = os.fs.read_dir(path).await else {
