@@ -59,6 +59,27 @@ pub fn animate_output(output: &mut impl Write, bytes: &[u8]) -> Result<(), ChatE
     Ok(())
 }
 
+pub fn sanitize_unicode_tags(text: &str) -> String {
+    let original_len = text.chars().count();
+    let filtered: String = text
+        .chars()
+        .filter(|&c| {
+            let code = c as u32;
+            !(0xe0000..=0xe007f).contains(&code)
+        })
+        .collect();
+
+    let filtered_len = filtered.chars().count();
+    if original_len != filtered_len {
+        tracing::debug!(
+            "Detected and removed {} hidden Unicode tag characters",
+            original_len - filtered_len
+        );
+    }
+
+    filtered
+}
+
 /// Play the terminal bell notification sound
 pub fn play_notification_bell(requires_confirmation: bool) {
     // Don't play bell for tools that don't require confirmation

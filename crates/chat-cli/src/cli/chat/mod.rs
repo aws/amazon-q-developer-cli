@@ -12,6 +12,7 @@ mod prompt;
 mod prompt_parser;
 mod server_messenger;
 #[cfg(unix)]
+use crate::cli::chat::util::sanitize_unicode_tags;
 mod skim_integration;
 mod token_counter;
 pub mod tool_manager;
@@ -1560,7 +1561,7 @@ impl ChatSession {
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
         queue!(self.stderr, style::Print('\n'))?;
-
+        user_input = sanitize_unicode_tags(&user_input);
         let input = user_input.trim();
 
         // handle image path
