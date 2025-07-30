@@ -122,8 +122,6 @@ pub enum AgentConfigError {
 pub struct Agent {
     /// Name of the agent
     pub name: String,
-    /// Version of the agent config
-    pub version: String,
     /// This field is not model facing and is mostly here for users to discern between agents
     #[serde(default)]
     pub description: Option<String>,
@@ -169,7 +167,6 @@ impl Default for Agent {
     fn default() -> Self {
         Self {
             name: DEFAULT_AGENT_NAME.to_string(),
-            version: "0.1.0".to_string(),
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
             mcp_servers: Default::default(),
@@ -794,7 +791,6 @@ mod tests {
     const INPUT: &str = r#"
             {
               "name": "some_agent",
-              "version": "0.1.0",
               "description": "My developer agent is used for small development tasks like solving open issues.",
               "prompt": "You are a principal developer who uses multiple agents to accomplish difficult engineering tasks",
               "mcpServers": {
