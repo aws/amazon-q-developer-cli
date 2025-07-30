@@ -71,7 +71,7 @@ use crate::util::{
     directories,
 };
 
-const DEFAULT_AGENT_NAME: &str = "q_cli_default";
+pub const DEFAULT_AGENT_NAME: &str = "q_cli_default";
 
 #[derive(Debug, Error)]
 pub enum AgentConfigError {
