@@ -303,10 +303,15 @@ pub async fn create_agent(
     let prepopulated_content = if let Some(from) = from {
         let mut agent_to_copy = agents.switch(from.as_str())?.clone();
         agent_to_copy.name = name.clone();
-        agent_to_copy.to_str_pretty()?
+        agent_to_copy
     } else {
-        Default::default()
-    };
+        Agent {
+            name: name.clone(),
+            description: Some(Default::default()),
+            ..Default::default()
+        }
+    }
+    .to_str_pretty()?;
     let path_with_file_name = path.join(format!("{name}.json"));
 
     if !path.exists() {

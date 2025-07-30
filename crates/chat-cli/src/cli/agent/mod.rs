@@ -71,6 +71,8 @@ use crate::util::{
     directories,
 };
 
+const DEFAULT_AGENT_NAME: &str = "q_cli_default";
+
 #[derive(Debug, Error)]
 pub enum AgentConfigError {
     #[error("Json supplied at {} is invalid: {}", path.display(), error)]
@@ -120,10 +122,12 @@ pub enum AgentConfigError {
 pub struct Agent {
     /// Name of the agent
     pub name: String,
+    /// Version of the agent config
+    pub version: String,
     /// This field is not model facing and is mostly here for users to discern between agents
     #[serde(default)]
     pub description: Option<String>,
-    /// (NOT YET IMPLEMENTED) The intention for this field is to provide high level context to the
+    /// The intention for this field is to provide high level context to the
     /// agent. This should be seen as the same category of context as a system prompt.
     #[serde(default)]
     pub prompt: Option<String>,
@@ -164,7 +168,8 @@ pub struct Agent {
 impl Default for Agent {
     fn default() -> Self {
         Self {
-            name: "q_cli_default".to_string(),
+            name: DEFAULT_AGENT_NAME.to_string(),
+            version: "0.1.0".to_string(),
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
             mcp_servers: Default::default(),
@@ -629,7 +634,7 @@ impl Agents {
                 agent
             });
 
-            "default".to_string()
+            DEFAULT_AGENT_NAME.to_string()
         };
 
         let _ = output.flush();
@@ -788,6 +793,8 @@ mod tests {
 
     const INPUT: &str = r#"
             {
+              "name": "some_agent",
+              "version": "0.1.0",
               "description": "My developer agent is used for small development tasks like solving open issues.",
               "prompt": "You are a principal developer who uses multiple agents to accomplish difficult engineering tasks",
               "mcpServers": {
@@ -829,11 +836,12 @@ mod tests {
         assert!(collection.get_active().is_none());
 
         let agent = Agent::default();
-        collection.agents.insert("default".to_string(), agent);
-        collection.active_idx = "default".to_string();
+        let agent_name = agent.name.clone();
+        collection.agents.insert(agent_name.clone(), agent);
+        collection.active_idx = agent_name.clone();
 
         assert!(collection.get_active().is_some());
-        assert_eq!(collection.get_active().unwrap().name, "default");
+        assert_eq!(collection.get_active().unwrap().name, agent_name);
     }
 
     #[test]
