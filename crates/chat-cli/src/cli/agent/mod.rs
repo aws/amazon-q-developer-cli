@@ -770,7 +770,7 @@ async fn load_agents_from_entries(
 }
 
 fn default_schema() -> String {
-    "https://github.com/aws/amazon-q-developer-cli/blob/main/schemas/agent-v1.json".into()
+    "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
 }
 
 #[cfg(test)]
