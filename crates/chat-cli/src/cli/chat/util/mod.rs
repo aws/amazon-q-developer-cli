@@ -70,14 +70,14 @@ fn is_hidden(c: char) -> bool {
         '\u{2028}'..='\u{202F}'  |      // line / paragraph separators, narrow NB-SP  
         '\u{205F}'..='\u{206F}'  |      // format control characters  
         '\u{FFF0}'..='\u{FFFF}'   // Specials block (non-characters) 
-        => true, 
+        => true,
         _ => false,
     }
 }
 
 /// Remove hidden / control characters from `text`.
 ///
-/// * `text`   –  raw user input or file content  
+/// * `text`   –  raw user input or file content
 ///
 /// The function keeps things **O(n)** with a single allocation and logs how many
 /// characters were dropped. 400 KB worst-case size ⇒ sub-millisecond runtime.
@@ -292,13 +292,7 @@ mod tests {
     }
     #[test]
     fn is_hidden_recognises_all_ranges() {
-        let samples = [
-            '\u{E0000}', 
-            '\u{200B}',  
-            '\u{2028}',  
-            '\u{205F}',  
-            '\u{FFF0}',  
-        ];
+        let samples = ['\u{E0000}', '\u{200B}', '\u{2028}', '\u{205F}', '\u{FFF0}'];
 
         for ch in samples {
             assert!(is_hidden(ch), "char U+{:X} should be hidden", ch as u32);
@@ -318,7 +312,7 @@ mod tests {
     #[test]
     fn sanitize_handles_large_mixture() {
         let visible_block = "abcXYZ";
-        let hidden_block  = "\u{200B}\u{E0000}";
+        let hidden_block = "\u{200B}\u{E0000}";
         let mut big_input = String::new();
         for _ in 0..50_000 {
             big_input.push_str(visible_block);
