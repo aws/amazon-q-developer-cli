@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn test_agent_subcommand_create() {
         assert_parse!(
-            ["agent", "create", "--name", "some_agent", "--from", "some_old_agent"],
+            ["agent", "create", "some_agent", "--from", "some_old_agent"],
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Create {
                     name: "some_agent".to_string(),
