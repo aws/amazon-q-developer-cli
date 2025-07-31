@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent",
+  "description": "An Agent is a declarative way of configuring a given instance of q chat.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "The schema to use for validating the agent",
+      "type": "string"
+    },
+    "name": {
+      "description": "Name of the agent",
+      "type": "string"
+    },
+    "description": {
+      "description": "This field is not model facing and is mostly here for users to discern between agents",
+      "type": ["string", "null"],
+      "default": null
+    },
+    "prompt": {
+      "description": "The intention for this field is to provide high level context to the\nagent. This should be seen as the same category of context as a system prompt.",
+      "type": ["string", "null"],
+      "default": null
+    },
+    "mcpServers": {
+      "description": "Configuration for Model Context Protocol (MCP) servers",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "description": "The command string used to initialize the mcp server",
+            "type": "string"
+          },
+          "args": {
+            "description": "A list of arguments to be used to run the command with",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "env": {
+            "description": "A list of environment variables to run the command with",
+            "type": ["object", "null"],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "timeout": {
+            "description": "Timeout for each mcp request in ms",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "default": 120000
+          },
+          "disabled": {
+            "description": "A boolean flag to denote whether or not to load this mcp server",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": ["command"]
+      },
+      "default": {}
+    },
+    "tools": {
+      "description": "List of tools the agent can see. Use \\\"@{MCP_SERVER_NAME}/tool_name\\\" to specify tools from\nmcp servers. To include all tools from a server, use \\\"@{MCP_SERVER_NAME}\\\"",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "toolAliases": {
+      "description": "Tool aliases for remapping tool names",
+      "type": "object",
+      "additionalProperties": {
+        "description": "The name to change to. For tools in mcp servers, you would need to exclude their server prefix",
+        "type": "string"
+      },
+      "propertyNames": {
+        "description": "Subject of the tool name change. For tools in mcp servers, you would need to prefix them with their server names",
+        "type": "string"
+      },
+      "default": {}
+    },
+    "allowedTools": {
+      "description": "List of tools the agent is explicitly allowed to use",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "resources": {
+      "description": "Files to include in the agent's context",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(file://)"
+      },
+      "default": []
+    },
+    "hooks": {
+      "description": "Commands to run when a chat session is created",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "description": "The command to run when the hook is triggered",
+              "type": "string"
+            }
+          },
+          "required": ["command"]
+        }
+      },
+      "default": {}
+    },
+    "toolsSettings": {
+      "description": "Settings for specific tools. These are mostly for native tools. The actual schema differs by\ntools and is documented in detail in our documentation",
+      "type": "object",
+      "additionalProperties": {
+        "description": "Settings for tools. Refer to our documentations to see how to configure them",
+        "type": "object"
+      },
+      "propertyNames": {
+        "description": "The name of the tool to be configured",
+        "type": "string"
+      },
+      "default": {}
+    },
+    "useLegacyMcpJson": {
+      "description": "Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent\nYou can reference tools brought in by these servers as just as you would with the servers\nyou configure in the mcpServers field in this config",
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "additionalProperties": false,
+  "required": ["name"]
+}

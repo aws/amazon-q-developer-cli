@@ -28,17 +28,6 @@ The `name` field specifies the name of the agent. This is used for identificatio
 
 Note: While this field can be included in the configuration file, it will be overridden by the filename when the agent is loaded.
 
-## Version Field
-
-The `version` field specifies the version of the agent config. This is currently not being utilized though you must specify it.
-Currently, the default version is "0.1.0"
-
-```json
-{
-  "version": "0.1.0"
-}
-```
-
 ## Description Field
 
 The `description` field provides a description of what the agent does. This is primarily for human readability and helps users distinguish between different agents.

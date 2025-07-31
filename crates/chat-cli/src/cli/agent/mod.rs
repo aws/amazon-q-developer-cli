@@ -71,7 +71,7 @@ use crate::util::{
     directories,
 };
 
-const DEFAULT_AGENT_NAME: &str = "q_cli_default";
+pub const DEFAULT_AGENT_NAME: &str = "q_cli_default";
 
 #[derive(Debug, Error)]
 pub enum AgentConfigError {
@@ -122,8 +122,6 @@ pub enum AgentConfigError {
 pub struct Agent {
     /// Name of the agent
     pub name: String,
-    /// Version of the agent config
-    pub version: String,
     /// This field is not model facing and is mostly here for users to discern between agents
     #[serde(default)]
     pub description: Option<String>,
@@ -169,7 +167,6 @@ impl Default for Agent {
     fn default() -> Self {
         Self {
             name: DEFAULT_AGENT_NAME.to_string(),
-            version: "0.1.0".to_string(),
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
             mcp_servers: Default::default(),
@@ -252,7 +249,7 @@ impl Agent {
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
-            let local_config_dir = directories::chat_local_agent_dir()?.join(format!("{agent_name}.json"));
+            let local_config_dir = directories::chat_local_agent_dir(os)?.join(format!("{agent_name}.json"));
             if os.fs.exists(&local_config_dir) {
                 break 'config Ok(local_config_dir);
             }
@@ -424,7 +421,7 @@ impl Agents {
                 },
             }
 
-            let Ok(path) = directories::chat_local_agent_dir() else {
+            let Ok(path) = directories::chat_local_agent_dir(os) else {
                 break 'local Vec::<Agent>::new();
             };
             let Ok(files) = os.fs.read_dir(path).await else {
@@ -794,7 +791,6 @@ mod tests {
     const INPUT: &str = r#"
             {
               "name": "some_agent",
-              "version": "0.1.0",
               "description": "My developer agent is used for small development tasks like solving open issues.",
               "prompt": "You are a principal developer who uses multiple agents to accomplish difficult engineering tasks",
               "mcpServers": {
