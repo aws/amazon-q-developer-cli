@@ -4,6 +4,10 @@
   "description": "An Agent is a declarative way of configuring a given instance of q chat.",
   "type": "object",
   "properties": {
+    "$schema": {
+      "description": "The schema to use for validating the agent",
+      "type": "string"
+    }
     "name": {
       "description": "Name of the agent",
       "type": "string"
