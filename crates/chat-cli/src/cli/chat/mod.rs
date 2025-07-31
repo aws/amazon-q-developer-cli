@@ -127,7 +127,6 @@ use crate::api_client::{
     ApiClientError,
 };
 use crate::cli::chat::colors::ColorManager;
-use crate::api_client::send_message_output::SendMessageOutput;
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
@@ -1036,32 +1035,6 @@ impl Drop for ChatSession {
         .ok();
     }
 }
-
-/// Convert a color to string representation
-fn color_to_string(color: Color) -> String {
-    match color {
-        Color::Black => "black".to_string(),
-        Color::DarkGrey => "darkgrey".to_string(),
-        Color::Red => "red".to_string(),
-        Color::DarkRed => "darkred".to_string(),
-        Color::Green => "green".to_string(),
-        Color::DarkGreen => "darkgreen".to_string(),
-        Color::Yellow => "yellow".to_string(),
-        Color::DarkYellow => "darkyellow".to_string(),
-        Color::Blue => "blue".to_string(),
-        Color::DarkBlue => "darkblue".to_string(),
-        Color::Magenta => "magenta".to_string(),
-        Color::DarkMagenta => "darkmagenta".to_string(),
-        Color::Cyan => "cyan".to_string(),
-        Color::DarkCyan => "darkcyan".to_string(),
-        Color::White => "white".to_string(),
-        Color::Grey => "grey".to_string(),
-        Color::Reset => "reset".to_string(),
-        Color::Rgb { r, g, b } => format!("rgb({},{},{})", r, g, b),
-        Color::AnsiValue(val) => format!("ansi({})", val),
-    }
-}
-
 
 /// The chat execution state.
 ///

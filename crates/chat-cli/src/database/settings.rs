@@ -89,14 +89,6 @@ impl ThemeName {
             _ => None,
         }
     }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::HighContrast => "high-contrast",
-            Self::Light => "light",
-        }
-    }
 }
 
 /// Color theme definitions
@@ -364,63 +356,9 @@ impl Settings {
         self.get_string(key).and_then(|color_str| parse_color(&color_str))
     }
 
-    /// Set a color setting
-    pub async fn set_color(&mut self, key: Setting, color: Color) -> Result<(), DatabaseError> {
-        self.set(key, color_to_string(color)).await
-    }
-
     /// Get the current color theme
     pub fn get_color_theme(&self) -> ColorTheme {
         ColorTheme::from_settings(self)
-    }
-
-    /// Set a predefined color theme
-    pub async fn set_color_theme(&mut self, theme: ColorTheme) -> Result<(), DatabaseError> {
-        // Determine which predefined theme this matches (if any)
-        let theme_name = if theme == ColorTheme::default_theme() {
-            Some(ThemeName::Default)
-        } else if theme == ColorTheme::high_contrast_theme() {
-            Some(ThemeName::HighContrast)
-        } else if theme == ColorTheme::light_theme() {
-            Some(ThemeName::Light)
-        } else {
-            None
-        };
-        
-        // Set the theme name if it matches a predefined theme
-        if let Some(name) = theme_name {
-            self.set(Setting::ChatTheme, name.as_str()).await?;
-        } else {
-            // Clear theme name for custom themes
-            self.remove(Setting::ChatTheme).await?;
-        }
-        
-        // Set individual colors
-        self.set_color(Setting::ChatThemeSuccess, theme.success).await?;
-        self.set_color(Setting::ChatThemeError, theme.error).await?;
-        self.set_color(Setting::ChatThemeWarning, theme.warning).await?;
-        self.set_color(Setting::ChatThemeInfo, theme.info).await?;
-        self.set_color(Setting::ChatThemeSecondary, theme.secondary).await?;
-        self.set_color(Setting::ChatThemePrimary, theme.primary).await?;
-        self.set_color(Setting::ChatThemeAction, theme.action).await?;
-        self.set_color(Setting::ChatThemeData, theme.data).await?;
-        Ok(())
-    }
-
-    /// Set a predefined theme by name
-    pub async fn set_theme(&mut self, theme_name: ThemeName) -> Result<(), DatabaseError> {
-        self.set(Setting::ChatTheme, theme_name.as_str()).await
-    }
-    
-    /// Get the current theme name (if set)
-    pub fn get_theme(&self) -> Option<ThemeName> {
-        self.get_string(Setting::ChatTheme)
-            .and_then(|s| ThemeName::from_str(&s))
-    }
-    
-    /// Clear theme setting (fall back to individual colors)
-    pub async fn clear_theme(&mut self) -> Result<(), DatabaseError> {
-        self.remove(Setting::ChatTheme).await.map(|_| ())
     }
 
     pub async fn save_to_file(&self) -> Result<(), DatabaseError> {
@@ -663,30 +601,5 @@ fn parse_color(color_str: &str) -> Option<Color> {
             }
             None
         }
-    }
-}
-
-/// Convert a color to string representation
-fn color_to_string(color: Color) -> String {
-    match color {
-        Color::Black => "black".to_string(),
-        Color::DarkGrey => "darkgrey".to_string(),
-        Color::Red => "red".to_string(),
-        Color::DarkRed => "darkred".to_string(),
-        Color::Green => "green".to_string(),
-        Color::DarkGreen => "darkgreen".to_string(),
-        Color::Yellow => "yellow".to_string(),
-        Color::DarkYellow => "darkyellow".to_string(),
-        Color::Blue => "blue".to_string(),
-        Color::DarkBlue => "darkblue".to_string(),
-        Color::Magenta => "magenta".to_string(),
-        Color::DarkMagenta => "darkmagenta".to_string(),
-        Color::Cyan => "cyan".to_string(),
-        Color::DarkCyan => "darkcyan".to_string(),
-        Color::White => "white".to_string(),
-        Color::Grey => "grey".to_string(),
-        Color::Reset => "reset".to_string(),
-        Color::Rgb { r, g, b } => format!("rgb({},{},{})", r, g, b),
-        Color::AnsiValue(val) => format!("ansi({})", val),
     }
 }
