@@ -1,5 +1,5 @@
 pub mod cli;
-mod colors;
+pub mod colors;
 mod consts;
 pub mod context;
 mod conversation;
@@ -49,7 +49,6 @@ use conversation::TokenWarningLevel;
 use crossterm::style::{
     Attribute,
     Color,
-    Stylize,
 };
 use crossterm::{
     cursor,
@@ -127,7 +126,6 @@ use crate::api_client::{
     ApiClientError,
 };
 use crate::cli::chat::colors::ColorManager;
-use crate::api_client::send_message_output::SendMessageOutput;
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
@@ -236,11 +234,11 @@ impl ChatArgs {
         {
             execute!(
                 stderr,
-                style::SetForegroundColor(Color::Yellow),
+                style::SetForegroundColor(ColorManager::default().warning()),
                 style::Print("WARNING: "),
                 style::SetForegroundColor(Color::Reset),
                 style::Print("--profile is deprecated, use "),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(ColorManager::default().success()),
                 style::Print("--agent"),
                 style::SetForegroundColor(Color::Reset),
                 style::Print(" instead\n")
@@ -316,7 +314,7 @@ impl ChatArgs {
             .prompt_list_receiver(prompt_request_receiver)
             .conversation_id(&conversation_id)
             .agent(agents.get_active().cloned().unwrap_or_default())
-            .build(os, Box::new(std::io::stderr()), !self.no_interactive)
+            .build(os, Box::new(std::io::stderr()), !self.no_interactive, &ColorManager::default())
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
 
@@ -602,7 +600,7 @@ impl ChatSession {
                     if agents.switch(profile).is_err() {
                         execute!(
                             stderr,
-                            style::SetForegroundColor(Color::Red),
+                            style::SetForegroundColor(ColorManager::default().error()),
                             style::Print("Error"),
                             style::ResetColor,
                             style::Print(format!(
@@ -796,13 +794,25 @@ impl ChatSession {
                     style::SetForegroundColor(self.colors.error()),
                     style::Print("Your conversation is too large to continue.\n"),
                     style::SetForegroundColor(Color::Reset),
-                    style::Print(format!(
-                        "• Run {} to compact your conversation. See {} for compaction options\n",
-                        "/compact".green(),
-                        "/compact --help".green()
-                    )),
-                    style::Print(format!("• Run {} to analyze your context usage\n", "/usage".green())),
-                    style::Print(format!("• Run {} to reset your conversation state\n", "/clear".green())),
+                    style::Print("• Run "),
+                    style::SetForegroundColor(self.colors.success()),
+                    style::Print("/compact"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(" to compact your conversation. See "),
+                    style::SetForegroundColor(self.colors.success()),
+                    style::Print("/compact --help"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(" for compaction options\n"),
+                    style::Print("• Run "),
+                    style::SetForegroundColor(self.colors.success()),
+                    style::Print("/usage"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(" to analyze your context usage\n"),
+                    style::Print("• Run "),
+                    style::SetForegroundColor(self.colors.success()),
+                    style::Print("/clear"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(" to reset your conversation state\n"),
                     style::SetAttribute(Attribute::Reset),
                     style::Print("\n\n"),
                 )?;
@@ -823,7 +833,11 @@ impl ChatSession {
                             style::SetForegroundColor(self.colors.error()),
                             style::Print("The conversation history has overflowed.\n"),
                             style::SetForegroundColor(Color::Reset),
-                            style::Print(format!("• Run {} to compact your conversation\n", "/compact".green())),
+                            style::Print("• Run "),
+                            style::SetForegroundColor(self.colors.success()),
+                            style::Print("/compact"),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print(" to compact your conversation\n"),
                             style::SetAttribute(Attribute::Reset),
                             style::Print("\n\n"),
                         )?;
@@ -845,7 +859,7 @@ impl ChatSession {
 
                         execute!(
                             self.stdout,
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(self.colors.warning()),
                             style::Print("The context window has overflowed, summarizing the history..."),
                             style::SetAttribute(Attribute::Reset),
                             style::Print("\n\n"),
@@ -863,7 +877,7 @@ impl ChatSession {
                     execute!(
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
-                        style::SetForegroundColor(Color::Red),
+                        style::SetForegroundColor(self.colors.error()),
                         style::Print(" ⚠️  Amazon Q rate limit reached:\n"),
                         style::Print(format!("    {}\n\n", err.clone())),
                         style::SetAttribute(Attribute::Reset),
@@ -876,7 +890,7 @@ impl ChatSession {
                         execute!(
                             self.stderr,
                             style::SetAttribute(Attribute::Bold),
-                            style::SetForegroundColor(Color::Red),
+                            style::SetForegroundColor(self.colors.error()),
                             style::Print(
                                 "\nThe model you've selected is temporarily unavailable. Please select a different model.\n"
                             ),
@@ -908,7 +922,7 @@ impl ChatSession {
                     execute!(
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
-                        style::SetForegroundColor(Color::Red),
+                        style::SetForegroundColor(self.colors.error()),
                         style::Print("Amazon Q is having trouble responding right now:\n"),
                         style::Print(format!("    {}\n", err.clone())),
                         style::SetAttribute(Attribute::Reset),
@@ -1037,32 +1051,6 @@ impl Drop for ChatSession {
     }
 }
 
-/// Convert a color to string representation
-fn color_to_string(color: Color) -> String {
-    match color {
-        Color::Black => "black".to_string(),
-        Color::DarkGrey => "darkgrey".to_string(),
-        Color::Red => "red".to_string(),
-        Color::DarkRed => "darkred".to_string(),
-        Color::Green => "green".to_string(),
-        Color::DarkGreen => "darkgreen".to_string(),
-        Color::Yellow => "yellow".to_string(),
-        Color::DarkYellow => "darkyellow".to_string(),
-        Color::Blue => "blue".to_string(),
-        Color::DarkBlue => "darkblue".to_string(),
-        Color::Magenta => "magenta".to_string(),
-        Color::DarkMagenta => "darkmagenta".to_string(),
-        Color::Cyan => "cyan".to_string(),
-        Color::DarkCyan => "darkcyan".to_string(),
-        Color::White => "white".to_string(),
-        Color::Grey => "grey".to_string(),
-        Color::Reset => "reset".to_string(),
-        Color::Rgb { r, g, b } => format!("rgb({},{},{})", r, g, b),
-        Color::AnsiValue(val) => format!("ansi({})", val),
-    }
-}
-
-
 /// The chat execution state.
 ///
 /// Intended to provide more robust handling around state transitions while dealing with, e.g.,
@@ -1174,7 +1162,7 @@ impl ChatSession {
                     "Did you know?",
                     tip,
                     GREETING_BREAK_POINT,
-                    Color::DarkGrey,
+                    self.colors.secondary(),
                 )?;
             }
 
@@ -1186,11 +1174,12 @@ impl ChatSession {
                     false => POPULAR_SHORTCUTS,
                 }),
                 style::Print("\n"),
+                style::SetForegroundColor(self.colors.secondary()),
                 style::Print(
                     "━"
                         .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
-                        .dark_grey()
-                )
+                ),
+                style::SetForegroundColor(Color::Reset)
             )?;
             execute!(self.stderr, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
         }
@@ -1302,7 +1291,7 @@ impl ChatSession {
                 self.stderr,
                 terminal::Clear(terminal::ClearType::CurrentLine),
                 cursor::MoveToColumn(0),
-                style::SetForegroundColor(Color::Yellow),
+                style::SetForegroundColor(self.colors.warning()),
                 style::Print("Truncating large messages..."),
                 style::SetAttribute(Attribute::Reset),
                 style::Print("\n\n"),
@@ -2085,7 +2074,7 @@ impl ChatSession {
                             if !response_prefix_printed && !text.trim().is_empty() {
                                 queue!(
                                     self.stdout,
-                                    style::SetForegroundColor(Color::Green),
+                                    style::SetForegroundColor(self.colors.success()),
                                     style::Print("> "),
                                     style::SetForegroundColor(Color::Reset)
                                 )?;
@@ -2251,7 +2240,7 @@ impl ChatSession {
             // Print the response for normal cases
             loop {
                 let input = Partial::new(&buf[offset..]);
-                match interpret_markdown(input, &mut self.stdout, &mut state) {
+                match interpret_markdown(input, &mut self.stdout, &mut state, &self.colors) {
                     Ok(parsed) => {
                         offset += parsed.offset_from(&input);
                         self.stdout.flush()?;
@@ -2485,10 +2474,11 @@ impl ChatSession {
             self.stdout,
             style::SetForegroundColor(self.colors.action()),
             style::Print(format!(
-                "🛠️  Using tool: {}{}",
-                tool_use.tool.display_name(),
-                if trusted { " (trusted)".dark_green() } else { "".reset() }
+                "🛠️  Using tool: {}",
+                tool_use.tool.display_name()
             )),
+            style::SetForegroundColor(if trusted { self.colors.success() } else { Color::Reset }),
+            style::Print(if trusted { " (trusted)" } else { "" }),
             style::SetForegroundColor(Color::Reset)
         )?;
         if let Tool::Custom(ref tool) = tool_use.tool {
@@ -2536,10 +2526,11 @@ impl ChatSession {
                     }
                     execute!(
                         self.stderr,
-                        style::Print(format!(
-                            "\n(To exit the CLI, press Ctrl+C or Ctrl+D again or type {})\n\n",
-                            "/quit".green()
-                        ))
+                        style::Print("\n(To exit the CLI, press Ctrl+C or Ctrl+D again or type "),
+                        style::SetForegroundColor(self.colors.success()),
+                        style::Print("/quit"),
+                        style::SetForegroundColor(Color::Reset),
+                        style::Print(")\n\n")
                     )
                     .unwrap_or_default();
                     ctrl_c = true;
@@ -2848,7 +2839,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::cli::agent::Agent;
+    use super::super::colors::ColorManager;
+use crate::cli::agent::Agent;
 
     async fn get_test_agents(os: &Os) -> Agents {
         const AGENT_PATH: &str = "/persona/TestAgent.json";

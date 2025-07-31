@@ -37,6 +37,7 @@ use thinking::Thinking;
 use tracing::error;
 use use_aws::UseAws;
 
+use super::colors::ColorManager;
 use super::consts::MAX_TOOL_RESPONSE_SIZE;
 use super::util::images::RichImageBlocks;
 use crate::cli::agent::{
@@ -354,7 +355,7 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
             style::Print(super::CONTINUATION_LINE),
             style::Print("\n"),
             style::Print(super::PURPOSE_ARROW),
-            style::SetForegroundColor(Color::Blue),
+            style::SetForegroundColor(ColorManager::default().info()),
             style::Print("Purpose: "),
             style::ResetColor,
             style::Print(purpose),
@@ -376,9 +377,9 @@ pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: b
 
     // Determine symbol and color
     let (symbol, color) = match (is_error, use_bullet) {
-        (true, _) => (super::ERROR_EXCLAMATION, Color::Red),
+        (true, _) => (super::ERROR_EXCLAMATION, ColorManager::default().error()),
         (false, true) => (super::TOOL_BULLET, Color::Reset),
-        (false, false) => (super::SUCCESS_TICK, Color::Green),
+        (false, false) => (super::SUCCESS_TICK, ColorManager::default().success()),
     };
 
     queue!(updates, style::Print("\n"))?;

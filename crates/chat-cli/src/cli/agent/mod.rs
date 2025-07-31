@@ -19,10 +19,9 @@ use std::path::{
     PathBuf,
 };
 
-use crossterm::style::{
-    Color,
-    Stylize as _,
-};
+use crate::cli::chat::colors::ColorManager;
+use crossterm::style::Stylize;
+
 use crossterm::{
     execute,
     queue,
@@ -212,15 +211,16 @@ impl Agent {
 
         if let (true, Some(global_mcp_config)) = (self.use_legacy_mcp_json, global_mcp_config) {
             let mut stderr = std::io::stderr();
+            let colors = ColorManager::default();
             for (name, legacy_server) in &global_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
                         stderr,
-                        style::SetForegroundColor(Color::Yellow),
+                        style::SetForegroundColor(colors.warning()),
                         style::Print("WARNING: "),
                         style::ResetColor,
                         style::Print("MCP server '"),
-                        style::SetForegroundColor(Color::Green),
+                        style::SetForegroundColor(colors.success()),
                         style::Print(name),
                         style::ResetColor,
                         style::Print(
@@ -380,6 +380,8 @@ impl Agents {
         skip_migration: bool,
         output: &mut impl Write,
     ) -> (Self, AgentsLoadMetadata) {
+        let colors = ColorManager::default();
+        
         // Tracking metadata about the performed load operation.
         let mut load_metadata = AgentsLoadMetadata {
             launched_agent: agent_name.map(Into::into),
@@ -437,7 +439,7 @@ impl Agents {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
-                            style::SetForegroundColor(Color::Red),
+                            style::SetForegroundColor(colors.error()),
                             style::Print("Error: "),
                             style::ResetColor,
                             style::Print(e),
@@ -475,7 +477,7 @@ impl Agents {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
-                            style::SetForegroundColor(Color::Red),
+                            style::SetForegroundColor(colors.error()),
                             style::Print("Error: "),
                             style::ResetColor,
                             style::Print(e),
@@ -545,11 +547,11 @@ impl Agents {
             if local_names.contains(name) {
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    style::SetForegroundColor(colors.warning()),
                     style::Print("WARNING: "),
                     style::ResetColor,
                     style::Print("Agent conflict for "),
-                    style::SetForegroundColor(style::Color::Green),
+                    style::SetForegroundColor(colors.success()),
                     style::Print(name),
                     style::ResetColor,
                     style::Print(". Using workspace version.\n")
@@ -575,15 +577,15 @@ impl Agents {
                 }
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(Color::Red),
+                    style::SetForegroundColor(colors.error()),
                     style::Print("Error"),
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(colors.warning()),
                     style::Print(format!(
                         ": no agent with name {} found. Falling back to user specified default",
                         name
                     )),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    style::ResetColor
                 );
             }
 
@@ -593,15 +595,15 @@ impl Agents {
                 }
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(Color::Red),
+                    style::SetForegroundColor(colors.error()),
                     style::Print("Error"),
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(colors.warning()),
                     style::Print(format!(
                         ": user defined default {} not found. Falling back to in-memory default",
                         user_set_default
                     )),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    style::ResetColor
                 );
             }
 
@@ -656,15 +658,15 @@ impl Agents {
                         let name = &agent.name;
                         let _ = execute!(
                             output,
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(colors.warning()),
                             style::Print("WARNING "),
                             style::ResetColor,
                             style::Print("Agent config "),
-                            style::SetForegroundColor(Color::Green),
+                            style::SetForegroundColor(colors.success()),
                             style::Print(name),
                             style::ResetColor,
                             style::Print(" is malformed at "),
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(colors.warning()),
                             style::Print(&e.instance_path),
                             style::ResetColor,
                             style::Print(format!(": {e}\n")),
@@ -708,7 +710,7 @@ impl Agents {
         });
 
         if tool_trusted || self.trust_all_tools {
-            format!("* {}", "trusted".dark_green().bold())
+            format!("* {}", "trusted".green().bold())
         } else {
             self.default_permission_label(tool_name)
         }
@@ -718,17 +720,17 @@ impl Agents {
     // This "static" way avoids needing to construct a tool instance.
     fn default_permission_label(&self, tool_name: &str) -> String {
         let label = match tool_name {
-            "fs_read" => "trusted".dark_green().bold(),
-            "fs_write" => "not trusted".dark_grey(),
+            "fs_read" => "trusted".green().bold(),
+            "fs_write" => "not trusted".white(),
             #[cfg(not(windows))]
-            "execute_bash" => "trust read-only commands".dark_grey(),
+            "execute_bash" => "trust read-only commands".white(),
             #[cfg(windows)]
-            "execute_cmd" => "trust read-only commands".dark_grey(),
-            "use_aws" => "trust read-only commands".dark_grey(),
-            "report_issue" => "trusted".dark_green().bold(),
-            "thinking" => "trusted (prerelease)".dark_green().bold(),
-            _ if self.trust_all_tools => "trusted".dark_grey().bold(),
-            _ => "not trusted".dark_grey(),
+            "execute_cmd" => "trust read-only commands".white(),
+            "use_aws" => "trust read-only commands".white(),
+            "report_issue" => "trusted".green().bold(),
+            "thinking" => "trusted (prerelease)".green().bold(),
+            _ if self.trust_all_tools => "trusted".white().bold(),
+            _ => "not trusted".white(),
         };
 
         format!("{} {label}", "*".reset())

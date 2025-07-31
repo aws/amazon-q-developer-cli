@@ -78,7 +78,7 @@ impl KnowledgeSubcommand {
     fn write_feature_disabled_message(session: &mut ChatSession) -> Result<(), std::io::Error> {
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::Red),
+            style::SetForegroundColor(session.colors.error()),
             style::Print("\nKnowledge tool is disabled. Enable it with: q settings chat.enableKnowledge true\n\n"),
             style::SetForegroundColor(Color::Reset)
         )
@@ -116,7 +116,7 @@ impl KnowledgeSubcommand {
             // Write error to output using queue system
             let _ = queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::Red),
+                style::SetForegroundColor(session.colors.error()),
                 style::Print(&format!("Error getting contexts: {}\n", e)),
                 style::ResetColor
             );
@@ -155,9 +155,9 @@ impl KnowledgeSubcommand {
         queue!(
             session.stderr,
             style::SetAttribute(style::Attribute::Bold),
-            style::SetForegroundColor(Color::Cyan),
+            style::SetForegroundColor(session.colors.primary()),
             style::Print(format!("📂 {}: ", context.id)),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(session.colors.success()),
             style::Print(&context.name),
             style::SetAttribute(style::Attribute::Reset),
             style::Print("\n")
@@ -183,7 +183,7 @@ impl KnowledgeSubcommand {
         queue!(
             session.stderr,
             style::Print("   Items: "),
-            style::SetForegroundColor(Color::Yellow),
+            style::SetForegroundColor(session.colors.warning()),
             style::Print(format!("{}", context.item_count)),
             style::SetForegroundColor(Color::Reset),
             style::Print(" | Persistent: ")
@@ -192,7 +192,7 @@ impl KnowledgeSubcommand {
         if context.persistent {
             queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(session.colors.success()),
                 style::Print("Yes"),
                 style::SetForegroundColor(Color::Reset),
                 style::Print("\n")
@@ -200,7 +200,7 @@ impl KnowledgeSubcommand {
         } else {
             queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                style::SetForegroundColor(session.colors.warning()),
                 style::Print("No"),
                 style::SetForegroundColor(Color::Reset),
                 style::Print("\n")
@@ -445,7 +445,7 @@ impl KnowledgeSubcommand {
             OperationResult::Success(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    style::SetForegroundColor(session.colors.success()),
                     style::Print(format!("\n{}\n\n", msg)),
                     style::SetForegroundColor(Color::Reset)
                 )
@@ -463,7 +463,7 @@ impl KnowledgeSubcommand {
             OperationResult::Warning(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print(format!("\n{}\n\n", msg)),
                     style::SetForegroundColor(Color::Reset)
                 )
@@ -471,7 +471,7 @@ impl KnowledgeSubcommand {
             OperationResult::Error(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    style::SetForegroundColor(session.colors.error()),
                     style::Print(format!("\nError: {}\n\n", msg)),
                     style::SetForegroundColor(Color::Reset)
                 )

@@ -185,6 +185,9 @@ impl FsWrite {
 
     pub fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {
         let cwd = os.env.current_dir()?;
+        let settings = Settings::default();
+        let color_manager = ColorManager::from_settings(&settings);
+        
         self.print_relative_path(os, output)?;
         match self {
             FsWrite::Create { path, .. } => {
@@ -198,7 +201,7 @@ impl FsWrite {
                     Default::default()
                 };
                 let new = stylize_output_if_able(os, &relative_path, &file_text);
-                print_diff(output, &prev, &new, 1)?;
+                print_diff(output, &prev, &new, 1, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
                 super::display_purpose(self.get_summary(), output)?;
@@ -227,7 +230,7 @@ impl FsWrite {
 
                 let old = stylize_output_if_able(os, &relative_path, &old);
                 let new = stylize_output_if_able(os, &relative_path, &new);
-                print_diff(output, &old, &new, start_line)?;
+                print_diff(output, &old, &new, start_line, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
                 super::display_purpose(self.get_summary(), output)?;
@@ -246,7 +249,7 @@ impl FsWrite {
                 };
                 let old_str = stylize_output_if_able(os, &relative_path, old_str);
                 let new_str = stylize_output_if_able(os, &relative_path, new_str);
-                print_diff(output, &old_str, &new_str, start_line)?;
+                print_diff(output, &old_str, &new_str, start_line, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
                 super::display_purpose(self.get_summary(), output)?;
@@ -258,7 +261,7 @@ impl FsWrite {
                 let relative_path = format_path(cwd, &path);
                 let start_line = os.fs.read_to_string_sync(&path)?.lines().count() + 1;
                 let file = stylize_output_if_able(os, &relative_path, new_str);
-                print_diff(output, &Default::default(), &file, start_line)?;
+                print_diff(output, &Default::default(), &file, start_line, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
                 super::display_purpose(self.get_summary(), output)?;
@@ -505,6 +508,7 @@ fn print_diff(
     old_str: &StylizedFile,
     new_str: &StylizedFile,
     start_line: usize,
+    color_manager: &ColorManager,
 ) -> Result<()> {
     let diff = similar::TextDiff::from_lines(&old_str.content, &new_str.content);
 
@@ -543,8 +547,8 @@ fn print_diff(
                 style::Color::Rgb { r: 24, g: 38, b: 30 },
             ),
             (similar::ChangeTag::Equal, false) => (style::Color::Reset, new_str.gutter_bg, new_str.line_bg),
-            (similar::ChangeTag::Delete, false) => (style::Color::Red, new_str.gutter_bg, new_str.line_bg),
-            (similar::ChangeTag::Insert, false) => (style::Color::Green, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Delete, false) => (color_manager.error(), new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Insert, false) => (color_manager.success(), new_str.gutter_bg, new_str.line_bg),
         };
         // Define the change tag character to print, if any.
         let sign = match change.tag() {

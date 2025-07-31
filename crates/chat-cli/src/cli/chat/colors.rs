@@ -8,6 +8,7 @@ use crossterm::style::Color;
 use crate::database::settings::{ColorCategory, ColorTheme, Settings};
 
 /// Color manager that provides semantic color access
+#[derive(Clone)]
 pub struct ColorManager {
     theme: ColorTheme,
 }

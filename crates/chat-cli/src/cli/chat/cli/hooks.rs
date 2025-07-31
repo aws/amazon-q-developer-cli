@@ -8,11 +8,12 @@ use std::time::{
 
 use bstr::ByteSlice;
 use clap::Args;
+
+use super::super::colors::ColorManager;
 use crossterm::style::{
     self,
     Attribute,
     Color,
-    Stylize,
 };
 use crossterm::{
     cursor,
@@ -38,6 +39,16 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
+
+// Simple color utility for hooks (which don't have access to ColorManager)
+// Uses colors that work well across different terminal themes
+struct HookColors;
+
+impl HookColors {
+    fn error() -> Color { ColorManager::default().error() }
+    fn info() -> Color { ColorManager::default().info() }
+    fn warning() -> Color { ColorManager::default().warning() }
+}
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
     ChatError,
@@ -94,9 +105,13 @@ impl HookExecutor {
         let mut spinner = None;
         let spinner_text = |complete: usize, total: usize| {
             format!(
-                "{} of {} hooks finished",
-                complete.to_string().blue(),
-                total.to_string().blue(),
+                "{}{}{} of {}{}{} hooks finished",
+                crossterm::style::SetForegroundColor(HookColors::info()),
+                complete,
+                crossterm::style::SetForegroundColor(crossterm::style::Color::Reset),
+                crossterm::style::SetForegroundColor(HookColors::info()),
+                total,
+                crossterm::style::SetForegroundColor(crossterm::style::Color::Reset),
             )
         };
 
@@ -124,13 +139,13 @@ impl HookExecutor {
             if let Err(err) = &result {
                 queue!(
                     output,
-                    style::SetForegroundColor(style::Color::Red),
+                    style::SetForegroundColor(HookColors::error()),
                     style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Blue),
+                    style::SetForegroundColor(HookColors::info()),
                     style::Print(&hook.1.command),
                     style::ResetColor,
                     style::Print(" failed after "),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    style::SetForegroundColor(HookColors::warning()),
                     style::Print(format!("{:.2} s", duration.as_secs_f32())),
                     style::ResetColor,
                     style::Print(format!(": {}\n", err)),
@@ -147,16 +162,22 @@ impl HookExecutor {
             // The futures set size decreases each time we process one
             if futures.is_empty() {
                 let symbol = if total == complete {
-                    "✓".to_string().green()
+                    format!("{}✓{}", 
+                        crossterm::style::SetForegroundColor(HookColors::info()),
+                        crossterm::style::SetForegroundColor(crossterm::style::Color::Reset)
+                    )
                 } else {
-                    "✗".to_string().red()
+                    format!("{}✗{}", 
+                        crossterm::style::SetForegroundColor(HookColors::error()),
+                        crossterm::style::SetForegroundColor(crossterm::style::Color::Reset)
+                    )
                 };
 
                 queue!(
                     output,
-                    style::SetForegroundColor(Color::Blue),
+                    style::SetForegroundColor(HookColors::info()),
                     style::Print(format!("{symbol} {} in ", spinner_text(complete, total))),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    style::SetForegroundColor(HookColors::warning()),
                     style::Print(format!("{:.2} s\n", start_time.elapsed().as_secs_f32())),
                     style::ResetColor,
                 )?;
@@ -315,7 +336,7 @@ impl HooksArgs {
                 style::Print(
                     "No hooks are configured.\n\nRefer to the documentation for how to add hooks to your agent: "
                 ),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(session.colors.success()),
                 style::Print(AGENT_FORMAT_HOOKS_DOC_URL),
                 style::SetAttribute(Attribute::Reset),
                 style::Print("\n"),

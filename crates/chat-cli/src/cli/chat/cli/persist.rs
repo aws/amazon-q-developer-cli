@@ -3,7 +3,6 @@ use crossterm::execute;
 use crossterm::style::{
     self,
     Attribute,
-    Color,
 };
 
 use crate::cli::ConversationState;
@@ -36,7 +35,7 @@ impl PersistSubcommand {
                     Err(err) => {
                         execute!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Red),
+                            style::SetForegroundColor(session.colors.error()),
                             style::Print(format!("\nFailed to {} {}: {}\n\n", $name, $path, &err)),
                             style::SetAttribute(Attribute::Reset)
                         )?;
@@ -55,7 +54,7 @@ impl PersistSubcommand {
                 if os.fs.exists(&path) && !force {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        style::SetForegroundColor(session.colors.error()),
                         style::Print(format!(
                             "\nFile at {} already exists. To overwrite, use -f or --force\n\n",
                             &path
@@ -70,7 +69,7 @@ impl PersistSubcommand {
 
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    style::SetForegroundColor(session.colors.success()),
                     style::Print(format!("\n✔ Exported conversation state to {}\n\n", &path)),
                     style::SetAttribute(Attribute::Reset)
                 )?;
@@ -104,7 +103,7 @@ impl PersistSubcommand {
 
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    style::SetForegroundColor(session.colors.success()),
                     style::Print(format!("\n✔ Imported conversation state from {}\n\n", &path)),
                     style::SetAttribute(Attribute::Reset)
                 )?;

@@ -6,7 +6,6 @@ use std::collections::{
 use std::io::Write;
 use std::sync::atomic::Ordering;
 
-use crossterm::style::Color;
 use crossterm::{
     execute,
     style,
@@ -19,6 +18,8 @@ use tracing::{
     debug,
     warn,
 };
+
+use super::colors::ColorManager;
 
 use super::cli::compact::CompactStrategy;
 use super::consts::{
@@ -339,11 +340,11 @@ impl ConversationState {
         if !context.dropped_context_files.is_empty() {
             execute!(
                 stderr,
-                style::SetForegroundColor(Color::DarkYellow),
+                style::SetForegroundColor(ColorManager::default().warning()),  // Changed from DarkYellow for better visibility
                 style::Print("\nSome context files are dropped due to size limit, please run "),
-                style::SetForegroundColor(Color::DarkGreen),
+                style::SetForegroundColor(ColorManager::default().success()),  // Changed from DarkGreen for better visibility
                 style::Print("/context show "),
-                style::SetForegroundColor(Color::DarkYellow),
+                style::SetForegroundColor(ColorManager::default().warning()),  // Changed from DarkYellow for better visibility
                 style::Print("to learn more.\n"),
                 style::SetForegroundColor(style::Color::Reset)
             )
