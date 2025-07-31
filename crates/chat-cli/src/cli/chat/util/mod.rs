@@ -59,17 +59,18 @@ pub fn animate_output(output: &mut impl Write, bytes: &[u8]) -> Result<(), ChatE
     Ok(())
 }
 
-/// Returns `true` when the character belongs to one of the “invisible / control”
-/// Unicode ranges that we consider unsafe to pass downstream to the LLM.
-/// These code-points almost never appear in normal source files or shell input,
-/// so stripping them is “safe by default”.
+/// Returns `true` if the character is from an invisible or control Unicode range
+/// that is considered unsafe for LLM input. These rarely appear in normal input,
+/// so stripping them is generally safe.
+/// The replacement character U+FFFD (�) is preserved to indicate invalid bytes.
 fn is_hidden(c: char) -> bool {
     match c {
         '\u{E0000}'..='\u{E007F}' |     // TAG characters (used for hidden prompts)  
         '\u{200B}'..='\u{200F}'  |      // zero-width space, ZWJ, ZWNJ, RTL/LTR marks  
         '\u{2028}'..='\u{202F}'  |      // line / paragraph separators, narrow NB-SP  
         '\u{205F}'..='\u{206F}'  |      // format control characters  
-        '\u{FFF0}'..='\u{FFFF}'   // Specials block (non-characters) 
+        '\u{FFF0}'..='\u{FFFC}'  |
+        '\u{FFFE}'..='\u{FFFF}'   // Specials block (non-characters) 
         => true,
         _ => false,
     }
