@@ -10,6 +10,10 @@ Workspace agents are managed under the current working directory inside `.amazon
 
 You can create a new workspace agent with `q agent create --name my-agent -d .`.
 
+## Global Context
+
+Global context previously configured under `~/.aws/amazonq/global_context.json` is no longer supported. Global context will need to be manually added to agents (see the below section).
+
 ## MCP Servers
 
 The agent configuration supports the same MCP format as previously configured.
