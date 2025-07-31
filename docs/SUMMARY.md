@@ -3,5 +3,5 @@
 [Introduction](./introduction.md)
 
 - [The Agent Format](./agent-format.md)
-- [Native Tools](./native-tools.md)
+- [Built-in Tools](./built-in-tools.md)
 - [Knowledge Management](./knowledge-management.md)
