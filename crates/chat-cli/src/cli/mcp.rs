@@ -175,6 +175,7 @@ impl AddArgs {
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub struct RemoveArgs {
+    #[arg(long)]
     pub name: String,
     #[arg(long, value_enum)]
     pub agent: Option<String>,
@@ -330,6 +331,7 @@ impl ImportArgs {
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub struct StatusArgs {
+    #[arg(long)]
     pub name: String,
 }
 
@@ -548,11 +550,12 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_subcomman_add() {
+    fn test_mcp_subcommand_add() {
         assert_parse!(
             [
                 "mcp",
                 "add",
+                "--name",
                 "test_server",
                 "--command",
                 "test_command",
@@ -588,7 +591,7 @@ mod tests {
     #[test]
     fn test_mcp_subcomman_remove_workspace() {
         assert_parse!(
-            ["mcp", "remove", "old"],
+            ["mcp", "remove", "--name", "old"],
             RootSubcommand::Mcp(McpSubcommand::Remove(RemoveArgs {
                 name: "old".into(),
                 agent: None,
@@ -611,7 +614,7 @@ mod tests {
     #[test]
     fn test_mcp_subcommand_status_simple() {
         assert_parse!(
-            ["mcp", "status", "aws"],
+            ["mcp", "status", "--name", "aws"],
             RootSubcommand::Mcp(McpSubcommand::Status(StatusArgs { name: "aws".into() }))
         );
     }

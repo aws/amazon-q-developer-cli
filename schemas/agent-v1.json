@@ -3,19 +3,44 @@
   "title": "Agent",
   "description": "An Agent is a declarative way of configuring a given instance of q chat.",
   "type": "object",
+  "definitions": {
+    "hookCommands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "description": "The command to run when the hook is triggered",
+            "type": "string"
+          }
+        },
+        "required": ["command"]
+      }
+    }
+  },
   "properties": {
+    "$schema": {
+      "description": "JSON Schema reference",
+      "type": "string"
+    },
     "name": {
       "description": "Name of the agent",
       "type": "string"
     },
     "description": {
       "description": "This field is not model facing and is mostly here for users to discern between agents",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "default": null
     },
     "prompt": {
       "description": "The intention for this field is to provide high level context to the\nagent. This should be seen as the same category of context as a system prompt.",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "default": null
     },
     "mcpServers": {
@@ -38,7 +63,10 @@
           },
           "env": {
             "description": "A list of environment variables to run the command with",
-            "type": ["object", "null"],
+            "type": [
+              "object",
+              "null"
+            ],
             "additionalProperties": {
               "type": "string"
             }
@@ -56,7 +84,9 @@
             "default": false
           }
         },
-        "required": ["command"]
+        "required": [
+          "command"
+        ]
       },
       "default": {}
     },
@@ -102,17 +132,12 @@
     "hooks": {
       "description": "Commands to run when a chat session is created",
       "type": "object",
-      "additionalProperties": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "command": {
-              "description": "The command to run when the hook is triggered",
-              "type": "string"
-            }
-          },
-          "required": ["command"]
+      "properties": {
+        "userPromptSubmit": {
+          "$ref": "#/definitions/hookCommands"
+        },
+        "agentSpawn": {
+          "$ref": "#/definitions/hookCommands"
         }
       },
       "default": {}
@@ -137,5 +162,7 @@
     }
   },
   "additionalProperties": false,
-  "required": ["name"]
+  "required": [
+    "name"
+  ]
 }
