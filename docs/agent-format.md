@@ -26,8 +26,6 @@ The `name` field specifies the name of the agent. This is used for identificatio
 }
 ```
 
-Note: While this field can be included in the configuration file, it will be overridden by the filename when the agent is loaded.
-
 ## Description Field
 
 The `description` field provides a description of what the agent does. This is primarily for human readability and helps users distinguish between different agents.
@@ -207,15 +205,11 @@ The `hooks` field defines commands to run at specific trigger points. The output
     "agentSpawn": [
       {
         "command": "git status",
-        "timeout_ms": 30000,
-        "max_output_size": 10240,
-        "cache_ttl_seconds": 0
       }
     ],
     "userPromptSubmit": [
       {
         "command": "ls -la",
-        "timeout_ms": 5000
       }
     ]
   }
@@ -224,9 +218,6 @@ The `hooks` field defines commands to run at specific trigger points. The output
 
 Each hook is defined with:
 - `command` (required): The command to execute
-- `timeout_ms` (optional): Maximum execution time in milliseconds (default: 30000)
-- `max_output_size` (optional): Maximum output size in bytes (default: 10240)
-- `cache_ttl_seconds` (optional): How long to cache the output (default: 0)
 
 Available hook triggers:
 - `agentSpawn`: Triggered when the agent is initialized
@@ -294,13 +285,11 @@ Here's a complete example of an agent configuration file:
     "agentSpawn": [
       {
         "command": "git status",
-        "timeout_ms": 30000
       }
     ],
     "userPromptSubmit": [
       {
         "command": "ls -la",
-        "timeout_ms": 5000
       }
     ]
   },
