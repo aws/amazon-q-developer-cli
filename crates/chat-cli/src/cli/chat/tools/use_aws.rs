@@ -221,10 +221,9 @@ impl UseAws {
                 }
                 PermissionEvalResult::Ask
             },
-            None if is_in_allowlist => PermissionEvalResult::Allow,
             _ => {
                 if self.requires_acceptance() {
-                    PermissionEvalResult::Ask
+                    PermissionEvalResult::AskWithoutTrust
                 } else {
                     PermissionEvalResult::Allow
                 }
@@ -322,6 +321,63 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[test]
+    fn test_trusted_tool_still_requires_acceptance_for_write_ops() {
+        use crate::cli::agent::Agent;
+
+        // Create an agent with use_aws in the allowed tools (trusted)
+        let mut agent = Agent::default();
+        agent.allowed_tools.insert("use_aws".to_string());
+
+        // Test a write operation (should still require acceptance even if trusted)
+        let write_cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "put-object",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+        assert_eq!(write_cmd.eval_perm(&agent), PermissionEvalResult::AskWithoutTrust);
+
+        // Test a read operation (should be allowed for trusted tools)
+        let read_cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "list-objects",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+        assert_eq!(read_cmd.eval_perm(&agent), PermissionEvalResult::Allow);
+    }
+
+    #[test]
+    fn test_untrusted_tool_uses_ask_without_trust_for_write_ops() {
+        use crate::cli::agent::Agent;
+
+        // Create an agent without use_aws in the allowed tools (untrusted)
+        let agent = Agent::default();
+
+        // Test a write operation (should use AskWithoutTrust for untrusted tools)
+        let write_cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "put-object",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+        assert_eq!(write_cmd.eval_perm(&agent), PermissionEvalResult::AskWithoutTrust);
+
+        // Test a read operation (should be allowed for untrusted tools too)
+        let read_cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "list-objects",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+        assert_eq!(read_cmd.eval_perm(&agent), PermissionEvalResult::Allow);
     }
 
     #[tokio::test]

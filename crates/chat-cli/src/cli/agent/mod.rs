@@ -314,6 +314,7 @@ impl Agent {
 pub enum PermissionEvalResult {
     Allow,
     Ask,
+    AskWithoutTrust,
     Deny,
 }
 
