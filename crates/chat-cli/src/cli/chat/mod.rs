@@ -802,7 +802,7 @@ impl ChatSession {
                 )?;
                 ("Unable to compact the conversation history", eyre!(err), true)
             },
-            ChatError::Client(err) => match *err {
+            ChatError::SendMessage(err) => match err.source {
                 // Errors from attempting to send too large of a conversation history. In
                 // this case, attempt to automatically compact the history for the user.
                 ApiClientError::ContextWindowOverflow { .. } => {
@@ -1307,7 +1307,9 @@ impl ChatSession {
                 // retryable according to the passed strategy.
                 let history_len = self.conversation.history().len();
                 match err {
-                    ChatError::Client(err) if matches!(*err, ApiClientError::ContextWindowOverflow { .. }) => {
+                    ChatError::SendMessage(err)
+                        if matches!(err.source, ApiClientError::ContextWindowOverflow { .. }) =>
+                    {
                         error!(?strategy, "failed to send compaction request");
                         // If there's only two messages in the history, we have no choice but to
                         // truncate it. We use two messages since it's almost guaranteed to contain:

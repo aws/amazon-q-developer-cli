@@ -20,7 +20,7 @@
   },
   "properties": {
     "$schema": {
-      "description": "JSON Schema reference",
+      "description": "The schema to use for validating the agent",
       "type": "string"
     },
     "name": {
