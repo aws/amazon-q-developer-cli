@@ -700,7 +700,7 @@ impl Agents {
                 // Here the tool names can take the following forms:
                 // - @{server_name}{delimiter}{tool_name}
                 // - native_tool_name
-                name == tool_name
+                name == tool_name && matches!(origin, &ToolOrigin::Native)
                     || name.strip_prefix("@").is_some_and(|remainder| {
                         remainder
                             .split_once(MCP_SERVER_TOOL_DELIMITER)

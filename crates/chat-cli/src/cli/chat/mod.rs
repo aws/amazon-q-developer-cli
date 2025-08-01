@@ -98,6 +98,7 @@ use tool_manager::{
 };
 use tools::gh_issue::GhIssueContext;
 use tools::{
+    NATIVE_TOOLS,
     OutputKind,
     QueuedTool,
     Tool,
@@ -280,6 +281,28 @@ impl ChatArgs {
             }
 
             if let Some(trust_tools) = self.trust_tools.take() {
+                for tool in &trust_tools {
+                    if !tool.starts_with("@") && !NATIVE_TOOLS.contains(&tool.as_str()) {
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print("WARNING: "),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print("--trust-tools arg for custom tool "),
+                            style::SetForegroundColor(Color::Cyan),
+                            style::Print(tool),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print(" needs to be prepended with "),
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("@{MCPSERVERNAME}/"),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print("\n"),
+                        );
+                    }
+                }
+
+                let _ = stderr.flush();
+
                 if let Some(a) = agents.get_active_mut() {
                     a.allowed_tools.extend(trust_tools);
                 }
