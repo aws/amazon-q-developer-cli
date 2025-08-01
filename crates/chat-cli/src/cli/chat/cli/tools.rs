@@ -18,7 +18,10 @@ use crossterm::{
 };
 
 use crate::api_client::model::Tool as FigTool;
-use crate::cli::agent::Agent;
+use crate::cli::agent::{
+    Agent,
+    DEFAULT_AGENT_NAME,
+};
 use crate::cli::chat::consts::{
     AGENT_FORMAT_TOOLS_DOC_URL,
     DUMMY_TOOL_NAME,
@@ -371,7 +374,7 @@ impl ToolsSubcommand {
                     .conversation
                     .agents
                     .get_active()
-                    .is_some_and(|a| a.name.as_str() == "default")
+                    .is_some_and(|a| a.name.as_str() == DEFAULT_AGENT_NAME)
                 {
                     // We only want to reset the tool permission and nothing else
                     if let Some(active_agent) = session.conversation.agents.get_active_mut() {

@@ -32,3 +32,6 @@ pub const AGENT_FORMAT_HOOKS_DOC_URL: &str =
 
 pub const AGENT_FORMAT_TOOLS_DOC_URL: &str =
     "https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#tools-field";
+
+pub const AGENT_MIGRATION_DOC_URL: &str =
+    "https://github.com/aws/amazon-q-developer-cli/blob/main/docs/legacy-profile-to-agent-migration.md";
