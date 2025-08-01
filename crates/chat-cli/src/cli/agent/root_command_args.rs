@@ -36,6 +36,7 @@ pub enum AgentSubcommands {
     /// global agent directory
     Create {
         /// Name of the agent to be created
+        #[arg(long, short)]
         name: String,
         /// The directory where the agent will be saved. If not provided, the agent will be saved in
         /// the global agent directory
@@ -358,7 +359,17 @@ mod tests {
     #[test]
     fn test_agent_subcommand_create() {
         assert_parse!(
-            ["agent", "create", "some_agent", "--from", "some_old_agent"],
+            ["agent", "create", "--name", "some_agent", "--from", "some_old_agent"],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Create {
+                    name: "some_agent".to_string(),
+                    directory: None,
+                    from: Some("some_old_agent".to_string())
+                })
+            })
+        );
+        assert_parse!(
+            ["agent", "create", "-n", "some_agent", "--from", "some_old_agent"],
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Create {
                     name: "some_agent".to_string(),

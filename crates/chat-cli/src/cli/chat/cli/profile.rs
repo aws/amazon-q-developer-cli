@@ -54,6 +54,7 @@ pub enum AgentSubcommand {
     /// Create a new agent with the specified name
     Create {
         /// Name of the agent to be created
+        #[arg(long, short)]
         name: String,
         /// The directory where the agent will be saved. If not provided, the agent will be saved in
         /// the global agent directory
