@@ -13,6 +13,7 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::sanitize_unicode_tags;
 use crate::cli::chat::tools::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
@@ -120,10 +121,13 @@ impl ExecuteCommand {
 
     pub async fn invoke(&self, output: &mut impl Write) -> Result<InvokeOutput> {
         let output = run_command(&self.command, MAX_TOOL_RESPONSE_SIZE / 3, Some(output)).await?;
+        let clean_stdout = sanitize_unicode_tags(&output.stdout);
+        let clean_stderr = sanitize_unicode_tags(&output.stderr);
+
         let result = serde_json::json!({
             "exit_status": output.exit_status.unwrap_or(0).to_string(),
-            "stdout": output.stdout,
-            "stderr": output.stderr,
+            "stdout": clean_stdout,
+            "stderr": clean_stderr,
         });
 
         Ok(InvokeOutput {

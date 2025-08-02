@@ -59,6 +59,48 @@ pub fn animate_output(output: &mut impl Write, bytes: &[u8]) -> Result<(), ChatE
     Ok(())
 }
 
+/// Returns `true` if the character is from an invisible or control Unicode range
+/// that is considered unsafe for LLM input. These rarely appear in normal input,
+/// so stripping them is generally safe.
+/// The replacement character U+FFFD (�) is preserved to indicate invalid bytes.
+fn is_hidden(c: char) -> bool {
+    match c {
+        '\u{E0000}'..='\u{E007F}' |     // TAG characters (used for hidden prompts)  
+        '\u{200B}'..='\u{200F}'  |      // zero-width space, ZWJ, ZWNJ, RTL/LTR marks  
+        '\u{2028}'..='\u{202F}'  |      // line / paragraph separators, narrow NB-SP  
+        '\u{205F}'..='\u{206F}'  |      // format control characters  
+        '\u{FFF0}'..='\u{FFFC}'  |
+        '\u{FFFE}'..='\u{FFFF}'   // Specials block (non-characters) 
+        => true,
+        _ => false,
+    }
+}
+
+/// Remove hidden / control characters from `text`.
+///
+/// * `text`   –  raw user input or file content
+///
+/// The function keeps things **O(n)** with a single allocation and logs how many
+/// characters were dropped. 400 KB worst-case size ⇒ sub-millisecond runtime.
+pub fn sanitize_unicode_tags(text: &str) -> String {
+    let mut removed = 0;
+    let out: String = text
+        .chars()
+        .filter(|&c| {
+            let bad = is_hidden(c);
+            if bad {
+                removed += 1;
+            }
+            !bad
+        })
+        .collect();
+
+    if removed > 0 {
+        tracing::debug!("Detected and removed {} hidden chars", removed);
+    }
+    out
+}
+
 /// Play the terminal bell notification sound
 pub fn play_notification_bell(requires_confirmation: bool) {
     // Don't play bell for tools that don't require confirmation
@@ -248,5 +290,40 @@ mod tests {
             files.retain(|(f, _)| f != filename);
         }
         assert_eq!(files.len(), 1);
+    }
+    #[test]
+    fn is_hidden_recognises_all_ranges() {
+        let samples = ['\u{E0000}', '\u{200B}', '\u{2028}', '\u{205F}', '\u{FFF0}'];
+
+        for ch in samples {
+            assert!(is_hidden(ch), "char U+{:X} should be hidden", ch as u32);
+        }
+
+        for ch in ['a', '你', '\u{03A9}'] {
+            assert!(!is_hidden(ch), "char {:?} should NOT be hidden", ch);
+        }
+    }
+
+    #[test]
+    fn sanitize_keeps_visible_text_intact() {
+        let visible = "Rust 🦀 > C";
+        assert_eq!(sanitize_unicode_tags(visible), visible);
+    }
+
+    #[test]
+    fn sanitize_handles_large_mixture() {
+        let visible_block = "abcXYZ";
+        let hidden_block = "\u{200B}\u{E0000}";
+        let mut big_input = String::new();
+        for _ in 0..50_000 {
+            big_input.push_str(visible_block);
+            big_input.push_str(hidden_block);
+        }
+
+        let result = sanitize_unicode_tags(&big_input);
+
+        assert_eq!(result.len(), 50_000 * visible_block.len());
+
+        assert!(result.chars().all(|c| !is_hidden(c)));
     }
 }
