@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::env;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -25,6 +24,7 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
+use crate::os::Os;
 use crate::mcp_client::{
     Client as McpClient,
     ClientConfig as McpClientConfig,
@@ -37,7 +37,6 @@ use crate::mcp_client::{
     StdioTransport,
     ToolCallResult,
 };
-use crate::os::Os;
 
 // TODO: support http transport type
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
@@ -66,22 +65,22 @@ pub fn default_timeout() -> u64 {
 }
 
 /// Substitutes environment variables in the format ${env:VAR_NAME} with their actual values
-fn substitute_env_vars(input: &str) -> String {
+fn substitute_env_vars(input: &str, env: &crate::os::Env) -> String {
     // Create a regex to match ${env:VAR_NAME} pattern
     let re = Regex::new(r"\$\{env:([^}]+)\}").unwrap();
 
     re.replace_all(input, |caps: &regex::Captures<'_>| {
         let var_name = &caps[1];
-        env::var(var_name).unwrap_or_else(|_| format!("${{{}}}", var_name))
+        env.get(var_name).unwrap_or_else(|_| format!("${{{}}}", var_name))
     })
     .to_string()
 }
 
 /// Process a HashMap of environment variables, substituting any ${env:VAR_NAME} patterns
 /// with their actual values from the environment
-fn process_env_vars(env_vars: &mut HashMap<String, String>) {
+fn process_env_vars(env_vars: &mut HashMap<String, String>, env: &crate::os::Env) {
     for (_, value) in env_vars.iter_mut() {
-        *value = substitute_env_vars(value);
+        *value = substitute_env_vars(value, env);
     }
 }
 
@@ -97,7 +96,7 @@ pub enum CustomToolClient {
 
 impl CustomToolClient {
     // TODO: add support for http transport
-    pub fn from_config(server_name: String, config: CustomToolConfig) -> Result<Self> {
+    pub fn from_config(server_name: String, config: CustomToolConfig, os: &crate::os::Os) -> Result<Self> {
         let CustomToolConfig {
             command,
             args,
@@ -109,7 +108,7 @@ impl CustomToolClient {
 
         // Process environment variables if present
         let processed_env = env.map(|mut env_vars| {
-            process_env_vars(&mut env_vars);
+            process_env_vars(&mut env_vars, &os.env);
             env_vars
         });
 
@@ -313,48 +312,47 @@ impl CustomTool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_substitute_env_vars() {
+    #[tokio::test]
+    async fn test_substitute_env_vars() {
         // Set a test environment variable
-        unsafe { env::set_var("TEST_VAR", "test_value") };
+        let os = Os::new().await.unwrap();
+        unsafe {
+            os.env.set_var("TEST_VAR", "test_value");
+        }
 
         // Test basic substitution
-        assert_eq!(substitute_env_vars("Value is ${env:TEST_VAR}"), "Value is test_value");
+        assert_eq!(substitute_env_vars("Value is ${env:TEST_VAR}", &os.env), "Value is test_value");
 
         // Test multiple substitutions
         assert_eq!(
-            substitute_env_vars("${env:TEST_VAR} and ${env:TEST_VAR}"),
+            substitute_env_vars("${env:TEST_VAR} and ${env:TEST_VAR}", &os.env),
             "test_value and test_value"
         );
 
         // Test non-existent variable
-        assert_eq!(substitute_env_vars("${env:NON_EXISTENT_VAR}"), "${NON_EXISTENT_VAR}");
+        assert_eq!(substitute_env_vars("${env:NON_EXISTENT_VAR}", &os.env), "${NON_EXISTENT_VAR}");
 
         // Test mixed content
         assert_eq!(
-            substitute_env_vars("Prefix ${env:TEST_VAR} suffix"),
+            substitute_env_vars("Prefix ${env:TEST_VAR} suffix", &os.env),
             "Prefix test_value suffix"
         );
-
-        // Clean up
-        unsafe { env::remove_var("TEST_VAR") };
     }
 
-    #[test]
-    fn test_process_env_vars() {
-        // Set a test environment variable
-        unsafe { env::set_var("TEST_VAR", "test_value") };
+    #[tokio::test]
+    async fn test_process_env_vars() {
+        let os = Os::new().await.unwrap();
+        unsafe {
+            os.env.set_var("TEST_VAR", "test_value");
+        }
 
         let mut env_vars = HashMap::new();
         env_vars.insert("KEY1".to_string(), "Value is ${env:TEST_VAR}".to_string());
         env_vars.insert("KEY2".to_string(), "No substitution".to_string());
 
-        process_env_vars(&mut env_vars);
+        process_env_vars(&mut env_vars, &os.env);
 
         assert_eq!(env_vars.get("KEY1").unwrap(), "Value is test_value");
         assert_eq!(env_vars.get("KEY2").unwrap(), "No substitution");
-
-        // Clean up
-        unsafe { env::remove_var("TEST_VAR") };
     }
 }
