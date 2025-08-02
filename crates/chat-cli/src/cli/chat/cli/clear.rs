@@ -41,7 +41,7 @@ impl ClearArgs {
         )?;
 
         // Setting `exit_on_single_ctrl_c` for better ux: exit the confirmation dialog rather than the CLI
-        let user_input = match session.read_user_input("> ".yellow().to_string().as_str(), true) {
+        let user_input = match session.read_user_input("> ".yellow().to_string().as_str(), true).await {
             Some(input) => input,
             None => "".to_string(),
         };
