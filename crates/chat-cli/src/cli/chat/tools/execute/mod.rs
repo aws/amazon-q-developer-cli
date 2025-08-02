@@ -1,10 +1,7 @@
 use std::io::Write;
 
 use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
-};
+use crossterm::style;
 use eyre::Result;
 use serde::Deserialize;
 use tracing::error;
@@ -13,13 +10,16 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::tools::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
 };
 use crate::cli::chat::util::truncate_safe;
+use crate::database::settings::Settings;
 use crate::os::Os;
+use crate::{with_success, with_color};
 
 // Platform-specific modules
 #[cfg(windows)]
@@ -139,13 +139,11 @@ impl ExecuteCommand {
             queue!(output, style::Print("\n"),)?;
         }
 
-        queue!(
-            output,
-            style::SetForegroundColor(Color::Green),
-            style::Print(&self.command),
-            style::Print("\n"),
-            style::ResetColor
-        )?;
+        let settings = Settings::default();
+        let color_manager = ColorManager::from_settings(&settings);
+
+        with_success!(output, &color_manager, "{}", &self.command)?;
+        queue!(output, style::Print("\n"))?;
 
         // Add the summary if available
         if let Some(ref summary) = self.summary {
