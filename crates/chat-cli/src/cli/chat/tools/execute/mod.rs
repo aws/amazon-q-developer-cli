@@ -6,6 +6,7 @@ use crossterm::style::{
     Color,
 };
 use eyre::Result;
+use regex::Regex;
 use serde::Deserialize;
 use tracing::error;
 
@@ -47,6 +48,17 @@ impl ExecuteCommand {
     pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
         let default_arr = vec![];
         let allowed_commands = allowed_commands.unwrap_or(&default_arr);
+
+        let has_regex_match = allowed_commands
+            .iter()
+            .map(|cmd| Regex::new(cmd))
+            .filter(Result::is_ok)
+            .flatten()
+            .any(|regex| regex.is_match(&self.command));
+        if has_regex_match {
+            return false;
+        }
+
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
@@ -328,6 +340,42 @@ mod tests {
             .unwrap();
             assert_eq!(
                 tool.requires_acceptance(None, true),
+                *expected,
+                "expected command: `{}` to have requires_acceptance: `{}`",
+                cmd,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_requires_acceptance_allowed_commands() {
+        let allowed_cmds: &[String] = &[
+            String::from("git status"),
+            String::from("root"),
+            String::from("command subcommand a=[0-9]{10} b=[0-9]{10}"),
+            String::from("command subcommand && command subcommand"),
+        ];
+        let cmds = &[
+            // Command first argument 'root' allowed (allows all subcommands)
+            ("root", false),
+            ("root subcommand", false),
+            // Valid allowed_command_regex matching
+            ("git", true),
+            ("git status", false),
+            ("command subcommand a=0123456789 b=0123456789", false),
+            ("command subcommand a=0123456789 b=012345678", true),
+            ("command subcommand alternate a=0123456789 b=0123456789", true),
+            // Control characters ignored due to direct allowed_command_regex match
+            ("command subcommand && command subcommand", false),
+        ];
+        for (cmd, expected) in cmds {
+            let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+                "command": cmd,
+            }))
+            .unwrap();
+            assert_eq!(
+                tool.requires_acceptance(Option::from(&allowed_cmds.to_vec()), true),
                 *expected,
                 "expected command: `{}` to have requires_acceptance: `{}`",
                 cmd,
