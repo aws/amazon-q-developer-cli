@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::Path;
 
 use crossterm::queue;
 use crossterm::style::{
@@ -7,12 +8,17 @@ use crossterm::style::{
 };
 use eyre::Result;
 use serde::Deserialize;
-use tracing::warn;
+use tracing::{
+    error,
+    warn,
+};
 
 use super::{
     InvokeOutput,
     OutputKind,
 };
+use crate::cli::agent::Agent;
+use crate::cli::chat::cli::knowledge::Settings;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::knowledge_store::KnowledgeStore;
@@ -305,9 +311,9 @@ impl Knowledge {
         Ok(())
     }
 
-    pub async fn invoke(&self, os: &Os, _updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, _updates: &mut impl Write, agent: Option<&Agent>) -> Result<InvokeOutput> {
         // Get the async knowledge store singleton
-        let async_knowledge_store = KnowledgeStore::get_async_instance().await;
+        let async_knowledge_store = KnowledgeStore::get_async_instance(Self::get_knowledge_base_dir(agent)).await;
         let mut store = async_knowledge_store.lock().await;
 
         let result = match self {
@@ -540,6 +546,24 @@ impl Knowledge {
                 "Operation ID: {} | Type: {} | {} | {}",
                 op.short_id, operation_desc, status_info, time_info
             )
+        }
+    }
+
+    fn get_knowledge_base_dir(agent: Option<&Agent>) -> Option<impl AsRef<Path> + use<>> {
+        if agent.is_none() {
+            return None;
+        }
+
+        agent.unwrap().tools_settings.get("knowledge")?.get("base_dir");
+        match agent.unwrap().tools_settings.get("knowledge") {
+            Some(settings) => match serde_json::from_value::<Settings>(settings.clone()) {
+                Ok(settings) => Some(settings.base_dir),
+                Err(e) => {
+                    error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
+                    None
+                },
+            },
+            None => None,
         }
     }
 }

@@ -1881,7 +1881,10 @@ impl ChatSession {
                 ev.is_accepted = true;
             });
 
-            let invoke_result = tool.tool.invoke(os, &mut self.stdout).await;
+            let invoke_result = tool
+                .tool
+                .invoke(os, &mut self.stdout, self.conversation.agents.get_active())
+                .await;
 
             if self.spinner.is_some() {
                 queue!(

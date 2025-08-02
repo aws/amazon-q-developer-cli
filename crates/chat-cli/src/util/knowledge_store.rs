@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::{
     Arc,
     LazyLock as Lazy,
@@ -32,13 +33,13 @@ pub struct KnowledgeStore {
 
 impl KnowledgeStore {
     /// Get singleton instance
-    pub async fn get_async_instance() -> Arc<Mutex<Self>> {
+    pub async fn get_async_instance(path: Option<impl AsRef<Path>>) -> Arc<Mutex<Self>> {
         static ASYNC_INSTANCE: Lazy<tokio::sync::OnceCell<Arc<Mutex<KnowledgeStore>>>> =
             Lazy::new(tokio::sync::OnceCell::new);
 
         if cfg!(test) {
             Arc::new(Mutex::new(
-                KnowledgeStore::new()
+                KnowledgeStore::new(path)
                     .await
                     .expect("Failed to create test async knowledge store"),
             ))
@@ -46,7 +47,7 @@ impl KnowledgeStore {
             ASYNC_INSTANCE
                 .get_or_init(|| async {
                     Arc::new(Mutex::new(
-                        KnowledgeStore::new()
+                        KnowledgeStore::new(path)
                             .await
                             .expect("Failed to create async knowledge store"),
                     ))
@@ -56,12 +57,21 @@ impl KnowledgeStore {
         }
     }
 
-    pub async fn new() -> Result<Self> {
-        let client = AsyncSemanticSearchClient::new_with_default_dir()
-            .await
-            .map_err(|e| eyre::eyre!("Failed to create client: {}", e))?;
-
-        Ok(Self { client })
+    pub async fn new(path: Option<impl AsRef<Path>>) -> Result<Self> {
+        match path {
+            Some(path) => {
+                let client = AsyncSemanticSearchClient::new(path)
+                    .await
+                    .map_err(|e| eyre::eyre!("Failed to create client: {}", e))?;
+                Ok(Self { client })
+            },
+            None => {
+                let client = AsyncSemanticSearchClient::new_with_default_dir()
+                    .await
+                    .map_err(|e| eyre::eyre!("Failed to create client: {}", e))?;
+                Ok(Self { client })
+            },
+        }
     }
 
     /// Add context - delegates to async client
