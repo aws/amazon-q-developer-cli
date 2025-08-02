@@ -23,6 +23,8 @@ use std::collections::{
     HashMap,
     VecDeque,
 };
+use std::fmt::Display;
+use std::io;
 use std::io::{
     IsTerminal,
     Read,
@@ -52,7 +54,6 @@ use crossterm::style::{
 };
 use crossterm::{
     cursor,
-    execute,
     queue,
     style,
     terminal,
@@ -175,6 +176,80 @@ pub const EXTRA_HELP: &str = color_print::cstr! {"
                     <black!>Change using: q settings chat.skimCommandKey x</black!>
 "};
 
+/// Trait to identify commands that perform terminal styling operations.
+/// Used by conditional macros to skip styling commands when styling is disabled.
+trait IsStyling {
+    /// Returns true if this command performs styling (colors, attributes, cursor movement, etc.)
+    fn is_styling(&self) -> bool;
+}
+
+/// Macro to mark crossterm command types as styling operations.
+/// This allows the conditional execution macros to skip these commands
+/// when styling is disabled (e.g., in non-interactive mode).
+macro_rules! declare_as_styling {
+    ($type_name:path) => {
+        impl IsStyling for $type_name {
+            fn is_styling(&self) -> bool {
+                true
+            }
+        }
+    };
+}
+
+/// Conditionally executes crossterm commands based on styling preference.
+/// Styling commands (colors, cursor movement, etc.) are skipped when styling is disabled,
+/// while non-styling commands (like Print) are always executed.
+/// Equivalent to crossterm::execute! but with conditional styling support.
+macro_rules! execute_conditional {
+    ($enable_styling:expr, $writer:expr $(, $command:expr)* $(,)? ) => {{
+        use ::std::io::Write;
+
+        // Queue each command, then flush
+        queue_conditional!($enable_styling, $writer $(, $command)*)
+            .and_then(|()| {
+                ::std::io::Write::flush($writer.by_ref())
+            })
+    }}
+}
+
+/// Conditionally queues crossterm commands based on styling preference.
+/// When styling is enabled, all commands are queued normally.
+/// When styling is disabled, only non-styling commands (like Print) are queued,
+/// while styling commands are skipped to avoid terminal formatting in non-interactive mode.
+/// Equivalent to crossterm::queue! but with conditional styling support.
+macro_rules! queue_conditional {
+    ($enable_styling:expr, $writer:expr $(, $command:expr)* $(,)?) => {{
+        use ::std::io::Write;
+
+        // This allows the macro to take both mut impl Write and &mut impl Write.
+        Ok($writer.by_ref())
+            $(.and_then(|writer| {
+                if ($enable_styling || !$command.is_styling()) {
+                    crossterm::QueueableCommand::queue(writer, $command)
+                } else {
+                    io::Result::Ok(writer)
+                }
+            }))*
+            .map(|_| ())
+    }}
+}
+
+// Styling commands - these are skipped when styling is disabled
+declare_as_styling!(style::SetForegroundColor);
+declare_as_styling!(style::ResetColor);
+declare_as_styling!(style::SetAttribute);
+declare_as_styling!(terminal::Clear);
+declare_as_styling!(cursor::MoveToColumn);
+declare_as_styling!(cursor::Hide);
+declare_as_styling!(cursor::Show);
+
+// Non-styling commands - these are always executed
+impl<T: Display> IsStyling for style::Print<T> {
+    fn is_styling(&self) -> bool {
+        false
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
     /// Resumes the previous conversation from this directory.
@@ -203,6 +278,7 @@ pub struct ChatArgs {
 impl ChatArgs {
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
         let mut input = self.input;
+        let enable_styling = !self.no_interactive;
 
         if self.no_interactive && input.is_none() {
             if !std::io::stdin().is_terminal() {
@@ -232,7 +308,8 @@ impl ChatArgs {
             .iter()
             .any(|arg| arg == "--profile" || arg.starts_with("--profile="))
         {
-            execute!(
+            execute_conditional!(
+                enable_styling,
                 stderr,
                 style::SetForegroundColor(Color::Yellow),
                 style::Print("WARNING: "),
@@ -270,7 +347,8 @@ impl ChatArgs {
                 .is_some_and(|a| !a.mcp_servers.mcp_servers.is_empty())
             {
                 if !self.no_interactive && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
-                    execute!(
+                    execute_conditional!(
+                        enable_styling,
                         stderr,
                         style::Print(
                             "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
@@ -555,6 +633,8 @@ pub struct ChatSession {
     /// Pending prompts to be sent
     pending_prompts: VecDeque<Prompt>,
     interactive: bool,
+    /// Whether text styling should be enabled for this session
+    enable_styling: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
 }
@@ -618,7 +698,8 @@ impl ChatSession {
                 cs.tool_manager = tool_manager;
                 if let Some(profile) = cs.current_profile() {
                     if agents.switch(profile).is_err() {
-                        execute!(
+                        execute_conditional!(
+                            !interactive,
                             stderr,
                             style::SetForegroundColor(Color::Red),
                             style::Print("Error"),
@@ -675,6 +756,7 @@ impl ChatSession {
             failed_request_ids: Vec::new(),
             pending_prompts: VecDeque::new(),
             interactive,
+            enable_styling: interactive,
             inner: Some(ChatState::default()),
             ctrlc_rx,
         })
@@ -683,6 +765,7 @@ impl ChatSession {
     pub async fn next(&mut self, os: &mut Os) -> Result<(), ChatError> {
         // Update conversation state with new tool information
         self.conversation.update_state(false).await;
+        let enable_styling = self.enable_styling();
 
         let mut ctrl_c_stream = self.ctrlc_rx.resubscribe();
         let result = match self.inner.take().expect("state must always be Some") {
@@ -770,7 +853,8 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
-            queue!(
+            queue_conditional!(
+                enable_styling,
                 self.stderr,
                 terminal::Clear(terminal::ClearType::CurrentLine),
                 cursor::MoveToColumn(0),
@@ -779,7 +863,7 @@ impl ChatSession {
 
         let (context, report, display_err_message) = match err {
             ChatError::Interrupted { tool_uses: ref inter } => {
-                execute!(self.stderr, style::Print("\n\n"))?;
+                execute_conditional!(enable_styling, self.stderr, style::Print("\n\n"))?;
 
                 // If there was an interrupt during tool execution, then we add fake
                 // messages to "reset" the chat state.
@@ -808,7 +892,8 @@ impl ChatSession {
             ChatError::CompactHistoryFailure => {
                 // This error is not retryable - the user must take manual intervention to manage
                 // their context.
-                execute!(
+                execute_conditional!(
+                    enable_styling,
                     self.stderr,
                     style::SetForegroundColor(Color::Red),
                     style::Print("Your conversation is too large to continue.\n"),
@@ -835,7 +920,8 @@ impl ChatSession {
                         .get_bool(Setting::ChatDisableAutoCompaction)
                         .unwrap_or(false)
                     {
-                        execute!(
+                        execute_conditional!(
+                            enable_styling,
                             self.stderr,
                             style::SetForegroundColor(Color::Red),
                             style::Print("The conversation history has overflowed.\n"),
@@ -859,8 +945,8 @@ impl ChatSession {
                                 ..Default::default()
                             },
                         });
-
-                        execute!(
+                        execute_conditional!(
+                            enable_styling,
                             self.stdout,
                             style::SetForegroundColor(Color::Yellow),
                             style::Print("The context window has overflowed, summarizing the history..."),
@@ -877,7 +963,8 @@ impl ChatSession {
                 } => {
                     let err = "Request quota exceeded. Please wait a moment and try again.".to_string();
                     self.conversation.append_transcript(err.clone());
-                    execute!(
+                    execute_conditional!(
+                        enable_styling,
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
                         style::SetForegroundColor(Color::Red),
@@ -890,7 +977,8 @@ impl ChatSession {
                 },
                 ApiClientError::ModelOverloadedError { request_id, .. } => {
                     if self.interactive {
-                        execute!(
+                        execute_conditional!(
+                            enable_styling,
                             self.stderr,
                             style::SetAttribute(Attribute::Bold),
                             style::SetForegroundColor(Color::Red),
@@ -922,7 +1010,8 @@ impl ChatSession {
                         }
                     );
                     self.conversation.append_transcript(err.clone());
-                    execute!(
+                    execute_conditional!(
+                        enable_styling,
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
                         style::SetForegroundColor(Color::Red),
@@ -936,7 +1025,8 @@ impl ChatSession {
                 ApiClientError::MonthlyLimitReached { .. } => {
                     let subscription_status = get_subscription_status(os).await;
                     if subscription_status.is_err() {
-                        execute!(
+                        execute_conditional!(
+                            enable_styling,
                             self.stderr,
                             style::SetForegroundColor(Color::Red),
                             style::Print(format!(
@@ -947,7 +1037,8 @@ impl ChatSession {
                         )?;
                     }
 
-                    execute!(
+                    execute_conditional!(
+                        enable_styling,
                         self.stderr,
                         style::SetForegroundColor(Color::Yellow),
                         style::Print("Monthly request limit reached"),
@@ -962,7 +1053,8 @@ impl ChatSession {
                     if subscription_status.is_err()
                         || subscription_status.is_ok_and(|s| s == ActualSubscriptionStatus::None)
                     {
-                        execute!(
+                        execute_conditional!(
+                            enable_styling,
                             self.stderr,
                             style::Print(format!("\n\n{LIMIT_REACHED_TEXT} {limits_text}")),
                             style::SetForegroundColor(Color::DarkGrey),
@@ -974,7 +1066,8 @@ impl ChatSession {
                             style::SetForegroundColor(Color::Reset),
                         )?;
                     } else {
-                        execute!(
+                        execute_conditional!(
+                            enable_styling,
                             self.stderr,
                             style::SetForegroundColor(Color::Yellow),
                             style::Print(format!(" - {limits_text}\n\n")),
@@ -1005,7 +1098,8 @@ impl ChatSession {
             // Remove non-ASCII and ANSI characters.
             let re = Regex::new(r"((\x9B|\x1B\[)[0-?]*[ -\/]*[@-~])|([^\x00-\x7F]+)").unwrap();
 
-            queue!(
+            queue_conditional!(
+                enable_styling,
                 self.stderr,
                 style::SetAttribute(Attribute::Bold),
                 style::SetForegroundColor(Color::Red),
@@ -1013,10 +1107,11 @@ impl ChatSession {
 
             let text = re.replace_all(&format!("{}: {:?}\n", context, report), "").into_owned();
 
-            queue!(self.stderr, style::Print(&text),)?;
+            queue_conditional!(enable_styling, self.stderr, style::Print(&text),)?;
             self.conversation.append_transcript(text);
 
-            execute!(
+            execute_conditional!(
+                enable_styling,
                 self.stderr,
                 style::SetAttribute(Attribute::Reset),
                 style::SetForegroundColor(Color::Reset),
@@ -1043,7 +1138,9 @@ impl Drop for ChatSession {
             spinner.stop();
         }
 
-        execute!(
+        let enable_styling = self.enable_styling();
+        execute_conditional!(
+            enable_styling,
             self.stderr,
             cursor::MoveToColumn(0),
             style::SetAttribute(Attribute::Reset),
@@ -1129,6 +1226,7 @@ impl ChatSession {
 
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
+        let enable_styling = self.enable_styling();
         if os
             .database
             .settings
@@ -1143,12 +1241,18 @@ impl ChatSession {
                 },
             };
 
-            execute!(self.stderr, style::Print(welcome_text), style::Print("\n\n"),)?;
+            execute_conditional!(
+                enable_styling,
+                self.stderr,
+                style::Print(welcome_text),
+                style::Print("\n\n"),
+            )?;
 
             let tip = ROTATING_TIPS[usize::try_from(rand::random::<u32>()).unwrap_or(0) % ROTATING_TIPS.len()];
             if is_small_screen {
                 // If the screen is small, print the tip in a single line
-                execute!(
+                execute_conditional!(
+                    enable_styling,
                     self.stderr,
                     style::Print("💡 ".to_string()),
                     style::Print(tip),
@@ -1164,7 +1268,8 @@ impl ChatSession {
                 )?;
             }
 
-            execute!(
+            execute_conditional!(
+                enable_styling,
                 self.stderr,
                 style::Print("\n"),
                 style::Print(match is_small_screen {
@@ -1178,11 +1283,17 @@ impl ChatSession {
                         .dark_grey()
                 )
             )?;
-            execute!(self.stderr, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+            execute_conditional!(
+                enable_styling,
+                self.stderr,
+                style::Print("\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
         }
 
         if self.all_tools_trusted() {
-            queue!(
+            queue_conditional!(
+                enable_styling,
                 self.stderr,
                 style::Print(format!(
                     "{}{TRUST_ALL_TEXT}\n\n",
@@ -1194,7 +1305,8 @@ impl ChatSession {
 
         if let Some(ref id) = self.conversation.model {
             if let Some(model_option) = MODEL_OPTIONS.iter().find(|option| option.model_id == *id) {
-                execute!(
+                execute_conditional!(
+                    enable_styling,
                     self.stderr,
                     style::SetForegroundColor(Color::Cyan),
                     style::Print(format!("🤖 You are chatting with {}\n", model_option.name)),
@@ -1267,10 +1379,12 @@ impl ChatSession {
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
         let hist = self.conversation.history();
+        let enable_styling = self.enable_styling();
         debug!(?strategy, ?hist, "compacting history");
 
         if self.conversation.history().is_empty() {
-            execute!(
+            execute_conditional!(
+                enable_styling,
                 self.stderr,
                 style::SetForegroundColor(Color::Yellow),
                 style::Print("\nConversation too short to compact.\n\n"),
@@ -1284,7 +1398,8 @@ impl ChatSession {
 
         if strategy.truncate_large_messages {
             info!("truncating large messages");
-            execute!(
+            execute_conditional!(
+                enable_styling,
                 self.stderr,
                 terminal::Clear(terminal::ClearType::CurrentLine),
                 cursor::MoveToColumn(0),
@@ -1301,7 +1416,7 @@ impl ChatSession {
             .await?;
 
         if self.interactive {
-            execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
+            execute_conditional!(enable_styling, self.stderr, cursor::Hide, style::Print("\n"))?;
             self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
         }
 
@@ -1318,7 +1433,8 @@ impl ChatSession {
             Err(err) => {
                 if self.interactive {
                     self.spinner.take();
-                    execute!(
+                    execute_conditional!(
+                        enable_styling,
                         self.stderr,
                         terminal::Clear(terminal::ClearType::CurrentLine),
                         cursor::MoveToColumn(0),
@@ -1421,7 +1537,8 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
-            queue!(
+            queue_conditional!(
+                enable_styling,
                 self.stderr,
                 terminal::Clear(terminal::ClearType::CurrentLine),
                 cursor::MoveToColumn(0),
@@ -1441,7 +1558,8 @@ impl ChatSession {
 
         // Print output to the user.
         {
-            execute!(
+            execute_conditional!(
+                enable_styling,
                 self.stderr,
                 style::SetForegroundColor(Color::Green),
                 style::Print("✔ Conversation history has been compacted successfully!\n\n"),
@@ -1450,7 +1568,8 @@ impl ChatSession {
 
             let mut output = Vec::new();
             if let Some(custom_prompt) = &custom_prompt {
-                execute!(
+                execute_conditional!(
+                    enable_styling,
                     output,
                     style::Print(format!("• Custom prompt applied: {}\n", custom_prompt))
                 )?;
@@ -1462,7 +1581,8 @@ impl ChatSession {
                 // Add a border around the summary for better visual separation
                 let terminal_width = self.terminal_width();
                 let border = "═".repeat(terminal_width.min(80));
-                execute!(
+                execute_conditional!(
+                    enable_styling,
                     self.stderr,
                     style::Print("\n"),
                     style::SetForegroundColor(Color::Cyan),
@@ -1476,7 +1596,8 @@ impl ChatSession {
                     style::Print("\n\n"),
                 )?;
 
-                execute!(
+                execute_conditional!(
+                    enable_styling,
                     output,
                     style::Print(&summary),
                     style::Print("\n\n"),
@@ -1486,7 +1607,8 @@ impl ChatSession {
                 )?;
                 animate_output(&mut self.stderr, &output)?;
 
-                execute!(
+                execute_conditional!(
+                    enable_styling,
                     self.stderr,
                     style::Print(&border),
                     style::Print("\n\n"),
@@ -1511,7 +1633,8 @@ impl ChatSession {
 
     /// Read input from the user.
     async fn prompt_user(&mut self, os: &Os, skip_printing_tools: bool) -> Result<ChatState, ChatError> {
-        execute!(self.stderr, cursor::Show)?;
+        let enable_styling = self.enable_styling();
+        execute_conditional!(enable_styling, self.stderr, cursor::Show)?;
 
         // Check token usage and display warnings if needed
         if self.pending_tool_index.is_none() {
@@ -1523,7 +1646,8 @@ impl ChatSession {
 
         let show_tool_use_confirmation_dialog = !skip_printing_tools && self.pending_tool_index.is_some();
         if show_tool_use_confirmation_dialog {
-            execute!(
+            execute_conditional!(
+                enable_styling,
                 self.stderr,
                 style::SetForegroundColor(Color::DarkGrey),
                 style::Print("\nAllow this action? Use '"),
@@ -1568,7 +1692,8 @@ impl ChatSession {
                 .put_skim_command_selector(os, Arc::new(context_manager.clone()), tool_names);
         }
 
-        execute!(
+        execute_conditional!(
+            enable_styling,
             self.stderr,
             style::SetForegroundColor(Color::Reset),
             style::SetAttribute(Attribute::Reset)
@@ -1584,7 +1709,8 @@ impl ChatSession {
     }
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
-        queue!(self.stderr, style::Print('\n'))?;
+        let enable_styling = self.enable_styling();
+        queue_conditional!(enable_styling, self.stderr, style::Print('\n'))?;
 
         let input = user_input.trim();
 
@@ -1628,7 +1754,8 @@ impl ChatSession {
                             }
                         },
                         Err(err) => {
-                            queue!(
+                            queue_conditional!(
+                                enable_styling,
                                 self.stderr,
                                 style::SetForegroundColor(Color::Red),
                                 style::Print(format!("\nFailed to execute command: {}\n", err)),
@@ -1713,7 +1840,8 @@ impl ChatSession {
             match result {
                 Ok(status) => {
                     if !status.success() {
-                        queue!(
+                        queue_conditional!(
+                            enable_styling,
                             self.stderr,
                             style::SetForegroundColor(Color::Yellow),
                             style::Print(format!("Self exited with status: {}\n", status)),
@@ -1722,7 +1850,8 @@ impl ChatSession {
                     }
                 },
                 Err(e) => {
-                    queue!(
+                    queue_conditional!(
+                        enable_styling,
                         self.stderr,
                         style::SetForegroundColor(Color::Red),
                         style::Print(format!("\nFailed to execute command: {}\n", e)),
@@ -1795,9 +1924,9 @@ impl ChatSession {
                 .await?;
             self.send_tool_use_telemetry(os).await;
 
-            queue!(self.stderr, style::SetForegroundColor(Color::Magenta))?;
-            queue!(self.stderr, style::SetForegroundColor(Color::Reset))?;
-            queue!(self.stderr, cursor::Hide)?;
+            queue_conditional!(enable_styling, self.stderr, style::SetForegroundColor(Color::Magenta))?;
+            queue_conditional!(enable_styling, self.stderr, style::SetForegroundColor(Color::Reset))?;
+            queue_conditional!(enable_styling, self.stderr, cursor::Hide)?;
 
             if self.interactive {
                 self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
@@ -1874,6 +2003,8 @@ impl ChatSession {
         let mut tool_results = vec![];
         let mut image_blocks: Vec<RichImageBlock> = Vec::new();
 
+        let enable_styling = self.enable_styling();
+
         for tool in &self.tool_uses {
             let tool_start = std::time::Instant::now();
             let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
@@ -1884,14 +2015,15 @@ impl ChatSession {
             let invoke_result = tool.tool.invoke(os, &mut self.stdout).await;
 
             if self.spinner.is_some() {
-                queue!(
+                queue_conditional!(
+                    enable_styling,
                     self.stderr,
                     terminal::Clear(terminal::ClearType::CurrentLine),
                     cursor::MoveToColumn(0),
                     cursor::Show
                 )?;
             }
-            execute!(self.stdout, style::Print("\n"))?;
+            execute_conditional!(enable_styling, self.stdout, style::Print("\n"))?;
 
             let tool_end_time = Instant::now();
             let tool_time = tool_end_time.duration_since(tool_start);
@@ -1927,7 +2059,8 @@ impl ChatSession {
                     }
 
                     debug!("tool result output: {:#?}", result);
-                    execute!(
+                    execute_conditional!(
+                        enable_styling,
                         self.stdout,
                         style::Print(CONTINUATION_LINE),
                         style::Print("\n"),
@@ -1951,7 +2084,8 @@ impl ChatSession {
                 },
                 Err(err) => {
                     error!(?err, "An error occurred processing the tool");
-                    execute!(
+                    execute_conditional!(
+                        enable_styling,
                         self.stderr,
                         style::Print(CONTINUATION_LINE),
                         style::Print("\n"),
@@ -1991,7 +2125,8 @@ impl ChatSession {
         if !image_blocks.is_empty() {
             let images = image_blocks.into_iter().map(|(block, _)| block).collect();
             self.conversation.add_tool_results_with_images(tool_results, images);
-            execute!(
+            execute_conditional!(
+                enable_styling,
                 self.stderr,
                 style::SetAttribute(Attribute::Reset),
                 style::SetForegroundColor(Color::Reset),
@@ -2001,8 +2136,13 @@ impl ChatSession {
             self.conversation.add_tool_results(tool_results);
         }
 
-        execute!(self.stderr, cursor::Hide)?;
-        execute!(self.stderr, style::Print("\n"), style::SetAttribute(Attribute::Reset))?;
+        execute_conditional!(enable_styling, self.stderr, cursor::Hide)?;
+        execute_conditional!(
+            enable_styling,
+            self.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Reset)
+        )?;
         if self.interactive {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
         }
@@ -2033,6 +2173,7 @@ impl ChatSession {
         let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
 
         let request_id = rx.request_id().map(String::from);
+        let enable_styling = self.enable_styling();
 
         let mut buf = String::new();
         let mut offset = 0;
@@ -2048,7 +2189,8 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
-            queue!(
+            queue_conditional!(
+                enable_styling,
                 self.stderr,
                 style::SetForegroundColor(Color::Reset),
                 cursor::MoveToColumn(0),
@@ -2070,8 +2212,9 @@ impl ChatSession {
                         },
                         parser::ResponseEvent::AssistantText(text) => {
                             // Add Q response prefix before the first assistant text.
-                            if !response_prefix_printed && !text.trim().is_empty() {
-                                queue!(
+                            if !response_prefix_printed && !text.trim().is_empty() && enable_styling {
+                                queue_conditional!(
+                                    enable_styling,
                                     self.stdout,
                                     style::SetForegroundColor(Color::Green),
                                     style::Print("> "),
@@ -2084,7 +2227,8 @@ impl ChatSession {
                         parser::ResponseEvent::ToolUse(tool_use) => {
                             if self.spinner.is_some() {
                                 drop(self.spinner.take());
-                                queue!(
+                                queue_conditional!(
+                                    enable_styling,
                                     self.stderr,
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                     cursor::MoveToColumn(0),
@@ -2138,8 +2282,11 @@ impl ChatSession {
                                 duration.as_secs()
                             );
 
-                            execute!(self.stderr, cursor::Hide)?;
-                            self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
+                            execute_conditional!(enable_styling, self.stderr, cursor::Hide)?;
+                            if self.interactive {
+                                self.spinner =
+                                    Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
+                            }
 
                             // For stream timeouts, we'll tell the model to try and split its response into
                             // smaller chunks.
@@ -2228,7 +2375,8 @@ impl ChatSession {
 
             if tool_name_being_recvd.is_none() && !buf.is_empty() && self.spinner.is_some() {
                 drop(self.spinner.take());
-                queue!(
+                queue_conditional!(
+                    enable_styling,
                     self.stderr,
                     terminal::Clear(terminal::ClearType::CurrentLine),
                     cursor::MoveToColumn(0),
@@ -2237,29 +2385,39 @@ impl ChatSession {
             }
 
             // Print the response for normal cases
-            loop {
-                let input = Partial::new(&buf[offset..]);
-                match interpret_markdown(input, &mut self.stdout, &mut state) {
-                    Ok(parsed) => {
-                        offset += parsed.offset_from(&input);
-                        self.stdout.flush()?;
-                        state.newline = state.set_newline;
-                        state.set_newline = false;
-                    },
-                    Err(err) => match err.into_inner() {
-                        Some(err) => return Err(ChatError::Custom(err.to_string().into())),
-                        None => break, // Data was incomplete
-                    },
-                }
+            if enable_styling {
+                loop {
+                    let input = Partial::new(&buf[offset..]);
+                    match interpret_markdown(input, &mut self.stdout, &mut state) {
+                        Ok(parsed) => {
+                            offset += parsed.offset_from(&input);
+                            self.stdout.flush()?;
+                            state.newline = state.set_newline;
+                            state.set_newline = false;
+                        },
+                        Err(err) => match err.into_inner() {
+                            Some(err) => return Err(ChatError::Custom(err.to_string().into())),
+                            None => break, // Data was incomplete
+                        },
+                    }
 
-                // TODO: We should buffer output based on how much we have to parse, not as a constant
-                // Do not remove unless you are nabochay :)
-                tokio::time::sleep(Duration::from_millis(8)).await;
+                    // TODO: We should buffer output based on how much we have to parse, not as a constant
+                    // Do not remove unless you are nabochay :)
+                    tokio::time::sleep(Duration::from_millis(8)).await;
+                }
+            } else {
+                // When styling is disabled, output raw text without markdown processing
+                let remaining = &buf[offset..];
+                if !remaining.is_empty() {
+                    write!(self.stdout, "{}", remaining)?;
+                    self.stdout.flush()?;
+                    offset = buf.len();
+                }
             }
 
             // Set spinner after showing all of the assistant text content so far.
             if tool_name_being_recvd.is_some() {
-                queue!(self.stderr, cursor::Hide)?;
+                queue_conditional!(enable_styling, self.stderr, cursor::Hide)?;
                 if self.interactive {
                     self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
                 }
@@ -2276,11 +2434,17 @@ impl ChatSession {
                     play_notification_bell(tool_uses.is_empty());
                 }
 
-                queue!(self.stderr, style::ResetColor, style::SetAttribute(Attribute::Reset))?;
-                execute!(self.stdout, style::Print("\n"))?;
+                queue_conditional!(
+                    enable_styling,
+                    self.stderr,
+                    style::ResetColor,
+                    style::SetAttribute(Attribute::Reset)
+                )?;
+                execute_conditional!(enable_styling, self.stdout, style::Print("\n"))?;
 
                 for (i, citation) in &state.citations {
-                    queue!(
+                    queue_conditional!(
+                        enable_styling,
                         self.stdout,
                         style::Print("\n"),
                         style::SetForegroundColor(Color::Blue),
@@ -2313,6 +2477,7 @@ impl ChatSession {
 
     async fn validate_tools(&mut self, os: &Os, tool_uses: Vec<AssistantToolUse>) -> Result<ChatState, ChatError> {
         let conv_id = self.conversation.conversation_id().to_owned();
+        let enable_styling = self.enable_styling();
         debug!(?tool_uses, "Validating tool uses");
         let mut queued_tools: Vec<QueuedTool> = Vec::new();
         let mut tool_results: Vec<ToolUseResult> = Vec::new();
@@ -2363,7 +2528,8 @@ impl ChatSession {
         // If we have any validation errors, then return them immediately to the model.
         if !tool_results.is_empty() {
             debug!(?tool_results, "Error found in the model tools");
-            queue!(
+            queue_conditional!(
+                enable_styling,
                 self.stderr,
                 style::SetAttribute(Attribute::Bold),
                 style::Print("Tool validation failed: "),
@@ -2379,7 +2545,8 @@ impl ChatSession {
                             .ok(),
                     };
                     if let Some(content) = content {
-                        queue!(
+                        queue_conditional!(
+                            enable_styling,
                             self.stderr,
                             style::Print("\n"),
                             style::SetForegroundColor(Color::Red),
@@ -2468,8 +2635,11 @@ impl ChatSession {
 
     async fn print_tool_description(&mut self, os: &Os, tool_index: usize, trusted: bool) -> Result<(), ChatError> {
         let tool_use = &self.tool_uses[tool_index];
+        let enable_styling = self.enable_styling();
 
-        queue!(
+        // TODO: Should we change this output as stderr?
+        queue_conditional!(
+            enable_styling,
             self.stdout,
             style::SetForegroundColor(Color::Magenta),
             style::Print(format!(
@@ -2480,7 +2650,8 @@ impl ChatSession {
             style::SetForegroundColor(Color::Reset)
         )?;
         if let Tool::Custom(ref tool) = tool_use.tool {
-            queue!(
+            queue_conditional!(
+                enable_styling,
                 self.stdout,
                 style::SetForegroundColor(Color::Reset),
                 style::Print(" from mcp server "),
@@ -2490,7 +2661,8 @@ impl ChatSession {
             )?;
         }
 
-        execute!(
+        execute_conditional!(
+            enable_styling,
             self.stdout,
             style::Print("\n"),
             style::Print(CONTINUATION_LINE),
@@ -2510,6 +2682,7 @@ impl ChatSession {
     /// Helper function to read user input with a prompt and Ctrl+C handling
     fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
         let mut ctrl_c = false;
+        let enable_styling = self.enable_styling();
         loop {
             match (self.input_source.read_line(Some(prompt)), ctrl_c) {
                 (Ok(Some(line)), _) => {
@@ -2522,7 +2695,8 @@ impl ChatSession {
                     if exit_on_single_ctrl_c {
                         return None;
                     }
-                    execute!(
+                    execute_conditional!(
+                        enable_styling,
                         self.stderr,
                         style::Print(format!(
                             "\n(To exit the CLI, press Ctrl+C or Ctrl+D again or type {})\n\n",
@@ -2565,14 +2739,21 @@ impl ChatSession {
         self.conversation.agents.trust_all_tools
     }
 
+    /// Returns true if text styling should be disabled for this session
+    fn enable_styling(&self) -> bool {
+        self.enable_styling
+    }
+
     /// Display character limit warnings based on current conversation size
     async fn display_char_warnings(&mut self, os: &Os) -> Result<(), ChatError> {
         let warning_level = self.conversation.get_token_warning_level(os).await?;
+        let enable_styling = self.enable_styling();
 
         match warning_level {
             TokenWarningLevel::Critical => {
                 // Memory constraint warning with gentler wording
-                execute!(
+                execute_conditional!(
+                    enable_styling,
                     self.stderr,
                     style::SetForegroundColor(Color::Yellow),
                     style::SetAttribute(Attribute::Bold),
@@ -2834,6 +3015,8 @@ fn does_input_reference_file(input: &str) -> Option<ChatState> {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use crossterm::Command;
 
     use super::*;
     use crate::cli::agent::Agent;
@@ -3293,5 +3476,128 @@ mod tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
         }
+    }
+
+    #[test]
+    fn test_conditional_styling_macros() {
+        let mut output = Vec::new();
+
+        // With styling enabled - should include ANSI codes
+        queue_conditional!(
+            true,
+            &mut output,
+            style::SetForegroundColor(Color::Red),
+            style::Print("test"),
+            style::ResetColor
+        )
+        .unwrap();
+
+        let styled_output = String::from_utf8(output.clone()).unwrap();
+        let mut expected_red = String::new();
+        style::SetForegroundColor(Color::Red)
+            .write_ansi(&mut expected_red)
+            .unwrap();
+        let mut expected_reset = String::new();
+        style::ResetColor.write_ansi(&mut expected_reset).unwrap();
+
+        assert!(styled_output.contains(&expected_red));
+        assert!(styled_output.contains(&expected_reset));
+        assert!(styled_output.contains("test"));
+
+        // With styling disabled - should only contain text
+        output.clear();
+        queue_conditional!(
+            false,
+            &mut output,
+            style::SetForegroundColor(Color::Red),
+            style::Print("test"),
+            style::ResetColor
+        )
+        .unwrap();
+
+        let unstyled_output = String::from_utf8(output).unwrap();
+        assert_eq!(unstyled_output, "test");
+        assert!(!unstyled_output.contains(&expected_red));
+        assert!(!unstyled_output.contains(&expected_reset));
+    }
+
+    #[test]
+    fn test_execute_conditional_macro() {
+        use std::sync::Arc;
+        use std::sync::atomic::{
+            AtomicUsize,
+            Ordering,
+        };
+
+        // Mock writer that tracks flush calls
+        struct MockWriter {
+            buffer: Vec<u8>,
+            flush_count: Arc<AtomicUsize>,
+        }
+
+        impl std::io::Write for MockWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.buffer.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                self.flush_count.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }
+        }
+
+        let flush_count = Arc::new(AtomicUsize::new(0));
+        let mut mock_writer = MockWriter {
+            buffer: Vec::new(),
+            flush_count: flush_count.clone(),
+        };
+
+        let mut expected_red = String::new();
+        style::SetForegroundColor(Color::Red)
+            .write_ansi(&mut expected_red)
+            .unwrap();
+        let mut expected_reset = String::new();
+        style::ResetColor.write_ansi(&mut expected_reset).unwrap();
+
+        // Test execute_conditional with styling enabled
+        execute_conditional!(
+            true,
+            &mut mock_writer,
+            style::SetForegroundColor(Color::Red),
+            style::Print("test"),
+            style::ResetColor
+        )
+        .unwrap();
+
+        let styled_output = String::from_utf8(mock_writer.buffer.clone()).unwrap();
+        assert!(styled_output.contains(&expected_red));
+        assert!(styled_output.contains(&expected_reset));
+        assert!(styled_output.contains("test"));
+        assert_eq!(flush_count.load(Ordering::Relaxed), 1, "flush should be called once");
+
+        // Reset for next test
+        mock_writer.buffer.clear();
+        flush_count.store(0, Ordering::Relaxed);
+
+        // Test execute_conditional with styling disabled
+        execute_conditional!(
+            false,
+            &mut mock_writer,
+            style::SetForegroundColor(Color::Red),
+            style::Print("test"),
+            style::ResetColor
+        )
+        .unwrap();
+
+        let unstyled_output = String::from_utf8(mock_writer.buffer).unwrap();
+        assert_eq!(unstyled_output, "test");
+        assert!(!unstyled_output.contains(&expected_red));
+        assert!(!unstyled_output.contains(&expected_reset));
+        assert_eq!(
+            flush_count.load(Ordering::Relaxed),
+            1,
+            "flush should still be called once even when styling is disabled"
+        );
     }
 }
