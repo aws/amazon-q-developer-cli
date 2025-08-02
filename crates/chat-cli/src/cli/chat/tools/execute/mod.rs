@@ -83,6 +83,11 @@ impl ExecuteCommand {
 
         // Check if each command in the pipe chain starts with a safe command
         for cmd_args in all_commands {
+            let cmd_as_str = cmd_args.join(" ");
+            if allowed_commands.contains(&cmd_as_str) {
+                continue;
+            }
+
             match cmd_args.first() {
                 // Special casing for `find` so that we support most cases while safeguarding
                 // against unwanted mutations
@@ -97,9 +102,6 @@ impl ExecuteCommand {
                     return true;
                 },
                 Some(cmd) => {
-                    if allowed_commands.contains(cmd) {
-                        continue;
-                    }
                     // Special casing for `grep`. -P flag for perl regexp has RCE issues, apparently
                     // should not be supported within grep but is flagged as a possibility since this is perl
                     // regexp.
@@ -334,5 +336,26 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn test_tool_settings() {
+        let allowed_commands = ["git status", "git diff"]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        let execute_cmd = ExecuteCommand {
+            command: "git status".to_string(),
+            summary: None,
+        };
+        let requires_acceptance = execute_cmd.requires_acceptance(Some(&allowed_commands), false);
+        assert!(!requires_acceptance);
+
+        let execute_cmd = ExecuteCommand {
+            command: "git commit".to_string(),
+            summary: None,
+        };
+        let requires_acceptance = execute_cmd.requires_acceptance(Some(&allowed_commands), false);
+        assert!(requires_acceptance);
     }
 }
