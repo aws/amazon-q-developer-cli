@@ -133,7 +133,8 @@ impl AgentArgs {
             },
             Some(AgentSubcommands::Validate { path }) => {
                 let mut global_mcp_config = None::<McpServerConfig>;
-                let agent = Agent::load(os, path.as_str(), &mut global_mcp_config).await;
+                let mut workspace_mcp_config = None::<McpServerConfig>;
+                let agent = Agent::load(os, path.as_str(), &mut global_mcp_config, &mut workspace_mcp_config).await;
 
                 'validate: {
                     match agent {

@@ -140,7 +140,7 @@ impl AgentSubcommand {
                     return Err(ChatError::Custom("Editor process did not exit with success".into()));
                 }
 
-                let new_agent = Agent::load(os, &path_with_file_name, &mut None).await;
+                let new_agent = Agent::load(os, &path_with_file_name, &mut None, &mut None).await;
                 match new_agent {
                     Ok(agent) => {
                         session.conversation.agents.agents.insert(agent.name.clone(), agent);

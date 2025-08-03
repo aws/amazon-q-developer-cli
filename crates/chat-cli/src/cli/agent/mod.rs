@@ -63,6 +63,7 @@ use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
 };
+use crate::cli::chat::tool_manager::workspace_mcp_config_path;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::{
@@ -205,15 +206,44 @@ impl Agent {
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
     /// For example, converting the mcp array to actual mcp config and populate the agent file path.
-    fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
+    fn thaw(
+        &mut self,
+        path: &Path,
+        global_mcp_config: Option<&McpServerConfig>,
+        workspace_mcp_config: Option<&McpServerConfig>,
+    ) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         self.path = Some(path.to_path_buf());
 
-        if let (true, Some(global_mcp_config)) = (self.use_legacy_mcp_json, global_mcp_config) {
+        if self.use_legacy_mcp_json {
+            // MCP configuration loading priority (later configs override earlier ones):
+            // 1. Global legacy MCP config (~/.aws/amazonq/mcp.json)
+            // 2. Workspace MCP config (.amazonq/mcp.json)
+            // 3. Agent-specific MCP config (~/.aws/amazonq/cli-agents/{agent-name}.json and
+            //    .amazonq/cli-agents/{agent-name}.json)
+            // This ensures workspace-specific configurations take precedence over global ones.
+
+            let mut legacy_mcp_servers = HashMap::new();
+            if let Some(global_mcp_config) = global_mcp_config {
+                for (name, legacy_server) in &global_mcp_config.mcp_servers {
+                    let mut server_clone = legacy_server.clone();
+                    server_clone.is_from_legacy_mcp_json = true;
+                    legacy_mcp_servers.insert(name.clone(), server_clone);
+                }
+            }
+
+            if let Some(workspace_mcp_config) = workspace_mcp_config {
+                for (name, legacy_server) in &workspace_mcp_config.mcp_servers {
+                    let mut server_clone = legacy_server.clone();
+                    server_clone.is_from_legacy_mcp_json = true;
+                    legacy_mcp_servers.insert(name.clone(), server_clone);
+                }
+            }
+
             let mut stderr = std::io::stderr();
-            for (name, legacy_server) in &global_mcp_config.mcp_servers {
-                if mcp_servers.mcp_servers.contains_key(name) {
+            for (name, legacy_server) in legacy_mcp_servers {
+                if mcp_servers.mcp_servers.contains_key(&name) {
                     let _ = queue!(
                         stderr,
                         style::SetForegroundColor(Color::Yellow),
@@ -229,9 +259,7 @@ impl Agent {
                     );
                     continue;
                 }
-                let mut server_clone = legacy_server.clone();
-                server_clone.is_from_legacy_mcp_json = true;
-                mcp_servers.mcp_servers.insert(name.clone(), server_clone);
+                mcp_servers.mcp_servers.insert(name.clone(), legacy_server);
             }
         }
 
@@ -244,8 +272,8 @@ impl Agent {
         Ok(serde_json::to_string_pretty(&agent_clone)?)
     }
 
-    /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
-    /// and falling back to global dir if it does not exist in local.
+    /// Retrieves an agent by name. First searches in the local directory,
+    /// then falls back to global and workspace directories if not found locally.
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
@@ -275,7 +303,17 @@ impl Agent {
                         None
                     },
                 };
-                agent.thaw(&config_path, global_mcp_config.as_ref())?;
+
+                let workspace_mcp_path = workspace_mcp_config_path(os)?;
+                let workspace_mcp_config = match McpServerConfig::load_from_file(os, workspace_mcp_path).await {
+                    Ok(config) => Some(config),
+                    Err(e) => {
+                        tracing::error!("Error loading workspace mcp json path: {e}.");
+                        None
+                    },
+                };
+
+                agent.thaw(&config_path, global_mcp_config.as_ref(), workspace_mcp_config.as_ref())?;
                 Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
@@ -286,6 +324,7 @@ impl Agent {
         os: &Os,
         agent_path: impl AsRef<Path>,
         global_mcp_config: &mut Option<McpServerConfig>,
+        workspace_mcp_config: &mut Option<McpServerConfig>,
     ) -> Result<Agent, AgentConfigError> {
         let content = os.fs.read(&agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
@@ -305,7 +344,23 @@ impl Agent {
             global_mcp_config.replace(legacy_mcp_config);
         }
 
-        agent.thaw(agent_path.as_ref(), global_mcp_config.as_ref())?;
+        if agent.use_legacy_mcp_json && workspace_mcp_config.is_none() {
+            let workspace_mcp_path = workspace_mcp_config_path(os)?;
+            let legacy_mcp_config = if workspace_mcp_path.exists() {
+                McpServerConfig::load_from_file(os, workspace_mcp_path)
+                    .await
+                    .map_err(AgentConfigError::BadLegacyMcpConfig)?
+            } else {
+                McpServerConfig::default()
+            };
+            workspace_mcp_config.replace(legacy_mcp_config);
+        }
+
+        agent.thaw(
+            agent_path.as_ref(),
+            global_mcp_config.as_ref(),
+            workspace_mcp_config.as_ref(),
+        )?;
         Ok(agent)
     }
 }
@@ -409,6 +464,7 @@ impl Agents {
         };
 
         let mut global_mcp_config = None::<McpServerConfig>;
+        let mut workspace_mcp_config = None::<McpServerConfig>;
 
         let mut local_agents = 'local: {
             // We could be launching from the home dir, in which case the global and local agents
@@ -429,7 +485,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, &mut workspace_mcp_config).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -467,7 +523,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, &mut workspace_mcp_config).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -607,6 +663,31 @@ impl Agents {
 
             all_agents.push({
                 let mut agent = Agent::default();
+
+                // MCP configuration loading priority (later configs override earlier ones):
+                // 1. Global legacy MCP config (~/.aws/amazonq/mcp.json)
+                // 2. Workspace MCP config (.amazonq/mcp.json)
+                // This ensures workspace-specific configurations take precedence over global ones
+
+                let mut workspace_mcp_config = None;
+                'load_workspace_mcp_json: {
+                    let Ok(workspace_mcp_path) = workspace_mcp_config_path(os) else {
+                        tracing::error!("Error obtaining workspace mcp json path. Skipping");
+                        break 'load_workspace_mcp_json;
+                    };
+
+                    if os.fs.exists(&workspace_mcp_path) {
+                        match McpServerConfig::load_from_file(os, workspace_mcp_path).await {
+                            Ok(config) => {
+                                workspace_mcp_config = Some(config);
+                            },
+                            Err(e) => {
+                                tracing::error!("Error loading workspace mcp.json: {e}. Skipping");
+                            },
+                        };
+                    }
+                }
+
                 'load_legacy_mcp_json: {
                     if global_mcp_config.is_none() {
                         let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
@@ -626,6 +707,12 @@ impl Agents {
 
                 if let Some(config) = &global_mcp_config {
                     agent.mcp_servers = config.clone();
+                }
+
+                if let Some(workspace_config) = workspace_mcp_config {
+                    for (name, server) in workspace_config.mcp_servers {
+                        agent.mcp_servers.mcp_servers.insert(name, server);
+                    }
                 }
 
                 agent
@@ -749,6 +836,7 @@ async fn load_agents_from_entries(
     mut files: ReadDir,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
+    workspace_mcp_config: &mut Option<McpServerConfig>,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
 
@@ -759,7 +847,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, file_path, global_mcp_config).await);
+            res.push(Agent::load(os, file_path, global_mcp_config, workspace_mcp_config).await);
         }
     }
 
