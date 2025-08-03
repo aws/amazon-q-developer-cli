@@ -119,6 +119,8 @@ pub enum AgentConfigError {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
+    #[serde(rename = "$schema", default = "default_schema")]
+    pub schema: String,
     /// Name of the agent
     pub name: String,
     /// This field is not model facing and is mostly here for users to discern between agents
@@ -165,6 +167,7 @@ pub struct Agent {
 impl Default for Agent {
     fn default() -> Self {
         Self {
+            schema: default_schema(),
             name: DEFAULT_AGENT_NAME.to_string(),
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
@@ -699,7 +702,7 @@ impl Agents {
                 // Here the tool names can take the following forms:
                 // - @{server_name}{delimiter}{tool_name}
                 // - native_tool_name
-                name == tool_name
+                name == tool_name && matches!(origin, &ToolOrigin::Native)
                     || name.strip_prefix("@").is_some_and(|remainder| {
                         remainder
                             .split_once(MCP_SERVER_TOOL_DELIMITER)
@@ -766,6 +769,10 @@ async fn load_agents_from_entries(
     }
 
     res
+}
+
+fn default_schema() -> String {
+    "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
 }
 
 #[cfg(test)]

@@ -369,5 +369,15 @@ mod tests {
                 })
             })
         );
+        assert_parse!(
+            ["agent", "create", "-n", "some_agent", "--from", "some_old_agent"],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Create {
+                    name: "some_agent".to_string(),
+                    directory: None,
+                    from: Some("some_old_agent".to_string())
+                })
+            })
+        );
     }
 }

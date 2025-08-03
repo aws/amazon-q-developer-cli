@@ -170,8 +170,9 @@ pub enum ToolOrigin {
 
 impl std::hash::Hash for ToolOrigin {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
         match self {
-            Self::Native => "native".hash(state),
+            Self::Native => {},
             Self::McpServer(name) => name.hash(state),
         }
     }

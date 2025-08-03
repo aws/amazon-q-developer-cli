@@ -98,6 +98,7 @@ use tool_manager::{
 };
 use tools::gh_issue::GhIssueContext;
 use tools::{
+    NATIVE_TOOLS,
     OutputKind,
     QueuedTool,
     Tool,
@@ -281,6 +282,28 @@ impl ChatArgs {
             }
 
             if let Some(trust_tools) = self.trust_tools.take() {
+                for tool in &trust_tools {
+                    if !tool.starts_with("@") && !NATIVE_TOOLS.contains(&tool.as_str()) {
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print("WARNING: "),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print("--trust-tools arg for custom tool "),
+                            style::SetForegroundColor(Color::Cyan),
+                            style::Print(tool),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print(" needs to be prepended with "),
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("@{MCPSERVERNAME}/"),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print("\n"),
+                        );
+                    }
+                }
+
+                let _ = stderr.flush();
+
                 if let Some(a) = agents.get_active_mut() {
                     a.allowed_tools.extend(trust_tools);
                 }
@@ -818,7 +841,7 @@ impl ChatSession {
                 )?;
                 ("Unable to compact the conversation history", eyre!(err), true)
             },
-            ChatError::Client(err) => match *err {
+            ChatError::SendMessage(err) => match err.source {
                 // Errors from attempting to send too large of a conversation history. In
                 // this case, attempt to automatically compact the history for the user.
                 ApiClientError::ContextWindowOverflow { .. } => {
@@ -1333,7 +1356,9 @@ impl ChatSession {
                 // retryable according to the passed strategy.
                 let history_len = self.conversation.history().len();
                 match err {
-                    ChatError::Client(err) if matches!(*err, ApiClientError::ContextWindowOverflow { .. }) => {
+                    ChatError::SendMessage(err)
+                        if matches!(err.source, ApiClientError::ContextWindowOverflow { .. }) =>
+                    {
                         error!(?strategy, "failed to send compaction request");
                         // If there's only two messages in the history, we have no choice but to
                         // truncate it. We use two messages since it's almost guaranteed to contain:
