@@ -5,7 +5,6 @@ The agent configuration file for each agent is a JSON file. The filename (withou
 Every agent configuration file can include the following sections:
 
 - [`name`](#name-field) — The name of the agent (optional, derived from filename if not specified).
-- [`version`](#version-field) - The version of the agent config.
 - [`description`](#description-field) — A description of the agent.
 - [`prompt`](#prompt-field) — High-level context for the agent (not yet implemented).
 - [`mcpServers`](#mcpservers-field) — The MCP servers the agent has access to.
@@ -24,19 +23,6 @@ The `name` field specifies the name of the agent. This is used for identificatio
 ```json
 {
   "name": "aws-expert"
-}
-```
-
-Note: While this field can be included in the configuration file, it will be overridden by the filename when the agent is loaded.
-
-## Version Field
-
-The `version` field specifies the version of the agent config. This is currently not being utilized though you must specify it.
-Currently, the default version is "0.1.0"
-
-```json
-{
-  "version": "0.1.0"
 }
 ```
 
@@ -219,15 +205,11 @@ The `hooks` field defines commands to run at specific trigger points. The output
     "agentSpawn": [
       {
         "command": "git status",
-        "timeout_ms": 30000,
-        "max_output_size": 10240,
-        "cache_ttl_seconds": 0
       }
     ],
     "userPromptSubmit": [
       {
         "command": "ls -la",
-        "timeout_ms": 5000
       }
     ]
   }
@@ -236,9 +218,6 @@ The `hooks` field defines commands to run at specific trigger points. The output
 
 Each hook is defined with:
 - `command` (required): The command to execute
-- `timeout_ms` (optional): Maximum execution time in milliseconds (default: 30000)
-- `max_output_size` (optional): Maximum output size in bytes (default: 10240)
-- `cache_ttl_seconds` (optional): How long to cache the output (default: 0)
 
 Available hook triggers:
 - `agentSpawn`: Triggered when the agent is initialized
@@ -306,13 +285,11 @@ Here's a complete example of an agent configuration file:
     "agentSpawn": [
       {
         "command": "git status",
-        "timeout_ms": 30000
       }
     ],
     "userPromptSubmit": [
       {
         "command": "ls -la",
-        "timeout_ms": 5000
       }
     ]
   },

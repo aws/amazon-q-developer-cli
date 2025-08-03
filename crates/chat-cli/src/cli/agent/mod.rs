@@ -120,10 +120,10 @@ pub enum AgentConfigError {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
+    #[serde(rename = "$schema", default = "default_schema")]
+    pub schema: String,
     /// Name of the agent
     pub name: String,
-    /// Version of the agent config
-    pub version: String,
     /// This field is not model facing and is mostly here for users to discern between agents
     #[serde(default)]
     pub description: Option<String>,
@@ -168,8 +168,8 @@ pub struct Agent {
 impl Default for Agent {
     fn default() -> Self {
         Self {
+            schema: default_schema(),
             name: DEFAULT_AGENT_NAME.to_string(),
-            version: "0.1.0".to_string(),
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
             mcp_servers: Default::default(),
@@ -700,7 +700,7 @@ impl Agents {
                 // Here the tool names can take the following forms:
                 // - @{server_name}{delimiter}{tool_name}
                 // - native_tool_name
-                name == tool_name
+                name == tool_name && matches!(origin, &ToolOrigin::Native)
                     || name.strip_prefix("@").is_some_and(|remainder| {
                         remainder
                             .split_once(MCP_SERVER_TOOL_DELIMITER)
@@ -769,6 +769,10 @@ async fn load_agents_from_entries(
     res
 }
 
+fn default_schema() -> String {
+    "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
+}
+
 #[cfg(test)]
 fn validate_agent_name(name: &str) -> eyre::Result<()> {
     // Check if name is empty
@@ -794,7 +798,6 @@ mod tests {
     const INPUT: &str = r#"
             {
               "name": "some_agent",
-              "version": "0.1.0",
               "description": "My developer agent is used for small development tasks like solving open issues.",
               "prompt": "You are a principal developer who uses multiple agents to accomplish difficult engineering tasks",
               "mcpServers": {

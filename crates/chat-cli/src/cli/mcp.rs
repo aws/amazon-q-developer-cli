@@ -550,7 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_subcomman_add() {
+    fn test_mcp_subcommand_add() {
         assert_parse!(
             [
                 "mcp",

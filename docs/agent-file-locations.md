@@ -7,7 +7,7 @@ Agent configuration files can be placed in two different locations, allowing for
 Local agents are stored in the current working directory under:
 
 ```
-.aws/amazonq/agents/
+.amazonq/cli-agents/
 ```
 
 These agents are specific to the current workspace or project and are only available when running Q CLI from that directory or its subdirectories.
@@ -15,9 +15,8 @@ These agents are specific to the current workspace or project and are only avail
 **Example structure:**
 ```
 my-project/
-├── .aws/
-│   └── amazonq/
-│       └── agents/
+├── .amazonq/
+│       └── cli-agents/
 │           ├── dev-agent.json
 │           └── aws-specialist.json
 └── src/
@@ -29,14 +28,16 @@ my-project/
 Global agents are stored in your home directory under:
 
 ```
-~/.aws/amazonq/agents/
+~/.aws/amazonq/cli-agents/
 ```
+
+Note: For globally available agents, the `amazonq` directory is in the `.aws` folder. 
 
 These agents are available from any directory when using Q CLI.
 
 **Example structure:**
 ```
-~/.aws/amazonq/agents/
+~/.aws/amazonq/cli-agents/
 ├── general-assistant.json
 ├── code-reviewer.json
 └── documentation-writer.json
@@ -46,8 +47,8 @@ These agents are available from any directory when using Q CLI.
 
 When Q CLI looks for an agent, it follows this precedence order:
 
-1. **Local first**: Checks `.aws/amazonq/agents/` in the current working directory
-2. **Global fallback**: If not found locally, checks `~/.aws/amazonq/agents/` in the home directory
+1. **Local first**: Checks `.aws/amazonq/cli-agents/` in the current working directory
+2. **Global fallback**: If not found locally, checks `~/.aws/amazonq/cli-agents/` in the home directory
 
 ## Naming Conflicts
 
@@ -78,8 +79,8 @@ The global agent with the same name will be ignored in favor of the local versio
 To create a local agent for your current project:
 
 ```bash
-mkdir -p .aws/amazonq/agents
-cat > .aws/amazonq/agents/project-helper.json << 'EOF'
+mkdir -p .amazonq/cli-agents
+cat > .amazonq/cli-agents/project-helper.json << 'EOF'
 {
   "description": "Helper agent for this specific project",
   "tools": ["fs_read", "fs_write", "execute_bash"],
@@ -94,8 +95,8 @@ EOF
 To create a global agent available everywhere:
 
 ```bash
-mkdir -p ~/.aws/amazonq/agents
-cat > ~/.aws/amazonq/agents/general-helper.json << 'EOF'
+mkdir -p ~/.aws/amazonq/cli-agents
+cat > ~/.aws/amazonq/cli-agents/general-helper.json << 'EOF'
 {
   "description": "General purpose assistant",
   "tools": ["*"],
@@ -106,4 +107,4 @@ EOF
 
 ## Directory Creation
 
-Q CLI will automatically create the global agents directory (`~/.aws/amazonq/agents/`) if it doesn't exist. However, you need to manually create the local agents directory (`.aws/amazonq/agents/`) in your workspace if you want to use local agents.
+Q CLI will automatically create the global agents directory (`~/.aws/amazonq/cli-agents/`) if it doesn't exist. However, you need to manually create the local agents directory (`.amazonq/cli-agents/`) in your workspace if you want to use local agents.

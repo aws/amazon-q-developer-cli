@@ -165,7 +165,7 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
 
     // Get profile-specific paths
     for path in &context_manager.paths {
-        all_paths.push(format!("(profile: {}) {}", context_manager.current_profile, path));
+        all_paths.push(format!("(agent: {}) {}", context_manager.current_profile, path));
     }
 
     if all_paths.is_empty() {
