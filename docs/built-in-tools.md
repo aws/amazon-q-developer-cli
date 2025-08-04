@@ -31,7 +31,7 @@ Execute the specified bash command.
 
 | Option | Type | Default | Description                                                                              |
 |--------|------|---------|------------------------------------------------------------------------------------------|
-| `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting. Supports regex formatting. |
+| `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting. Supports regex formatting. Note that regex entered are anchored with \A and \z. |
 | `allowReadOnly` | boolean | `true` | Whether to allow read-only commands without prompting                                    |
 
 ## Fs_read Tool
