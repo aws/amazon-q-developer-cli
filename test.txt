@@ -1,9 +1,0 @@
-crates/chat-cli/src/cli/chat/tools/execute/mod.rs --- Rust
-51 
-52         let has_regex_match = allowed_commands
-53             .iter()
-54             .map(|cmd| Regex::new(&format!(r"\A{}\z", cmd)))
-55             .filter(Result::is_ok)
-56             .flatten()
-57             .any(|regex| regex.is_match(&self.command));
-

@@ -109,9 +109,6 @@ impl ExecuteCommand {
                     return true;
                 },
                 Some(cmd) => {
-                    if allowed_commands.contains(cmd) {
-                        continue;
-                    }
                     // Special casing for `grep`. -P flag for perl regexp has RCE issues, apparently
                     // should not be supported within grep but is flagged as a possibility since this is perl
                     // regexp.
@@ -359,7 +356,7 @@ mod tests {
         let cmds = &[
             // Command first argument 'root' allowed (allows all subcommands)
             ("root", false),
-            ("root subcommand", false),
+            ("root subcommand", true),
             // Valid allowed_command_regex matching
             ("git", true),
             ("git status", false),
