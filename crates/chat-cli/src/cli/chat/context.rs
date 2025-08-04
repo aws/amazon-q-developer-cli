@@ -29,7 +29,7 @@ use crate::os::Os;
 pub enum ContextFilePath {
     /// Signifies that the path is brought in from the agent config
     Agent(String),
-    /// Signifies that hte path is brought in via /context add
+    /// Signifies that the path is brought in via /context add
     Session(String),
 }
 

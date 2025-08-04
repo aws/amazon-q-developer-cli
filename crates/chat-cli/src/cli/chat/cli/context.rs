@@ -298,7 +298,8 @@ impl ContextSubcommand {
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::Green),
-                        style::Print(format!("\nAdded {} path(s) to context.\n\n", paths.len())),
+                        style::Print(format!("\nAdded {} path(s) to context.\n", paths.len())),
+                        style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 },
@@ -317,6 +318,7 @@ impl ContextSubcommand {
                         session.stderr,
                         style::SetForegroundColor(Color::Green),
                         style::Print(format!("\nRemoved {} path(s) from context.\n\n", paths.len(),)),
+                        style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 },
@@ -334,7 +336,8 @@ impl ContextSubcommand {
                 execute!(
                     session.stderr,
                     style::SetForegroundColor(Color::Green),
-                    style::Print("\nCleared context\n\n"),
+                    style::Print("\nCleared context\n"),
+                    style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
             },
