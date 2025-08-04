@@ -7,6 +7,7 @@ mod issue;
 mod mcp;
 mod settings;
 mod user;
+mod webchat;
 
 use std::fmt::Display;
 use std::io::{
@@ -43,6 +44,7 @@ use crate::cli::user::{
     LoginArgs,
     WhoamiArgs,
 };
+use crate::cli::webchat::WebchatArgs;
 use crate::logging::{
     LogArgs,
     initialize_logging,
@@ -89,6 +91,8 @@ pub enum RootSubcommand {
     Agent(AgentArgs),
     /// AI assistant in your terminal
     Chat(ChatArgs),
+    /// AI assistant in your web browser
+    Webchat(WebchatArgs),
     /// Log in to Amazon Q
     Login(LoginArgs),
     /// Log out of Amazon Q
@@ -123,11 +127,11 @@ impl RootSubcommand {
     ///
     /// Emitting telemetry takes a long time so the answer is usually no.
     pub fn valid_for_telemetry(&self) -> bool {
-        matches!(self, Self::Chat(_) | Self::Login(_) | Self::Profile | Self::Issue(_))
+        matches!(self, Self::Chat(_) | Self::Webchat(_) | Self::Login(_) | Self::Profile | Self::Issue(_))
     }
 
     pub fn requires_auth(&self) -> bool {
-        matches!(self, Self::Chat(_) | Self::Profile)
+        matches!(self, Self::Chat(_) | Self::Webchat(_) | Self::Profile)
     }
 
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
@@ -155,6 +159,7 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => args.execute(os).await,
+            Self::Webchat(args) => args.execute(os).await,
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
         }
     }
@@ -171,6 +176,7 @@ impl Display for RootSubcommand {
         let name = match self {
             Self::Agent(_) => "agent",
             Self::Chat(_) => "chat",
+            Self::Webchat(_) => "webchat",
             Self::Login(_) => "login",
             Self::Logout => "logout",
             Self::Whoami(_) => "whoami",
@@ -362,7 +368,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
-                web_server: false,
             })),
             verbose: 2,
             help_all: false,
@@ -402,7 +407,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
-                web_server: false,
             })
         );
     }
@@ -419,7 +423,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
-                web_server: false,
             })
         );
     }
@@ -436,7 +439,6 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
-                web_server: false,
             })
         );
     }
@@ -453,7 +455,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
-                web_server: false,
             })
         );
         assert_parse!(
@@ -466,7 +467,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
-                web_server: false,
             })
         );
     }
@@ -483,7 +483,6 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
-                web_server: false,
             })
         );
     }
@@ -500,7 +499,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["".to_string()]),
                 no_interactive: false,
-                web_server: false,
             })
         );
     }
@@ -517,24 +515,6 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
                 no_interactive: false,
-                web_server: false,
-            })
-        );
-    }
-
-    #[test]
-    fn test_chat_with_web_server() {
-        assert_parse!(
-            ["chat", "--web-server"],
-            RootSubcommand::Chat(ChatArgs {
-                resume: false,
-                input: None,
-                agent: None,
-                model: None,
-                trust_all_tools: false,
-                trust_tools: None,
-                no_interactive: false,
-                web_server: true,
             })
         );
     }

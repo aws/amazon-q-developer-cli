@@ -118,6 +118,7 @@ url.workspace = true
 uuid.workspace = true
 walkdir.workspace = true
 webpki-roots.workspace = true
+web-terminal = { path = "../web-terminal" }
 whoami.workspace = true
 winnow.workspace = true
 schemars.workspace = true

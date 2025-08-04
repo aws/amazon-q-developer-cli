@@ -196,9 +196,6 @@ pub struct ChatArgs {
     /// Whether the command should run without expecting user input
     #[arg(long, alias = "non-interactive")]
     pub no_interactive: bool,
-    /// Start a web server interface for chat
-    #[arg(long)]
-    pub web_server: bool,
     /// The first question to ask
     pub input: Option<String>,
 }
