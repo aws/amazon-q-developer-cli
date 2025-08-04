@@ -284,12 +284,12 @@ Here's a complete example of an agent configuration file:
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
+        "command": "git status"
       }
     ],
     "userPromptSubmit": [
       {
-        "command": "ls -la",
+        "command": "ls -la"
       }
     ]
   },
