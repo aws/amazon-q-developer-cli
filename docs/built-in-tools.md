@@ -29,10 +29,10 @@ Execute the specified bash command.
 
 ### Configuration Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting |
-| `allowReadOnly` | boolean | `true` | Whether to allow read-only commands without prompting |
+| Option | Type | Default | Description                                                                              |
+|--------|------|---------|------------------------------------------------------------------------------------------|
+| `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting. Supports regex formatting. |
+| `allowReadOnly` | boolean | `true` | Whether to allow read-only commands without prompting                                    |
 
 ## Fs_read Tool
 
