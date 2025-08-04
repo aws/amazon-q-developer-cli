@@ -21,12 +21,15 @@ use tracing::{
 };
 
 use super::cli::compact::CompactStrategy;
+use super::cli::model::context_window_tokens;
 use super::consts::{
     DUMMY_TOOL_NAME,
-    MAX_CHARS,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
 };
-use super::context::ContextManager;
+use super::context::{
+    ContextManager,
+    calc_max_context_files_size,
+};
 use super::message::{
     AssistantMessage,
     ToolUseResult,
@@ -36,6 +39,7 @@ use super::parser::RequestMetadata;
 use super::token_counter::{
     CharCount,
     CharCounter,
+    TokenCounter,
 };
 use super::tool_manager::ToolManager;
 use super::tools::{
@@ -116,7 +120,7 @@ impl ConversationState {
         current_model_id: Option<String>,
     ) -> Self {
         let context_manager = if let Some(agent) = agents.get_active() {
-            ContextManager::from_agent(agent, None).ok()
+            ContextManager::from_agent(agent, calc_max_context_files_size(current_model_id.as_deref())).ok()
         } else {
             None
         };
@@ -634,8 +638,9 @@ impl ConversationState {
     /// Get the current token warning level
     pub async fn get_token_warning_level(&mut self, os: &Os) -> Result<TokenWarningLevel, ChatError> {
         let total_chars = self.calculate_char_count(os).await?;
+        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model.as_deref()));
 
-        Ok(if *total_chars >= MAX_CHARS {
+        Ok(if *total_chars >= max_chars {
             TokenWarningLevel::Critical
         } else {
             TokenWarningLevel::None

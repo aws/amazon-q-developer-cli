@@ -303,6 +303,9 @@ impl BuilderIdToken {
 
     /// Load the token from the keychain, refresh the token if it is expired and return it
     pub async fn load(database: &Database) -> Result<Option<Self>, AuthError> {
+        #[cfg(test)]
+        return Ok(Some(Self::test()));
+
         trace!("loading builder id token from the secret store");
         match database.get_secret(Self::SECRET_KEY).await {
             Ok(Some(secret)) => {

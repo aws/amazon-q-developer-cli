@@ -12,7 +12,7 @@ use serde::{
     Serialize,
 };
 
-use super::consts::CONTEXT_FILES_MAX_SIZE;
+use super::cli::model::context_window_tokens;
 use super::util::drop_matched_context_files;
 use crate::cli::agent::Agent;
 use crate::cli::agent::hook::{
@@ -38,7 +38,7 @@ pub struct ContextManager {
 }
 
 impl ContextManager {
-    pub fn from_agent(agent: &Agent, max_context_files_size: Option<usize>) -> Result<Self> {
+    pub fn from_agent(agent: &Agent, max_context_files_size: usize) -> Result<Self> {
         let paths = agent
             .resources
             .iter()
@@ -47,7 +47,7 @@ impl ContextManager {
             .collect::<Vec<_>>();
 
         Ok(Self {
-            max_context_files_size: max_context_files_size.unwrap_or(CONTEXT_FILES_MAX_SIZE),
+            max_context_files_size,
             current_profile: agent.name.clone(),
             paths,
             hooks: agent.hooks.clone(),
@@ -184,6 +184,12 @@ impl ContextManager {
         hooks.retain(|t, _| *t == trigger);
         self.hook_executor.run_hooks(hooks, output, prompt).await
     }
+}
+
+/// Calculates the maximum context files size to use for the given model id.
+pub fn calc_max_context_files_size(model_id: Option<&str>) -> usize {
+    // Sets the max as 75% of the context window
+    context_window_tokens(model_id).saturating_mul(3) / 4
 }
 
 /// Process a path, handling glob patterns and file types.
@@ -355,5 +361,14 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_calc_max_context_files_size() {
+        assert_eq!(
+            calc_max_context_files_size(Some("CLAUDE_SONNET_4_20250514_V1_0")),
+            150_000
+        );
+        assert_eq!(calc_max_context_files_size(Some("OPENAI_GPT_OSS_120B_1_0")), 96_000);
     }
 }
