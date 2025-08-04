@@ -106,7 +106,7 @@ impl UsageArgs {
                 )),
                 // Context files
                 style::SetForegroundColor(Color::DarkCyan),
-                // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too
+                // add a nice visual to mimic "tiny" progress, so the overrall progress bar doesn't look too
                 // empty
                 style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
                     1
