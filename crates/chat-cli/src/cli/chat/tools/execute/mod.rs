@@ -51,7 +51,7 @@ impl ExecuteCommand {
 
         let has_regex_match = allowed_commands
             .iter()
-            .map(|cmd| Regex::new(cmd))
+            .map(|cmd| Regex::new(&format!(r"\A{}\z", cmd)))
             .filter(Result::is_ok)
             .flatten()
             .any(|regex| regex.is_match(&self.command));
