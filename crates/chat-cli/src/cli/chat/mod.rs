@@ -12,7 +12,6 @@ mod prompt;
 mod prompt_parser;
 mod server_messenger;
 #[cfg(unix)]
-use crate::cli::chat::util::sanitize_unicode_tags;
 mod skim_integration;
 mod token_counter;
 pub mod tool_manager;
@@ -138,6 +137,7 @@ use crate::cli::chat::cli::prompts::{
     GetPromptError,
     PromptsSubcommand,
 };
+use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
