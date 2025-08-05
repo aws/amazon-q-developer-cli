@@ -44,6 +44,15 @@ use super::{
     ServerCapabilities,
     ToolsListResult,
 };
+use crate::api_client::model::{
+    ChatMessage,
+    ConversationState,
+    UserInputMessage,
+};
+use crate::api_client::{
+    ApiClient,
+    ApiClientError,
+};
 use crate::util::process::{
     Pid,
     terminate_process,
@@ -67,8 +76,14 @@ struct ClientCapabilities {
 
 impl From<ClientInfo> for ClientCapabilities {
     fn from(client_info: ClientInfo) -> Self {
+        let mut capabilities = HashMap::new();
+
+        // Add sampling capability support
+        capabilities.insert("sampling".to_string(), serde_json::json!({}));
+
         ClientCapabilities {
             client_info,
+            capabilities,
             ..Default::default()
         }
     }
@@ -93,6 +108,8 @@ pub enum ClientError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Serialization(#[from] serde_json::Error),
+    #[error(transparent)]
+    ApiClient(#[from] Box<ApiClientError>),
     #[error("Operation timed out: {context}")]
     RuntimeError {
         #[source]
@@ -131,6 +148,7 @@ pub struct Client<T: Transport> {
     // TODO: move this to tool manager that way all the assets are treated equally
     pub prompt_gets: Arc<SyncRwLock<HashMap<String, PromptGet>>>,
     pub is_prompts_out_of_date: Arc<AtomicBool>,
+    api_client: Option<Arc<ApiClient>>,
 }
 
 impl<T: Transport> Clone for Client<T> {
@@ -147,6 +165,7 @@ impl<T: Transport> Clone for Client<T> {
             messenger: None,
             prompt_gets: self.prompt_gets.clone(),
             is_prompts_out_of_date: self.is_prompts_out_of_date.clone(),
+            api_client: self.api_client.clone(),
         }
     }
 }
@@ -199,6 +218,9 @@ impl Client<StdioTransport> {
         let server_process_id = Some(Pid::from_u32(server_process_id));
 
         let transport = Arc::new(transport::stdio::JsonRpcStdioTransport::client(child)?);
+        
+        tracing::error!("DEBUG: MCP Client created: server_name={}, timeout={}ms", server_name, timeout);
+        
         Ok(Self {
             server_name,
             transport,
@@ -209,6 +231,7 @@ impl Client<StdioTransport> {
             messenger: None,
             prompt_gets: Arc::new(SyncRwLock::new(HashMap::new())),
             is_prompts_out_of_date: Arc::new(AtomicBool::new(false)),
+            api_client: None, // Will be set later via set_api_client
         })
     }
 
@@ -290,6 +313,9 @@ where
     /// - Spawns tasks to ask for relevant info such as tools and prompts in accordance to server
     ///   capabilities received
     pub async fn init(&self) -> Result<ServerCapabilities, ClientError> {
+        tracing::info!("🚀 Initializing MCP client for server: {}", self.server_name);
+        tracing::info!("   - API client available: {}", self.api_client.is_some());
+        
         let transport_ref = self.transport.clone();
         let server_name = self.server_name.clone();
 
@@ -367,11 +393,50 @@ where
         let tools_list_changed_supported = cap.tools.as_ref().is_some_and(|t| t.get("listChanged").is_some());
         tokio::spawn(async move {
             let mut listener = transport_ref.get_listener();
+            tracing::info!("🎧 MCP message listener started for server: {}", server_name);
             loop {
                 match listener.recv().await {
                     Ok(msg) => {
+                        tracing::debug!("📨 MCP message received from {}: {:?}", server_name, msg);
                         match msg {
-                            JsonRpcMessage::Request(_req) => {},
+                            JsonRpcMessage::Request(req) => {
+                                tracing::info!("🔍 MCP Request received: method={}, id={}", req.method, req.id);
+                                // Handle sampling requests from the server
+                                if req.method == "sampling/createMessage" {
+                                    tracing::info!("🎯 Sampling request detected, processing...");
+                                    let client_ref_inner = client_ref.clone();
+                                    let transport_ref_inner = transport_ref.clone();
+                                    tokio::spawn(async move {
+                                        match client_ref_inner.handle_sampling_request(&req).await {
+                                            Ok(response) => {
+                                                let msg = JsonRpcMessage::Response(response);
+                                                if let Err(e) = transport_ref_inner.send(&msg).await {
+                                                    tracing::error!("Failed to send sampling response: {:?}", e);
+                                                }
+                                            },
+                                            Err(e) => {
+                                                tracing::error!("Failed to handle sampling request: {:?}", e);
+                                                // Send error response
+                                                let error_response = JsonRpcResponse {
+                                                    jsonrpc: req.jsonrpc,
+                                                    id: req.id,
+                                                    result: None,
+                                                    error: Some(super::transport::base_protocol::JsonRpcError {
+                                                        code: -1,
+                                                        message: format!("Sampling request failed: {}", e),
+                                                        data: None,
+                                                    }),
+                                                };
+                                                let msg = JsonRpcMessage::Response(error_response);
+                                                if let Err(e) = transport_ref_inner.send(&msg).await {
+                                                    tracing::error!("Failed to send error response: {:?}", e);
+                                                }
+                                            },
+                                        }
+                                    });
+                                }
+                                // Ignore other request types for now
+                            },
                             JsonRpcMessage::Notification(notif) => {
                                 let JsonRpcNotification { method, params, .. } = notif;
                                 match method.as_str() {
@@ -418,6 +483,9 @@ where
                                     "notifications/tools/list_changed" | "tools/list_changed"
                                         if tools_list_changed_supported =>
                                     {
+                                        tracing::error!("DEBUG: Tools list changed notification received from {}", server_name);
+                                        // Add a small delay to prevent rapid-fire loops
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                                         fetch_tools_and_notify_with_messenger(&client_ref, messenger_ref.as_ref())
                                             .await;
                                     },
@@ -455,6 +523,14 @@ where
         method: &str,
         params: Option<serde_json::Value>,
     ) -> Result<JsonRpcResponse, ClientError> {
+        tracing::error!("DEBUG: MCP Request to {}: method={}", self.server_name, method);
+        if method == "tools/call" {
+            tracing::error!("DEBUG: Tool call detected: {}", serde_json::to_string_pretty(&params).unwrap_or_else(|_| "Failed to serialize params".to_string()));
+        }
+        if method == "tools/list" {
+            tracing::error!("DEBUG: Tools list request to {}", self.server_name);
+        }
+        
         let send_map_err = |e: Elapsed| (e, method.to_string());
         let recv_map_err = |e: Elapsed| (e, format!("recv for {method}"));
         let mut id = self.get_id();
@@ -564,6 +640,12 @@ where
             }
         }
         tracing::trace!(target: "mcp", "From {}:\n{:#?}", self.server_name, resp);
+        
+        // Add debug logging for tools/list responses
+        if method == "tools/list" {
+            tracing::error!("DEBUG: Tools list response from {}: {}", self.server_name, serde_json::to_string_pretty(&resp).unwrap_or_else(|_| "Failed to serialize response".to_string()));
+        }
+        
         Ok(resp)
     }
 
@@ -582,6 +664,401 @@ where
                 .await
                 .map_err(send_map_err)??,
         )
+    }
+
+    /// Sets the API client for LLM integration
+    #[allow(dead_code)]
+    pub fn set_api_client(&mut self, api_client: Arc<ApiClient>) {
+        tracing::error!("DEBUG: API client set for MCP client: {}", self.server_name);
+        self.api_client = Some(api_client);
+    }
+
+    /// Converts MCP sampling request to Amazon Q conversation format
+    fn convert_sampling_to_conversation(
+        sampling_request: &super::facilitator_types::SamplingCreateMessageRequest,
+    ) -> ConversationState {
+        use super::facilitator_types::{
+            Role,
+            SamplingContent,
+        };
+
+        // Convert messages to chat history
+        let mut history = Vec::new();
+        let mut user_message_content = String::new();
+
+        for message in &sampling_request.messages {
+            let content = match &message.content {
+                SamplingContent::Text { text } => text.clone(),
+                SamplingContent::Image { .. } => "[Image content not supported in sampling]".to_string(),
+                SamplingContent::Audio { .. } => "[Audio content not supported in sampling]".to_string(),
+            };
+
+            match message.role {
+                Role::User => {
+                    if user_message_content.is_empty() {
+                        user_message_content = content;
+                    } else {
+                        // If we have multiple user messages, combine them
+                        user_message_content.push_str("\n\n");
+                        user_message_content.push_str(&content);
+                    }
+                },
+                Role::Assistant => {
+                    // Add assistant message to history
+                    history.push(ChatMessage::AssistantResponseMessage(
+                        crate::api_client::model::AssistantResponseMessage {
+                            message_id: None,
+                            content,
+                            tool_uses: None,
+                        },
+                    ));
+                },
+            }
+        }
+
+        // If we still don't have user content, use a default
+        if user_message_content.is_empty() {
+            user_message_content = "Please help me with this task.".to_string();
+        }
+
+        // For sampling requests, we need to preserve the exact format requested
+        // The system prompt should be treated as instructions, not appended to user content
+        let final_user_content = if let Some(system_prompt) = &sampling_request.system_prompt {
+            // Combine system prompt and user message in a way that preserves the instruction format
+            format!("{}\n\nUser request: {}", system_prompt, user_message_content)
+        } else {
+            user_message_content
+        };
+
+        let user_input_message = UserInputMessage {
+            content: final_user_content,
+            user_input_message_context: None,
+            user_intent: None,
+            images: None,
+            model_id: sampling_request
+                .model_preferences
+                .as_ref()
+                .and_then(|prefs| prefs.hints.as_ref())
+                .and_then(|hints| hints.first())
+                .map(|hint| hint.name.clone()),
+        };
+
+        ConversationState {
+            conversation_id: None, // New conversation for sampling
+            user_input_message,
+            history: if history.is_empty() { None } else { Some(history) },
+        }
+    }
+
+    /// Converts Amazon Q API response to MCP sampling response format
+    async fn convert_api_response_to_sampling(
+        &self,
+        mut api_response: crate::api_client::send_message_output::SendMessageOutput,
+    ) -> Result<super::facilitator_types::SamplingCreateMessageResponse, ClientError> {
+        use super::facilitator_types::{
+            Role,
+            SamplingContent,
+            SamplingCreateMessageResponse,
+        };
+        use crate::api_client::model::ChatResponseStream;
+
+        let mut content_parts = Vec::new();
+        
+        tracing::info!("🔄 Converting API response to sampling format...");
+
+        // Collect all response events
+        while let Some(event) = api_response
+            .recv()
+            .await
+            .map_err(|e| ClientError::ApiClient(Box::new(e)))?
+        {
+            match event {
+                ChatResponseStream::AssistantResponseEvent { content } => {
+                    tracing::info!("   📝 AssistantResponseEvent: {}", content);
+                    content_parts.push(content);
+                },
+                ChatResponseStream::CodeEvent { content } => {
+                    tracing::info!("   💻 CodeEvent: {}", content);
+                    content_parts.push(content);
+                },
+                ChatResponseStream::InvalidStateEvent { reason, message } => {
+                    tracing::warn!("   ⚠️  InvalidStateEvent: {} - {}", reason, message);
+                },
+                ChatResponseStream::MessageMetadataEvent {
+                    conversation_id,
+                    utterance_id,
+                } => {
+                    tracing::info!("   📊 MessageMetadataEvent: conversation_id={:?}, utterance_id={:?}", conversation_id, utterance_id);
+                },
+                other => {
+                    tracing::info!("   🔍 Other event: {:?}", other);
+                },
+            }
+        }
+
+        let response_text = if content_parts.is_empty() {
+            tracing::warn!("   ❌ No content parts received from LLM");
+            "I apologize, but I couldn't generate a response for your request.".to_string()
+        } else {
+            let combined_text = content_parts.join("");
+            tracing::info!("   ✅ Combined response text length: {}", combined_text.len());
+            tracing::info!("   ✅ Combined response text: {}", combined_text);
+            combined_text
+        };
+
+        Ok(SamplingCreateMessageResponse {
+            role: Role::Assistant,
+            content: SamplingContent::Text { text: response_text },
+            model: Some("amazon-q-cli".to_string()),
+            stop_reason: Some("endTurn".to_string()),
+        })
+    }
+
+    /// Handles sampling/createMessage requests from MCP servers
+    /// This allows servers to request LLM completions through the client
+    pub async fn handle_sampling_request(&self, request: &JsonRpcRequest) -> Result<JsonRpcResponse, ClientError> {
+        use super::facilitator_types::{
+            Role,
+            SamplingContent,
+            SamplingCreateMessageRequest,
+            SamplingCreateMessageResponse,
+        };
+
+        tracing::info!("🔍 SAMPLING REQUEST RECEIVED");
+        tracing::info!("📥 Method: {}", request.method);
+        tracing::info!("📥 Request ID: {}", request.id);
+
+        if request.method != "sampling/createMessage" {
+            return Err(ClientError::NegotiationError(format!(
+                "Unsupported sampling method: {}. Expected 'sampling/createMessage'",
+                request.method
+            )));
+        }
+
+        let params = request
+            .params
+            .as_ref()
+            .ok_or_else(|| ClientError::NegotiationError("Missing parameters for sampling request".to_string()))?;
+
+        tracing::info!("📥 Raw params: {}", serde_json::to_string_pretty(params).unwrap_or_else(|_| "Failed to serialize params".to_string()));
+
+        let sampling_request: SamplingCreateMessageRequest =
+            serde_json::from_value(params.clone()).map_err(ClientError::Serialization)?;
+
+        tracing::info!("📥 Parsed sampling request:");
+        tracing::info!("   - Messages count: {}", sampling_request.messages.len());
+        for (i, message) in sampling_request.messages.iter().enumerate() {
+            match &message.content {
+                SamplingContent::Text { text } => {
+                    tracing::info!("   - Message {}: Role={:?}, Text length={}, Preview: {}", 
+                        i, message.role, text.len(), 
+                        if text.len() > 100 { format!("{}...", &text[..100]) } else { text.clone() }
+                    );
+                }
+                SamplingContent::Image { .. } => {
+                    tracing::info!("   - Message {}: Role={:?}, Type=Image", i, message.role);
+                }
+                SamplingContent::Audio { .. } => {
+                    tracing::info!("   - Message {}: Role={:?}, Type=Audio", i, message.role);
+                }
+            }
+        }
+        if let Some(system_prompt) = &sampling_request.system_prompt {
+            tracing::info!("   - System prompt length: {}, Preview: {}", 
+                system_prompt.len(),
+                if system_prompt.len() > 100 { format!("{}...", &system_prompt[..100]) } else { system_prompt.clone() }
+            );
+        }
+        if let Some(model_prefs) = &sampling_request.model_preferences {
+            tracing::info!("   - Model preferences: {:?}", model_prefs);
+        }
+
+        // Check if we have API client access
+        let api_client = match &self.api_client {
+            Some(client) => {
+                tracing::info!("✅ API client available, proceeding with real LLM request");
+                client
+            },
+            None => {
+                tracing::warn!("❌ No API client available for sampling request, returning fallback response");
+                // Return a fallback response when API client is not available
+                let response = SamplingCreateMessageResponse {
+                    role: Role::Assistant,
+                    content: SamplingContent::Text {
+                        text: "API client not available for LLM sampling. Please ensure the MCP client is properly configured.".to_string(),
+                    },
+                    model: Some("amazon-q-cli".to_string()),
+                    stop_reason: Some("no_api_client".to_string()),
+                };
+
+                tracing::info!("📤 SAMPLING RESPONSE (fallback): {}", serde_json::to_string_pretty(&response).unwrap_or_else(|_| "Failed to serialize response".to_string()));
+
+                return Ok(JsonRpcResponse {
+                    jsonrpc: request.jsonrpc.clone(),
+                    id: request.id,
+                    result: Some({
+                        // Convert fallback response to proper MCP format
+                        let content_obj = match &response.content {
+                            super::facilitator_types::SamplingContent::Text { text } => {
+                                serde_json::json!({"type": "text", "text": text})
+                            },
+                            _ => serde_json::json!({"type": "text", "text": "API client not available"})
+                        };
+                        
+                        serde_json::json!({
+                            "role": "assistant",
+                            "content": content_obj,
+                            "model": response.model.as_ref().unwrap_or(&"amazon-q-cli".to_string()),
+                            "stopReason": response.stop_reason.as_ref().unwrap_or(&"endTurn".to_string())
+                        })
+                    }),
+                    error: None,
+                });
+            },
+        };
+
+        // Convert MCP sampling request to Amazon Q conversation format
+        let conversation_state = Self::convert_sampling_to_conversation(&sampling_request);
+        
+        tracing::info!("🔄 Converted to Amazon Q conversation format:");
+        tracing::info!("   - Conversation ID: {:?}", conversation_state.conversation_id);
+        tracing::info!("   - User message content length: {}", conversation_state.user_input_message.content.len());
+        tracing::info!("   - User message preview: {}", 
+            if conversation_state.user_input_message.content.len() > 200 { 
+                format!("{}...", &conversation_state.user_input_message.content[..200]) 
+            } else { 
+                conversation_state.user_input_message.content.clone() 
+            }
+        );
+        tracing::info!("   - Model ID: {:?}", conversation_state.user_input_message.model_id);
+        tracing::info!("   - History messages: {}", conversation_state.history.as_ref().map_or(0, |h| h.len()));
+
+        // Send request to Amazon Q LLM
+        tracing::info!("🚀 Sending request to Amazon Q LLM...");
+        match api_client.send_message(conversation_state).await {
+            Ok(api_response) => {
+                tracing::info!("✅ Received LLM response, converting to sampling format");
+
+                // Convert API response back to MCP sampling format
+                match self.convert_api_response_to_sampling(api_response).await {
+                    Ok(sampling_response) => {
+                        tracing::info!("📤 SAMPLING RESPONSE (success):");
+                        tracing::info!("   - Role: {:?}", sampling_response.role);
+                        match &sampling_response.content {
+                            SamplingContent::Text { text } => {
+                                tracing::info!("   - Response text length: {}", text.len());
+                                tracing::info!("   - Response text: {}", text);
+                            }
+                            _ => {
+                                tracing::info!("   - Response content: {:?}", sampling_response.content);
+                            }
+                        }
+                        tracing::info!("   - Model: {:?}", sampling_response.model);
+                        tracing::info!("   - Stop reason: {:?}", sampling_response.stop_reason);
+
+                        Ok(JsonRpcResponse {
+                            jsonrpc: request.jsonrpc.clone(),
+                            id: request.id,
+                            result: Some({
+                                // Convert to proper MCP sampling response format
+                                let content_obj = match &sampling_response.content {
+                                    super::facilitator_types::SamplingContent::Text { text } => {
+                                        serde_json::json!({"type": "text", "text": text})
+                                    },
+                                    super::facilitator_types::SamplingContent::Image { data, mime_type } => {
+                                        serde_json::json!({"type": "image", "data": data, "mimeType": mime_type})
+                                    },
+                                    super::facilitator_types::SamplingContent::Audio { data, mime_type } => {
+                                        serde_json::json!({"type": "audio", "data": data, "mimeType": mime_type})
+                                    },
+                                };
+                                
+                                serde_json::json!({
+                                    "role": "assistant",
+                                    "content": content_obj,
+                                    "model": sampling_response.model.as_ref().unwrap_or(&"amazon-q-cli".to_string()),
+                                    "stopReason": sampling_response.stop_reason.as_ref().unwrap_or(&"endTurn".to_string())
+                                })
+                            }),
+                            error: None,
+                        })
+                    },
+                    Err(conversion_error) => {
+                        tracing::error!("❌ Failed to convert API response: {:?}", conversion_error);
+
+                        let error_response = SamplingCreateMessageResponse {
+                            role: Role::Assistant,
+                            content: SamplingContent::Text {
+                                text: format!("Error processing LLM response: {}", conversion_error),
+                            },
+                            model: Some("amazon-q-cli".to_string()),
+                            stop_reason: Some("conversion_error".to_string()),
+                        };
+
+                        tracing::info!("📤 SAMPLING RESPONSE (conversion error): {}", serde_json::to_string_pretty(&error_response).unwrap_or_else(|_| "Failed to serialize response".to_string()));
+
+                        Ok(JsonRpcResponse {
+                            jsonrpc: request.jsonrpc.clone(),
+                            id: request.id,
+                            result: Some({
+                                // Convert error response to proper MCP format
+                                let content_obj = match &error_response.content {
+                                    super::facilitator_types::SamplingContent::Text { text } => {
+                                        serde_json::json!({"type": "text", "text": text})
+                                    },
+                                    _ => serde_json::json!({"type": "text", "text": "Error processing response"})
+                                };
+                                
+                                serde_json::json!({
+                                    "role": "assistant",
+                                    "content": content_obj,
+                                    "model": error_response.model.as_ref().unwrap_or(&"amazon-q-cli".to_string()),
+                                    "stopReason": error_response.stop_reason.as_ref().unwrap_or(&"endTurn".to_string())
+                                })
+                            }),
+                            error: None,
+                        })
+                    },
+                }
+            },
+            Err(api_error) => {
+                tracing::error!("❌ LLM API request failed: {:?}", api_error);
+
+                // Return an error response in sampling format
+                let error_response = SamplingCreateMessageResponse {
+                    role: Role::Assistant,
+                    content: SamplingContent::Text {
+                        text: format!("I encountered an error while processing your request: {}", api_error),
+                    },
+                    model: Some("amazon-q-cli".to_string()),
+                    stop_reason: Some("error".to_string()),
+                };
+
+                tracing::info!("📤 SAMPLING RESPONSE (API error): {}", serde_json::to_string_pretty(&error_response).unwrap_or_else(|_| "Failed to serialize response".to_string()));
+
+                Ok(JsonRpcResponse {
+                    jsonrpc: request.jsonrpc.clone(),
+                    id: request.id,
+                    result: Some({
+                        // Convert API error response to proper MCP format
+                        let content_obj = match &error_response.content {
+                            super::facilitator_types::SamplingContent::Text { text } => {
+                                serde_json::json!({"type": "text", "text": text})
+                            },
+                            _ => serde_json::json!({"type": "text", "text": "API error occurred"})
+                        };
+                        
+                        serde_json::json!({
+                            "role": "assistant",
+                            "content": content_obj,
+                            "model": error_response.model.as_ref().unwrap_or(&"amazon-q-cli".to_string()),
+                            "stopReason": error_response.stop_reason.as_ref().unwrap_or(&"endTurn".to_string())
+                        })
+                    }),
+                    error: None,
+                })
+            },
+        }
     }
 
     fn get_id(&self) -> u64 {
@@ -1142,6 +1619,458 @@ mod tests {
             ];
             let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
             assert_eq!(result, "python -m mcp_server --config C:\\configs\\server.json");
+        }
+    }
+
+    // Sampling feature tests
+    mod sampling_tests {
+        use super::*;
+        use crate::mcp_client::facilitator_types::{
+            ModelHint,
+            ModelPreferences,
+            Role,
+            SamplingContent,
+            SamplingCreateMessageRequest,
+            SamplingCreateMessageResponse,
+            SamplingMessage,
+        };
+        use crate::mcp_client::transport::base_protocol::{
+            JsonRpcRequest,
+            JsonRpcVersion,
+        };
+
+        /// Test that ClientCapabilities includes sampling capability
+        #[test]
+        fn test_client_capabilities_includes_sampling() {
+            let client_info = serde_json::json!({
+                "name": "TestClient",
+                "version": "1.0.0"
+            });
+
+            let capabilities = ClientCapabilities::from(client_info);
+
+            // Check that sampling capability is declared
+            assert!(capabilities.capabilities.contains_key("sampling"));
+            assert_eq!(capabilities.capabilities.get("sampling"), Some(&serde_json::json!({})));
+        }
+
+        /// Test successful sampling request handling
+        #[tokio::test]
+        async fn test_handle_sampling_request_success() {
+            let client_info = serde_json::json!({
+                "name": "TestClient",
+                "version": "1.0.0"
+            });
+
+            let client_config = ClientConfig {
+                server_name: "test_server".to_string(),
+                bin_path: "test".to_string(),
+                args: vec![],
+                timeout: 5000,
+                client_info: client_info.clone(),
+                env: None,
+            };
+
+            // Use from_config to create the client
+            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+
+            // Create a sampling request
+            let sampling_request = SamplingCreateMessageRequest {
+                messages: vec![SamplingMessage {
+                    role: Role::User,
+                    content: SamplingContent::Text {
+                        text: "What is the capital of France?".to_string(),
+                    },
+                }],
+                model_preferences: Some(ModelPreferences {
+                    hints: Some(vec![ModelHint {
+                        name: "claude-3-sonnet".to_string(),
+                    }]),
+                    cost_priority: Some(0.3),
+                    speed_priority: Some(0.8),
+                    intelligence_priority: Some(0.5),
+                }),
+                system_prompt: Some("You are a helpful assistant.".to_string()),
+                max_tokens: Some(100),
+            };
+
+            let request = JsonRpcRequest {
+                jsonrpc: JsonRpcVersion::default(),
+                id: 1,
+                method: "sampling/createMessage".to_string(),
+                params: Some(serde_json::to_value(sampling_request).unwrap()),
+            };
+
+            // Test the sampling request handler
+            let response = client.handle_sampling_request(&request).await.unwrap();
+
+            // Verify response structure
+            assert_eq!(response.jsonrpc, JsonRpcVersion::default());
+            assert_eq!(response.id, 1);
+            assert!(response.result.is_some());
+            assert!(response.error.is_none());
+
+            // Verify response content - should indicate no API client available
+            let result: SamplingCreateMessageResponse = serde_json::from_value(response.result.unwrap()).unwrap();
+
+            assert_eq!(result.role, Role::Assistant);
+            match result.content {
+                SamplingContent::Text { text } => {
+                    assert!(text.contains("API client not available"));
+                },
+                _ => panic!("Expected text content"),
+            }
+            assert_eq!(result.model, Some("amazon-q-cli".to_string()));
+            assert_eq!(result.stop_reason, Some("no_api_client".to_string()));
+        }
+
+        /// Test sampling request with invalid method
+        #[tokio::test]
+        async fn test_handle_sampling_request_invalid_method() {
+            let client_info = serde_json::json!({
+                "name": "TestClient",
+                "version": "1.0.0"
+            });
+
+            let client_config = ClientConfig {
+                server_name: "test_server".to_string(),
+                bin_path: "test".to_string(),
+                args: vec![],
+                timeout: 5000,
+                client_info: client_info.clone(),
+                env: None,
+            };
+
+            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+
+            let request = JsonRpcRequest {
+                jsonrpc: JsonRpcVersion::default(),
+                id: 1,
+                method: "sampling/invalidMethod".to_string(),
+                params: Some(serde_json::json!({})),
+            };
+
+            // Test with invalid method
+            let result = client.handle_sampling_request(&request).await;
+            assert!(result.is_err());
+
+            match result.unwrap_err() {
+                ClientError::NegotiationError(msg) => {
+                    assert!(msg.contains("Unsupported sampling method"));
+                },
+                _ => panic!("Expected NegotiationError"),
+            }
+        }
+
+        /// Test sampling request with missing parameters
+        #[tokio::test]
+        async fn test_handle_sampling_request_missing_params() {
+            let client_info = serde_json::json!({
+                "name": "TestClient",
+                "version": "1.0.0"
+            });
+
+            let client_config = ClientConfig {
+                server_name: "test_server".to_string(),
+                bin_path: "test".to_string(),
+                args: vec![],
+                timeout: 5000,
+                client_info: client_info.clone(),
+                env: None,
+            };
+
+            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+
+            let request = JsonRpcRequest {
+                jsonrpc: JsonRpcVersion::default(),
+                id: 1,
+                method: "sampling/createMessage".to_string(),
+                params: None, // Missing parameters
+            };
+
+            // Test with missing parameters
+            let result = client.handle_sampling_request(&request).await;
+            assert!(result.is_err());
+
+            match result.unwrap_err() {
+                ClientError::NegotiationError(msg) => {
+                    assert!(msg.contains("Missing parameters"));
+                },
+                _ => panic!("Expected NegotiationError"),
+            }
+        }
+
+        /// Test sampling request with malformed parameters
+        #[tokio::test]
+        async fn test_handle_sampling_request_malformed_params() {
+            let client_info = serde_json::json!({
+                "name": "TestClient",
+                "version": "1.0.0"
+            });
+
+            let client_config = ClientConfig {
+                server_name: "test_server".to_string(),
+                bin_path: "test".to_string(),
+                args: vec![],
+                timeout: 5000,
+                client_info: client_info.clone(),
+                env: None,
+            };
+
+            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+
+            let request = JsonRpcRequest {
+                jsonrpc: JsonRpcVersion::default(),
+                id: 1,
+                method: "sampling/createMessage".to_string(),
+                params: Some(serde_json::json!({
+                    "invalid": "structure"
+                })),
+            };
+
+            // Test with malformed parameters
+            let result = client.handle_sampling_request(&request).await;
+            assert!(result.is_err());
+
+            match result.unwrap_err() {
+                ClientError::Serialization(_) => {
+                    // Expected serialization error
+                },
+                _ => panic!("Expected Serialization error"),
+            }
+        }
+
+        /// Test sampling types serialization/deserialization
+        #[test]
+        fn test_sampling_types_serialization() {
+            // Test SamplingCreateMessageRequest
+            let request = SamplingCreateMessageRequest {
+                messages: vec![
+                    SamplingMessage {
+                        role: Role::User,
+                        content: SamplingContent::Text {
+                            text: "Hello".to_string(),
+                        },
+                    },
+                    SamplingMessage {
+                        role: Role::Assistant,
+                        content: SamplingContent::Image {
+                            data: "base64data".to_string(),
+                            mime_type: "image/jpeg".to_string(),
+                        },
+                    },
+                ],
+                model_preferences: Some(ModelPreferences {
+                    hints: Some(vec![
+                        ModelHint {
+                            name: "claude-3-sonnet".to_string(),
+                        },
+                        ModelHint {
+                            name: "gpt-4".to_string(),
+                        },
+                    ]),
+                    cost_priority: Some(0.2),
+                    speed_priority: Some(0.8),
+                    intelligence_priority: Some(0.9),
+                }),
+                system_prompt: Some("You are helpful".to_string()),
+                max_tokens: Some(150),
+            };
+
+            // Test serialization
+            let json = serde_json::to_value(&request).unwrap();
+            assert!(json.get("messages").is_some());
+            assert!(json.get("modelPreferences").is_some());
+            assert!(json.get("systemPrompt").is_some());
+            assert!(json.get("maxTokens").is_some());
+
+            // Test deserialization
+            let deserialized: SamplingCreateMessageRequest = serde_json::from_value(json).unwrap();
+            assert_eq!(deserialized.messages.len(), 2);
+            assert!(deserialized.model_preferences.is_some());
+            assert_eq!(deserialized.system_prompt, Some("You are helpful".to_string()));
+            assert_eq!(deserialized.max_tokens, Some(150));
+
+            // Test SamplingCreateMessageResponse
+            let response = SamplingCreateMessageResponse {
+                role: Role::Assistant,
+                content: SamplingContent::Audio {
+                    data: "audiodata".to_string(),
+                    mime_type: "audio/wav".to_string(),
+                },
+                model: Some("claude-3-sonnet-20240307".to_string()),
+                stop_reason: Some("endTurn".to_string()),
+            };
+
+            // Test serialization/deserialization
+            let json = serde_json::to_value(&response).unwrap();
+            let deserialized: SamplingCreateMessageResponse = serde_json::from_value(json).unwrap();
+
+            assert_eq!(deserialized.role, Role::Assistant);
+            match deserialized.content {
+                SamplingContent::Audio { data, mime_type } => {
+                    assert_eq!(data, "audiodata");
+                    assert_eq!(mime_type, "audio/wav");
+                },
+                _ => panic!("Expected audio content"),
+            }
+            assert_eq!(deserialized.model, Some("claude-3-sonnet-20240307".to_string()));
+            assert_eq!(deserialized.stop_reason, Some("endTurn".to_string()));
+        }
+
+        /// Test ServerCapabilities includes sampling field
+        #[test]
+        fn test_server_capabilities_sampling_field() {
+            let capabilities_json = serde_json::json!({
+                "logging": {},
+                "prompts": { "listChanged": true },
+                "resources": {},
+                "tools": { "listChanged": true },
+                "sampling": {}
+            });
+
+            let capabilities: ServerCapabilities = serde_json::from_value(capabilities_json).unwrap();
+
+            assert!(capabilities.logging.is_some());
+            assert!(capabilities.prompts.is_some());
+            assert!(capabilities.resources.is_some());
+            assert!(capabilities.tools.is_some());
+            assert!(capabilities.sampling.is_some());
+
+            // Test serialization back
+            let serialized = serde_json::to_value(&capabilities).unwrap();
+            assert!(serialized.get("sampling").is_some());
+        }
+
+        /// Test Role enum serialization
+        #[test]
+        fn test_role_serialization() {
+            let user_role = Role::User;
+            let assistant_role = Role::Assistant;
+
+            // Test serialization
+            let user_json = serde_json::to_value(&user_role).unwrap();
+            let assistant_json = serde_json::to_value(&assistant_role).unwrap();
+
+            assert_eq!(user_json, serde_json::Value::String("user".to_string()));
+            assert_eq!(assistant_json, serde_json::Value::String("assistant".to_string()));
+
+            // Test deserialization
+            let user_deserialized: Role = serde_json::from_value(user_json).unwrap();
+            let assistant_deserialized: Role = serde_json::from_value(assistant_json).unwrap();
+
+            assert_eq!(user_deserialized, Role::User);
+            assert_eq!(assistant_deserialized, Role::Assistant);
+
+            // Test Display trait
+            assert_eq!(user_role.to_string(), "user");
+            assert_eq!(assistant_role.to_string(), "assistant");
+        }
+
+        /// Test SamplingContent variants
+        #[test]
+        fn test_sampling_content_variants() {
+            // Test Text content
+            let text_content = SamplingContent::Text {
+                text: "Hello world".to_string(),
+            };
+            let text_json = serde_json::to_value(&text_content).unwrap();
+            assert_eq!(text_json["type"], "text");
+            assert_eq!(text_json["text"], "Hello world");
+
+            // Test Image content
+            let image_content = SamplingContent::Image {
+                data: "base64imagedata".to_string(),
+                mime_type: "image/png".to_string(),
+            };
+            let image_json = serde_json::to_value(&image_content).unwrap();
+            assert_eq!(image_json["type"], "image");
+            assert_eq!(image_json["data"], "base64imagedata");
+            assert_eq!(image_json["mimeType"], "image/png");
+
+            // Test Audio content
+            let audio_content = SamplingContent::Audio {
+                data: "base64audiodata".to_string(),
+                mime_type: "audio/mp3".to_string(),
+            };
+            let audio_json = serde_json::to_value(&audio_content).unwrap();
+            assert_eq!(audio_json["type"], "audio");
+            assert_eq!(audio_json["data"], "base64audiodata");
+            assert_eq!(audio_json["mimeType"], "audio/mp3");
+
+            // Test deserialization
+            let text_deserialized: SamplingContent = serde_json::from_value(text_json).unwrap();
+            let image_deserialized: SamplingContent = serde_json::from_value(image_json).unwrap();
+            let audio_deserialized: SamplingContent = serde_json::from_value(audio_json).unwrap();
+
+            match text_deserialized {
+                SamplingContent::Text { text } => assert_eq!(text, "Hello world"),
+                _ => panic!("Expected text content"),
+            }
+
+            match image_deserialized {
+                SamplingContent::Image { data, mime_type } => {
+                    assert_eq!(data, "base64imagedata");
+                    assert_eq!(mime_type, "image/png");
+                },
+                _ => panic!("Expected image content"),
+            }
+
+            match audio_deserialized {
+                SamplingContent::Audio { data, mime_type } => {
+                    assert_eq!(data, "base64audiodata");
+                    assert_eq!(mime_type, "audio/mp3");
+                },
+                _ => panic!("Expected audio content"),
+            }
+        }
+
+        /// Test ModelPreferences with optional fields
+        #[test]
+        fn test_model_preferences_optional_fields() {
+            // Test with all fields
+            let full_prefs = ModelPreferences {
+                hints: Some(vec![ModelHint {
+                    name: "claude".to_string(),
+                }]),
+                cost_priority: Some(0.5),
+                speed_priority: Some(0.7),
+                intelligence_priority: Some(0.9),
+            };
+
+            let full_json = serde_json::to_value(&full_prefs).unwrap();
+            assert!(full_json.get("hints").is_some());
+            assert!(full_json.get("costPriority").is_some());
+            assert!(full_json.get("speedPriority").is_some());
+            assert!(full_json.get("intelligencePriority").is_some());
+
+            // Test with minimal fields
+            let minimal_prefs = ModelPreferences {
+                hints: None,
+                cost_priority: None,
+                speed_priority: None,
+                intelligence_priority: None,
+            };
+
+            let minimal_json = serde_json::to_value(&minimal_prefs).unwrap();
+            // Optional fields should not be present when None
+            assert!(minimal_json.get("hints").is_none());
+            assert!(minimal_json.get("costPriority").is_none());
+            assert!(minimal_json.get("speedPriority").is_none());
+            assert!(minimal_json.get("intelligencePriority").is_none());
+
+            // Test deserialization
+            let full_deserialized: ModelPreferences = serde_json::from_value(full_json).unwrap();
+            assert!(full_deserialized.hints.is_some());
+            assert_eq!(full_deserialized.cost_priority, Some(0.5));
+            assert_eq!(full_deserialized.speed_priority, Some(0.7));
+            assert_eq!(full_deserialized.intelligence_priority, Some(0.9));
+
+            let minimal_deserialized: ModelPreferences = serde_json::from_value(minimal_json).unwrap();
+            assert!(minimal_deserialized.hints.is_none());
+            assert!(minimal_deserialized.cost_priority.is_none());
+            assert!(minimal_deserialized.speed_priority.is_none());
+            assert!(minimal_deserialized.intelligence_priority.is_none());
         }
     }
 }

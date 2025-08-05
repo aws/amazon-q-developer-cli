@@ -152,6 +152,14 @@ impl CustomToolClient {
         }
     }
 
+    pub fn set_api_client(&mut self, api_client: std::sync::Arc<crate::api_client::ApiClient>) {
+        match self {
+            CustomToolClient::Stdio { client, .. } => {
+                client.set_api_client(api_client);
+            },
+        }
+    }
+
     pub fn assign_messenger(&mut self, messenger: Box<dyn Messenger>) {
         match self {
             CustomToolClient::Stdio { client, .. } => {
