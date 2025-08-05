@@ -43,18 +43,11 @@ const MODEL_OPTIONS: [ModelOption; 2] = [
     },
 ];
 
-const OPENAI_MODEL_OPTIONS: [ModelOption; 2] = [
-    ModelOption {
-        name: "experimental-gpt-oss-120b",
-        model_id: "OPENAI_GPT_OSS_120B_1_0",
-        context_window_tokens: 128_000,
-    },
-    ModelOption {
-        name: "experimental-gpt-oss-20b",
-        model_id: "OPENAI_GPT_OSS_20B_1_0",
-        context_window_tokens: 128_000,
-    },
-];
+const OPENAI_MODEL_OPTIONS: [ModelOption; 1] = [ModelOption {
+    name: "gpt-oss-120b-experimental",
+    model_id: "OPENAI_GPT_OSS_120B_1_0",
+    context_window_tokens: 128_000,
+}];
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
