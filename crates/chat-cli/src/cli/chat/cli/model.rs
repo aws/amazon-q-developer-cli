@@ -9,7 +9,7 @@ use crossterm::{
 };
 use dialoguer::Select;
 
-use crate::auth::AuthError;
+use crate::api_client::Endpoint;
 use crate::auth::builder_id::{
     BuilderIdToken,
     TokenType,
@@ -43,11 +43,11 @@ const MODEL_OPTIONS: [ModelOption; 2] = [
     },
 ];
 
-const OPENAI_MODEL_OPTIONS: [ModelOption; 1] = [ModelOption {
-    name: "gpt-oss-120b-experimental",
+const GPT_OSS_120B: ModelOption = ModelOption {
+    name: "openai-gpt-oss-120b-preview",
     model_id: "OPENAI_GPT_OSS_120B_1_0",
     context_window_tokens: 128_000,
-}];
+};
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
@@ -144,18 +144,15 @@ pub async fn default_model_id(os: &Os) -> &'static str {
 
 /// Returns the available models for use.
 pub async fn get_model_options(os: &Os) -> Result<Vec<ModelOption>, ChatError> {
-    let is_amzn_user = BuilderIdToken::load(&os.database)
-        .await?
-        .ok_or(AuthError::NoToken)?
-        .is_amzn_user();
-
     let mut model_options = MODEL_OPTIONS.into_iter().collect::<Vec<_>>();
-    if is_amzn_user {
-        for opt in OPENAI_MODEL_OPTIONS {
-            model_options.push(opt);
-        }
+
+    // GPT OSS is only accessible in IAD.
+    let endpoint = Endpoint::configured_value(&os.database);
+    if endpoint.region().as_ref() != "us-east-1" {
+        return Ok(model_options);
     }
 
+    model_options.push(GPT_OSS_120B);
     Ok(model_options)
 }
 
@@ -169,7 +166,7 @@ pub fn context_window_tokens(model_id: Option<&str>) -> usize {
 
     MODEL_OPTIONS
         .iter()
-        .chain(OPENAI_MODEL_OPTIONS.iter())
+        .chain(std::iter::once(&GPT_OSS_120B))
         .find(|m| m.model_id == model_id)
         .map_or(DEFAULT_CONTEXT_WINDOW_LENGTH, |m| m.context_window_tokens)
 }
