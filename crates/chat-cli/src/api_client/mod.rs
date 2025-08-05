@@ -285,36 +285,34 @@ impl ApiClient {
             {
                 Ok(response) => Ok(SendMessageOutput::Codewhisperer(response)),
                 Err(err) => {
-                    use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError as OperationThrottlingError;
-                    use amzn_codewhisperer_streaming_client::types::ThrottlingExceptionReason;
-                    use amzn_codewhisperer_streaming_client::types::error::ThrottlingError;
-
                     let status_code = err.raw_response().map(|res| res.status().as_u16());
                     let is_quota_breach = status_code.is_some_and(|status| status == 429);
                     let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
                         matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
                     });
 
-                    let is_model_unavailable =
-                        // Handling the updated error response
-                        err.as_service_error().is_some_and(|err| {
-                            matches!(
-                                err,
-                                OperationThrottlingError(ThrottlingError {
-                                    reason: Some(ThrottlingExceptionReason::InsufficientModelCapacity),
-                                    ..
-                                })
-                            )
-                        })
-                        // Legacy error response
+                    let is_model_unavailable = {
+                        // check if ThrottlingException
+                        let is_throttling_exception = err
+                            .as_service_error()
+                            .is_some_and(|service_err| service_err.meta().code() == Some("ThrottlingException"));
+
+                        // check if the response contains INSUFFICIENT_MODEL_CAPACITY
+                        let has_insufficient_capacity = err
+                            .raw_response()
+                            .and_then(|resp| resp.body().bytes())
+                            .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
+                            .is_some_and(|body| body.contains("INSUFFICIENT_MODEL_CAPACITY"));
+
+                        (is_throttling_exception && has_insufficient_capacity)
+                        // Legacy error response fallback
                         || (model_id_opt.is_some()
-                            && status_code.is_some_and(|status| status == 500)
-                            && err.as_service_error().is_some_and(|err| {
-                                err.meta().message()
-                                    == Some(
-                                        "Encountered unexpectedly high load when processing the request, please try again.",
-                                    )
-                            }));
+                        && status_code.is_some_and(|status| status == 500)
+                        && err.as_service_error().is_some_and(|err| {
+                            err.meta().message() == Some(
+                    "Encountered unexpectedly high load when processing the request, please try again.",
+                )}))
+                    };
 
                     let is_monthly_limit_err = err
                         .raw_response()
@@ -325,23 +323,24 @@ impl ApiClient {
                         })
                         .unwrap_or(false);
 
-                    if is_quota_breach {
-                        return Err(ApiClientError::QuotaBreach {
-                            message: "quota has reached its limit",
-                            status_code,
-                        });
-                    }
-
                     if is_context_window_overflow {
                         return Err(ApiClientError::ContextWindowOverflow { status_code });
                     }
 
+                    // Both ModelOverloadedError and QuotaBreach return 429,
+                    // so check is_model_unavailable first.
                     if is_model_unavailable {
                         return Err(ApiClientError::ModelOverloadedError {
                             request_id: err
                                 .as_service_error()
                                 .and_then(|err| err.meta().request_id())
                                 .map(|s| s.to_string()),
+                            status_code,
+                        });
+                    }
+                    if is_quota_breach {
+                        return Err(ApiClientError::QuotaBreach {
+                            message: "quota has reached its limit",
                             status_code,
                         });
                     }
