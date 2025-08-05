@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::Path;
 
 use clap::Subcommand;
 use crossterm::queue;
@@ -12,6 +13,8 @@ use semantic_search_client::{
     OperationStatus,
     SystemStatus,
 };
+use serde::Deserialize;
+use tracing::error;
 
 use crate::cli::chat::tools::sanitize_path_tool_arg;
 use crate::cli::chat::{
@@ -54,6 +57,13 @@ enum OperationResult {
     Error(String),
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    #[serde(default)]
+    pub(crate) base_dir: String,
+}
+
 impl KnowledgeSubcommand {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         if !Self::is_feature_enabled(os) {
@@ -90,7 +100,27 @@ impl KnowledgeSubcommand {
         }
     }
 
+    fn get_knowledge_base_dir(session: &mut ChatSession) -> Option<impl AsRef<Path> + use<>> {
+        let agent = session.conversation.agents.get_active();
+        if agent.is_none() {
+            return None;
+        }
+
+        agent.unwrap().tools_settings.get("knowledge")?.get("base_dir");
+        match agent.unwrap().tools_settings.get("knowledge") {
+            Some(settings) => match serde_json::from_value::<Settings>(settings.clone()) {
+                Ok(settings) => Some(settings.base_dir),
+                Err(e) => {
+                    error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
+                    None
+                },
+            },
+            None => None,
+        }
+    }
+
     async fn execute_operation(&self, os: &Os, session: &mut ChatSession) -> OperationResult {
+        let knowledge_base_dir = Self::get_knowledge_base_dir(session);
         match self {
             KnowledgeSubcommand::Show => {
                 match Self::handle_show(session).await {
@@ -98,17 +128,20 @@ impl KnowledgeSubcommand {
                     Err(e) => OperationResult::Error(format!("Failed to show contexts: {}", e)),
                 }
             },
-            KnowledgeSubcommand::Add { path } => Self::handle_add(os, path).await,
-            KnowledgeSubcommand::Remove { path } => Self::handle_remove(os, path).await,
-            KnowledgeSubcommand::Update { path } => Self::handle_update(os, path).await,
+            KnowledgeSubcommand::Add { path } => Self::handle_add(os, path, knowledge_base_dir).await,
+            KnowledgeSubcommand::Remove { path } => Self::handle_remove(os, path, knowledge_base_dir).await,
+            KnowledgeSubcommand::Update { path } => Self::handle_update(os, path, knowledge_base_dir).await,
             KnowledgeSubcommand::Clear => Self::handle_clear(session).await,
-            KnowledgeSubcommand::Status => Self::handle_status().await,
-            KnowledgeSubcommand::Cancel { operation_id } => Self::handle_cancel(operation_id.as_deref()).await,
+            KnowledgeSubcommand::Status => Self::handle_status(knowledge_base_dir).await,
+            KnowledgeSubcommand::Cancel { operation_id } => {
+                Self::handle_cancel(operation_id.as_deref(), knowledge_base_dir).await
+            },
         }
     }
 
     async fn handle_show(session: &mut ChatSession) -> Result<(), std::io::Error> {
-        let async_knowledge_store = KnowledgeStore::get_async_instance().await;
+        let knowledge_base_dir = Self::get_knowledge_base_dir(session);
+        let async_knowledge_store = KnowledgeStore::get_async_instance(knowledge_base_dir).await;
         let store = async_knowledge_store.lock().await;
 
         // Use the async get_all method which is concurrent with indexing
@@ -210,10 +243,10 @@ impl KnowledgeSubcommand {
     }
 
     /// Handle add operation
-    async fn handle_add(os: &Os, path: &str) -> OperationResult {
+    async fn handle_add(os: &Os, path: &str, knowledge_base_dir: Option<impl AsRef<Path>>) -> OperationResult {
         match Self::validate_and_sanitize_path(os, path) {
             Ok(sanitized_path) => {
-                let async_knowledge_store = KnowledgeStore::get_async_instance().await;
+                let async_knowledge_store = KnowledgeStore::get_async_instance(knowledge_base_dir).await;
                 let mut store = async_knowledge_store.lock().await;
 
                 // Use the async add method which is fire-and-forget
@@ -227,9 +260,9 @@ impl KnowledgeSubcommand {
     }
 
     /// Handle remove operation
-    async fn handle_remove(os: &Os, path: &str) -> OperationResult {
+    async fn handle_remove(os: &Os, path: &str, knowledge_base_dir: Option<impl AsRef<Path>>) -> OperationResult {
         let sanitized_path = sanitize_path_tool_arg(os, path);
-        let async_knowledge_store = KnowledgeStore::get_async_instance().await;
+        let async_knowledge_store = KnowledgeStore::get_async_instance(knowledge_base_dir).await;
         let mut store = async_knowledge_store.lock().await;
 
         // Try path first, then name
@@ -243,10 +276,10 @@ impl KnowledgeSubcommand {
     }
 
     /// Handle update operation
-    async fn handle_update(os: &Os, path: &str) -> OperationResult {
+    async fn handle_update(os: &Os, path: &str, knowledge_base_dir: Option<impl AsRef<Path>>) -> OperationResult {
         match Self::validate_and_sanitize_path(os, path) {
             Ok(sanitized_path) => {
-                let async_knowledge_store = KnowledgeStore::get_async_instance().await;
+                let async_knowledge_store = KnowledgeStore::get_async_instance(knowledge_base_dir).await;
                 let mut store = async_knowledge_store.lock().await;
 
                 match store.update_by_path(&sanitized_path).await {
@@ -278,7 +311,8 @@ impl KnowledgeSubcommand {
             return OperationResult::Info("Clear operation cancelled".to_string());
         }
 
-        let async_knowledge_store = KnowledgeStore::get_async_instance().await;
+        let knowledge_base_dir = Self::get_knowledge_base_dir(session);
+        let async_knowledge_store = KnowledgeStore::get_async_instance(knowledge_base_dir).await;
         let mut store = async_knowledge_store.lock().await;
 
         // First, cancel any pending operations
@@ -308,8 +342,8 @@ impl KnowledgeSubcommand {
     }
 
     /// Handle status operation
-    async fn handle_status() -> OperationResult {
-        let async_knowledge_store = KnowledgeStore::get_async_instance().await;
+    async fn handle_status(knowledge_base_dir: Option<impl AsRef<Path>>) -> OperationResult {
+        let async_knowledge_store = KnowledgeStore::get_async_instance(knowledge_base_dir).await;
         let store = async_knowledge_store.lock().await;
 
         match store.get_status_data().await {
@@ -416,8 +450,11 @@ impl KnowledgeSubcommand {
     }
 
     /// Handle cancel operation
-    async fn handle_cancel(operation_id: Option<&str>) -> OperationResult {
-        let async_knowledge_store = KnowledgeStore::get_async_instance().await;
+    async fn handle_cancel(
+        operation_id: Option<&str>,
+        knowledge_base_dir: Option<impl AsRef<Path>>,
+    ) -> OperationResult {
+        let async_knowledge_store = KnowledgeStore::get_async_instance(knowledge_base_dir).await;
         let mut store = async_knowledge_store.lock().await;
 
         match store.cancel_operation(operation_id).await {
