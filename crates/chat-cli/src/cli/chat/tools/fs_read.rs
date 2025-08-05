@@ -36,12 +36,15 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
-use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::tools::display_purpose;
 use crate::cli::chat::util::images::{
     handle_images_from_paths,
     is_supported_image_type,
     pre_process,
+};
+use crate::cli::chat::{
+    CONTINUATION_LINE,
+    sanitize_unicode_tags,
 };
 use crate::os::Os;
 
@@ -450,6 +453,7 @@ impl FsLine {
         debug!(?path, "Reading");
         let file_bytes = os.fs.read(&path).await?;
         let file_content = String::from_utf8_lossy(&file_bytes);
+        let file_content = sanitize_unicode_tags(&file_content);
         let line_count = file_content.lines().count();
         let (start, end) = (
             convert_negative_index(line_count, self.start_line()),
@@ -558,6 +562,7 @@ impl FsSearch {
 
         let file_bytes = os.fs.read(&file_path).await?;
         let file_content = String::from_utf8_lossy(&file_bytes);
+        let file_content = sanitize_unicode_tags(&file_content);
         let lines: Vec<&str> = LinesWithEndings::from(&file_content).collect();
 
         let mut results = Vec::new();

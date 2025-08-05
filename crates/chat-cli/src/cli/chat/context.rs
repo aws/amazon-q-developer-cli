@@ -9,10 +9,12 @@ use eyre::{
 use glob::glob;
 use serde::{
     Deserialize,
+    Deserializer,
     Serialize,
+    Serializer,
 };
 
-use super::consts::CONTEXT_FILES_MAX_SIZE;
+use super::cli::model::context_window_tokens;
 use super::util::drop_matched_context_files;
 use crate::cli::agent::Agent;
 use crate::cli::agent::hook::{
@@ -23,6 +25,69 @@ use crate::cli::chat::ChatError;
 use crate::cli::chat::cli::hooks::HookExecutor;
 use crate::os::Os;
 
+#[derive(Debug, Clone)]
+pub enum ContextFilePath {
+    /// Signifies that the path is brought in from the agent config
+    Agent(String),
+    /// Signifies that the path is brought in via /context add
+    Session(String),
+}
+
+impl Serialize for ContextFilePath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            ContextFilePath::Agent(path) => path.serialize(serializer),
+            ContextFilePath::Session(_) => Err(serde::ser::Error::custom("Session paths are not serialized")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ContextFilePath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let path = String::deserialize(deserializer)?;
+        Ok(ContextFilePath::Agent(path))
+    }
+}
+
+impl ContextFilePath {
+    pub fn get_path_as_str(&self) -> &str {
+        match self {
+            Self::Agent(path) | Self::Session(path) => path.as_str(),
+        }
+    }
+}
+
+impl PartialEq for ContextFilePath {
+    fn eq(&self, other: &Self) -> bool {
+        let self_path = self.get_path_as_str();
+        let other_path = other.get_path_as_str();
+
+        self_path == other_path
+    }
+}
+
+impl PartialEq<str> for ContextFilePath {
+    fn eq(&self, other: &str) -> bool {
+        self.get_path_as_str() == other
+    }
+}
+
+impl PartialEq<ContextFilePath> for String {
+    fn eq(&self, other: &ContextFilePath) -> bool {
+        let inner = match other {
+            ContextFilePath::Agent(path) | ContextFilePath::Session(path) => path,
+        };
+
+        self == inner
+    }
+}
+
 /// Manager for context files and profiles.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextManager {
@@ -30,7 +95,7 @@ pub struct ContextManager {
     /// Name of the current active profile.
     pub current_profile: String,
     /// List of file paths or glob patterns to include in the context.
-    pub paths: Vec<String>,
+    pub paths: Vec<ContextFilePath>,
     /// Map of Hook Name to [`Hook`]. The hook name serves as the hook's ID.
     pub hooks: HashMap<HookTrigger, Vec<Hook>>,
     #[serde(skip)]
@@ -38,16 +103,16 @@ pub struct ContextManager {
 }
 
 impl ContextManager {
-    pub fn from_agent(agent: &Agent, max_context_files_size: Option<usize>) -> Result<Self> {
+    pub fn from_agent(agent: &Agent, max_context_files_size: usize) -> Result<Self> {
         let paths = agent
             .resources
             .iter()
             .filter(|resource| resource.starts_with("file://"))
-            .map(|s| s.trim_start_matches("file://").to_string())
+            .map(|s| ContextFilePath::Agent(s.trim_start_matches("file://").to_string()))
             .collect::<Vec<_>>();
 
         Ok(Self {
-            max_context_files_size: max_context_files_size.unwrap_or(CONTEXT_FILES_MAX_SIZE),
+            max_context_files_size,
             current_profile: agent.name.clone(),
             paths,
             hooks: agent.hooks.clone(),
@@ -79,12 +144,14 @@ impl ContextManager {
             }
         }
 
-        // Add each path, checking for duplicates
         for path in paths {
-            if self.paths.contains(&path) {
+            if self.paths.iter().any(|p| p == path.as_str()) {
                 return Err(eyre!("Rule '{}' already exists.", path));
             }
-            self.paths.push(path);
+
+            // The assumption here is that we are only calling [add_paths] for adding paths in
+            // session
+            self.paths.push(ContextFilePath::Session(path));
         }
 
         Ok(())
@@ -100,7 +167,8 @@ impl ContextManager {
     pub fn remove_paths(&mut self, paths: Vec<String>) -> Result<()> {
         // Remove each path if it exists
         let old_path_num = self.paths.len();
-        self.paths.retain(|p| !paths.contains(p));
+        self.paths
+            .retain(|p| !paths.iter().any(|path| path.as_str() == p.get_path_as_str()));
 
         if old_path_num == self.paths.len() {
             return Err(eyre!("None of the specified paths were found in the context"));
@@ -161,12 +229,12 @@ impl ContextManager {
     async fn collect_context_files(
         &self,
         os: &Os,
-        paths: &[String],
+        paths: &[ContextFilePath],
         context_files: &mut Vec<(String, String)>,
     ) -> Result<()> {
         for path in paths {
             // Use is_validation=false to handle non-matching globs gracefully
-            process_path(os, path, context_files, false).await?;
+            process_path(os, path.get_path_as_str(), context_files, false).await?;
         }
         Ok(())
     }
@@ -184,6 +252,12 @@ impl ContextManager {
         hooks.retain(|t, _| *t == trigger);
         self.hook_executor.run_hooks(hooks, output, prompt).await
     }
+}
+
+/// Calculates the maximum context files size to use for the given model id.
+pub fn calc_max_context_files_size(model_id: Option<&str>) -> usize {
+    // Sets the max as 75% of the context window
+    context_window_tokens(model_id).saturating_mul(3) / 4
 }
 
 /// Process a path, handling glob patterns and file types.
@@ -355,5 +429,14 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_calc_max_context_files_size() {
+        assert_eq!(
+            calc_max_context_files_size(Some("CLAUDE_SONNET_4_20250514_V1_0")),
+            150_000
+        );
+        assert_eq!(calc_max_context_files_size(Some("OPENAI_GPT_OSS_120B_1_0")), 96_000);
     }
 }

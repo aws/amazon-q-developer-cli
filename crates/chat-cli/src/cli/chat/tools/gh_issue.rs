@@ -148,7 +148,15 @@ impl GhIssue {
         if os_manager.paths.is_empty() {
             os_str.push_str("profile_context=none\n\n");
         } else {
-            os_str.push_str(&format!("profile_context=\n{}\n\n", &os_manager.paths.join("\n")));
+            os_str.push_str(&format!(
+                "profile_context=\n{}\n\n",
+                &os_manager
+                    .paths
+                    .iter()
+                    .map(|p| p.get_path_as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ));
         }
 
         // Handle context files
