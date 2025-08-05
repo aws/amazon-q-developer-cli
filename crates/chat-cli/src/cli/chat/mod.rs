@@ -28,6 +28,7 @@ use std::io::{
     Read,
     Write,
 };
+use std::os::unix::fs::PermissionsExt;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{
@@ -90,6 +91,11 @@ use spinners::{
 use thiserror::Error;
 use time::OffsetDateTime;
 use token_counter::TokenCounter;
+use tokio::io::{
+    AsyncReadExt,
+    AsyncWriteExt,
+};
+use tokio::net::UnixListener;
 use tokio::signal::ctrl_c;
 use tokio::sync::{
     Mutex,
@@ -175,6 +181,16 @@ pub const EXTRA_HELP: &str = color_print::cstr! {"
 <em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
                     <black!>Change using: q settings chat.skimCommandKey x</black!>
 "};
+
+/// Shared variables that are updated inside main chat loop
+/// Allows orchestrator to see status of children agents
+#[derive(Debug)]
+pub struct AgentSocketInfo {
+    profile: Arc<Mutex<String>>,
+    tokens_used: Arc<Mutex<usize>>,
+    context_window_percent: Arc<Mutex<f32>>,
+    status: Arc<Mutex<String>>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
@@ -558,6 +574,7 @@ pub struct ChatSession {
     pending_prompts: VecDeque<Prompt>,
     interactive: bool,
     inner: Option<ChatState>,
+    last_tool_use: Option<(String, String)>,
     ctrlc_rx: broadcast::Receiver<()>,
 }
 
@@ -679,13 +696,45 @@ impl ChatSession {
             pending_prompts: VecDeque::new(),
             interactive,
             inner: Some(ChatState::default()),
+            last_tool_use: None,
             ctrlc_rx,
         })
     }
 
-    pub async fn next(&mut self, os: &mut Os) -> Result<(), ChatError> {
+    pub async fn next(&mut self, os: &mut Os, socket_info: &mut AgentSocketInfo) -> Result<(), ChatError> {
         // Update conversation state with new tool information
         self.conversation.update_state(false).await;
+
+        // setup arc variables for updating status
+        let AgentSocketInfo {
+            profile,
+            tokens_used,
+            context_window_percent,
+            status,
+        } = socket_info;
+
+        // Update shared state values for socket communication
+        if let Some(current_profile) = self.conversation.current_profile() {
+            let mut profile_guard = profile.lock().await;
+            *profile_guard = current_profile.to_string();
+        }
+
+        let backend_state = self
+            .conversation
+            .backend_conversation_state(os, false, &mut self.stdout)
+            .await;
+        let data = backend_state?.calculate_conversation_size();
+        let mut tokens_guard = tokens_used.lock().await;
+        *tokens_guard = *data.context_messages + *data.assistant_messages + *data.user_messages;
+        let mut percent_guard = context_window_percent.lock().await;
+        *percent_guard = (*tokens_guard as f32 / consts::CONTEXT_WINDOW_SIZE as f32) * 100.0;
+        let mut status_guard = status.lock().await;
+        let default_state = ChatState::default();
+        let current_chat_state = self.inner.as_ref().unwrap_or(&default_state);
+        *status_guard = self.get_current_status(current_chat_state);
+        std::mem::drop(tokens_guard);
+        std::mem::drop(status_guard);
+        std::mem::drop(percent_guard);
 
         let mut ctrl_c_stream = self.ctrlc_rx.resubscribe();
         let result = match self.inner.take().expect("state must always be Some") {
@@ -1102,6 +1151,54 @@ impl Default for ChatState {
 }
 
 impl ChatSession {
+    /// Returns current status state of chat for orchestrator agent to display
+    fn get_current_status(&self, current_state: &ChatState) -> String {
+        // Display previous tool use summary at all times if available
+        if let Some((name, summary)) = &self.last_tool_use {
+            if !summary.is_empty() {
+                return format!("Running {}: {}", name, summary);
+            }
+        }
+
+        match current_state {
+            ChatState::PromptUser { .. } if self.pending_tool_index.is_some() => {
+                "waiting for tool approval".to_string()
+            },
+            // edge case: if self.last_tool_use not set yet and get_current_status called.
+            ChatState::ExecuteTools => {
+                if !self.tool_uses.is_empty() {
+                    let tool = &self.tool_uses[0];
+                    if let Tool::ExecuteCommand(execute_cmd) = &tool.tool {
+                        if let Some(summary) = &execute_cmd.summary {
+                            return format!("Running {}: {}", tool.name, summary);
+                        }
+                    } else if let Tool::FsWrite(fswrite) = &tool.tool {
+                        if let Some(summary) = &fswrite.get_summary() {
+                            return format!("Running {}: {}", tool.name, summary);
+                        }
+                    }
+                    format!("Running {}", tool.name)
+                } else {
+                    "executing tool".to_string()
+                }
+            },
+            ChatState::ValidateTools { .. } => "validating tools".to_string(),
+            ChatState::HandleResponseStream(_) => "generating response".to_string(),
+            ChatState::CompactHistory { .. } => "compacting history".to_string(),
+            _ => match &self.tool_use_status {
+                ToolUseStatus::RetryInProgress(_) => "retrying tool use".to_string(),
+                ToolUseStatus::Idle => {
+                    // Use last tool use if exists or default to generating response
+                    if self.conversation.next_user_message().is_some() {
+                        "processing request".to_string()
+                    } else {
+                        "waiting for user input".to_string()
+                    }
+                },
+            },
+        }
+    }
+
     /// Sends a request to the SendMessage API. Emits error telemetry on failure.
     async fn send_message(
         &mut self,
@@ -1130,7 +1227,99 @@ impl ChatSession {
         }
     }
 
+    /// Sets up a Unix domain socket server for subagent communication
+    async fn setup_agent_socket() -> (
+        Arc<tokio::sync::Mutex<String>>,
+        Arc<tokio::sync::Mutex<usize>>,
+        Arc<tokio::sync::Mutex<f32>>,
+        Arc<tokio::sync::Mutex<String>>,
+    ) {
+        let profile = Arc::new(tokio::sync::Mutex::new(String::from("unknown")));
+        let tokens_used = Arc::new(tokio::sync::Mutex::new(0));
+        let context_window_percent = Arc::new(tokio::sync::Mutex::new(0.0));
+        let status = Arc::new(tokio::sync::Mutex::new(String::from("waiting for user input")));
+
+        // Create clones for the async task
+        let profile_clone = profile.clone();
+        let tokens_used_clone: Arc<tokio::sync::Mutex<usize>> = tokens_used.clone();
+        let context_window_percent_clone = context_window_percent.clone();
+        let status_clone = status.clone();
+
+        // Create UDS for list agent
+        let socket_dir = "/tmp/qchat";
+        let _ = std::fs::create_dir_all(socket_dir);
+        let _ = std::fs::set_permissions(socket_dir, std::fs::Permissions::from_mode(0o777));
+        let socket_path = format!("/tmp/qchat/{}", std::process::id());
+        // Remove existing socket if it exists
+        let _ = std::fs::remove_file(&socket_path);
+        let start = Instant::now();
+
+        // Spawn async listening task
+        tokio::spawn(async move {
+            if let Ok(listener) = UnixListener::bind(&socket_path) {
+                if let Err(e) = std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o666)) {
+                    eprintln!("Failed to set socket permissions: {}", e);
+                }
+
+                loop {
+                    match listener.accept().await {
+                        Ok((mut stream, _)) => {
+                            let mut buffer = [0u8; 1024];
+                            match stream.read(&mut buffer).await {
+                                Ok(0) => {
+                                    eprintln!("Client disconnected");
+                                },
+                                Ok(n) => {
+                                    let command = std::str::from_utf8(&buffer[..n]).unwrap_or("").trim();
+                                    if command.starts_with("LIST") {
+                                        let profile_value = profile_clone.lock().await.clone();
+                                        let tokens_value = *tokens_used_clone.lock().await;
+                                        let percent_value = *context_window_percent_clone.lock().await;
+                                        let duration = start.elapsed();
+                                        let duration_secs = duration.as_secs_f64();
+                                        let status_value = status_clone.lock().await.clone();
+                                        let response = format!(
+                                            "{{\"profile\":\"{}\",\"tokens_used\":{},\"context_window\":{:.1},\"duration_secs\":{:.3},\"status\":\"{}\"}}",
+                                            profile_value, tokens_value, percent_value, duration_secs, status_value
+                                        );
+                                        if let Err(e) = stream.write_all(response.as_bytes()).await {
+                                            eprintln!("Failed to write response: {}", e);
+                                        }
+                                    // TODO: handle errors differently instead of printing to stderr
+                                    } else {
+                                        // Unknown command
+                                        eprintln!("Failed to write response due to unknown prefix");
+                                    }
+                                },
+                                Err(e) => {
+                                    eprintln!("Failed to read from socket: {}", e);
+                                },
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Socket error: {}", e);
+                            break;
+                        },
+                    }
+                }
+            } else {
+                eprintln!("Failed to bind Unix socket");
+            }
+        });
+
+        (profile, tokens_used, context_window_percent, status)
+    }
+
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
+        // socket setup before displaying any text to user
+        let (profile, tokens_used, context_window_percent, status) = Self::setup_agent_socket().await;
+        let mut agent_socket_values = AgentSocketInfo {
+            profile,
+            tokens_used,
+            context_window_percent,
+            status,
+        };
+
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
         if os
             .database
@@ -1213,7 +1402,7 @@ impl ChatSession {
         }
 
         while !matches!(self.inner, Some(ChatState::Exit)) {
-            self.next(os).await?;
+            self.next(os, &mut agent_socket_values).await?;
         }
 
         Ok(())
@@ -1887,6 +2076,9 @@ impl ChatSession {
 
             let invoke_result = tool.tool.invoke(os, &mut self.stdout).await;
 
+            // store last tool use for current status
+            self.last_tool_use = Some((tool.name.clone(), Self::get_tool_summary(&tool.tool)));
+
             if self.spinner.is_some() {
                 queue!(
                     self.stderr,
@@ -2019,6 +2211,14 @@ impl ChatSession {
                 .as_sendable_conversation_state(os, &mut self.stderr, false)
                 .await?,
         ));
+    }
+
+    fn get_tool_summary(tool: &Tool) -> String {
+        match tool {
+            Tool::ExecuteCommand(execute_cmd) => execute_cmd.summary.clone().unwrap_or_default(),
+            Tool::FsWrite(fswrite) => fswrite.get_summary().cloned().unwrap_or_default(),
+            _ => String::new(),
+        }
     }
 
     /// Sends a [crate::api_client::ApiClient::send_message] request to the backend and consumes
@@ -2515,6 +2715,7 @@ impl ChatSession {
     fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
         let mut ctrl_c = false;
         loop {
+            // check if user input provided
             match (self.input_source.read_line(Some(prompt)), ctrl_c) {
                 (Ok(Some(line)), _) => {
                     if line.trim().is_empty() {
