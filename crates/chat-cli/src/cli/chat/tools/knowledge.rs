@@ -13,8 +13,6 @@ use super::{
     InvokeOutput,
     OutputKind,
 };
-
-
 use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
