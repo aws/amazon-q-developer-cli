@@ -141,7 +141,10 @@ impl RootSubcommand {
 
         // Send executed telemetry.
         if self.valid_for_telemetry() {
-            os.telemetry.send_cli_subcommand_executed(&self).ok();
+            os.telemetry
+                .send_cli_subcommand_executed(&os.database, &self)
+                .await
+                .ok();
         }
 
         match self {

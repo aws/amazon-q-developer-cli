@@ -66,7 +66,10 @@ pub mod env_var {
         Q_USING_ZSH_AUTOSUGGESTIONS = "Q_USING_ZSH_AUTOSUGGESTIONS",
 
         /// Overrides the path to the bundle metadata released with certain desktop builds.
-        Q_BUNDLE_METADATA_PATH = "Q_BUNDLE_METADATA_PATH"
+        Q_BUNDLE_METADATA_PATH = "Q_BUNDLE_METADATA_PATH",
+
+        /// Identifier for the client application or service using the chat-cli
+        Q_CLI_CLIENT_APPLICATION = "Q_CLI_CLIENT_APPLICATION"
     }
 }
 

@@ -49,6 +49,7 @@ pub struct Event {
     pub created_time: Option<SystemTime>,
     pub credential_start_url: Option<String>,
     pub sso_region: Option<String>,
+    pub client_application: Option<String>,
     #[serde(flatten)]
     pub ty: EventType,
 }
@@ -60,6 +61,7 @@ impl Event {
             created_time: Some(SystemTime::now()),
             credential_start_url: None,
             sso_region: None,
+            client_application: None,
         }
     }
 
@@ -69,6 +71,10 @@ impl Event {
 
     pub fn set_sso_region(&mut self, sso_region: String) {
         self.sso_region = Some(sso_region);
+    }
+
+    pub fn set_client_application(&mut self, client_application: String) {
+        self.client_application = Some(client_application);
     }
 
     pub fn into_metric_datum(self) -> Option<MetricDatum> {
@@ -107,6 +113,7 @@ impl Event {
                     credential_start_url: self.credential_start_url.map(Into::into),
                     codewhispererterminal_subcommand: Some(subcommand.into()),
                     codewhispererterminal_in_cloudshell: None,
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -209,6 +216,7 @@ impl Event {
                             .join(",")
                             .into(),
                     ),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -294,6 +302,8 @@ impl Event {
                 model,
                 execution_duration,
                 turn_duration,
+                aws_service_name,
+                aws_operation_name,
             } => Some(
                 CodewhispererterminalToolUseSuggested {
                     create_time: self.created_time,
@@ -323,6 +333,9 @@ impl Event {
                     codewhispererterminal_tool_turn_duration_ms: turn_duration
                         .map(|d| d.as_millis() as i64)
                         .map(Into::into),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
+                    codewhispererterminal_aws_service_name: aws_service_name.map(Into::into),
+                    codewhispererterminal_aws_operation_name: aws_operation_name.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -343,6 +356,7 @@ impl Event {
                     codewhispererterminal_tools_per_mcp_server: Some(CodewhispererterminalToolsPerMcpServer(
                         number_of_tools as i64,
                     )),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -431,6 +445,7 @@ impl Event {
                     status_code: status_code.map(|v| v as i64).map(Into::into),
                     request_id: request_id.map(Into::into),
                     codewhispererterminal_utterance_id: message_id.map(Into::into),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -562,6 +577,8 @@ pub enum EventType {
         model: Option<String>,
         execution_duration: Option<Duration>,
         turn_duration: Option<Duration>,
+        aws_service_name: Option<String>,
+        aws_operation_name: Option<String>,
     },
     McpServerInit {
         conversation_id: String,
@@ -617,6 +634,8 @@ pub struct ToolUseEventBuilder {
     pub model: Option<String>,
     pub execution_duration: Option<Duration>,
     pub turn_duration: Option<Duration>,
+    pub aws_service_name: Option<String>,
+    pub aws_operation_name: Option<String>,
 }
 
 impl ToolUseEventBuilder {
@@ -639,6 +658,8 @@ impl ToolUseEventBuilder {
             model,
             execution_duration: None,
             turn_duration: None,
+            aws_service_name: None,
+            aws_operation_name: None,
         }
     }
 
