@@ -224,7 +224,6 @@ impl Client<StdioTransport> {
 
         let transport = Arc::new(transport::stdio::JsonRpcStdioTransport::client(child)?);
         
-        tracing::error!("DEBUG: MCP Client created: server_name={}, timeout={}ms", server_name, timeout);
         
         Ok(Self {
             server_name,
@@ -319,9 +318,6 @@ where
     /// - Spawns tasks to ask for relevant info such as tools and prompts in accordance to server
     ///   capabilities received
     pub async fn init(&self) -> Result<ServerCapabilities, ClientError> {
-        tracing::info!("🚀 Initializing MCP client for server: {}", self.server_name);
-        tracing::info!("   - API client available: {}", self.api_client.is_some());
-        
         let transport_ref = self.transport.clone();
         let server_name = self.server_name.clone();
 
@@ -399,17 +395,13 @@ where
         let tools_list_changed_supported = cap.tools.as_ref().is_some_and(|t| t.get("listChanged").is_some());
         tokio::spawn(async move {
             let mut listener = transport_ref.get_listener();
-            tracing::info!("🎧 MCP message listener started for server: {}", server_name);
             loop {
                 match listener.recv().await {
                     Ok(msg) => {
-                        tracing::debug!("📨 MCP message received from {}: {:?}", server_name, msg);
                         match msg {
                             JsonRpcMessage::Request(req) => {
-                                tracing::info!("🔍 MCP Request received: method={}, id={}", req.method, req.id);
                                 // Handle sampling requests from the server
                                 if req.method == "sampling/createMessage" {
-                                    tracing::info!("🎯 Sampling request detected, processing...");
                                     let client_ref_inner = client_ref.clone();
                                     let transport_ref_inner = transport_ref.clone();
                                     tokio::spawn(async move {
@@ -489,7 +481,6 @@ where
                                     "notifications/tools/list_changed" | "tools/list_changed"
                                         if tools_list_changed_supported =>
                                     {
-                                        tracing::error!("DEBUG: Tools list changed notification received from {}", server_name);
                                         // Add a small delay to prevent rapid-fire loops
                                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                                         fetch_tools_and_notify_with_messenger(&client_ref, messenger_ref.as_ref())
@@ -529,12 +520,9 @@ where
         method: &str,
         params: Option<serde_json::Value>,
     ) -> Result<JsonRpcResponse, ClientError> {
-        tracing::error!("DEBUG: MCP Request to {}: method={}", self.server_name, method);
         if method == "tools/call" {
-            tracing::error!("DEBUG: Tool call detected: {}", serde_json::to_string_pretty(&params).unwrap_or_else(|_| "Failed to serialize params".to_string()));
         }
         if method == "tools/list" {
-            tracing::error!("DEBUG: Tools list request to {}", self.server_name);
         }
         
         let send_map_err = |e: Elapsed| (e, method.to_string());
@@ -649,7 +637,6 @@ where
         
         // Add debug logging for tools/list responses
         if method == "tools/list" {
-            tracing::error!("DEBUG: Tools list response from {}: {}", self.server_name, serde_json::to_string_pretty(&resp).unwrap_or_else(|_| "Failed to serialize response".to_string()));
         }
         
         Ok(resp)
@@ -675,7 +662,6 @@ where
     /// Sets the API client for LLM integration
     #[allow(dead_code)]
     pub fn set_api_client(&mut self, api_client: Arc<ApiClient>) {
-        tracing::error!("DEBUG: API client set for MCP client: {}", self.server_name);
         self.api_client = Some(api_client);
     }
 
@@ -770,7 +756,6 @@ where
 
         let mut content_parts = Vec::new();
         
-        tracing::info!("🔄 Converting API response to sampling format...");
 
         // Collect all response events
         while let Some(event) = api_response
@@ -780,35 +765,27 @@ where
         {
             match event {
                 ChatResponseStream::AssistantResponseEvent { content } => {
-                    tracing::info!("   📝 AssistantResponseEvent: {}", content);
                     content_parts.push(content);
                 },
                 ChatResponseStream::CodeEvent { content } => {
-                    tracing::info!("   💻 CodeEvent: {}", content);
                     content_parts.push(content);
                 },
-                ChatResponseStream::InvalidStateEvent { reason, message } => {
-                    tracing::warn!("   ⚠️  InvalidStateEvent: {} - {}", reason, message);
+                ChatResponseStream::InvalidStateEvent { reason: _, message: _ } => {
                 },
                 ChatResponseStream::MessageMetadataEvent {
-                    conversation_id,
-                    utterance_id,
+                    conversation_id: _,
+                    utterance_id: _,
                 } => {
-                    tracing::info!("   📊 MessageMetadataEvent: conversation_id={:?}, utterance_id={:?}", conversation_id, utterance_id);
                 },
-                other => {
-                    tracing::info!("   🔍 Other event: {:?}", other);
+                _other => {
                 },
             }
         }
 
         let response_text = if content_parts.is_empty() {
-            tracing::warn!("   ❌ No content parts received from LLM");
             "I apologize, but I couldn't generate a response for your request.".to_string()
         } else {
             let combined_text = content_parts.join("");
-            tracing::info!("   ✅ Combined response text length: {}", combined_text.len());
-            tracing::info!("   ✅ Combined response text: {}", combined_text);
             combined_text
         };
 
@@ -830,13 +807,9 @@ where
             SamplingCreateMessageResponse,
         };
 
-        tracing::info!("🔍 SAMPLING REQUEST RECEIVED");
-        tracing::info!("📥 Method: {}", request.method);
-        tracing::info!("📥 Request ID: {}", request.id);
 
         // Check if sampling is enabled for this server
         if !self.sampling_enabled {
-            tracing::warn!("❌ Sampling request rejected - sampling not enabled for server: {}", self.server_name);
             return Ok(JsonRpcResponse {
                 jsonrpc: JsonRpcVersion::default(),
                 id: request.id,
@@ -849,7 +822,6 @@ where
             });
         }
 
-        tracing::info!("✅ Sampling enabled for server: {}", self.server_name);
 
         if request.method != "sampling/createMessage" {
             return Err(ClientError::NegotiationError(format!(
@@ -863,47 +835,16 @@ where
             .as_ref()
             .ok_or_else(|| ClientError::NegotiationError("Missing parameters for sampling request".to_string()))?;
 
-        tracing::info!("📥 Raw params: {}", serde_json::to_string_pretty(params).unwrap_or_else(|_| "Failed to serialize params".to_string()));
 
         let sampling_request: SamplingCreateMessageRequest =
             serde_json::from_value(params.clone()).map_err(ClientError::Serialization)?;
 
-        tracing::info!("📥 Parsed sampling request:");
-        tracing::info!("   - Messages count: {}", sampling_request.messages.len());
-        for (i, message) in sampling_request.messages.iter().enumerate() {
-            match &message.content {
-                SamplingContent::Text { text } => {
-                    tracing::info!("   - Message {}: Role={:?}, Text length={}, Preview: {}", 
-                        i, message.role, text.len(), 
-                        if text.len() > 100 { format!("{}...", &text[..100]) } else { text.clone() }
-                    );
-                }
-                SamplingContent::Image { .. } => {
-                    tracing::info!("   - Message {}: Role={:?}, Type=Image", i, message.role);
-                }
-                SamplingContent::Audio { .. } => {
-                    tracing::info!("   - Message {}: Role={:?}, Type=Audio", i, message.role);
-                }
-            }
-        }
-        if let Some(system_prompt) = &sampling_request.system_prompt {
-            tracing::info!("   - System prompt length: {}, Preview: {}", 
-                system_prompt.len(),
-                if system_prompt.len() > 100 { format!("{}...", &system_prompt[..100]) } else { system_prompt.clone() }
-            );
-        }
-        if let Some(model_prefs) = &sampling_request.model_preferences {
-            tracing::info!("   - Model preferences: {:?}", model_prefs);
-        }
-
         // Check if we have API client access
         let api_client = match &self.api_client {
             Some(client) => {
-                tracing::info!("✅ API client available, proceeding with real LLM request");
                 client
             },
             None => {
-                tracing::warn!("❌ No API client available for sampling request, returning fallback response");
                 // Return a fallback response when API client is not available
                 let response = SamplingCreateMessageResponse {
                     role: Role::Assistant,
@@ -913,8 +854,6 @@ where
                     model: Some("amazon-q-cli".to_string()),
                     stop_reason: Some("no_api_client".to_string()),
                 };
-
-                tracing::info!("📤 SAMPLING RESPONSE (fallback): {}", serde_json::to_string_pretty(&response).unwrap_or_else(|_| "Failed to serialize response".to_string()));
 
                 return Ok(JsonRpcResponse {
                     jsonrpc: request.jsonrpc.clone(),
@@ -943,42 +882,13 @@ where
         // Convert MCP sampling request to Amazon Q conversation format
         let conversation_state = Self::convert_sampling_to_conversation(&sampling_request);
         
-        tracing::info!("🔄 Converted to Amazon Q conversation format:");
-        tracing::info!("   - Conversation ID: {:?}", conversation_state.conversation_id);
-        tracing::info!("   - User message content length: {}", conversation_state.user_input_message.content.len());
-        tracing::info!("   - User message preview: {}", 
-            if conversation_state.user_input_message.content.len() > 200 { 
-                format!("{}...", &conversation_state.user_input_message.content[..200]) 
-            } else { 
-                conversation_state.user_input_message.content.clone() 
-            }
-        );
-        tracing::info!("   - Model ID: {:?}", conversation_state.user_input_message.model_id);
-        tracing::info!("   - History messages: {}", conversation_state.history.as_ref().map_or(0, |h| h.len()));
-
         // Send request to Amazon Q LLM
-        tracing::info!("🚀 Sending request to Amazon Q LLM...");
         match api_client.send_message(conversation_state).await {
             Ok(api_response) => {
-                tracing::info!("✅ Received LLM response, converting to sampling format");
 
                 // Convert API response back to MCP sampling format
                 match self.convert_api_response_to_sampling(api_response).await {
                     Ok(sampling_response) => {
-                        tracing::info!("📤 SAMPLING RESPONSE (success):");
-                        tracing::info!("   - Role: {:?}", sampling_response.role);
-                        match &sampling_response.content {
-                            SamplingContent::Text { text } => {
-                                tracing::info!("   - Response text length: {}", text.len());
-                                tracing::info!("   - Response text: {}", text);
-                            }
-                            _ => {
-                                tracing::info!("   - Response content: {:?}", sampling_response.content);
-                            }
-                        }
-                        tracing::info!("   - Model: {:?}", sampling_response.model);
-                        tracing::info!("   - Stop reason: {:?}", sampling_response.stop_reason);
-
                         Ok(JsonRpcResponse {
                             jsonrpc: request.jsonrpc.clone(),
                             id: request.id,
@@ -1007,7 +917,6 @@ where
                         })
                     },
                     Err(conversion_error) => {
-                        tracing::error!("❌ Failed to convert API response: {:?}", conversion_error);
 
                         let error_response = SamplingCreateMessageResponse {
                             role: Role::Assistant,
@@ -1017,8 +926,6 @@ where
                             model: Some("amazon-q-cli".to_string()),
                             stop_reason: Some("conversion_error".to_string()),
                         };
-
-                        tracing::info!("📤 SAMPLING RESPONSE (conversion error): {}", serde_json::to_string_pretty(&error_response).unwrap_or_else(|_| "Failed to serialize response".to_string()));
 
                         Ok(JsonRpcResponse {
                             jsonrpc: request.jsonrpc.clone(),
@@ -1045,7 +952,6 @@ where
                 }
             },
             Err(api_error) => {
-                tracing::error!("❌ LLM API request failed: {:?}", api_error);
 
                 // Return an error response in sampling format
                 let error_response = SamplingCreateMessageResponse {
@@ -1056,8 +962,6 @@ where
                     model: Some("amazon-q-cli".to_string()),
                     stop_reason: Some("error".to_string()),
                 };
-
-                tracing::info!("📤 SAMPLING RESPONSE (API error): {}", serde_json::to_string_pretty(&error_response).unwrap_or_else(|_| "Failed to serialize response".to_string()));
 
                 Ok(JsonRpcResponse {
                     jsonrpc: request.jsonrpc.clone(),
