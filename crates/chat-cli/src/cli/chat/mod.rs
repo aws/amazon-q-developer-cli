@@ -541,6 +541,9 @@ pub struct ChatSession {
     tool_uses: Vec<QueuedTool>,
     /// An index into [Self::tool_uses] to represent the current tool use being handled.
     pending_tool_index: Option<usize>,
+    /// Whether the current pending tool allows trust option (true for Ask, false for
+    /// AskWithoutTrust)
+    pending_tool_allows_trust: bool,
     /// The time immediately after having received valid tool uses from the model.
     ///
     /// Used to track the time taken from initially prompting the user to tool execute
@@ -672,6 +675,7 @@ impl ChatSession {
             tool_uses: vec![],
             user_turn_request_metadata: vec![],
             pending_tool_index: None,
+            pending_tool_allows_trust: false,
             tool_turn_start_time: None,
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
@@ -1029,6 +1033,7 @@ impl ChatSession {
         self.conversation.enforce_conversation_invariants();
         self.conversation.reset_next_user_message();
         self.pending_tool_index = None;
+        self.pending_tool_allows_trust = false;
         self.tool_turn_start_time = None;
         self.reset_user_turn();
 
@@ -1527,28 +1532,47 @@ impl ChatSession {
 
         let show_tool_use_confirmation_dialog = !skip_printing_tools && self.pending_tool_index.is_some();
         if show_tool_use_confirmation_dialog {
-            execute!(
-                self.stderr,
-                style::SetForegroundColor(Color::DarkGrey),
-                style::Print("\nAllow this action? Use '"),
-                style::SetForegroundColor(Color::Green),
-                style::Print("t"),
-                style::SetForegroundColor(Color::DarkGrey),
-                style::Print("' to trust (always allow) this tool for the session. ["),
-                style::SetForegroundColor(Color::Green),
-                style::Print("y"),
-                style::SetForegroundColor(Color::DarkGrey),
-                style::Print("/"),
-                style::SetForegroundColor(Color::Green),
-                style::Print("n"),
-                style::SetForegroundColor(Color::DarkGrey),
-                style::Print("/"),
-                style::SetForegroundColor(Color::Green),
-                style::Print("t"),
-                style::SetForegroundColor(Color::DarkGrey),
-                style::Print("]:\n\n"),
-                style::SetForegroundColor(Color::Reset),
-            )?;
+            if self.pending_tool_allows_trust {
+                // Show full prompt with trust option for Ask
+                execute!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("\nAllow this action? Use '"),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("t"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("' to trust (always allow) this tool for the session. ["),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("y"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("/"),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("n"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("/"),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("t"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("]:\n\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            } else {
+                // Show simplified prompt without trust option for AskWithoutTrust
+                execute!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("\nAllow this action? ["),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("y"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("/"),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("n"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("]:\n\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            }
         }
 
         // Do this here so that the skim integration sees an updated view of the context *during the current
@@ -1741,7 +1765,7 @@ impl ChatSession {
         } else {
             // Check for a pending tool approval
             if let Some(index) = self.pending_tool_index {
-                let is_trust = ["t", "T"].contains(&input);
+                let is_trust = ["t", "T"].contains(&input) && self.pending_tool_allows_trust;
                 let tool_use = &mut self.tool_uses[index];
                 if ["y", "Y"].contains(&input) || is_trust {
                     if is_trust {
@@ -1822,13 +1846,18 @@ impl ChatSession {
             }
 
             let mut denied = false;
+            let mut allows_trust = false;
             let allowed =
                 self.conversation
                     .agents
                     .get_active()
                     .is_some_and(|a| match tool.tool.requires_acceptance(a) {
                         PermissionEvalResult::Allow => true,
-                        PermissionEvalResult::Ask => false,
+                        PermissionEvalResult::Ask => {
+                            allows_trust = true;
+                            false
+                        },
+                        PermissionEvalResult::AskWithoutTrust => false,
                         PermissionEvalResult::Deny => {
                             denied = true;
                             false
@@ -1868,6 +1897,7 @@ impl ChatSession {
             }
 
             self.pending_tool_index = Some(i);
+            self.pending_tool_allows_trust = allows_trust;
 
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
@@ -2304,6 +2334,7 @@ impl ChatSession {
         } else {
             self.tool_uses.clear();
             self.pending_tool_index = None;
+            self.pending_tool_allows_trust = false;
             self.tool_turn_start_time = None;
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
@@ -2427,6 +2458,7 @@ impl ChatSession {
                 self.conversation.enforce_conversation_invariants();
                 self.conversation.reset_next_user_message();
                 self.pending_tool_index = None;
+                self.pending_tool_allows_trust = false;
                 self.tool_turn_start_time = None;
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: false,
