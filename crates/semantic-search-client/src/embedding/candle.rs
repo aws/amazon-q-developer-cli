@@ -66,7 +66,7 @@ impl CandleTextEmbedder {
         // Create model directory if it doesn't exist
         ensure_model_directory_exists(&model_path)?;
 
-        // Download files if they don't exist
+        // Download files if they don't exist (synchronous like original HF)
         ensure_model_files(&model_path, &tokenizer_path, &model_config)?;
 
         Self::with_model_config(&model_path, &tokenizer_path, model_config)
@@ -291,33 +291,40 @@ fn ensure_model_files(model_path: &Path, tokenizer_path: &Path, config: &ModelCo
 
     info!("Downloading model files for {}...", config.name);
 
-    // Download files using Hugging Face Hub API
+    // Download files using hosted model client (synchronous like original HF)
     download_model_files(model_path, tokenizer_path, config).map_err(|e| {
         error!("Failed to download model files: {}", e);
         SemanticSearchError::EmbeddingError(e.to_string())
     })
 }
 
-/// Download model files from Hugging Face Hub
+/// Download model files from hosted CDN with progress bar
 fn download_model_files(model_path: &Path, tokenizer_path: &Path, config: &ModelConfig) -> AnyhowResult<()> {
-    // Use Hugging Face Hub API to download files
-    let api = hf_hub::api::sync::Api::new()?;
-    let repo = api.repo(hf_hub::Repo::with_revision(
-        config.repo_path.clone(),
-        hf_hub::RepoType::Model,
-        "main".to_string(),
-    ));
-
-    // Download model file if it doesn't exist
-    if !model_path.exists() {
-        let model_file = repo.get(&config.model_file)?;
-        std::fs::copy(model_file, model_path)?;
+    // Check if files already exist before creating any clients
+    if model_path.exists() && tokenizer_path.exists() {
+        return Ok(());
     }
 
-    // Download tokenizer file if it doesn't exist
+    use crate::client::hosted_model_client::HostedModelClient;
+
+    // Get the target directory (parent of model_path, which should be the model directory)
+    let target_dir = model_path.parent()
+        .ok_or_else(|| anyhow::anyhow!("Invalid model path: {:?}", model_path))?;
+
+    // Get the hosted models base URL from config
+    let semantic_config = crate::config::get_config();
+    let base_url = &semantic_config.hosted_models_base_url;
+
+    // Create hosted model client and download with progress bar
+    let client = HostedModelClient::new(base_url.clone());
+    client.ensure_model(&config.name, target_dir)?;
+
+    // Verify that the expected files now exist
+    if !model_path.exists() {
+        return Err(anyhow::anyhow!("Model file not found after download: {:?}", model_path));
+    }
     if !tokenizer_path.exists() {
-        let tokenizer_file = repo.get(&config.tokenizer_file)?;
-        std::fs::copy(tokenizer_file, tokenizer_path)?;
+        return Err(anyhow::anyhow!("Tokenizer file not found after download: {:?}", tokenizer_path));
     }
 
     Ok(())

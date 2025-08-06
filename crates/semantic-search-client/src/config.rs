@@ -39,6 +39,9 @@ pub struct SemanticSearchConfig {
 
     /// Maximum number of files allowed for indexing (default: 5000)
     pub max_files: usize,
+
+    /// Base URL for hosted models
+    pub hosted_models_base_url: String,
 }
 
 impl SemanticSearchConfig {
@@ -83,6 +86,8 @@ impl Default for SemanticSearchConfig {
             timeout: 30000, // 30 seconds
             base_dir: get_default_base_dir(),
             max_files: 10000, // Default limit of 10000 files
+            //Gamma endpoint: "https://desktop.gamma-us-east-1.codewhisperer.ai.aws.dev/models"
+            hosted_models_base_url: "https://desktop-release.q.us-east-1.amazonaws.com/models".to_string(),
         }
     }
 }
@@ -333,6 +338,7 @@ mod tests {
             timeout: 30000,
             base_dir: temp_dir.path().to_path_buf(),
             max_files: 10000,
+            hosted_models_base_url: "http://test.example.com/models".to_string(),
         };
 
         // Update the config

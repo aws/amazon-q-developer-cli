@@ -119,6 +119,9 @@ mod tests {
                 println!("Indexing file {}/{}", current, total);
                 progress_counter_clone.store(current, Ordering::SeqCst);
             },
+            ProgressStatus::DownloadingModel(current, total) => {
+                println!("Downloading model {}/{} bytes", current, total);
+            },
             ProgressStatus::CreatingSemanticContext => {
                 println!("Creating semantic context...");
             },

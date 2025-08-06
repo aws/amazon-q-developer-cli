@@ -1078,6 +1078,13 @@ impl BackgroundWorker {
                                     format!("Indexing files ({}/{})", current, total),
                                 );
                             },
+                            ProgressStatus::DownloadingModel(current, total) => {
+                                progress.update(
+                                    current,
+                                    total,
+                                    format!("Downloading model ({} / {} bytes)", current, total),
+                                );
+                            },
                             ProgressStatus::CreatingSemanticContext => {
                                 progress.update(0, 0, "Creating semantic context...".to_string());
                             },
