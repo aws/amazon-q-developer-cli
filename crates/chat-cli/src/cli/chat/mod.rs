@@ -18,6 +18,9 @@ pub mod tool_manager;
 pub mod tools;
 pub mod util;
 
+mod api;
+mod api_chat_session;
+
 use std::borrow::Cow;
 use std::collections::{
     HashMap,
@@ -197,6 +200,9 @@ pub struct ChatArgs {
     /// Whether the command should run without expecting user input
     #[arg(long, alias = "non-interactive")]
     pub no_interactive: bool,
+    /// Enable API mode with socket communication
+    #[arg(long)]
+    pub api: bool,
     /// The first question to ask
     pub input: Option<String>,
 }
@@ -342,6 +348,65 @@ impl ChatArgs {
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
 
+        // Initialize API mode components if --api flag is provided
+        let (lifecycle_manager, message_router, input_source) = if self.api {
+            // Create socket lifecycle manager
+            let working_directory = os.env.current_dir()?;
+            let mut lifecycle_manager = api::SocketLifecycleManager::new(working_directory)?;
+            
+            // Initialize and create sockets
+            lifecycle_manager.initialize().await?;
+            lifecycle_manager.create_sockets_with_lifecycle_management().await?;
+            
+            // Create message router with socket manager
+            let socket_manager = lifecycle_manager.socket_manager();
+            
+            // Create shared broadcast channels for all socket types
+            let mut shared_broadcasters = std::collections::HashMap::new();
+            for socket_type in api::SocketType::all() {
+                let (sender, _) = tokio::sync::broadcast::channel(1000);
+                shared_broadcasters.insert(socket_type, sender);
+            }
+            
+            // Create InputSource with async injection capability for API mode
+            let (input_source, input_injection_sender) = InputSource::new_async_with_injection(os, prompt_request_sender, prompt_response_receiver)?;
+            
+            // Create the connection handler and message router with shared broadcasters
+            let mut connection_handler = api::ConnectionHandler::new(
+                Arc::clone(&socket_manager),
+                shared_broadcasters.clone(),
+            );
+            
+            // Set the input injection sender in the connection handler
+            connection_handler.set_input_injection_sender(input_injection_sender);
+            
+            let message_router = api::MessageRouter::new(
+                Arc::clone(&socket_manager),
+                shared_broadcasters,
+                lifecycle_manager.session_id().to_string(),
+            );
+            
+            // Spawn the connection acceptance task
+            tokio::spawn(async move {
+                match connection_handler.start_accepting_connections().await {
+                    Ok(_guard) => {
+                        // Keep the guard alive by waiting for a signal that never comes
+                        // The guard will be dropped when the program exits, triggering cleanup
+                        std::future::pending::<()>().await;
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Connection handler failed to start: {}", e);
+                    }
+                }
+            });
+            
+            (Some(lifecycle_manager), Some(Arc::new(message_router)), input_source)
+        } else {
+            // Normal mode: create regular InputSource
+            let input_source = InputSource::new(os, prompt_request_sender, prompt_response_receiver)?;
+            (None, None, input_source)
+        };
+
         ChatSession::new(
             os,
             stdout,
@@ -349,13 +414,15 @@ impl ChatArgs {
             &conversation_id,
             agents,
             input,
-            InputSource::new(os, prompt_request_sender, prompt_response_receiver)?,
+            input_source,
             self.resume,
             || terminal::window_size().map(|s| s.columns.into()).ok(),
             tool_manager,
             model_id,
             tool_config,
             !self.no_interactive,
+            lifecycle_manager,
+            message_router,
         )
         .await?
         .spawn(os)
@@ -558,6 +625,10 @@ pub struct ChatSession {
     pending_prompts: VecDeque<Prompt>,
     interactive: bool,
     inner: Option<ChatState>,
+    /// Socket lifecycle manager for API mode (optional)
+    lifecycle_manager: Option<api::SocketLifecycleManager>,
+    /// Message router for API mode socket communication (optional)
+    message_router: Option<Arc<api::MessageRouter>>,
     ctrlc_rx: broadcast::Receiver<()>,
 }
 
@@ -577,6 +648,8 @@ impl ChatSession {
         model_id: Option<String>,
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
+        lifecycle_manager: Option<api::SocketLifecycleManager>,
+        message_router: Option<Arc<api::MessageRouter>>,
     ) -> Result<Self> {
         let model_options = get_model_options(os).await?;
         let valid_model_id = match model_id {
@@ -679,11 +752,19 @@ impl ChatSession {
             pending_prompts: VecDeque::new(),
             interactive,
             inner: Some(ChatState::default()),
+            lifecycle_manager,
+            message_router,
             ctrlc_rx,
         })
     }
 
     pub async fn next(&mut self, os: &mut Os) -> Result<(), ChatError> {
+        // Check for injected input at the beginning of each iteration
+        if let Some(injected_input) = self.input_source.check_for_injected_input() {
+            self.inner = Some(ChatState::HandleInput { input: injected_input });
+            return Ok(());
+        }
+
         // Update conversation state with new tool information
         self.conversation.update_state(false).await;
 
@@ -1131,6 +1212,15 @@ impl ChatSession {
     }
 
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
+        // Run the terminal loop (with shutdown handling if API mode)
+        self.run_terminal_loop(os).await?;
+
+        Ok(())
+    }
+
+    /// Run the main terminal loop (extracted from existing spawn logic)
+    async fn run_terminal_loop(&mut self, os: &mut Os) -> Result<()> {
+
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
         if os
             .database
@@ -1184,6 +1274,11 @@ impl ChatSession {
             execute!(self.stderr, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
         }
 
+        // Display socket information table if API mode is enabled
+        if self.is_api_mode() {
+            self.display_socket_info_table()?;
+        }
+
         if self.all_tools_trusted() {
             queue!(
                 self.stderr,
@@ -1213,9 +1308,179 @@ impl ChatSession {
         }
 
         while !matches!(self.inner, Some(ChatState::Exit)) {
-            self.next(os).await?;
+            match self.next(os).await {
+                Ok(()) => {}
+                Err(e) => {
+                    return Err(e.into());
+                }
+            }
         }
 
+        Ok(())
+    }
+
+    /// Check if API mode is enabled
+    fn is_api_mode(&self) -> bool {
+        self.message_router.is_some()
+    }
+
+    /// Display socket information table for API mode
+    fn display_socket_info_table(&mut self) -> Result<(), ChatError> {
+        if let Some(ref lifecycle_manager) = self.lifecycle_manager {
+            let socket_manager = lifecycle_manager.socket_manager();
+            let socket_manager_guard = socket_manager.lock().map_err(|e| {
+                ChatError::Custom(format!("Failed to lock socket manager: {}", e).into())
+            })?;
+            
+            let socket_paths = socket_manager_guard.get_all_socket_paths();
+            
+            // Check if we have any sockets to display
+            if socket_paths.is_empty() {
+                // Display warning if no sockets were created
+                execute!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("⚠️  Warning: No API sockets were successfully created\n"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("   API mode functionality will be limited\n"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n")
+                )?;
+                return Ok(());
+            }
+            
+            // Check for partial failures (expected 4 socket types - Control and Events suppressed)
+            let expected_socket_types = [
+                // api::SocketType::Control,  // Suppressed - control socket management disabled
+                api::SocketType::Input,
+                api::SocketType::Output,
+                api::SocketType::Thinking,
+                api::SocketType::Tools,
+                // api::SocketType::Events,   // Suppressed - events socket management disabled
+            ];
+            
+            let missing_sockets: Vec<_> = expected_socket_types
+                .iter()
+                .filter(|socket_type| !socket_paths.contains_key(socket_type))
+                .collect();
+            
+            // Display table header
+            execute!(
+                self.stderr,
+                style::SetForegroundColor(Color::Cyan),
+                style::Print("🔌 API Mode Socket Information\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+            
+            // Show warning for partial failures if any sockets are missing
+            if !missing_sockets.is_empty() {
+                execute!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(format!("⚠️  Warning: {} of {} sockets failed to create\n", 
+                        missing_sockets.len(), expected_socket_types.len())),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+            }
+            
+            // Table border and headers
+            execute!(
+                self.stderr,
+                style::Print("┌─────────────┬─────────────────────────────────────────────────────────────────┐\n"),
+                style::Print("│ Socket Type │ Path                                                            │\n"),
+                style::Print("├─────────────┼─────────────────────────────────────────────────────────────────┤\n")
+            )?;
+            
+            // Display successfully created sockets
+            for (socket_type, path) in socket_paths.iter() {
+                let socket_name = match socket_type {
+                    api::SocketType::Control => "control",
+                    api::SocketType::Input => "input",
+                    api::SocketType::Output => "output",
+                    api::SocketType::Thinking => "thinking",
+                    api::SocketType::Tools => "tools",
+                    api::SocketType::Events => "events",
+                };
+                
+                let path_str = path.display().to_string();
+                let truncated_path = if path_str.len() > 63 {
+                    format!("...{}", &path_str[path_str.len() - 60..])
+                } else {
+                    path_str
+                };
+                
+                execute!(
+                    self.stderr,
+                    style::Print(format!("│ {:11} │ {:63} │\n", socket_name, truncated_path))
+                )?;
+            }
+            
+            // Display failed sockets if any
+            if !missing_sockets.is_empty() {
+                for socket_type in &missing_sockets {
+                    let socket_name = match socket_type {
+                        api::SocketType::Control => "control",
+                        api::SocketType::Input => "input",
+                        api::SocketType::Output => "output",
+                        api::SocketType::Thinking => "thinking",
+                        api::SocketType::Tools => "tools",
+                        api::SocketType::Events => "events",
+                    };
+                    
+                    execute!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("│ {:11} │ {:63} │\n", socket_name, "FAILED TO CREATE")),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                }
+            }
+            
+            // Table footer
+            execute!(
+                self.stderr,
+                style::Print("└─────────────┴─────────────────────────────────────────────────────────────────┘\n")
+            )?;
+            
+            // Display session information
+            execute!(
+                self.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print(format!("Session ID: {}\n", lifecycle_manager.session_id())),
+                style::Print(format!("Socket Directory: {}\n", lifecycle_manager.socket_directory().display())),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n")
+            )?;
+            
+            // Display additional warnings for missing critical sockets
+            // Control socket is intentionally suppressed - no warning needed
+            /*
+            if missing_sockets.contains(&&api::SocketType::Control) {
+                execute!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("⚠️  Control socket failed - remote shutdown commands will not work\n"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+            }
+            */
+            
+            if missing_sockets.contains(&&api::SocketType::Input) {
+                execute!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("⚠️  Input socket failed - programmatic input will not work\n"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+            }
+            
+            if !missing_sockets.is_empty() {
+                execute!(
+                    self.stderr,
+                    style::Print("\n")
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -1578,12 +1843,13 @@ impl ChatSession {
             style::SetAttribute(Attribute::Reset)
         )?;
         let prompt = self.generate_tool_trust_prompt();
-        let user_input = match self.read_user_input(&prompt, false) {
+        let user_input = match self.read_user_input(&prompt, false).await {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
         };
 
         self.conversation.append_user_transcript(&user_input);
+        
         Ok(ChatState::HandleInput { input: user_input })
     }
 
@@ -1879,11 +2145,31 @@ impl ChatSession {
         let mut image_blocks: Vec<RichImageBlock> = Vec::new();
 
         for tool in &self.tool_uses {
+            // Clone values before mutable borrow to avoid borrowing conflicts
+            let message_router = self.message_router.clone();
+            let is_api_mode = self.is_api_mode();
+            
             let tool_start = std::time::Instant::now();
             let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
             tool_telemetry = tool_telemetry.and_modify(|ev| {
                 ev.is_accepted = true;
             });
+
+            // Route tool request to tools socket if API mode is enabled
+            if is_api_mode {
+                if let Some(ref message_router) = message_router {
+                    // Create a basic tool parameters object
+                    let tool_params = serde_json::json!({
+                        "tool_name": tool.name,
+                        "tool_id": tool.id,
+                        "description": tool.tool.display_name()
+                    });
+                    
+                    if let Err(e) = message_router.route_tool_request(&tool.name, tool_params, &tool.id).await {
+                        eprintln!("Warning: Failed to route tool request to socket: {}", e);
+                    }
+                }
+            }
 
             let invoke_result = tool.tool.invoke(os, &mut self.stdout).await;
 
@@ -1942,6 +2228,30 @@ impl ChatSession {
                         style::Print("\n\n"),
                     )?;
 
+                    // Route successful tool response to tools socket if API mode is enabled
+                    if is_api_mode {
+                        if let Some(ref message_router) = message_router {
+                            let result_data = match &result.output {
+                                OutputKind::Text(text) => serde_json::json!({"type": "text", "content": text}),
+                                OutputKind::Json(json) => serde_json::json!({"type": "json", "content": json}),
+                                OutputKind::Images(images) => serde_json::json!({"type": "images", "count": images.len()}),
+                                OutputKind::Mixed { text, images } => serde_json::json!({
+                                    "type": "mixed", 
+                                    "text": text, 
+                                    "image_count": images.len()
+                                }),
+                            };
+                            
+                            if let Err(_e) = message_router.route_tool_response(
+                                &tool.id, 
+                                result_data, 
+                                crate::cli::chat::api::protocol::ToolStatus::Success
+                            ).await {
+                                // socket is not open
+                            }
+                        }
+                    }
+
                     tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
                     if let Tool::Custom(_) = &tool.tool {
                         tool_telemetry
@@ -1968,6 +2278,24 @@ impl ChatSession {
                         style::SetAttribute(Attribute::Reset),
                         style::Print("\n\n"),
                     )?;
+
+                    // Route failed tool response to tools socket if API mode is enabled
+                    if is_api_mode {
+                        if let Some(ref message_router) = message_router {
+                            let error_data = serde_json::json!({
+                                "type": "error",
+                                "error": err.to_string()
+                            });
+                            
+                            if let Err(e) = message_router.route_tool_response(
+                                &tool.id, 
+                                error_data, 
+                                crate::cli::chat::api::protocol::ToolStatus::Error
+                            ).await {
+                                eprintln!("Warning: Failed to route tool error response to socket: {}", e);
+                            }
+                        }
+                    }
 
                     tool_telemetry.and_modify(|ev| {
                         ev.is_success = Some(false);
@@ -2084,6 +2412,16 @@ impl ChatSession {
                                 response_prefix_printed = true;
                             }
                             buf.push_str(&text);
+                            
+                            // Route text to output socket in real-time if API mode is enabled
+                            if self.is_api_mode() && !text.trim().is_empty() {
+                                if let Some(ref message_router) = self.message_router {
+                                    // Send the new text chunk to output socket immediately
+                                    if let Err(_e) = message_router.route_output_message(&text, false).await {
+                                        // Silently ignore output socket routing errors
+                                    }
+                                }
+                            }
                         },
                         parser::ResponseEvent::ToolUse(tool_use) => {
                             if self.spinner.is_some() {
@@ -2512,10 +2850,17 @@ impl ChatSession {
     }
 
     /// Helper function to read user input with a prompt and Ctrl+C handling
-    fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
+    async fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
         let mut ctrl_c = false;
         loop {
-            match (self.input_source.read_line(Some(prompt)), ctrl_c) {
+            // Check if we have an AsyncReadline variant and use async method
+            let read_result = if self.input_source.is_async() {
+                self.input_source.read_line_async(Some(prompt)).await
+            } else {
+                self.input_source.read_line(Some(prompt))
+            };
+            
+            match (read_result, ctrl_c) {
                 (Ok(Some(line)), _) => {
                     if line.trim().is_empty() {
                         continue; // Reprompt if the input is empty
@@ -2913,6 +3258,8 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // No lifecycle manager for tests
+            None, // No message router for tests
         )
         .await
         .unwrap()
@@ -3054,6 +3401,8 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // No lifecycle manager for tests
+            None, // No message router for tests
         )
         .await
         .unwrap()
@@ -3150,6 +3499,8 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // No lifecycle manager for tests
+            None, // No message router for tests
         )
         .await
         .unwrap()
@@ -3224,6 +3575,8 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // No lifecycle manager for tests
+            None, // No message router for tests
         )
         .await
         .unwrap()
@@ -3274,6 +3627,8 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // No lifecycle manager for tests
+            None, // No message router for tests
         )
         .await
         .unwrap()

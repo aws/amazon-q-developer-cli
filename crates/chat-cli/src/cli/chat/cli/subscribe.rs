@@ -148,7 +148,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
         "]: ".dark_grey(),
     );
 
-    let user_input = session.read_user_input(&prompt, true);
+    let user_input = session.read_user_input(&prompt, true).await;
     queue!(
         session.stderr,
         style::SetForegroundColor(Color::Reset),
