@@ -20,6 +20,7 @@ use tokio::time;
 use tokio::time::error::Elapsed;
 
 use super::transport::base_protocol::{
+    JsonRpcError,
     JsonRpcMessage,
     JsonRpcNotification,
     JsonRpcRequest,
@@ -97,6 +98,7 @@ pub struct ClientConfig {
     pub timeout: u64,
     pub client_info: serde_json::Value,
     pub env: Option<HashMap<String, String>>,
+    pub sampling_enabled: bool,
 }
 
 #[allow(dead_code)]
@@ -148,6 +150,7 @@ pub struct Client<T: Transport> {
     // TODO: move this to tool manager that way all the assets are treated equally
     pub prompt_gets: Arc<SyncRwLock<HashMap<String, PromptGet>>>,
     pub is_prompts_out_of_date: Arc<AtomicBool>,
+    sampling_enabled: bool,
     api_client: Option<Arc<ApiClient>>,
 }
 
@@ -165,6 +168,7 @@ impl<T: Transport> Clone for Client<T> {
             messenger: None,
             prompt_gets: self.prompt_gets.clone(),
             is_prompts_out_of_date: self.is_prompts_out_of_date.clone(),
+            sampling_enabled: self.sampling_enabled,
             api_client: self.api_client.clone(),
         }
     }
@@ -179,6 +183,7 @@ impl Client<StdioTransport> {
             timeout,
             client_info,
             env,
+            sampling_enabled,
         } = config;
         let child = {
             let expanded_bin_path = shellexpand::tilde(&bin_path);
@@ -231,6 +236,7 @@ impl Client<StdioTransport> {
             messenger: None,
             prompt_gets: Arc::new(SyncRwLock::new(HashMap::new())),
             is_prompts_out_of_date: Arc::new(AtomicBool::new(false)),
+            sampling_enabled,
             api_client: None, // Will be set later via set_api_client
         })
     }
@@ -828,6 +834,23 @@ where
         tracing::info!("📥 Method: {}", request.method);
         tracing::info!("📥 Request ID: {}", request.id);
 
+        // Check if sampling is enabled for this server
+        if !self.sampling_enabled {
+            tracing::warn!("❌ Sampling request rejected - sampling not enabled for server: {}", self.server_name);
+            return Ok(JsonRpcResponse {
+                jsonrpc: JsonRpcVersion::default(),
+                id: request.id,
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32601,
+                    message: "Sampling not enabled for this server. Add 'sampling: true' to server configuration.".to_string(),
+                    data: None,
+                }),
+            });
+        }
+
+        tracing::info!("✅ Sampling enabled for server: {}", self.server_name);
+
         if request.method != "sampling/createMessage" {
             return Err(ClientError::NegotiationError(format!(
                 "Unsupported sampling method: {}. Expected 'sampling/createMessage'",
@@ -1215,6 +1238,7 @@ mod tests {
                 map.insert("ENV_TWO".to_owned(), "2".to_owned());
                 Some(map)
             },
+            sampling_enabled: false, // Disable sampling for main test
         };
         let client_info_two = serde_json::json!({
           "name": "TestClientTwo",
@@ -1232,6 +1256,7 @@ mod tests {
                 map.insert("ENV_TWO".to_owned(), "2".to_owned());
                 Some(map)
             },
+            sampling_enabled: false, // Disable sampling for main test
         };
         let mut client_one = Client::<StdioTransport>::from_config(client_config_one).expect("Failed to create client");
         let mut client_two = Client::<StdioTransport>::from_config(client_config_two).expect("Failed to create client");
@@ -1669,6 +1694,7 @@ mod tests {
                 timeout: 5000,
                 client_info: client_info.clone(),
                 env: None,
+                sampling_enabled: true, // Enable sampling for test
             };
 
             // Use from_config to create the client
@@ -1739,6 +1765,7 @@ mod tests {
                 timeout: 5000,
                 client_info: client_info.clone(),
                 env: None,
+                sampling_enabled: true, // Enable sampling for test
             };
 
             let client = Client::<StdioTransport>::from_config(client_config).unwrap();
@@ -1777,6 +1804,7 @@ mod tests {
                 timeout: 5000,
                 client_info: client_info.clone(),
                 env: None,
+                sampling_enabled: true, // Enable sampling for test
             };
 
             let client = Client::<StdioTransport>::from_config(client_config).unwrap();
@@ -1815,6 +1843,7 @@ mod tests {
                 timeout: 5000,
                 client_info: client_info.clone(),
                 env: None,
+                sampling_enabled: true, // Enable sampling for test
             };
 
             let client = Client::<StdioTransport>::from_config(client_config).unwrap();
@@ -1838,6 +1867,61 @@ mod tests {
                 },
                 _ => panic!("Expected Serialization error"),
             }
+        }
+
+        /// Test sampling request when sampling is disabled
+        #[tokio::test]
+        async fn test_handle_sampling_request_disabled() {
+            let client_info = serde_json::json!({
+                "name": "TestClient",
+                "version": "1.0.0"
+            });
+
+            let client_config = ClientConfig {
+                server_name: "test_server".to_string(),
+                bin_path: "test".to_string(),
+                args: vec![],
+                timeout: 5000,
+                client_info: client_info.clone(),
+                env: None,
+                sampling_enabled: false, // Disable sampling
+            };
+
+            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+
+            let sampling_request = SamplingCreateMessageRequest {
+                messages: vec![SamplingMessage {
+                    role: Role::User,
+                    content: SamplingContent::Text {
+                        text: "Hello, world!".to_string(),
+                    },
+                }],
+                model_preferences: None,
+                system_prompt: None,
+                max_tokens: None,
+            };
+
+            let request = JsonRpcRequest {
+                jsonrpc: JsonRpcVersion::default(),
+                id: 1,
+                method: "sampling/createMessage".to_string(),
+                params: Some(serde_json::to_value(sampling_request).unwrap()),
+            };
+
+            // Test the sampling request handler
+            let response = client.handle_sampling_request(&request).await.unwrap();
+
+            // Verify response structure - should be an error
+            assert_eq!(response.jsonrpc, JsonRpcVersion::default());
+            assert_eq!(response.id, 1);
+            assert!(response.result.is_none());
+            assert!(response.error.is_some());
+
+            // Verify error details
+            let error = response.error.unwrap();
+            assert_eq!(error.code, -32601);
+            assert!(error.message.contains("Sampling not enabled"));
+            assert!(error.message.contains("sampling: true"));
         }
 
         /// Test sampling types serialization/deserialization

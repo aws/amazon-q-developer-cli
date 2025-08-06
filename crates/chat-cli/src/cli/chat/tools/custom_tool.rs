@@ -55,6 +55,9 @@ pub struct CustomToolConfig {
     /// A boolean flag to denote whether or not to load this mcp server
     #[serde(default)]
     pub disabled: bool,
+    /// Enable MCP sampling support for this server
+    #[serde(default)]
+    pub sampling: bool,
     /// A flag to denote whether this is a server from the legacy mcp.json
     #[serde(skip)]
     pub is_from_legacy_mcp_json: bool,
@@ -103,6 +106,7 @@ impl CustomToolClient {
             env,
             timeout,
             disabled: _,
+            sampling,
             ..
         } = config;
 
@@ -122,6 +126,7 @@ impl CustomToolClient {
                "version": "1.0.0"
             }),
             env: processed_env,
+            sampling_enabled: sampling,
         };
         let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
         Ok(CustomToolClient::Stdio {

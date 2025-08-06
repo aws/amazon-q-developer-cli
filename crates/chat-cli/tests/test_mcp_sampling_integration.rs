@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use chat_cli::mcp_client::client::{Client, ClientConfig};
-use chat_cli::{StdioTransport, Transport};
+use chat_cli::StdioTransport;
 use tokio::time;
 
 /// Integration test for MCP sampling protocol using the existing test server
@@ -48,6 +48,7 @@ async fn test_mcp_sampling_with_test_server() {
             map.insert("TEST_MODE".to_owned(), "sampling".to_owned());
             map
         }),
+        sampling_enabled: true, // Enable sampling for integration test
     };
     
     // Create and connect the client
