@@ -24,7 +24,6 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
-use crate::os::Os;
 use crate::mcp_client::{
     Client as McpClient,
     ClientConfig as McpClientConfig,
@@ -37,6 +36,7 @@ use crate::mcp_client::{
     StdioTransport,
     ToolCallResult,
 };
+use crate::os::Os;
 
 // TODO: support http transport type
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
@@ -321,7 +321,10 @@ mod tests {
         }
 
         // Test basic substitution
-        assert_eq!(substitute_env_vars("Value is ${env:TEST_VAR}", &os.env), "Value is test_value");
+        assert_eq!(
+            substitute_env_vars("Value is ${env:TEST_VAR}", &os.env),
+            "Value is test_value"
+        );
 
         // Test multiple substitutions
         assert_eq!(
@@ -330,7 +333,10 @@ mod tests {
         );
 
         // Test non-existent variable
-        assert_eq!(substitute_env_vars("${env:NON_EXISTENT_VAR}", &os.env), "${NON_EXISTENT_VAR}");
+        assert_eq!(
+            substitute_env_vars("${env:NON_EXISTENT_VAR}", &os.env),
+            "${NON_EXISTENT_VAR}"
+        );
 
         // Test mixed content
         assert_eq!(
