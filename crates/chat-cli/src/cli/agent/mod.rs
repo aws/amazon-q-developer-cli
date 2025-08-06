@@ -208,14 +208,14 @@ impl Agent {
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
     /// For example, converting the mcp array to actual mcp config and populate the agent file path.
-    fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
+    fn thaw(&mut self, path: &Path, legacy_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         self.path = Some(path.to_path_buf());
 
-        if let (true, Some(global_mcp_config)) = (self.use_legacy_mcp_json, global_mcp_config) {
+        if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
             let mut stderr = std::io::stderr();
-            for (name, legacy_server) in &global_mcp_config.mcp_servers {
+            for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
                         stderr,
@@ -269,16 +269,13 @@ impl Agent {
             Ok(config_path) => {
                 let content = os.fs.read(&config_path).await?;
                 let mut agent = serde_json::from_slice::<Agent>(&content)?;
-
-                let global_mcp_path = directories::chat_legacy_mcp_config(os)?;
-                let global_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
-                    Ok(config) => Some(config),
-                    Err(e) => {
-                        tracing::error!("Error loading global mcp json path: {e}.");
-                        None
-                    },
+                let legacy_mcp_config = if agent.use_legacy_mcp_json {
+                    load_legacy_mcp_config(os).await.unwrap_or(None)
+                } else {
+                    None
                 };
-                agent.thaw(&config_path, global_mcp_config.as_ref())?;
+
+                agent.thaw(&config_path, legacy_mcp_config.as_ref())?;
                 Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
@@ -288,7 +285,7 @@ impl Agent {
     pub async fn load(
         os: &Os,
         agent_path: impl AsRef<Path>,
-        global_mcp_config: &mut Option<McpServerConfig>,
+        legacy_mcp_config: &mut Option<McpServerConfig>,
     ) -> Result<Agent, AgentConfigError> {
         let content = os.fs.read(&agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
@@ -296,19 +293,14 @@ impl Agent {
             path: agent_path.as_ref().to_path_buf(),
         })?;
 
-        if agent.use_legacy_mcp_json && global_mcp_config.is_none() {
-            let global_mcp_path = directories::chat_legacy_mcp_config(os)?;
-            let legacy_mcp_config = if global_mcp_path.exists() {
-                McpServerConfig::load_from_file(os, global_mcp_path)
-                    .await
-                    .map_err(AgentConfigError::BadLegacyMcpConfig)?
-            } else {
-                McpServerConfig::default()
-            };
-            global_mcp_config.replace(legacy_mcp_config);
+        if agent.use_legacy_mcp_json && legacy_mcp_config.is_none() {
+            let config = load_legacy_mcp_config(os).await.unwrap_or_default();
+            if let Some(config) = config {
+                legacy_mcp_config.replace(config);
+            }
         }
 
-        agent.thaw(agent_path.as_ref(), global_mcp_config.as_ref())?;
+        agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref())?;
         Ok(agent)
     }
 }
@@ -611,7 +603,7 @@ impl Agents {
                 let mut agent = Agent::default();
                 'load_legacy_mcp_json: {
                     if global_mcp_config.is_none() {
-                        let Ok(global_mcp_path) = directories::chat_legacy_mcp_config(os) else {
+                        let Ok(global_mcp_path) = directories::chat_legacy_global_mcp_config(os) else {
                             tracing::error!("Error obtaining legacy mcp json path. Skipping");
                             break 'load_legacy_mcp_json;
                         };
@@ -767,6 +759,42 @@ async fn load_agents_from_entries(
     }
 
     res
+}
+
+/// Loads legacy mcp config by combining workspace and global config.
+/// In case of a server naming conflict, the workspace config is prioritized.
+async fn load_legacy_mcp_config(os: &Os) -> eyre::Result<Option<McpServerConfig>> {
+    let global_mcp_path = directories::chat_legacy_global_mcp_config(os)?;
+    let global_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+        Ok(config) => Some(config),
+        Err(e) => {
+            tracing::error!("Error loading global mcp json path: {e}.");
+            None
+        },
+    };
+
+    let workspace_mcp_path = directories::chat_legacy_workspace_mcp_config(os)?;
+    let workspace_mcp_config = match McpServerConfig::load_from_file(os, workspace_mcp_path).await {
+        Ok(config) => Some(config),
+        Err(e) => {
+            tracing::error!("Error loading global mcp json path: {e}.");
+            None
+        },
+    };
+
+    Ok(match (workspace_mcp_config, global_mcp_config) {
+        (Some(mut wc), Some(gc)) => {
+            for (server_name, config) in gc.mcp_servers {
+                // We prioritize what is in the workspace
+                wc.mcp_servers.entry(server_name).or_insert(config);
+            }
+
+            Some(wc)
+        },
+        (None, Some(gc)) => Some(gc),
+        (Some(wc), None) => Some(wc),
+        _ => None,
+    })
 }
 
 fn default_schema() -> String {

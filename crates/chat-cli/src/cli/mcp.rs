@@ -90,6 +90,9 @@ pub struct AddArgs {
     /// Name for the server
     #[arg(long)]
     pub name: String,
+    /// Scope. This parameter is only meaningful in the absence of agent name.
+    #[arg(long)]
+    pub scope: Option<Scope>,
     /// The command used to launch the server
     #[arg(long)]
     pub command: String,
@@ -145,14 +148,17 @@ impl AddArgs {
                 writeln!(output, "✓ Added MCP server '{}' to agent {}\n", self.name, agent_name)?;
             },
             None => {
-                let global_config_path = directories::chat_legacy_mcp_config(os)?;
-                let mut mcp_servers = McpServerConfig::load_from_file(os, &global_config_path).await?;
+                let legacy_mcp_config_path = match self.scope {
+                    Some(Scope::Workspace) => directories::chat_legacy_workspace_mcp_config(os)?,
+                    _ => directories::chat_legacy_global_mcp_config(os)?,
+                };
+                let mut mcp_servers = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
 
                 if mcp_servers.mcp_servers.contains_key(&self.name) && !self.force {
                     bail!(
                         "\nMCP server '{}' already exists in global config (path {}). Use --force to overwrite.",
                         self.name,
-                        &global_config_path.display(),
+                        &legacy_mcp_config_path.display(),
                     );
                 }
 
@@ -166,12 +172,12 @@ impl AddArgs {
                 }))?;
 
                 mcp_servers.mcp_servers.insert(self.name.clone(), tool);
-                mcp_servers.save_to_file(os, &global_config_path).await?;
+                mcp_servers.save_to_file(os, &legacy_mcp_config_path).await?;
                 writeln!(
                     output,
                     "✓ Added MCP server '{}' to global config in {}\n",
                     self.name,
-                    global_config_path.display()
+                    legacy_mcp_config_path.display()
                 )?;
             },
         };
@@ -184,6 +190,9 @@ impl AddArgs {
 pub struct RemoveArgs {
     #[arg(long)]
     pub name: String,
+    /// Scope. This parameter is only meaningful in the absence of agent name.
+    #[arg(long)]
+    pub scope: Option<Scope>,
     #[arg(long, value_enum)]
     pub agent: Option<String>,
 }
@@ -221,17 +230,20 @@ impl RemoveArgs {
                 }
             },
             None => {
-                let global_config_path = directories::chat_legacy_mcp_config(os)?;
-                let mut config = McpServerConfig::load_from_file(os, &global_config_path).await?;
+                let legacy_mcp_config_path = match self.scope {
+                    Some(Scope::Workspace) => directories::chat_legacy_workspace_mcp_config(os)?,
+                    _ => directories::chat_legacy_global_mcp_config(os)?,
+                };
+                let mut config = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
 
                 match config.mcp_servers.remove(&self.name) {
                     Some(_) => {
-                        config.save_to_file(os, &global_config_path).await?;
+                        config.save_to_file(os, &legacy_mcp_config_path).await?;
                         writeln!(
                             output,
                             "\n✓ Removed MCP server '{}' from global config (path {})\n",
                             self.name,
-                            &global_config_path.display(),
+                            &legacy_mcp_config_path.display(),
                         )?;
                     },
                     None => {
@@ -239,7 +251,7 @@ impl RemoveArgs {
                             output,
                             "\nNo MCP server named '{}' found in global config (path {})\n",
                             self.name,
-                            &global_config_path.display(),
+                            &legacy_mcp_config_path.display(),
                         )?;
                     },
                 }
@@ -540,6 +552,7 @@ mod tests {
         // 1. add
         AddArgs {
             name: "local".into(),
+            scope: None,
             command: "echo hi".into(),
             args: vec![
                 "awslabs.eks-mcp-server".to_string(),
@@ -564,6 +577,7 @@ mod tests {
         // 2. remove
         RemoveArgs {
             name: "local".into(),
+            scope: None,
             agent: None,
         }
         .execute(&os, &mut vec![])
@@ -591,6 +605,7 @@ mod tests {
             ],
             RootSubcommand::Mcp(McpSubcommand::Add(AddArgs {
                 name: "test_server".to_string(),
+                scope: None,
                 command: "test_command".to_string(),
                 args: vec![
                     "awslabs.eks-mcp-server".to_string(),
@@ -619,6 +634,7 @@ mod tests {
             ["mcp", "remove", "--name", "old"],
             RootSubcommand::Mcp(McpSubcommand::Remove(RemoveArgs {
                 name: "old".into(),
+                scope: None,
                 agent: None,
             }))
         );
