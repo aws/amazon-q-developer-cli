@@ -350,6 +350,49 @@ mod tests {
     }
 
     #[test]
+    fn test_exact_full_command_matching_bug_fix() {
+        // This test specifically covers the bug where exact commands should be matched
+        // using regex patterns with proper escaping
+
+        let test_cases = vec![
+            // Test case: (command, allowed_patterns, should_require_acceptance)
+            ("cargo check", vec![regex::escape("cargo check")], false), // Should be allowed
+            ("cargo build", vec![regex::escape("cargo check")], true),  // Should require acceptance
+            ("npm install", vec![regex::escape("npm install")], false), // Exact match, should be allowed
+            ("git commit -m test", vec![regex::escape("git commit -m test")], false), // Exact full match
+            (
+                "git commit -m different",
+                vec![regex::escape("git commit -m test")],
+                true,
+            ), // Different, should require acceptance
+            // Test regex patterns for command prefixes (new pattern: git\s.* - matches "git " + anything but NOT "git"
+            // alone)
+            ("git status", vec!["git\\s.*".to_string()], false), // Should match "git " + anything
+            ("git commit -m test", vec!["git\\s.*".to_string()], false), // Should match
+            ("git", vec!["git\\s.*".to_string()], true),         /* Should NOT match "git" alone, and git is not
+                                                                  * read-only, so requires acceptance */
+            ("gitfoo", vec!["git\\s.*".to_string()], true), // Should NOT match (no space after git)
+            ("ls", vec!["git\\s.*".to_string()], false),    // ls is read-only, so allowed anyway
+            // Test that "git" alone would require acceptance if it wasn't read-only
+            ("rm", vec!["git\\s.*".to_string()], true), // rm doesn't match pattern and isn't read-only
+        ];
+
+        for (command, allowed_patterns, should_require_acceptance) in test_cases {
+            let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+                "command": command,
+            }))
+            .unwrap();
+
+            let result = tool.requires_acceptance(Some(&allowed_patterns), true);
+            assert_eq!(
+                result, should_require_acceptance,
+                "Command '{}' with patterns {:?} - expected requires_acceptance: {}, got: {}",
+                command, allowed_patterns, should_require_acceptance, result
+            );
+        }
+    }
+
+    #[test]
     fn test_requires_acceptance_allowed_commands() {
         let allowed_cmds: &[String] = &[
             String::from("git status"),

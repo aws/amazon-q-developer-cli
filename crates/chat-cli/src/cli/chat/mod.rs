@@ -157,6 +157,14 @@ use crate::telemetry::{
 };
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 
+/// Result of the allow similar commands menu interaction
+#[derive(Debug)]
+enum AllowCommandResult {
+    AddedRule,
+    RunWithoutRule,
+    ExitWithoutRunning,
+}
+
 const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
 1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> <blue!>https://aws.amazon.com/q/developer/pricing/</blue!>
 2. Wait until next month when your limit automatically resets." };
@@ -1527,14 +1535,28 @@ impl ChatSession {
 
         let show_tool_use_confirmation_dialog = !skip_printing_tools && self.pending_tool_index.is_some();
         if show_tool_use_confirmation_dialog {
+            // Determine if this is an execute tool that supports allowedCommands
+            let is_execute_tool = if let Some(index) = self.pending_tool_index {
+                let tool_name = &self.tool_uses[index].name;
+                tool_name == "execute_bash" || tool_name == "execute_cmd"
+            } else {
+                false
+            };
+
+            let (option_key, option_description) = if is_execute_tool {
+                ("a", "' to allow similar or exact commands in the futur. [")
+            } else {
+                ("t", "' to trust (always allow) this tool for the session. [")
+            };
+
             execute!(
                 self.stderr,
                 style::SetForegroundColor(Color::DarkGrey),
                 style::Print("\nAllow this action? Use '"),
                 style::SetForegroundColor(Color::Green),
-                style::Print("t"),
+                style::Print(option_key),
                 style::SetForegroundColor(Color::DarkGrey),
-                style::Print("' to trust (always allow) this tool for the session. ["),
+                style::Print(option_description),
                 style::SetForegroundColor(Color::Green),
                 style::Print("y"),
                 style::SetForegroundColor(Color::DarkGrey),
@@ -1544,7 +1566,7 @@ impl ChatSession {
                 style::SetForegroundColor(Color::DarkGrey),
                 style::Print("/"),
                 style::SetForegroundColor(Color::Green),
-                style::Print("t"),
+                style::Print(option_key),
                 style::SetForegroundColor(Color::DarkGrey),
                 style::Print("]:\n\n"),
                 style::SetForegroundColor(Color::Reset),
@@ -1741,10 +1763,34 @@ impl ChatSession {
         } else {
             // Check for a pending tool approval
             if let Some(index) = self.pending_tool_index {
+                let is_execute_tool = {
+                    let tool_use = &self.tool_uses[index];
+                    tool_use.name == "execute_bash" || tool_use.name == "execute_cmd"
+                };
+
+                let is_allow_similar = ["a", "A"].contains(&input);
                 let is_trust = ["t", "T"].contains(&input);
-                let tool_use = &mut self.tool_uses[index];
-                if ["y", "Y"].contains(&input) || is_trust {
-                    if is_trust {
+
+                if ["y", "Y"].contains(&input) || is_allow_similar || is_trust {
+                    if is_allow_similar && is_execute_tool {
+                        // Handle 'a' option for execute tools - show menu for allowed command patterns
+                        match self.handle_allow_similar_commands_menu(index, os).await? {
+                            AllowCommandResult::AddedRule => {
+                                // Rule was added, continue with execution
+                            },
+                            AllowCommandResult::RunWithoutRule => {
+                                // User chose to run without adding a rule, just continue
+                            },
+                            AllowCommandResult::ExitWithoutRunning => {
+                                // User chose to exit without running the command
+                                return Ok(ChatState::PromptUser {
+                                    skip_printing_tools: true,
+                                });
+                            },
+                        }
+                    } else if is_trust && !is_execute_tool {
+                        // Handle 't' option for non-execute tools - traditional trust behavior
+                        let tool_use = &self.tool_uses[index];
                         let formatted_tool_name = self
                             .conversation
                             .tool_manager
@@ -1759,9 +1805,29 @@ impl ChatSession {
                             .clone()
                             .unwrap_or(tool_use.name.clone());
                         self.conversation.agents.trust_tools(vec![formatted_tool_name]);
+                    } else if (is_allow_similar && !is_execute_tool) || (is_trust && is_execute_tool) {
+                        // Invalid combination - show error message
+                        let (wrong_key, right_key, tool_type) = if is_execute_tool {
+                            ("t", "a", "execute")
+                        } else {
+                            ("a", "t", "other")
+                        };
+                        queue!(
+                            self.stderr,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!(
+                                "\n'{}' is not available for {} tools. Use '{}' instead.\n",
+                                wrong_key, tool_type, right_key
+                            )),
+                            style::SetForegroundColor(Color::Reset)
+                        )?;
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
                     }
-                    tool_use.accepted = true;
 
+                    // Accept the tool use
+                    self.tool_uses[index].accepted = true;
                     return Ok(ChatState::ExecuteTools);
                 }
             } else if !self.pending_prompts.is_empty() {
@@ -2733,6 +2799,170 @@ impl ChatSession {
         {
             tracing::warn!("Failed to send slash command telemetry: {}", e);
         }
+    }
+
+    /// Handle the 'a' option for execute tools - show menu for allowed command patterns
+    async fn handle_allow_similar_commands_menu(
+        &mut self,
+        tool_index: usize,
+        os: &Os,
+    ) -> Result<AllowCommandResult, ChatError> {
+        // Extract the command first to avoid borrowing issues
+        let command = {
+            let tool_use = &self.tool_uses[tool_index];
+            if let Tool::ExecuteCommand(exec_cmd) = &tool_use.tool {
+                exec_cmd.command.clone()
+            } else {
+                return Err(ChatError::Custom("Expected execute command tool".into()));
+            }
+        };
+
+        let first_word = command.split_whitespace().next().unwrap_or(&command).to_string();
+
+        loop {
+            // Show the menu header
+            queue!(
+                self.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(format!("\nCreate rule for: execute_bash (command={})\n", command)),
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print("Allowed commands do not ask for confirmation before running.\n\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+
+            // Show the 4 options
+            queue!(
+                self.stderr,
+                style::Print(format!("type 1. Allow this exact command only: '{}'\n", command)),
+                style::Print(format!(
+                    "type 2. Allow all '{}' commands (first word only)\n",
+                    first_word
+                )),
+                style::Print("type 3. Run the command without adding a rule\n"),
+                style::Print("type 4. Exit allowed command rule creation and don't run any commands\n\n")
+            )?;
+            self.stderr.flush()?;
+
+            // Get user input
+            let mut input = String::new();
+            std::io::stdin()
+                .read_line(&mut input)
+                .map_err(|e| ChatError::Custom(format!("Failed to read user input: {}", e).into()))?;
+            let choice = input.trim();
+
+            match choice {
+                "1" => {
+                    // Allow this exact command only - escape regex special characters
+                    let escaped_command = regex::escape(&command);
+                    self.add_allowed_command_pattern(&escaped_command, os).await?;
+                    queue!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::Green),
+                        style::Print(format!("\nAllowed command rule added: '{}'\n\n", command)),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                    return Ok(AllowCommandResult::AddedRule);
+                },
+                "2" => {
+                    // Allow all commands with first word - create regex pattern
+                    let escaped_first_word = regex::escape(&first_word);
+                    let pattern = format!("{}\\s.*", escaped_first_word);
+                    self.add_allowed_command_pattern(&pattern, os).await?;
+                    queue!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::Green),
+                        style::Print(format!(
+                            "\nAllowed command rule added for all '{}' commands\n\n",
+                            first_word
+                        )),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                    return Ok(AllowCommandResult::AddedRule);
+                },
+                "3" => {
+                    // Run without adding a rule
+                    queue!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print("\nRunning command without adding a rule.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                    return Ok(AllowCommandResult::RunWithoutRule);
+                },
+                "4" => {
+                    // Exit without running
+                    queue!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print("\nExiting without running the command.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                    return Ok(AllowCommandResult::ExitWithoutRunning);
+                },
+                _ => {
+                    queue!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("\nInvalid choice. Please enter 1, 2, 3, or 4.\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                    // Continue the loop to retry
+                },
+            }
+        }
+    }
+
+    /// Add an allowed command pattern to the current agent configuration
+    async fn add_allowed_command_pattern(&mut self, pattern: &str, os: &Os) -> Result<(), ChatError> {
+        use serde_json::Value;
+
+        if let Some(agent) = self.conversation.agents.get_active_mut() {
+            let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+
+            // Get or create the toolsSettings for execute tool
+            // We need to create the ToolSettingTarget through deserialization since constructor is private
+            let tool_setting_key: crate::cli::agent::ToolSettingTarget =
+                serde_json::from_str(&format!("\"{}\"", tool_name))
+                    .map_err(|e| ChatError::Custom(format!("Failed to create tool setting key: {}", e).into()))?;
+
+            let settings = agent.tools_settings.entry(tool_setting_key).or_insert_with(|| {
+                serde_json::json!({
+                    "allowReadOnly": true,
+                    "allowedCommands": []
+                })
+            });
+
+            // Add the new pattern to allowedCommands
+            if let Some(allowed_commands) = settings.get_mut("allowedCommands") {
+                if let Some(commands_array) = allowed_commands.as_array_mut() {
+                    // Check if pattern already exists
+                    if !commands_array.iter().any(|v| v.as_str() == Some(pattern)) {
+                        commands_array.push(Value::String(pattern.to_string()));
+                    }
+                } else {
+                    // allowedCommands exists but is not an array, replace it
+                    *allowed_commands = serde_json::json!([pattern]);
+                }
+            } else {
+                // allowedCommands doesn't exist, create it
+                if let Some(settings_obj) = settings.as_object_mut() {
+                    settings_obj.insert("allowedCommands".to_string(), serde_json::json!([pattern]));
+                }
+            }
+
+            // Save the updated agent configuration to disk
+            if agent.save(os).await.is_err() {
+                // Log the error but don't fail the operation - pattern is still added to memory
+                queue!(
+                    self.stderr,
+                    style::SetForegroundColor(crossterm::style::Color::Yellow),
+                    style::Print("  Warning: Pattern added to session but not saved to disk.\n"),
+                    style::SetForegroundColor(crossterm::style::Color::Reset)
+                )?;
+            }
+        }
+
+        Ok(())
     }
 }
 

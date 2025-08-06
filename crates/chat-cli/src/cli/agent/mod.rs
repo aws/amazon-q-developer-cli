@@ -90,6 +90,8 @@ pub enum AgentConfigError {
     Io(#[from] std::io::Error),
     #[error("Failed to parse legacy mcp config: {0}")]
     BadLegacyMcpConfig(#[from] eyre::Report),
+    #[error("Agent configuration error: {0}")]
+    Custom(Box<str>),
 }
 
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
@@ -310,6 +312,40 @@ impl Agent {
 
         agent.thaw(agent_path.as_ref(), global_mcp_config.as_ref())?;
         Ok(agent)
+    }
+
+    /// Save the agent configuration to disk
+    pub async fn save(&mut self, os: &Os) -> Result<(), AgentConfigError> {
+        let path = self
+            .path
+            .as_ref()
+            .ok_or_else(|| AgentConfigError::Custom("Agent has no associated file path".into()))?;
+
+        // Create a copy for serialization (freeze it to remove runtime-only fields)
+        let mut agent_to_save = self.clone();
+        agent_to_save.freeze();
+
+        // Serialize to JSON with pretty formatting
+        let json_content = serde_json::to_string_pretty(&agent_to_save)
+            .map_err(|e| AgentConfigError::Custom(format!("Failed to serialize agent: {}", e).into()))?;
+
+        // Write to a temporary file first for atomic operation
+        let temp_path = path.with_extension("json.tmp");
+
+        // Write to temporary file
+        os.fs
+            .write(&temp_path, json_content.as_bytes())
+            .await
+            .map_err(|e| AgentConfigError::Custom(format!("Failed to write temporary file: {}", e).into()))?;
+
+        // Atomically rename temporary file to final file
+        os.fs.rename(&temp_path, path).await.map_err(|e| {
+            // Clean up temporary file on failure
+            let _ = std::fs::remove_file(&temp_path);
+            AgentConfigError::Custom(format!("Failed to save agent file: {}", e).into())
+        })?;
+
+        Ok(())
     }
 }
 
@@ -720,6 +756,21 @@ impl Agents {
     /// Provide default permission labels for the built-in set of tools.
     // This "static" way avoids needing to construct a tool instance.
     fn default_permission_label(&self, tool_name: &str) -> String {
+        // Handle execute tools with custom labels first (preserving early return)
+        #[cfg(not(windows))]
+        if tool_name == "execute_bash" {
+            if let Some(custom_label) = self.get_execute_tool_label("execute_bash") {
+                return format!("{} {}", "*".reset(), custom_label);
+            }
+        }
+
+        #[cfg(windows)]
+        if tool_name == "execute_cmd" {
+            if let Some(custom_label) = self.get_execute_tool_label("execute_cmd") {
+                return format!("{} {}", "*".reset(), custom_label);
+            }
+        }
+
         let label = match tool_name {
             "fs_read" => "trusted".dark_green().bold(),
             "fs_write" => "not trusted".dark_grey(),
@@ -735,6 +786,55 @@ impl Agents {
         };
 
         format!("{} {label}", "*".reset())
+    }
+
+    /// Get the display label for execute tools (execute_bash/execute_cmd) with allowedCommands
+    fn get_execute_tool_label(&self, tool_name: &str) -> Option<String> {
+        let agent = self.get_active()?;
+        let settings = agent.tools_settings.get(tool_name)?;
+        let parsed_settings = serde_json::from_value::<serde_json::Value>(settings.clone()).ok()?;
+
+        // Check for allowedCommands
+        let allowed_commands = parsed_settings
+            .get("allowedCommands")
+            .and_then(|v| v.as_array())
+            .filter(|arr| !arr.is_empty())
+            .and_then(|commands_array| {
+                let commands: Vec<String> = commands_array
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+
+                if commands.is_empty() {
+                    return None;
+                }
+
+                let commands_display = if commands.len() <= 3 {
+                    commands.join(", ")
+                } else {
+                    format!("{}, ... (+{} more)", commands[..2].join(", "), commands.len() - 2)
+                };
+
+                Some(format!("allowed: [{}]", commands_display))
+            });
+
+        // Check for allowReadOnly (defaults to true if not specified)
+        let allow_read_only = parsed_settings
+            .get("allowReadOnly")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        // Combine the information
+        match (allowed_commands, allow_read_only) {
+            (Some(commands), true) => Some(
+                format!("{}, trust read-only commands", commands)
+                    .dark_grey()
+                    .to_string(),
+            ),
+            (Some(commands), false) => Some(commands.dark_grey().to_string()),
+            (None, true) => None, // Fall back to default "trust read-only commands"
+            (None, false) => Some("no commands allowed".dark_grey().to_string()),
+        }
     }
 }
 
