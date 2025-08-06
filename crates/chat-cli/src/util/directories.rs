@@ -32,6 +32,9 @@ pub enum DirectoryError {
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 
+const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
+const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
+
 /// The directory of the users home
 ///
 /// - Linux: /home/Alice
@@ -147,13 +150,13 @@ pub fn chat_legacy_mcp_config(os: &Os) -> Result<PathBuf> {
 
 /// The directory to the directory containing global agents
 pub fn chat_global_agent_path(os: &Os) -> Result<PathBuf> {
-    Ok(home_dir(os)?.join(".aws").join("amazonq").join("agents"))
+    Ok(home_dir(os)?.join(GLOBAL_AGENT_DIR_RELATIVE_TO_HOME))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.
-pub fn chat_local_agent_dir() -> Result<PathBuf> {
-    let cwd = std::env::current_dir()?;
-    Ok(cwd.join(".amazonq").join("agents"))
+pub fn chat_local_agent_dir(os: &Os) -> Result<PathBuf> {
+    let cwd = os.env.current_dir()?;
+    Ok(cwd.join(WORKSPACE_AGENT_DIR_RELATIVE))
 }
 
 /// Derives the absolute path to an agent config directory given a "workspace directory".
@@ -162,7 +165,7 @@ pub fn chat_local_agent_dir() -> Result<PathBuf> {
 /// For example, if the given path is /path/one, then the derived config path would be
 /// `/path/one/.amazonq/agents`
 pub fn agent_config_dir(workspace_dir: PathBuf) -> Result<PathBuf> {
-    Ok(workspace_dir.join(".amazonq/agents"))
+    Ok(workspace_dir.join(WORKSPACE_AGENT_DIR_RELATIVE))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.

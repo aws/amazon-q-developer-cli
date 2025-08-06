@@ -152,9 +152,10 @@ impl UserMessage {
     /// Converts this message into a [UserInputMessage] to be stored in the history of
     /// [api_client::model::ConversationState].
     pub fn into_history_entry(self) -> UserInputMessage {
+        let content = self.content_with_context();
         UserInputMessage {
             images: self.images.clone(),
-            content: self.prompt().unwrap_or_default().to_string(),
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
                 tool_results: match self.content {
@@ -179,17 +180,10 @@ impl UserMessage {
         model_id: Option<String>,
         tools: &HashMap<ToolOrigin, Vec<Tool>>,
     ) -> UserInputMessage {
-        let formatted_prompt = match self.prompt() {
-            Some(prompt) if !prompt.is_empty() => {
-                format!("{}{}{}", USER_ENTRY_START_HEADER, prompt, USER_ENTRY_END_HEADER)
-            },
-            _ => String::new(),
-        };
+        let content = self.content_with_context();
         UserInputMessage {
             images: self.images,
-            content: format!("{} {}", self.additional_context, formatted_prompt)
-                .trim()
-                .to_string(),
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
                 tool_results: match self.content {
@@ -269,6 +263,21 @@ impl UserMessage {
             let prompt = truncate_safe(&tool_content, MAX_USER_MESSAGE_SIZE).to_string();
             self.content = UserMessageContent::Prompt { prompt };
         }
+    }
+
+    /// Returns a formatted [String] containing [Self::additional_context] and [Self::prompt].
+    fn content_with_context(&self) -> String {
+        match (self.additional_context.is_empty(), self.prompt()) {
+            // Only add special delimiters if we have both a prompt and additional context
+            (false, Some(prompt)) => format!(
+                "{} {}{}{}",
+                self.additional_context, USER_ENTRY_START_HEADER, prompt, USER_ENTRY_END_HEADER
+            ),
+            (true, Some(prompt)) => prompt.to_string(),
+            _ => self.additional_context.clone(),
+        }
+        .trim()
+        .to_string()
     }
 }
 

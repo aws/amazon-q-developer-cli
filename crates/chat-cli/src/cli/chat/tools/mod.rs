@@ -102,7 +102,7 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.eval_perm(agent),
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
-            Tool::Knowledge(_) => PermissionEvalResult::Ask,
+            Tool::Knowledge(knowledge) => knowledge.eval_perm(agent),
         }
     }
 
@@ -169,8 +169,9 @@ pub enum ToolOrigin {
 
 impl std::hash::Hash for ToolOrigin {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
         match self {
-            Self::Native => "native".hash(state),
+            Self::Native => {},
             Self::McpServer(name) => name.hash(state),
         }
     }

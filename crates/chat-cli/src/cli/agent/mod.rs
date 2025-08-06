@@ -71,6 +71,8 @@ use crate::util::{
     directories,
 };
 
+pub const DEFAULT_AGENT_NAME: &str = "q_cli_default";
+
 #[derive(Debug, Error)]
 pub enum AgentConfigError {
     #[error("Json supplied at {} is invalid: {}", path.display(), error)]
@@ -86,8 +88,6 @@ pub enum AgentConfigError {
     Directories(#[from] util::directories::DirectoryError),
     #[error("Encountered io error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Agent path missing file name")]
-    MissingFilename,
     #[error("Failed to parse legacy mcp config: {0}")]
     BadLegacyMcpConfig(#[from] eyre::Report),
 }
@@ -120,14 +120,14 @@ pub enum AgentConfigError {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
-    /// Agent names are derived from the file name. Thus they are skipped for
-    /// serializing
-    #[serde(skip)]
+    #[serde(rename = "$schema", default = "default_schema")]
+    pub schema: String,
+    /// Name of the agent
     pub name: String,
     /// This field is not model facing and is mostly here for users to discern between agents
     #[serde(default)]
     pub description: Option<String>,
-    /// (NOT YET IMPLEMENTED) The intention for this field is to provide high level context to the
+    /// The intention for this field is to provide high level context to the
     /// agent. This should be seen as the same category of context as a system prompt.
     #[serde(default)]
     pub prompt: Option<String>,
@@ -168,7 +168,8 @@ pub struct Agent {
 impl Default for Agent {
     fn default() -> Self {
         Self {
-            name: "default".to_string(),
+            schema: default_schema(),
+            name: DEFAULT_AGENT_NAME.to_string(),
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
             mcp_servers: Default::default(),
@@ -206,18 +207,10 @@ impl Agent {
 
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
-    /// For example, we populate the agent with its file name, convert the mcp array to actual
-    /// mcp config and populate the agent file path.
+    /// For example, converting the mcp array to actual mcp config and populate the agent file path.
     fn thaw(&mut self, path: &Path, global_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
-        let name = path
-            .file_stem()
-            .ok_or(AgentConfigError::MissingFilename)?
-            .to_string_lossy()
-            .to_string();
-
-        self.name = name.clone();
         self.path = Some(path.to_path_buf());
 
         if let (true, Some(global_mcp_config)) = (self.use_legacy_mcp_json, global_mcp_config) {
@@ -259,7 +252,7 @@ impl Agent {
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
-            let local_config_dir = directories::chat_local_agent_dir()?.join(format!("{agent_name}.json"));
+            let local_config_dir = directories::chat_local_agent_dir(os)?.join(format!("{agent_name}.json"));
             if os.fs.exists(&local_config_dir) {
                 break 'config Ok(local_config_dir);
             }
@@ -329,7 +322,9 @@ pub enum PermissionEvalResult {
 
 #[derive(Clone, Default, Debug)]
 pub struct Agents {
+    /// Mapping from agent name to an [Agent].
     pub agents: HashMap<String, Agent>,
+    /// Agent name.
     pub active_idx: String,
     pub trust_all_tools: bool,
 }
@@ -391,13 +386,10 @@ impl Agents {
         output: &mut impl Write,
     ) -> (Self, AgentsLoadMetadata) {
         // Tracking metadata about the performed load operation.
-        let mut load_metadata = AgentsLoadMetadata {
-            launched_agent: agent_name.map(Into::into),
-            ..Default::default()
-        };
+        let mut load_metadata = AgentsLoadMetadata::default();
 
         let new_agents = if !skip_migration {
-            match legacy::migrate(os).await {
+            match legacy::migrate(os, false).await {
                 Ok(Some(new_agents)) => {
                     let migrated_count = new_agents.len();
                     info!(migrated_count, "Profile migration successful");
@@ -431,7 +423,7 @@ impl Agents {
                 },
             }
 
-            let Ok(path) = directories::chat_local_agent_dir() else {
+            let Ok(path) = directories::chat_local_agent_dir(os) else {
                 break 'local Vec::<Agent>::new();
             };
             let Ok(files) = os.fs.read_dir(path).await else {
@@ -641,7 +633,7 @@ impl Agents {
                 agent
             });
 
-            "default".to_string()
+            DEFAULT_AGENT_NAME.to_string()
         };
 
         let _ = output.flush();
@@ -690,6 +682,7 @@ impl Agents {
             }
         }
 
+        load_metadata.launched_agent = active_idx.clone();
         (
             Self {
                 agents,
@@ -707,7 +700,7 @@ impl Agents {
                 // Here the tool names can take the following forms:
                 // - @{server_name}{delimiter}{tool_name}
                 // - native_tool_name
-                name == tool_name
+                name == tool_name && matches!(origin, &ToolOrigin::Native)
                     || name.strip_prefix("@").is_some_and(|remainder| {
                         remainder
                             .split_once(MCP_SERVER_TOOL_DELIMITER)
@@ -752,7 +745,7 @@ pub struct AgentsLoadMetadata {
     pub migrated_count: u32,
     pub load_count: u32,
     pub load_failed_count: u32,
-    pub launched_agent: Option<String>,
+    pub launched_agent: String,
 }
 
 async fn load_agents_from_entries(
@@ -774,6 +767,10 @@ async fn load_agents_from_entries(
     }
 
     res
+}
+
+fn default_schema() -> String {
+    "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
 }
 
 #[cfg(test)]
@@ -800,6 +797,7 @@ mod tests {
 
     const INPUT: &str = r#"
             {
+              "name": "some_agent",
               "description": "My developer agent is used for small development tasks like solving open issues.",
               "prompt": "You are a principal developer who uses multiple agents to accomplish difficult engineering tasks",
               "mcpServers": {
@@ -841,11 +839,12 @@ mod tests {
         assert!(collection.get_active().is_none());
 
         let agent = Agent::default();
-        collection.agents.insert("default".to_string(), agent);
-        collection.active_idx = "default".to_string();
+        let agent_name = agent.name.clone();
+        collection.agents.insert(agent_name.clone(), agent);
+        collection.active_idx = agent_name.clone();
 
         assert!(collection.get_active().is_some());
-        assert_eq!(collection.get_active().unwrap().name, "default");
+        assert_eq!(collection.get_active().unwrap().name, agent_name);
     }
 
     #[test]

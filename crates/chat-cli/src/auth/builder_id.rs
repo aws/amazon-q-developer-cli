@@ -303,6 +303,20 @@ impl BuilderIdToken {
 
     /// Load the token from the keychain, refresh the token if it is expired and return it
     pub async fn load(database: &Database) -> Result<Option<Self>, AuthError> {
+        // Can't use #[cfg(test)] without breaking lints, and we don't want to require
+        // authentication in order to run ChatSession tests. Hence, adding this here with cfg!(test)
+        if cfg!(test) {
+            return Ok(Some(Self {
+                access_token: Secret("test_access_token".to_string()),
+                expires_at: time::OffsetDateTime::now_utc() + time::Duration::minutes(60),
+                refresh_token: Some(Secret("test_refresh_token".to_string())),
+                region: Some(OIDC_BUILDER_ID_REGION.to_string()),
+                start_url: Some(START_URL.to_string()),
+                oauth_flow: OAuthFlow::DeviceCode,
+                scopes: Some(SCOPES.iter().map(|s| (*s).to_owned()).collect()),
+            }));
+        }
+
         trace!("loading builder id token from the secret store");
         match database.get_secret(Self::SECRET_KEY).await {
             Ok(Some(secret)) => {

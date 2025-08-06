@@ -10,6 +10,7 @@ use bstr::ByteSlice;
 use clap::Args;
 use crossterm::style::{
     self,
+    Attribute,
     Color,
     Stylize,
 };
@@ -36,6 +37,7 @@ use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
 };
+use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
     ChatError,
@@ -67,7 +69,7 @@ impl HookExecutor {
     /// If `updates` is `Some`, progress on hook execution will be written to it.
     /// Errors encountered with write operations to `updates` are ignored.
     ///
-    /// Note: [`HookTrigger::ConversationStart`] hooks never leave the cache.
+    /// Note: [`HookTrigger::AgentSpawn`] hooks never leave the cache.
     pub async fn run_hooks(
         &mut self,
         hooks: HashMap<HookTrigger, Vec<Hook>>,
@@ -175,6 +177,8 @@ impl HookExecutor {
             });
         }
 
+        results.append(&mut cached);
+
         Ok(results)
     }
 
@@ -275,6 +279,8 @@ fn sanitize_user_prompt(input: &str) -> String {
     before_long_help = "Use context hooks to specify shell commands to run. The output from these 
 commands will be appended to the prompt to Amazon Q.
 
+Refer to the documentation for how to configure hooks with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#hooks-field
+
 Notes:
 • Hooks are executed in parallel
 • 'conversation_start' hooks run on the first user prompt and are attached once to the conversation history sent to Amazon Q
@@ -290,16 +296,32 @@ impl HooksArgs {
             });
         };
 
+        let mut out = Vec::new();
         for (trigger, hooks) in &context_manager.hooks {
-            writeln!(session.stdout, "{trigger}:")?;
+            writeln!(&mut out, "{trigger}:")?;
             match hooks.is_empty() {
-                true => writeln!(session.stdout, "<none>")?,
+                true => writeln!(&mut out, "<none>")?,
                 false => {
                     for hook in hooks {
-                        writeln!(session.stdout, "  - {}", hook.command)?;
+                        writeln!(&mut out, "  - {}", hook.command)?;
                     }
                 },
             }
+        }
+
+        if out.is_empty() {
+            queue!(
+                session.stderr,
+                style::Print(
+                    "No hooks are configured.\n\nRefer to the documentation for how to add hooks to your agent: "
+                ),
+                style::SetForegroundColor(Color::Green),
+                style::Print(AGENT_FORMAT_HOOKS_DOC_URL),
+                style::SetAttribute(Attribute::Reset),
+                style::Print("\n"),
+            )?;
+        } else {
+            session.stdout.write_all(&out)?;
         }
 
         Ok(ChatState::PromptUser {

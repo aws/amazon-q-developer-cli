@@ -18,15 +18,13 @@ Every agent configuration file can include the following sections:
 
 ## Name Field
 
-The `name` field specifies the name of the agent. This is used for identification and display purposes. If not specified, the name is derived from the filename (without the `.json` extension).
+The `name` field specifies the name of the agent. This is used for identification and display purposes. 
 
 ```json
 {
   "name": "aws-expert"
 }
 ```
-
-Note: While this field can be included in the configuration file, it will be overridden by the filename when the agent is loaded.
 
 ## Description Field
 
@@ -76,7 +74,6 @@ Each MCP server configuration can include:
 - `args` (optional): Arguments to pass to the command
 - `env` (optional): Environment variables to set for the server
 - `timeout` (optional): Timeout for each MCP request in milliseconds (default: 120000)
-- `disabled` (optional): Whether this server should be disabled (default: false)
 
 ## Tools Field
 
@@ -208,15 +205,11 @@ The `hooks` field defines commands to run at specific trigger points. The output
     "agentSpawn": [
       {
         "command": "git status",
-        "timeout_ms": 30000,
-        "max_output_size": 10240,
-        "cache_ttl_seconds": 0
       }
     ],
     "userPromptSubmit": [
       {
         "command": "ls -la",
-        "timeout_ms": 5000
       }
     ]
   }
@@ -225,9 +218,6 @@ The `hooks` field defines commands to run at specific trigger points. The output
 
 Each hook is defined with:
 - `command` (required): The command to execute
-- `timeout_ms` (optional): Maximum execution time in milliseconds (default: 30000)
-- `max_output_size` (optional): Maximum output size in bytes (default: 10240)
-- `cache_ttl_seconds` (optional): How long to cache the output (default: 0)
 
 Available hook triggers:
 - `agentSpawn`: Triggered when the agent is initialized
@@ -294,14 +284,12 @@ Here's a complete example of an agent configuration file:
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
-        "timeout_ms": 30000
+        "command": "git status"
       }
     ],
     "userPromptSubmit": [
       {
-        "command": "ls -la",
-        "timeout_ms": 5000
+        "command": "ls -la"
       }
     ]
   },

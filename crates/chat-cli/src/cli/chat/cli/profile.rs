@@ -26,13 +26,13 @@ use crate::cli::agent::{
     Agent,
     Agents,
     create_agent,
-    rename_agent,
 };
 use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_global_agent_path;
 
@@ -43,7 +43,7 @@ use crate::util::directories::chat_global_agent_path;
 
 Notes
 • Launch q chat with a specific agent with --agent
-• Construct an agent under ~/.aws/amazonq/agents/ (accessible globally) or cwd/.aws/amazonq/agents (accessible in workspace)
+• Construct an agent under ~/.aws/amazonq/cli-agents/ (accessible globally) or cwd/.aws/amazonq/cli-agents (accessible in workspace)
 • See example config under global directory
 • Set default agent to assume with settings by running \"q settings chat.defaultAgent agent_name\"
 • Each agent maintains its own set of context and customizations"
@@ -70,18 +70,13 @@ pub enum AgentSubcommand {
     /// Switch to the specified agent
     #[command(hide = true)]
     Set { name: String },
-    /// Rename an agent. Should this be the current active agent, its changes will take effect upon
-    /// next launch
-    Rename {
-        /// Original name of the agent
-        #[arg(long, short)]
-        agent: String,
-        /// New name the agent shall be changed to
-        #[arg(long, short)]
-        new_name: String,
-    },
     /// Show agent config schema
     Schema,
+    /// Define a default agent to use when q chat launches
+    SetDefault {
+        #[arg(long, short)]
+        name: String,
+    },
 }
 
 impl AgentSubcommand {
@@ -182,29 +177,6 @@ impl AgentSubcommand {
                     style::SetForegroundColor(Color::Reset)
                 )?;
             },
-            Self::Rename { agent, new_name } => {
-                let mut agents = Agents::load(os, None, true, &mut session.stderr).await.0;
-                rename_agent(os, &mut agents, agent.clone(), new_name.clone())
-                    .await
-                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
-
-                execute!(
-                    session.stderr,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print("Agent "),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print(agent),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(" has been renamed to "),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print(new_name),
-                    style::SetForegroundColor(Color::Reset),
-                    style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print("Changes take effect on next launch"),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
-            },
             Self::Set { .. } | Self::Delete { .. } => {
                 // As part of the agent implementation, we are disabling the ability to
                 // switch / create profile after a session has started.
@@ -225,6 +197,33 @@ impl AgentSubcommand {
                     style::SetAttribute(Attribute::Reset)
                 )?;
             },
+            Self::SetDefault { name } => match session.conversation.agents.agents.get(&name) {
+                Some(agent) => {
+                    os.database
+                        .settings
+                        .set(Setting::ChatDefaultAgent, agent.name.clone())
+                        .await
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?;
+
+                    execute!(
+                        session.stderr,
+                        style::SetForegroundColor(Color::Green),
+                        style::Print("✓ Default agent set to '"),
+                        style::Print(&agent.name),
+                        style::Print("'. This will take effect the next time q chat is launched.\n"),
+                        style::ResetColor,
+                    )?;
+                },
+                None => {
+                    execute!(
+                        session.stderr,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("Error: "),
+                        style::ResetColor,
+                        style::Print(format!("No agent with name {name} found\n")),
+                    )?;
+                },
+            },
         }
 
         Ok(ChatState::PromptUser {
@@ -238,8 +237,8 @@ impl AgentSubcommand {
             Self::Create { .. } => "create",
             Self::Delete { .. } => "delete",
             Self::Set { .. } => "set",
-            Self::Rename { .. } => "rename",
             Self::Schema => "schema",
+            Self::SetDefault { .. } => "set_default",
         }
     }
 }

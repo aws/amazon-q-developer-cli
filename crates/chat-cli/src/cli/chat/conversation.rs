@@ -21,12 +21,15 @@ use tracing::{
 };
 
 use super::cli::compact::CompactStrategy;
+use super::cli::model::context_window_tokens;
 use super::consts::{
     DUMMY_TOOL_NAME,
-    MAX_CHARS,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
 };
-use super::context::ContextManager;
+use super::context::{
+    ContextManager,
+    calc_max_context_files_size,
+};
 use super::message::{
     AssistantMessage,
     ToolUseResult,
@@ -36,6 +39,7 @@ use super::parser::RequestMetadata;
 use super::token_counter::{
     CharCount,
     CharCounter,
+    TokenCounter,
 };
 use super::tool_manager::ToolManager;
 use super::tools::{
@@ -116,7 +120,7 @@ impl ConversationState {
         current_model_id: Option<String>,
     ) -> Self {
         let context_manager = if let Some(agent) = agents.get_active() {
-            ContextManager::from_agent(agent, None).ok()
+            ContextManager::from_agent(agent, calc_max_context_files_size(current_model_id.as_deref())).ok()
         } else {
             None
         };
@@ -328,14 +332,14 @@ impl ConversationState {
         &mut self,
         os: &Os,
         stderr: &mut impl Write,
-        run_hooks: bool,
+        run_perprompt_hooks: bool,
     ) -> Result<FigConversationState, ChatError> {
         debug_assert!(self.next_message.is_some());
         self.enforce_conversation_invariants();
         self.history.drain(self.valid_history_range.1..);
         self.history.drain(..self.valid_history_range.0);
 
-        let context = self.backend_conversation_state(os, run_hooks, stderr).await?;
+        let context = self.backend_conversation_state(os, run_perprompt_hooks, stderr).await?;
         if !context.dropped_context_files.is_empty() {
             execute!(
                 stderr,
@@ -389,28 +393,30 @@ impl ConversationState {
     pub async fn backend_conversation_state(
         &mut self,
         os: &Os,
-        run_hooks: bool,
+        run_perprompt_hooks: bool,
         output: &mut impl Write,
     ) -> Result<BackendConversationState<'_>, ChatError> {
         self.update_state(false).await;
         self.enforce_conversation_invariants();
 
         // Run hooks and add to conversation start and next user message.
-        let mut conversation_start_context = None;
-        if let (true, Some(cm)) = (run_hooks, self.context_manager.as_mut()) {
-            // Get the user prompt from next_message if available
+        let mut agent_spawn_context = None;
+        if let Some(cm) = self.context_manager.as_mut() {
             let user_prompt = self.next_message.as_ref().and_then(|m| m.prompt());
-            let hook_results = cm.run_hooks(output, user_prompt).await?;
+            let agent_spawn = cm.run_hooks(HookTrigger::AgentSpawn, output, user_prompt).await?;
+            agent_spawn_context = format_hook_context(&agent_spawn, HookTrigger::AgentSpawn);
 
-            conversation_start_context = Some(format_hook_context(&hook_results, HookTrigger::AgentSpawn));
-
-            // add per prompt content to next_user_message if available
-            if let Some(next_message) = self.next_message.as_mut() {
-                next_message.additional_context = format_hook_context(&hook_results, HookTrigger::UserPromptSubmit);
+            if let (true, Some(next_message)) = (run_perprompt_hooks, self.next_message.as_mut()) {
+                let per_prompt = cm
+                    .run_hooks(HookTrigger::UserPromptSubmit, output, next_message.prompt())
+                    .await?;
+                if let Some(ctx) = format_hook_context(&per_prompt, HookTrigger::UserPromptSubmit) {
+                    next_message.additional_context = ctx;
+                }
             }
         }
 
-        let (context_messages, dropped_context_files) = self.context_messages(os, conversation_start_context).await;
+        let (context_messages, dropped_context_files) = self.context_messages(os, agent_spawn_context).await;
 
         Ok(BackendConversationState {
             conversation_id: self.conversation_id.as_str(),
@@ -556,7 +562,7 @@ impl ConversationState {
     async fn context_messages(
         &mut self,
         os: &Os,
-        conversation_start_context: Option<String>,
+        additional_context: Option<String>,
     ) -> (Option<Vec<HistoryEntry>>, Vec<(String, String)>) {
         let mut context_content = String::new();
         let mut dropped_context_files = Vec::new();
@@ -591,7 +597,7 @@ impl ConversationState {
             }
         }
 
-        if let Some(context) = conversation_start_context {
+        if let Some(context) = additional_context {
             context_content.push_str(&context);
         }
 
@@ -632,8 +638,9 @@ impl ConversationState {
     /// Get the current token warning level
     pub async fn get_token_warning_level(&mut self, os: &Os) -> Result<TokenWarningLevel, ChatError> {
         let total_chars = self.calculate_char_count(os).await?;
+        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model.as_deref()));
 
-        Ok(if *total_chars >= MAX_CHARS {
+        Ok(if *total_chars >= max_chars {
             TokenWarningLevel::Critical
         } else {
             TokenWarningLevel::None
@@ -765,7 +772,17 @@ impl From<InputSchema> for ToolInputSchema {
     }
 }
 
-fn format_hook_context(hook_results: &[((HookTrigger, Hook), String)], trigger: HookTrigger) -> String {
+/// Formats hook output to be used within context blocks (e.g., in context messages or in new user
+/// prompts).
+///
+/// # Returns
+/// [Option::Some] if `hook_results` is not empty and at least one hook has content. Otherwise,
+/// [Option::None]
+fn format_hook_context(hook_results: &[((HookTrigger, Hook), String)], trigger: HookTrigger) -> Option<String> {
+    if hook_results.iter().all(|(_, content)| content.is_empty()) {
+        return None;
+    }
+
     let mut context_content = String::new();
 
     context_content.push_str(CONTEXT_ENTRY_START_HEADER);
@@ -779,7 +796,7 @@ fn format_hook_context(hook_results: &[((HookTrigger, Hook), String)], trigger: 
         context_content.push_str(&format!("{output}\n\n"));
     }
     context_content.push_str(CONTEXT_ENTRY_END_HEADER);
-    context_content
+    Some(context_content)
 }
 
 fn enforce_conversation_invariants(

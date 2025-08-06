@@ -63,6 +63,7 @@ use crate::cli::agent::{
     McpServerConfig,
 };
 use crate::cli::chat::cli::prompts::GetPromptError;
+use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 use crate::cli::chat::message::AssistantToolUse;
 use crate::cli::chat::server_messenger::{
     ServerMessengerBuilder,
@@ -232,7 +233,7 @@ impl ToolManagerBuilder {
                     );
                     None
                 } else {
-                    let custom_tool_client = CustomToolClient::from_config(server_name.clone(), server_config);
+                    let custom_tool_client = CustomToolClient::from_config(server_name.clone(), server_config, os);
                     Some((server_name, custom_tool_client))
                 }
             })
@@ -896,7 +897,8 @@ impl ToolManager {
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?
                     .into_iter()
                     .filter(|(name, _)| {
-                        is_allow_all
+                        name == DUMMY_TOOL_NAME
+                            || is_allow_all
                             || is_allow_native
                             || tool_list.contains(name)
                             || tool_list.contains(&format!("@builtin/{name}"))

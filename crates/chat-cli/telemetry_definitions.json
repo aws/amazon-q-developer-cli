@@ -423,7 +423,7 @@
         { "type": "codewhispererterminal_agentsFailedToLoadCount" },
         { "type": "codewhispererterminal_legacyProfileMigrationExecuted", "required": false },
         { "type": "codewhispererterminal_legacyProfileMigratedCount", "required": false },
-        { "type": "codewhispererterminal_launchedAgent", "required": false }
+        { "type": "codewhispererterminal_launchedAgent" }
       ]
     },
     {

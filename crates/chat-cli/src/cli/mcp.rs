@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{
+    BTreeMap,
+    HashMap,
+};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -8,6 +11,7 @@ use clap::{
     Args,
     ValueEnum,
 };
+use crossterm::style::Stylize;
 use crossterm::{
     execute,
     style,
@@ -20,6 +24,7 @@ use eyre::{
 use super::agent::{
     Agent,
     Agents,
+    DEFAULT_AGENT_NAME,
     McpServerConfig,
 };
 use crate::cli::chat::tool_manager::{
@@ -33,8 +38,9 @@ use crate::cli::chat::tools::custom_tool::{
 use crate::os::Os;
 use crate::util::directories;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Hash)]
 pub enum Scope {
+    Default,
     Workspace,
     Global,
 }
@@ -42,6 +48,7 @@ pub enum Scope {
 impl std::fmt::Display for Scope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Scope::Default => write!(f, "default"),
             Scope::Workspace => write!(f, "workspace"),
             Scope::Global => write!(f, "global"),
         }
@@ -247,31 +254,43 @@ impl RemoveArgs {
 pub struct ListArgs {
     #[arg(value_enum)]
     pub scope: Option<Scope>,
-    #[arg(long, hide = true)]
-    pub profile: Option<String>,
 }
 
 impl ListArgs {
     pub async fn execute(self, os: &mut Os, output: &mut impl Write) -> Result<()> {
-        let configs = get_mcp_server_configs(os, self.scope).await?;
+        let mut configs = get_mcp_server_configs(os).await?;
+        configs.retain(|k, _| self.scope.is_none_or(|s| s == *k));
         if configs.is_empty() {
             writeln!(output, "No MCP server configurations found.\n")?;
             return Ok(());
         }
 
-        for (scope, path, cfg_opt) in configs {
+        for (scope, agents) in configs {
+            if let Some(s) = self.scope {
+                if scope != s {
+                    continue;
+                }
+            }
             writeln!(output)?;
-            writeln!(output, "{}:\n  {}", scope_display(&scope), path.display())?;
-            match cfg_opt {
-                Some(cfg) if !cfg.mcp_servers.is_empty() => {
-                    for (name, tool_cfg) in &cfg.mcp_servers {
-                        let status = if tool_cfg.disabled { " (disabled)" } else { "" };
-                        writeln!(output, "    • {name:<12} {}{}", tool_cfg.command, status)?;
-                    }
-                },
-                _ => {
-                    writeln!(output, "    (empty)")?;
-                },
+            writeln!(output, "{}:\n", scope_display(&scope))?;
+            for (agent_name, cfg_opt, _) in agents {
+                writeln!(output, "  {}", agent_name.bold())?;
+                match cfg_opt {
+                    Some(cfg) if !cfg.mcp_servers.is_empty() => {
+                        // Sorting servers by name since HashMap is unordered, and having a bunch
+                        // of agents with the same global MCP servers included with different
+                        // ordering looks weird.
+                        let mut servers = cfg.mcp_servers.into_iter().collect::<Vec<_>>();
+                        servers.sort_by(|a, b| a.0.cmp(&b.0));
+                        for (name, tool_cfg) in &servers {
+                            let status = if tool_cfg.disabled { " (disabled)" } else { "" };
+                            writeln!(output, "    • {name:<12} {}{}", tool_cfg.command, status)?;
+                        }
+                    },
+                    _ => {
+                        writeln!(output, "    (empty)")?;
+                    },
+                }
             }
         }
         writeln!(output, "\n")?;
@@ -337,50 +356,49 @@ pub struct StatusArgs {
 
 impl StatusArgs {
     pub async fn execute(self, os: &mut Os, output: &mut impl Write) -> Result<()> {
-        let configs = get_mcp_server_configs(os, None).await?;
+        let configs = get_mcp_server_configs(os).await?;
         let mut found = false;
 
-        for (sc, path, cfg_opt) in configs {
-            if let Some(cfg) = cfg_opt.and_then(|c| c.mcp_servers.get(&self.name).cloned()) {
-                found = true;
-                execute!(
-                    output,
-                    style::Print("\n─────────────\n"),
-                    style::Print(format!("Scope   : {}\n", scope_display(&sc))),
-                    style::Print(format!("File    : {}\n", path.display())),
-                    style::Print(format!("Command : {}\n", cfg.command)),
-                    style::Print(format!("Timeout : {} ms\n", cfg.timeout)),
-                    style::Print(format!("Disabled: {}\n", cfg.disabled)),
-                    style::Print(format!(
-                        "Env Vars: {}\n",
-                        cfg.env
-                            .as_ref()
-                            .map_or_else(|| "(none)".into(), |e| e.keys().cloned().collect::<Vec<_>>().join(", "))
-                    )),
-                )?;
+        for (sc, agents) in configs {
+            for (name, cfg_opt, _) in agents {
+                if let Some(cfg) = cfg_opt.and_then(|c| c.mcp_servers.get(&self.name).cloned()) {
+                    found = true;
+                    execute!(
+                        output,
+                        style::Print("\n─────────────\n"),
+                        style::Print(format!("Scope   : {}\n", scope_display(&sc))),
+                        style::Print(format!("Agent   : {}\n", name)),
+                        style::Print(format!("Command : {}\n", cfg.command)),
+                        style::Print(format!("Timeout : {} ms\n", cfg.timeout)),
+                        style::Print(format!("Disabled: {}\n", cfg.disabled)),
+                        style::Print(format!(
+                            "Env Vars: {}\n",
+                            cfg.env.as_ref().map_or_else(
+                                || "(none)".into(),
+                                |e| e
+                                    .iter()
+                                    .map(|(k, v)| format!("{}={}", k, v))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )
+                        )),
+                    )?;
+                }
             }
+            writeln!(output, "\n")?;
         }
-        writeln!(output, "\n")?;
 
         if !found {
-            bail!("No MCP server named '{}' found in any scope/profile\n", self.name);
+            bail!("No MCP server named '{}' found in any agent\n", self.name);
         }
 
         Ok(())
     }
 }
 
-async fn get_mcp_server_configs(
-    os: &mut Os,
-    scope: Option<Scope>,
-) -> Result<Vec<(Scope, PathBuf, Option<McpServerConfig>)>> {
-    let mut targets = Vec::new();
-    match scope {
-        Some(scope) => targets.push(scope),
-        None => targets.extend([Scope::Workspace, Scope::Global]),
-    }
-
-    let mut results = Vec::new();
+/// Returns a [BTreeMap] for consistent key iteration.
+async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(String, Option<McpServerConfig>, bool)>>> {
+    let mut results = BTreeMap::new();
     let mut stderr = std::io::stderr();
     let agents = Agents::load(os, None, true, &mut stderr).await.0;
     let global_path = directories::chat_global_agent_path(os)?;
@@ -391,21 +409,28 @@ async fn get_mcp_server_configs(
             .is_some_and(|p| p.parent().is_some_and(|p| p == global_path))
         {
             Scope::Global
+        } else if agent.name == DEFAULT_AGENT_NAME {
+            Scope::Default
         } else {
             Scope::Workspace
         };
-
-        results.push((
-            scope,
-            agent.path.ok_or(eyre::eyre!("Agent missing path info"))?,
+        results.entry(scope).or_insert(Vec::new()).push((
+            agent.name,
             Some(agent.mcp_servers),
+            agent.use_legacy_mcp_json,
         ));
     }
+
+    for agents in results.values_mut() {
+        agents.sort_by(|a, b| a.0.cmp(&b.0));
+    }
+
     Ok(results)
 }
 
 fn scope_display(scope: &Scope) -> String {
     match scope {
+        Scope::Default => "🤖 default".into(),
         Scope::Workspace => "📄 workspace".into(),
         Scope::Global => "🌍 global".into(),
     }
@@ -480,7 +505,7 @@ mod tests {
         assert_eq!(
             path.to_str(),
             workspace_mcp_config_path(&os).unwrap().to_str(),
-            "No scope or profile should default to the workspace path"
+            "No scope should default to the workspace path"
         );
     }
 
@@ -550,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_subcomman_add() {
+    fn test_mcp_subcommand_add() {
         assert_parse!(
             [
                 "mcp",
@@ -625,7 +650,6 @@ mod tests {
             ["mcp", "list", "global"],
             RootSubcommand::Mcp(McpSubcommand::List(ListArgs {
                 scope: Some(Scope::Global),
-                profile: None
             }))
         );
     }
