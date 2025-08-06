@@ -163,7 +163,7 @@ const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free
 
 pub const EXTRA_HELP: &str = color_print::cstr! {"
 <cyan,em>MCP:</cyan,em>
-<black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/en_us/amazonq/latest/qdeveloper-ug/command-line-mcp.html</black!>
+<black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html</black!>
 
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>          <black!>Quickly execute a command in your current session</black!>

@@ -368,7 +368,7 @@ impl Event {
                         legacy_profile_migration_executed.into(),
                     ),
                     codewhispererterminal_legacy_profile_migrated_count: Some(legacy_profile_migrated_count.into()),
-                    codewhispererterminal_launched_agent: launched_agent.map(Into::into),
+                    codewhispererterminal_launched_agent: Some(launched_agent.into()),
                 }
                 .into_metric_datum(),
             ),
@@ -502,7 +502,7 @@ pub struct AgentConfigInitArgs {
     pub agents_loaded_failed_count: i64,
     pub legacy_profile_migration_executed: bool,
     pub legacy_profile_migrated_count: i64,
-    pub launched_agent: Option<String>,
+    pub launched_agent: String,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

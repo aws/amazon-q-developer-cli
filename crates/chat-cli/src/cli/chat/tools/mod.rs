@@ -102,7 +102,7 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.eval_perm(agent),
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
-            Tool::Knowledge(_) => PermissionEvalResult::Ask,
+            Tool::Knowledge(knowledge) => knowledge.eval_perm(agent),
         }
     }
 

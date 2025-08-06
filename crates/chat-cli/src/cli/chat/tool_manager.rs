@@ -233,7 +233,7 @@ impl ToolManagerBuilder {
                     );
                     None
                 } else {
-                    let custom_tool_client = CustomToolClient::from_config(server_name.clone(), server_config);
+                    let custom_tool_client = CustomToolClient::from_config(server_name.clone(), server_config, os);
                     Some((server_name, custom_tool_client))
                 }
             })

@@ -322,7 +322,9 @@ pub enum PermissionEvalResult {
 
 #[derive(Clone, Default, Debug)]
 pub struct Agents {
+    /// Mapping from agent name to an [Agent].
     pub agents: HashMap<String, Agent>,
+    /// Agent name.
     pub active_idx: String,
     pub trust_all_tools: bool,
 }
@@ -384,10 +386,7 @@ impl Agents {
         output: &mut impl Write,
     ) -> (Self, AgentsLoadMetadata) {
         // Tracking metadata about the performed load operation.
-        let mut load_metadata = AgentsLoadMetadata {
-            launched_agent: agent_name.map(Into::into),
-            ..Default::default()
-        };
+        let mut load_metadata = AgentsLoadMetadata::default();
 
         let new_agents = if !skip_migration {
             match legacy::migrate(os, false).await {
@@ -683,6 +682,7 @@ impl Agents {
             }
         }
 
+        load_metadata.launched_agent = active_idx.clone();
         (
             Self {
                 agents,
@@ -745,7 +745,7 @@ pub struct AgentsLoadMetadata {
     pub migrated_count: u32,
     pub load_count: u32,
     pub load_failed_count: u32,
-    pub launched_agent: Option<String>,
+    pub launched_agent: String,
 }
 
 async fn load_agents_from_entries(
