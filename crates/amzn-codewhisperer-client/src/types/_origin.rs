@@ -21,6 +21,7 @@
 ///     Origin::Ide => { /* ... */ },
 ///     Origin::Marketing => { /* ... */ },
 ///     Origin::Md => { /* ... */ },
+///     Origin::MdCe => { /* ... */ },
 ///     Origin::MdIde => { /* ... */ },
 ///     Origin::Mobile => { /* ... */ },
 ///     Origin::OpensearchDashboard => { /* ... */ },
@@ -83,6 +84,8 @@ pub enum Origin {
     Marketing,
     /// MD.
     Md,
+    /// SageMaker Unified Studio/MaxDome CodeEditor Chat
+    MdCe,
     /// SageMaker Unified Studio/MaxDome IDE Chat
     MdIde,
     /// AWS Mobile Application (ACMA)
@@ -120,6 +123,7 @@ impl ::std::convert::From<&str> for Origin {
             "IDE" => Origin::Ide,
             "MARKETING" => Origin::Marketing,
             "MD" => Origin::Md,
+            "MD_CE" => Origin::MdCe,
             "MD_IDE" => Origin::MdIde,
             "MOBILE" => Origin::Mobile,
             "OPENSEARCH_DASHBOARD" => Origin::OpensearchDashboard,
@@ -154,6 +158,7 @@ impl Origin {
             Origin::Ide => "IDE",
             Origin::Marketing => "MARKETING",
             Origin::Md => "MD",
+            Origin::MdCe => "MD_CE",
             Origin::MdIde => "MD_IDE",
             Origin::Mobile => "MOBILE",
             Origin::OpensearchDashboard => "OPENSEARCH_DASHBOARD",
@@ -178,6 +183,7 @@ impl Origin {
             "IDE",
             "MARKETING",
             "MD",
+            "MD_CE",
             "MD_IDE",
             "MOBILE",
             "OPENSEARCH_DASHBOARD",
@@ -218,6 +224,7 @@ impl ::std::fmt::Display for Origin {
             Origin::Ide => write!(f, "IDE"),
             Origin::Marketing => write!(f, "MARKETING"),
             Origin::Md => write!(f, "MD"),
+            Origin::MdCe => write!(f, "MD_CE"),
             Origin::MdIde => write!(f, "MD_IDE"),
             Origin::Mobile => write!(f, "MOBILE"),
             Origin::OpensearchDashboard => write!(f, "OPENSEARCH_DASHBOARD"),

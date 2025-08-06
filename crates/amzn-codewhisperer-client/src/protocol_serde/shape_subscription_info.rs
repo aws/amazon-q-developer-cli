@@ -33,6 +33,16 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "upgradeCapable" => {
+                                builder = builder.set_upgrade_capable(
+                                    ::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?,
+                                );
+                            },
+                            "overageCapable" => {
+                                builder = builder.set_overage_capable(
+                                    ::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?,
+                                );
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },
