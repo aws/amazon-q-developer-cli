@@ -57,7 +57,7 @@ pub struct CustomToolConfig {
     pub disabled: bool,
     /// Enable MCP sampling support for this server
     #[serde(default)]
-    pub sampling: bool,
+    pub sampling_enabled: bool,
     /// A flag to denote whether this is a server from the legacy mcp.json
     #[serde(skip)]
     pub is_from_legacy_mcp_json: bool,
@@ -106,7 +106,7 @@ impl CustomToolClient {
             env,
             timeout,
             disabled: _,
-            sampling,
+            sampling_enabled,
             ..
         } = config;
 

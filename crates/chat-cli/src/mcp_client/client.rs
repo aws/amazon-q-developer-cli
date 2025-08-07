@@ -567,7 +567,8 @@ where
             };
             if let Some(ops) = pagination_supported_ops {
                 loop {
-                    let result = current_resp.result.as_ref().cloned().unwrap();
+                    let result = current_resp.result.as_ref().cloned()
+                        .ok_or_else(|| ClientError::NegotiationError("Missing result in paginated response".to_string()))?;
                     let mut list: Vec<serde_json::Value> = match ops {
                         PaginationSupportedOps::ResourcesList => {
                             let ResourcesListResult { resources: list, .. } =
@@ -800,17 +801,29 @@ where
     /// Handles sampling/createMessage requests from MCP servers
     /// This allows servers to request LLM completions through the client
     pub async fn handle_sampling_request(&self, request: &JsonRpcRequest) -> Result<JsonRpcResponse, ClientError> {
-        use super::facilitator_types::{
-            Role,
-            SamplingContent,
-            SamplingCreateMessageRequest,
-            SamplingCreateMessageResponse,
-        };
+        // Validate sampling is enabled
+        if let Some(error_response) = self.validate_sampling_enabled(request) {
+            return Ok(error_response);
+        }
 
+        // Validate and parse the request
+        let sampling_request = self.parse_sampling_request(request)?;
 
-        // Check if sampling is enabled for this server
+        // Check API client availability and process request
+        match &self.api_client {
+            Some(api_client) => {
+                self.process_sampling_with_api(request, &sampling_request, api_client).await
+            },
+            None => {
+                Ok(self.create_fallback_response(request))
+            },
+        }
+    }
+
+    /// Validates that sampling is enabled for this server
+    fn validate_sampling_enabled(&self, request: &JsonRpcRequest) -> Option<JsonRpcResponse> {
         if !self.sampling_enabled {
-            return Ok(JsonRpcResponse {
+            return Some(JsonRpcResponse {
                 jsonrpc: JsonRpcVersion::default(),
                 id: request.id,
                 result: None,
@@ -821,8 +834,11 @@ where
                 }),
             });
         }
+        None
+    }
 
-
+    /// Parses and validates the sampling request
+    fn parse_sampling_request(&self, request: &JsonRpcRequest) -> Result<super::facilitator_types::SamplingCreateMessageRequest, ClientError> {
         if request.method != "sampling/createMessage" {
             return Err(ClientError::NegotiationError(format!(
                 "Unsupported sampling method: {}. Expected 'sampling/createMessage'",
@@ -835,157 +851,109 @@ where
             .as_ref()
             .ok_or_else(|| ClientError::NegotiationError("Missing parameters for sampling request".to_string()))?;
 
+        serde_json::from_value(params.clone()).map_err(ClientError::Serialization)
+    }
 
-        let sampling_request: SamplingCreateMessageRequest =
-            serde_json::from_value(params.clone()).map_err(ClientError::Serialization)?;
-
-        // Check if we have API client access
-        let api_client = match &self.api_client {
-            Some(client) => {
-                client
+    /// Creates a fallback response when API client is unavailable
+    fn create_fallback_response(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        let response = super::facilitator_types::SamplingCreateMessageResponse {
+            role: super::facilitator_types::Role::Assistant,
+            content: super::facilitator_types::SamplingContent::Text {
+                text: "API client not available for LLM sampling. Please ensure the MCP client is properly configured.".to_string(),
             },
-            None => {
-                // Return a fallback response when API client is not available
-                let response = SamplingCreateMessageResponse {
-                    role: Role::Assistant,
-                    content: SamplingContent::Text {
-                        text: "API client not available for LLM sampling. Please ensure the MCP client is properly configured.".to_string(),
-                    },
-                    model: Some("amazon-q-cli".to_string()),
-                    stop_reason: Some("no_api_client".to_string()),
-                };
-
-                return Ok(JsonRpcResponse {
-                    jsonrpc: request.jsonrpc.clone(),
-                    id: request.id,
-                    result: Some({
-                        // Convert fallback response to proper MCP format
-                        let content_obj = match &response.content {
-                            super::facilitator_types::SamplingContent::Text { text } => {
-                                serde_json::json!({"type": "text", "text": text})
-                            },
-                            _ => serde_json::json!({"type": "text", "text": "API client not available"})
-                        };
-                        
-                        serde_json::json!({
-                            "role": "assistant",
-                            "content": content_obj,
-                            "model": response.model.as_ref().unwrap_or(&"amazon-q-cli".to_string()),
-                            "stopReason": response.stop_reason.as_ref().unwrap_or(&"endTurn".to_string())
-                        })
-                    }),
-                    error: None,
-                });
-            },
+            model: Some("amazon-q-cli".to_string()),
+            stop_reason: Some("no_api_client".to_string()),
         };
 
-        // Convert MCP sampling request to Amazon Q conversation format
-        let conversation_state = Self::convert_sampling_to_conversation(&sampling_request);
-        
-        // Send request to Amazon Q LLM
+        JsonRpcResponse {
+            jsonrpc: request.jsonrpc.clone(),
+            id: request.id,
+            result: Some(self.convert_sampling_response_to_json(&response)),
+            error: None,
+        }
+    }
+
+    /// Processes sampling request with API client
+    async fn process_sampling_with_api(
+        &self,
+        request: &JsonRpcRequest,
+        sampling_request: &super::facilitator_types::SamplingCreateMessageRequest,
+        api_client: &Arc<ApiClient>,
+    ) -> Result<JsonRpcResponse, ClientError> {
+        // Convert sampling request to conversation format
+        let conversation_state = Self::convert_sampling_to_conversation(sampling_request);
+
+        // Make API call to Amazon Q
         match api_client.send_message(conversation_state).await {
             Ok(api_response) => {
-
-                // Convert API response back to MCP sampling format
-                match self.convert_api_response_to_sampling(api_response).await {
-                    Ok(sampling_response) => {
-                        Ok(JsonRpcResponse {
-                            jsonrpc: request.jsonrpc.clone(),
-                            id: request.id,
-                            result: Some({
-                                // Convert to proper MCP sampling response format
-                                let content_obj = match &sampling_response.content {
-                                    super::facilitator_types::SamplingContent::Text { text } => {
-                                        serde_json::json!({"type": "text", "text": text})
-                                    },
-                                    super::facilitator_types::SamplingContent::Image { data, mime_type } => {
-                                        serde_json::json!({"type": "image", "data": data, "mimeType": mime_type})
-                                    },
-                                    super::facilitator_types::SamplingContent::Audio { data, mime_type } => {
-                                        serde_json::json!({"type": "audio", "data": data, "mimeType": mime_type})
-                                    },
-                                };
-                                
-                                serde_json::json!({
-                                    "role": "assistant",
-                                    "content": content_obj,
-                                    "model": sampling_response.model.as_ref().unwrap_or(&"amazon-q-cli".to_string()),
-                                    "stopReason": sampling_response.stop_reason.as_ref().unwrap_or(&"endTurn".to_string())
-                                })
-                            }),
-                            error: None,
-                        })
-                    },
-                    Err(conversion_error) => {
-
-                        let error_response = SamplingCreateMessageResponse {
-                            role: Role::Assistant,
-                            content: SamplingContent::Text {
-                                text: format!("Error processing LLM response: {}", conversion_error),
-                            },
-                            model: Some("amazon-q-cli".to_string()),
-                            stop_reason: Some("conversion_error".to_string()),
-                        };
-
-                        Ok(JsonRpcResponse {
-                            jsonrpc: request.jsonrpc.clone(),
-                            id: request.id,
-                            result: Some({
-                                // Convert error response to proper MCP format
-                                let content_obj = match &error_response.content {
-                                    super::facilitator_types::SamplingContent::Text { text } => {
-                                        serde_json::json!({"type": "text", "text": text})
-                                    },
-                                    _ => serde_json::json!({"type": "text", "text": "Error processing response"})
-                                };
-                                
-                                serde_json::json!({
-                                    "role": "assistant",
-                                    "content": content_obj,
-                                    "model": error_response.model.as_ref().unwrap_or(&"amazon-q-cli".to_string()),
-                                    "stopReason": error_response.stop_reason.as_ref().unwrap_or(&"endTurn".to_string())
-                                })
-                            }),
-                            error: None,
-                        })
-                    },
-                }
+                self.handle_successful_api_response(request, api_response).await
             },
             Err(api_error) => {
+                Ok(self.create_error_response(request, &format!("I encountered an error while processing your request: {}", api_error), "error"))
+            },
+        }
+    }
 
-                // Return an error response in sampling format
-                let error_response = SamplingCreateMessageResponse {
-                    role: Role::Assistant,
-                    content: SamplingContent::Text {
-                        text: format!("I encountered an error while processing your request: {}", api_error),
-                    },
-                    model: Some("amazon-q-cli".to_string()),
-                    stop_reason: Some("error".to_string()),
-                };
-
+    /// Handles successful API response and converts to MCP format
+    async fn handle_successful_api_response(
+        &self,
+        request: &JsonRpcRequest,
+        api_response: crate::api_client::send_message_output::SendMessageOutput,
+    ) -> Result<JsonRpcResponse, ClientError> {
+        match self.convert_api_response_to_sampling(api_response).await {
+            Ok(sampling_response) => {
                 Ok(JsonRpcResponse {
                     jsonrpc: request.jsonrpc.clone(),
                     id: request.id,
-                    result: Some({
-                        // Convert API error response to proper MCP format
-                        let content_obj = match &error_response.content {
-                            super::facilitator_types::SamplingContent::Text { text } => {
-                                serde_json::json!({"type": "text", "text": text})
-                            },
-                            _ => serde_json::json!({"type": "text", "text": "API error occurred"})
-                        };
-                        
-                        serde_json::json!({
-                            "role": "assistant",
-                            "content": content_obj,
-                            "model": error_response.model.as_ref().unwrap_or(&"amazon-q-cli".to_string()),
-                            "stopReason": error_response.stop_reason.as_ref().unwrap_or(&"endTurn".to_string())
-                        })
-                    }),
+                    result: Some(self.convert_sampling_response_to_json(&sampling_response)),
                     error: None,
                 })
             },
+            Err(conversion_error) => {
+                Ok(self.create_error_response(request, &format!("Error processing LLM response: {}", conversion_error), "conversion_error"))
+            },
         }
+    }
+
+    /// Creates an error response in MCP sampling format
+    fn create_error_response(&self, request: &JsonRpcRequest, error_message: &str, stop_reason: &str) -> JsonRpcResponse {
+        let error_response = super::facilitator_types::SamplingCreateMessageResponse {
+            role: super::facilitator_types::Role::Assistant,
+            content: super::facilitator_types::SamplingContent::Text {
+                text: error_message.to_string(),
+            },
+            model: Some("amazon-q-cli".to_string()),
+            stop_reason: Some(stop_reason.to_string()),
+        };
+
+        JsonRpcResponse {
+            jsonrpc: request.jsonrpc.clone(),
+            id: request.id,
+            result: Some(self.convert_sampling_response_to_json(&error_response)),
+            error: None,
+        }
+    }
+
+    /// Converts SamplingCreateMessageResponse to JSON format
+    fn convert_sampling_response_to_json(&self, response: &super::facilitator_types::SamplingCreateMessageResponse) -> serde_json::Value {
+        let content_obj = match &response.content {
+            super::facilitator_types::SamplingContent::Text { text } => {
+                serde_json::json!({"type": "text", "text": text})
+            },
+            super::facilitator_types::SamplingContent::Image { data, mime_type } => {
+                serde_json::json!({"type": "image", "data": data, "mimeType": mime_type})
+            },
+            super::facilitator_types::SamplingContent::Audio { data, mime_type } => {
+                serde_json::json!({"type": "audio", "data": data, "mimeType": mime_type})
+            },
+        };
+        
+        serde_json::json!({
+            "role": "assistant",
+            "content": content_obj,
+            "model": response.model.as_ref().unwrap_or(&"amazon-q-cli".to_string()),
+            "stopReason": response.stop_reason.as_ref().unwrap_or(&"endTurn".to_string())
+        })
     }
 
     fn get_id(&self) -> u64 {
