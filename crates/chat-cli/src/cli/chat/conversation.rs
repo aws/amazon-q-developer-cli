@@ -6,11 +6,8 @@ use std::collections::{
 use std::io::Write;
 use std::sync::atomic::Ordering;
 
+use crossterm::style;
 use crossterm::style::Color;
-use crossterm::{
-    execute,
-    style,
-};
 use serde::{
     Deserialize,
     Serialize,
@@ -64,6 +61,7 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
+use crate::execute_conditional;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 
@@ -332,6 +330,7 @@ impl ConversationState {
         &mut self,
         os: &Os,
         stderr: &mut impl Write,
+        enable_syling: bool,
         run_perprompt_hooks: bool,
     ) -> Result<FigConversationState, ChatError> {
         debug_assert!(self.next_message.is_some());
@@ -341,7 +340,8 @@ impl ConversationState {
 
         let context = self.backend_conversation_state(os, run_perprompt_hooks, stderr).await?;
         if !context.dropped_context_files.is_empty() {
-            execute!(
+            execute_conditional!(
+                enable_syling,
                 stderr,
                 style::SetForegroundColor(Color::DarkYellow),
                 style::Print("\nSome context files are dropped due to size limit, please run "),
@@ -1069,7 +1069,7 @@ mod tests {
         conversation.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation
-                .as_sendable_conversation_state(&os, &mut vec![], true)
+                .as_sendable_conversation_state(&os, &mut vec![], true, true)
                 .await
                 .unwrap();
             assert_conversation_state_invariants(s, i);
@@ -1097,7 +1097,7 @@ mod tests {
         conversation.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation
-                .as_sendable_conversation_state(&os, &mut vec![], true)
+                .as_sendable_conversation_state(&os, &mut vec![], true, true)
                 .await
                 .unwrap();
             assert_conversation_state_invariants(s, i);
@@ -1125,7 +1125,7 @@ mod tests {
         conversation.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation
-                .as_sendable_conversation_state(&os, &mut vec![], true)
+                .as_sendable_conversation_state(&os, &mut vec![], true, true)
                 .await
                 .unwrap();
             assert_conversation_state_invariants(s, i);
@@ -1181,7 +1181,7 @@ mod tests {
         conversation.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation
-                .as_sendable_conversation_state(&os, &mut vec![], true)
+                .as_sendable_conversation_state(&os, &mut vec![], true, true)
                 .await
                 .unwrap();
 

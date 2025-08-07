@@ -1,5 +1,6 @@
 pub mod images;
 pub mod issue;
+pub mod styling;
 #[cfg(test)]
 pub mod test;
 pub mod ui;
