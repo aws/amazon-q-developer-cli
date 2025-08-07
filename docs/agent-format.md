@@ -36,15 +36,7 @@ The `description` field provides a description of what the agent does. This is p
 }
 ```
 
-## Prompt Field
 
-The `prompt` field is intended to provide high-level context to the agent, similar to a system prompt. This feature is not yet implemented.
-
-```json
-{
-  "prompt": "You are an expert AWS infrastructure specialist"
-}
-```
 
 ## McpServers Field
 
