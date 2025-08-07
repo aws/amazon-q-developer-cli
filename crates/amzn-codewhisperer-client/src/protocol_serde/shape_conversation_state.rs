@@ -33,5 +33,11 @@ pub fn ser_conversation_state(
     if let Some(var_8) = &input.customization_arn {
         object.key("customizationArn").string(var_8.as_str());
     }
+    if let Some(var_9) = &input.agent_continuation_id {
+        object.key("agentContinuationId").string(var_9.as_str());
+    }
+    if let Some(var_10) = &input.agent_task_type {
+        object.key("agentTaskType").string(var_10.as_str());
+    }
     Ok(())
 }

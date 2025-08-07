@@ -139,6 +139,8 @@ pub enum ProgressStatus {
     StartingIndexing(usize),
     /// Indexing in progress with current file and total count
     Indexing(usize, usize),
+    /// Downloading model files with bytes downloaded and total bytes
+    DownloadingModel(u64, u64),
     /// Creating semantic context (50% progress point)
     CreatingSemanticContext,
     /// Generating embeddings for items (50-80% progress range)

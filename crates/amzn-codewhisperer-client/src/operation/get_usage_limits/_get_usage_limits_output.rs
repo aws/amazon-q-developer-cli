@@ -5,6 +5,8 @@
 pub struct GetUsageLimitsOutput {
     #[allow(missing_docs)] // documentation missing in model
     pub limits: ::std::option::Option<::std::vec::Vec<crate::types::UsageLimitList>>,
+    /// The next reset date in UTC timezone.
+    pub next_date_reset: ::std::option::Option<::aws_smithy_types::DateTime>,
     /// Number of days remaining until the usage metrics reset
     pub days_until_reset: ::std::option::Option<i32>,
     /// Usage breakdown by SKU type
@@ -17,8 +19,6 @@ pub struct GetUsageLimitsOutput {
     pub overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
     /// User Information
     pub user_info: ::std::option::Option<crate::types::UserInfo>,
-    /// User's free trial info
-    pub free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
     _request_id: Option<String>,
 }
 impl GetUsageLimitsOutput {
@@ -27,6 +27,11 @@ impl GetUsageLimitsOutput {
     /// value was sent, use `.limits.is_none()`.
     pub fn limits(&self) -> &[crate::types::UsageLimitList] {
         self.limits.as_deref().unwrap_or_default()
+    }
+
+    /// The next reset date in UTC timezone.
+    pub fn next_date_reset(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
+        self.next_date_reset.as_ref()
     }
 
     /// Number of days remaining until the usage metrics reset
@@ -61,11 +66,6 @@ impl GetUsageLimitsOutput {
     pub fn user_info(&self) -> ::std::option::Option<&crate::types::UserInfo> {
         self.user_info.as_ref()
     }
-
-    /// User's free trial info
-    pub fn free_trial_info(&self) -> ::std::option::Option<&crate::types::FreeTrialInfo> {
-        self.free_trial_info.as_ref()
-    }
 }
 impl ::aws_types::request_id::RequestId for GetUsageLimitsOutput {
     fn request_id(&self) -> Option<&str> {
@@ -86,13 +86,13 @@ impl GetUsageLimitsOutput {
 #[non_exhaustive]
 pub struct GetUsageLimitsOutputBuilder {
     pub(crate) limits: ::std::option::Option<::std::vec::Vec<crate::types::UsageLimitList>>,
+    pub(crate) next_date_reset: ::std::option::Option<::aws_smithy_types::DateTime>,
     pub(crate) days_until_reset: ::std::option::Option<i32>,
     pub(crate) usage_breakdown: ::std::option::Option<crate::types::UsageBreakdown>,
     pub(crate) usage_breakdown_list: ::std::option::Option<::std::vec::Vec<crate::types::UsageBreakdown>>,
     pub(crate) subscription_info: ::std::option::Option<crate::types::SubscriptionInfo>,
     pub(crate) overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
     pub(crate) user_info: ::std::option::Option<crate::types::UserInfo>,
-    pub(crate) free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
     _request_id: Option<String>,
 }
 impl GetUsageLimitsOutputBuilder {
@@ -115,6 +115,23 @@ impl GetUsageLimitsOutputBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_limits(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::UsageLimitList>> {
         &self.limits
+    }
+
+    /// The next reset date in UTC timezone.
+    pub fn next_date_reset(mut self, input: ::aws_smithy_types::DateTime) -> Self {
+        self.next_date_reset = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The next reset date in UTC timezone.
+    pub fn set_next_date_reset(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
+        self.next_date_reset = input;
+        self
+    }
+
+    /// The next reset date in UTC timezone.
+    pub fn get_next_date_reset(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
+        &self.next_date_reset
     }
 
     /// Number of days remaining until the usage metrics reset
@@ -232,23 +249,6 @@ impl GetUsageLimitsOutputBuilder {
         &self.user_info
     }
 
-    /// User's free trial info
-    pub fn free_trial_info(mut self, input: crate::types::FreeTrialInfo) -> Self {
-        self.free_trial_info = ::std::option::Option::Some(input);
-        self
-    }
-
-    /// User's free trial info
-    pub fn set_free_trial_info(mut self, input: ::std::option::Option<crate::types::FreeTrialInfo>) -> Self {
-        self.free_trial_info = input;
-        self
-    }
-
-    /// User's free trial info
-    pub fn get_free_trial_info(&self) -> &::std::option::Option<crate::types::FreeTrialInfo> {
-        &self.free_trial_info
-    }
-
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -264,13 +264,13 @@ impl GetUsageLimitsOutputBuilder {
     pub fn build(self) -> crate::operation::get_usage_limits::GetUsageLimitsOutput {
         crate::operation::get_usage_limits::GetUsageLimitsOutput {
             limits: self.limits,
+            next_date_reset: self.next_date_reset,
             days_until_reset: self.days_until_reset,
             usage_breakdown: self.usage_breakdown,
             usage_breakdown_list: self.usage_breakdown_list,
             subscription_info: self.subscription_info,
             overage_configuration: self.overage_configuration,
             user_info: self.user_info,
-            free_trial_info: self.free_trial_info,
             _request_id: self._request_id,
         }
     }

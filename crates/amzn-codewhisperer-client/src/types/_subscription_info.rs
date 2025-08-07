@@ -5,11 +5,25 @@
 pub struct SubscriptionInfo {
     /// Granted subscription type
     pub r#type: crate::types::SubscriptionType,
+    /// Is this subscription upgradeable
+    pub upgrade_capable: bool,
+    /// Does this subscription support overages
+    pub overage_capable: bool,
 }
 impl SubscriptionInfo {
     /// Granted subscription type
     pub fn r#type(&self) -> &crate::types::SubscriptionType {
         &self.r#type
+    }
+
+    /// Is this subscription upgradeable
+    pub fn upgrade_capable(&self) -> bool {
+        self.upgrade_capable
+    }
+
+    /// Does this subscription support overages
+    pub fn overage_capable(&self) -> bool {
+        self.overage_capable
     }
 }
 impl SubscriptionInfo {
@@ -25,6 +39,8 @@ impl SubscriptionInfo {
 #[non_exhaustive]
 pub struct SubscriptionInfoBuilder {
     pub(crate) r#type: ::std::option::Option<crate::types::SubscriptionType>,
+    pub(crate) upgrade_capable: ::std::option::Option<bool>,
+    pub(crate) overage_capable: ::std::option::Option<bool>,
 }
 impl SubscriptionInfoBuilder {
     /// Granted subscription type
@@ -45,9 +61,47 @@ impl SubscriptionInfoBuilder {
         &self.r#type
     }
 
+    /// Is this subscription upgradeable
+    /// This field is required.
+    pub fn upgrade_capable(mut self, input: bool) -> Self {
+        self.upgrade_capable = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Is this subscription upgradeable
+    pub fn set_upgrade_capable(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.upgrade_capable = input;
+        self
+    }
+
+    /// Is this subscription upgradeable
+    pub fn get_upgrade_capable(&self) -> &::std::option::Option<bool> {
+        &self.upgrade_capable
+    }
+
+    /// Does this subscription support overages
+    /// This field is required.
+    pub fn overage_capable(mut self, input: bool) -> Self {
+        self.overage_capable = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Does this subscription support overages
+    pub fn set_overage_capable(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.overage_capable = input;
+        self
+    }
+
+    /// Does this subscription support overages
+    pub fn get_overage_capable(&self) -> &::std::option::Option<bool> {
+        &self.overage_capable
+    }
+
     /// Consumes the builder and constructs a [`SubscriptionInfo`](crate::types::SubscriptionInfo).
     /// This method will fail if any of the following fields are not set:
     /// - [`r#type`](crate::types::builders::SubscriptionInfoBuilder::type)
+    /// - [`upgrade_capable`](crate::types::builders::SubscriptionInfoBuilder::upgrade_capable)
+    /// - [`overage_capable`](crate::types::builders::SubscriptionInfoBuilder::overage_capable)
     pub fn build(
         self,
     ) -> ::std::result::Result<crate::types::SubscriptionInfo, ::aws_smithy_types::error::operation::BuildError> {
@@ -56,6 +110,18 @@ impl SubscriptionInfoBuilder {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
                     "r#type",
                     "r#type was not specified but it is required when building SubscriptionInfo",
+                )
+            })?,
+            upgrade_capable: self.upgrade_capable.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "upgrade_capable",
+                    "upgrade_capable was not specified but it is required when building SubscriptionInfo",
+                )
+            })?,
+            overage_capable: self.overage_capable.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "overage_capable",
+                    "overage_capable was not specified but it is required when building SubscriptionInfo",
                 )
             })?,
         })

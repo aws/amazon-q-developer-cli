@@ -27,6 +27,13 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "modelName" => {
+                                builder = builder.set_model_name(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
+                                );
+                            },
                             "description" => {
                                 builder = builder.set_description(
                                     ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?

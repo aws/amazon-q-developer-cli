@@ -144,8 +144,14 @@ pub fn example_agent_config(os: &Os) -> Result<PathBuf> {
 }
 
 /// Legacy global MCP server config path
-pub fn chat_legacy_mcp_config(os: &Os) -> Result<PathBuf> {
+pub fn chat_legacy_global_mcp_config(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("mcp.json"))
+}
+
+/// Legacy workspace MCP server config path
+pub fn chat_legacy_workspace_mcp_config(os: &Os) -> Result<PathBuf> {
+    let cwd = os.env.current_dir()?;
+    Ok(cwd.join(".amazonq").join("mcp.json"))
 }
 
 /// The directory to the directory containing global agents

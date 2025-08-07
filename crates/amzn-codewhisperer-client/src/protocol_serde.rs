@@ -220,8 +220,6 @@ pub(crate) mod shape_feature_evaluations_list;
 
 pub(crate) mod shape_file_context;
 
-pub(crate) mod shape_free_trial_info;
-
 pub(crate) mod shape_intent_context;
 
 pub(crate) mod shape_memory_entry;
@@ -339,6 +337,8 @@ pub(crate) mod shape_feature_dev_code_generation_event;
 pub(crate) mod shape_feature_dev_event;
 
 pub(crate) mod shape_feature_evaluation;
+
+pub(crate) mod shape_free_trial_info;
 
 pub(crate) mod shape_inline_chat_event;
 

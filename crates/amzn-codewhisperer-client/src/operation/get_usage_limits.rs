@@ -214,6 +214,14 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GetUsageLimi
                         query.push_kv("resourceType", &::aws_smithy_http::query::fmt_string(inner_2));
                     }
                 }
+                if let ::std::option::Option::Some(inner_3) = &_input.is_email_required {
+                    {
+                        query.push_kv(
+                            "isEmailRequired",
+                            ::aws_smithy_types::primitive::Encoder::from(*inner_3).encode(),
+                        );
+                    }
+                }
                 ::std::result::Result::Ok(())
             }
             #[allow(clippy::unnecessary_wraps)]

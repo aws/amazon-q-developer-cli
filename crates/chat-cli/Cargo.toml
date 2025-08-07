@@ -14,6 +14,7 @@ workspace = true
 [features]
 default = []
 wayland = ["arboard/wayland-data-control"]
+knowledge = []
 
 [[bin]]
 name = "test_mcp_server"

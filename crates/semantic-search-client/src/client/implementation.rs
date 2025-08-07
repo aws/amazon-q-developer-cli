@@ -43,7 +43,7 @@ use crate::types::{
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use semantic_search_client::SemanticSearchClient;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
