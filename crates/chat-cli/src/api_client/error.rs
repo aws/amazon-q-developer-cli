@@ -1,5 +1,6 @@
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenError;
 use amzn_codewhisperer_client::operation::generate_completions::GenerateCompletionsError;
+use amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsError;
 use amzn_codewhisperer_client::operation::list_available_customizations::ListAvailableCustomizationsError;
 use amzn_codewhisperer_client::operation::list_available_profiles::ListAvailableProfilesError;
 use amzn_codewhisperer_client::operation::send_telemetry_event::SendTelemetryEventError;
@@ -93,6 +94,10 @@ pub enum ApiClientError {
     // Credential errors
     #[error("failed to load credentials: {}", .0)]
     Credentials(CredentialsError),
+
+    // Get usgae limits error
+    #[error("{}", SdkErrorDisplay(.0))]
+    GetUsageLimits(#[from] SdkError<GetUsageLimitsError, HttpResponse>),
 }
 
 impl ApiClientError {
@@ -116,6 +121,7 @@ impl ApiClientError {
             Self::ModelOverloadedError { status_code, .. } => *status_code,
             Self::MonthlyLimitReached { status_code } => *status_code,
             Self::Credentials(_e) => None,
+            Self::GetUsageLimits(e) => sdk_status_code(e),
         }
     }
 }
@@ -141,6 +147,7 @@ impl ReasonCode for ApiClientError {
             Self::ModelOverloadedError { .. } => "ModelOverloadedError".to_string(),
             Self::MonthlyLimitReached { .. } => "MonthlyLimitReached".to_string(),
             Self::Credentials(_) => "CredentialsError".to_string(),
+            Self::GetUsageLimits(e) => sdk_error_code(e),
         }
     }
 }
