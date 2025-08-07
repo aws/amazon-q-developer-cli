@@ -9,7 +9,6 @@ use crossterm::{
 };
 use dialoguer::Select;
 
-use crate::api_client::Endpoint;
 use crate::auth::builder_id::{
     BuilderIdToken,
     TokenType,
@@ -143,17 +142,20 @@ pub async fn default_model_id(os: &Os) -> &'static str {
 }
 
 /// Returns the available models for use.
+#[allow(unused_variables)]
 pub async fn get_model_options(os: &Os) -> Result<Vec<ModelOption>, ChatError> {
-    let mut model_options = MODEL_OPTIONS.into_iter().collect::<Vec<_>>();
-
-    // GPT OSS is only accessible in IAD.
-    let endpoint = Endpoint::configured_value(&os.database);
-    if endpoint.region().as_ref() != "us-east-1" {
-        return Ok(model_options);
-    }
-
-    model_options.push(GPT_OSS_120B);
-    Ok(model_options)
+    Ok(MODEL_OPTIONS.into_iter().collect::<Vec<_>>())
+    // TODO: Once we have access to gpt-oss, add back.
+    // let mut model_options = MODEL_OPTIONS.into_iter().collect::<Vec<_>>();
+    //
+    // // GPT OSS is only accessible in IAD.
+    // let endpoint = Endpoint::configured_value(&os.database);
+    // if endpoint.region().as_ref() != "us-east-1" {
+    //     return Ok(model_options);
+    // }
+    //
+    // model_options.push(GPT_OSS_120B);
+    // Ok(model_options)
 }
 
 /// Returns the context window length in tokens for the given model_id.
