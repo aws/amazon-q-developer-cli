@@ -33,8 +33,9 @@ bm25 = { version = "2.2.1", features = ["language_detection"] }
 
 # Common dependencies for all platforms
 anyhow = "1.0"
-ureq = "2.12"
-zip = "0.6"
+reqwest = { workspace = true }
+zip = { version = "4.3.0", default-features = false, features = ["deflate", "time"] }
+tokio-stream = "0.1.17"
 
 # Candle dependencies - not used on Linux ARM
 [target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]

@@ -13,6 +13,7 @@ use tokio::sync::{
     mpsc,
 };
 use tokio_util::sync::CancellationToken;
+use tracing::debug;
 use uuid::Uuid;
 
 use crate::client::semantic_context::SemanticContext;
@@ -98,6 +99,64 @@ impl AsyncSemanticSearchClient {
         Self::new(base_dir).await
     }
 
+    /// Ensure models are downloaded for the given embedding type
+    async fn ensure_models_downloaded(embedding_type: &EmbeddingType) -> Result<()> {
+        match embedding_type {
+            #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+            EmbeddingType::Candle => {
+                use crate::client::hosted_model_client::HostedModelClient;
+                use crate::embedding::ModelType;
+
+                let model_config = ModelType::default().get_config();
+                let (model_path, tokenizer_path) = model_config.get_local_paths();
+                if model_path.exists() && tokenizer_path.exists() {
+                    return Ok(());
+                }
+
+                // Create model directory if it doesn't exist
+                if let Some(parent) = model_path.parent() {
+                    tokio::fs::create_dir_all(parent)
+                        .await
+                        .map_err(SemanticSearchError::IoError)?;
+                }
+
+                // Check if files already exist
+                let model_exists = tokio::fs::try_exists(&model_path).await.unwrap_or(false);
+                let tokenizer_exists = tokio::fs::try_exists(&tokenizer_path).await.unwrap_or(false);
+
+                if !model_exists || !tokenizer_exists {
+                    debug!("Downloading model files for {}...", model_config.name);
+
+                    // Get the target directory (parent of model_path, which should be the model directory)
+                    let target_dir = model_path
+                        .parent()
+                        .ok_or_else(|| SemanticSearchError::EmbeddingError("Invalid model path".to_string()))?;
+
+                    // Get the hosted models base URL from config
+                    let semantic_config = crate::config::get_config();
+                    let base_url = &semantic_config.hosted_models_base_url;
+
+                    // Create hosted model client and download with progress bar
+                    let client = HostedModelClient::new(base_url.clone());
+                    client
+                        .ensure_model(&model_config.name, target_dir)
+                        .await
+                        .map_err(|e| SemanticSearchError::EmbeddingError(format!("Failed to download model: {}", e)))?;
+
+                    debug!("Model download completed for {}", model_config.name);
+                }
+            },
+            EmbeddingType::BM25 => {
+                // BM25 doesn't require model downloads
+            },
+            #[cfg(test)]
+            EmbeddingType::Mock => {
+                // Mock doesn't require model downloads
+            },
+        }
+        Ok(())
+    }
+
     /// Get the default base directory for memory bank
     ///
     /// # Returns
@@ -120,6 +179,9 @@ impl AsyncSemanticSearchClient {
             tracing::error!("Failed to initialize semantic search configuration: {}", e);
         }
 
+        // Pre-download models if the embedding type requires them
+        Self::ensure_models_downloaded(&embedding_type).await?;
+
         let embedder = embedder_factory::create_embedder(embedding_type)?;
 
         // Load metadata for persistent contexts
@@ -132,6 +194,7 @@ impl AsyncSemanticSearchClient {
         let (job_tx, job_rx) = mpsc::unbounded_channel();
 
         // Start background worker - we'll need to create a new embedder for the worker
+        // Models should already be downloaded by now
         let worker_embedder = embedder_factory::create_embedder(embedding_type)?;
         // Makes sure it respects configuration even if tweaked by user.
         let loaded_config = config::get_config().clone();
@@ -717,7 +780,7 @@ impl AsyncSemanticSearchClient {
 // Background Worker Implementation
 impl BackgroundWorker {
     async fn run(mut self) {
-        tracing::info!("Background worker started for async semantic search client");
+        debug!("Background worker started for async semantic search client");
 
         while let Some(job) = self.job_rx.recv().await {
             match job {
@@ -738,7 +801,7 @@ impl BackgroundWorker {
             }
         }
 
-        tracing::info!("Background worker stopped");
+        debug!("Background worker stopped");
     }
 
     async fn process_add_directory(
@@ -750,7 +813,7 @@ impl BackgroundWorker {
         persistent: bool,
         cancel_token: CancellationToken,
     ) {
-        tracing::info!("Processing AddDirectory job: {} -> {}", name, path.display());
+        debug!("Processing AddDirectory job: {} -> {}", name, path.display());
 
         if cancel_token.is_cancelled() {
             self.mark_operation_cancelled(operation_id).await;
@@ -798,7 +861,7 @@ impl BackgroundWorker {
 
         match result {
             Ok(context_id) => {
-                tracing::info!("Successfully indexed context: {}", context_id);
+                debug!("Successfully indexed context: {}", context_id);
                 self.mark_operation_completed(operation_id).await;
             },
             Err(e) => {
@@ -940,7 +1003,7 @@ impl BackgroundWorker {
     }
 
     async fn process_clear(&self, operation_id: Uuid, cancel_token: CancellationToken) {
-        tracing::info!("Processing Clear job");
+        debug!("Processing Clear job");
 
         if cancel_token.is_cancelled() {
             self.mark_operation_cancelled(operation_id).await;
@@ -1136,7 +1199,7 @@ impl BackgroundWorker {
         if let Ok(mut operations) = self.active_operations.try_write() {
             operations.remove(&operation_id);
         }
-        tracing::info!("Operation {} completed", operation_id);
+        debug!("Operation {} completed", operation_id);
     }
 
     async fn mark_operation_failed(&self, operation_id: Uuid, error: String) {
@@ -1163,7 +1226,7 @@ impl BackgroundWorker {
             }
             // Don't remove immediately - let it show as cancelled for a while
         }
-        tracing::info!("Operation {} cancelled", operation_id);
+        debug!("Operation {} cancelled", operation_id);
     }
 
     #[allow(clippy::too_many_arguments)]

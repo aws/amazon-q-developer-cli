@@ -4,19 +4,33 @@
 //! instead of directly from Hugging Face. Models are distributed as zip files
 //! containing model.safetensors and tokenizer.json files.
 
-use std::path::Path;
+#[cfg(test)]
 use std::fs;
-use anyhow::{Result as AnyhowResult, Context};
-use tracing::{info, debug, error};
-use indicatif::{ProgressBar, ProgressStyle};
+use std::path::Path;
+
+use anyhow::{
+    Context,
+    Result as AnyhowResult,
+};
+use indicatif::{
+    ProgressBar,
+    ProgressStyle,
+};
+use reqwest;
+use tracing::{
+    debug,
+    error,
+};
 
 /// Progress callback type for download operations
 pub type ProgressCallback = Box<dyn Fn(u64, u64) + Send + Sync>;
 
-/// Hosted model client for downloading models from CDN (synchronous like original HF)
+/// Hosted model client for downloading models from CDN (synchronous)
 pub struct HostedModelClient {
-    /// Base URL for the CDN (e.g., "https://desktop.gamma-us-east-1.codewhisperer.ai.aws.dev/models")
+    /// Base URL for the CDN
     base_url: String,
+    /// HTTP client
+    client: reqwest::Client,
 }
 
 impl HostedModelClient {
@@ -33,10 +47,13 @@ impl HostedModelClient {
     /// let client = HostedModelClient::new("http://example.com/models".to_string());
     /// ```
     pub fn new(base_url: String) -> Self {
-        Self { base_url }
+        Self {
+            base_url,
+            client: reqwest::Client::new(),
+        }
     }
 
-    /// Download a model if it doesn't exist locally (synchronous like original HF api.repo().get())
+    /// Download a model if it doesn't exist locally (asynchronous)
     ///
     /// # Arguments
     ///
@@ -46,8 +63,8 @@ impl HostedModelClient {
     /// # Returns
     ///
     /// Result indicating success or failure
-    pub fn ensure_model(&self, model_name: &str, target_dir: &Path) -> AnyhowResult<()> {
-        self.ensure_model_with_progress(model_name, target_dir, None)
+    pub async fn ensure_model(&self, model_name: &str, target_dir: &Path) -> AnyhowResult<()> {
+        self.ensure_model_with_progress(model_name, target_dir, None).await
     }
 
     /// Download a model if it doesn't exist locally with optional progress callback
@@ -61,96 +78,99 @@ impl HostedModelClient {
     /// # Returns
     ///
     /// Result indicating success or failure
-    pub fn ensure_model_with_progress(
-        &self, 
-        model_name: &str, 
+    pub async fn ensure_model_with_progress(
+        &self,
+        model_name: &str,
         target_dir: &Path,
-        progress_callback: Option<ProgressCallback>
+        progress_callback: Option<ProgressCallback>,
     ) -> AnyhowResult<()> {
         // Check if model already exists and is valid
-        if self.is_model_valid(target_dir)? {
-            info!("Model '{}' already exists and is valid", model_name);
+        if self.is_model_valid(target_dir).await? {
+            debug!("Model '{}' already exists and is valid", model_name);
             return Ok(());
         }
 
-        info!("Downloading hosted model: {}", model_name);
-        self.download_model(model_name, target_dir, progress_callback)
+        debug!("Downloading hosted model: {}", model_name);
+        self.download_model(model_name, target_dir, progress_callback).await
     }
 
-    /// Download model from hosted CDN (synchronous) with optional progress
-    fn download_model(
-        &self, 
-        model_name: &str, 
+    /// Download model from hosted CDN (asynchronous) with optional progress
+    async fn download_model(
+        &self,
+        model_name: &str,
         target_dir: &Path,
-        progress_callback: Option<ProgressCallback>
+        progress_callback: Option<ProgressCallback>,
     ) -> AnyhowResult<()> {
         // Construct zip filename and URL
         let zip_filename = format!("{}.zip", model_name);
         let zip_url = format!("{}/{}", self.base_url, zip_filename);
         let zip_path = target_dir.join(&zip_filename);
 
-        info!("Constructing download URL:");
-        info!("  Base URL: {}", self.base_url);
-        info!("  Model name: {}", model_name);
-        info!("  Zip filename: {}", zip_filename);
-        info!("  Final URL: {}", zip_url);
-        info!("  Target path: {:?}", zip_path);
+        debug!("Constructing download URL:");
+        debug!("  Base URL: {}", self.base_url);
+        debug!("  Model name: {}", model_name);
+        debug!("  Zip filename: {}", zip_filename);
+        debug!("  Final URL: {}", zip_url);
+        debug!("  Target path: {:?}", zip_path);
 
         // Create target directory if it doesn't exist
-        if let Some(parent) = target_dir.parent() {
-            fs::create_dir_all(parent)
-                .context("Failed to create parent directories")?;
-        }
-        fs::create_dir_all(target_dir)
+        tokio::fs::create_dir_all(target_dir)
+            .await
             .context("Failed to create target directory")?;
 
         // Download the zip file with progress
         self.download_file(&zip_url, &zip_path, progress_callback)
+            .await
             .context("Failed to download model zip file")?;
 
         // Extract zip contents
         self.extract_model_zip(&zip_path, target_dir)
+            .await
             .context("Failed to extract model zip file")?;
 
         // Clean up zip file
-        fs::remove_file(&zip_path)
+        tokio::fs::remove_file(&zip_path)
+            .await
             .context("Failed to remove temporary zip file")?;
 
-        info!("Successfully downloaded and extracted model: {}", model_name);
+        debug!("Successfully downloaded and extracted model: {}", model_name);
         Ok(())
     }
 
-    /// Download a file from URL to local path (synchronous) with progress
-    fn download_file(
-        &self, 
-        url: &str, 
+    /// Download a file from URL to local path (asynchronous) with progress
+    async fn download_file(
+        &self,
+        url: &str,
         target_path: &Path,
-        progress_callback: Option<ProgressCallback>
+        progress_callback: Option<ProgressCallback>,
     ) -> AnyhowResult<()> {
-        info!("Attempting to download from URL: {}", url);
-        
-        let response = ureq::get(url).call()
-            .map_err(|e| {
-                error!("HTTP request failed for URL: {} - Error: {}", url, e);
-                match e {
-                    ureq::Error::Status(code, response) => {
-                        let body = response.into_string().unwrap_or_else(|_| "Unable to read response body".to_string());
-                        error!("HTTP {} response body: {}", code, body);
-                        anyhow::anyhow!("HTTP {} error for URL: {} - Response: {}", code, url, body)
-                    }
-                    ureq::Error::Transport(transport_err) => {
-                        error!("Transport error: {}", transport_err);
-                        anyhow::anyhow!("Transport error for URL: {} - {}", url, transport_err)
-                    }
-                }
-            })?;
+        debug!("Attempting to download from URL: {}", url);
+
+        let response = self.client.get(url).send().await.map_err(|e| {
+            error!("HTTP request failed for URL: {} - Error: {}", url, e);
+            anyhow::anyhow!("HTTP request failed for URL: {} - {}", url, e)
+        })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unable to read response body".to_string());
+            error!("HTTP {} response body: {}", status, body);
+            return Err(anyhow::anyhow!(
+                "HTTP {} error for URL: {} - Response: {}",
+                status,
+                url,
+                body
+            ));
+        }
 
         // Get content length for progress tracking
-        let content_length = response.header("content-length")
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
+        let content_length = response.content_length().unwrap_or(0);
 
-        let mut file = fs::File::create(target_path)
+        let mut file = tokio::fs::File::create(target_path)
+            .await
             .context("Failed to create target file")?;
 
         // Create progress bar if we have content length and no custom callback
@@ -158,33 +178,29 @@ impl HostedModelClient {
             let pb = ProgressBar::new(content_length);
             pb.set_style(
                 ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                    .template("{msg} {spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
                     .expect("Failed to set progress bar template")
                     .progress_chars("#>-")
             );
-            pb.set_message("Downloading model");
+            pb.set_message("Loading model");
             Some(pb)
         } else {
             None
         };
 
         // Read and write with progress tracking
-        let mut reader = response.into_reader();
-        let mut buffer = [0; 8192]; // 8KB buffer
+        use tokio::io::AsyncWriteExt;
+        use tokio_stream::StreamExt;
+
         let mut total_downloaded = 0u64;
+        let mut stream = response.bytes_stream();
 
-        loop {
-            let bytes_read = std::io::Read::read(&mut reader, &mut buffer)
-                .context("Failed to read from response")?;
-            
-            if bytes_read == 0 {
-                break; // EOF
-            }
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.context("Failed to read chunk from response")?;
 
-            std::io::Write::write_all(&mut file, &buffer[..bytes_read])
-                .context("Failed to write to file")?;
+            file.write_all(&chunk).await.context("Failed to write chunk to file")?;
 
-            total_downloaded += bytes_read as u64;
+            total_downloaded += chunk.len() as u64;
 
             // Update progress
             if let Some(ref pb) = progress_bar {
@@ -197,7 +213,7 @@ impl HostedModelClient {
 
         // Finish progress bar
         if let Some(pb) = progress_bar {
-            pb.finish_with_message("Download complete");
+            pb.finish_and_clear();
         }
 
         debug!("Downloaded {} bytes to {:?}", total_downloaded, target_path);
@@ -205,63 +221,98 @@ impl HostedModelClient {
     }
 
     /// Extract model zip file to target directory
-    fn extract_model_zip(&self, zip_path: &Path, target_dir: &Path) -> AnyhowResult<()> {
-        let file = fs::File::open(zip_path)
-            .context("Failed to open zip file")?;
-        
-        let mut archive = zip::ZipArchive::new(file)
-            .context("Failed to read zip archive")?;
+    async fn extract_model_zip(&self, zip_path: &Path, target_dir: &Path) -> AnyhowResult<()> {
+        // Since zip extraction is CPU-intensive and the zip crate is sync,
+        // we'll run it in a blocking task
+        let zip_path = zip_path.to_path_buf();
+        let target_dir = target_dir.to_path_buf();
 
-        for i in 0..archive.len() {
-            let mut file = archive.by_index(i)
-                .context("Failed to read zip entry")?;
-            
-            let outpath = target_dir.join(file.name());
+        tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&zip_path).context("Failed to open zip file")?;
 
-            if file.is_dir() {
-                fs::create_dir_all(&outpath)
-                    .context("Failed to create directory from zip")?;
-            } else {
-                if let Some(parent) = outpath.parent() {
-                    fs::create_dir_all(parent)
-                        .context("Failed to create parent directory for zip entry")?;
+            let mut archive = zip::ZipArchive::new(file).context("Failed to read zip archive")?;
+
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).context("Failed to read zip entry")?;
+
+                let outpath = target_dir.join(file.name());
+
+                if file.is_dir() {
+                    std::fs::create_dir_all(&outpath).context("Failed to create directory from zip")?;
+                } else {
+                    if let Some(parent) = outpath.parent() {
+                        std::fs::create_dir_all(parent).context("Failed to create parent directory for zip entry")?;
+                    }
+
+                    let mut outfile = std::fs::File::create(&outpath).context("Failed to create output file")?;
+
+                    std::io::copy(&mut file, &mut outfile).context("Failed to extract file from zip")?;
+
+                    debug!("Extracted: {:?}", outpath);
                 }
-                
-                let mut outfile = fs::File::create(&outpath)
-                    .context("Failed to create output file")?;
-                
-                std::io::copy(&mut file, &mut outfile)
-                    .context("Failed to extract file from zip")?;
-                
-                debug!("Extracted: {:?}", outpath);
             }
-        }
+
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .context("Zip extraction task failed")?
+        .context("Zip extraction failed")?;
 
         Ok(())
     }
 
-    /// Check if model files exist and are valid
-    fn is_model_valid(&self, target_dir: &Path) -> AnyhowResult<bool> {
+    /// Check if model files exist and are valid (sync version for testing)
+    #[cfg(test)]
+    fn is_model_valid_sync(&self, target_dir: &Path) -> AnyhowResult<bool> {
         let model_path = target_dir.join("model.safetensors");
         let tokenizer_path = target_dir.join("tokenizer.json");
-        
+
         let valid = model_path.exists() && tokenizer_path.exists();
-        
+
+        debug!(
+            "Model validation for {:?}: model={}, tokenizer={}",
+            target_dir,
+            model_path.exists(),
+            tokenizer_path.exists()
+        );
+
+        Ok(valid)
+    }
+
+    /// Check if model files exist and are valid
+    async fn is_model_valid(&self, target_dir: &Path) -> AnyhowResult<bool> {
+        let model_path = target_dir.join("model.safetensors");
+        let tokenizer_path = target_dir.join("tokenizer.json");
+
+        // Use tokio::fs for async file operations
+        let model_exists = (tokio::fs::metadata(&model_path).await).is_ok();
+
+        let tokenizer_exists = (tokio::fs::metadata(&tokenizer_path).await).is_ok();
+
+        let valid = model_exists && tokenizer_exists;
+
         if valid {
-            debug!("Model files found: model={:?}, tokenizer={:?}", model_path, tokenizer_path);
+            debug!(
+                "Model files found: model={:?}, tokenizer={:?}",
+                model_path, tokenizer_path
+            );
         } else {
-            debug!("Model files missing: model_exists={}, tokenizer_exists={}", 
-                   model_path.exists(), tokenizer_path.exists());
+            debug!(
+                "Model files missing: model_exists={}, tokenizer_exists={}",
+                model_path.exists(),
+                tokenizer_path.exists()
+            );
         }
-        
+
         Ok(valid)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_hosted_model_client_creation() {
@@ -273,8 +324,8 @@ mod tests {
     fn test_is_model_valid_empty_directory() {
         let temp_dir = TempDir::new().unwrap();
         let client = HostedModelClient::new("https://example.com".to_string());
-        
-        let is_valid = client.is_model_valid(temp_dir.path()).unwrap();
+
+        let is_valid = client.is_model_valid_sync(temp_dir.path()).unwrap();
         assert!(!is_valid);
     }
 
@@ -284,7 +335,7 @@ mod tests {
         let base_url = "https://example.com/models";
         let model_name = "all-MiniLM-L6-v2";
         let expected_url = format!("{}/{}.zip", base_url, model_name);
-        
+
         assert_eq!(expected_url, "https://example.com/models/all-MiniLM-L6-v2.zip");
     }
 
@@ -292,12 +343,12 @@ mod tests {
     fn test_is_model_valid_with_files() {
         let temp_dir = TempDir::new().unwrap();
         let client = HostedModelClient::new("https://example.com".to_string());
-        
+
         // Create mock model files
         fs::write(temp_dir.path().join("model.safetensors"), b"mock model").unwrap();
         fs::write(temp_dir.path().join("tokenizer.json"), b"mock tokenizer").unwrap();
-        
-        let is_valid = client.is_model_valid(temp_dir.path()).unwrap();
+
+        let is_valid = client.is_model_valid_sync(temp_dir.path()).unwrap();
         assert!(is_valid);
     }
 }
