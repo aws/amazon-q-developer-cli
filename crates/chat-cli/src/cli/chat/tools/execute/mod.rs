@@ -194,13 +194,11 @@ impl ExecuteCommand {
         let Self { command, .. } = self;
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let is_in_allowlist = agent.allowed_tools.contains("execute_bash");
-        match agent.tools_settings.get(tool_name) {
-            Some(settings) if is_in_allowlist => {
-                let Settings {
-                    allowed_commands,
-                    denied_commands,
-                    allow_read_only,
-                } = match serde_json::from_value::<Settings>(settings.clone()) {
+
+        // Step 1: If execute_bash is in allowedTools, always allow (except denied commands)
+        if is_in_allowlist {
+            if let Some(settings) = agent.tools_settings.get(tool_name) {
+                let Settings { denied_commands, .. } = match serde_json::from_value::<Settings>(settings.clone()) {
                     Ok(settings) => settings,
                     Err(e) => {
                         error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
@@ -211,6 +209,39 @@ impl ExecuteCommand {
                 if denied_commands.iter().any(|dc| command.contains(dc)) {
                     return PermissionEvalResult::Deny;
                 }
+            }
+            return PermissionEvalResult::Allow;
+        }
+
+        // Step 2: Check if command matches denied patterns
+        if let Some(settings) = agent.tools_settings.get(tool_name) {
+            let Settings { denied_commands, .. } = match serde_json::from_value::<Settings>(settings.clone()) {
+                Ok(settings) => settings,
+                Err(e) => {
+                    error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
+                    return PermissionEvalResult::Ask;
+                },
+            };
+
+            if denied_commands.iter().any(|dc| command.contains(dc)) {
+                return PermissionEvalResult::Deny;
+            }
+        }
+
+        // Step 3: Use requires_acceptance logic with allowedCommands patterns
+        match agent.tools_settings.get(tool_name) {
+            Some(settings) => {
+                let Settings {
+                    allowed_commands,
+                    allow_read_only,
+                    ..
+                } = match serde_json::from_value::<Settings>(settings.clone()) {
+                    Ok(settings) => settings,
+                    Err(e) => {
+                        error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
+                        return PermissionEvalResult::Ask;
+                    },
+                };
 
                 if self.requires_acceptance(Some(&allowed_commands), allow_read_only) {
                     PermissionEvalResult::Ask
@@ -218,8 +249,7 @@ impl ExecuteCommand {
                     PermissionEvalResult::Allow
                 }
             },
-            None if is_in_allowlist => PermissionEvalResult::Allow,
-            _ => {
+            None => {
                 if self.requires_acceptance(None, default_allow_read_only()) {
                     PermissionEvalResult::Ask
                 } else {
@@ -383,5 +413,151 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn test_eval_perm_allowed_tools_priority() {
+        use crate::cli::agent::{Agent, PermissionEvalResult};
+
+        // Test that when execute_bash is in allowedTools, it always allows (except denied commands)
+        let agent_json = serde_json::json!({
+            "name": "test_agent",
+            "allowedTools": ["execute_bash"],
+            "toolsSettings": {
+                "execute_bash": {
+                    "allowedCommands": ["ls"],
+                    "deniedCommands": ["rm"],
+                    "allowReadOnly": false
+                }
+            }
+        });
+
+        let agent: Agent = serde_json::from_value(agent_json).unwrap();
+
+        let dangerous_cmd = ExecuteCommand {
+            command: "sudo dd if=/dev/zero of=/dev/sda".to_string(),
+            summary: None,
+        };
+
+        let denied_cmd = ExecuteCommand {
+            command: "rm file.txt".to_string(),
+            summary: None,
+        };
+
+        // Should allow dangerous command because execute_bash is in allowedTools
+        assert_eq!(dangerous_cmd.eval_perm(&agent), PermissionEvalResult::Allow);
+
+        // Should deny command matching denied pattern
+        assert_eq!(denied_cmd.eval_perm(&agent), PermissionEvalResult::Deny);
+    }
+
+    #[test]
+    fn test_eval_perm_fine_grained_control() {
+        use crate::cli::agent::{Agent, PermissionEvalResult};
+
+        // Test fine-grained control when execute_bash is NOT in allowedTools
+        let agent_json = serde_json::json!({
+            "name": "test_agent",
+            "allowedTools": [],
+            "toolsSettings": {
+                "execute_bash": {
+                    "allowedCommands": ["git status", "ls.*"],
+                    "deniedCommands": ["rm"],
+                    "allowReadOnly": true
+                }
+            }
+        });
+
+        let agent: Agent = serde_json::from_value(agent_json).unwrap();
+
+        let allowed_cmd = ExecuteCommand {
+            command: "git status".to_string(),
+            summary: None,
+        };
+
+        let pattern_match_cmd = ExecuteCommand {
+            command: "ls -la".to_string(),
+            summary: None,
+        };
+
+        let readonly_cmd = ExecuteCommand {
+            command: "cat file.txt".to_string(),
+            summary: None,
+        };
+
+        let denied_cmd = ExecuteCommand {
+            command: "rm file.txt".to_string(),
+            summary: None,
+        };
+
+        let dangerous_cmd = ExecuteCommand {
+            command: "sudo dd if=/dev/zero of=/dev/sda".to_string(),
+            summary: None,
+        };
+
+        // Should allow command matching allowedCommands pattern
+        assert_eq!(allowed_cmd.eval_perm(&agent), PermissionEvalResult::Allow);
+
+        // Should allow command matching regex pattern
+        assert_eq!(pattern_match_cmd.eval_perm(&agent), PermissionEvalResult::Allow);
+
+        // Should allow readonly command when allowReadOnly is true
+        assert_eq!(readonly_cmd.eval_perm(&agent), PermissionEvalResult::Allow);
+
+        // Should deny command matching denied pattern
+        assert_eq!(denied_cmd.eval_perm(&agent), PermissionEvalResult::Deny);
+
+        // Should ask for dangerous command not matching any allowed pattern
+        assert_eq!(dangerous_cmd.eval_perm(&agent), PermissionEvalResult::Ask);
+    }
+
+    #[test]
+    fn test_eval_perm_default_behavior() {
+        use crate::cli::agent::{Agent, PermissionEvalResult};
+
+        // Test default behavior when no settings are configured
+        let agent = Agent::default();
+
+        let readonly_cmd = ExecuteCommand {
+            command: "ls -la".to_string(),
+            summary: None,
+        };
+
+        let dangerous_cmd = ExecuteCommand {
+            command: "sudo rm -rf /".to_string(),
+            summary: None,
+        };
+
+        // Should allow readonly command with default settings
+        assert_eq!(readonly_cmd.eval_perm(&agent), PermissionEvalResult::Allow);
+
+        // Should ask for dangerous command with default settings
+        assert_eq!(dangerous_cmd.eval_perm(&agent), PermissionEvalResult::Ask);
+    }
+
+    #[test]
+    fn test_eval_perm_invalid_settings() {
+        use crate::cli::agent::{Agent, PermissionEvalResult};
+
+        // Test behavior with invalid JSON settings
+        let agent_json = serde_json::json!({
+            "name": "test_agent",
+            "allowedTools": [],
+            "toolsSettings": {
+                "execute_bash": {
+                    "invalidField": "invalidValue"
+                }
+            }
+        });
+
+        let agent: Agent = serde_json::from_value(agent_json).unwrap();
+
+        let cmd = ExecuteCommand {
+            command: "sudo systemctl restart nginx".to_string(),
+            summary: None,
+        };
+
+        // Should ask when settings are invalid (falls back to safe behavior)
+        assert_eq!(cmd.eval_perm(&agent), PermissionEvalResult::Ask);
     }
 }
