@@ -34,7 +34,7 @@ Q_SESSION_TOKEN=$(echo $TEMP_CREDENTIALS | jq -r '.Credentials.SessionToken')
 
 # Download specific build from S3 based on commit hash
 echo "Downloading Amazon Q CLI build from S3..."
-S3_PREFIX="main/${GIT_HASH}/x86_64-unknown-linux-musl"
+S3_PREFIX="main/${GIT_HASH}/x86_64-unknown-linux-gnu"
 echo "Downloading qchat.zip from s3://.../${S3_PREFIX}/qchat.zip"
 
 # Try download, if hash is invalid we fail.
@@ -45,15 +45,20 @@ AWS_ACCESS_KEY_ID="$QCHAT_ACCESSKEY" AWS_SECRET_ACCESS_KEY="$Q_SECRET_ACCESS_KEY
 echo "Extracting qchat.zip..."
 unzip -q qchat.zip
 
-# move it to /usr/local/bin/qchat for path as qchat may not work otherwise
-if cp qchat /usr/local/bin/ && chmod +x /usr/local/bin/qchat; then
+# Extract and install - the executable is named chat_cli
+# qchat → runs /usr/local/bin/qchat directly → which is the chat_cli binary
+
+if [ -f "chat_cli" ]; then
+    cp chat_cli /usr/local/bin/qchat
     ln -sf /usr/local/bin/qchat /usr/local/bin/q
+    chmod +x /usr/local/bin/qchat
     echo "qchat installed successfully"
 else
-    echo "ERROR: Failed to install qchat"
+    echo "ERROR: chat_cli executable not found"
+    ls -la
     exit 1
 fi
 
 echo "Cleaning q zip"
 rm -f qchat.zip
-rm -rf qchat
+rm -rf q qchat
