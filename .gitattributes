@@ -2,3 +2,6 @@
 Cargo.toml text eol=lf
 Cargo.lock text eol=lf
 .gitignore text eol=lf
+
+# Git LFS tracking for model files
+models/*.zip filter=lfs diff=lfs merge=lfs -text
