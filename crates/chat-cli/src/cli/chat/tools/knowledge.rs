@@ -17,7 +17,6 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
-#[cfg(feature = "knowledge")]
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::knowledge_store::KnowledgeStore;
@@ -88,19 +87,10 @@ pub struct KnowledgeCancel {
 impl Knowledge {
     /// Checks if the knowledge feature is enabled in settings
     pub fn is_enabled(os: &Os) -> bool {
-        // Feature is only available when compiled with the knowledge feature flag
-        #[cfg(feature = "knowledge")]
-        {
-            os.database
-                .settings
-                .get_bool(Setting::EnabledKnowledge)
-                .unwrap_or(false)
-        }
-        #[cfg(not(feature = "knowledge"))]
-        {
-            let _ = os; // Suppress unused variable warning
-            false
-        }
+        os.database
+            .settings
+            .get_bool(Setting::EnabledKnowledge)
+            .unwrap_or(false)
     }
 
     pub async fn validate(&mut self, os: &Os) -> Result<()> {

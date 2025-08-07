@@ -3,7 +3,6 @@ pub mod compact;
 pub mod context;
 pub mod editor;
 pub mod hooks;
-#[cfg(feature = "knowledge")]
 pub mod knowledge;
 pub mod mcp;
 pub mod model;
@@ -20,7 +19,6 @@ use compact::CompactArgs;
 use context::ContextSubcommand;
 use editor::EditorArgs;
 use hooks::HooksArgs;
-#[cfg(feature = "knowledge")]
 use knowledge::KnowledgeSubcommand;
 use mcp::McpArgs;
 use model::ModelArgs;
@@ -58,9 +56,9 @@ pub enum SlashCommand {
     /// Manage context files for the chat session
     #[command(subcommand)]
     Context(ContextSubcommand),
-    /// (Beta) Manage knowledge base for persistent context storage
-    #[cfg(feature = "knowledge")]
-    #[command(subcommand)]
+    /// (Beta) Manage knowledge base for persistent context storage. Requires "q settings
+    /// chat.enableKnowledge true"
+    #[command(subcommand, hide = true)]
     Knowledge(KnowledgeSubcommand),
     /// Open $EDITOR (defaults to vi) to compose a prompt
     #[command(name = "editor")]
@@ -119,7 +117,6 @@ impl SlashCommand {
                 })
             },
             Self::Context(args) => args.execute(os, session).await,
-            #[cfg(feature = "knowledge")]
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
             Self::PromptEditor(args) => args.execute(session).await,
             Self::Compact(args) => args.execute(os, session).await,
@@ -159,7 +156,6 @@ impl SlashCommand {
             Self::Agent(_) => "agent",
             Self::Profile => "profile",
             Self::Context(_) => "context",
-            #[cfg(feature = "knowledge")]
             Self::Knowledge(_) => "knowledge",
             Self::PromptEditor(_) => "editor",
             Self::Compact(_) => "compact",
@@ -182,7 +178,6 @@ impl SlashCommand {
         match self {
             SlashCommand::Agent(sub) => Some(sub.name()),
             SlashCommand::Context(sub) => Some(sub.name()),
-            #[cfg(feature = "knowledge")]
             SlashCommand::Knowledge(sub) => Some(sub.name()),
             SlashCommand::Tools(arg) => arg.subcommand_name(),
             SlashCommand::Prompts(arg) => arg.subcommand_name(),

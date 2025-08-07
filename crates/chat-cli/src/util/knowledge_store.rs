@@ -159,7 +159,6 @@ impl KnowledgeStore {
     }
 
     /// Clear all contexts immediately (synchronous operation)
-    #[allow(dead_code)]
     pub async fn clear_immediate(&mut self) -> Result<String, String> {
         match self.client.clear_all_immediate().await {
             Ok(count) => Ok(format!("✅ Successfully cleared {} knowledge base entries", count)),
