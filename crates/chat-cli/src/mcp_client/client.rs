@@ -520,11 +520,6 @@ where
         method: &str,
         params: Option<serde_json::Value>,
     ) -> Result<JsonRpcResponse, ClientError> {
-        if method == "tools/call" {
-        }
-        if method == "tools/list" {
-        }
-        
         let send_map_err = |e: Elapsed| (e, method.to_string());
         let recv_map_err = |e: Elapsed| (e, format!("recv for {method}"));
         let mut id = self.get_id();
@@ -636,10 +631,6 @@ where
         }
         tracing::trace!(target: "mcp", "From {}:\n{:#?}", self.server_name, resp);
         
-        // Add debug logging for tools/list responses
-        if method == "tools/list" {
-        }
-        
         Ok(resp)
     }
 
@@ -661,7 +652,6 @@ where
     }
 
     /// Sets the API client for LLM integration
-    #[allow(dead_code)]
     pub fn set_api_client(&mut self, api_client: Arc<ApiClient>) {
         self.api_client = Some(api_client);
     }
