@@ -10,6 +10,7 @@ pub mod persist;
 pub mod profile;
 pub mod prompts;
 pub mod subscribe;
+pub mod theme;
 pub mod tools;
 pub mod usage;
 
@@ -25,6 +26,7 @@ use model::ModelArgs;
 use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
+use theme::ThemeArgs;
 use tools::ToolsArgs;
 
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
@@ -79,6 +81,8 @@ pub enum SlashCommand {
     Mcp(McpArgs),
     /// Select a model for the current conversation session
     Model(ModelArgs),
+    /// View and change color theme
+    Theme(ThemeArgs),
     /// Upgrade to a Q Developer Pro subscription for increased query limits
     Subscribe(SubscribeArgs),
     #[command(flatten)]
@@ -135,6 +139,7 @@ impl SlashCommand {
             Self::Usage(args) => args.execute(os, session).await,
             Self::Mcp(args) => args.execute(session).await,
             Self::Model(args) => args.execute(os, session).await,
+            Self::Theme(args) => args.execute(os, session).await,
             Self::Subscribe(args) => args.execute(os, session).await,
             Self::Persist(subcommand) => subcommand.execute(os, session).await,
             // Self::Root(subcommand) => {
@@ -166,6 +171,7 @@ impl SlashCommand {
             Self::Usage(_) => "usage",
             Self::Mcp(_) => "mcp",
             Self::Model(_) => "model",
+            Self::Theme(_) => "theme",
             Self::Subscribe(_) => "subscribe",
             Self::Persist(sub) => match sub {
                 PersistSubcommand::Save { .. } => "save",
