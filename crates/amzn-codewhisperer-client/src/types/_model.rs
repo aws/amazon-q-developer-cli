@@ -5,6 +5,8 @@
 pub struct Model {
     /// Unique identifier for the model
     pub model_id: ::std::string::String,
+    /// User-facing display name
+    pub model_name: ::std::option::Option<::std::string::String>,
     /// Description of the model
     pub description: ::std::option::Option<::std::string::String>,
     /// Limits on token usage for this model
@@ -17,6 +19,11 @@ impl Model {
     pub fn model_id(&self) -> &str {
         use std::ops::Deref;
         self.model_id.deref()
+    }
+
+    /// User-facing display name
+    pub fn model_name(&self) -> ::std::option::Option<&str> {
+        self.model_name.as_deref()
     }
 
     /// Description of the model
@@ -49,6 +56,7 @@ impl Model {
 #[non_exhaustive]
 pub struct ModelBuilder {
     pub(crate) model_id: ::std::option::Option<::std::string::String>,
+    pub(crate) model_name: ::std::option::Option<::std::string::String>,
     pub(crate) description: ::std::option::Option<::std::string::String>,
     pub(crate) token_limits: ::std::option::Option<crate::types::TokenLimits>,
     pub(crate) supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
@@ -70,6 +78,23 @@ impl ModelBuilder {
     /// Unique identifier for the model
     pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.model_id
+    }
+
+    /// User-facing display name
+    pub fn model_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.model_name = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// User-facing display name
+    pub fn set_model_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.model_name = input;
+        self
+    }
+
+    /// User-facing display name
+    pub fn get_model_name(&self) -> &::std::option::Option<::std::string::String> {
+        &self.model_name
     }
 
     /// Description of the model
@@ -144,6 +169,7 @@ impl ModelBuilder {
                     "model_id was not specified but it is required when building Model",
                 )
             })?,
+            model_name: self.model_name,
             description: self.description,
             token_limits: self.token_limits,
             supported_input_types: self.supported_input_types,

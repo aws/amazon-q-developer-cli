@@ -21,6 +21,7 @@ use crate::telemetry::definitions::metrics::{
     AmazonqStartChat,
     CodewhispererterminalAddChatMessage,
     CodewhispererterminalAgentConfigInit,
+    CodewhispererterminalAgentContribution,
     CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
@@ -49,6 +50,7 @@ pub struct Event {
     pub created_time: Option<SystemTime>,
     pub credential_start_url: Option<String>,
     pub sso_region: Option<String>,
+    pub client_application: Option<String>,
     #[serde(flatten)]
     pub ty: EventType,
 }
@@ -60,6 +62,7 @@ impl Event {
             created_time: Some(SystemTime::now()),
             credential_start_url: None,
             sso_region: None,
+            client_application: None,
         }
     }
 
@@ -69,6 +72,10 @@ impl Event {
 
     pub fn set_sso_region(&mut self, sso_region: String) {
         self.sso_region = Some(sso_region);
+    }
+
+    pub fn set_client_application(&mut self, client_application: String) {
+        self.client_application = Some(client_application);
     }
 
     pub fn into_metric_datum(self) -> Option<MetricDatum> {
@@ -107,6 +114,7 @@ impl Event {
                     credential_start_url: self.credential_start_url.map(Into::into),
                     codewhispererterminal_subcommand: Some(subcommand.into()),
                     codewhispererterminal_in_cloudshell: None,
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -209,6 +217,7 @@ impl Event {
                             .join(",")
                             .into(),
                     ),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -294,6 +303,8 @@ impl Event {
                 model,
                 execution_duration,
                 turn_duration,
+                aws_service_name,
+                aws_operation_name,
             } => Some(
                 CodewhispererterminalToolUseSuggested {
                     create_time: self.created_time,
@@ -323,6 +334,30 @@ impl Event {
                     codewhispererterminal_tool_turn_duration_ms: turn_duration
                         .map(|d| d.as_millis() as i64)
                         .map(Into::into),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
+                    codewhispererterminal_aws_service_name: aws_service_name.map(Into::into),
+                    codewhispererterminal_aws_operation_name: aws_operation_name.map(Into::into),
+                }
+                .into_metric_datum(),
+            ),
+            EventType::AgentContribution {
+                conversation_id,
+                utterance_id,
+                tool_use_id,
+                tool_name,
+                lines_by_agent,
+                lines_by_user,
+            } => Some(
+                CodewhispererterminalAgentContribution {
+                    create_time: self.created_time,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    value: None,
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_utterance_id: utterance_id.map(CodewhispererterminalUtteranceId),
+                    codewhispererterminal_tool_use_id: tool_use_id.map(CodewhispererterminalToolUseId),
+                    codewhispererterminal_tool_name: tool_name.map(CodewhispererterminalToolName),
+                    codewhispererterminal_lines_by_agent: lines_by_agent.map(|count| count as i64).map(Into::into),
+                    codewhispererterminal_lines_by_user: lines_by_user.map(|count| count as i64).map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -343,6 +378,7 @@ impl Event {
                     codewhispererterminal_tools_per_mcp_server: Some(CodewhispererterminalToolsPerMcpServer(
                         number_of_tools as i64,
                     )),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -368,7 +404,7 @@ impl Event {
                         legacy_profile_migration_executed.into(),
                     ),
                     codewhispererterminal_legacy_profile_migrated_count: Some(legacy_profile_migrated_count.into()),
-                    codewhispererterminal_launched_agent: launched_agent.map(Into::into),
+                    codewhispererterminal_launched_agent: Some(launched_agent.into()),
                 }
                 .into_metric_datum(),
             ),
@@ -431,6 +467,7 @@ impl Event {
                     status_code: status_code.map(|v| v as i64).map(Into::into),
                     request_id: request_id.map(Into::into),
                     codewhispererterminal_utterance_id: message_id.map(Into::into),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -502,7 +539,7 @@ pub struct AgentConfigInitArgs {
     pub agents_loaded_failed_count: i64,
     pub legacy_profile_migration_executed: bool,
     pub legacy_profile_migrated_count: i64,
-    pub launched_agent: Option<String>,
+    pub launched_agent: String,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -562,6 +599,16 @@ pub enum EventType {
         model: Option<String>,
         execution_duration: Option<Duration>,
         turn_duration: Option<Duration>,
+        aws_service_name: Option<String>,
+        aws_operation_name: Option<String>,
+    },
+    AgentContribution {
+        conversation_id: String,
+        utterance_id: Option<String>,
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+        lines_by_agent: Option<isize>,
+        lines_by_user: Option<isize>,
     },
     McpServerInit {
         conversation_id: String,
@@ -617,6 +664,8 @@ pub struct ToolUseEventBuilder {
     pub model: Option<String>,
     pub execution_duration: Option<Duration>,
     pub turn_duration: Option<Duration>,
+    pub aws_service_name: Option<String>,
+    pub aws_operation_name: Option<String>,
 }
 
 impl ToolUseEventBuilder {
@@ -639,6 +688,8 @@ impl ToolUseEventBuilder {
             model,
             execution_duration: None,
             turn_duration: None,
+            aws_service_name: None,
+            aws_operation_name: None,
         }
     }
 

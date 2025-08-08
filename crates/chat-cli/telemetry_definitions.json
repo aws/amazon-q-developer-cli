@@ -96,6 +96,16 @@
       "description": "Comma-delimited tool name(s) of the tool uses requested by the model."
     },
     {
+      "name": "codewhispererterminal_AwsServiceName",
+      "type": "string",
+      "description": "AWS service called by the tool"
+    },
+    {
+      "name": "codewhispererterminal_AwsOperationName",
+      "type": "string",
+      "description": "Specific operation of the AWS service invoked by the tool"
+    },
+    {
       "name": "codewhispererterminal_isToolUseAccepted",
       "type": "boolean",
       "description": "Denotes if a tool use event has been fulfilled"
@@ -248,6 +258,21 @@
       "name": "codewhispererterminal_launchedAgent",
       "type": "string",
       "description": "The name of the agent launched by the user on startup"
+    },
+    {
+      "name": "codewhispererterminal_clientApplication",
+      "type": "string",
+      "description": "Identifier for the client application or service using the chat-cli"
+    },
+    {
+      "name": "codewhispererterminal_linesByAgent",
+      "type": "int",
+      "description": "The number of lines of code contributed by agent"
+    },
+    {
+      "name": "codewhispererterminal_linesByUser",
+      "type": "int",
+      "description": "The number of lines of code contributed by user"
     }
   ],
   "metrics": [
@@ -283,7 +308,8 @@
         { "type": "codewhispererterminal_toolUseId", "required": false },
         { "type": "codewhispererterminal_toolName", "required": false },
         { "type": "codewhispererterminal_assistantResponseLength", "required": false },
-        { "type": "codewhispererterminal_chatMessageMetaTags", "required": false }
+        { "type": "codewhispererterminal_chatMessageMetaTags", "required": false },
+        { "type": "codewhispererterminal_clientApplication" }
       ]
     },
     {
@@ -348,7 +374,8 @@
       "metadata": [
         { "type": "credentialStartUrl" },
         { "type": "codewhispererterminal_subcommand" },
-        { "type": "codewhispererterminal_inCloudshell" }
+        { "type": "codewhispererterminal_inCloudshell" },
+        { "type": "codewhispererterminal_clientApplication" }
       ]
     },
     {
@@ -394,7 +421,24 @@
         { "type": "codewhispererterminal_model" },
         { "type": "codewhispererterminal_toolExecutionDurationMs", "required": false },
         { "type": "codewhispererterminal_toolTurnDurationMs", "required": false },
-        { "type": "codewhispererterminal_isToolUseTrusted", "required": false }
+        { "type": "codewhispererterminal_isToolUseTrusted", "required": false },
+        { "type": "codewhispererterminal_clientApplication" },
+        { "type": "codewhispererterminal_AwsServiceName", "required": false },
+        { "type": "codewhispererterminal_AwsOperationName", "required": false }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_agentContribution",
+      "description": "Emitted after write tool to track agent contribution for the file",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl" },
+        { "type": "amazonqConversationId" },
+        { "type": "codewhispererterminal_utteranceId" },
+        { "type": "codewhispererterminal_toolUseId" },
+        { "type": "codewhispererterminal_toolName" },
+        { "type": "codewhispererterminal_linesByAgent" },
+        { "type": "codewhispererterminal_linesByUser" }
       ]
     },
     {
@@ -409,7 +453,8 @@
           "type": "codewhispererterminal_mcpServerInitFailureReason",
           "required": false
         },
-        { "type": "codewhispererterminal_toolsPerMcpServer" }
+        { "type": "codewhispererterminal_toolsPerMcpServer" },
+        { "type": "codewhispererterminal_clientApplication" }
       ]
     },
     {
@@ -423,7 +468,7 @@
         { "type": "codewhispererterminal_agentsFailedToLoadCount" },
         { "type": "codewhispererterminal_legacyProfileMigrationExecuted", "required": false },
         { "type": "codewhispererterminal_legacyProfileMigratedCount", "required": false },
-        { "type": "codewhispererterminal_launchedAgent", "required": false }
+        { "type": "codewhispererterminal_launchedAgent" }
       ]
     },
     {
@@ -464,7 +509,8 @@
           { "type": "result" },
           { "type": "reason", "required": false },
           { "type": "reasonDesc", "required": false },
-          { "type": "statusCode", "required": false }
+          { "type": "statusCode", "required": false },
+          { "type": "codewhispererterminal_clientApplication" }
       ]
     }
   ]

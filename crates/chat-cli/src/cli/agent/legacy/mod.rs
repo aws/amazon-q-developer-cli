@@ -79,7 +79,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
     };
 
     let mcp_servers = {
-        let config_path = directories::chat_legacy_mcp_config(os)?;
+        let config_path = directories::chat_legacy_global_mcp_config(os)?;
         if os.fs.exists(&config_path) {
             match McpServerConfig::load_from_file(os, config_path).await {
                 Ok(mut config) => {

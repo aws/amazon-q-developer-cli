@@ -5,11 +5,18 @@
 pub struct SetUserPreferenceInput {
     #[allow(missing_docs)] // documentation missing in model
     pub overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl SetUserPreferenceInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn overage_configuration(&self) -> ::std::option::Option<&crate::types::OverageConfiguration> {
         self.overage_configuration.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 }
 impl SetUserPreferenceInput {
@@ -26,6 +33,7 @@ impl SetUserPreferenceInput {
 #[non_exhaustive]
 pub struct SetUserPreferenceInputBuilder {
     pub(crate) overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl SetUserPreferenceInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -48,6 +56,23 @@ impl SetUserPreferenceInputBuilder {
         &self.overage_configuration
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`SetUserPreferenceInput`](crate::operation::set_user_preference::SetUserPreferenceInput).
     pub fn build(
@@ -58,6 +83,7 @@ impl SetUserPreferenceInputBuilder {
     > {
         ::std::result::Result::Ok(crate::operation::set_user_preference::SetUserPreferenceInput {
             overage_configuration: self.overage_configuration,
+            profile_arn: self.profile_arn,
         })
     }
 }

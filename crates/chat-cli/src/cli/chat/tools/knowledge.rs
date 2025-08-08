@@ -10,6 +10,10 @@ use super::{
     InvokeOutput,
     OutputKind,
 };
+use crate::cli::agent::{
+    Agent,
+    PermissionEvalResult,
+};
 use crate::cli::chat::colors::ColorManager;
 use crate::database::settings::{Setting, Settings};
 use crate::os::Os;
@@ -406,6 +410,15 @@ impl Knowledge {
         Ok(InvokeOutput {
             output: OutputKind::Text(result),
         })
+    }
+
+    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+        _ = self;
+        if agent.allowed_tools.contains("knowledge") {
+            PermissionEvalResult::Allow
+        } else {
+            PermissionEvalResult::Ask
+        }
     }
 
     /// Format status data for display (UI rendering responsibility)

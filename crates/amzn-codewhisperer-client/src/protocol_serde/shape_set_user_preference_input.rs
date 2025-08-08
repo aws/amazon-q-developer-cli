@@ -9,5 +9,8 @@ pub fn ser_set_user_preference_input_input(
         crate::protocol_serde::shape_overage_configuration::ser_overage_configuration(&mut object_2, var_1)?;
         object_2.finish();
     }
+    if let Some(var_3) = &input.profile_arn {
+        object.key("profileArn").string(var_3.as_str());
+    }
     Ok(())
 }

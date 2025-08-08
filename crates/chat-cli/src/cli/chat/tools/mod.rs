@@ -11,6 +11,7 @@ use std::borrow::{
     Borrow,
     Cow,
 };
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{
     Path,
@@ -44,6 +45,7 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
@@ -103,15 +105,20 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.eval_perm(agent),
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
-            Tool::Knowledge(_) => PermissionEvalResult::Ask,
+            Tool::Knowledge(knowledge) => knowledge.eval_perm(agent),
         }
     }
 
     /// Invokes the tool asynchronously
-    pub async fn invoke(&self, os: &Os, stdout: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(
+        &self,
+        os: &Os,
+        stdout: &mut impl Write,
+        line_tracker: &mut HashMap<String, FileLineTracker>,
+    ) -> Result<InvokeOutput> {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
-            Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout).await,
+            Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout, line_tracker).await,
             Tool::ExecuteCommand(execute_command) => execute_command.invoke(stdout).await,
             Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
@@ -146,6 +153,15 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
+        }
+    }
+
+    /// Returns additional information about the tool if available
+    pub fn get_additional_info(&self) -> Option<serde_json::Value> {
+        match self {
+            Tool::UseAws(use_aws) => Some(use_aws.get_additional_info()),
+            // Add other tool types here as they implement get_additional_info()
+            _ => None,
         }
     }
 }

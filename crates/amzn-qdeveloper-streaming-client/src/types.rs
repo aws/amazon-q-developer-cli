@@ -2,6 +2,7 @@
 pub use crate::types::_access_denied_exception_reason::AccessDeniedExceptionReason;
 pub use crate::types::_action::Action;
 pub use crate::types::_additional_content_entry::AdditionalContentEntry;
+pub use crate::types::_agent_task_type::AgentTaskType;
 pub use crate::types::_alert::Alert;
 pub use crate::types::_alert_component::AlertComponent;
 pub use crate::types::_alert_type::AlertType;
@@ -117,6 +118,8 @@ mod _access_denied_exception_reason;
 mod _action;
 
 mod _additional_content_entry;
+
+mod _agent_task_type;
 
 mod _alert;
 
