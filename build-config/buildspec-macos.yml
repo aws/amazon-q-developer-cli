@@ -25,19 +25,11 @@ phases:
       - eval "$(mise activate zsh --shims)"
       # Install python deps
       - python3 -m venv scripts/.env
-<<<<<<< HEAD
       - source build-scripts/.env/bin/activate
       - pip3 install -r build-scripts/requirements.txt
   build:
     commands:
       - python3 build-scripts/qchatmain.py build --skip-lints --skip-tests --not-release
-=======
-      - source scripts/.env/bin/activate
-      - pip3 install -r scripts/requirements.txt
-  build:
-    commands:
-      - python3 scripts/main.py build
->>>>>>> f27a0bb9194e533a13f203113b20ee5fa5688cc5
 
 artifacts:
   discard-paths: "yes"
