@@ -78,6 +78,7 @@ pub enum ThemeName {
     Default,
     HighContrast,
     Light,
+    Nord,
 }
 
 impl ThemeName {
@@ -86,7 +87,17 @@ impl ThemeName {
             "default" => Some(Self::Default),
             "high-contrast" | "high_contrast" => Some(Self::HighContrast),
             "light" => Some(Self::Light),
+            "nord" => Some(Self::Nord),
             _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::HighContrast => "high-contrast",
+            Self::Light => "light",
+            Self::Nord => "nord",
         }
     }
 }
@@ -153,6 +164,20 @@ impl ColorTheme {
         }
     }
 
+    /// Nord theme - Arctic, north-bluish color palette
+    pub fn nord_theme() -> Self {
+        Self {
+            success: Color::Rgb { r: 163, g: 190, b: 140 }, // Nord14
+            error: Color::Rgb { r: 191, g: 97, b: 106 },    // Nord11
+            warning: Color::Rgb { r: 235, g: 203, b: 139 }, // Nord13
+            info: Color::Rgb { r: 129, g: 161, b: 193 },    // Nord10
+            secondary: Color::Rgb { r: 76, g: 86, b: 106 }, // Nord3
+            primary: Color::Rgb { r: 136, g: 192, b: 208 }, // Nord8
+            action: Color::Rgb { r: 180, g: 142, b: 173 },  // Nord15
+            data: Color::Rgb { r: 94, g: 129, b: 172 },     // Nord9
+        }
+    }
+
     /// Get color for a specific category
     pub fn get_color(&self, category: ColorCategory) -> Color {
         match category {
@@ -176,6 +201,7 @@ impl ColorTheme {
                     ThemeName::Default => Self::default_theme(),
                     ThemeName::HighContrast => Self::high_contrast_theme(),
                     ThemeName::Light => Self::light_theme(),
+                    ThemeName::Nord => Self::nord_theme(),
                 };
                 
                 // Apply any individual color overrides on top of the base theme
@@ -359,6 +385,17 @@ impl Settings {
     /// Get the current color theme
     pub fn get_color_theme(&self) -> ColorTheme {
         ColorTheme::from_settings(self)
+    }
+
+    /// Set the theme by name
+    pub async fn set_theme(&mut self, theme: ThemeName) -> Result<(), DatabaseError> {
+        self.set(Setting::ChatTheme, theme.as_str()).await
+    }
+
+    /// Get the current theme name
+    pub fn get_theme(&self) -> Option<ThemeName> {
+        self.get_string(Setting::ChatTheme)
+            .and_then(|s| ThemeName::from_str(&s))
     }
 
     pub async fn save_to_file(&self) -> Result<(), DatabaseError> {
