@@ -30,6 +30,7 @@ use super::context::{
     ContextManager,
     calc_max_context_files_size,
 };
+use super::line_tracker::FileLineTracker;
 use super::message::{
     AssistantMessage,
     ToolUseResult,
@@ -109,6 +110,8 @@ pub struct ConversationState {
     /// Model explicitly selected by the user in this conversation state via `/model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default)]
+    pub file_line_tracker: HashMap<String, FileLineTracker>,
 }
 
 impl ConversationState {
@@ -150,6 +153,7 @@ impl ConversationState {
             latest_summary: None,
             agents,
             model: current_model_id,
+            file_line_tracker: HashMap::new(),
         }
     }
 
