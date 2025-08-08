@@ -2795,6 +2795,54 @@ impl ChatSession {
             tracing::warn!("Failed to send slash command telemetry: {}", e);
         }
     }
+
+    /// Prompts Q to resume a to-do list with the given id by calling the load
+    /// command of the todo_list tool
+    pub async fn resume_todo(&mut self, os: &mut Os, id: &str) -> Result<()> {
+        let request_state = self.conversation.create_todo_request(os, id).await;
+        match request_state {
+            Ok(state) => {
+                self.conversation.reset_next_user_message();
+                self.conversation
+                    .set_next_user_message(state.user_input_message.content)
+                    .await;
+            },
+            Err(_) => bail!("Todo could not be resumed"),
+        };
+
+        let conv_state = self
+            .conversation
+            .as_sendable_conversation_state(os, &mut self.stderr, false)
+            .await?;
+
+        let request_metadata: Arc<Mutex<Option<RequestMetadata>>> = Arc::new(Mutex::new(None));
+        let request_metadata_clone = Arc::clone(&request_metadata);
+
+        let mut response = match self.send_message(os, conv_state, request_metadata_clone, None).await {
+            Ok(res) => res,
+            Err(_) => bail!("Turn summary could not be created"),
+        };
+
+        // Since this is an internal tool call, manually handle the tool requests from Q
+        let mut tool_uses = Vec::new();
+        while let Some(res) = response.recv().await {
+            let res = res?;
+            match res {
+                parser::ResponseEvent::AssistantText(_) => (),
+                parser::ResponseEvent::EndStream { .. } => break,
+                parser::ResponseEvent::ToolUse(e) => tool_uses.push(e),
+                parser::ResponseEvent::ToolUseStart { .. } => (),
+            }
+        }
+        if !tool_uses.is_empty() {
+            self.validate_tools(os, tool_uses).await?;
+        }
+
+        // FIX: hacky? not really sure how this works honestly LOL
+        self.conversation.reset_next_user_message();
+
+        Ok(())
+    }
 }
 
 /// Replaces amzn_codewhisperer_client::types::SubscriptionStatus with a more descriptive type.
@@ -2855,7 +2903,7 @@ async fn get_subscription_status_with_spinner(
     .await;
 }
 
-async fn with_spinner<T, E, F, Fut>(output: &mut impl std::io::Write, spinner_text: &str, f: F) -> Result<T, E>
+pub async fn with_spinner<T, E, F, Fut>(output: &mut impl std::io::Write, spinner_text: &str, f: F) -> Result<T, E>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,

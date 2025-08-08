@@ -5,6 +5,7 @@ pub mod fs_write;
 pub mod gh_issue;
 pub mod knowledge;
 pub mod thinking;
+pub mod todo;
 pub mod use_aws;
 
 use std::borrow::{
@@ -35,6 +36,7 @@ use serde::{
     Serialize,
 };
 use thinking::Thinking;
+use todo::TodoInput;
 use tracing::error;
 use use_aws::UseAws;
 
@@ -73,6 +75,7 @@ pub enum Tool {
     GhIssue(GhIssue),
     Knowledge(Knowledge),
     Thinking(Thinking),
+    Todo(TodoInput),
 }
 
 impl Tool {
@@ -90,6 +93,7 @@ impl Tool {
             Tool::GhIssue(_) => "gh_issue",
             Tool::Knowledge(_) => "knowledge",
             Tool::Thinking(_) => "thinking (prerelease)",
+            Tool::Todo(_) => "todo_list",
         }
         .to_owned()
     }
@@ -105,6 +109,7 @@ impl Tool {
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(agent),
+            Tool::Todo(_) => PermissionEvalResult::Allow,
         }
     }
 
@@ -124,6 +129,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
+            Tool::Todo(todo) => todo.invoke(os, stdout).await,
         }
     }
 
@@ -138,6 +144,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
             Tool::Thinking(thinking) => thinking.queue_description(output),
+            Tool::Todo(_) => Ok(()),
         }
     }
 
@@ -152,6 +159,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
+            Tool::Todo(todo) => todo.validate(os).await,
         }
     }
 

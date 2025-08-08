@@ -10,6 +10,7 @@ pub mod persist;
 pub mod profile;
 pub mod prompts;
 pub mod subscribe;
+pub mod todos;
 pub mod tools;
 pub mod usage;
 
@@ -25,6 +26,7 @@ use model::ModelArgs;
 use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
+use todos::TodoSubcommand;
 use tools::ToolsArgs;
 
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
@@ -85,6 +87,9 @@ pub enum SlashCommand {
     Persist(PersistSubcommand),
     // #[command(flatten)]
     // Root(RootSubcommand),
+    /// View, manage, and resume to-do lists
+    #[command(subcommand)]
+    Todos(TodoSubcommand),
 }
 
 impl SlashCommand {
@@ -146,6 +151,7 @@ impl SlashCommand {
             //         skip_printing_tools: true,
             //     })
             // },
+            Self::Todos(subcommand) => subcommand.execute(os, session).await,
         }
     }
 
@@ -171,6 +177,7 @@ impl SlashCommand {
                 PersistSubcommand::Save { .. } => "save",
                 PersistSubcommand::Load { .. } => "load",
             },
+            Self::Todos(_) => "todos",
         }
     }
 
