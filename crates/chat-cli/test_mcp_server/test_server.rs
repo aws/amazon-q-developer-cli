@@ -10,12 +10,12 @@ use chat_cli::{
     self,
     JsonRpcRequest,
     JsonRpcResponse,
-    JsonRpcStdioTransport,
     PreServerRequestHandler,
     Response,
     Server,
     ServerError,
     ServerRequestHandler,
+    stdio::JsonRpcStdioTransport,
 };
 use tokio::sync::Mutex;
 

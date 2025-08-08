@@ -175,7 +175,7 @@ impl<T: Transport> Clone for Client<T> {
 }
 
 impl Client<StdioTransport> {
-    pub fn from_config(config: ClientConfig) -> Result<Self, ClientError> {
+    pub fn from_config(config: ClientConfig, api_client: Option<Arc<ApiClient>>) -> Result<Self, ClientError> {
         let ClientConfig {
             server_name,
             bin_path,
@@ -236,7 +236,7 @@ impl Client<StdioTransport> {
             prompt_gets: Arc::new(SyncRwLock::new(HashMap::new())),
             is_prompts_out_of_date: Arc::new(AtomicBool::new(false)),
             sampling_enabled,
-            api_client: None, // Will be set later via set_api_client
+            api_client,
         })
     }
 
@@ -651,11 +651,6 @@ where
         )
     }
 
-    /// Sets the API client for LLM integration
-    pub fn set_api_client(&mut self, api_client: Arc<ApiClient>) {
-        self.api_client = Some(api_client);
-    }
-
     /// Converts MCP sampling request to Amazon Q conversation format
     fn convert_sampling_to_conversation(
         sampling_request: &super::facilitator_types::SamplingCreateMessageRequest,
@@ -776,8 +771,7 @@ where
         let response_text = if content_parts.is_empty() {
             "I apologize, but I couldn't generate a response for your request.".to_string()
         } else {
-            let combined_text = content_parts.join("");
-            combined_text
+            content_parts.join("")
         };
 
         Ok(SamplingCreateMessageResponse {
@@ -797,7 +791,7 @@ where
         }
 
         // Validate and parse the request
-        let sampling_request = self.parse_sampling_request(request)?;
+        let sampling_request = Self::parse_sampling_request(request)?;
 
         // Check API client availability and process request
         match &self.api_client {
@@ -805,7 +799,7 @@ where
                 self.process_sampling_with_api(request, &sampling_request, api_client).await
             },
             None => {
-                Ok(self.create_fallback_response(request))
+                Ok(Self::create_fallback_response(request))
             },
         }
     }
@@ -828,7 +822,7 @@ where
     }
 
     /// Parses and validates the sampling request
-    fn parse_sampling_request(&self, request: &JsonRpcRequest) -> Result<super::facilitator_types::SamplingCreateMessageRequest, ClientError> {
+    fn parse_sampling_request(request: &JsonRpcRequest) -> Result<super::facilitator_types::SamplingCreateMessageRequest, ClientError> {
         if request.method != "sampling/createMessage" {
             return Err(ClientError::NegotiationError(format!(
                 "Unsupported sampling method: {}. Expected 'sampling/createMessage'",
@@ -845,7 +839,7 @@ where
     }
 
     /// Creates a fallback response when API client is unavailable
-    fn create_fallback_response(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+    fn create_fallback_response(request: &JsonRpcRequest) -> JsonRpcResponse {
         let response = super::facilitator_types::SamplingCreateMessageResponse {
             role: super::facilitator_types::Role::Assistant,
             content: super::facilitator_types::SamplingContent::Text {
@@ -858,7 +852,7 @@ where
         JsonRpcResponse {
             jsonrpc: request.jsonrpc.clone(),
             id: request.id,
-            result: Some(self.convert_sampling_response_to_json(&response)),
+            result: Some(Self::convert_sampling_response_to_json(&response)),
             error: None,
         }
     }
@@ -879,7 +873,7 @@ where
                 self.handle_successful_api_response(request, api_response).await
             },
             Err(api_error) => {
-                Ok(self.create_error_response(request, &format!("I encountered an error while processing your request: {}", api_error), "error"))
+                Ok(Self::create_error_response(request, &format!("I encountered an error while processing your request: {}", api_error), "error"))
             },
         }
     }
@@ -895,18 +889,18 @@ where
                 Ok(JsonRpcResponse {
                     jsonrpc: request.jsonrpc.clone(),
                     id: request.id,
-                    result: Some(self.convert_sampling_response_to_json(&sampling_response)),
+                    result: Some(Self::convert_sampling_response_to_json(&sampling_response)),
                     error: None,
                 })
             },
             Err(conversion_error) => {
-                Ok(self.create_error_response(request, &format!("Error processing LLM response: {}", conversion_error), "conversion_error"))
+                Ok(Self::create_error_response(request, &format!("Error processing LLM response: {}", conversion_error), "conversion_error"))
             },
         }
     }
 
     /// Creates an error response in MCP sampling format
-    fn create_error_response(&self, request: &JsonRpcRequest, error_message: &str, stop_reason: &str) -> JsonRpcResponse {
+    fn create_error_response(request: &JsonRpcRequest, error_message: &str, stop_reason: &str) -> JsonRpcResponse {
         let error_response = super::facilitator_types::SamplingCreateMessageResponse {
             role: super::facilitator_types::Role::Assistant,
             content: super::facilitator_types::SamplingContent::Text {
@@ -919,13 +913,13 @@ where
         JsonRpcResponse {
             jsonrpc: request.jsonrpc.clone(),
             id: request.id,
-            result: Some(self.convert_sampling_response_to_json(&error_response)),
+            result: Some(Self::convert_sampling_response_to_json(&error_response)),
             error: None,
         }
     }
 
     /// Converts SamplingCreateMessageResponse to JSON format
-    fn convert_sampling_response_to_json(&self, response: &super::facilitator_types::SamplingCreateMessageResponse) -> serde_json::Value {
+    fn convert_sampling_response_to_json(response: &super::facilitator_types::SamplingCreateMessageResponse) -> serde_json::Value {
         let content_obj = match &response.content {
             super::facilitator_types::SamplingContent::Text { text } => {
                 serde_json::json!({"type": "text", "text": text})
@@ -1120,8 +1114,8 @@ mod tests {
             },
             sampling_enabled: false, // Disable sampling for main test
         };
-        let mut client_one = Client::<StdioTransport>::from_config(client_config_one).expect("Failed to create client");
-        let mut client_two = Client::<StdioTransport>::from_config(client_config_two).expect("Failed to create client");
+        let mut client_one = Client::<StdioTransport>::from_config(client_config_one, None).expect("Failed to create client");
+        let mut client_two = Client::<StdioTransport>::from_config(client_config_two, None).expect("Failed to create client");
         let client_one_cap = ClientCapabilities::from(client_info_one);
         let client_two_cap = ClientCapabilities::from(client_info_two);
 
@@ -1560,7 +1554,7 @@ mod tests {
             };
 
             // Use from_config to create the client
-            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+            let client = Client::<StdioTransport>::from_config(client_config, None).unwrap();
 
             // Create a sampling request
             let sampling_request = SamplingCreateMessageRequest {
@@ -1630,7 +1624,7 @@ mod tests {
                 sampling_enabled: true, // Enable sampling for test
             };
 
-            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+            let client = Client::<StdioTransport>::from_config(client_config, None).unwrap();
 
             let request = JsonRpcRequest {
                 jsonrpc: JsonRpcVersion::default(),
@@ -1669,7 +1663,7 @@ mod tests {
                 sampling_enabled: true, // Enable sampling for test
             };
 
-            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+            let client = Client::<StdioTransport>::from_config(client_config, None).unwrap();
 
             let request = JsonRpcRequest {
                 jsonrpc: JsonRpcVersion::default(),
@@ -1708,7 +1702,7 @@ mod tests {
                 sampling_enabled: true, // Enable sampling for test
             };
 
-            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+            let client = Client::<StdioTransport>::from_config(client_config, None).unwrap();
 
             let request = JsonRpcRequest {
                 jsonrpc: JsonRpcVersion::default(),
@@ -1749,7 +1743,7 @@ mod tests {
                 sampling_enabled: false, // Disable sampling
             };
 
-            let client = Client::<StdioTransport>::from_config(client_config).unwrap();
+            let client = Client::<StdioTransport>::from_config(client_config, None).unwrap();
 
             let sampling_request = SamplingCreateMessageRequest {
                 messages: vec![SamplingMessage {

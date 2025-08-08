@@ -28,7 +28,6 @@ use crate::mcp_client::{
     Client as McpClient,
     ClientConfig as McpClientConfig,
     JsonRpcResponse,
-    JsonRpcStdioTransport,
     MessageContent,
     Messenger,
     PromptGet,
@@ -128,7 +127,7 @@ impl CustomToolClient {
             env: processed_env,
             sampling_enabled,
         };
-        let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
+        let client = McpClient::<StdioTransport>::from_config(mcp_client_config, Some(std::sync::Arc::new(os.client.clone())))?;
         Ok(CustomToolClient::Stdio {
             server_name,
             client,
@@ -153,14 +152,6 @@ impl CustomToolClient {
                 // So don't worry about the tidiness for now
                 server_capabilities.write().await.replace(cap);
                 Ok(())
-            },
-        }
-    }
-
-    pub fn set_api_client(&mut self, api_client: std::sync::Arc<crate::api_client::ApiClient>) {
-        match self {
-            CustomToolClient::Stdio { client, .. } => {
-                client.set_api_client(api_client);
             },
         }
     }

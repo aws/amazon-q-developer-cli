@@ -52,7 +52,7 @@ async fn test_mcp_sampling_with_test_server() {
     };
     
     // Create and connect the client
-    let mut client = Client::<StdioTransport>::from_config(client_config)
+    let mut client = Client::<StdioTransport>::from_config(client_config, None)
         .expect("Failed to create client");
     
     // Run the test with timeout like the working test
