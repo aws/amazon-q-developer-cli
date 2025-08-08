@@ -1,12 +1,23 @@
+pub mod bash_preprocessor; // NEW: Add bash preprocessor module
+pub mod command_analytics; // NEW: Add command analytics module
+pub mod command_crud; // NEW: Add command CRUD operations module
+pub mod command_frontmatter; // NEW: Add command frontmatter module
+pub mod command_import_export; // NEW: Add command import/export module
+pub mod command_manager; // NEW: Add command manager module
+pub mod command_templates; // NEW: Add command templates module
+pub mod command_types; // NEW: Add command types module
 pub mod consts;
 pub mod directories;
 pub mod knowledge_store;
+pub mod metrics_collector; // NEW: Add metrics collector module
 pub mod open;
 pub mod process;
 pub mod spinner;
 pub mod system_info;
+pub mod template_registry; // NEW: Add template registry module
 #[cfg(test)]
 pub mod test;
+pub mod usage_tracker; // NEW: Add usage tracker module
 
 use std::fmt::Display;
 use std::io::{
