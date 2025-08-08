@@ -92,7 +92,7 @@ security-framework = "3.2.0"
 semantic_search_client = { path = "crates/semantic-search-client" }
 semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive", "rc"] }
-serde_json = { version = "1.0.140", features = ["preserve_order"] }
+serde_json = { version = "1.0.142", features = ["preserve_order"] }
 sha2 = "0.10.9"
 shell-color = "1.0.0"
 shell-words = "1.1.0"
