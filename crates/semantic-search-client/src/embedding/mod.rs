@@ -21,7 +21,10 @@ pub use bm25::BM25TextEmbedder;
 #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 pub use candle::CandleTextEmbedder;
 #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
-pub use candle_models::ModelType;
+pub use candle_models::{
+    ModelConfig,
+    ModelType,
+};
 #[cfg(test)]
 pub use mock::MockTextEmbedder;
 pub use trait_def::{

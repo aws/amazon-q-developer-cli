@@ -108,10 +108,7 @@ impl AsyncSemanticSearchClient {
                 use crate::embedding::ModelType;
 
                 let model_config = ModelType::default().get_config();
-                let (model_path, tokenizer_path) = model_config.get_local_paths();
-                if model_path.exists() && tokenizer_path.exists() {
-                    return Ok(());
-                }
+                let (model_path, _tokenizer_path) = model_config.get_local_paths();
 
                 // Create model directory if it doesn't exist
                 if let Some(parent) = model_path.parent() {
@@ -134,7 +131,7 @@ impl AsyncSemanticSearchClient {
                 // Create hosted model client and download with progress bar
                 let client = HostedModelClient::new(base_url.clone());
                 client
-                    .ensure_model(&model_config.name, target_dir)
+                    .ensure_model(&model_config, target_dir)
                     .await
                     .map_err(|e| SemanticSearchError::EmbeddingError(format!("Failed to download model: {}", e)))?;
 
