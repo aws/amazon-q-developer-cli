@@ -192,9 +192,21 @@ impl ExecuteCommand {
         }
 
         let Self { command, .. } = self;
-        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        let is_in_allowlist = agent.allowed_tools.contains("execute_bash");
-        match agent.tools_settings.get(tool_name) {
+        
+        // Detect the actual shell dynamically
+        let detected_shell = if cfg!(windows) {
+            "cmd".to_string()
+        } else {
+            // Use the same shell detection logic as tool creation
+            let shell = crate::cli::chat::tool_manager::detect_shell_for_execute();
+            eprintln!("DEBUG: Execute module detected shell: {}", shell);
+            shell
+        };
+        
+        let tool_name = format!("execute_{}", detected_shell);
+        eprintln!("DEBUG: Execute module using tool_name: {}", tool_name);
+        let is_in_allowlist = agent.allowed_tools.contains(&tool_name) || agent.allowed_tools.contains("execute_bash");
+        match agent.tools_settings.get(tool_name.as_str()).or_else(|| agent.tools_settings.get("execute_bash")) {
             Some(settings) if is_in_allowlist => {
                 let Settings {
                     allowed_commands,
@@ -203,7 +215,7 @@ impl ExecuteCommand {
                 } = match serde_json::from_value::<Settings>(settings.clone()) {
                     Ok(settings) => settings,
                     Err(e) => {
-                        error!("Failed to deserialize tool settings for execute_bash: {:?}", e);
+                        error!("Failed to deserialize tool settings for {}: {:?}", tool_name, e);
                         return PermissionEvalResult::Ask;
                     },
                 };

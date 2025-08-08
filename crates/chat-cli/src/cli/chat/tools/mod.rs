@@ -46,13 +46,12 @@ use crate::cli::agent::{
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
-pub const NATIVE_TOOLS: [&str; 7] = [
+pub const NATIVE_TOOLS: [&str; 6] = [
     "fs_read",
     "fs_write",
     #[cfg(windows)]
     "execute_cmd",
-    #[cfg(not(windows))]
-    "execute_bash",
+    // Note: execute_bash removed - shell-specific tools are now created dynamically
     "use_aws",
     "gh_issue",
     "knowledge",
@@ -82,7 +81,18 @@ impl Tool {
             #[cfg(windows)]
             Tool::ExecuteCommand(_) => "execute_cmd",
             #[cfg(not(windows))]
-            Tool::ExecuteCommand(_) => "execute_bash",
+            Tool::ExecuteCommand(_) => {
+                // Use the same unified shell detection as tool creation and execution
+                #[cfg(not(windows))]
+                {
+                    let detected_shell = crate::cli::chat::tool_manager::detect_shell_for_execute();
+                    return format!("execute_{}", detected_shell);
+                }
+                #[cfg(windows)]
+                {
+                    return "execute_cmd".to_string();
+                }
+            },
             Tool::UseAws(_) => "use_aws",
             Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => "gh_issue",

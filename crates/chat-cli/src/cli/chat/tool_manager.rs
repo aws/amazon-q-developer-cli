@@ -103,6 +103,110 @@ const NAMESPACE_DELIMITER: &str = "___";
 const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+/// Detects the actual shell being used on Windows systems
+#[cfg(windows)]
+fn detect_shell_windows() -> String {
+    use std::env;
+    
+    // Check for PowerShell Core (pwsh) first
+    if env::var("PSModulePath").is_ok() {
+        if let Ok(ps_version) = env::var("PSVersionTable") {
+            if ps_version.contains("Core") {
+                return "pwsh".to_string();
+            }
+        }
+        // Check if we're in PowerShell (any version)
+        if env::var("PSMODULEPATH").is_ok() || env::var("PSExecutionPolicyPreference").is_ok() {
+            return "powershell".to_string();
+        }
+    }
+    
+    // Check for Command Prompt indicators
+    if env::var("PROMPT").is_ok() || env::var("COMSPEC").is_ok() {
+        return "cmd".to_string();
+    }
+    
+    // Default to cmd for Windows
+    "cmd".to_string()
+}
+
+/// Detects the actual shell being used on Unix-like systems
+#[cfg(not(windows))]
+/// Simple shell detection for Unix-like systems
+#[cfg(not(windows))]
+pub fn detect_shell_for_execute() -> String {
+    detect_shell_unix_simple()
+}
+
+/// Simple shell detection for Unix-like systems
+#[cfg(not(windows))]
+fn detect_shell_unix_simple() -> String {
+    use std::env;
+    use std::process::Command;
+    
+    eprintln!("DEBUG: SHELL={:?}", env::var("SHELL"));
+    eprintln!("DEBUG: ZSH_VERSION={:?}", env::var("ZSH_VERSION"));
+    eprintln!("DEBUG: BASH_VERSION={:?}", env::var("BASH_VERSION"));
+    
+    // Method 1: Check for shell-specific environment variables (most reliable)
+    if env::var("ZSH_VERSION").is_ok() {
+        eprintln!("DEBUG: Found ZSH_VERSION, returning zsh");
+        return "zsh".to_string();
+    }
+    if env::var("BASH_VERSION").is_ok() {
+        eprintln!("DEBUG: Found BASH_VERSION, returning bash");
+        return "bash".to_string();
+    }
+    
+    // Method 2: Try to detect by checking what shell can run zsh-specific commands
+    if let Ok(output) = Command::new("zsh").args(&["-c", "echo $ZSH_VERSION"]).output() {
+        if output.status.success() {
+            if let Ok(version) = String::from_utf8(output.stdout) {
+                let version = version.trim();
+                if !version.is_empty() {
+                    eprintln!("DEBUG: zsh command returned version: {}, using zsh", version);
+                    return "zsh".to_string();
+                }
+            }
+        }
+    }
+    
+    // Method 3: Check the SHELL environment variable (login shell fallback)
+    if let Ok(shell_path) = env::var("SHELL") {
+        eprintln!("DEBUG: SHELL path: {}", shell_path);
+        if let Some(shell_name) = shell_path.split('/').last() {
+            eprintln!("DEBUG: Shell name from path: {}", shell_name);
+            match shell_name {
+                "bash" => {
+                    eprintln!("DEBUG: Matched bash from SHELL path");
+                    return "bash".to_string();
+                },
+                "zsh" => {
+                    eprintln!("DEBUG: Matched zsh from SHELL path");
+                    return "zsh".to_string();
+                },
+                "fish" => return "fish".to_string(),
+                "sh" => return "sh".to_string(),
+                "dash" => return "dash".to_string(),
+                "ksh" => return "ksh".to_string(),
+                "tcsh" => return "tcsh".to_string(),
+                "csh" => return "csh".to_string(),
+                _ => {
+                    // For unknown shells, return the name as-is if it's alphanumeric
+                    if shell_name.chars().all(|c| c.is_alphanumeric()) {
+                        eprintln!("DEBUG: Unknown shell, returning as-is: {}", shell_name);
+                        return shell_name.to_string();
+                    }
+                }
+            }
+        }
+    }
+    
+    eprintln!("DEBUG: No shell detected, defaulting to bash");
+    // Default fallback
+    "bash".to_string()
+}
+
 pub fn workspace_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
     Ok(os.env.current_dir()?.join(".amazonq").join("mcp.json"))
 }
@@ -937,6 +1041,121 @@ impl ToolManager {
                         "required": ["command"]})),
                     tool_origin: ToolOrigin::Native,
                 });
+<<<<<<< Updated upstream
+=======
+
+                // Create backward compatibility alias
+                if tool_name != "execute_cmd" {
+                    tool_specs.insert("execute_cmd".to_string(), ToolSpec {
+                        name: "execute_cmd".to_string(),
+                        description: "Execute the specified Windows command.".to_string(),
+                        input_schema: InputSchema(json!({
+                        "type": "object",
+                        "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "Windows command to execute"
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "A brief explanation of what the command does"
+                        }
+                        },
+                            "required": ["command"]})),
+                        tool_origin: ToolOrigin::Native,
+                    });
+                }
+            }
+
+            #[cfg(not(windows))]
+            {
+                use serde_json::json;
+
+                use crate::cli::chat::tools::InputSchema;
+
+                eprintln!("DEBUG: Unix shell detection starting...");
+                
+                // EXPERIMENT: Always remove execute_bash completely
+                let removed = tool_specs.remove("execute_bash");
+                eprintln!("DEBUG: Removed execute_bash: {:?}", removed.is_some());
+
+                // Detect the actual shell on Unix-like systems
+                let shell_name = detect_shell_unix_simple();
+                eprintln!("DEBUG: Detected shell: {}", shell_name);
+                let tool_name = format!("execute_{}", shell_name);
+                eprintln!("DEBUG: Creating tool: {}", tool_name);
+                
+                // Debug: Show what execute tools are in tool_specs
+                let execute_tools: Vec<_> = tool_specs.keys()
+                    .filter(|k| k.starts_with("execute_"))
+                    .collect();
+                eprintln!("DEBUG: Execute tools before adding new one: {:?}", execute_tools);
+                let description = format!("Execute the specified {} command.", shell_name);
+
+                // Only create the shell-specific tool (no bash fallback)
+                tool_specs.insert(tool_name.clone(), ToolSpec {
+                    name: tool_name.clone(),
+                    description,
+                    input_schema: InputSchema(json!({
+                    "type": "object",
+                    "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": format!("{} command to execute", shell_name)
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "A brief explanation of what the command does"
+                    }
+                    },
+                        "required": ["command"]})),
+                    tool_origin: ToolOrigin::Native,
+                });
+
+                // Debug: Show what execute tools are in tool_specs after adding new one
+                let execute_tools_after: Vec<_> = tool_specs.keys()
+                    .filter(|k| k.starts_with("execute_"))
+                    .collect();
+                eprintln!("DEBUG: Execute tools after adding new one: {:?}", execute_tools_after);
+                
+                // Debug: Show ALL tools available to model  
+                let all_tools: Vec<_> = tool_specs.keys().collect();
+                eprintln!("DEBUG: ALL tools available: {:?}", all_tools);
+                
+                // Debug: Show what execute tools are in tool_specs
+                let execute_tools: Vec<_> = tool_specs.keys()
+                    .filter(|k| k.starts_with("execute_"))
+                    .collect();
+                eprintln!("DEBUG: Execute tools before adding new one: {:?}", execute_tools);
+                let description = format!("Execute the specified {} command.", shell_name);
+
+                // Only create the shell-specific tool (no bash fallback)
+                tool_specs.insert(tool_name.clone(), ToolSpec {
+                    name: tool_name.clone(),
+                    description,
+                    input_schema: InputSchema(json!({
+                    "type": "object",
+                    "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": format!("{} command to execute", shell_name)
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "A brief explanation of what the command does"
+                    }
+                    },
+                        "required": ["command"]})),
+                    tool_origin: ToolOrigin::Native,
+                });
+
+                // Debug: Show what execute tools are in tool_specs after adding new one
+                let execute_tools_after: Vec<_> = tool_specs.keys()
+                    .filter(|k| k.starts_with("execute_"))
+                    .collect();
+                eprintln!("DEBUG: Execute tools after adding new one: {:?}", execute_tools_after);
+
+                // EXPERIMENT: No backward compatibility - force shell-specific tool usage
             }
 
             tool_specs

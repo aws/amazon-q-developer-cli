@@ -8,26 +8,6 @@
       "required": []
     }
   },
-  "execute_bash": {
-    "name": "execute_bash",
-    "description": "Execute the specified bash command.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "command": {
-          "type": "string",
-          "description": "Bash command to execute"
-        },
-        "summary": {
-          "type": "string",
-          "description": "A brief explanation of what the command does"
-        }
-      },
-      "required": [
-        "command"
-      ]
-    }
-  },
   "fs_read": {
     "name": "fs_read",
     "description": "Tool for reading files, directories and images. Always provide an 'operations' array.\n\nFor single operation: provide array with one element.\nFor batch operations: provide array with multiple elements.\n\nAvailable modes:\n- Line: Read lines from a file\n- Directory: List directory contents\n- Search: Search for patterns in files\n- Image: Read and process images\n\nExamples:\n1. Single: {\"operations\": [{\"mode\": \"Line\", \"path\": \"/file.txt\"}]}\n2. Batch: {\"operations\": [{\"mode\": \"Line\", \"path\": \"/file1.txt\"}, {\"mode\": \"Search\", \"path\": \"/file2.txt\", \"pattern\": \"test\"}]}",
