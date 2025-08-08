@@ -12,6 +12,7 @@ use std::borrow::{
     Borrow,
     Cow,
 };
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{
     Path,
@@ -45,6 +46,7 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
@@ -112,10 +114,15 @@ impl Tool {
     }
 
     /// Invokes the tool asynchronously
-    pub async fn invoke(&self, os: &Os, stdout: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(
+        &self,
+        os: &Os,
+        stdout: &mut impl Write,
+        line_tracker: &mut HashMap<String, FileLineTracker>,
+    ) -> Result<InvokeOutput> {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
-            Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout).await,
+            Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout, line_tracker).await,
             Tool::ExecuteCommand(execute_command) => execute_command.invoke(stdout).await,
             Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,

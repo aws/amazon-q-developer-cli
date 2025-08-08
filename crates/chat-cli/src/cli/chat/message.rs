@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 use std::env;
 
+use chrono::{
+    DateTime,
+    Utc,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -13,6 +17,10 @@ use tracing::{
 use super::consts::{
     MAX_CURRENT_WORKING_DIRECTORY_LEN,
     MAX_USER_MESSAGE_SIZE,
+};
+use super::conversation::{
+    CONTEXT_ENTRY_END_HEADER,
+    CONTEXT_ENTRY_START_HEADER,
 };
 use super::tools::{
     InvokeOutput,
@@ -46,6 +54,7 @@ pub struct UserMessage {
     pub additional_context: String,
     pub env_context: UserEnvContext,
     pub content: UserMessageContent,
+    pub timestamp: DateTime<Utc>,
     pub images: Option<Vec<ImageBlock>>,
 }
 
@@ -101,6 +110,7 @@ impl UserMessage {
     pub fn new_prompt(prompt: String) -> Self {
         Self {
             images: None,
+            timestamp: Utc::now(),
             additional_context: String::new(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::Prompt { prompt },
@@ -110,6 +120,7 @@ impl UserMessage {
     pub fn new_cancelled_tool_uses<'a>(prompt: Option<String>, tool_use_ids: impl Iterator<Item = &'a str>) -> Self {
         Self {
             images: None,
+            timestamp: Utc::now(),
             additional_context: String::new(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::CancelledToolUses {
@@ -130,6 +141,7 @@ impl UserMessage {
     pub fn new_tool_use_results(results: Vec<ToolUseResult>) -> Self {
         Self {
             additional_context: String::new(),
+            timestamp: Utc::now(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::ToolUseResults {
                 tool_use_results: results,
@@ -141,6 +153,7 @@ impl UserMessage {
     pub fn new_tool_use_results_with_images(results: Vec<ToolUseResult>, images: Vec<ImageBlock>) -> Self {
         Self {
             additional_context: String::new(),
+            timestamp: Utc::now(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::ToolUseResults {
                 tool_use_results: results,
@@ -267,13 +280,25 @@ impl UserMessage {
 
     /// Returns a formatted [String] containing [Self::additional_context] and [Self::prompt].
     fn content_with_context(&self) -> String {
-        match (self.additional_context.is_empty(), self.prompt()) {
+        // Format the time with iso8601 format using Z, e.g. 2025-08-08T17:43:28.672Z
+        let timestamp = self.timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+
+        let prompt_with_timestamp = self.prompt().map(|p| {
+            format!(
+                "{}Current UTC time: {}{}{}{}{}",
+                CONTEXT_ENTRY_START_HEADER,
+                timestamp,
+                CONTEXT_ENTRY_END_HEADER,
+                USER_ENTRY_START_HEADER,
+                p,
+                USER_ENTRY_END_HEADER
+            )
+        });
+
+        match (self.additional_context.is_empty(), prompt_with_timestamp) {
             // Only add special delimiters if we have both a prompt and additional context
-            (false, Some(prompt)) => format!(
-                "{} {}{}{}",
-                self.additional_context, USER_ENTRY_START_HEADER, prompt, USER_ENTRY_END_HEADER
-            ),
-            (true, Some(prompt)) => prompt.to_string(),
+            (false, Some(prompt)) => format!("{}\n{}", self.additional_context, prompt),
+            (true, Some(prompt)) => prompt,
             _ => self.additional_context.clone(),
         }
         .trim()
@@ -520,5 +545,24 @@ mod tests {
         assert!(env_state.current_working_directory.is_some());
         assert!(env_state.operating_system.as_ref().is_some_and(|os| !os.is_empty()));
         println!("{env_state:?}");
+    }
+
+    #[test]
+    fn test_user_input_message_timestamp_formatting() {
+        let msg = UserMessage::new_prompt("hello world".to_string());
+
+        let msgs = [
+            msg.clone().into_user_input_message(None, &HashMap::new()),
+            msg.clone().into_history_entry(),
+        ];
+
+        for m in msgs {
+            m.content.contains(CONTEXT_ENTRY_START_HEADER);
+            m.content.contains("Current UTC time");
+            m.content.contains(CONTEXT_ENTRY_END_HEADER);
+            m.content.contains(USER_ENTRY_START_HEADER);
+            m.content.contains("hello world");
+            m.content.contains(USER_ENTRY_END_HEADER);
+        }
     }
 }

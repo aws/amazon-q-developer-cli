@@ -31,6 +31,7 @@ use super::context::{
     ContextManager,
     calc_max_context_files_size,
 };
+use super::line_tracker::FileLineTracker;
 use super::message::{
     AssistantMessage,
     ToolUseResult,
@@ -69,8 +70,8 @@ use crate::cli::chat::ChatError;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 
-const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
-const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
+pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
+pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -114,6 +115,11 @@ pub struct ConversationState {
 
     // Current todo list
     pub todo_state: Option<TodoState>,
+    /// Used to track agent vs user updates to file modifications.
+    ///
+    /// Maps from a file path to [FileLineTracker]
+    #[serde(default)]
+    pub file_line_tracker: HashMap<String, FileLineTracker>,
 }
 
 impl ConversationState {
@@ -156,6 +162,7 @@ impl ConversationState {
             agents,
             model: current_model_id,
             todo_state: Some(TodoState::default()),
+            file_line_tracker: HashMap::new(),
         }
     }
 
