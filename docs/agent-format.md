@@ -6,7 +6,7 @@ Every agent configuration file can include the following sections:
 
 - [`name`](#name-field) — The name of the agent (optional, derived from filename if not specified).
 - [`description`](#description-field) — A description of the agent.
-- [`prompt`](#prompt-field) — High-level context for the agent (not yet implemented).
+- [`prompt`](#prompt-field) — High-level context for the agent.
 - [`mcpServers`](#mcpservers-field) — The MCP servers the agent has access to.
 - [`tools`](#tools-field) — The tools available to the agent.
 - [`toolAliases`](#toolaliases-field) — Tool name remapping for handling naming collisions.
@@ -38,7 +38,7 @@ The `description` field provides a description of what the agent does. This is p
 
 ## Prompt Field
 
-The `prompt` field is intended to provide high-level context to the agent, similar to a system prompt. This feature is not yet implemented.
+The `prompt` field is intended to provide high-level context to the agent, similar to a system prompt. 
 
 ```json
 {
@@ -225,7 +225,7 @@ Available hook triggers:
 
 ## UseLegacyMcpJson Field
 
-The `useLegacyMcpJson` field determines whether to include MCP servers defined in the legacy global MCP configuration file (`~/.aws/amazonq/mcp.json`).
+The `useLegacyMcpJson` field determines whether to include MCP servers defined in the legacy MCP configuration files (`~/.aws/amazonq/mcp.json` for global and `cwd/.amazonq/mcp.json` for workspace).
 
 ```json
 {

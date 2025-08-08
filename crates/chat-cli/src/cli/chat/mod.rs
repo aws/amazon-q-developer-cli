@@ -7,6 +7,7 @@ mod input_source;
 mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
+mod line_tracker;
 mod parser;
 mod prompt;
 mod prompt_parser;
@@ -1903,7 +1904,22 @@ impl ChatSession {
                 ev.is_accepted = true;
             });
 
-            let invoke_result = tool.tool.invoke(os, &mut self.stdout).await;
+            // Extract AWS service name and operation name if available
+            if let Some(additional_info) = tool.tool.get_additional_info() {
+                if let Some(aws_service_name) = additional_info.get("aws_service_name").and_then(|v| v.as_str()) {
+                    tool_telemetry =
+                        tool_telemetry.and_modify(|ev| ev.aws_service_name = Some(aws_service_name.to_string()));
+                }
+                if let Some(aws_operation_name) = additional_info.get("aws_operation_name").and_then(|v| v.as_str()) {
+                    tool_telemetry =
+                        tool_telemetry.and_modify(|ev| ev.aws_operation_name = Some(aws_operation_name.to_string()));
+                }
+            }
+
+            let invoke_result = tool
+                .tool
+                .invoke(os, &mut self.stdout, &mut self.conversation.file_line_tracker)
+                .await;
 
             if self.spinner.is_some() {
                 queue!(
@@ -1965,6 +1981,33 @@ impl ChatSession {
                         tool_telemetry
                             .and_modify(|ev| ev.output_token_size = Some(TokenCounter::count_tokens(&result.as_str())));
                     }
+
+                    // Send telemetry for agent contribution
+                    if let Tool::FsWrite(w) = &tool.tool {
+                        let sanitized_path_str = w.path(os).to_string_lossy().to_string();
+                        let conversation_id = self.conversation.conversation_id().to_string();
+                        let message_id = self.conversation.message_id().map(|s| s.to_string());
+                        if let Some(tracker) = self.conversation.file_line_tracker.get_mut(&sanitized_path_str) {
+                            let lines_by_agent = tracker.lines_by_agent();
+                            let lines_by_user = tracker.lines_by_user();
+
+                            os.telemetry
+                                .send_agent_contribution_metric(
+                                    &os.database,
+                                    conversation_id,
+                                    message_id,
+                                    Some(tool.id.clone()),   // Already a String
+                                    Some(tool.name.clone()), // Already a String
+                                    Some(lines_by_agent),
+                                    Some(lines_by_user),
+                                )
+                                .await
+                                .ok();
+
+                            tracker.prev_fswrite_lines = tracker.after_fswrite_lines;
+                        }
+                    }
+
                     tool_results.push(ToolUseResult {
                         tool_use_id: tool.id.clone(),
                         content: vec![result.into()],
@@ -2575,7 +2618,7 @@ impl ChatSession {
             }
             .map(|v| v.to_string());
 
-            os.telemetry.send_tool_use_suggested(event).ok();
+            os.telemetry.send_tool_use_suggested(&os.database, event).await.ok();
         }
     }
 

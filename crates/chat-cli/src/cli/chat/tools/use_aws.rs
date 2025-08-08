@@ -178,6 +178,13 @@ impl UseAws {
         Ok(())
     }
 
+    pub fn get_additional_info(&self) -> serde_json::Value {
+        serde_json::json!({
+            "aws_service_name": self.service_name.clone(),
+            "aws_operation_name": self.operation_name.clone()
+        })
+    }
+
     /// Returns the CLI arguments properly formatted as kebab case if parameters is
     /// [Option::Some], otherwise None
     fn cli_parameters(&self) -> Option<Vec<(String, String)>> {

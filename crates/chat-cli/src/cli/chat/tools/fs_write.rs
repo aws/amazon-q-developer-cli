@@ -1,5 +1,9 @@
+use std::collections::HashMap;
 use std::io::Write;
-use std::path::Path;
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::sync::LazyLock;
 
 use crossterm::queue;
@@ -41,6 +45,7 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
@@ -81,12 +86,29 @@ pub enum FsWrite {
 }
 
 impl FsWrite {
-    pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
+    pub fn path(&self, os: &Os) -> PathBuf {
+        sanitize_path_tool_arg(os, match self {
+            FsWrite::Create { path, .. } => path.as_str(),
+            FsWrite::StrReplace { path, .. } => path.as_str(),
+            FsWrite::Insert { path, .. } => path.as_str(),
+            FsWrite::Append { path, .. } => path.as_str(),
+        })
+    }
+
+    pub async fn invoke(
+        &self,
+        os: &Os,
+        output: &mut impl Write,
+        line_tracker: &mut HashMap<String, FileLineTracker>,
+    ) -> Result<InvokeOutput> {
         let cwd = os.env.current_dir()?;
+        let path = self.path(os);
+
+        self.update_line_tracker_before_invoke(os, line_tracker).await?;
+
         match self {
-            FsWrite::Create { path, .. } => {
+            FsWrite::Create { .. } => {
                 let file_text = self.canonical_create_command_text();
-                let path = sanitize_path_tool_arg(os, path);
                 if let Some(parent) = path.parent() {
                     os.fs.create_dir_all(parent).await?;
                 }
@@ -105,13 +127,9 @@ impl FsWrite {
                     style::Print("\n"),
                 )?;
 
-                write_to_file(os, path, file_text).await?;
-                Ok(Default::default())
+                write_to_file(os, &path, file_text).await?;
             },
-            FsWrite::StrReplace {
-                path, old_str, new_str, ..
-            } => {
-                let path = sanitize_path_tool_arg(os, path);
+            FsWrite::StrReplace { old_str, new_str, .. } => {
                 let file = os.fs.read_to_string(&path).await?;
                 let matches = file.match_indices(old_str).collect::<Vec<_>>();
                 queue!(
@@ -123,22 +141,17 @@ impl FsWrite {
                     style::Print("\n"),
                 )?;
                 match matches.len() {
-                    0 => Err(eyre!("no occurrences of \"{old_str}\" were found")),
+                    0 => return Err(eyre!("no occurrences of \"{old_str}\" were found")),
                     1 => {
                         let file = file.replacen(old_str, new_str, 1);
-                        os.fs.write(path, file).await?;
-                        Ok(Default::default())
+                        os.fs.write(&path, file).await?;
                     },
-                    x => Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
+                    x => return Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
                 }
             },
             FsWrite::Insert {
-                path,
-                insert_line,
-                new_str,
-                ..
+                insert_line, new_str, ..
             } => {
-                let path = sanitize_path_tool_arg(os, path);
                 let mut file = os.fs.read_to_string(&path).await?;
                 queue!(
                     output,
@@ -159,11 +172,8 @@ impl FsWrite {
                 }
                 file.insert_str(i, new_str);
                 write_to_file(os, &path, file).await?;
-                Ok(Default::default())
             },
-            FsWrite::Append { path, new_str, .. } => {
-                let path = sanitize_path_tool_arg(os, path);
-
+            FsWrite::Append { new_str, .. } => {
                 queue!(
                     output,
                     style::Print("Appending to: "),
@@ -178,10 +188,69 @@ impl FsWrite {
                     file.push('\n');
                 }
                 file.push_str(new_str);
-                write_to_file(os, path, file).await?;
-                Ok(Default::default())
+                write_to_file(os, &path, file).await?;
+            },
+        };
+
+        self.update_line_tracker_after_invoke(os, line_tracker).await?;
+
+        Ok(Default::default())
+    }
+
+    async fn update_line_tracker_before_invoke(
+        &self,
+        os: &Os,
+        line_tracker: &mut HashMap<String, FileLineTracker>,
+    ) -> Result<()> {
+        let path = self.path(os);
+
+        let curr_lines = if os.fs.exists(&path) {
+            let content = os.fs.read_to_string(&path).await?;
+            content.lines().count()
+        } else {
+            0
+        };
+
+        let tracker = line_tracker.entry(path.to_string_lossy().to_string()).or_default();
+        match self {
+            FsWrite::Create { .. } => {
+                // For Create, always set prev_lines to 0 since we're creating a new file
+                if tracker.is_first_write {
+                    tracker.prev_fswrite_lines = 0;
+                }
+            },
+            _ => {
+                // For StrReplace, Insert, Append - if it's the first time we're tracking this file,
+                // set prev_lines to curr_lines so we only track changes from this point forward
+                if tracker.is_first_write {
+                    tracker.prev_fswrite_lines = curr_lines;
+                }
             },
         }
+        tracker.before_fswrite_lines = curr_lines;
+
+        Ok(())
+    }
+
+    async fn update_line_tracker_after_invoke(
+        &self,
+        os: &Os,
+        line_tracker: &mut HashMap<String, FileLineTracker>,
+    ) -> Result<()> {
+        let path = self.path(os);
+
+        let after_lines = if os.fs.exists(&path) {
+            let content = os.fs.read_to_string(&path).await?;
+            content.lines().count()
+        } else {
+            0
+        };
+
+        let tracker = line_tracker.entry(path.to_string_lossy().to_string()).or_default();
+        tracker.after_fswrite_lines = after_lines;
+        tracker.is_first_write = false;
+
+        Ok(())
     }
 
     pub fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {
@@ -439,7 +508,6 @@ impl FsWrite {
 /// Writes `content` to `path`, adding a newline if necessary.
 async fn write_to_file(os: &Os, path: impl AsRef<Path>, mut content: String) -> Result<()> {
     let path_ref = path.as_ref();
-
     // Log the path being written to
     tracing::debug!("Writing to file: {:?}", path_ref);
 
@@ -829,6 +897,7 @@ mod tests {
     async fn test_fs_write_tool_create() {
         let os = setup_test_directory().await;
         let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
 
         let file_text = "Hello, world!";
         let v = serde_json::json!({
@@ -838,7 +907,7 @@ mod tests {
         });
         serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await
             .unwrap();
 
@@ -855,7 +924,7 @@ mod tests {
         });
         serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await
             .unwrap();
 
@@ -873,7 +942,7 @@ mod tests {
         });
         serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await
             .unwrap();
 
@@ -887,6 +956,7 @@ mod tests {
     async fn test_fs_write_tool_str_replace() {
         let os = setup_test_directory().await;
         let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
 
         // No instances found
         let v = serde_json::json!({
@@ -898,7 +968,7 @@ mod tests {
         assert!(
             serde_json::from_value::<FsWrite>(v)
                 .unwrap()
-                .invoke(&os, &mut stdout)
+                .invoke(&os, &mut stdout, &mut line_tracker)
                 .await
                 .is_err()
         );
@@ -913,7 +983,7 @@ mod tests {
         assert!(
             serde_json::from_value::<FsWrite>(v)
                 .unwrap()
-                .invoke(&os, &mut stdout)
+                .invoke(&os, &mut stdout, &mut line_tracker)
                 .await
                 .is_err()
         );
@@ -927,7 +997,7 @@ mod tests {
         });
         serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await
             .unwrap();
         assert_eq!(
@@ -947,6 +1017,7 @@ mod tests {
     async fn test_fs_write_tool_insert_at_beginning() {
         let os = setup_test_directory().await;
         let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
 
         let new_str = "1: New first line!\n";
         let v = serde_json::json!({
@@ -957,7 +1028,7 @@ mod tests {
         });
         serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await
             .unwrap();
         let actual = os.fs.read_to_string(TEST_FILE_PATH).await.unwrap();
@@ -978,6 +1049,7 @@ mod tests {
     async fn test_fs_write_tool_insert_after_first_line() {
         let os = setup_test_directory().await;
         let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
 
         let new_str = "2: New second line!\n";
         let v = serde_json::json!({
@@ -989,7 +1061,7 @@ mod tests {
 
         serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await
             .unwrap();
         let actual = os.fs.read_to_string(TEST_FILE_PATH).await.unwrap();
@@ -1010,6 +1082,7 @@ mod tests {
     async fn test_fs_write_tool_insert_when_no_newlines_in_file() {
         let os = Os::new().await.unwrap();
         let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
 
         let test_file_path = "/file.txt";
         let test_file_contents = "hello there";
@@ -1026,7 +1099,7 @@ mod tests {
         });
         serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await
             .unwrap();
         let actual = os.fs.read_to_string(test_file_path).await.unwrap();
@@ -1041,7 +1114,7 @@ mod tests {
         });
         serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await
             .unwrap();
         let actual = os.fs.read_to_string(test_file_path).await.unwrap();
@@ -1052,6 +1125,7 @@ mod tests {
     async fn test_fs_write_tool_append() {
         let os = setup_test_directory().await;
         let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
 
         // Test appending to existing file
         let content_to_append = "5: Appended line";
@@ -1063,7 +1137,7 @@ mod tests {
 
         serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await
             .unwrap();
 
@@ -1085,7 +1159,7 @@ mod tests {
 
         let result = serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await;
 
         assert!(result.is_err(), "Appending to non-existent file should fail");
@@ -1118,6 +1192,7 @@ mod tests {
         // Create a test context
         let os = Os::new().await.unwrap();
         let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
 
         // Get the home directory from the context
         let home_dir = os.env.home().unwrap_or_default();
@@ -1138,7 +1213,7 @@ mod tests {
 
         let result = serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await;
 
         match &result {
@@ -1173,7 +1248,7 @@ mod tests {
 
         let result = serde_json::from_value::<FsWrite>(v)
             .unwrap()
-            .invoke(&os, &mut stdout)
+            .invoke(&os, &mut stdout, &mut line_tracker)
             .await;
 
         assert!(result.is_ok(), "Writing to ~/nested/path/file.txt should succeed");
@@ -1253,6 +1328,121 @@ mod tests {
         let res = tool.eval_perm(&agent);
         assert!(
             matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_GLOB.to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_line_tracker_updates() {
+        let os = setup_test_directory().await;
+        let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
+
+        // 1. Create a file with known content
+        let file_path = "/tracked_file.txt";
+        let initial_content = "Line 1\nLine 2\nLine 3";
+
+        let create_command = serde_json::json!({
+            "path": file_path,
+            "command": "create",
+            "file_text": initial_content
+        });
+
+        serde_json::from_value::<FsWrite>(create_command)
+            .unwrap()
+            .invoke(&os, &mut stdout, &mut line_tracker)
+            .await
+            .unwrap();
+
+        let sanitized_path = sanitize_path_tool_arg(&os, file_path);
+        let path_key = sanitized_path.to_string_lossy().to_string();
+
+        assert!(
+            line_tracker.contains_key(&path_key),
+            "Line tracker should contain an entry for the created file"
+        );
+
+        let tracker = line_tracker.get(&path_key).unwrap();
+        assert_eq!(tracker.before_fswrite_lines, 0, "curr_lines should be 0 for a new file");
+        assert_eq!(
+            tracker.after_fswrite_lines, 3,
+            "after_lines should be 3 for the created content"
+        );
+
+        // 2. Append to the file
+        let append_content = "Line 4\nLine 5";
+        let append_command = serde_json::json!({
+            "path": file_path,
+            "command": "append",
+            "new_str": append_content
+        });
+
+        serde_json::from_value::<FsWrite>(append_command)
+            .unwrap()
+            .invoke(&os, &mut stdout, &mut line_tracker)
+            .await
+            .unwrap();
+
+        // Check that line_tracker was updated after append
+        let tracker = line_tracker.get(&path_key).unwrap();
+        assert_eq!(
+            tracker.before_fswrite_lines, 3,
+            "curr_lines should be 3 (previous after_lines)"
+        );
+        assert_eq!(tracker.after_fswrite_lines, 5, "after_lines should be 5 after append");
+
+        // 3. Insert a line
+        let insert_command = serde_json::json!({
+            "path": file_path,
+            "command": "insert",
+            "insert_line": 2,
+            "new_str": "Inserted Line\n"
+        });
+
+        serde_json::from_value::<FsWrite>(insert_command)
+            .unwrap()
+            .invoke(&os, &mut stdout, &mut line_tracker)
+            .await
+            .unwrap();
+
+        // Check that line_tracker was updated after insert
+        let tracker = line_tracker.get(&path_key).unwrap();
+        assert_eq!(
+            tracker.before_fswrite_lines, 5,
+            "curr_lines should be 5 (previous after_lines)"
+        );
+        assert_eq!(tracker.after_fswrite_lines, 6, "after_lines should be 6 after insert");
+
+        // 4. Replace a string that changes line count
+        let replace_command = serde_json::json!({
+            "path": file_path,
+            "command": "str_replace",
+            "old_str": "Line 4",
+            "new_str": "Line 4\nExtra Line"
+        });
+
+        serde_json::from_value::<FsWrite>(replace_command)
+            .unwrap()
+            .invoke(&os, &mut stdout, &mut line_tracker)
+            .await
+            .unwrap();
+
+        // Check that line_tracker was updated after string replacement
+        let tracker = line_tracker.get(&path_key).unwrap();
+        assert_eq!(
+            tracker.before_fswrite_lines, 6,
+            "curr_lines should be 6 (previous after_lines)"
+        );
+        assert_eq!(
+            tracker.after_fswrite_lines, 7,
+            "after_lines should be 7 after string replacement"
+        );
+
+        // 5. Verify line counts match actual file content
+        let content = os.fs.read_to_string(file_path).await.unwrap();
+        let actual_line_count = content.lines().count();
+        assert_eq!(
+            actual_line_count, tracker.after_fswrite_lines,
+            "after_lines should match the actual line count in the file"
         );
     }
 }

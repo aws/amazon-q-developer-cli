@@ -145,6 +145,13 @@ pub(crate) fn de_get_usage_limits(
                 "limits" => {
                     builder = builder.set_limits(crate::protocol_serde::shape_usage_limits::de_usage_limits(tokens)?);
                 },
+                "nextDateReset" => {
+                    builder =
+                        builder.set_next_date_reset(::aws_smithy_json::deserialize::token::expect_timestamp_or_null(
+                            tokens.next(),
+                            ::aws_smithy_types::date_time::Format::EpochSeconds,
+                        )?);
+                },
                 "daysUntilReset" => {
                     builder = builder.set_days_until_reset(
                         ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
@@ -174,11 +181,6 @@ pub(crate) fn de_get_usage_limits(
                 },
                 "userInfo" => {
                     builder = builder.set_user_info(crate::protocol_serde::shape_user_info::de_user_info(tokens)?);
-                },
-                "freeTrialInfo" => {
-                    builder = builder.set_free_trial_info(
-                        crate::protocol_serde::shape_free_trial_info::de_free_trial_info(tokens)?,
-                    );
                 },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
