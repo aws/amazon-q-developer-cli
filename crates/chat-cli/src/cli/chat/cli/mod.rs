@@ -104,11 +104,11 @@ impl SlashCommand {
                 };
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print("This command has been deprecated. Use"),
-                    style::SetForegroundColor(style::Color::Cyan),
+                    style::SetForegroundColor(session.colors.primary()),
                     style::Print(" /agent "),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print("instead.\nSee "),
                     style::Print(AGENT_MIGRATION_DOC_URL),
                     style::Print(" for more detail"),

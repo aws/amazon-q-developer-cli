@@ -284,19 +284,20 @@ impl ChatArgs {
             }
 
             if let Some(trust_tools) = self.trust_tools.take() {
+                let colors = ColorManager::from_settings(&os.database.settings);
                 for tool in &trust_tools {
                     if !tool.starts_with("@") && !NATIVE_TOOLS.contains(&tool.as_str()) {
                         let _ = queue!(
                             stderr,
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(colors.warning()),
                             style::Print("WARNING: "),
                             style::SetForegroundColor(Color::Reset),
                             style::Print("--trust-tools arg for custom tool "),
-                            style::SetForegroundColor(Color::Cyan),
+                            style::SetForegroundColor(colors.primary()),
                             style::Print(tool),
                             style::SetForegroundColor(Color::Reset),
                             style::Print(" needs to be prepended with "),
-                            style::SetForegroundColor(Color::Green),
+                            style::SetForegroundColor(colors.success()),
                             style::Print("@{MCPSERVERNAME}/"),
                             style::SetForegroundColor(Color::Reset),
                             style::Print("\n"),
