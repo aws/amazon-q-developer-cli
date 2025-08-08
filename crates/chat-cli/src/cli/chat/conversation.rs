@@ -110,6 +110,9 @@ pub struct ConversationState {
     /// Model explicitly selected by the user in this conversation state via `/model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Used to track agent vs user updates to file modifications.
+    ///
+    /// Maps from a file path to [FileLineTracker]
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
 }

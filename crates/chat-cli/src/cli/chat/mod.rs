@@ -139,7 +139,6 @@ use crate::cli::chat::cli::prompts::{
     GetPromptError,
     PromptsSubcommand,
 };
-use crate::cli::chat::tools::sanitize_path_tool_arg;
 use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
@@ -1964,33 +1963,33 @@ impl ChatSession {
                         tool_telemetry
                             .and_modify(|ev| ev.output_token_size = Some(TokenCounter::count_tokens(&result.as_str())));
                     }
-                    if let Tool::FsWrite(w) = &tool.tool {
-                        let path_str = w.path();
-                        let sanitized_path = sanitize_path_tool_arg(os, path_str);
-                        let sanitized_path_str = sanitized_path.to_string_lossy().to_string();
 
+                    // Send telemetry for agent contribution
+                    if let Tool::FsWrite(w) = &tool.tool {
+                        let sanitized_path_str = w.path(os).to_string_lossy().to_string();
                         let conversation_id = self.conversation.conversation_id().to_string();
                         let message_id = self.conversation.message_id().map(|s| s.to_string());
-
                         if let Some(tracker) = self.conversation.file_line_tracker.get_mut(&sanitized_path_str) {
                             let lines_by_agent = tracker.lines_by_agent();
                             let lines_by_user = tracker.lines_by_user();
-                            
-                            os.telemetry.send_agent_contribution_metric(
-                                &os.database,
-                                conversation_id,
-                                message_id,
-                                Some(tool.id.clone()),  // Already a String
-                                Some(tool.name.clone()),  // Already a String
-                                Some(lines_by_agent),
-                                Some(lines_by_user)
-                            ).await.ok();
 
-                            tracker.prev_lines = tracker.after_lines;
+                            os.telemetry
+                                .send_agent_contribution_metric(
+                                    &os.database,
+                                    conversation_id,
+                                    message_id,
+                                    Some(tool.id.clone()),   // Already a String
+                                    Some(tool.name.clone()), // Already a String
+                                    Some(lines_by_agent),
+                                    Some(lines_by_user),
+                                )
+                                .await
+                                .ok();
 
+                            tracker.prev_fswrite_lines = tracker.after_fswrite_lines;
                         }
                     }
-                    
+
                     tool_results.push(ToolUseResult {
                         tool_use_id: tool.id.clone(),
                         content: vec![result.into()],
