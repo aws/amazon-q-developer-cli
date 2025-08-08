@@ -126,7 +126,7 @@ impl CustomToolClient {
                "version": "1.0.0"
             }),
             env: processed_env,
-            sampling_enabled: sampling,
+            sampling_enabled,
         };
         let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
         Ok(CustomToolClient::Stdio {
