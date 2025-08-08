@@ -85,7 +85,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         Ok(sel) => {
             let _ = crossterm::execute!(
                 std::io::stdout(),
-                crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
+                crossterm::style::SetForegroundColor(session.colors.action())
             );
             sel
         },
