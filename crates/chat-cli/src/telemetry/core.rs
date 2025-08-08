@@ -21,6 +21,7 @@ use crate::telemetry::definitions::metrics::{
     AmazonqStartChat,
     CodewhispererterminalAddChatMessage,
     CodewhispererterminalAgentConfigInit,
+    CodewhispererterminalAgentContribution,
     CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
@@ -339,6 +340,27 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::AgentContribution {
+                conversation_id,
+                utterance_id,
+                tool_use_id,
+                tool_name,
+                lines_by_agent,
+                lines_by_user,
+            } => Some(
+                CodewhispererterminalAgentContribution {
+                    create_time: self.created_time,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    value: None,
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_utterance_id: utterance_id.map(CodewhispererterminalUtteranceId),
+                    codewhispererterminal_tool_use_id: tool_use_id.map(CodewhispererterminalToolUseId),
+                    codewhispererterminal_tool_name: tool_name.map(CodewhispererterminalToolName),
+                    codewhispererterminal_lines_by_agent: lines_by_agent.map(|count| count as i64).map(Into::into),
+                    codewhispererterminal_lines_by_user: lines_by_user.map(|count| count as i64).map(Into::into),
+                }
+                .into_metric_datum(),
+            ),
             EventType::McpServerInit {
                 conversation_id,
                 server_name,
@@ -579,6 +601,14 @@ pub enum EventType {
         turn_duration: Option<Duration>,
         aws_service_name: Option<String>,
         aws_operation_name: Option<String>,
+    },
+    AgentContribution {
+        conversation_id: String,
+        utterance_id: Option<String>,
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+        lines_by_agent: Option<isize>,
+        lines_by_user: Option<isize>,
     },
     McpServerInit {
         conversation_id: String,

@@ -22,6 +22,9 @@ use tracing::{
     error,
 };
 
+use crate::embedding::ModelConfig;
+use crate::model_validator::ModelValidator;
+
 /// Progress callback type for download operations
 pub type ProgressCallback = Box<dyn Fn(u64, u64) + Send + Sync>;
 
@@ -31,6 +34,8 @@ pub struct HostedModelClient {
     base_url: String,
     /// HTTP client
     client: reqwest::Client,
+    /// Model validator for SHA verification
+    validator: ModelValidator,
 }
 
 impl HostedModelClient {
@@ -50,6 +55,7 @@ impl HostedModelClient {
         Self {
             base_url,
             client: reqwest::Client::new(),
+            validator: ModelValidator::new(),
         }
     }
 
@@ -57,21 +63,21 @@ impl HostedModelClient {
     ///
     /// # Arguments
     ///
-    /// * `model_name` - Name of the model (e.g., "all-MiniLM-L6-v2")
+    /// * `model_config` - Model configuration containing name and file paths
     /// * `target_dir` - Directory where model files should be extracted
     ///
     /// # Returns
     ///
     /// Result indicating success or failure
-    pub async fn ensure_model(&self, model_name: &str, target_dir: &Path) -> AnyhowResult<()> {
-        self.ensure_model_with_progress(model_name, target_dir, None).await
+    pub async fn ensure_model(&self, model_config: &ModelConfig, target_dir: &Path) -> AnyhowResult<()> {
+        self.ensure_model_with_progress(model_config, target_dir, None).await
     }
 
     /// Download a model if it doesn't exist locally with optional progress callback
     ///
     /// # Arguments
     ///
-    /// * `model_name` - Name of the model (e.g., "all-MiniLM-L6-v2")
+    /// * `model_config` - Model configuration containing name and file paths
     /// * `target_dir` - Directory where model files should be extracted
     /// * `progress_callback` - Optional callback for progress updates
     ///
@@ -80,35 +86,35 @@ impl HostedModelClient {
     /// Result indicating success or failure
     pub async fn ensure_model_with_progress(
         &self,
-        model_name: &str,
+        model_config: &ModelConfig,
         target_dir: &Path,
         progress_callback: Option<ProgressCallback>,
     ) -> AnyhowResult<()> {
         // Check if model already exists and is valid
-        if self.is_model_valid(target_dir).await? {
-            debug!("Model '{}' already exists and is valid", model_name);
+        if self.is_model_valid(model_config, target_dir).await? {
+            debug!("Model '{}' already exists and is valid", model_config.name);
             return Ok(());
         }
 
-        debug!("Downloading hosted model: {}", model_name);
-        self.download_model(model_name, target_dir, progress_callback).await
+        debug!("Downloading hosted model: {}", model_config.name);
+        self.download_model(model_config, target_dir, progress_callback).await
     }
 
     /// Download model from hosted CDN (asynchronous) with optional progress
     async fn download_model(
         &self,
-        model_name: &str,
+        model_config: &ModelConfig,
         target_dir: &Path,
         progress_callback: Option<ProgressCallback>,
     ) -> AnyhowResult<()> {
         // Construct zip filename and URL
-        let zip_filename = format!("{}.zip", model_name);
+        let zip_filename = format!("{}.zip", model_config.name);
         let zip_url = format!("{}/{}", self.base_url, zip_filename);
         let zip_path = target_dir.join(&zip_filename);
 
         debug!("Constructing download URL:");
         debug!("  Base URL: {}", self.base_url);
-        debug!("  Model name: {}", model_name);
+        debug!("  Model name: {}", model_config.name);
         debug!("  Zip filename: {}", zip_filename);
         debug!("  Final URL: {}", zip_url);
         debug!("  Target path: {:?}", zip_path);
@@ -133,7 +139,7 @@ impl HostedModelClient {
             .await
             .context("Failed to remove temporary zip file")?;
 
-        debug!("Successfully downloaded and extracted model: {}", model_name);
+        debug!("Successfully downloaded and extracted model: {}", model_config.name);
         Ok(())
     }
 
@@ -263,45 +269,37 @@ impl HostedModelClient {
 
     /// Check if model files exist and are valid (sync version for testing)
     #[cfg(test)]
-    fn is_model_valid_sync(&self, target_dir: &Path) -> AnyhowResult<bool> {
-        let model_path = target_dir.join("model.safetensors");
-        let tokenizer_path = target_dir.join("tokenizer.json");
+    fn is_model_valid_sync(&self, model_config: &ModelConfig, target_dir: &Path) -> AnyhowResult<bool> {
+        let model_path = target_dir.join(&model_config.model_file);
+        let tokenizer_path = target_dir.join(&model_config.tokenizer_file);
 
-        let valid = model_path.exists() && tokenizer_path.exists();
+        let model_valid = self.validator.validate_file(&model_path);
+        let tokenizer_valid = self.validator.validate_file(&tokenizer_path);
+
+        let valid = model_valid && tokenizer_valid;
 
         debug!(
             "Model validation for {:?}: model={}, tokenizer={}",
-            target_dir,
-            model_path.exists(),
-            tokenizer_path.exists()
+            target_dir, model_valid, tokenizer_valid
         );
 
         Ok(valid)
     }
 
     /// Check if model files exist and are valid
-    async fn is_model_valid(&self, target_dir: &Path) -> AnyhowResult<bool> {
-        let model_path = target_dir.join("model.safetensors");
-        let tokenizer_path = target_dir.join("tokenizer.json");
+    async fn is_model_valid(&self, model_config: &ModelConfig, target_dir: &Path) -> AnyhowResult<bool> {
+        let model_path = target_dir.join(&model_config.model_file);
+        let tokenizer_path = target_dir.join(&model_config.tokenizer_file);
 
-        // Use tokio::fs for async file operations
-        let model_exists = (tokio::fs::metadata(&model_path).await).is_ok();
+        let model_valid = self.validator.validate_file(&model_path);
+        let tokenizer_valid = self.validator.validate_file(&tokenizer_path);
 
-        let tokenizer_exists = (tokio::fs::metadata(&tokenizer_path).await).is_ok();
-
-        let valid = model_exists && tokenizer_exists;
+        let valid = model_valid && tokenizer_valid;
 
         if valid {
-            debug!(
-                "Model files found: model={:?}, tokenizer={:?}",
-                model_path, tokenizer_path
-            );
+            debug!("Model files validated successfully");
         } else {
-            debug!(
-                "Model files missing: model_exists={}, tokenizer_exists={}",
-                model_path.exists(),
-                tokenizer_path.exists()
-            );
+            debug!("Model files invalid or missing, will re-download");
         }
 
         Ok(valid)
@@ -325,7 +323,19 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let client = HostedModelClient::new("https://example.com".to_string());
 
-        let is_valid = client.is_model_valid_sync(temp_dir.path()).unwrap();
+        // Create a minimal ModelConfig for testing
+        let model_config = ModelConfig {
+            name: "test-model".to_string(),
+            repo_path: "test/repo".to_string(),
+            model_file: "model.safetensors".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+            config: Default::default(),
+            normalize_embeddings: true,
+            batch_size: 32,
+        };
+
+        let is_valid = client.is_model_valid_sync(&model_config, temp_dir.path()).unwrap();
         assert!(!is_valid);
     }
 
@@ -344,11 +354,28 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let client = HostedModelClient::new("https://example.com".to_string());
 
-        // Create mock model files
+        // Create a minimal ModelConfig for testing
+        let model_config = ModelConfig {
+            name: "test-model".to_string(),
+            repo_path: "test/repo".to_string(),
+            model_file: "model.safetensors".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+            config: Default::default(),
+            normalize_embeddings: true,
+            batch_size: 32,
+        };
+
+        // Create mock model files with incorrect content
         fs::write(temp_dir.path().join("model.safetensors"), b"mock model").unwrap();
         fs::write(temp_dir.path().join("tokenizer.json"), b"mock tokenizer").unwrap();
 
-        let is_valid = client.is_model_valid_sync(temp_dir.path()).unwrap();
-        assert!(is_valid);
+        // Should be invalid because SHA doesn't match allowlisted values
+        let is_valid = client.is_model_valid_sync(&model_config, temp_dir.path()).unwrap();
+        assert!(!is_valid);
+
+        // Files should be removed after validation failure
+        assert!(!temp_dir.path().join("model.safetensors").exists());
+        assert!(!temp_dir.path().join("tokenizer.json").exists());
     }
 }

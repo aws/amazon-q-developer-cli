@@ -266,6 +266,29 @@ impl TelemetryThread {
     }
 
     #[allow(clippy::too_many_arguments)] // TODO: Should make a parameters struct.
+    pub async fn send_agent_contribution_metric(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        utterance_id: Option<String>,
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+        lines_by_agent: Option<isize>,
+        lines_by_user: Option<isize>,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::AgentContribution {
+            conversation_id,
+            utterance_id,
+            tool_use_id,
+            tool_name,
+            lines_by_agent,
+            lines_by_user,
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
+    #[allow(clippy::too_many_arguments)] // TODO: Should make a parameters struct.
     pub async fn send_chat_added_message(
         &self,
         database: &Database,
