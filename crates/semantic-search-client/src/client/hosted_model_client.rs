@@ -22,6 +22,8 @@ use tracing::{
     error,
 };
 
+use crate::model_validator::ModelValidator;
+
 /// Progress callback type for download operations
 pub type ProgressCallback = Box<dyn Fn(u64, u64) + Send + Sync>;
 
@@ -31,6 +33,8 @@ pub struct HostedModelClient {
     base_url: String,
     /// HTTP client
     client: reqwest::Client,
+    /// Model validator for SHA verification
+    validator: ModelValidator,
 }
 
 impl HostedModelClient {
@@ -50,6 +54,7 @@ impl HostedModelClient {
         Self {
             base_url,
             client: reqwest::Client::new(),
+            validator: ModelValidator::new(),
         }
     }
 
@@ -267,13 +272,14 @@ impl HostedModelClient {
         let model_path = target_dir.join("model.safetensors");
         let tokenizer_path = target_dir.join("tokenizer.json");
 
-        let valid = model_path.exists() && tokenizer_path.exists();
+        let model_valid = self.validator.validate_file(&model_path);
+        let tokenizer_valid = self.validator.validate_file(&tokenizer_path);
+
+        let valid = model_valid && tokenizer_valid;
 
         debug!(
             "Model validation for {:?}: model={}, tokenizer={}",
-            target_dir,
-            model_path.exists(),
-            tokenizer_path.exists()
+            target_dir, model_valid, tokenizer_valid
         );
 
         Ok(valid)
@@ -284,24 +290,15 @@ impl HostedModelClient {
         let model_path = target_dir.join("model.safetensors");
         let tokenizer_path = target_dir.join("tokenizer.json");
 
-        // Use tokio::fs for async file operations
-        let model_exists = (tokio::fs::metadata(&model_path).await).is_ok();
+        let model_valid = self.validator.validate_file(&model_path);
+        let tokenizer_valid = self.validator.validate_file(&tokenizer_path);
 
-        let tokenizer_exists = (tokio::fs::metadata(&tokenizer_path).await).is_ok();
-
-        let valid = model_exists && tokenizer_exists;
+        let valid = model_valid && tokenizer_valid;
 
         if valid {
-            debug!(
-                "Model files found: model={:?}, tokenizer={:?}",
-                model_path, tokenizer_path
-            );
+            debug!("Model files validated successfully");
         } else {
-            debug!(
-                "Model files missing: model_exists={}, tokenizer_exists={}",
-                model_path.exists(),
-                tokenizer_path.exists()
-            );
+            debug!("Model files invalid or missing, will re-download");
         }
 
         Ok(valid)
@@ -344,11 +341,16 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let client = HostedModelClient::new("https://example.com".to_string());
 
-        // Create mock model files
+        // Create mock model files with incorrect content
         fs::write(temp_dir.path().join("model.safetensors"), b"mock model").unwrap();
         fs::write(temp_dir.path().join("tokenizer.json"), b"mock tokenizer").unwrap();
 
+        // Should be invalid because SHA doesn't match allowlisted values
         let is_valid = client.is_model_valid_sync(temp_dir.path()).unwrap();
-        assert!(is_valid);
+        assert!(!is_valid);
+
+        // Files should be removed after validation failure
+        assert!(!temp_dir.path().join("model.safetensors").exists());
+        assert!(!temp_dir.path().join("tokenizer.json").exists());
     }
 }

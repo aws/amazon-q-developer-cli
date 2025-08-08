@@ -120,31 +120,25 @@ impl AsyncSemanticSearchClient {
                         .map_err(SemanticSearchError::IoError)?;
                 }
 
-                // Check if files already exist
-                let model_exists = tokio::fs::try_exists(&model_path).await.unwrap_or(false);
-                let tokenizer_exists = tokio::fs::try_exists(&tokenizer_path).await.unwrap_or(false);
+                debug!("Reviewing model files for {}...", model_config.name);
 
-                if !model_exists || !tokenizer_exists {
-                    debug!("Downloading model files for {}...", model_config.name);
+                // Get the target directory (parent of model_path, which should be the model directory)
+                let target_dir = model_path
+                    .parent()
+                    .ok_or_else(|| SemanticSearchError::EmbeddingError("Invalid model path".to_string()))?;
 
-                    // Get the target directory (parent of model_path, which should be the model directory)
-                    let target_dir = model_path
-                        .parent()
-                        .ok_or_else(|| SemanticSearchError::EmbeddingError("Invalid model path".to_string()))?;
+                // Get the hosted models base URL from config
+                let semantic_config = crate::config::get_config();
+                let base_url = &semantic_config.hosted_models_base_url;
 
-                    // Get the hosted models base URL from config
-                    let semantic_config = crate::config::get_config();
-                    let base_url = &semantic_config.hosted_models_base_url;
+                // Create hosted model client and download with progress bar
+                let client = HostedModelClient::new(base_url.clone());
+                client
+                    .ensure_model(&model_config.name, target_dir)
+                    .await
+                    .map_err(|e| SemanticSearchError::EmbeddingError(format!("Failed to download model: {}", e)))?;
 
-                    // Create hosted model client and download with progress bar
-                    let client = HostedModelClient::new(base_url.clone());
-                    client
-                        .ensure_model(&model_config.name, target_dir)
-                        .await
-                        .map_err(|e| SemanticSearchError::EmbeddingError(format!("Failed to download model: {}", e)))?;
-
-                    debug!("Model download completed for {}", model_config.name);
-                }
+                debug!("Model download completed for {}", model_config.name);
             },
             EmbeddingType::BM25 => {
                 // BM25 doesn't require model downloads
