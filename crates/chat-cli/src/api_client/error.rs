@@ -1,6 +1,7 @@
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenError;
 use amzn_codewhisperer_client::operation::generate_completions::GenerateCompletionsError;
 use amzn_codewhisperer_client::operation::list_available_customizations::ListAvailableCustomizationsError;
+use amzn_codewhisperer_client::operation::list_available_models::ListAvailableModelsError;
 use amzn_codewhisperer_client::operation::list_available_profiles::ListAvailableProfilesError;
 use amzn_codewhisperer_client::operation::send_telemetry_event::SendTelemetryEventError;
 pub use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError;
@@ -93,6 +94,12 @@ pub enum ApiClientError {
     // Credential errors
     #[error("failed to load credentials: {}", .0)]
     Credentials(CredentialsError),
+
+    #[error(transparent)]
+    ListAvailableModelsError(#[from] SdkError<ListAvailableModelsError, HttpResponse>),
+
+    #[error("No default model found in the ListAvailableModels API response")]
+    DefaultModelNotFound,
 }
 
 impl ApiClientError {
@@ -116,6 +123,8 @@ impl ApiClientError {
             Self::ModelOverloadedError { status_code, .. } => *status_code,
             Self::MonthlyLimitReached { status_code } => *status_code,
             Self::Credentials(_e) => None,
+            Self::ListAvailableModelsError(e) => sdk_status_code(e),
+            Self::DefaultModelNotFound => None,
         }
     }
 }
@@ -141,6 +150,8 @@ impl ReasonCode for ApiClientError {
             Self::ModelOverloadedError { .. } => "ModelOverloadedError".to_string(),
             Self::MonthlyLimitReached { .. } => "MonthlyLimitReached".to_string(),
             Self::Credentials(_) => "CredentialsError".to_string(),
+            Self::ListAvailableModelsError(e) => sdk_error_code(e),
+            Self::DefaultModelNotFound => "DefaultModelNotFound".to_string(),
         }
     }
 }
@@ -186,6 +197,10 @@ mod tests {
             )),
             ApiClientError::ListAvailableCustomizations(SdkError::service_error(
                 ListAvailableCustomizationsError::unhandled("<unhandled>"),
+                response(),
+            )),
+            ApiClientError::ListAvailableModelsError(SdkError::service_error(
+                ListAvailableModelsError::unhandled("<unhandled>"),
                 response(),
             )),
             ApiClientError::ListAvailableServices(SdkError::service_error(

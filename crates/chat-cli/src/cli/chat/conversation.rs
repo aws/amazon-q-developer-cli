@@ -65,6 +65,10 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
+use crate::cli::chat::cli::model::{
+    ModelInfo,
+    get_model_info,
+};
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 
@@ -109,7 +113,7 @@ pub struct ConversationState {
     pub agents: Agents,
     /// Model explicitly selected by the user in this conversation state via `/model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
+    pub model: Option<ModelInfo>,
     /// Used to track agent vs user updates to file modifications.
     ///
     /// Maps from a file path to [FileLineTracker]
@@ -124,9 +128,22 @@ impl ConversationState {
         tool_config: HashMap<String, ToolSpec>,
         tool_manager: ToolManager,
         current_model_id: Option<String>,
+        os: &Os,
     ) -> Self {
+        let model = if let Some(model_id) = current_model_id {
+            match get_model_info(&model_id, os).await {
+                Ok(info) => Some(info),
+                Err(e) => {
+                    tracing::warn!("Failed to get model info for {}: {}, using default", model_id, e);
+                    Some(ModelInfo::from_id(model_id))
+                },
+            }
+        } else {
+            None
+        };
+
         let context_manager = if let Some(agent) = agents.get_active() {
-            ContextManager::from_agent(agent, calc_max_context_files_size(current_model_id.as_deref())).ok()
+            ContextManager::from_agent(agent, calc_max_context_files_size(model.as_ref())).ok()
         } else {
             None
         };
@@ -155,7 +172,7 @@ impl ConversationState {
             context_message_length: None,
             latest_summary: None,
             agents,
-            model: current_model_id,
+            model,
             file_line_tracker: HashMap::new(),
         }
     }
@@ -434,7 +451,7 @@ impl ConversationState {
             context_messages,
             dropped_context_files,
             tools: &self.tools,
-            model_id: self.model.as_deref(),
+            model_id: self.model.as_ref().map(|m| m.model_id.as_str()),
         })
     }
 
@@ -532,7 +549,7 @@ impl ConversationState {
             conversation_id: Some(self.conversation_id.clone()),
             user_input_message: summary_message
                 .unwrap_or(UserMessage::new_prompt(summary_content)) // should not happen
-                .into_user_input_message(self.model.clone(), &tools),
+                .into_user_input_message(self.model.as_ref().map(|m| m.model_id.clone()), &tools),
             history: Some(flatten_history(history.iter())),
         })
     }
@@ -645,7 +662,7 @@ impl ConversationState {
     /// Get the current token warning level
     pub async fn get_token_warning_level(&mut self, os: &Os) -> Result<TokenWarningLevel, ChatError> {
         let total_chars = self.calculate_char_count(os).await?;
-        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model.as_deref()));
+        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model.as_ref()));
 
         Ok(if *total_chars >= max_chars {
             TokenWarningLevel::Critical
@@ -1068,6 +1085,7 @@ mod tests {
             tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
             tool_manager,
             None,
+            &os,
         )
         .await;
 
@@ -1099,6 +1117,7 @@ mod tests {
             tool_config.clone(),
             tool_manager.clone(),
             None,
+            &os,
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1127,8 +1146,15 @@ mod tests {
         }
 
         // Build a long conversation history of user messages mixed in with tool results.
-        let mut conversation =
-            ConversationState::new("fake_conv_id", agents, tool_config.clone(), tool_manager.clone(), None).await;
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_config.clone(),
+            tool_manager.clone(),
+            None,
+            &os,
+        )
+        .await;
         conversation.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation
@@ -1180,6 +1206,7 @@ mod tests {
             tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
             tool_manager,
             None,
+            &os,
         )
         .await;
 

@@ -23,6 +23,7 @@ use crate::cli::agent::hook::{
 };
 use crate::cli::chat::ChatError;
 use crate::cli::chat::cli::hooks::HookExecutor;
+use crate::cli::chat::cli::model::ModelInfo;
 use crate::os::Os;
 
 #[derive(Debug, Clone)]
@@ -255,9 +256,9 @@ impl ContextManager {
 }
 
 /// Calculates the maximum context files size to use for the given model id.
-pub fn calc_max_context_files_size(model_id: Option<&str>) -> usize {
+pub fn calc_max_context_files_size(model: Option<&ModelInfo>) -> usize {
     // Sets the max as 75% of the context window
-    context_window_tokens(model_id).saturating_mul(3) / 4
+    context_window_tokens(model).saturating_mul(3) / 4
 }
 
 /// Process a path, handling glob patterns and file types.
@@ -434,9 +435,20 @@ mod tests {
     #[test]
     fn test_calc_max_context_files_size() {
         assert_eq!(
-            calc_max_context_files_size(Some("CLAUDE_SONNET_4_20250514_V1_0")),
+            calc_max_context_files_size(Some(&ModelInfo {
+                model_id: "CLAUDE_SONNET_4_20250514_V1_0".to_string(),
+                model_name: Some("Claude".to_string()),
+                context_window_tokens: 200_000,
+            })),
             150_000
         );
-        assert_eq!(calc_max_context_files_size(Some("OPENAI_GPT_OSS_120B_1_0")), 96_000);
+        assert_eq!(
+            calc_max_context_files_size(Some(&ModelInfo {
+                model_id: "OPENAI_GPT_OSS_120B_1_0".to_string(),
+                model_name: Some("GPT".to_string()),
+                context_window_tokens: 128_000,
+            })),
+            96_000
+        );
     }
 }
