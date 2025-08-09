@@ -44,6 +44,7 @@ impl CustomModelHandler {
     }
 
     /// Check if this is a Bedrock/Anthropic model
+    #[allow(dead_code)]
     pub fn is_bedrock(&self) -> bool {
         self.actual_model_id.contains("anthropic") || 
         self.actual_model_id.contains("claude")
@@ -72,6 +73,7 @@ impl CustomModelHandler {
     }
     
     /// Validate that AWS credentials are available
+    #[allow(dead_code)]
     pub async fn validate_credentials() -> Result<(), String> {
         let credentials_chain = CredentialsChain::new().await;
         match credentials_chain.provide_credentials().await {

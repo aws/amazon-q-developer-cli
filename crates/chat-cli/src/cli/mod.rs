@@ -136,7 +136,7 @@ impl RootSubcommand {
         let skip_auth = std::env::var("AMAZON_Q_CUSTOM_MODEL").is_ok() 
             || std::env::var("AMAZON_Q_SIGV4").is_ok()
             || match &self {
-                Self::Chat(args) => args.model.as_ref().map(|m| m.starts_with("custom:")).unwrap_or(false),
+                Self::Chat(args) => args.model.as_ref().is_some_and(|m| m.starts_with("custom:")),
                 _ => false,
             };
         

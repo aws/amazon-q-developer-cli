@@ -88,7 +88,7 @@ impl ApiClient {
         let endpoint = endpoint.unwrap_or(Endpoint::configured_value(database));
         
         // Check if using custom model (bypasses authentication)
-        let use_custom_model = env.get("AMAZON_Q_CUSTOM_MODEL").is_ok() || env.get("AMAZON_Q_SIGV4").is_ok();
+        let _use_custom_model = env.get("AMAZON_Q_CUSTOM_MODEL").is_ok() || env.get("AMAZON_Q_SIGV4").is_ok();
 
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
