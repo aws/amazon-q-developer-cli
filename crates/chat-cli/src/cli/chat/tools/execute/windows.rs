@@ -12,8 +12,10 @@ use tracing::error;
 
 use super::{
     CommandResult,
+    env_vars_with_user_agent,
     format_output,
 };
+use crate::os::Os;
 
 /// Run a command on Windows using cmd.exe.
 /// # Arguments
@@ -23,14 +25,19 @@ use super::{
 /// # Returns
 /// A [`CommandResult`]
 pub async fn run_command<W: Write>(
+    os: &Os,
     command: &str,
     max_result_size: usize,
     mut updates: Option<W>,
 ) -> Result<CommandResult> {
+    // Set up environment variables with user agent metadata for CloudTrail tracking
+    let env_vars = env_vars_with_user_agent(os);
+
     // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
     let mut child = tokio::process::Command::new("cmd")
         .arg("/C")
         .arg(command)
+        .envs(env_vars)
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -116,9 +123,11 @@ pub async fn run_command<W: Write>(
 mod tests {
     use crate::cli::chat::tools::OutputKind;
     use crate::cli::chat::tools::execute::ExecuteCommand;
+    use crate::os::Os;
 
     #[tokio::test]
     async fn test_execute_cmd_tool() {
+        let os = Os::new().await.unwrap();
         let mut stdout = std::io::stdout();
 
         // Verifying stdout
@@ -127,7 +136,7 @@ mod tests {
         });
         let out = serde_json::from_value::<ExecuteCommand>(v)
             .unwrap()
-            .invoke(&mut stdout)
+            .invoke(&os, &mut stdout)
             .await
             .unwrap();
 
@@ -145,7 +154,7 @@ mod tests {
         });
         let out = serde_json::from_value::<ExecuteCommand>(v)
             .unwrap()
-            .invoke(&mut stdout)
+            .invoke(&os, &mut stdout)
             .await
             .unwrap();
 
@@ -163,7 +172,7 @@ mod tests {
         });
         let out = serde_json::from_value::<ExecuteCommand>(v)
             .unwrap()
-            .invoke(&mut stdout)
+            .invoke(&os, &mut stdout)
             .await
             .unwrap();
         if let OutputKind::Json(json) = out.output {

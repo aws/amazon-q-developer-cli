@@ -26,3 +26,9 @@ pub const AGENT_FORMAT_TOOLS_DOC_URL: &str =
 
 pub const AGENT_MIGRATION_DOC_URL: &str =
     "https://github.com/aws/amazon-q-developer-cli/blob/main/docs/legacy-profile-to-agent-migration.md";
+
+// The environment variable name where we set additional metadata for the AWS CLI user agent.
+pub const USER_AGENT_ENV_VAR: &str = "AWS_EXECUTION_ENV";
+pub const USER_AGENT_APP_NAME: &str = "AmazonQ-For-CLI";
+pub const USER_AGENT_VERSION_KEY: &str = "Version";
+pub const USER_AGENT_VERSION_VALUE: &str = env!("CARGO_PKG_VERSION");
