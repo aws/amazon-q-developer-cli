@@ -86,7 +86,7 @@ impl ApiClient {
         endpoint: Option<Endpoint>,
     ) -> Result<Self, ApiClientError> {
         let endpoint = endpoint.unwrap_or(Endpoint::configured_value(database));
-        
+
         // Check if using custom model (bypasses authentication)
         let _use_custom_model = env.get("AMAZON_Q_CUSTOM_MODEL").is_ok() || env.get("AMAZON_Q_SIGV4").is_ok();
 
@@ -127,20 +127,23 @@ impl ApiClient {
         }
 
         // Check if using custom model first
-        let custom_model = database.settings.get_string(Setting::ChatDefaultModel)
+        let custom_model = database
+            .settings
+            .get_string(Setting::ChatDefaultModel)
             .and_then(|m| custom_model::CustomModelHandler::from_model_id(&m))
             .or_else(|| {
                 // Also check environment variable
-                std::env::var("AMAZON_Q_MODEL").ok()
+                std::env::var("AMAZON_Q_MODEL")
+                    .ok()
                     .and_then(|m| custom_model::CustomModelHandler::from_model_id(&m))
             });
-        
+
         if let Some(ref cm) = custom_model {
             // Setup AWS authentication for custom model
             cm.setup_aws_auth();
             info!("Using custom model: {} in region: {}", cm.get_model_id(), cm.region);
         }
-        
+
         // If SIGV4_AUTH_ENABLED is true or using custom model, use Q developer client
         let mut streaming_client = None;
         let mut sigv4_streaming_client = None;

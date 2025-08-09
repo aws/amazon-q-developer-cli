@@ -611,7 +611,7 @@ impl ChatSession {
                 }
             },
         };
-        
+
         // Handle custom model format: extract actual model ID and set region
         if valid_model_id.starts_with("custom:") {
             if let Some((region, actual_model_id)) = cli::model::parse_custom_model(&valid_model_id) {

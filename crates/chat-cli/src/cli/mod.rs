@@ -133,13 +133,13 @@ impl RootSubcommand {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Check for auth on subcommands that require it.
         // Skip auth check for custom models or when using AWS credentials
-        let skip_auth = std::env::var("AMAZON_Q_CUSTOM_MODEL").is_ok() 
+        let skip_auth = std::env::var("AMAZON_Q_CUSTOM_MODEL").is_ok()
             || std::env::var("AMAZON_Q_SIGV4").is_ok()
             || match &self {
                 Self::Chat(args) => args.model.as_ref().is_some_and(|m| m.starts_with("custom:")),
                 _ => false,
             };
-        
+
         if self.requires_auth() && !skip_auth && !crate::auth::is_logged_in(&mut os.database).await {
             bail!(
                 "You are not logged in, please log in with {}",

@@ -49,21 +49,21 @@ pub fn parse_custom_model(model_id: &str) -> Option<(String, String)> {
     if !model_id.starts_with("custom:") {
         return None;
     }
-    
+
     // Remove "custom:" prefix
     let without_prefix = &model_id[7..];
-    
+
     // Find the first colon to separate region from model ID
     if let Some(colon_pos) = without_prefix.find(':') {
         let region = without_prefix[..colon_pos].to_string();
         let mut actual_model_id = without_prefix[colon_pos + 1..].to_string();
-        
+
         // Map common Bedrock model IDs to Q Developer format
         actual_model_id = map_bedrock_to_q_model(&actual_model_id);
-        
+
         return Some((region, actual_model_id));
     }
-    
+
     None
 }
 
@@ -71,14 +71,13 @@ pub fn parse_custom_model(model_id: &str) -> Option<(String, String)> {
 fn map_bedrock_to_q_model(model_id: &str) -> String {
     match model_id {
         // Claude 3.5 Sonnet mappings
-        "us.anthropic.claude-3-5-sonnet-20241022-v2:0" |
-        "anthropic.claude-3-5-sonnet-20241022-v2:0" |
-        "claude-3-5-sonnet-20241022" => "CLAUDE_3_7_SONNET_20250219_V1_0".to_string(),
-        
+        "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+        | "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        | "claude-3-5-sonnet-20241022" => "CLAUDE_3_7_SONNET_20250219_V1_0".to_string(),
+
         // Claude 4 Sonnet mappings
-        "anthropic.claude-4-sonnet:0" |
-        "claude-4-sonnet" => "CLAUDE_SONNET_4_20250514_V1_0".to_string(),
-        
+        "anthropic.claude-4-sonnet:0" | "claude-4-sonnet" => "CLAUDE_SONNET_4_20250514_V1_0".to_string(),
+
         // If already in Q Developer format or unknown, pass through
         _ => model_id.to_string(),
     }
@@ -265,33 +264,30 @@ mod tests {
             map_bedrock_to_q_model("us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
             "CLAUDE_3_7_SONNET_20250219_V1_0"
         );
-        
+
         assert_eq!(
             map_bedrock_to_q_model("anthropic.claude-3-5-sonnet-20241022-v2:0"),
             "CLAUDE_3_7_SONNET_20250219_V1_0"
         );
-        
+
         assert_eq!(
             map_bedrock_to_q_model("claude-3-5-sonnet-20241022"),
             "CLAUDE_3_7_SONNET_20250219_V1_0"
         );
-        
+
         assert_eq!(
             map_bedrock_to_q_model("anthropic.claude-4-sonnet:0"),
             "CLAUDE_SONNET_4_20250514_V1_0"
         );
-        
+
         assert_eq!(
             map_bedrock_to_q_model("claude-4-sonnet"),
             "CLAUDE_SONNET_4_20250514_V1_0"
         );
-        
+
         // Test passthrough for unknown models
-        assert_eq!(
-            map_bedrock_to_q_model("some-unknown-model"),
-            "some-unknown-model"
-        );
-        
+        assert_eq!(map_bedrock_to_q_model("some-unknown-model"), "some-unknown-model");
+
         // Test passthrough for already-formatted Q models
         assert_eq!(
             map_bedrock_to_q_model("CLAUDE_3_7_SONNET_20250219_V1_0"),
@@ -308,7 +304,7 @@ mod tests {
             ("custom:ap-southeast-2:model", "ap-southeast-2"),
             ("custom:ca-central-1:model", "ca-central-1"),
         ];
-        
+
         for (input, expected_region) in test_cases {
             let result = parse_custom_model(input);
             assert!(result.is_some());
