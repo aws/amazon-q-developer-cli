@@ -477,6 +477,13 @@ impl BuilderIdToken {
             Some(_) => TokenType::IamIdentityCenter,
         }
     }
+
+    /// Check if the token is for the internal amzn start URL (`https://amzn.awsapps.com/start`),
+    /// this implies the user will use midway for private specs
+    #[allow(unused_variables)]
+    pub fn is_amzn_user(&self) -> bool {
+        matches!(&self.start_url, Some(url) if url == AMZN_START_URL)
+    }
 }
 
 pub enum PollCreateToken {

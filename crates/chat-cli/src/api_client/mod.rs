@@ -324,7 +324,7 @@ impl ApiClient {
         //     models.push(gpt_oss);
         // }
 
-        Ok(res.into())
+        Ok(res)
     }
 
     pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {
