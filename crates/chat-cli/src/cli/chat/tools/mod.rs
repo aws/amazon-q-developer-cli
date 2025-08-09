@@ -38,7 +38,13 @@ use thinking::Thinking;
 use tracing::error;
 use use_aws::UseAws;
 
-use super::consts::MAX_TOOL_RESPONSE_SIZE;
+use super::consts::{
+    MAX_TOOL_RESPONSE_SIZE,
+    USER_AGENT_APP_NAME,
+    USER_AGENT_ENV_VAR,
+    USER_AGENT_VERSION_KEY,
+    USER_AGENT_VERSION_VALUE,
+};
 use super::util::images::RichImageBlocks;
 use crate::cli::agent::{
     Agent,
@@ -118,7 +124,7 @@ impl Tool {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout, line_tracker).await,
-            Tool::ExecuteCommand(execute_command) => execute_command.invoke(stdout).await,
+            Tool::ExecuteCommand(execute_command) => execute_command.invoke(os, stdout).await,
             Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
@@ -423,6 +429,36 @@ pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: b
     }
 
     Ok(())
+}
+
+/// Helper function to set up environment variables with user agent metadata for CloudTrail tracking
+pub fn env_vars_with_user_agent(os: &Os) -> std::collections::HashMap<String, String> {
+    let mut env_vars: std::collections::HashMap<String, String> = std::env::vars().collect();
+
+    // Set up additional metadata for the AWS CLI user agent
+    let user_agent_metadata_value = format!(
+        "{} {}/{}",
+        USER_AGENT_APP_NAME, USER_AGENT_VERSION_KEY, USER_AGENT_VERSION_VALUE
+    );
+
+    // Check if the user agent metadata env var already exists using Os
+    let existing_value = os.env.get(USER_AGENT_ENV_VAR).ok();
+
+    // If the user agent metadata env var already exists, append to it, otherwise set it
+    if let Some(existing_value) = existing_value {
+        if !existing_value.is_empty() {
+            env_vars.insert(
+                USER_AGENT_ENV_VAR.to_string(),
+                format!("{} {}", existing_value, user_agent_metadata_value),
+            );
+        } else {
+            env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
+        }
+    } else {
+        env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
+    }
+
+    env_vars
 }
 
 #[cfg(test)]
