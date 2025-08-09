@@ -68,7 +68,18 @@ pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-opto
 // TODO(bskiser): confirm timeout is updated to an appropriate value?
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 
-type ModelListResult = (Vec<Model>, Model);
+#[derive(Clone, Debug)]
+pub struct ModelListResult {
+    pub models: Vec<Model>,
+    pub default_model: Model,
+}
+
+impl From<ModelListResult> for (Vec<Model>, Model) {
+    fn from(v: ModelListResult) -> Self {
+        (v.models, v.default_model)
+    }
+}
+
 type ModelCache = Arc<RwLock<Option<ModelListResult>>>;
 
 #[derive(Clone, Debug)]
@@ -240,22 +251,18 @@ impl ApiClient {
         Ok(profiles)
     }
 
-    pub async fn list_available_models(&self) -> Result<(Vec<Model>, Model), ApiClientError> {
+    pub async fn list_available_models(&self) -> Result<ModelListResult, ApiClientError> {
         if cfg!(test) {
-            return Ok((
-                vec![
-                    Model::builder()
-                        .model_id("model-1")
-                        .description("Test Model 1")
-                        .build()
-                        .unwrap(),
-                ],
-                Model::builder()
-                    .model_id("model-1")
-                    .description("Test Model 1")
-                    .build()
-                    .unwrap(),
-            ));
+            let m = Model::builder()
+                .model_id("model-1")
+                .description("Test Model 1")
+                .build()
+                .unwrap();
+
+            return Ok(ModelListResult {
+                models: vec![m.clone()],
+                default_model: m,
+            });
         }
 
         let mut models = Vec::new();
@@ -276,10 +283,10 @@ impl ApiClient {
             }
         }
         let default_model = default_model.ok_or_else(|| ApiClientError::DefaultModelNotFound)?;
-        Ok((models, default_model))
+        Ok(ModelListResult { models, default_model })
     }
 
-    pub async fn list_available_models_cached(&self) -> Result<(Vec<Model>, Model), ApiClientError> {
+    pub async fn list_available_models_cached(&self) -> Result<ModelListResult, ApiClientError> {
         {
             let cache = self.model_cache.read().await;
             if let Some(cached) = cache.as_ref() {
@@ -303,9 +310,8 @@ impl ApiClient {
         tracing::info!("Model cache invalidated");
     }
 
-    pub async fn get_available_models(&self, _region: &str) -> Result<(Vec<Model>, Model), ApiClientError> {
-        let (models, default_model) = self.list_available_models_cached().await?;
-
+    pub async fn get_available_models(&self, _region: &str) -> Result<ModelListResult, ApiClientError> {
+        let res = self.list_available_models_cached().await?;
         // TODO: Once we have access to gpt-oss, add back.
         // if region == "us-east-1" {
         //     let gpt_oss = Model::builder()
@@ -318,7 +324,7 @@ impl ApiClient {
         //     models.push(gpt_oss);
         // }
 
-        Ok((models, default_model))
+        Ok(res.into())
     }
 
     pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {
