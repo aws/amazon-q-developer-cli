@@ -85,3 +85,105 @@ impl CustomModelHandler {
         }
     }
 }
+
+// Add Debug trait implementation for better test output
+impl std::fmt::Debug for CustomModelHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CustomModelHandler")
+            .field("region", &self.region)
+            .field("actual_model_id", &self.actual_model_id)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_custom_model_handler_creation() {
+        let handler = CustomModelHandler {
+            region: "us-east-1".to_string(),
+            actual_model_id: "CLAUDE_3_7_SONNET_20250219_V1_0".to_string(),
+        };
+        
+        assert_eq!(handler.region, "us-east-1");
+        assert_eq!(handler.actual_model_id, "CLAUDE_3_7_SONNET_20250219_V1_0");
+    }
+
+    #[test]
+    fn test_from_model_id() {
+        let handler = CustomModelHandler::from_model_id("custom:us-west-2:test-model-id");
+        assert!(handler.is_some());
+        let handler = handler.unwrap();
+        assert_eq!(handler.region, "us-west-2");
+        assert_eq!(handler.actual_model_id, "test-model-id");
+    }
+
+    #[test]
+    fn test_is_bedrock() {
+        let handler1 = CustomModelHandler {
+            region: "us-east-1".to_string(),
+            actual_model_id: "anthropic.claude-3-5-sonnet".to_string(),
+        };
+        assert!(handler1.is_bedrock());
+
+        let handler2 = CustomModelHandler {
+            region: "us-east-1".to_string(),
+            actual_model_id: "claude-4-sonnet".to_string(),
+        };
+        assert!(handler2.is_bedrock());
+
+        let handler3 = CustomModelHandler {
+            region: "us-east-1".to_string(),
+            actual_model_id: "other-model".to_string(),
+        };
+        assert!(!handler3.is_bedrock());
+    }
+
+    #[test]
+    fn test_get_model_id() {
+        let handler = CustomModelHandler {
+            region: "eu-west-1".to_string(),
+            actual_model_id: "CLAUDE_SONNET_4_20250514_V1_0".to_string(),
+        };
+        assert_eq!(handler.get_model_id(), "CLAUDE_SONNET_4_20250514_V1_0");
+    }
+
+    #[test]
+    fn test_parse_custom_model() {
+        // Valid format
+        let result = parse_custom_model("custom:us-east-1:model-id");
+        assert!(result.is_some());
+        let (region, model) = result.unwrap();
+        assert_eq!(region, "us-east-1");
+        assert_eq!(model, "model-id");
+
+        // Invalid formats
+        assert!(parse_custom_model("invalid:format").is_none());
+        assert!(parse_custom_model("custom:").is_none());
+        assert!(parse_custom_model("custom:us-east-1").is_none());
+        assert!(parse_custom_model("").is_none());
+    }
+
+    #[test]
+    fn test_complex_model_ids() {
+        let result = parse_custom_model("custom:us-east-1:vendor:model:version:0");
+        assert!(result.is_some());
+        let (region, model) = result.unwrap();
+        assert_eq!(region, "us-east-1");
+        assert_eq!(model, "vendor:model:version:0");
+    }
+
+    #[test]
+    fn test_debug_trait() {
+        let handler = CustomModelHandler {
+            region: "ap-southeast-1".to_string(),
+            actual_model_id: "TEST_MODEL".to_string(),
+        };
+        let debug_str = format!("{:?}", handler);
+        assert!(debug_str.contains("CustomModelHandler"));
+        assert!(debug_str.contains("ap-southeast-1"));
+        assert!(debug_str.contains("TEST_MODEL"));
+    }
+}
