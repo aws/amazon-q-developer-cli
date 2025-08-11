@@ -375,8 +375,12 @@ impl ToolManagerBuilder {
         let agent = Arc::new(Mutex::new(self.agent.unwrap_or_default()));
         let agent_clone = agent.clone();
         let database = os.database.clone();
+        let mut prompt_list_sender = self.prompt_list_sender.take();
+        let mut prompt_list_receiver = self.prompt_list_receiver.take();
 
         tokio::spawn(async move {
+            use tokio::sync::mpsc::Sender;
+
             let mut record_temp_buf = Vec::<u8>::new();
             let mut initialized = HashSet::<String>::new();
             let mut prompts = HashMap::<String, Vec<PromptBundle>>::new();
@@ -395,7 +399,65 @@ impl ToolManagerBuilder {
                 }
             }
 
-            while let Some(msg) = msg_rx.recv().await {
+            // We separate this into its own function for ease of maintenance since things written
+            // in select arms don't have type hints
+            #[inline]
+            async fn handle_prompt_search(
+                search_word: Option<String>,
+                prompts: &HashMap<String, Vec<PromptBundle>>,
+                prompt_list_sender: &mut Option<Sender<Vec<String>>>,
+            ) {
+                let filtered_prompts = prompts
+                    .iter()
+                    .flat_map(|(prompt_name, bundles)| {
+                        if bundles.len() > 1 {
+                            bundles
+                                .iter()
+                                .map(|b| format!("{}/{}", b.server_name, prompt_name))
+                                .collect()
+                        } else {
+                            vec![prompt_name.to_owned()]
+                        }
+                    })
+                    .filter(|n| {
+                        if let Some(p) = &search_word {
+                            n.contains(p)
+                        } else {
+                            true
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Some(sender) = prompt_list_sender {
+                    if let Err(e) = sender.send(filtered_prompts).await {
+                        error!("Error sending prompts to chat helper: {:?}", e);
+                    }
+                }
+            }
+
+            // We separate this into its own function for ease of maintenance since things written
+            // in select arms don't have type hints
+            #[inline]
+            #[allow(clippy::too_many_arguments)]
+            async fn handle_messenger_msg(
+                msg: UpdateEventMessage,
+                loading_servers: &mut HashMap<String, Instant>,
+                record_temp_buf: &mut Vec<u8>,
+                pending_clone: &Arc<RwLock<HashSet<String>>>,
+                agent_clone: &Arc<Mutex<Agent>>,
+                database: &Database,
+                conv_id_clone: &str,
+                regex: &Regex,
+                telemetry_clone: &TelemetryThread,
+                mut loading_status_sender_clone: Option<Sender<LoadingMsg>>,
+                new_tool_specs_clone: &Arc<Mutex<HashMap<String, (HashMap<String, ToolInfo>, Vec<ToolSpec>)>>>,
+                has_new_stuff_clone: &Arc<AtomicBool>,
+                load_record_clone: &Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
+                notify_weak: &std::sync::Weak<Notify>,
+                initialized: &mut HashSet<String>,
+                prompts: &mut HashMap<String, Vec<PromptBundle>>,
+                total: usize,
+            ) {
                 record_temp_buf.clear();
                 // For now we will treat every list result as if they contain the
                 // complete set of tools. This is not necessarily true in the future when
@@ -469,7 +531,7 @@ impl ToolManagerBuilder {
                                 let mut sanitized_mapping = HashMap::<ModelToolName, ToolInfo>::new();
                                 let process_result = process_tool_specs(
                                     &database,
-                                    conv_id_clone.as_str(),
+                                    conv_id_clone,
                                     &server_name,
                                     &mut specs,
                                     &mut sanitized_mapping,
@@ -506,7 +568,7 @@ impl ToolManagerBuilder {
                                     .insert(server_name.clone(), (sanitized_mapping, specs));
                                 has_new_stuff_clone.store(true, Ordering::Release);
                                 // Maintain a record of the server load:
-                                let mut buf_writer = BufWriter::new(&mut record_temp_buf);
+                                let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
                                 if let Err(e) = &process_result {
                                     let _ = queue_warn_message(
                                         server_name.as_str(),
@@ -542,7 +604,7 @@ impl ToolManagerBuilder {
                                 // Log error to chat Log
                                 error!("Error loading server {server_name}: {:?}", e);
                                 // Maintain a record of the server load:
-                                let mut buf_writer = BufWriter::new(&mut record_temp_buf);
+                                let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
                                 let _ = queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer);
                                 let _ = buf_writer.flush();
                                 drop(buf_writer);
@@ -581,7 +643,43 @@ impl ToolManagerBuilder {
                             }
                         }
                     },
-                    UpdateEventMessage::PromptsListResult { server_name, result } => {},
+                    UpdateEventMessage::PromptsListResult { server_name, result } => match result {
+                        Ok(prompt_list_result) => {
+                            let mut to_append = prompt_list_result
+                                .prompts
+                                .into_iter()
+                                .map(|pg| PromptBundle {
+                                    server_name: server_name.clone(),
+                                    prompt_get: pg,
+                                })
+                                .collect::<Vec<_>>();
+
+                            prompts
+                                .entry(server_name.clone())
+                                .and_modify(|bundles| {
+                                    bundles.clear();
+                                    bundles.append(&mut to_append);
+                                })
+                                .or_insert(to_append);
+                        },
+                        Err(e) => {
+                            error!("Error fetching prompts from server {server_name}: {:?}", e);
+                            let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
+                            let _ = queue_prompts_load_message(&server_name, &e, &mut buf_writer);
+                            let _ = buf_writer.flush();
+                            drop(buf_writer);
+                            let record = String::from_utf8_lossy(&record_temp_buf).to_string();
+                            let record = LoadingRecord::Err(record);
+                            load_record_clone
+                                .lock()
+                                .await
+                                .entry(server_name.clone())
+                                .and_modify(|load_record| {
+                                    load_record.push(record.clone());
+                                })
+                                .or_insert(vec![record]);
+                        },
+                    },
                     UpdateEventMessage::ResourcesListResult {
                         server_name: _,
                         result: _,
@@ -594,6 +692,40 @@ impl ToolManagerBuilder {
                         pending_clone.write().await.insert(server_name.clone());
                         loading_servers.insert(server_name, std::time::Instant::now());
                     },
+                }
+            }
+
+            loop {
+                tokio::select! {
+                    Ok(search_word) = async {
+                        match prompt_list_receiver.as_mut() {
+                            Some(receiver) => receiver.recv(),
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        handle_prompt_search(search_word, &prompts, &mut prompt_list_sender).await;
+                    },
+                    Some(msg) = msg_rx.recv() => {
+                        handle_messenger_msg(
+                                msg,
+                                &mut loading_servers,
+                                &mut record_temp_buf,
+                                &pending_clone,
+                                &agent_clone,
+                                &database,
+                                conv_id_clone.as_str(),
+                                &regex,
+                                &telemetry_clone,
+                                loading_status_sender_clone,
+                                &new_tool_specs_clone,
+                                &has_new_stuff_clone,
+                                &load_record_clone,
+                                &notify_weak,
+                                &mut initialized,
+                                &mut prompts,
+                                total
+                            ).await;
+                    }
                 }
             }
         });
@@ -1618,6 +1750,14 @@ fn queue_incomplete_load_message(
         style::Print(" Servers still loading:"),
         style::Print(msg),
         style::ResetColor,
+    )?)
+}
+
+fn queue_prompts_load_message(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+    Ok(queue!(
+        output,
+        style::Print("Prompt list failed with the following message: \n"),
+        style::Print(msg),
     )?)
 }
 
