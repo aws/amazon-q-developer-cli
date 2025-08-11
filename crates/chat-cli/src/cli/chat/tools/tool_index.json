@@ -333,7 +333,7 @@
           "type": "string"
         },
         "current_id": {
-          "description": "Required paramter of `complete`, `add`, and `remove` commands containing the ID of the currently loaded todo list. The ID will ALWAYS be provided after every `todo_list` call after the serialized todo list state.",
+          "description": "Required parameter of `complete`, `add`, and `remove` commands containing the ID of the currently loaded todo list. The ID will ALWAYS be provided after every `todo_list` call after the serialized todo list state.",
           "type": "string"
         },
         "new_tasks": {
