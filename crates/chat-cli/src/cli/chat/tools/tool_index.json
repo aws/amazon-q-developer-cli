@@ -328,8 +328,12 @@
             "type": "string"
           }
         },
-        "id": {
+        "load_id": {
           "description": "Required parameter of `load` command containing ID of todo list to load",
+          "type": "string"
+        },
+        "current_id": {
+          "description": "Required paramter of `complete`, `add`, and `remove` commands containing the ID of the currently loaded todo list. The ID will ALWAYS be provided after every `todo_list` call after the serialized todo list state.",
           "type": "string"
         },
         "new_tasks": {

@@ -677,61 +677,6 @@ impl ConversationState {
         }
         self.transcript.push_back(message);
     }
-
-    /// Create a request that prompts Q to use the `load` command of the
-    /// todo_list tool
-    pub async fn create_todo_request(&mut self, os: &Os, id: &str) -> Result<FigConversationState, ChatError> {
-        // Have to unpack each value separately since Reports can't be converted to
-        // ChatError
-        let todo_list_option = match os.database.get_todo(id) {
-            Ok(option) => option,
-            Err(e) => {
-                return Err(ChatError::Custom(
-                    format!("Error getting todo list from database: {e}").into(),
-                ));
-            },
-        };
-        let todo_list = match todo_list_option {
-            Some(todo_list) => todo_list,
-            None => return Err(ChatError::Custom(format!("No todo list with id {}", id).into())),
-        };
-        let contents = match serde_json::to_string(&todo_list) {
-            Ok(s) => s,
-            Err(e) => return Err(ChatError::Custom(format!("Error deserializing todo list: {e}").into())),
-        };
-        let summary_content = format!(
-            "[SYSTEM NOTE: This is an automated request, not from the user]\n
-            Read the TODO list contents below and understand the task description, completed tasks, and provided context.\n 
-            Call the `load` command of the todo_list tool with the given ID as an argument to display the TODO list to the user and officially resume execution of the TODO list tasks.\n
-            You do not need to display the tasks to the user yourself. You can begin completing the tasks after calling the `load` command.\n
-            TODO LIST CONTENTS: {}\n
-            ID: {}\n",
-            contents,
-            id
-        );
-
-        let mut conv_state = self.backend_conversation_state(os, false, &mut vec![]).await?;
-        let summary_message = UserMessage::new_prompt(summary_content.clone());
-        let history = conv_state.history.next_back().cloned();
-
-        // Only send the todo_list tool
-        let mut tools = self.tools.clone();
-        tools.retain(|k, v| match k {
-            ToolOrigin::Native => {
-                v.retain(|tool| match tool {
-                    Tool::ToolSpecification(tool_spec) => tool_spec.name == "todo_list",
-                });
-                true
-            },
-            ToolOrigin::McpServer(_) => false,
-        });
-
-        Ok(FigConversationState {
-            conversation_id: Some(self.conversation_id.clone()),
-            user_input_message: summary_message.into_user_input_message(self.model.clone(), &tools),
-            history: Some(flatten_history(history.iter())),
-        })
-    }
 }
 
 /// Represents a conversation state that can be converted into a [FigConversationState] (the type

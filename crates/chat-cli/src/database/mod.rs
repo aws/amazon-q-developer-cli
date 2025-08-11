@@ -387,15 +387,6 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_current_todo_id(&self) -> Result<Option<String>, DatabaseError> {
-        self.get_entry(Table::State, "current_todo_id")
-    }
-
-    pub fn set_current_todo_id(&self, id: &str) -> Result<(), DatabaseError> {
-        self.set_entry(Table::State, "current_todo_id", id)?;
-        Ok(())
-    }
-
     pub fn get_all_todos(&self) -> Result<Map<String, Value>, DatabaseError> {
         self.all_entries(Table::Todos)
     }

@@ -23,35 +23,41 @@ use super::InvokeOutput;
 use crate::os::Os;
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "command")]
+#[serde(tag = "command", rename_all = "camelCase")]
 pub enum TodoInput {
-    #[serde(rename = "create")]
+    // Creates a todo list
     Create {
         tasks: Vec<String>,
         task_description: String,
     },
 
-    #[serde(rename = "complete")]
+    // Completes tasks corresponding to the provided indices
+    // on the currently loaded todo list
     Complete {
         completed_indices: Vec<usize>,
         context_update: String,
         modified_files: Option<Vec<String>>,
+        current_id: String,
     },
 
-    #[serde(rename = "load")]
-    Load { id: String },
+    // Loads a todo list with the given id
+    Load {
+        load_id: String,
+    },
 
-    #[serde(rename = "add")]
+    // Inserts new tasks into the current todo list
     Add {
         new_tasks: Vec<String>,
         insert_indices: Vec<usize>,
         new_description: Option<String>,
+        current_id: String,
     },
 
-    #[serde(rename = "remove")]
+    // Removes tasks from the current todo list
     Remove {
         remove_indices: Vec<usize>,
         new_description: Option<String>,
+        current_id: String,
     },
 }
 
@@ -114,15 +120,6 @@ impl TodoState {
         Ok(())
     }
 
-    pub fn get_current_todo_id(os: &Os) -> Result<Option<String>> {
-        Ok(os.database.get_current_todo_id()?)
-    }
-
-    pub fn set_current_todo_id(os: &Os, id: &str) -> Result<()> {
-        os.database.set_current_todo_id(id)?;
-        Ok(())
-    }
-
     /// Generates a new unique id be used for new to-do lists
     pub fn generate_new_id() -> String {
         let timestamp = SystemTime::now()
@@ -136,12 +133,12 @@ impl TodoState {
 
 impl TodoInput {
     pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
-        let state = match self {
+        let (state, id) = match self {
             TodoInput::Create {
                 tasks,
                 task_description,
             } => {
-                // Create a new todo list with the given tasks and save state to databases
+                // Create a new todo list with the given tasks and save state to database
                 let state = TodoState {
                     tasks: tasks.clone(),
                     completed: vec![false; tasks.len()],
@@ -151,20 +148,16 @@ impl TodoInput {
                 };
                 let new_id = TodoState::generate_new_id();
                 state.save(os, &new_id)?;
-                TodoState::set_current_todo_id(os, &new_id)?;
                 state.display_list(output)?;
-                state
+                (state, new_id)
             },
             TodoInput::Complete {
                 completed_indices,
                 context_update,
                 modified_files,
+                current_id: id,
             } => {
-                let current_id = match TodoState::get_current_todo_id(os)? {
-                    Some(id) => id,
-                    None => bail!("No to-do list currently loaded"),
-                };
-                let mut state = TodoState::load(os, &current_id)?;
+                let mut state = TodoState::load(os, id)?;
 
                 for i in completed_indices.iter() {
                     state.completed[*i] = true;
@@ -175,7 +168,7 @@ impl TodoInput {
                 if let Some(files) = modified_files {
                     state.modified_files.extend_from_slice(files);
                 }
-                state.save(os, &current_id)?;
+                state.save(os, id)?;
 
                 // As tasks are being completed, display only the newly completed tasks
                 // and the next. Only display the whole list when all tasks are completed
@@ -198,24 +191,20 @@ impl TodoInput {
 
                     display_list.display_list(output)?;
                 }
-                state
+                (state, id.clone())
             },
-            TodoInput::Load { id } => {
-                TodoState::set_current_todo_id(os, id)?;
+            TodoInput::Load { load_id: id } => {
                 let state = TodoState::load(os, id)?;
                 state.display_list(output)?;
-                state
+                (state, id.clone())
             },
             TodoInput::Add {
                 new_tasks,
                 insert_indices,
                 new_description,
+                current_id: id,
             } => {
-                let current_id = match TodoState::get_current_todo_id(os)? {
-                    Some(id) => id,
-                    None => bail!("No to-do list currently loaded"),
-                };
-                let mut state = TodoState::load(os, &current_id)?;
+                let mut state = TodoState::load(os, id)?;
                 for (i, task) in insert_indices.iter().zip(new_tasks.iter()) {
                     state.tasks.insert(*i, task.clone());
                     state.completed.insert(*i, false);
@@ -223,19 +212,16 @@ impl TodoInput {
                 if let Some(description) = new_description {
                     state.task_description = description.clone();
                 }
-                state.save(os, &current_id)?;
+                state.save(os, id)?;
                 state.display_list(output)?;
-                state
+                (state, id.clone())
             },
             TodoInput::Remove {
                 remove_indices,
                 new_description,
+                current_id: id,
             } => {
-                let current_id = match TodoState::get_current_todo_id(os)? {
-                    Some(id) => id,
-                    None => bail!("No to-do list currently loaded"),
-                };
-                let mut state = TodoState::load(os, &current_id)?;
+                let mut state = TodoState::load(os, id)?;
 
                 // Remove entries in reverse order so indices aren't mismatched
                 let mut remove_indices = remove_indices.clone();
@@ -247,14 +233,15 @@ impl TodoInput {
                 if let Some(description) = new_description {
                     state.task_description = description.clone();
                 }
-                state.save(os, &current_id)?;
+                state.save(os, id)?;
                 state.display_list(output)?;
-                state
+                (state, id.clone())
             },
         };
 
+        let invoke_output = format!("TODO LIST STATE: {}\n\n ID: {id}", serde_json::to_string(&state)?);
         Ok(InvokeOutput {
-            output: super::OutputKind::Json(serde_json::to_value(state)?),
+            output: super::OutputKind::Text(invoke_output),
         })
     }
 
@@ -275,13 +262,10 @@ impl TodoInput {
             TodoInput::Complete {
                 completed_indices,
                 context_update,
+                current_id,
                 ..
             } => {
-                let current_id = match TodoState::get_current_todo_id(os)? {
-                    Some(id) => id,
-                    None => bail!("No todo list is currently loaded"),
-                };
-                let state = TodoState::load(os, &current_id)?;
+                let state = TodoState::load(os, current_id)?;
                 if completed_indices.is_empty() {
                     bail!("At least one completed index must be provided");
                 } else if completed_indices.iter().any(|i| *i >= state.completed.len()) {
@@ -290,7 +274,7 @@ impl TodoInput {
                     bail!("No context update was provided");
                 }
             },
-            TodoInput::Load { id } => {
+            TodoInput::Load { load_id: id } => {
                 let state = TodoState::load(os, id)?;
                 if state.tasks.is_empty() {
                     bail!("Loaded todo list is empty");
@@ -300,12 +284,9 @@ impl TodoInput {
                 new_tasks,
                 insert_indices,
                 new_description,
+                current_id: id,
             } => {
-                let current_id = match TodoState::get_current_todo_id(os)? {
-                    Some(id) => id,
-                    None => bail!("No todo list is currently loaded"),
-                };
-                let state = TodoState::load(os, &current_id)?;
+                let state = TodoState::load(os, id)?;
                 if new_tasks.iter().any(|task| task.trim().is_empty()) {
                     bail!("New tasks cannot be empty");
                 } else if has_duplicates(insert_indices) {
@@ -321,12 +302,9 @@ impl TodoInput {
             TodoInput::Remove {
                 remove_indices,
                 new_description,
+                current_id: id,
             } => {
-                let current_id = match TodoState::get_current_todo_id(os)? {
-                    Some(id) => id,
-                    None => bail!("No todo list is currently loaded"),
-                };
-                let state = TodoState::load(os, &current_id)?;
+                let state = TodoState::load(os, id)?;
                 if has_duplicates(remove_indices) {
                     bail!("Removal indices must be unique")
                 } else if remove_indices.iter().any(|i| *i > state.tasks.len()) {

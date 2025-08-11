@@ -1,20 +1,11 @@
 use clap::Subcommand;
+use crossterm::execute;
 use crossterm::style::{
     self,
     Stylize,
 };
-use crossterm::{
-    cursor,
-    execute,
-    queue,
-    terminal,
-};
 use dialoguer::FuzzySelect;
 use eyre::Result;
-use spinners::{
-    Spinner,
-    Spinners,
-};
 
 use crate::cli::chat::tools::todo::TodoState;
 use crate::cli::chat::{
@@ -37,9 +28,6 @@ pub enum TodoSubcommand {
 
     /// Delete a to-do list
     Delete,
-
-    /// Display current to-do list
-    Show,
 }
 
 /// Used for displaying completed and in-progress todo lists
@@ -73,21 +61,28 @@ impl TodoSubcommand {
             Self::ClearFinished => {
                 let entries = match os.database.get_all_todos() {
                     Ok(e) => e,
-                    Err(_) => return Err(ChatError::Custom("Could not get all to-do lists".into())),
+                    Err(e) => return Err(ChatError::Custom(format!("Could not get all to-do lists: {e}").into())),
                 };
                 let mut cleared_one = false;
+                println!("Starting loop!: {} entries", entries.len());
+
                 for (id, value) in entries.iter() {
-                    let temp_struct = match value.as_str() {
+                    let todo_status = match value.as_str() {
                         Some(s) => match serde_json::from_str::<TodoState>(s) {
                             Ok(state) => state,
+
+                            // FIX: Silent fail
                             Err(_) => continue,
                         },
                         None => continue,
                     };
-                    if temp_struct.completed.iter().all(|b| *b) {
+                    println!("{}", todo_status.task_description);
+                    if todo_status.completed.iter().all(|b| *b) {
                         match os.database.delete_todo(id) {
                             Ok(_) => cleared_one = true,
-                            Err(_) => return Err(ChatError::Custom("Could not delete to-do list".into())),
+                            Err(e) => {
+                                return Err(ChatError::Custom(format!("Could not delete to-do list: {e}").into()));
+                            },
                         };
                     }
                 }
@@ -106,44 +101,19 @@ impl TodoSubcommand {
                         execute!(session.stderr, style::Print("No to-do lists to resume!\n"),)?;
                     } else if let Some(index) = fuzzy_select_todos(&entries, "Select a to-do list to resume:") {
                         if index < entries.len() {
-                            // Create spinner for long wait
-                            // Can't use with_spinner because of mutable references?? bchm
-                            execute!(session.stderr, cursor::Hide)?;
-                            let spinner = if session.interactive {
-                                Some(Spinner::new(
-                                    Spinners::Dots,
-                                    format!("{} {}", "Resuming:".magenta(), entries[index].description.clone()),
+                            execute!(
+                                session.stderr,
+                                style::Print(format!(
+                                    "{} {}",
+                                    "⟳ Resuming:".magenta(),
+                                    entries[index].description.clone()
                                 ))
-                            } else {
-                                None
-                            };
-
-                            let todo_result = session.resume_todo(os, &entries[index].id).await;
-
-                            // Remove spinner
-                            if let Some(mut s) = spinner {
-                                s.stop();
-                                queue!(
-                                    session.stderr,
-                                    terminal::Clear(terminal::ClearType::CurrentLine),
-                                    cursor::MoveToColumn(0),
-                                    style::Print(format!(
-                                        "{} {}\n",
-                                        "⟳ Resuming:".magenta(),
-                                        entries[index].description.clone()
-                                    )),
-                                    cursor::Show,
-                                    style::SetForegroundColor(style::Color::Reset)
-                                )?;
-                            }
-
-                            if let Err(e) = todo_result {
-                                return Err(ChatError::Custom(format!("Could not resume todo list: {e}").into()));
-                            }
+                            )?;
+                            return session.resume_todo_request(os, &entries[index].id).await;
                         }
                     }
                 },
-                Err(_) => return Err(ChatError::Custom("Could not show to-do lists".into())),
+                Err(e) => return Err(ChatError::Custom(format!("Could not show to-do lists: {e}").into())),
             },
             Self::View => match Self::get_descriptions_and_statuses(os) {
                 Ok(entries) => {
@@ -151,16 +121,13 @@ impl TodoSubcommand {
                         execute!(session.stderr, style::Print("No to-do lists to view!\n"))?;
                     } else if let Some(index) = fuzzy_select_todos(&entries, "Select a to-do list to view:") {
                         if index < entries.len() {
-                            let list = match TodoState::load(os, &entries[index].id) {
-                                Ok(list) => list,
-                                Err(_) => {
-                                    return Err(ChatError::Custom("Could not load the selected to-do list".into()));
-                                },
-                            };
+                            let list = TodoState::load(os, &entries[index].id).map_err(|e| {
+                                ChatError::Custom(format!("Could not load current to-do list: {e}").into())
+                            })?;
                             execute!(
                                 session.stderr,
                                 style::Print(format!(
-                                    "{} {}\n",
+                                    "{} {}\n\n",
                                     "Viewing:".magenta(),
                                     entries[index].description.clone()
                                 ))
@@ -180,12 +147,9 @@ impl TodoSubcommand {
                         execute!(session.stderr, style::Print("No to-do lists to delete!\n"))?;
                     } else if let Some(index) = fuzzy_select_todos(&entries, "Select a to-do list to delete:") {
                         if index < entries.len() {
-                            match os.database.delete_todo(&entries[index].id) {
-                                Ok(_) => {},
-                                Err(_) => {
-                                    return Err(ChatError::Custom("Could not delete the selected to-do list".into()));
-                                },
-                            };
+                            os.database.delete_todo(&entries[index].id).map_err(|e| {
+                                ChatError::Custom(format!("Could not delete the selected to-do list: {e}").into())
+                            })?;
                             execute!(
                                 session.stderr,
                                 style::Print("✔ Deleted to-do list: ".green()),
@@ -195,24 +159,6 @@ impl TodoSubcommand {
                     }
                 },
                 Err(_) => return Err(ChatError::Custom("Could not show to-do lists".into())),
-            },
-            Self::Show => {
-                if let Some(id) = TodoState::get_current_todo_id(os).unwrap_or(None) {
-                    let state = match TodoState::load(os, &id) {
-                        Ok(s) => s,
-                        Err(_) => {
-                            return Err(ChatError::Custom("Could not load current to-do list".into()));
-                        },
-                    };
-                    match state.display_list(&mut session.stderr) {
-                        Ok(_) => execute!(session.stderr, style::Print("\n"))?,
-                        Err(_) => {
-                            return Err(ChatError::Custom("Could not display current to-do list".into()));
-                        },
-                    };
-                } else {
-                    execute!(session.stderr, style::Print("No to-do list currently loaded\n"))?;
-                }
             },
         }
         Ok(ChatState::PromptUser {

@@ -139,6 +139,8 @@ use crate::cli::chat::cli::prompts::{
     GetPromptError,
     PromptsSubcommand,
 };
+use crate::cli::chat::message::UserMessage;
+use crate::cli::chat::tools::ToolOrigin;
 use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
@@ -2780,50 +2782,55 @@ impl ChatSession {
 
     /// Prompts Q to resume a to-do list with the given id by calling the load
     /// command of the todo_list tool
-    pub async fn resume_todo(&mut self, os: &mut Os, id: &str) -> Result<()> {
-        let request_state = self.conversation.create_todo_request(os, id).await;
-        match request_state {
-            Ok(state) => {
-                self.conversation.reset_next_user_message();
-                self.conversation
-                    .set_next_user_message(state.user_input_message.content)
-                    .await;
+    pub async fn resume_todo_request(&mut self, os: &mut Os, id: &str) -> Result<ChatState, ChatError> {
+        // Have to unpack each value separately since Reports can't be converted to
+        // ChatError
+        let todo_list_option = match os.database.get_todo(id) {
+            Ok(option) => option,
+            Err(e) => {
+                return Err(ChatError::Custom(
+                    format!("Error getting todo list from database: {e}").into(),
+                ));
             },
-            Err(_) => bail!("Todo could not be resumed"),
         };
-
-        let conv_state = self
-            .conversation
-            .as_sendable_conversation_state(os, &mut self.stderr, false)
-            .await?;
-
-        let request_metadata: Arc<Mutex<Option<RequestMetadata>>> = Arc::new(Mutex::new(None));
-        let request_metadata_clone = Arc::clone(&request_metadata);
-
-        let mut response = match self.send_message(os, conv_state, request_metadata_clone, None).await {
-            Ok(res) => res,
-            Err(_) => bail!("Turn summary could not be created"),
+        let todo_list = match todo_list_option {
+            Some(todo_list) => todo_list,
+            None => return Err(ChatError::Custom(format!("No todo list with id {}", id).into())),
         };
+        let contents = match serde_json::to_string(&todo_list) {
+            Ok(s) => s,
+            Err(e) => return Err(ChatError::Custom(format!("Error deserializing todo list: {e}").into())),
+        };
+        let summary_content = format!(
+            "[SYSTEM NOTE: This is an automated request, not from the user]\n
+            Read the TODO list contents below and understand the task description, completed tasks, and provided context.\n 
+            Call the `load` command of the todo_list tool with the given ID as an argument to display the TODO list to the user and officially resume execution of the TODO list tasks.\n
+            You do not need to display the tasks to the user yourself. You can begin completing the tasks after calling the `load` command.\n
+            TODO LIST CONTENTS: {}\n
+            ID: {}\n",
+            contents,
+            id
+        );
 
-        // Since this is an internal tool call, manually handle the tool requests from Q
-        let mut tool_uses = Vec::new();
-        while let Some(res) = response.recv().await {
-            let res = res?;
-            match res {
-                parser::ResponseEvent::AssistantText(_) => (),
-                parser::ResponseEvent::EndStream { .. } => break,
-                parser::ResponseEvent::ToolUse(e) => tool_uses.push(e),
-                parser::ResponseEvent::ToolUseStart { .. } => (),
-            }
-        }
-        if !tool_uses.is_empty() {
-            self.validate_tools(os, tool_uses).await?;
-        }
+        let summary_message = UserMessage::new_prompt(summary_content.clone());
 
-        // FIX: hacky? not really sure how this works honestly LOL
-        self.conversation.reset_next_user_message();
+        // Only send the todo_list tool
+        let mut tools = self.conversation.tools.clone();
+        tools.retain(|k, v| match k {
+            ToolOrigin::Native => {
+                v.retain(|tool| match tool {
+                    api_client::model::Tool::ToolSpecification(tool_spec) => tool_spec.name == "todo_list",
+                });
+                true
+            },
+            ToolOrigin::McpServer(_) => false,
+        });
 
-        Ok(())
+        Ok(ChatState::HandleInput {
+            input: summary_message
+                .into_user_input_message(self.conversation.model.clone(), &tools)
+                .content,
+        })
     }
 }
 
