@@ -379,6 +379,7 @@ impl ToolManagerBuilder {
         tokio::spawn(async move {
             let mut record_temp_buf = Vec::<u8>::new();
             let mut initialized = HashSet::<String>::new();
+            let mut prompts = HashMap::<String, Vec<PromptBundle>>::new();
 
             enum ToolFilter {
                 All,
@@ -580,10 +581,7 @@ impl ToolManagerBuilder {
                             }
                         }
                     },
-                    UpdateEventMessage::PromptsListResult {
-                        server_name: _,
-                        result: _,
-                    } => {},
+                    UpdateEventMessage::PromptsListResult { server_name, result } => {},
                     UpdateEventMessage::ResourcesListResult {
                         server_name: _,
                         result: _,
