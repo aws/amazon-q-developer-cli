@@ -64,7 +64,6 @@ impl TodoSubcommand {
                     Err(e) => return Err(ChatError::Custom(format!("Could not get all to-do lists: {e}").into())),
                 };
                 let mut cleared_one = false;
-                println!("Starting loop!: {} entries", entries.len());
 
                 for (id, value) in entries.iter() {
                     let todo_status = match value.as_str() {
@@ -76,7 +75,6 @@ impl TodoSubcommand {
                         },
                         None => continue,
                     };
-                    println!("{}", todo_status.task_description);
                     if todo_status.completed.iter().all(|b| *b) {
                         match os.database.delete_todo(id) {
                             Ok(_) => cleared_one = true,
