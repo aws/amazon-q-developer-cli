@@ -5,8 +5,8 @@ mod error;
 pub mod model;
 mod opt_out;
 pub mod profile;
+mod retry_classifier;
 pub mod send_message_output;
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -146,6 +146,7 @@ impl ApiClient {
                     .interceptor(UserAgentOverrideInterceptor::new())
                     .app_name(app_name())
                     .endpoint_url(endpoint.url())
+                    .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                     .stalled_stream_protection(stalled_stream_protection_config())
                     .build(),
                 ));
@@ -159,6 +160,7 @@ impl ApiClient {
                         .bearer_token_resolver(BearerResolver)
                         .app_name(app_name())
                         .endpoint_url(endpoint.url())
+                        .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                         .stalled_stream_protection(stalled_stream_protection_config())
                         .build(),
                 ));
@@ -496,7 +498,9 @@ fn timeout_config(database: &Database) -> TimeoutConfig {
 }
 
 fn retry_config() -> RetryConfig {
-    RetryConfig::standard().with_max_attempts(1)
+    RetryConfig::adaptive()
+        .with_max_attempts(3)
+        .with_max_backoff(Duration::from_secs(10))
 }
 
 pub fn stalled_stream_protection_config() -> StalledStreamProtectionConfig {
