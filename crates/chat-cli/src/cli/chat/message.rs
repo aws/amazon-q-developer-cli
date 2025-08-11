@@ -286,7 +286,8 @@ impl UserMessage {
         }
     }
 
-    /// Returns a formatted [String] containing [Self::additional_context] and [Self::prompt].
+    /// Returns a formatted [String] containing [Self::additional_context], [Self::timestamp], and
+    /// [Self::prompt].
     fn content_with_context(&self) -> String {
         let mut content = String::new();
 
