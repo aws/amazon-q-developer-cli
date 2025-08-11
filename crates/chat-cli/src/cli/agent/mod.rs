@@ -305,11 +305,17 @@ impl Agent {
     }
 }
 
+/// Result of evaluating tool permissions, indicating whether a tool should be allowed,
+/// require user confirmation, or be denied with specific reasons.
 #[derive(Debug, PartialEq)]
 pub enum PermissionEvalResult {
+    /// Tool is allowed to execute without user confirmation
     Allow,
+    /// Tool requires user confirmation before execution
     Ask,
-    Deny,
+    /// Denial with specific reasons explaining why the tool was denied
+    /// Tools are free to overload what these reasons are
+    Deny(Vec<String>),
 }
 
 #[derive(Clone, Default, Debug)]

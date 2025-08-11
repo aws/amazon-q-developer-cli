@@ -263,6 +263,16 @@
       "name": "codewhispererterminal_clientApplication",
       "type": "string",
       "description": "Identifier for the client application or service using the chat-cli"
+    },
+    {
+      "name": "codewhispererterminal_linesByAgent",
+      "type": "int",
+      "description": "The number of lines of code contributed by agent"
+    },
+    {
+      "name": "codewhispererterminal_linesByUser",
+      "type": "int",
+      "description": "The number of lines of code contributed by user"
     }
   ],
   "metrics": [
@@ -415,6 +425,20 @@
         { "type": "codewhispererterminal_clientApplication" },
         { "type": "codewhispererterminal_AwsServiceName", "required": false },
         { "type": "codewhispererterminal_AwsOperationName", "required": false }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_agentContribution",
+      "description": "Emitted after write tool to track agent contribution for the file",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl" },
+        { "type": "amazonqConversationId" },
+        { "type": "codewhispererterminal_utteranceId" },
+        { "type": "codewhispererterminal_toolUseId" },
+        { "type": "codewhispererterminal_toolName" },
+        { "type": "codewhispererterminal_linesByAgent" },
+        { "type": "codewhispererterminal_linesByUser" }
       ]
     },
     {

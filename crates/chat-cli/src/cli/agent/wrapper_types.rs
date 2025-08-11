@@ -53,7 +53,7 @@ pub fn alias_schema(generator: &mut SchemaGenerator) -> Schema {
 
 /// The name of the tool to be configured
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, Hash, PartialEq, JsonSchema)]
-pub struct ToolSettingTarget(String);
+pub struct ToolSettingTarget(pub String);
 
 impl Deref for ToolSettingTarget {
     type Target = String;

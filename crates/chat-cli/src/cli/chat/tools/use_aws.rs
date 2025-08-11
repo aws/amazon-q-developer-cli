@@ -22,6 +22,7 @@ use super::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
+    env_vars_with_user_agent,
 };
 use crate::cli::agent::{
     Agent,
@@ -30,12 +31,6 @@ use crate::cli::agent::{
 use crate::os::Os;
 
 const READONLY_OPS: [&str; 6] = ["get", "describe", "list", "ls", "search", "batch_get"];
-
-/// The environment variable name where we set additional metadata for the AWS CLI user agent.
-const USER_AGENT_ENV_VAR: &str = "AWS_EXECUTION_ENV";
-const USER_AGENT_APP_NAME: &str = "AmazonQ-For-CLI";
-const USER_AGENT_VERSION_KEY: &str = "Version";
-const USER_AGENT_VERSION_VALUE: &str = env!("CARGO_PKG_VERSION");
 
 // TODO: we should perhaps composite this struct with an interface that we can use to mock the
 // actual cli with. That will allow us to more thoroughly test it.
@@ -54,32 +49,11 @@ impl UseAws {
         !READONLY_OPS.iter().any(|op| self.operation_name.starts_with(op))
     }
 
-    pub async fn invoke(&self, _os: &Os, _updates: impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, _updates: impl Write) -> Result<InvokeOutput> {
         let mut command = tokio::process::Command::new("aws");
-        command.envs(std::env::vars());
 
-        // Set up environment variables
-        let mut env_vars: std::collections::HashMap<String, String> = std::env::vars().collect();
-
-        // Set up additional metadata for the AWS CLI user agent
-        let user_agent_metadata_value = format!(
-            "{} {}/{}",
-            USER_AGENT_APP_NAME, USER_AGENT_VERSION_KEY, USER_AGENT_VERSION_VALUE
-        );
-
-        // If the user agent metadata env var already exists, append to it, otherwise set it
-        if let Some(existing_value) = env_vars.get(USER_AGENT_ENV_VAR) {
-            if !existing_value.is_empty() {
-                env_vars.insert(
-                    USER_AGENT_ENV_VAR.to_string(),
-                    format!("{} {}", existing_value, user_agent_metadata_value),
-                );
-            } else {
-                env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
-            }
-        } else {
-            env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
-        }
+        // Set up environment variables with user agent metadata for CloudTrail tracking
+        let env_vars = env_vars_with_user_agent(os);
 
         command.envs(env_vars).arg("--region").arg(&self.region);
         if let Some(profile_name) = self.profile_name.as_deref() {
@@ -205,7 +179,9 @@ impl UseAws {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {
+            #[serde(default)]
             allowed_services: Vec<String>,
+            #[serde(default)]
             denied_services: Vec<String>,
         }
 
@@ -221,7 +197,7 @@ impl UseAws {
                     },
                 };
                 if settings.denied_services.contains(service_name) {
-                    return PermissionEvalResult::Deny;
+                    return PermissionEvalResult::Deny(vec![service_name.clone()]);
                 }
                 if settings.allowed_services.contains(service_name) {
                     return PermissionEvalResult::Allow;
@@ -242,7 +218,10 @@ impl UseAws {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
+    use crate::cli::agent::ToolSettingTarget;
 
     macro_rules! use_aws {
         ($value:tt) => {
@@ -362,5 +341,50 @@ mod tests {
         } else {
             panic!("Expected JSON output");
         }
+    }
+
+    #[test]
+    fn test_eval_perm() {
+        let cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "put-object",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            allowed_tools: {
+                let mut allowed_tools = HashSet::<String>::new();
+                allowed_tools.insert("use_aws".to_string());
+                allowed_tools
+            },
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("use_aws".to_string()),
+                    serde_json::json!({
+                        "deniedServices": ["s3"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let res = cmd.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
+
+        let cmd = use_aws! {{
+            "service_name": "api_gateway",
+            "operation_name": "request",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+
+        let res = cmd.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Ask));
     }
 }

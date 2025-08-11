@@ -10,6 +10,7 @@ use regex::Regex;
 use serde::Deserialize;
 use tracing::error;
 
+use super::env_vars_with_user_agent;
 use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
@@ -128,8 +129,8 @@ impl ExecuteCommand {
         false
     }
 
-    pub async fn invoke(&self, output: &mut impl Write) -> Result<InvokeOutput> {
-        let output = run_command(&self.command, MAX_TOOL_RESPONSE_SIZE / 3, Some(output)).await?;
+    pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
+        let output = run_command(os, &self.command, MAX_TOOL_RESPONSE_SIZE / 3, Some(output)).await?;
         let clean_stdout = sanitize_unicode_tags(&output.stdout);
         let clean_stderr = sanitize_unicode_tags(&output.stderr);
 
@@ -193,7 +194,7 @@ impl ExecuteCommand {
 
         let Self { command, .. } = self;
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        let is_in_allowlist = agent.allowed_tools.contains("execute_bash");
+        let is_in_allowlist = agent.allowed_tools.contains(tool_name);
         match agent.tools_settings.get(tool_name) {
             Some(settings) if is_in_allowlist => {
                 let Settings {
@@ -208,8 +209,15 @@ impl ExecuteCommand {
                     },
                 };
 
-                if denied_commands.iter().any(|dc| command.contains(dc)) {
-                    return PermissionEvalResult::Deny;
+                let denied_match_set = denied_commands
+                    .iter()
+                    .filter_map(|dc| Regex::new(&format!(r"\A{dc}\z")).ok())
+                    .filter(|r| r.is_match(command))
+                    .map(|r| r.to_string())
+                    .collect::<Vec<_>>();
+
+                if !denied_match_set.is_empty() {
+                    return PermissionEvalResult::Deny(denied_match_set);
                 }
 
                 if self.requires_acceptance(Some(&allowed_commands), allow_read_only) {
@@ -249,7 +257,13 @@ pub fn format_output(output: &str, max_size: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{
+        HashMap,
+        HashSet,
+    };
+
     use super::*;
+    use crate::cli::agent::ToolSettingTarget;
 
     #[test]
     fn test_requires_acceptance_for_readonly_commands() {
@@ -383,5 +397,94 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn test_eval_perm() {
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            allowed_tools: {
+                let mut allowed_tools = HashSet::<String>::new();
+                allowed_tools.insert(tool_name.to_string());
+                allowed_tools
+            },
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({
+                        "deniedCommands": ["git .*"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "git status",
+        }))
+        .unwrap();
+
+        let res = tool.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
+
+        let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "echo hello",
+        }))
+        .unwrap();
+
+        let res = tool.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+    }
+
+    #[tokio::test]
+    async fn test_cloudtrail_tracking() {
+        use crate::cli::chat::consts::{
+            USER_AGENT_APP_NAME,
+            USER_AGENT_ENV_VAR,
+            USER_AGENT_VERSION_KEY,
+            USER_AGENT_VERSION_VALUE,
+        };
+
+        let os = Os::new().await.unwrap();
+
+        // Test that env_vars_with_user_agent sets the AWS_EXECUTION_ENV variable correctly
+        let env_vars = env_vars_with_user_agent(&os);
+
+        // Check that AWS_EXECUTION_ENV is set
+        assert!(env_vars.contains_key(USER_AGENT_ENV_VAR));
+
+        let user_agent_value = env_vars.get(USER_AGENT_ENV_VAR).unwrap();
+
+        // Check the format is correct
+        let expected_metadata = format!(
+            "{} {}/{}",
+            USER_AGENT_APP_NAME, USER_AGENT_VERSION_KEY, USER_AGENT_VERSION_VALUE
+        );
+        assert!(user_agent_value.contains(&expected_metadata));
+    }
+
+    #[tokio::test]
+    async fn test_cloudtrail_tracking_with_existing_env() {
+        use crate::cli::chat::consts::{
+            USER_AGENT_APP_NAME,
+            USER_AGENT_ENV_VAR,
+        };
+
+        let os = Os::new().await.unwrap();
+
+        // Set an existing AWS_EXECUTION_ENV value (safe because Os uses in-memory hashmap in tests)
+        unsafe {
+            os.env.set_var(USER_AGENT_ENV_VAR, "ExistingValue");
+        }
+
+        let env_vars = env_vars_with_user_agent(&os);
+        let user_agent_value = env_vars.get(USER_AGENT_ENV_VAR).unwrap();
+
+        // Should contain both the existing value and our metadata
+        assert!(user_agent_value.contains("ExistingValue"));
+        assert!(user_agent_value.contains(USER_AGENT_APP_NAME));
     }
 }
