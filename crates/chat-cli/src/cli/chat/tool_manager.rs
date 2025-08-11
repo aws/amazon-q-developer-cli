@@ -14,13 +14,10 @@ use std::io::{
 };
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,
     Ordering,
-};
-use std::sync::{
-    Arc,
-    RwLock as SyncRwLock,
 };
 use std::time::{
     Duration,
@@ -151,19 +148,19 @@ pub enum LoadingRecord {
 
 #[derive(Default)]
 pub struct ToolManagerBuilder {
-    prompt_list_sender: Option<std::sync::mpsc::Sender<Vec<String>>>,
-    prompt_list_receiver: Option<std::sync::mpsc::Receiver<Option<String>>>,
+    prompt_list_sender: Option<tokio::sync::broadcast::Sender<Vec<String>>>,
+    prompt_list_receiver: Option<tokio::sync::broadcast::Receiver<Option<String>>>,
     conversation_id: Option<String>,
     agent: Option<Agent>,
 }
 
 impl ToolManagerBuilder {
-    pub fn prompt_list_sender(mut self, sender: std::sync::mpsc::Sender<Vec<String>>) -> Self {
+    pub fn prompt_list_sender(mut self, sender: tokio::sync::broadcast::Sender<Vec<String>>) -> Self {
         self.prompt_list_sender.replace(sender);
         self
     }
 
-    pub fn prompt_list_receiver(mut self, receiver: std::sync::mpsc::Receiver<Option<String>>) -> Self {
+    pub fn prompt_list_receiver(mut self, receiver: tokio::sync::broadcast::Receiver<Option<String>>) -> Self {
         self.prompt_list_receiver.replace(receiver);
         self
     }
@@ -357,7 +354,7 @@ impl ToolManagerBuilder {
         };
 
         let mut clients = HashMap::<String, Arc<CustomToolClient>>::new();
-        let mut loading_status_sender_clone = loading_status_sender.clone();
+        let loading_status_sender_clone = loading_status_sender.clone();
         let conv_id_clone = conversation_id.clone();
         let regex = Regex::new(VALID_TOOL_NAME)?;
         let new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
@@ -379,7 +376,8 @@ impl ToolManagerBuilder {
         let mut prompt_list_receiver = self.prompt_list_receiver.take();
 
         tokio::spawn(async move {
-            use tokio::sync::mpsc::Sender;
+            use tokio::sync::broadcast::Sender as BroadcastSender;
+            use tokio::sync::mpsc::Sender as MpscSender;
 
             let mut record_temp_buf = Vec::<u8>::new();
             let mut initialized = HashSet::<String>::new();
@@ -405,7 +403,7 @@ impl ToolManagerBuilder {
             async fn handle_prompt_search(
                 search_word: Option<String>,
                 prompts: &HashMap<String, Vec<PromptBundle>>,
-                prompt_list_sender: &mut Option<Sender<Vec<String>>>,
+                prompt_list_sender: &mut Option<BroadcastSender<Vec<String>>>,
             ) {
                 let filtered_prompts = prompts
                     .iter()
@@ -429,7 +427,7 @@ impl ToolManagerBuilder {
                     .collect::<Vec<_>>();
 
                 if let Some(sender) = prompt_list_sender {
-                    if let Err(e) = sender.send(filtered_prompts).await {
+                    if let Err(e) = sender.send(filtered_prompts) {
                         error!("Error sending prompts to chat helper: {:?}", e);
                     }
                 }
@@ -449,7 +447,7 @@ impl ToolManagerBuilder {
                 conv_id_clone: &str,
                 regex: &Regex,
                 telemetry_clone: &TelemetryThread,
-                mut loading_status_sender_clone: Option<Sender<LoadingMsg>>,
+                mut loading_status_sender_clone: Option<&MpscSender<LoadingMsg>>,
                 new_tool_specs_clone: &Arc<Mutex<HashMap<String, (HashMap<String, ToolInfo>, Vec<ToolSpec>)>>>,
                 has_new_stuff_clone: &Arc<AtomicBool>,
                 load_record_clone: &Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
@@ -648,9 +646,12 @@ impl ToolManagerBuilder {
                             let mut to_append = prompt_list_result
                                 .prompts
                                 .into_iter()
-                                .map(|pg| PromptBundle {
-                                    server_name: server_name.clone(),
-                                    prompt_get: pg,
+                                .filter_map(|pg| {
+                                    let pg = serde_json::from_value::<PromptGet>(pg).ok()?;
+                                    Some(PromptBundle {
+                                        server_name: server_name.clone(),
+                                        prompt_get: pg,
+                                    })
                                 })
                                 .collect::<Vec<_>>();
 
@@ -699,7 +700,7 @@ impl ToolManagerBuilder {
                 tokio::select! {
                     Ok(search_word) = async {
                         match prompt_list_receiver.as_mut() {
-                            Some(receiver) => receiver.recv(),
+                            Some(receiver) => receiver.recv().await,
                             None => std::future::pending().await,
                         }
                     } => {
@@ -716,7 +717,7 @@ impl ToolManagerBuilder {
                                 conv_id_clone.as_str(),
                                 &regex,
                                 &telemetry_clone,
-                                loading_status_sender_clone,
+                                loading_status_sender_clone.as_ref(),
                                 &new_tool_specs_clone,
                                 &has_new_stuff_clone,
                                 &load_record_clone,
@@ -754,99 +755,9 @@ impl ToolManagerBuilder {
             }
         }
 
-        // Set up task to handle prompt requests
-        let sender = self.prompt_list_sender.take();
-        let receiver = self.prompt_list_receiver.take();
-        let prompts = Arc::new(SyncRwLock::new(HashMap::default()));
-        // TODO: accommodate hot reload of mcp servers
-        if let (Some(sender), Some(receiver)) = (sender, receiver) {
-            let clients = clients.iter().fold(HashMap::new(), |mut acc, (n, c)| {
-                acc.insert(n.clone(), Arc::downgrade(c));
-                acc
-            });
-            let prompts_clone = prompts.clone();
-            tokio::task::spawn_blocking(move || {
-                let receiver = Arc::new(std::sync::Mutex::new(receiver));
-                loop {
-                    let search_word = receiver.lock().map_err(|e| eyre::eyre!("{:?}", e))?.recv()?;
-                    if clients
-                        .values()
-                        .any(|client| client.upgrade().is_some_and(|c| c.is_prompts_out_of_date()))
-                    {
-                        let mut prompts_wl = prompts_clone.write().map_err(|e| {
-                            eyre::eyre!(
-                                "Error retrieving write lock on prompts for tab complete {}",
-                                e.to_string()
-                            )
-                        })?;
-                        *prompts_wl = clients.iter().fold(
-                            HashMap::<String, Vec<PromptBundle>>::new(),
-                            |mut acc, (server_name, client)| {
-                                let Some(client) = client.upgrade() else {
-                                    return acc;
-                                };
-                                let prompt_gets = client.list_prompt_gets();
-                                let Ok(prompt_gets) = prompt_gets.read() else {
-                                    tracing::error!("Error retrieving read lock for prompt gets for tab complete");
-                                    return acc;
-                                };
-                                for (prompt_name, prompt_get) in prompt_gets.iter() {
-                                    acc.entry(prompt_name.clone())
-                                        .and_modify(|bundles| {
-                                            bundles.push(PromptBundle {
-                                                server_name: server_name.to_owned(),
-                                                prompt_get: prompt_get.clone(),
-                                            });
-                                        })
-                                        .or_insert(vec![PromptBundle {
-                                            server_name: server_name.to_owned(),
-                                            prompt_get: prompt_get.clone(),
-                                        }]);
-                                }
-                                client.prompts_updated();
-                                acc
-                            },
-                        );
-                    }
-                    let prompts_rl = prompts_clone.read().map_err(|e| {
-                        eyre::eyre!(
-                            "Error retrieving read lock on prompts for tab complete {}",
-                            e.to_string()
-                        )
-                    })?;
-                    let filtered_prompts = prompts_rl
-                        .iter()
-                        .flat_map(|(prompt_name, bundles)| {
-                            if bundles.len() > 1 {
-                                bundles
-                                    .iter()
-                                    .map(|b| format!("{}/{}", b.server_name, prompt_name))
-                                    .collect()
-                            } else {
-                                vec![prompt_name.to_owned()]
-                            }
-                        })
-                        .filter(|n| {
-                            if let Some(p) = &search_word {
-                                n.contains(p)
-                            } else {
-                                true
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    if let Err(e) = sender.send(filtered_prompts) {
-                        error!("Error sending prompts to chat helper: {:?}", e);
-                    }
-                }
-                #[allow(unreachable_code)]
-                Ok::<(), eyre::Report>(())
-            });
-        }
-
         Ok(ToolManager {
             conversation_id,
             clients,
-            prompts,
             pending_clients: pending,
             notify: Some(notify),
             loading_status_sender,
@@ -947,13 +858,6 @@ pub struct ToolManager {
     /// from server initialization processes.
     new_tool_specs: NewToolSpecs,
 
-    /// Cache for prompts collected from different servers.
-    /// Key: prompt name
-    /// Value: a list of PromptBundle that has a prompt of this name.
-    /// This cache helps resolve prompt requests efficiently and handles
-    /// cases where multiple servers offer prompts with the same name.
-    pub prompts: Arc<SyncRwLock<HashMap<String, Vec<PromptBundle>>>>,
-
     /// A notifier to understand if the initial loading has completed.
     /// This is only used for initial loading and is discarded after.
     notify: Option<Arc<Notify>>,
@@ -1000,7 +904,6 @@ impl Clone for ToolManager {
             clients: self.clients.clone(),
             has_new_stuff: self.has_new_stuff.clone(),
             new_tool_specs: self.new_tool_specs.clone(),
-            prompts: self.prompts.clone(),
             tn_map: self.tn_map.clone(),
             schema: self.schema.clone(),
             is_interactive: self.is_interactive,
@@ -1315,7 +1218,10 @@ impl ToolManager {
         }
     }
 
-    #[allow(clippy::await_holding_lock)]
+    pub async fn list_prompts(&self) -> Result<HashMap<String, PromptBundle>, GetPromptError> {
+        Ok(Default::default())
+    }
+
     pub async fn get_prompt(
         &self,
         name: String,
@@ -1330,10 +1236,7 @@ impl ToolManager {
         // necessitated by the fact that said thread is also responsible for using a sync channel,
         // which is itself necessitated by the fact that consumer of said channel is calling from a
         // sync function
-        let mut prompts_wl = self
-            .prompts
-            .write()
-            .map_err(|e| GetPromptError::Synchronization(e.to_string()))?;
+        let mut prompts_wl = HashMap::<String, Vec<PromptBundle>>::new();
         let mut maybe_bundles = prompts_wl.get(&prompt_name);
         let mut has_retried = false;
         'blk: loop {

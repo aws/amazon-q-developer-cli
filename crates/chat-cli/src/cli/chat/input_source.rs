@@ -30,8 +30,8 @@ mod inner {
 impl InputSource {
     pub fn new(
         os: &Os,
-        sender: std::sync::mpsc::Sender<Option<String>>,
-        receiver: std::sync::mpsc::Receiver<Vec<String>>,
+        sender: tokio::sync::broadcast::Sender<Option<String>>,
+        receiver: tokio::sync::broadcast::Receiver<Vec<String>>,
     ) -> Result<Self> {
         Ok(Self(inner::Inner::Readline(rl(os, sender, receiver)?)))
     }

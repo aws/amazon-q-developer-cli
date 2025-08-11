@@ -76,9 +76,7 @@ impl PromptsArgs {
         }
 
         let terminal_width = session.terminal_width();
-        let mut prompts_wl = session.conversation.tool_manager.prompts.write().map_err(|e| {
-            ChatError::Custom(format!("Poison error encountered while retrieving prompts: {}", e).into())
-        })?;
+        let mut prompts_wl = HashMap::<String, Vec<PromptBundle>>::new();
         session.conversation.tool_manager.refresh_prompts(&mut prompts_wl)?;
         let mut longest_name = "";
         let arg_pos = {

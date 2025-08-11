@@ -89,7 +89,7 @@ pub struct ResourceTemplatesListResult {
 /// Result of prompt listing query
 pub struct PromptsListResult {
     /// List of prompts
-    pub prompts: Vec<PromptGet>,
+    pub prompts: Vec<serde_json::Value>,
     /// Optional cursor for pagination
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,

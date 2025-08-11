@@ -332,8 +332,8 @@ impl ChatArgs {
             None
         };
 
-        let (prompt_request_sender, prompt_request_receiver) = std::sync::mpsc::channel::<Option<String>>();
-        let (prompt_response_sender, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<Option<String>>(50);
+        let (prompt_response_sender, prompt_response_receiver) = tokio::sync::broadcast::channel::<Vec<String>>(50);
         let mut tool_manager = ToolManagerBuilder::default()
             .prompt_list_sender(prompt_response_sender)
             .prompt_list_receiver(prompt_request_receiver)
