@@ -32,7 +32,7 @@ impl EditorArgs {
             Err(err) => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    style::SetForegroundColor(session.colors.error()),
                     style::Print(format!("\nError opening editor: {}\n\n", err)),
                     style::SetForegroundColor(Color::Reset)
                 )?;
@@ -47,7 +47,7 @@ impl EditorArgs {
             true => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print("\nEmpty content from editor, not submitting.\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
@@ -59,7 +59,7 @@ impl EditorArgs {
             false => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    style::SetForegroundColor(session.colors.success()),
                     style::Print("\nContent loaded from editor. Submitting prompt...\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
@@ -68,7 +68,7 @@ impl EditorArgs {
                 execute!(
                     session.stderr,
                     style::SetAttribute(Attribute::Reset),
-                    style::SetForegroundColor(Color::Magenta),
+                    style::SetForegroundColor(session.colors.action()),
                     style::Print("> "),
                     style::SetAttribute(Attribute::Reset),
                     style::Print(&content),

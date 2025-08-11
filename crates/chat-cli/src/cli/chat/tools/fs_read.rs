@@ -3,10 +3,7 @@ use std::fs::Metadata;
 use std::io::Write;
 
 use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
-};
+use crossterm::style;
 use eyre::{
     Result,
     bail,
@@ -19,6 +16,8 @@ use serde::{
     Deserialize,
     Serialize,
 };
+
+use super::super::colors::ColorManager;
 use syntect::util::LinesWithEndings;
 use tracing::{
     debug,
@@ -85,7 +84,7 @@ impl FsRead {
             queue!(
                 updates,
                 style::Print("Batch fs_read operation with "),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(ColorManager::default().success()),
                 style::Print(self.operations.len()),
                 style::ResetColor,
                 style::Print(" operations:\n")
@@ -390,7 +389,7 @@ impl FsImage {
 
     pub async fn invoke(&self, updates: &mut impl Write) -> Result<InvokeOutput> {
         let pre_processed_paths: Vec<String> = self.image_paths.iter().map(|path| pre_process(path)).collect();
-        let valid_images = handle_images_from_paths(updates, &pre_processed_paths);
+        let valid_images = handle_images_from_paths(updates, &pre_processed_paths, &ColorManager::default());
         super::queue_function_result("Successfully read image", updates, false, false)?;
         Ok(InvokeOutput {
             output: OutputKind::Images(valid_images),
@@ -401,7 +400,7 @@ impl FsImage {
         queue!(
             updates,
             style::Print("Reading images: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(ColorManager::default().success()),
             style::Print(&self.image_paths.join("\n")),
             style::Print("\n"),
             style::ResetColor,
@@ -442,7 +441,7 @@ impl FsLine {
         queue!(
             updates,
             style::Print("Reading file: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(ColorManager::default().success()),
             style::Print(&self.path),
             style::ResetColor,
             style::Print(", "),
@@ -455,7 +454,7 @@ impl FsLine {
             _ if end == line_count => Ok(queue!(
                 updates,
                 style::Print("from line "),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(ColorManager::default().success()),
                 style::Print(start),
                 style::ResetColor,
                 style::Print(" to end of file"),
@@ -463,11 +462,11 @@ impl FsLine {
             _ => Ok(queue!(
                 updates,
                 style::Print("from line "),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(ColorManager::default().success()),
                 style::Print(start),
                 style::ResetColor,
                 style::Print(" to "),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(ColorManager::default().success()),
                 style::Print(end),
                 style::ResetColor,
             )?),
@@ -571,11 +570,11 @@ impl FsSearch {
         queue!(
             updates,
             style::Print("Searching: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(ColorManager::default().success()),
             style::Print(&self.path),
             style::ResetColor,
             style::Print(" for pattern: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(ColorManager::default().success()),
             style::Print(&self.pattern.to_lowercase()),
             style::ResetColor,
         )?;
@@ -667,7 +666,7 @@ impl FsDirectory {
         queue!(
             updates,
             style::Print("Reading directory: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(ColorManager::default().success()),
             style::Print(&self.path),
             style::ResetColor,
             style::Print(" "),

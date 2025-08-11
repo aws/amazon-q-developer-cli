@@ -7,10 +7,7 @@ use std::path::{
 use std::sync::LazyLock;
 
 use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
-};
+use crossterm::style;
 use eyre::{
     ContextCompat as _,
     Result,
@@ -34,6 +31,10 @@ use tracing::{
     error,
     warn,
 };
+
+use crate::cli::chat::colors::ColorManager;
+use crate::database::settings::Settings;
+use crate::{with_success, with_color};
 
 use super::{
     InvokeOutput,
@@ -113,6 +114,9 @@ impl FsWrite {
                     os.fs.create_dir_all(parent).await?;
                 }
 
+                let settings = Settings::default();
+                let color_manager = ColorManager::from_settings(&settings);
+
                 let invoke_description = if os.fs.exists(&path) {
                     "Replacing: "
                 } else {
@@ -121,25 +125,23 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print(invoke_description),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
                 )?;
+                with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
+                queue!(output, style::Print("\n"))?;
 
                 write_to_file(os, &path, file_text).await?;
             },
             FsWrite::StrReplace { old_str, new_str, .. } => {
                 let file = os.fs.read_to_string(&path).await?;
                 let matches = file.match_indices(old_str).collect::<Vec<_>>();
-                queue!(
-                    output,
-                    style::Print("Updating: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
+
+                let settings = Settings::default();
+                let color_manager = ColorManager::from_settings(&settings);
+
+                queue!(output, style::Print("Updating: "))?;
+                with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
+                queue!(output, style::Print("\n"))?;
+
                 match matches.len() {
                     0 => return Err(eyre!("no occurrences of \"{old_str}\" were found")),
                     1 => {
@@ -153,14 +155,13 @@ impl FsWrite {
                 insert_line, new_str, ..
             } => {
                 let mut file = os.fs.read_to_string(&path).await?;
-                queue!(
-                    output,
-                    style::Print("Updating: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
+
+                let settings = Settings::default();
+                let color_manager = ColorManager::from_settings(&settings);
+
+                queue!(output, style::Print("Updating: "))?;
+                with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
+                queue!(output, style::Print("\n"))?;
 
                 // Get the index of the start of the line to insert at.
                 let num_lines = file.lines().enumerate().map(|(i, _)| i + 1).last().unwrap_or(1);
@@ -173,15 +174,15 @@ impl FsWrite {
                 file.insert_str(i, new_str);
                 write_to_file(os, &path, file).await?;
             },
-            FsWrite::Append { new_str, .. } => {
-                queue!(
-                    output,
-                    style::Print("Appending to: "),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
-                    style::Print("\n"),
-                )?;
+            FsWrite::Append { path, new_str, .. } => {
+                let path = sanitize_path_tool_arg(os, path);
+
+                let settings = Settings::default();
+                let color_manager = ColorManager::from_settings(&settings);
+
+                queue!(output, style::Print("Appending to: "))?;
+                with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
+                queue!(output, style::Print("\n"))?;
 
                 let mut file = os.fs.read_to_string(&path).await?;
                 if !file.ends_with_newline() {
@@ -255,6 +256,9 @@ impl FsWrite {
 
     pub fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {
         let cwd = os.env.current_dir()?;
+        let settings = Settings::default();
+        let color_manager = ColorManager::from_settings(&settings);
+        
         self.print_relative_path(os, output)?;
         match self {
             FsWrite::Create { path, .. } => {
@@ -268,7 +272,7 @@ impl FsWrite {
                     Default::default()
                 };
                 let new = stylize_output_if_able(os, &relative_path, &file_text);
-                print_diff(output, &prev, &new, 1)?;
+                print_diff(output, &prev, &new, 1, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
                 super::display_purpose(self.get_summary(), output)?;
@@ -297,7 +301,7 @@ impl FsWrite {
 
                 let old = stylize_output_if_able(os, &relative_path, &old);
                 let new = stylize_output_if_able(os, &relative_path, &new);
-                print_diff(output, &old, &new, start_line)?;
+                print_diff(output, &old, &new, start_line, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
                 super::display_purpose(self.get_summary(), output)?;
@@ -316,7 +320,7 @@ impl FsWrite {
                 };
                 let old_str = stylize_output_if_able(os, &relative_path, old_str);
                 let new_str = stylize_output_if_able(os, &relative_path, new_str);
-                print_diff(output, &old_str, &new_str, start_line)?;
+                print_diff(output, &old_str, &new_str, start_line, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
                 super::display_purpose(self.get_summary(), output)?;
@@ -328,7 +332,7 @@ impl FsWrite {
                 let relative_path = format_path(cwd, &path);
                 let start_line = os.fs.read_to_string_sync(&path)?.lines().count() + 1;
                 let file = stylize_output_if_able(os, &relative_path, new_str);
-                print_diff(output, &Default::default(), &file, start_line)?;
+                print_diff(output, &Default::default(), &file, start_line, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
                 super::display_purpose(self.get_summary(), output)?;
@@ -375,14 +379,14 @@ impl FsWrite {
         // Sanitize the path to handle tilde expansion
         let path = sanitize_path_tool_arg(os, path);
         let relative_path = format_path(cwd, &path);
-        queue!(
-            output,
-            style::Print("Path: "),
-            style::SetForegroundColor(Color::Green),
-            style::Print(&relative_path),
-            style::ResetColor,
-            style::Print("\n\n"),
-        )?;
+
+        let settings = Settings::default();
+        let color_manager = ColorManager::from_settings(&settings);
+
+        queue!(output, style::Print("Path: "))?;
+        with_success!(output, &color_manager, "{}", &relative_path)?;
+        queue!(output, style::Print("\n\n"))?;
+
         Ok(())
     }
 
@@ -582,6 +586,7 @@ fn print_diff(
     old_str: &StylizedFile,
     new_str: &StylizedFile,
     start_line: usize,
+    color_manager: &ColorManager,
 ) -> Result<()> {
     let diff = similar::TextDiff::from_lines(&old_str.content, &new_str.content);
 
@@ -620,8 +625,8 @@ fn print_diff(
                 style::Color::Rgb { r: 24, g: 38, b: 30 },
             ),
             (similar::ChangeTag::Equal, false) => (style::Color::Reset, new_str.gutter_bg, new_str.line_bg),
-            (similar::ChangeTag::Delete, false) => (style::Color::Red, new_str.gutter_bg, new_str.line_bg),
-            (similar::ChangeTag::Insert, false) => (style::Color::Green, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Delete, false) => (color_manager.error(), new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Insert, false) => (color_manager.success(), new_str.gutter_bg, new_str.line_bg),
         };
         // Define the change tag character to print, if any.
         let sign = match change.tag() {

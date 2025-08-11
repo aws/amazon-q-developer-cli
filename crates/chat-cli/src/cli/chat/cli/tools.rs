@@ -162,7 +162,7 @@ impl ToolsArgs {
                 style::Print(
                     "\nNo tools are currently enabled.\n\nRefer to the documentation for how to add tools to your agent: "
                 ),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(session.colors.success()),
                 style::Print(AGENT_FORMAT_TOOLS_DOC_URL),
                 style::SetForegroundColor(Color::Reset),
                 style::Print("\n"),
@@ -248,7 +248,7 @@ impl ToolsSubcommand {
                 if !invalid_tools.is_empty() {
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        style::SetForegroundColor(session.colors.error()),
                         style::Print(format!("\nCannot trust '{}', ", invalid_tools.join("', '"))),
                         if invalid_tools.len() > 1 {
                             style::Print("they do not exist.")
@@ -274,7 +274,7 @@ impl ToolsSubcommand {
 
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        style::SetForegroundColor(session.colors.success()),
                         if tools_to_trust.len() > 1 {
                             style::Print(format!("\nTools '{}' are ", tools_to_trust.join("', '")))
                         } else {
@@ -284,7 +284,7 @@ impl ToolsSubcommand {
                         style::SetAttribute(Attribute::Bold),
                         style::Print("not"),
                         style::SetAttribute(Attribute::Reset),
-                        style::SetForegroundColor(Color::Green),
+                        style::SetForegroundColor(session.colors.success()),
                         style::Print(format!(
                             " ask for confirmation before running {}.",
                             if tools_to_trust.len() > 1 {
@@ -309,7 +309,7 @@ impl ToolsSubcommand {
                 if !invalid_tools.is_empty() {
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        style::SetForegroundColor(session.colors.error()),
                         style::Print(format!("\nCannot untrust '{}', ", invalid_tools.join("', '"))),
                         if invalid_tools.len() > 1 {
                             style::Print("they do not exist.")
@@ -337,7 +337,7 @@ impl ToolsSubcommand {
 
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        style::SetForegroundColor(session.colors.success()),
                         if tools_to_untrust.len() > 1 {
                             style::Print(format!("\nTools '{}' are ", tools_to_untrust.join("', '")))
                         } else {
@@ -384,7 +384,7 @@ impl ToolsSubcommand {
                 }
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    style::SetForegroundColor(session.colors.success()),
                     style::Print("\nReset all tools to the permission levels as defined in agent."),
                     style::SetForegroundColor(Color::Reset),
                 )?;
