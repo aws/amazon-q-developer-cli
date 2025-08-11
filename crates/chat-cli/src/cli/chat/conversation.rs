@@ -112,9 +112,13 @@ pub struct ConversationState {
     latest_summary: Option<(String, RequestMetadata)>,
     #[serde(skip)]
     pub agents: Agents,
+    /// Legacy, unused
     /// Model explicitly selected by the user in this conversation state via `/model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<ModelInfo>,
+    pub model: Option<String>,
+    /// Model explicitly selected by the user in this conversation state via `/model`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_info: Option<ModelInfo>,
     /// Used to track agent vs user updates to file modifications.
     ///
     /// Maps from a file path to [FileLineTracker]
@@ -173,7 +177,8 @@ impl ConversationState {
             context_message_length: None,
             latest_summary: None,
             agents,
-            model,
+            model: None,
+            model_info: model,
             file_line_tracker: HashMap::new(),
         }
     }
@@ -457,7 +462,7 @@ impl ConversationState {
             context_messages,
             dropped_context_files,
             tools: &self.tools,
-            model_id: self.model.as_ref().map(|m| m.model_id.as_str()),
+            model_id: self.model_info.as_ref().map(|m| m.model_id.as_str()),
         })
     }
 
@@ -555,7 +560,7 @@ impl ConversationState {
             conversation_id: Some(self.conversation_id.clone()),
             user_input_message: summary_message
                 .unwrap_or(UserMessage::new_prompt(summary_content, None)) // should not happen
-                .into_user_input_message(self.model.as_ref().map(|m| m.model_id.clone()), &tools),
+                .into_user_input_message(self.model_info.as_ref().map(|m| m.model_id.clone()), &tools),
             history: Some(flatten_history(history.iter())),
         })
     }
@@ -668,7 +673,7 @@ impl ConversationState {
     /// Get the current token warning level
     pub async fn get_token_warning_level(&mut self, os: &Os) -> Result<TokenWarningLevel, ChatError> {
         let total_chars = self.calculate_char_count(os).await?;
-        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model.as_ref()));
+        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model_info.as_ref()));
 
         Ok(if *total_chars >= max_chars {
             TokenWarningLevel::Critical

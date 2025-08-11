@@ -154,7 +154,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         return Ok(None);
     }
 
-    let active_model_id = session.conversation.model.as_ref().map(|m| m.model_id.as_str());
+    let active_model_id = session.conversation.model_info.as_ref().map(|m| m.model_id.as_str());
 
     let labels: Vec<String> = models
         .iter()
@@ -190,7 +190,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
 
     if let Some(index) = selection {
         let selected = models[index].clone();
-        session.conversation.model = Some(selected.clone());
+        session.conversation.model_info = Some(selected.clone());
         let display_name = selected.display_name();
 
         queue!(

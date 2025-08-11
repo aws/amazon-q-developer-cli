@@ -1184,7 +1184,7 @@ impl ChatSession {
         }
         self.stderr.flush()?;
 
-        if let Some(ref model_info) = self.conversation.model {
+        if let Some(ref model_info) = self.conversation.model_info {
             let (models, _default_model) = get_available_models(os).await?;
             if let Some(model_option) = models.iter().find(|option| option.model_id == model_info.model_id) {
                 let display_name = model_option.model_name.as_deref().unwrap_or(&model_option.model_id);
@@ -2377,7 +2377,7 @@ impl ChatSession {
             let mut tool_telemetry = ToolUseEventBuilder::new(
                 conv_id.clone(),
                 tool_use.id.clone(),
-                self.conversation.model.as_ref().map(|m| m.model_id.clone()),
+                self.conversation.model_info.as_ref().map(|m| m.model_id.clone()),
             )
             .set_tool_use_id(tool_use_id.clone())
             .set_tool_name(tool_use.name.clone())
