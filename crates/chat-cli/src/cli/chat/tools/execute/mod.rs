@@ -6,6 +6,7 @@ use crossterm::style::{
     Color,
 };
 use eyre::Result;
+use regex::Regex;
 use serde::Deserialize;
 use tracing::error;
 
@@ -13,6 +14,7 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::sanitize_unicode_tags;
 use crate::cli::chat::tools::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
@@ -47,6 +49,17 @@ impl ExecuteCommand {
     pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
         let default_arr = vec![];
         let allowed_commands = allowed_commands.unwrap_or(&default_arr);
+
+        let has_regex_match = allowed_commands
+            .iter()
+            .map(|cmd| Regex::new(&format!(r"\A{}\z", cmd)))
+            .filter(Result::is_ok)
+            .flatten()
+            .any(|regex| regex.is_match(&self.command));
+        if has_regex_match {
+            return false;
+        }
+
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
@@ -97,9 +110,6 @@ impl ExecuteCommand {
                     return true;
                 },
                 Some(cmd) => {
-                    if allowed_commands.contains(cmd) {
-                        continue;
-                    }
                     // Special casing for `grep`. -P flag for perl regexp has RCE issues, apparently
                     // should not be supported within grep but is flagged as a possibility since this is perl
                     // regexp.
@@ -120,10 +130,13 @@ impl ExecuteCommand {
 
     pub async fn invoke(&self, output: &mut impl Write) -> Result<InvokeOutput> {
         let output = run_command(&self.command, MAX_TOOL_RESPONSE_SIZE / 3, Some(output)).await?;
+        let clean_stdout = sanitize_unicode_tags(&output.stdout);
+        let clean_stderr = sanitize_unicode_tags(&output.stderr);
+
         let result = serde_json::json!({
             "exit_status": output.exit_status.unwrap_or(0).to_string(),
-            "stdout": output.stdout,
-            "stderr": output.stderr,
+            "stdout": clean_stdout,
+            "stderr": clean_stderr,
         });
 
         Ok(InvokeOutput {
@@ -180,7 +193,7 @@ impl ExecuteCommand {
 
         let Self { command, .. } = self;
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        let is_in_allowlist = agent.allowed_tools.contains("execute_bash");
+        let is_in_allowlist = agent.allowed_tools.contains(tool_name);
         match agent.tools_settings.get(tool_name) {
             Some(settings) if is_in_allowlist => {
                 let Settings {
@@ -195,8 +208,15 @@ impl ExecuteCommand {
                     },
                 };
 
-                if denied_commands.iter().any(|dc| command.contains(dc)) {
-                    return PermissionEvalResult::Deny;
+                let denied_match_set = denied_commands
+                    .iter()
+                    .filter_map(|dc| Regex::new(&format!(r"\A{dc}\z")).ok())
+                    .filter(|r| r.is_match(command))
+                    .map(|r| r.to_string())
+                    .collect::<Vec<_>>();
+
+                if !denied_match_set.is_empty() {
+                    return PermissionEvalResult::Deny(denied_match_set);
                 }
 
                 if self.requires_acceptance(Some(&allowed_commands), allow_read_only) {
@@ -236,7 +256,13 @@ pub fn format_output(output: &str, max_size: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{
+        HashMap,
+        HashSet,
+    };
+
     use super::*;
+    use crate::cli::agent::ToolSettingTarget;
 
     #[test]
     fn test_requires_acceptance_for_readonly_commands() {
@@ -334,5 +360,81 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn test_requires_acceptance_allowed_commands() {
+        let allowed_cmds: &[String] = &[
+            String::from("git status"),
+            String::from("root"),
+            String::from("command subcommand a=[0-9]{10} b=[0-9]{10}"),
+            String::from("command subcommand && command subcommand"),
+        ];
+        let cmds = &[
+            // Command first argument 'root' allowed (allows all subcommands)
+            ("root", false),
+            ("root subcommand", true),
+            // Valid allowed_command_regex matching
+            ("git", true),
+            ("git status", false),
+            ("command subcommand a=0123456789 b=0123456789", false),
+            ("command subcommand a=0123456789 b=012345678", true),
+            ("command subcommand alternate a=0123456789 b=0123456789", true),
+            // Control characters ignored due to direct allowed_command_regex match
+            ("command subcommand && command subcommand", false),
+        ];
+        for (cmd, expected) in cmds {
+            let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+                "command": cmd,
+            }))
+            .unwrap();
+            assert_eq!(
+                tool.requires_acceptance(Option::from(&allowed_cmds.to_vec()), true),
+                *expected,
+                "expected command: `{}` to have requires_acceptance: `{}`",
+                cmd,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_eval_perm() {
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            allowed_tools: {
+                let mut allowed_tools = HashSet::<String>::new();
+                allowed_tools.insert(tool_name.to_string());
+                allowed_tools
+            },
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({
+                        "deniedCommands": ["git .*"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "git status",
+        }))
+        .unwrap();
+
+        let res = tool.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
+
+        let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "echo hello",
+        }))
+        .unwrap();
+
+        let res = tool.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
     }
 }

@@ -14,6 +14,8 @@ pub mod config;
 pub mod error;
 /// Vector index implementation
 pub mod index;
+/// Model validation for SHA verification
+pub mod model_validator;
 /// File processing utilities
 pub mod processing;
 /// Data types for semantic search operations

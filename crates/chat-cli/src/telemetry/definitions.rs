@@ -43,6 +43,7 @@ mod tests {
             codewhispererterminal_tool_name: None,
             codewhispererterminal_assistant_response_length: Some(20.into()),
             codewhispererterminal_chat_message_meta_tags: Some([MessageMetaTag::Compact.to_string()].join(",").into()),
+            codewhispererterminal_client_application: None,
         });
 
         let s = serde_json::to_string_pretty(&metric_datum_init).unwrap();

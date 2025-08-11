@@ -6,6 +6,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`overage_configuration(OverageConfiguration)`](crate::operation::set_user_preference::builders::SetUserPreferenceFluentBuilder::overage_configuration) / [`set_overage_configuration(Option<OverageConfiguration>)`](crate::operation::set_user_preference::builders::SetUserPreferenceFluentBuilder::set_overage_configuration):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::set_user_preference::builders::SetUserPreferenceFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::set_user_preference::builders::SetUserPreferenceFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`SetUserPreferenceOutput`](crate::operation::set_user_preference::SetUserPreferenceOutput)
     /// - On failure, responds with

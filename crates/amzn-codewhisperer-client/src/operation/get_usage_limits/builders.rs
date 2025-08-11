@@ -154,4 +154,21 @@ impl GetUsageLimitsFluentBuilder {
     pub fn get_resource_type(&self) -> &::std::option::Option<crate::types::ResourceType> {
         self.inner.get_resource_type()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn is_email_required(mut self, input: bool) -> Self {
+        self.inner = self.inner.is_email_required(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_is_email_required(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.inner = self.inner.set_is_email_required(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_is_email_required(&self) -> &::std::option::Option<bool> {
+        self.inner.get_is_email_required()
+    }
 }

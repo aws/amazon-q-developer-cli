@@ -10,9 +10,10 @@ use crossterm::{
     style,
 };
 
-use crate::cli::chat::consts::{
-    AGENT_FORMAT_HOOKS_DOC_URL,
-    CONTEXT_FILES_MAX_SIZE,
+use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
+use crate::cli::chat::context::{
+    ContextFilePath,
+    calc_max_context_files_size,
 };
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::cli::chat::util::drop_matched_context_files;
@@ -82,16 +83,24 @@ impl ContextSubcommand {
 
         match self {
             Self::Show { expand } => {
-                let profile_context_files = HashSet::<(String, String)>::new();
+                // the bool signifies if the resources is temporary (i.e. is it session based as
+                // opposed to agent based)
+                let mut profile_context_files = HashSet::<(String, String, bool)>::new();
+
+                let (agent_owned_list, session_owned_list) = context_manager
+                    .paths
+                    .iter()
+                    .partition::<Vec<_>, _>(|p| matches!(**p, ContextFilePath::Agent(_)));
+
                 execute!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     style::SetForegroundColor(Color::Magenta),
-                    style::Print(format!("\n👤 Agent ({}):\n", context_manager.current_profile)),
+                    style::Print(format!("👤 Agent ({}):\n", context_manager.current_profile)),
                     style::SetAttribute(Attribute::Reset),
                 )?;
 
-                if context_manager.paths.is_empty() {
+                if agent_owned_list.is_empty() {
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::DarkGrey),
@@ -99,9 +108,12 @@ impl ContextSubcommand {
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 } else {
-                    for path in &context_manager.paths {
-                        execute!(session.stderr, style::Print(format!("    {} ", path)))?;
-                        if let Ok(context_files) = context_manager.get_context_files_by_path(os, path).await {
+                    for path in &agent_owned_list {
+                        execute!(session.stderr, style::Print(format!("    {} ", path.get_path_as_str())))?;
+                        if let Ok(context_files) = context_manager
+                            .get_context_files_by_path(os, path.get_path_as_str())
+                            .await
+                        {
                             execute!(
                                 session.stderr,
                                 style::SetForegroundColor(Color::Green),
@@ -112,6 +124,48 @@ impl ContextSubcommand {
                                 )),
                                 style::SetForegroundColor(Color::Reset)
                             )?;
+                            profile_context_files
+                                .extend(context_files.into_iter().map(|(path, content)| (path, content, false)));
+                        }
+                        execute!(session.stderr, style::Print("\n"))?;
+                    }
+                    execute!(session.stderr, style::Print("\n"))?;
+                }
+
+                execute!(
+                    session.stderr,
+                    style::SetAttribute(Attribute::Bold),
+                    style::SetForegroundColor(Color::Magenta),
+                    style::Print("💬 Session (temporary):\n"),
+                    style::SetAttribute(Attribute::Reset),
+                )?;
+
+                if session_owned_list.is_empty() {
+                    execute!(
+                        session.stderr,
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print("    <none>\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                } else {
+                    for path in &session_owned_list {
+                        execute!(session.stderr, style::Print(format!("    {} ", path.get_path_as_str())))?;
+                        if let Ok(context_files) = context_manager
+                            .get_context_files_by_path(os, path.get_path_as_str())
+                            .await
+                        {
+                            execute!(
+                                session.stderr,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!(
+                                    "({} match{})",
+                                    context_files.len(),
+                                    if context_files.len() == 1 { "" } else { "es" }
+                                )),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+                            profile_context_files
+                                .extend(context_files.into_iter().map(|(path, content)| (path, content, true)));
                         }
                         execute!(session.stderr, style::Print("\n"))?;
                     }
@@ -129,7 +183,7 @@ impl ContextSubcommand {
                     let total = profile_context_files.len();
                     let total_tokens = profile_context_files
                         .iter()
-                        .map(|(_, content)| TokenCounter::count_tokens(content))
+                        .map(|(_, content, _)| TokenCounter::count_tokens(content))
                         .sum::<usize>();
                     execute!(
                         session.stderr,
@@ -144,11 +198,12 @@ impl ContextSubcommand {
                         style::SetAttribute(Attribute::Reset)
                     )?;
 
-                    for (filename, content) in &profile_context_files {
+                    for (filename, content, is_temporary) in &profile_context_files {
                         let est_tokens = TokenCounter::count_tokens(content);
+                        let icon = if *is_temporary { "💬" } else { "👤" };
                         execute!(
                             session.stderr,
-                            style::Print(format!("👤 {} ", filename)),
+                            style::Print(format!("{} {} ", icon, filename)),
                             style::SetForegroundColor(Color::DarkGrey),
                             style::Print(format!("(~{} tkns)\n", est_tokens)),
                             style::SetForegroundColor(Color::Reset),
@@ -167,8 +222,12 @@ impl ContextSubcommand {
                         execute!(session.stderr, style::Print(format!("{}\n\n", "▔".repeat(3))),)?;
                     }
 
-                    let mut files_as_vec = profile_context_files.iter().cloned().collect::<Vec<_>>();
-                    let dropped_files = drop_matched_context_files(&mut files_as_vec, CONTEXT_FILES_MAX_SIZE).ok();
+                    let context_files_max_size = calc_max_context_files_size(session.conversation.model.as_deref());
+                    let mut files_as_vec = profile_context_files
+                        .iter()
+                        .map(|(path, content, _)| (path.clone(), content.clone()))
+                        .collect::<Vec<_>>();
+                    let dropped_files = drop_matched_context_files(&mut files_as_vec, context_files_max_size).ok();
 
                     execute!(
                         session.stderr,
@@ -182,7 +241,7 @@ impl ContextSubcommand {
                                 style::SetForegroundColor(Color::DarkYellow),
                                 style::Print(format!(
                                     "Total token count exceeds limit: {}. The following files will be automatically dropped when interacting with Q. Consider removing them. \n\n",
-                                    CONTEXT_FILES_MAX_SIZE
+                                    context_files_max_size
                                 )),
                                 style::SetForegroundColor(Color::Reset)
                             )?;
@@ -240,7 +299,8 @@ impl ContextSubcommand {
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::Green),
-                        style::Print(format!("\nAdded {} path(s) to context.\n\n", paths.len())),
+                        style::Print(format!("\nAdded {} path(s) to context.\n", paths.len())),
+                        style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 },
@@ -259,6 +319,7 @@ impl ContextSubcommand {
                         session.stderr,
                         style::SetForegroundColor(Color::Green),
                         style::Print(format!("\nRemoved {} path(s) from context.\n\n", paths.len(),)),
+                        style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 },
@@ -276,7 +337,8 @@ impl ContextSubcommand {
                 execute!(
                     session.stderr,
                     style::SetForegroundColor(Color::Green),
-                    style::Print("\nCleared context\n\n"),
+                    style::Print("\nCleared context\n"),
+                    style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
             },

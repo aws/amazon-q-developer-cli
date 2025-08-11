@@ -21,12 +21,16 @@ use tracing::{
 };
 
 use super::cli::compact::CompactStrategy;
+use super::cli::model::context_window_tokens;
 use super::consts::{
     DUMMY_TOOL_NAME,
-    MAX_CHARS,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
 };
-use super::context::ContextManager;
+use super::context::{
+    ContextManager,
+    calc_max_context_files_size,
+};
+use super::line_tracker::FileLineTracker;
 use super::message::{
     AssistantMessage,
     ToolUseResult,
@@ -36,6 +40,7 @@ use super::parser::RequestMetadata;
 use super::token_counter::{
     CharCount,
     CharCounter,
+    TokenCounter,
 };
 use super::tool_manager::ToolManager;
 use super::tools::{
@@ -63,8 +68,8 @@ use crate::cli::chat::ChatError;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 
-const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
-const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
+pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
+pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -105,6 +110,11 @@ pub struct ConversationState {
     /// Model explicitly selected by the user in this conversation state via `/model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Used to track agent vs user updates to file modifications.
+    ///
+    /// Maps from a file path to [FileLineTracker]
+    #[serde(default)]
+    pub file_line_tracker: HashMap<String, FileLineTracker>,
 }
 
 impl ConversationState {
@@ -116,7 +126,7 @@ impl ConversationState {
         current_model_id: Option<String>,
     ) -> Self {
         let context_manager = if let Some(agent) = agents.get_active() {
-            ContextManager::from_agent(agent, None).ok()
+            ContextManager::from_agent(agent, calc_max_context_files_size(current_model_id.as_deref())).ok()
         } else {
             None
         };
@@ -146,6 +156,7 @@ impl ConversationState {
             latest_summary: None,
             agents,
             model: current_model_id,
+            file_line_tracker: HashMap::new(),
         }
     }
 
@@ -634,8 +645,9 @@ impl ConversationState {
     /// Get the current token warning level
     pub async fn get_token_warning_level(&mut self, os: &Os) -> Result<TokenWarningLevel, ChatError> {
         let total_chars = self.calculate_char_count(os).await?;
+        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model.as_deref()));
 
-        Ok(if *total_chars >= MAX_CHARS {
+        Ok(if *total_chars >= max_chars {
             TokenWarningLevel::Critical
         } else {
             TokenWarningLevel::None

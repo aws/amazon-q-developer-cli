@@ -32,6 +32,18 @@ impl Display for HookTrigger {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
+pub enum Source {
+    Agent,
+    Session,
+}
+
+impl Default for Source {
+    fn default() -> Self {
+        Self::Agent
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema, Hash)]
 pub struct Hook {
     /// The command to run when the hook is triggered
@@ -48,15 +60,20 @@ pub struct Hook {
     /// How long the hook output is cached before it will be executed again
     #[serde(default = "Hook::default_cache_ttl_seconds")]
     pub cache_ttl_seconds: u64,
+
+    #[schemars(skip)]
+    #[serde(default, skip_serializing)]
+    pub source: Source,
 }
 
 impl Hook {
-    pub fn new(command: String) -> Self {
+    pub fn new(command: String, source: Source) -> Self {
         Self {
             command,
             timeout_ms: Self::default_timeout_ms(),
             max_output_size: Self::default_max_output_size(),
             cache_ttl_seconds: Self::default_cache_ttl_seconds(),
+            source,
         }
     }
 
