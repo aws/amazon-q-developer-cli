@@ -1811,7 +1811,7 @@ impl ChatSession {
                 continue;
             }
 
-            let mut denied = false;
+            let mut denied_match_set = None::<Vec<String>>;
             let allowed =
                 self.conversation
                     .agents
@@ -1819,14 +1819,32 @@ impl ChatSession {
                     .is_some_and(|a| match tool.tool.requires_acceptance(a) {
                         PermissionEvalResult::Allow => true,
                         PermissionEvalResult::Ask => false,
-                        PermissionEvalResult::Deny => {
-                            denied = true;
+                        PermissionEvalResult::Deny(matches) => {
+                            denied_match_set.replace(matches);
                             false
                         },
                     })
                     || self.conversation.agents.trust_all_tools;
 
-            if denied {
+            if let Some(match_set) = denied_match_set {
+                let formatted_set = match_set.into_iter().fold(String::new(), |mut acc, rule| {
+                    acc.push_str(&format!("\n  - {rule}"));
+                    acc
+                });
+
+                execute!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print("Command "),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(&tool.name),
+                    style::SetForegroundColor(Color::Red),
+                    style::Print(" is rejected because it matches one or more rules on the denied list:"),
+                    style::Print(formatted_set),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+
                 return Ok(ChatState::HandleInput {
                     input: format!(
                         "Tool use with {} was rejected because the arguments supplied were forbidden",
