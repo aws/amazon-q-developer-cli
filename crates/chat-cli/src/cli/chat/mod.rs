@@ -315,18 +315,25 @@ impl ChatArgs {
 
         // If modelId is specified, verify it exists before starting the chat
         let model_options = get_model_options(os).await?;
+        let mut custom_model_info: Option<String> = None;
         let model_id: Option<String> = if let Some(model_name) = self.model {
-            let model_name_lower = model_name.to_lowercase();
-            match model_options.iter().find(|opt| opt.name == model_name_lower) {
-                Some(opt) => Some((opt.model_id).to_string()),
-                None => {
-                    let available_names: Vec<&str> = model_options.iter().map(|opt| opt.name).collect();
-                    bail!(
-                        "Model '{}' does not exist. Available models: {}",
-                        model_name,
-                        available_names.join(", ")
-                    );
-                },
+            // Allow custom models to bypass validation
+            if model_name.starts_with("custom:") {
+                custom_model_info = Some(model_name.clone());
+                Some(model_name)
+            } else {
+                let model_name_lower = model_name.to_lowercase();
+                match model_options.iter().find(|opt| opt.name == model_name_lower) {
+                    Some(opt) => Some((opt.model_id).to_string()),
+                    None => {
+                        let available_names: Vec<&str> = model_options.iter().map(|opt| opt.name).collect();
+                        bail!(
+                            "Model '{}' does not exist. Available models: {}",
+                            model_name,
+                            available_names.join(", ")
+                        );
+                    },
+                }
             }
         } else {
             None
@@ -357,6 +364,7 @@ impl ChatArgs {
             model_id,
             tool_config,
             !self.no_interactive,
+            custom_model_info,
         )
         .await?
         .spawn(os)
@@ -560,6 +568,8 @@ pub struct ChatSession {
     interactive: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
+    /// Original custom model string if using custom model
+    custom_model_display: Option<String>,
 }
 
 impl ChatSession {
@@ -578,9 +588,10 @@ impl ChatSession {
         model_id: Option<String>,
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
+        custom_model_display: Option<String>,
     ) -> Result<Self> {
         let model_options = get_model_options(os).await?;
-        let valid_model_id = match model_id {
+        let mut valid_model_id = match model_id {
             Some(id) => id,
             None => {
                 let from_settings = os
@@ -600,6 +611,22 @@ impl ChatSession {
                 }
             },
         };
+
+        // Handle custom model format: extract actual model ID and set region
+        if valid_model_id.starts_with("custom:") {
+            if let Some((region, actual_model_id)) = cli::model::parse_custom_model(&valid_model_id) {
+                // Set AWS region environment variable
+                // Note: In production, these should be set before running the CLI
+                // Using unsafe here as this is required for the custom model feature
+                unsafe {
+                    std::env::set_var("AWS_REGION", region.clone());
+                    std::env::set_var("AMAZON_Q_SIGV4", "1");
+                }
+                // Use the actual model ID without the custom prefix
+                valid_model_id = actual_model_id;
+                info!("Using custom model: {} in region: {}", valid_model_id, region);
+            }
+        }
 
         // Reload prior conversation
         let mut existing_conversation = false;
@@ -681,6 +708,7 @@ impl ChatSession {
             interactive,
             inner: Some(ChatState::default()),
             ctrlc_rx,
+            custom_model_display,
         })
     }
 
@@ -1196,7 +1224,16 @@ impl ChatSession {
         }
         self.stderr.flush()?;
 
-        if let Some(ref id) = self.conversation.model {
+        if let Some(ref custom_display) = self.custom_model_display {
+            // Display custom model info
+            execute!(
+                self.stderr,
+                style::SetForegroundColor(Color::Cyan),
+                style::Print(format!("🤖 Using custom model: {}\n", custom_display)),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n")
+            )?;
+        } else if let Some(ref id) = self.conversation.model {
             let model_options = get_model_options(os).await?;
             if let Some(model_option) = model_options.iter().find(|option| option.model_id == *id) {
                 execute!(
@@ -2974,6 +3011,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // custom_model_display
         )
         .await
         .unwrap()
@@ -3115,6 +3153,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // custom_model_display
         )
         .await
         .unwrap()
@@ -3211,6 +3250,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // custom_model_display
         )
         .await
         .unwrap()
@@ -3285,6 +3325,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // custom_model_display
         )
         .await
         .unwrap()
@@ -3335,6 +3376,7 @@ mod tests {
             None,
             tool_config,
             true,
+            None, // custom_model_display
         )
         .await
         .unwrap()
