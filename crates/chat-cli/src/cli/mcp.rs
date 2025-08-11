@@ -152,6 +152,10 @@ impl AddArgs {
                     Some(Scope::Workspace) => directories::chat_legacy_workspace_mcp_config(os)?,
                     _ => directories::chat_legacy_global_mcp_config(os)?,
                 };
+                if !legacy_mcp_config_path.exists() {
+                    // Create an empty config file that won't fail to deserialize.
+                    os.fs.write(&legacy_mcp_config_path, "{ \"mcpServers\": {} }").await?;
+                }
                 let mut mcp_servers = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
 
                 if mcp_servers.mcp_servers.contains_key(&self.name) && !self.force {
