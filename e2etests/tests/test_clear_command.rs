@@ -30,11 +30,8 @@ fn test_clear_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END TEST RESPONSE");
     
     // Verify history is cleared - AI shouldn't remember the name
-    if !test_response.to_lowercase().contains("testuser") {
-        println!("✅ Clear command successful - Conversation history cleared.");
-    } else {
-        println!("⚠️ Clear command failed - AI still remembers previous conversation");
-    }
+    assert!(!test_response.to_lowercase().contains("testuser"), "Clear command failed - AI still remembers previous conversation");
+    println!("✅ Clear command successful - Conversation history cleared.");
     chat.quit()?;
     println!("✅ Test completed successfully");
     
