@@ -9,11 +9,7 @@ use crossterm::{
     queue,
 };
 use dialoguer::Select;
-use serde::{
-    Deserialize,
-    Deserializer,
-    Serialize,
-};
+use serde::Serialize;
 
 use crate::api_client::Endpoint;
 use crate::cli::chat::{
@@ -23,7 +19,7 @@ use crate::cli::chat::{
 };
 use crate::os::Os;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
     /// Display name
     #[serde(skip_serializing_if = "Option::is_none")]

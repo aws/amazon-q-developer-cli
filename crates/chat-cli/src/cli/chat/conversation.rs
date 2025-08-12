@@ -112,7 +112,7 @@ pub struct ConversationState {
     latest_summary: Option<(String, RequestMetadata)>,
     #[serde(skip)]
     pub agents: Agents,
-    /// Legacy, unused
+    /// Unused, kept only to maintain deserialization backwards compatibility with <=v1.13.3
     /// Model explicitly selected by the user in this conversation state via `/model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
