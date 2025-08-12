@@ -36,7 +36,7 @@
       "default": null
     },
     "prompt": {
-      "description": "The intention for this field is to provide high level context to the\nagent. This should be seen as the same category of context as a system prompt.",
+      "description": "The intention for this field is to provide high level context to the agent. This should be seen as the same category of context as a system prompt.",
       "type": [
         "string",
         "null"
@@ -91,7 +91,7 @@
       "default": {}
     },
     "tools": {
-      "description": "List of tools the agent can see. Use \\\"@{MCP_SERVER_NAME}/tool_name\\\" to specify tools from\nmcp servers. To include all tools from a server, use \\\"@{MCP_SERVER_NAME}\\\"",
+      "description": "List of tools the agent can see. Use \"@{MCP_SERVER_NAME}/tool_name\" to specify tools from mcp servers. To include all tools from a server, use \"@{MCP_SERVER_NAME}\"",
       "type": "array",
       "items": {
         "type": "string"
@@ -143,7 +143,7 @@
       "default": {}
     },
     "toolsSettings": {
-      "description": "Settings for specific tools. These are mostly for native tools. The actual schema differs by\ntools and is documented in detail in our documentation",
+      "description": "Settings for specific tools. These are mostly for native tools. The actual schema differs by tools and is documented in detail in our documentation",
       "type": "object",
       "additionalProperties": {
         "description": "Settings for tools. Refer to our documentations to see how to configure them",
@@ -156,7 +156,7 @@
       "default": {}
     },
     "useLegacyMcpJson": {
-      "description": "Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent\nYou can reference tools brought in by these servers as just as you would with the servers\nyou configure in the mcpServers field in this config",
+      "description": "Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent. You can reference tools brought in by these servers as just as you would with the servers you configure in the mcpServers field in this config",
       "type": "boolean",
       "default": false
     }
