@@ -12,7 +12,9 @@ use std::time::Duration;
 
 use amzn_codewhisperer_client::Client as CodewhispererClient;
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenOutput;
+use amzn_codewhisperer_client::types::Origin::Cli;
 use amzn_codewhisperer_client::types::{
+    Model,
     OptOutPreference,
     SubscriptionStatus,
     TelemetryEvent,
@@ -32,6 +34,7 @@ pub use error::ApiClientError;
 use parking_lot::Mutex;
 pub use profile::list_available_profiles;
 use serde_json::Map;
+use tokio::sync::RwLock;
 use tracing::{
     debug,
     error,
@@ -67,12 +70,27 @@ pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-opto
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 
 #[derive(Clone, Debug)]
+pub struct ModelListResult {
+    pub models: Vec<Model>,
+    pub default_model: Model,
+}
+
+impl From<ModelListResult> for (Vec<Model>, Model) {
+    fn from(v: ModelListResult) -> Self {
+        (v.models, v.default_model)
+    }
+}
+
+type ModelCache = Arc<RwLock<Option<ModelListResult>>>;
+
+#[derive(Clone, Debug)]
 pub struct ApiClient {
     client: CodewhispererClient,
     streaming_client: Option<CodewhispererStreamingClient>,
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
     profile: Option<AuthProfile>,
+    model_cache: ModelCache,
 }
 
 impl ApiClient {
@@ -112,6 +130,7 @@ impl ApiClient {
                 sigv4_streaming_client: None,
                 mock_client: None,
                 profile: None,
+                model_cache: Arc::new(RwLock::new(None)),
             };
 
             if let Ok(json) = env.get("Q_MOCK_CHAT_RESPONSE") {
@@ -181,6 +200,7 @@ impl ApiClient {
             sigv4_streaming_client,
             mock_client: None,
             profile,
+            model_cache: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -232,6 +252,82 @@ impl ApiClient {
         }
 
         Ok(profiles)
+    }
+
+    pub async fn list_available_models(&self) -> Result<ModelListResult, ApiClientError> {
+        if cfg!(test) {
+            let m = Model::builder()
+                .model_id("model-1")
+                .description("Test Model 1")
+                .build()
+                .unwrap();
+
+            return Ok(ModelListResult {
+                models: vec![m.clone()],
+                default_model: m,
+            });
+        }
+
+        let mut models = Vec::new();
+        let mut default_model = None;
+        let request = self
+            .client
+            .list_available_models()
+            .set_origin(Some(Cli))
+            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+        let mut paginator = request.into_paginator().send();
+
+        while let Some(result) = paginator.next().await {
+            let models_output = result?;
+            models.extend(models_output.models().iter().cloned());
+
+            if default_model.is_none() {
+                default_model = Some(models_output.default_model().clone());
+            }
+        }
+        let default_model = default_model.ok_or_else(|| ApiClientError::DefaultModelNotFound)?;
+        Ok(ModelListResult { models, default_model })
+    }
+
+    pub async fn list_available_models_cached(&self) -> Result<ModelListResult, ApiClientError> {
+        {
+            let cache = self.model_cache.read().await;
+            if let Some(cached) = cache.as_ref() {
+                tracing::debug!("Returning cached model list");
+                return Ok(cached.clone());
+            }
+        }
+
+        tracing::debug!("Cache miss, fetching models from list_available_models API");
+        let result = self.list_available_models().await?;
+        {
+            let mut cache = self.model_cache.write().await;
+            *cache = Some(result.clone());
+        }
+        Ok(result)
+    }
+
+    pub async fn invalidate_model_cache(&self) {
+        let mut cache = self.model_cache.write().await;
+        *cache = None;
+        tracing::info!("Model cache invalidated");
+    }
+
+    pub async fn get_available_models(&self, _region: &str) -> Result<ModelListResult, ApiClientError> {
+        let res = self.list_available_models_cached().await?;
+        // TODO: Once we have access to gpt-oss, add back.
+        // if region == "us-east-1" {
+        //     let gpt_oss = Model::builder()
+        //         .model_id("OPENAI_GPT_OSS_120B_1_0")
+        //         .model_name("openai-gpt-oss-120b-preview")
+        //         .token_limits(TokenLimits::builder().max_input_tokens(128_000).build())
+        //         .build()
+        //         .map_err(ApiClientError::from)?;
+
+        //     models.push(gpt_oss);
+        // }
+
+        Ok(res)
     }
 
     pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {
