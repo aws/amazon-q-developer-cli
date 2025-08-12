@@ -1315,90 +1315,61 @@ impl ToolManager {
             Some((server_name, prompt_name)) => (Some(server_name.to_string()), Some(prompt_name.to_string())),
         };
         let prompt_name = prompt_name.ok_or(GetPromptError::MissingPromptName)?;
-        // We need to use a sync lock here because this lock is also used in a blocking thread,
-        // necessitated by the fact that said thread is also responsible for using a sync channel,
-        // which is itself necessitated by the fact that consumer of said channel is calling from a
-        // sync function
-        let mut prompts_wl = HashMap::<String, Vec<PromptBundle>>::new();
-        let mut maybe_bundles = prompts_wl.get(&prompt_name);
-        let mut has_retried = false;
-        'blk: loop {
-            match (maybe_bundles, server_name.as_ref(), has_retried) {
+
+        if let Some((query_sender, query_result_receiver)) = &self.prompts_sender_receiver_pair {
+            query_sender
+                .send(PromptQuery::List)
+                .map_err(|e| GetPromptError::General(eyre::eyre!(e)))?;
+            let prompts = query_result_receiver
+                .resubscribe()
+                .recv()
+                .await
+                .map_err(|e| GetPromptError::General(eyre::eyre!(e)))?;
+            let PromptQueryResult::List(prompts) = prompts else {
+                return Err(GetPromptError::IncorrectResponseType);
+            };
+
+            match (prompts.get(&prompt_name), server_name.as_ref()) {
                 // If we have more than one eligible clients but no server name specified
-                (Some(bundles), None, _) if bundles.len() > 1 => {
-                    break 'blk Err(GetPromptError::AmbiguousPrompt(prompt_name.clone(), {
+                (Some(bundles), None) if bundles.len() > 1 => {
+                    Err(GetPromptError::AmbiguousPrompt(prompt_name.clone(), {
                         bundles.iter().fold("\n".to_string(), |mut acc, b| {
                             acc.push_str(&format!("- @{}/{}\n", b.server_name, prompt_name));
                             acc
                         })
-                    }));
+                    }))
                 },
                 // Normal case where we have enough info to proceed
                 // Note that if bundle exists, it should never be empty
-                (Some(bundles), sn, _) => {
+                (Some(bundles), sn) => {
                     let bundle = if bundles.len() > 1 {
-                        let Some(server_name) = sn else {
-                            maybe_bundles = None;
-                            continue 'blk;
+                        let Some(sn) = sn else {
+                            return Err(GetPromptError::AmbiguousPrompt(prompt_name.clone(), {
+                                bundles.iter().fold("\n".to_string(), |mut acc, b| {
+                                    acc.push_str(&format!("- @{}/{}\n", b.server_name, prompt_name));
+                                    acc
+                                })
+                            }));
                         };
-                        let bundle = bundles.iter().find(|b| b.server_name == *server_name);
+                        let bundle = bundles.iter().find(|b| b.server_name == *sn);
                         match bundle {
                             Some(bundle) => bundle,
                             None => {
-                                maybe_bundles = None;
-                                continue 'blk;
+                                return Err(GetPromptError::AmbiguousPrompt(prompt_name.clone(), {
+                                    bundles.iter().fold("\n".to_string(), |mut acc, b| {
+                                        acc.push_str(&format!("- @{}/{}\n", b.server_name, prompt_name));
+                                        acc
+                                    })
+                                }));
                             },
                         }
                     } else {
                         bundles.first().ok_or(GetPromptError::MissingPromptInfo)?
                     };
-                    let server_name = bundle.server_name.clone();
-                    let client = self.clients.get(&server_name).ok_or(GetPromptError::MissingClient)?;
-                    // Here we lazily update the out of date cache
-                    if client.is_prompts_out_of_date() {
-                        let prompt_gets = client.list_prompt_gets();
-                        let prompt_gets = prompt_gets
-                            .read()
-                            .map_err(|e| GetPromptError::Synchronization(e.to_string()))?;
-                        for (prompt_name, prompt_get) in prompt_gets.iter() {
-                            prompts_wl
-                                .entry(prompt_name.clone())
-                                .and_modify(|bundles| {
-                                    let mut is_modified = false;
-                                    for bundle in &mut *bundles {
-                                        let mut updated_bundle = PromptBundle {
-                                            server_name: server_name.clone(),
-                                            prompt_get: prompt_get.clone(),
-                                        };
-                                        if bundle.server_name == *server_name {
-                                            std::mem::swap(bundle, &mut updated_bundle);
-                                            is_modified = true;
-                                            break;
-                                        }
-                                    }
-                                    if !is_modified {
-                                        bundles.push(PromptBundle {
-                                            server_name: server_name.clone(),
-                                            prompt_get: prompt_get.clone(),
-                                        });
-                                    }
-                                })
-                                .or_insert(vec![PromptBundle {
-                                    server_name: server_name.clone(),
-                                    prompt_get: prompt_get.clone(),
-                                }]);
-                        }
-                        client.prompts_updated();
-                    }
 
-                    let PromptBundle { prompt_get, .. } = prompts_wl
-                        .get(&prompt_name)
-                        .and_then(|bundles| bundles.iter().find(|b| b.server_name == server_name))
-                        .ok_or(GetPromptError::MissingPromptInfo)?;
-
-                    // Here we need to convert the positional arguments into key value pair
-                    // The assignment order is assumed to be the order of args as they are
-                    // presented in PromptGet::arguments
+                    let server_name = &bundle.server_name;
+                    let client = self.clients.get(server_name).ok_or(GetPromptError::MissingClient)?;
+                    let PromptBundle { prompt_get, .. } = bundle;
                     let args = if let (Some(schema), Some(value)) = (&prompt_get.arguments, &arguments) {
                         let params = schema.iter().zip(value.iter()).fold(
                             HashMap::<String, String>::new(),
@@ -1420,50 +1391,13 @@ impl ToolManager {
                         Some(serde_json::Value::Object(params))
                     };
                     let resp = client.request("prompts/get", params).await?;
-                    break 'blk Ok(resp);
+                    Ok(resp)
                 },
-                // If we have no eligible clients this would mean one of the following:
-                // - The prompt does not exist, OR
-                // - This is the first time we have a query / our cache is out of date
-                // Both of which means we would have to requery
-                (None, _, false) => {
-                    has_retried = true;
-                    self.refresh_prompts(&mut prompts_wl)?;
-                    maybe_bundles = prompts_wl.get(&prompt_name);
-                },
-                (_, _, true) => {
-                    break 'blk Err(GetPromptError::PromptNotFound(prompt_name));
-                },
+                (None, _) => Err(GetPromptError::PromptNotFound(prompt_name)),
             }
+        } else {
+            Err(GetPromptError::MissingChannel)
         }
-    }
-
-    pub fn refresh_prompts(&self, prompts_wl: &mut HashMap<String, Vec<PromptBundle>>) -> Result<(), GetPromptError> {
-        *prompts_wl = self.clients.iter().fold(
-            HashMap::<String, Vec<PromptBundle>>::new(),
-            |mut acc, (server_name, client)| {
-                let prompt_gets = client.list_prompt_gets();
-                let Ok(prompt_gets) = prompt_gets.read() else {
-                    tracing::error!("Error encountered while retrieving read lock");
-                    return acc;
-                };
-                for (prompt_name, prompt_get) in prompt_gets.iter() {
-                    acc.entry(prompt_name.clone())
-                        .and_modify(|bundles| {
-                            bundles.push(PromptBundle {
-                                server_name: server_name.to_owned(),
-                                prompt_get: prompt_get.clone(),
-                            });
-                        })
-                        .or_insert(vec![PromptBundle {
-                            server_name: server_name.to_owned(),
-                            prompt_get: prompt_get.clone(),
-                        }]);
-                }
-                acc
-            },
-        );
-        Ok(())
     }
 
     pub async fn pending_clients(&self) -> Vec<String> {
