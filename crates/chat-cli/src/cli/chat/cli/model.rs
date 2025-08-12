@@ -9,7 +9,10 @@ use crossterm::{
     queue,
 };
 use dialoguer::Select;
-use serde::Serialize;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use crate::api_client::Endpoint;
 use crate::cli::chat::{
