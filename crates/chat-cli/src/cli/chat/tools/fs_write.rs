@@ -450,10 +450,12 @@ impl FsWrite {
                     builder.build()
                 };
 
+                let mut sanitized_deny_list = Vec::<&String>::new();
                 let deny_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &denied_paths {
                         if let Ok(glob) = Glob::new(path) {
+                            sanitized_deny_list.push(path);
                             builder.add(glob);
                         } else {
                             warn!("Failed to create glob from path given: {path}. Ignoring.");
@@ -469,8 +471,14 @@ impl FsWrite {
                             | Self::Insert { path, .. }
                             | Self::Append { path, .. }
                             | Self::StrReplace { path, .. } => {
-                                if deny_set.is_match(path) {
-                                    return PermissionEvalResult::Deny;
+                                let denied_match_set = deny_set.matches(path);
+                                if !denied_match_set.is_empty() {
+                                    return PermissionEvalResult::Deny({
+                                        denied_match_set
+                                            .iter()
+                                            .filter_map(|i| sanitized_deny_list.get(*i).map(|s| (*s).clone()))
+                                            .collect::<Vec<_>>()
+                                    });
                                 }
                                 if allow_set.is_match(path) {
                                     return PermissionEvalResult::Allow;
@@ -794,7 +802,13 @@ fn syntect_to_crossterm_color(syntect: syntect::highlighting::Color) -> style::C
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{
+        HashMap,
+        HashSet,
+    };
+
     use super::*;
+    use crate::cli::agent::ToolSettingTarget;
     use crate::cli::chat::util::test::{
         TEST_FILE_CONTENTS,
         TEST_FILE_PATH,
@@ -1243,6 +1257,78 @@ mod tests {
         let nested_file_path = nested_dir.join("file.txt");
         let nested_content = os.fs.read_to_string(&nested_file_path).await.unwrap();
         assert_eq!(nested_content, "content in nested path\n");
+    }
+
+    #[test]
+    fn test_eval_perm() {
+        const DENIED_PATH_ONE: &str = "/some/denied/path/**";
+        const DENIED_PATH_GLOB: &str = "/denied/glob/**/path/**";
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            allowed_tools: {
+                let mut allowed_tools = HashSet::<String>::new();
+                allowed_tools.insert("fs_write".to_string());
+                allowed_tools
+            },
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({
+                        "deniedPaths": [DENIED_PATH_ONE, DENIED_PATH_GLOB]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/not/a/denied/path/file.txt",
+            "command": "create",
+            "file_text": "content in nested path"
+        }))
+        .unwrap();
+
+        let res = tool.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Ask));
+
+        let tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": format!("{DENIED_PATH_ONE}/file.txt"),
+            "command": "create",
+            "file_text": "content in nested path"
+        }))
+        .unwrap();
+
+        let res = tool.eval_perm(&agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_ONE.to_string()))
+        );
+
+        let tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": format!("/denied/glob/child_one/path/file.txt"),
+            "command": "create",
+            "file_text": "content in nested path"
+        }))
+        .unwrap();
+
+        let res = tool.eval_perm(&agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_GLOB.to_string()))
+        );
+
+        let tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": format!("/denied/glob/child_one/grand_child_one/path/file.txt"),
+            "command": "create",
+            "file_text": "content in nested path"
+        }))
+        .unwrap();
+
+        let res = tool.eval_perm(&agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_GLOB.to_string()))
+        );
     }
 
     #[tokio::test]
