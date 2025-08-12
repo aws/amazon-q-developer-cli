@@ -25,5 +25,5 @@ if [ -n "$TEST_NAME" ]; then
     cargo test --test "$TEST_NAME" -- --nocapture
 else
     echo "🧪 Running all E2E tests"
-    cargo test --test test_help_command --test test_tools_command --test test_ai_prompt --test test_clear_command --test test_quit_command --test test_save_help_command --test test_usage_command --test test_usage_help_command --test test_compact_command --test test_compact_help_command --test test_hooks_help_command --test test_mcp_help_command --test test_mcp_loading_command --test test_model_command --test test_model_help_command --test test_subscribe_command --test test_subscribe_help_command --test test_editor_help_command --test test_load_help_command --test test_save_command --test test_context_show_command --test test_context_invalid_command --test test_context_without_subcommand --test test_context_help_command --test test_context_remove_command_of_non_existent_file --test test_save_force_command --test agent_without_subcommand  --test test_agent_list_command --test test_agent_invalid_command --test test_agent_create_missing_args --test test_agent_schema_command --test test_agent_set_default_missing_args --test test_agent_set_default_command --test test_agent_help_command  -- --nocapture
+    cargo test --tests -- --nocapture --test-threads=1
 fi

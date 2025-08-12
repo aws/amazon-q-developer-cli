@@ -14,6 +14,7 @@ impl<'a> Drop for FileCleanup<'a> {
 }
 
 #[test]
+#[cfg(feature = "save_load")]
 fn test_save_force_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /save --force command...");
     

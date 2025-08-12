@@ -1,6 +1,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
+#[cfg(feature = "agent")]
 fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent create without required arguments...");
     

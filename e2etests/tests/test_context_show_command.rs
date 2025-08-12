@@ -1,6 +1,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
+#[cfg(feature = "context")]
 fn test_context_show_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context show command...");
     

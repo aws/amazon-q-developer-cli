@@ -1,6 +1,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
+#[cfg(feature = "integration")]
 fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /editor --help command...");
     
@@ -44,7 +45,9 @@ fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "integration")]
 #[test]
+#[cfg(feature = "integration")]
 fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /help editor command...");
     

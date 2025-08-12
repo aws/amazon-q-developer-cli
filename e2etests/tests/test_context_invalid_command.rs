@@ -1,6 +1,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
+#[cfg(feature = "context")]
 fn test_context_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context invalid command...");
     

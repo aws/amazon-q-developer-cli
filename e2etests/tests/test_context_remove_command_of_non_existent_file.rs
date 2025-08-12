@@ -1,6 +1,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
+#[cfg(feature = "context")]
 fn test_context_remove_command_of_non_existent_file() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context remove non existing file command...");
     

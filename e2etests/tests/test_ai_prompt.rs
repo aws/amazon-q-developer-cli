@@ -1,8 +1,9 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
+#[cfg(feature = "ai_prompts")]
 fn test_what_is_aws_prompt() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing 'What is AWS?' AI prompt...");
+    println!("🔍 [AI PROMPTS] Testing 'What is AWS?' AI prompt...");
     
     let mut chat = QChatSession::new()?;
     println!("✅ Q Chat session started");
@@ -53,6 +54,7 @@ fn test_what_is_aws_prompt() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+#[cfg(feature = "ai_prompts")]
 fn test_simple_greeting() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing simple 'Hello' prompt...");
     

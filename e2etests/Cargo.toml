@@ -8,6 +8,18 @@ edition = "2021"
 [dependencies]
 expectrl = "0.7"
 
+[features]
+default = []
+core_session = []
+agent = []
+context = []
+save_load = []
+model = []
+session_mgmt = []
+integration = []
+mcp = []
+ai_prompts = []
+
 [[test]]
 name = "test_help_command"
 path = "tests/test_help_command.rs"

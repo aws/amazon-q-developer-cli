@@ -1,8 +1,9 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
+#[cfg(feature = "core_session")]
 fn test_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /help command...");
+    println!("🔍 [CORE SESSION] Testing /help command...");
     
     let mut chat = QChatSession::new()?;
     println!("✅ Q Chat session started");

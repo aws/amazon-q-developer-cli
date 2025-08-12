@@ -1,6 +1,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
+#[cfg(feature = "agent")]
 fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent command...");
     

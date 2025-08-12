@@ -1,6 +1,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
+#[cfg(feature = "integration")]
 fn test_subscribe_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /subscribe command...");
     
