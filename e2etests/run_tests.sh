@@ -25,5 +25,5 @@ if [ -n "$TEST_NAME" ]; then
     cargo test --test "$TEST_NAME" -- --nocapture
 else
     echo "🧪 Running all E2E tests"
-    cargo test --test test_help_command --test test_tools_command --test test_ai_prompt -- --nocapture
+    cargo test --test test_help_command --test test_tools_command --test test_ai_prompt --test test_clear_command --test test_quit_command --test test_save_help_command --test test_load_help_command -- --nocapture
 fi
