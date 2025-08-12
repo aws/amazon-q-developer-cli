@@ -27,7 +27,10 @@ pub enum TodoSubcommand {
     View,
 
     /// Delete a to-do list
-    Delete,
+    Delete {
+        #[arg(long, short)]
+        all: bool,
+    },
 }
 
 /// Used for displaying completed and in-progress todo lists
@@ -59,24 +62,15 @@ impl TodoSubcommand {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         match self {
             Self::ClearFinished => {
-                let entries = match os.database.get_all_todos() {
-                    Ok(e) => e,
-                    Err(e) => return Err(ChatError::Custom(format!("Could not get all to-do lists: {e}").into())),
+                let (todos, errors) = match TodoState::get_all_todos(os).await {
+                    Ok(res) => res,
+                    Err(e) => return Err(ChatError::Custom(format!("Could not get to-do lists: {e}").into())),
                 };
                 let mut cleared_one = false;
 
-                for (id, value) in entries.iter() {
-                    let todo_status = match value.as_str() {
-                        Some(s) => match serde_json::from_str::<TodoState>(s) {
-                            Ok(state) => state,
-
-                            // FIX: Silent fail
-                            Err(_) => continue,
-                        },
-                        None => continue,
-                    };
+                for todo_status in todos.iter() {
                     if todo_status.completed.iter().all(|b| *b) {
-                        match os.database.delete_todo(id) {
+                        match TodoState::delete_todo(os, &todo_status.id).await {
                             Ok(_) => cleared_one = true,
                             Err(e) => {
                                 return Err(ChatError::Custom(format!("Could not delete to-do list: {e}").into()));
@@ -92,8 +86,14 @@ impl TodoSubcommand {
                 } else {
                     execute!(session.stderr, style::Print("No finished to-do lists to clear!\n"))?;
                 }
+                if !errors.is_empty() {
+                    execute!(
+                        session.stderr,
+                        style::Print(format!("* Failed to get {} todo list(s)\n", errors.len()).dark_grey())
+                    )?;
+                }
             },
-            Self::Resume => match Self::get_descriptions_and_statuses(os) {
+            Self::Resume => match Self::get_descriptions_and_statuses(os).await {
                 Ok(entries) => {
                     if entries.is_empty() {
                         execute!(session.stderr, style::Print("No to-do lists to resume!\n"),)?;
@@ -113,13 +113,13 @@ impl TodoSubcommand {
                 },
                 Err(e) => return Err(ChatError::Custom(format!("Could not show to-do lists: {e}").into())),
             },
-            Self::View => match Self::get_descriptions_and_statuses(os) {
+            Self::View => match Self::get_descriptions_and_statuses(os).await {
                 Ok(entries) => {
                     if entries.is_empty() {
                         execute!(session.stderr, style::Print("No to-do lists to view!\n"))?;
                     } else if let Some(index) = fuzzy_select_todos(&entries, "Select a to-do list to view:") {
                         if index < entries.len() {
-                            let list = TodoState::load(os, &entries[index].id).map_err(|e| {
+                            let list = TodoState::load(os, &entries[index].id).await.map_err(|e| {
                                 ChatError::Custom(format!("Could not load current to-do list: {e}").into())
                             })?;
                             execute!(
@@ -137,15 +137,22 @@ impl TodoSubcommand {
                         }
                     }
                 },
-                Err(_) => return Err(ChatError::Custom("Could not show to-do lists".into())),
+                Err(e) => return Err(ChatError::Custom(format!("Could not show to-do lists: {e}").into())),
             },
-            Self::Delete => match Self::get_descriptions_and_statuses(os) {
+            Self::Delete { all } => match Self::get_descriptions_and_statuses(os).await {
                 Ok(entries) => {
                     if entries.is_empty() {
                         execute!(session.stderr, style::Print("No to-do lists to delete!\n"))?;
+                    } else if all {
+                        for entry in entries {
+                            TodoState::delete_todo(os, &entry.id)
+                                .await
+                                .map_err(|_e| ChatError::Custom("Could not delete all to-do lists".into()))?;
+                        }
+                        execute!(session.stderr, style::Print("✔ Deleted all to-do lists!\n".green()),)?;
                     } else if let Some(index) = fuzzy_select_todos(&entries, "Select a to-do list to delete:") {
                         if index < entries.len() {
-                            os.database.delete_todo(&entries[index].id).map_err(|e| {
+                            TodoState::delete_todo(os, &entries[index].id).await.map_err(|e| {
                                 ChatError::Custom(format!("Could not delete the selected to-do list: {e}").into())
                             })?;
                             execute!(
@@ -156,7 +163,7 @@ impl TodoSubcommand {
                         }
                     }
                 },
-                Err(_) => return Err(ChatError::Custom("Could not show to-do lists".into())),
+                Err(e) => return Err(ChatError::Custom(format!("Could not show to-do lists: {e}").into())),
             },
         }
         Ok(ChatState::PromptUser {
@@ -165,23 +172,15 @@ impl TodoSubcommand {
     }
 
     /// Convert all to-do list state entries to displayable entries
-    fn get_descriptions_and_statuses(os: &Os) -> Result<Vec<TodoDisplayEntry>> {
+    async fn get_descriptions_and_statuses(os: &Os) -> Result<Vec<TodoDisplayEntry>> {
         let mut out = Vec::new();
-        let entries = os.database.get_all_todos()?;
-        for (id, value) in entries.iter() {
-            let temp_struct = match value.as_str() {
-                Some(s) => match serde_json::from_str::<TodoState>(s) {
-                    Ok(state) => state,
-                    Err(_) => continue,
-                },
-                None => continue,
-            };
-
+        let (todos, _) = TodoState::get_all_todos(os).await?;
+        for todo in todos.iter() {
             out.push(TodoDisplayEntry {
-                num_completed: temp_struct.completed.iter().filter(|b| **b).count(),
-                num_tasks: temp_struct.completed.len(),
-                description: temp_struct.task_description,
-                id: id.clone(),
+                num_completed: todo.completed.iter().filter(|b| **b).count(),
+                num_tasks: todo.completed.len(),
+                description: todo.description.clone(),
+                id: todo.id.clone(),
             });
         }
         Ok(out)

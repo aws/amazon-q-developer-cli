@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::io::Write;
+use std::path::PathBuf;
 use std::time::{
     SystemTime,
     UNIX_EPOCH,
@@ -11,8 +12,11 @@ use crossterm::{
     style,
 };
 use eyre::{
+    OptionExt,
+    Report,
     Result,
     bail,
+    eyre,
 };
 use serde::{
     Deserialize,
@@ -22,13 +26,16 @@ use serde::{
 use super::InvokeOutput;
 use crate::os::Os;
 
+// Local directory to store todo lists
+const TODO_LIST_DIR: &str = ".amazonq/cli-todo-lists/";
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "command", rename_all = "camelCase")]
 pub enum TodoInput {
     // Creates a todo list
     Create {
         tasks: Vec<String>,
-        task_description: String,
+        todo_list_description: String,
     },
 
     // Completes tasks corresponding to the provided indices
@@ -65,23 +72,34 @@ pub enum TodoInput {
 pub struct TodoState {
     pub tasks: Vec<String>,
     pub completed: Vec<bool>,
-    pub task_description: String,
+    pub description: String,
     pub context: Vec<String>,
     pub modified_files: Vec<String>,
+    pub id: String,
 }
 
 impl TodoState {
+    pub async fn init_dir(os: &Os) -> Result<()> {
+        os.fs.create_dir_all(os.env.current_dir()?.join(TODO_LIST_DIR)).await?;
+        Ok(())
+    }
+
     /// Loads a TodoState with the given id
-    pub fn load(os: &Os, id: &str) -> Result<Self> {
-        match os.database.get_todo(id)? {
-            Some(state) => Ok(state),
-            None => bail!("No to-do list with id {}", id),
-        }
+    pub async fn load(os: &Os, id: &str) -> Result<Self> {
+        let Ok(state_str) = os.fs.read_to_string(Self::id_to_path(os, id)?).await else {
+            bail!("No to-do list with id {}", id);
+        };
+        serde_json::from_str::<Self>(&state_str).map_err(|e| eyre!("Could not deserialize todo list: {e}"))
     }
 
     /// Saves this TodoState with the given id
-    pub fn save(&self, os: &Os, id: &str) -> Result<()> {
-        os.database.set_todo(id, self)?;
+    pub async fn save(&self, os: &Os, id: &str) -> Result<()> {
+        let path = TodoState::id_to_path(os, id)?;
+        Self::init_dir(os).await?;
+        if !os.fs.exists(&path) {
+            os.fs.create_new(&path).await?;
+        }
+        os.fs.write(path, serde_json::to_string(self)?).await?;
         Ok(())
     }
 
@@ -129,6 +147,41 @@ impl TodoState {
 
         format!("{timestamp}")
     }
+
+    pub fn id_to_path(os: &Os, id: &str) -> Result<PathBuf> {
+        Ok(os.env.current_dir()?.join(TODO_LIST_DIR).join(id))
+    }
+
+    pub async fn get_all_todos(os: &Os) -> Result<(Vec<Self>, Vec<Report>)> {
+        let todo_list_dir = os.env.current_dir()?.join(TODO_LIST_DIR);
+        let mut read_dir_output = os.fs.read_dir(todo_list_dir).await?;
+
+        let mut todos = Vec::new();
+        let mut errors = Vec::new();
+
+        while let Some(entry) = read_dir_output.next_entry().await? {
+            match Self::load(
+                os,
+                &entry
+                    .path()
+                    .file_name()
+                    .ok_or_eyre("Path is not a file")?
+                    .to_string_lossy(),
+            )
+            .await
+            {
+                Ok(todo) => todos.push(todo),
+                Err(e) => errors.push(e),
+            };
+        }
+
+        Ok((todos, errors))
+    }
+
+    pub async fn delete_todo(os: &Os, id: &str) -> Result<()> {
+        os.fs.remove_file(Self::id_to_path(os, id)?).await?;
+        Ok(())
+    }
 }
 
 impl TodoInput {
@@ -136,18 +189,20 @@ impl TodoInput {
         let (state, id) = match self {
             TodoInput::Create {
                 tasks,
-                task_description,
+                todo_list_description: task_description,
             } => {
-                // Create a new todo list with the given tasks and save state to database
+                let new_id = TodoState::generate_new_id();
+
+                // Create a new todo list with the given tasks and save state
                 let state = TodoState {
                     tasks: tasks.clone(),
                     completed: vec![false; tasks.len()],
-                    task_description: task_description.clone(),
+                    description: task_description.clone(),
                     context: Vec::new(),
                     modified_files: Vec::new(),
+                    id: new_id.clone(),
                 };
-                let new_id = TodoState::generate_new_id();
-                state.save(os, &new_id)?;
+                state.save(os, &new_id).await?;
                 state.display_list(output)?;
                 (state, new_id)
             },
@@ -157,7 +212,7 @@ impl TodoInput {
                 modified_files,
                 current_id: id,
             } => {
-                let mut state = TodoState::load(os, id)?;
+                let mut state = TodoState::load(os, id).await?;
 
                 for i in completed_indices.iter() {
                     state.completed[*i] = true;
@@ -168,7 +223,7 @@ impl TodoInput {
                 if let Some(files) = modified_files {
                     state.modified_files.extend_from_slice(files);
                 }
-                state.save(os, id)?;
+                state.save(os, id).await?;
 
                 // As tasks are being completed, display only the newly completed tasks
                 // and the next. Only display the whole list when all tasks are completed
@@ -194,7 +249,7 @@ impl TodoInput {
                 (state, id.clone())
             },
             TodoInput::Load { load_id: id } => {
-                let state = TodoState::load(os, id)?;
+                let state = TodoState::load(os, id).await?;
                 state.display_list(output)?;
                 (state, id.clone())
             },
@@ -204,15 +259,15 @@ impl TodoInput {
                 new_description,
                 current_id: id,
             } => {
-                let mut state = TodoState::load(os, id)?;
+                let mut state = TodoState::load(os, id).await?;
                 for (i, task) in insert_indices.iter().zip(new_tasks.iter()) {
                     state.tasks.insert(*i, task.clone());
                     state.completed.insert(*i, false);
                 }
                 if let Some(description) = new_description {
-                    state.task_description = description.clone();
+                    state.description = description.clone();
                 }
-                state.save(os, id)?;
+                state.save(os, id).await?;
                 state.display_list(output)?;
                 (state, id.clone())
             },
@@ -221,7 +276,7 @@ impl TodoInput {
                 new_description,
                 current_id: id,
             } => {
-                let mut state = TodoState::load(os, id)?;
+                let mut state = TodoState::load(os, id).await?;
 
                 // Remove entries in reverse order so indices aren't mismatched
                 let mut remove_indices = remove_indices.clone();
@@ -231,9 +286,9 @@ impl TodoInput {
                     state.completed.remove(*i);
                 }
                 if let Some(description) = new_description {
-                    state.task_description = description.clone();
+                    state.description = description.clone();
                 }
-                state.save(os, id)?;
+                state.save(os, id).await?;
                 state.display_list(output)?;
                 (state, id.clone())
             },
@@ -249,7 +304,7 @@ impl TodoInput {
         match self {
             TodoInput::Create {
                 tasks,
-                task_description,
+                todo_list_description: task_description,
             } => {
                 if tasks.is_empty() {
                     bail!("No tasks were provided");
@@ -265,7 +320,7 @@ impl TodoInput {
                 current_id,
                 ..
             } => {
-                let state = TodoState::load(os, current_id)?;
+                let state = TodoState::load(os, current_id).await?;
                 if completed_indices.is_empty() {
                     bail!("At least one completed index must be provided");
                 } else if completed_indices.iter().any(|i| *i >= state.completed.len()) {
@@ -275,7 +330,7 @@ impl TodoInput {
                 }
             },
             TodoInput::Load { load_id: id } => {
-                let state = TodoState::load(os, id)?;
+                let state = TodoState::load(os, id).await?;
                 if state.tasks.is_empty() {
                     bail!("Loaded todo list is empty");
                 }
@@ -286,7 +341,7 @@ impl TodoInput {
                 new_description,
                 current_id: id,
             } => {
-                let state = TodoState::load(os, id)?;
+                let state = TodoState::load(os, id).await?;
                 if new_tasks.iter().any(|task| task.trim().is_empty()) {
                     bail!("New tasks cannot be empty");
                 } else if has_duplicates(insert_indices) {
@@ -304,7 +359,7 @@ impl TodoInput {
                 new_description,
                 current_id: id,
             } => {
-                let state = TodoState::load(os, id)?;
+                let state = TodoState::load(os, id).await?;
                 if has_duplicates(remove_indices) {
                     bail!("Removal indices must be unique")
                 } else if remove_indices.iter().any(|i| *i > state.tasks.len()) {

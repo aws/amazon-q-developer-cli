@@ -131,6 +131,7 @@ use crate::api_client::{
 };
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
+use crate::cli::TodoState;
 use crate::cli::agent::Agents;
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::prompts::{
@@ -650,6 +651,11 @@ impl ChatSession {
                 }
             }
         });
+
+        // Create for cleaner error handling for todo lists
+        // This is more of a convenience thing but is not required, so the Result
+        // is ignored
+        let _ = TodoState::init_dir(os).await;
 
         Ok(Self {
             stdout,
@@ -2796,17 +2802,11 @@ impl ChatSession {
     pub async fn resume_todo_request(&mut self, os: &mut Os, id: &str) -> Result<ChatState, ChatError> {
         // Have to unpack each value separately since Reports can't be converted to
         // ChatError
-        let todo_list_option = match os.database.get_todo(id) {
-            Ok(option) => option,
+        let todo_list = match TodoState::load(os, id).await {
+            Ok(todo) => todo,
             Err(e) => {
-                return Err(ChatError::Custom(
-                    format!("Error getting todo list from database: {e}").into(),
-                ));
+                return Err(ChatError::Custom(format!("Error getting todo list: {e}").into()));
             },
-        };
-        let todo_list = match todo_list_option {
-            Some(todo_list) => todo_list,
-            None => return Err(ChatError::Custom(format!("No todo list with id {}", id).into())),
         };
         let contents = match serde_json::to_string(&todo_list) {
             Ok(s) => s,

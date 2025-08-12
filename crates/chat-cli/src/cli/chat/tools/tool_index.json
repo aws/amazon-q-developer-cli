@@ -306,8 +306,8 @@
             "type": "string"
           }
         },
-        "task_description": {
-          "description": "Required parameter of `create` command containing a BRIEF summary of the given task. The summary should be detailed enough to refer to without knowing the problem context beforehand.",
+        "todo_list_description": {
+          "description": "Required parameter of `create` command containing a BRIEF summary of the todo list being created. The summary should be detailed enough to refer to without knowing the problem context beforehand.",
           "type": "string"
         },
         "completed_indices": {
@@ -351,7 +351,7 @@
           }
         },
         "new_description": {
-          "description": "Optional parameter of `add` and `remove` containing a new task description. Use this when the updated set of tasks significantly change the goal or overall procedure of the task.",
+          "description": "Optional parameter of `add` and `remove` containing a new todo list description. Use this when the updated set of tasks significantly change the goal or overall procedure of the todo list.",
           "type": "string"
         },
         "remove_indices": {
