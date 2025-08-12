@@ -97,6 +97,8 @@ use tokio::sync::{
     broadcast,
 };
 use tool_manager::{
+    PromptQuery,
+    PromptQueryResult,
     ToolManager,
     ToolManagerBuilder,
 };
@@ -332,11 +334,14 @@ impl ChatArgs {
             None
         };
 
-        let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<Option<String>>(50);
-        let (prompt_response_sender, prompt_response_receiver) = tokio::sync::broadcast::channel::<Vec<String>>(50);
+        let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (prompt_response_sender, prompt_response_receiver) =
+            tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let mut tool_manager = ToolManagerBuilder::default()
-            .prompt_list_sender(prompt_response_sender)
-            .prompt_list_receiver(prompt_request_receiver)
+            .prompt_query_result_sender(prompt_response_sender)
+            .prompt_query_receiver(prompt_request_receiver)
+            .prompt_query_sender(prompt_request_sender.clone())
+            .prompt_query_result_receiver(prompt_response_receiver.resubscribe())
             .conversation_id(&conversation_id)
             .agent(agents.get_active().cloned().unwrap_or_default())
             .build(os, Box::new(std::io::stderr()), !self.no_interactive)
@@ -1623,6 +1628,7 @@ impl ChatSession {
                                 .await;
 
                             if matches!(chat_state, ChatState::Exit)
+                                || matches!(chat_state, ChatState::HandleResponseStream(_))
                                 || matches!(chat_state, ChatState::HandleInput { input: _ })
                                 // TODO(bskiser): this is just a hotfix for handling state changes
                                 // from manually running /compact, without impacting behavior of

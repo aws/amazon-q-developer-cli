@@ -148,20 +148,35 @@ pub enum LoadingRecord {
 
 #[derive(Default)]
 pub struct ToolManagerBuilder {
-    prompt_list_sender: Option<tokio::sync::broadcast::Sender<Vec<String>>>,
-    prompt_list_receiver: Option<tokio::sync::broadcast::Receiver<Option<String>>>,
+    prompt_query_result_sender: Option<tokio::sync::broadcast::Sender<PromptQueryResult>>,
+    prompt_query_receiver: Option<tokio::sync::broadcast::Receiver<PromptQuery>>,
+    prompt_query_sender: Option<tokio::sync::broadcast::Sender<PromptQuery>>,
+    prompt_query_result_receiver: Option<tokio::sync::broadcast::Receiver<PromptQueryResult>>,
     conversation_id: Option<String>,
     agent: Option<Agent>,
 }
 
 impl ToolManagerBuilder {
-    pub fn prompt_list_sender(mut self, sender: tokio::sync::broadcast::Sender<Vec<String>>) -> Self {
-        self.prompt_list_sender.replace(sender);
+    pub fn prompt_query_result_sender(mut self, sender: tokio::sync::broadcast::Sender<PromptQueryResult>) -> Self {
+        self.prompt_query_result_sender.replace(sender);
         self
     }
 
-    pub fn prompt_list_receiver(mut self, receiver: tokio::sync::broadcast::Receiver<Option<String>>) -> Self {
-        self.prompt_list_receiver.replace(receiver);
+    pub fn prompt_query_receiver(mut self, receiver: tokio::sync::broadcast::Receiver<PromptQuery>) -> Self {
+        self.prompt_query_receiver.replace(receiver);
+        self
+    }
+
+    pub fn prompt_query_sender(mut self, sender: tokio::sync::broadcast::Sender<PromptQuery>) -> Self {
+        self.prompt_query_sender.replace(sender);
+        self
+    }
+
+    pub fn prompt_query_result_receiver(
+        mut self,
+        receiver: tokio::sync::broadcast::Receiver<PromptQueryResult>,
+    ) -> Self {
+        self.prompt_query_result_receiver.replace(receiver);
         self
     }
 
@@ -176,7 +191,7 @@ impl ToolManagerBuilder {
     }
 
     pub async fn build(
-        mut self,
+        self,
         os: &mut Os,
         mut output: Box<dyn Write + Send + Sync + 'static>,
         interactive: bool,
@@ -372,8 +387,8 @@ impl ToolManagerBuilder {
         let agent = Arc::new(Mutex::new(self.agent.unwrap_or_default()));
         let agent_clone = agent.clone();
         let database = os.database.clone();
-        let mut prompt_list_sender = self.prompt_list_sender.take();
-        let mut prompt_list_receiver = self.prompt_list_receiver.take();
+        let mut prompt_list_sender = self.prompt_query_result_sender.clone();
+        let mut prompt_list_receiver = self.prompt_query_receiver.as_ref().map(|r| r.resubscribe());
 
         tokio::spawn(async move {
             use tokio::sync::broadcast::Sender as BroadcastSender;
@@ -400,36 +415,49 @@ impl ToolManagerBuilder {
             // We separate this into its own function for ease of maintenance since things written
             // in select arms don't have type hints
             #[inline]
-            async fn handle_prompt_search(
-                search_word: Option<String>,
+            async fn handle_prompt_queries(
+                query: PromptQuery,
                 prompts: &HashMap<String, Vec<PromptBundle>>,
-                prompt_list_sender: &mut Option<BroadcastSender<Vec<String>>>,
+                prompt_query_response_sender: &mut Option<BroadcastSender<PromptQueryResult>>,
             ) {
-                let filtered_prompts = prompts
-                    .iter()
-                    .flat_map(|(prompt_name, bundles)| {
-                        if bundles.len() > 1 {
-                            bundles
-                                .iter()
-                                .map(|b| format!("{}/{}", b.server_name, prompt_name))
-                                .collect()
-                        } else {
-                            vec![prompt_name.to_owned()]
+                match query {
+                    PromptQuery::List => {
+                        if let Some(sender) = prompt_query_response_sender {
+                            let query_res = PromptQueryResult::List(prompts.clone());
+                            if let Err(e) = sender.send(query_res) {
+                                error!("Error sending prompts to chat helper: {:?}", e);
+                            }
                         }
-                    })
-                    .filter(|n| {
-                        if let Some(p) = &search_word {
-                            n.contains(p)
-                        } else {
-                            true
-                        }
-                    })
-                    .collect::<Vec<_>>();
+                    },
+                    PromptQuery::Search(search_word) => {
+                        let filtered_prompts = prompts
+                            .iter()
+                            .flat_map(|(prompt_name, bundles)| {
+                                if bundles.len() > 1 {
+                                    bundles
+                                        .iter()
+                                        .map(|b| format!("{}/{}", b.server_name, prompt_name))
+                                        .collect()
+                                } else {
+                                    vec![prompt_name.to_owned()]
+                                }
+                            })
+                            .filter(|n| {
+                                if let Some(p) = &search_word {
+                                    n.contains(p)
+                                } else {
+                                    true
+                                }
+                            })
+                            .collect::<Vec<_>>();
 
-                if let Some(sender) = prompt_list_sender {
-                    if let Err(e) = sender.send(filtered_prompts) {
-                        error!("Error sending prompts to chat helper: {:?}", e);
-                    }
+                        if let Some(sender) = prompt_query_response_sender {
+                            let query_res = PromptQueryResult::Search(filtered_prompts);
+                            if let Err(e) = sender.send(query_res) {
+                                error!("Error sending prompts to chat helper: {:?}", e);
+                            }
+                        }
+                    },
                 }
             }
 
@@ -448,7 +476,7 @@ impl ToolManagerBuilder {
                 regex: &Regex,
                 telemetry_clone: &TelemetryThread,
                 mut loading_status_sender_clone: Option<&MpscSender<LoadingMsg>>,
-                new_tool_specs_clone: &Arc<Mutex<HashMap<String, (HashMap<String, ToolInfo>, Vec<ToolSpec>)>>>,
+                new_tool_specs_clone: &NewToolSpecs,
                 has_new_stuff_clone: &Arc<AtomicBool>,
                 load_record_clone: &Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
                 notify_weak: &std::sync::Weak<Notify>,
@@ -528,14 +556,14 @@ impl ToolManagerBuilder {
                                     .collect::<Vec<_>>();
                                 let mut sanitized_mapping = HashMap::<ModelToolName, ToolInfo>::new();
                                 let process_result = process_tool_specs(
-                                    &database,
+                                    database,
                                     conv_id_clone,
                                     &server_name,
                                     &mut specs,
                                     &mut sanitized_mapping,
                                     &alias_list,
-                                    &regex,
-                                    &telemetry_clone,
+                                    regex,
+                                    telemetry_clone,
                                 )
                                 .await;
                                 if let Some(sender) = &loading_status_sender_clone {
@@ -583,7 +611,7 @@ impl ToolManagerBuilder {
                                 }
                                 let _ = buf_writer.flush();
                                 drop(buf_writer);
-                                let record = String::from_utf8_lossy(&record_temp_buf).to_string();
+                                let record = String::from_utf8_lossy(record_temp_buf).to_string();
                                 let record = if process_result.is_err() {
                                     LoadingRecord::Warn(record)
                                 } else {
@@ -606,7 +634,7 @@ impl ToolManagerBuilder {
                                 let _ = queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer);
                                 let _ = buf_writer.flush();
                                 drop(buf_writer);
-                                let record = String::from_utf8_lossy(&record_temp_buf).to_string();
+                                let record = String::from_utf8_lossy(record_temp_buf).to_string();
                                 let record = LoadingRecord::Err(record);
                                 load_record_clone
                                     .lock()
@@ -643,25 +671,34 @@ impl ToolManagerBuilder {
                     },
                     UpdateEventMessage::PromptsListResult { server_name, result } => match result {
                         Ok(prompt_list_result) => {
-                            let mut to_append = prompt_list_result
-                                .prompts
-                                .into_iter()
-                                .filter_map(|pg| {
-                                    let pg = serde_json::from_value::<PromptGet>(pg).ok()?;
-                                    Some(PromptBundle {
-                                        server_name: server_name.clone(),
-                                        prompt_get: pg,
-                                    })
-                                })
-                                .collect::<Vec<_>>();
-
+                            // We first need to clear all the PromptGets that are associated with
+                            // this server because PromptsListResult is declaring what is available
+                            // (and not the diff)
                             prompts
-                                .entry(server_name.clone())
-                                .and_modify(|bundles| {
-                                    bundles.clear();
-                                    bundles.append(&mut to_append);
-                                })
-                                .or_insert(to_append);
+                                .values_mut()
+                                .for_each(|bundles| bundles.retain(|bundle| bundle.server_name != server_name));
+
+                            // And then we update them with the new comers
+                            for result in prompt_list_result.prompts {
+                                let Ok(prompt_get) = serde_json::from_value::<PromptGet>(result) else {
+                                    error!("Failed to deserialize prompt get from server {server_name}");
+                                    continue;
+                                };
+                                prompts
+                                    .entry(prompt_get.name.clone())
+                                    .and_modify(|bundles| {
+                                        bundles.push(PromptBundle {
+                                            server_name: server_name.clone(),
+                                            prompt_get: prompt_get.clone(),
+                                        });
+                                    })
+                                    .or_insert_with(|| {
+                                        vec![PromptBundle {
+                                            server_name: server_name.clone(),
+                                            prompt_get,
+                                        }]
+                                    });
+                            }
                         },
                         Err(e) => {
                             error!("Error fetching prompts from server {server_name}: {:?}", e);
@@ -669,7 +706,7 @@ impl ToolManagerBuilder {
                             let _ = queue_prompts_load_message(&server_name, &e, &mut buf_writer);
                             let _ = buf_writer.flush();
                             drop(buf_writer);
-                            let record = String::from_utf8_lossy(&record_temp_buf).to_string();
+                            let record = String::from_utf8_lossy(record_temp_buf).to_string();
                             let record = LoadingRecord::Err(record);
                             load_record_clone
                                 .lock()
@@ -698,13 +735,13 @@ impl ToolManagerBuilder {
 
             loop {
                 tokio::select! {
-                    Ok(search_word) = async {
+                    Ok(query) = async {
                         match prompt_list_receiver.as_mut() {
                             Some(receiver) => receiver.recv().await,
                             None => std::future::pending().await,
                         }
                     } => {
-                        handle_prompt_search(search_word, &prompts, &mut prompt_list_sender).await;
+                        handle_prompt_queries(query, &prompts, &mut prompt_list_sender).await;
                     },
                     Some(msg) = msg_rx.recv() => {
                         handle_messenger_msg(
@@ -768,6 +805,13 @@ impl ToolManagerBuilder {
             mcp_load_record: load_record,
             agent,
             disabled_servers: disabled_servers_display,
+            prompts_sender_receiver_pair: {
+                if let (Some(sender), Some(receiver)) = (self.prompt_query_sender, self.prompt_query_result_receiver) {
+                    Some((sender, receiver))
+                } else {
+                    None
+                }
+            },
             ..Default::default()
         })
     }
@@ -782,6 +826,18 @@ pub struct PromptBundle {
     pub server_name: String,
     /// The prompt get (info with which a prompt is retrieved) cached
     pub prompt_get: PromptGet,
+}
+
+#[derive(Clone, Debug)]
+pub enum PromptQuery {
+    List,
+    Search(Option<String>),
+}
+
+#[derive(Clone, Debug)]
+pub enum PromptQueryResult {
+    List(HashMap<String, Vec<PromptBundle>>),
+    Search(Vec<String>),
 }
 
 /// Categorizes different types of tool name validation failures:
@@ -831,6 +887,14 @@ type ServerName = String;
 /// tool name).
 type NewToolSpecs = Arc<Mutex<HashMap<ServerName, (HashMap<ModelToolName, ToolInfo>, Vec<ToolSpec>)>>>;
 
+/// A pair of channels used for prompt list communication between the tool manager and chat helper.
+/// The sender broadcasts a list of available prompt names, while the receiver listens for
+/// search queries to filter the prompt list.
+type PromptsChannelPair = (
+    tokio::sync::broadcast::Sender<PromptQuery>,
+    tokio::sync::broadcast::Receiver<PromptQueryResult>,
+);
+
 #[derive(Default, Debug)]
 /// Manages the lifecycle and interactions with tools from various sources, including MCP servers.
 /// This struct is responsible for initializing tools, handling tool requests, and maintaining
@@ -851,6 +915,9 @@ pub struct ToolManager {
     /// When set to true, it signals that the tool manager needs to refresh its internal state
     /// to incorporate newly available tools from MCP servers.
     pub has_new_stuff: Arc<AtomicBool>,
+
+    /// Used by methods on the [ToolManager] to retrieve information from the orchestrator thread
+    prompts_sender_receiver_pair: Option<PromptsChannelPair>,
 
     /// Storage for newly discovered tool specifications from MCP servers that haven't yet been
     /// integrated into the main tool registry. This field holds a thread-safe reference to a map
@@ -1218,8 +1285,24 @@ impl ToolManager {
         }
     }
 
-    pub async fn list_prompts(&self) -> Result<HashMap<String, PromptBundle>, GetPromptError> {
-        Ok(Default::default())
+    pub async fn list_prompts(&self) -> Result<HashMap<String, Vec<PromptBundle>>, GetPromptError> {
+        if let Some((query_sender, query_result_receiver)) = &self.prompts_sender_receiver_pair {
+            let mut new_receiver = query_result_receiver.resubscribe();
+            query_sender
+                .send(PromptQuery::List)
+                .map_err(|e| GetPromptError::General(eyre::eyre!(e)))?;
+            let query_result = new_receiver
+                .recv()
+                .await
+                .map_err(|e| GetPromptError::General(eyre::eyre!(e)))?;
+
+            Ok(match query_result {
+                PromptQueryResult::List(list) => list,
+                PromptQueryResult::Search(_) => return Err(GetPromptError::IncorrectResponseType),
+            })
+        } else {
+            Err(GetPromptError::MissingChannel)
+        }
     }
 
     pub async fn get_prompt(

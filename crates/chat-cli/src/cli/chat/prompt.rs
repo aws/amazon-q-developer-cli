@@ -38,6 +38,10 @@ use winnow::stream::AsChar;
 
 pub use super::prompt_parser::generate_prompt;
 use super::prompt_parser::parse_prompt_components;
+use super::tool_manager::{
+    PromptQuery,
+    PromptQueryResult,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 
@@ -85,6 +89,9 @@ pub const COMMANDS: &[&str] = &[
     "/load",
     "/subscribe",
 ];
+
+pub type PromptQuerySender = tokio::sync::broadcast::Sender<PromptQuery>;
+pub type PromptQueryResponseReceiver = tokio::sync::broadcast::Receiver<PromptQueryResult>;
 
 /// Complete commands that start with a slash
 fn complete_command(word: &str, start: usize) -> (usize, Vec<String>) {
@@ -135,15 +142,12 @@ impl PathCompleter {
 }
 
 pub struct PromptCompleter {
-    sender: tokio::sync::broadcast::Sender<Option<String>>,
-    receiver: RefCell<tokio::sync::broadcast::Receiver<Vec<String>>>,
+    sender: PromptQuerySender,
+    receiver: RefCell<PromptQueryResponseReceiver>,
 }
 
 impl PromptCompleter {
-    fn new(
-        sender: tokio::sync::broadcast::Sender<Option<String>>,
-        receiver: tokio::sync::broadcast::Receiver<Vec<String>>,
-    ) -> Self {
+    fn new(sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Self {
         PromptCompleter {
             sender,
             receiver: RefCell::new(receiver),
@@ -153,24 +157,41 @@ impl PromptCompleter {
     fn complete_prompt(&self, word: &str) -> Result<Vec<String>, ReadlineError> {
         let sender = &self.sender;
         let receiver = self.receiver.borrow_mut();
+        let query = PromptQuery::Search(if !word.is_empty() { Some(word.to_string()) } else { None });
+
         sender
-            .send(if !word.is_empty() { Some(word.to_string()) } else { None })
+            .send(query)
             .map_err(|e| ReadlineError::Io(std::io::Error::other(e.to_string())))?;
         // We only want stuff from the current tail end onward
         let mut new_receiver = receiver.resubscribe();
-        let prompt_info = new_receiver
-            .try_recv()
-            .map_err(|e| {
-                ReadlineError::Io(std::io::Error::other(eyre::eyre!(
-                    "Failed to receive prompt info from complete prompt: {:?}",
-                    e
-                )))
-            })?
-            .iter()
-            .map(|n| format!("@{n}"))
-            .collect::<Vec<_>>();
+        let mut attempts = 0;
+        let max_attempts = 5;
+        let query_res = loop {
+            match new_receiver.try_recv() {
+                Ok(result) => break result,
+                Err(_e) if attempts < max_attempts - 1 => {
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                },
+                Err(e) => {
+                    return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
+                        "Failed to receive prompt info from complete prompt after {} attempts: {:?}",
+                        max_attempts,
+                        e
+                    ))));
+                },
+            }
+        };
+        let matches = match query_res {
+            PromptQueryResult::Search(list) => list.into_iter().map(|n| format!("@{n}")).collect::<Vec<_>>(),
+            PromptQueryResult::List(_) => {
+                return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
+                    "Wrong query response type received",
+                ))));
+            },
+        };
 
-        Ok(prompt_info)
+        Ok(matches)
     }
 }
 
@@ -180,10 +201,7 @@ pub struct ChatCompleter {
 }
 
 impl ChatCompleter {
-    fn new(
-        sender: tokio::sync::broadcast::Sender<Option<String>>,
-        receiver: tokio::sync::broadcast::Receiver<Vec<String>>,
-    ) -> Self {
+    fn new(sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Self {
         Self {
             path_completer: PathCompleter::new(),
             prompt_completer: PromptCompleter::new(sender, receiver),
@@ -387,8 +405,8 @@ impl Highlighter for ChatHelper {
 
 pub fn rl(
     os: &Os,
-    sender: tokio::sync::broadcast::Sender<Option<String>>,
-    receiver: tokio::sync::broadcast::Receiver<Vec<String>>,
+    sender: PromptQuerySender,
+    receiver: PromptQueryResponseReceiver,
 ) -> Result<Editor<ChatHelper, DefaultHistory>> {
     let edit_mode = match os.database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
@@ -445,8 +463,8 @@ mod tests {
 
     #[test]
     fn test_chat_completer_command_completion() {
-        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<Option<String>>(5);
-        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<Vec<String>>(5);
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
         let line = "/h";
         let pos = 2; // Position at the end of "/h"
@@ -467,8 +485,8 @@ mod tests {
 
     #[test]
     fn test_chat_completer_no_completion() {
-        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<Option<String>>(5);
-        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<Vec<String>>(5);
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
         let line = "Hello, how are you?";
         let pos = line.len();
@@ -486,8 +504,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_basic() {
-        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<Option<String>>(5);
-        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<Vec<String>>(5);
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
@@ -502,8 +520,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_with_warning() {
-        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<Option<String>>(5);
-        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<Vec<String>>(5);
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
@@ -518,8 +536,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_with_profile() {
-        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<Option<String>>(5);
-        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<Vec<String>>(5);
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
@@ -534,8 +552,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_with_profile_and_warning() {
-        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<Option<String>>(5);
-        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<Vec<String>>(5);
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
@@ -553,8 +571,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_invalid_format() {
-        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<Option<String>>(5);
-        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<Vec<String>>(5);
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
