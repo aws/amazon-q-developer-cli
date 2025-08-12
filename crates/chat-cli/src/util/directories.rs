@@ -165,6 +165,11 @@ pub fn chat_local_agent_dir(os: &Os) -> Result<PathBuf> {
     Ok(cwd.join(WORKSPACE_AGENT_DIR_RELATIVE))
 }
 
+/// Directory for agent config relative to given path
+pub fn chat_relative_agent_dir(dir: PathBuf) -> Result<PathBuf> {
+    Ok(dir.join(WORKSPACE_AGENT_DIR_RELATIVE))
+}
+
 /// Derives the absolute path to an agent config directory given a "workspace directory".
 /// A workspace directory is a directory where q chat is to be launched
 ///
