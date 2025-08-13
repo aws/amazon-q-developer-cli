@@ -36,7 +36,7 @@ use serde::{
     Serialize,
 };
 use thinking::Thinking;
-use todo::TodoInput;
+use todo::TodoList;
 use tracing::error;
 use use_aws::UseAws;
 
@@ -81,7 +81,7 @@ pub enum Tool {
     GhIssue(GhIssue),
     Knowledge(Knowledge),
     Thinking(Thinking),
-    Todo(TodoInput),
+    Todo(TodoList),
 }
 
 impl Tool {

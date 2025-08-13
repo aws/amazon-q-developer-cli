@@ -18,7 +18,7 @@ use std::process::ExitCode;
 use agent::AgentArgs;
 use anstream::println;
 pub use chat::ConversationState;
-pub use chat::tools::todo::TodoState;
+pub use chat::tools::todo::TodoListState;
 use clap::{
     ArgAction,
     CommandFactory,

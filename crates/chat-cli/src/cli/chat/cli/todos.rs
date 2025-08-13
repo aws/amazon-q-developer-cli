@@ -7,7 +7,11 @@ use crossterm::style::{
 use dialoguer::FuzzySelect;
 use eyre::Result;
 
-use crate::cli::chat::tools::todo::TodoState;
+use crate::cli::chat::tools::todo::{
+    TodoListState,
+    delete_todo,
+    get_all_todos,
+};
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -15,6 +19,7 @@ use crate::cli::chat::{
 };
 use crate::os::Os;
 
+/// Defines subcommands that allow users to view and manage todo lists
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum TodoSubcommand {
     /// Delete all completed to-do lists
@@ -62,7 +67,7 @@ impl TodoSubcommand {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         match self {
             Self::ClearFinished => {
-                let (todos, errors) = match TodoState::get_all_todos(os).await {
+                let (todos, errors) = match get_all_todos(os).await {
                     Ok(res) => res,
                     Err(e) => return Err(ChatError::Custom(format!("Could not get to-do lists: {e}").into())),
                 };
@@ -70,7 +75,7 @@ impl TodoSubcommand {
 
                 for todo_status in todos.iter() {
                     if todo_status.completed.iter().all(|b| *b) {
-                        match TodoState::delete_todo(os, &todo_status.id).await {
+                        match delete_todo(os, &todo_status.id).await {
                             Ok(_) => cleared_one = true,
                             Err(e) => {
                                 return Err(ChatError::Custom(format!("Could not delete to-do list: {e}").into()));
@@ -119,7 +124,7 @@ impl TodoSubcommand {
                         execute!(session.stderr, style::Print("No to-do lists to view!\n"))?;
                     } else if let Some(index) = fuzzy_select_todos(&entries, "Select a to-do list to view:") {
                         if index < entries.len() {
-                            let list = TodoState::load(os, &entries[index].id).await.map_err(|e| {
+                            let list = TodoListState::load(os, &entries[index].id).await.map_err(|e| {
                                 ChatError::Custom(format!("Could not load current to-do list: {e}").into())
                             })?;
                             execute!(
@@ -145,14 +150,14 @@ impl TodoSubcommand {
                         execute!(session.stderr, style::Print("No to-do lists to delete!\n"))?;
                     } else if all {
                         for entry in entries {
-                            TodoState::delete_todo(os, &entry.id)
+                            delete_todo(os, &entry.id)
                                 .await
                                 .map_err(|_e| ChatError::Custom("Could not delete all to-do lists".into()))?;
                         }
                         execute!(session.stderr, style::Print("✔ Deleted all to-do lists!\n".green()),)?;
                     } else if let Some(index) = fuzzy_select_todos(&entries, "Select a to-do list to delete:") {
                         if index < entries.len() {
-                            TodoState::delete_todo(os, &entries[index].id).await.map_err(|e| {
+                            delete_todo(os, &entries[index].id).await.map_err(|e| {
                                 ChatError::Custom(format!("Could not delete the selected to-do list: {e}").into())
                             })?;
                             execute!(
@@ -174,7 +179,7 @@ impl TodoSubcommand {
     /// Convert all to-do list state entries to displayable entries
     async fn get_descriptions_and_statuses(os: &Os) -> Result<Vec<TodoDisplayEntry>> {
         let mut out = Vec::new();
-        let (todos, _) = TodoState::get_all_todos(os).await?;
+        let (todos, _) = get_all_todos(os).await?;
         for todo in todos.iter() {
             out.push(TodoDisplayEntry {
                 num_completed: todo.completed.iter().filter(|b| **b).count(),

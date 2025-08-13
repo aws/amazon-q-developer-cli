@@ -29,9 +29,135 @@ use crate::os::Os;
 // Local directory to store todo lists
 const TODO_LIST_DIR: &str = ".amazonq/cli-todo-lists/";
 
+/// Contains all state to be serialized and deserialized into a todo list
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+pub struct TodoListState {
+    pub tasks: Vec<String>,
+    pub completed: Vec<bool>,
+    pub description: String,
+    pub context: Vec<String>,
+    pub modified_files: Vec<String>,
+    pub id: String,
+}
+
+impl TodoListState {
+    /// Creates a local directory to store todo lists
+    pub async fn init_dir(os: &Os) -> Result<()> {
+        os.fs.create_dir_all(os.env.current_dir()?.join(TODO_LIST_DIR)).await?;
+        Ok(())
+    }
+
+    /// Loads a TodoListState with the given id
+    pub async fn load(os: &Os, id: &str) -> Result<Self> {
+        let state_str = os
+            .fs
+            .read_to_string(id_to_path(os, id)?)
+            .await
+            .map_err(|e| eyre!("Could not load todo list: {e}"))?;
+        serde_json::from_str::<Self>(&state_str).map_err(|e| eyre!("Could not deserialize todo list: {e}"))
+    }
+
+    /// Saves this TodoListState with the given id
+    pub async fn save(&self, os: &Os, id: &str) -> Result<()> {
+        let path = id_to_path(os, id)?;
+        Self::init_dir(os).await?;
+        if !os.fs.exists(&path) {
+            os.fs.create_new(&path).await?;
+        }
+        os.fs.write(path, serde_json::to_string(self)?).await?;
+        Ok(())
+    }
+
+    /// Displays the TodoListState as a to-do list
+    pub fn display_list(&self, output: &mut impl Write) -> Result<()> {
+        queue!(output, style::Print("TODO:\n".yellow()))?;
+        for (index, (task, completed)) in self.tasks.iter().zip(self.completed.iter()).enumerate() {
+            queue_next_without_newline(output, task.clone(), *completed)?;
+            if index < self.tasks.len() - 1 {
+                queue!(output, style::Print("\n"))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Displays a single empty or marked off to-do list task depending on
+/// the completion status
+fn queue_next_without_newline(output: &mut impl Write, task: String, completed: bool) -> Result<()> {
+    if completed {
+        queue!(
+            output,
+            style::SetAttribute(style::Attribute::Italic),
+            style::SetForegroundColor(style::Color::Green),
+            style::Print(" ■ "),
+            style::SetForegroundColor(style::Color::DarkGrey),
+            style::Print(task),
+            style::SetAttribute(style::Attribute::NoItalic),
+        )?;
+    } else {
+        queue!(
+            output,
+            style::SetForegroundColor(style::Color::Reset),
+            style::Print(format!(" ☐ {task}")),
+        )?;
+    }
+    Ok(())
+}
+
+/// Generates a new unique id be used for new to-do lists
+pub fn generate_new_todo_id() -> String {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_millis();
+
+    format!("{timestamp}")
+}
+
+/// Converts a todo list id to an absolute path in the cwd
+pub fn id_to_path(os: &Os, id: &str) -> Result<PathBuf> {
+    Ok(os.env.current_dir()?.join(TODO_LIST_DIR).join(format!("{id}.json")))
+}
+
+/// Gets all todo lists from the local directory
+pub async fn get_all_todos(os: &Os) -> Result<(Vec<TodoListState>, Vec<Report>)> {
+    let todo_list_dir = os.env.current_dir()?.join(TODO_LIST_DIR);
+    let mut read_dir_output = os.fs.read_dir(todo_list_dir).await?;
+
+    let mut todos = Vec::new();
+    let mut errors = Vec::new();
+
+    while let Some(entry) = read_dir_output.next_entry().await? {
+        match TodoListState::load(
+            os,
+            &entry
+                .path()
+                .with_extension("")
+                .file_name()
+                .ok_or_eyre("Path is not a file")?
+                .to_string_lossy(),
+        )
+        .await
+        {
+            Ok(todo) => todos.push(todo),
+            Err(e) => errors.push(e),
+        };
+    }
+
+    Ok((todos, errors))
+}
+
+/// Deletes a todo list
+pub async fn delete_todo(os: &Os, id: &str) -> Result<()> {
+    os.fs.remove_file(id_to_path(os, id)?).await?;
+    Ok(())
+}
+
+/// Contains the command definitions that allow the model to create,
+/// modify, and mark todo list tasks as complete
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "command", rename_all = "camelCase")]
-pub enum TodoInput {
+pub enum TodoList {
     // Creates a todo list
     Create {
         tasks: Vec<String>,
@@ -68,133 +194,17 @@ pub enum TodoInput {
     },
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone)]
-pub struct TodoState {
-    pub tasks: Vec<String>,
-    pub completed: Vec<bool>,
-    pub description: String,
-    pub context: Vec<String>,
-    pub modified_files: Vec<String>,
-    pub id: String,
-}
-
-impl TodoState {
-    pub async fn init_dir(os: &Os) -> Result<()> {
-        os.fs.create_dir_all(os.env.current_dir()?.join(TODO_LIST_DIR)).await?;
-        Ok(())
-    }
-
-    /// Loads a TodoState with the given id
-    pub async fn load(os: &Os, id: &str) -> Result<Self> {
-        let Ok(state_str) = os.fs.read_to_string(Self::id_to_path(os, id)?).await else {
-            bail!("No to-do list with id {}", id);
-        };
-        serde_json::from_str::<Self>(&state_str).map_err(|e| eyre!("Could not deserialize todo list: {e}"))
-    }
-
-    /// Saves this TodoState with the given id
-    pub async fn save(&self, os: &Os, id: &str) -> Result<()> {
-        let path = TodoState::id_to_path(os, id)?;
-        Self::init_dir(os).await?;
-        if !os.fs.exists(&path) {
-            os.fs.create_new(&path).await?;
-        }
-        os.fs.write(path, serde_json::to_string(self)?).await?;
-        Ok(())
-    }
-
-    /// Displays the TodoState as a to-do list
-    pub fn display_list(&self, output: &mut impl Write) -> Result<()> {
-        queue!(output, style::Print("TODO:\n".yellow()))?;
-        for (index, (task, completed)) in self.tasks.iter().zip(self.completed.iter()).enumerate() {
-            TodoState::queue_next_without_newline(output, task.clone(), *completed)?;
-            if index < self.tasks.len() - 1 {
-                queue!(output, style::Print("\n"))?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Displays a single empty or marked off to-do list task depending on
-    /// the completion status
-    fn queue_next_without_newline(output: &mut impl Write, task: String, completed: bool) -> Result<()> {
-        if completed {
-            queue!(
-                output,
-                style::SetAttribute(style::Attribute::Italic),
-                style::SetForegroundColor(style::Color::Green),
-                style::Print(" ■ "),
-                style::SetForegroundColor(style::Color::DarkGrey),
-                style::Print(task),
-                style::SetAttribute(style::Attribute::NoItalic),
-            )?;
-        } else {
-            queue!(
-                output,
-                style::SetForegroundColor(style::Color::Reset),
-                style::Print(format!(" ☐ {task}")),
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Generates a new unique id be used for new to-do lists
-    pub fn generate_new_id() -> String {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_millis();
-
-        format!("{timestamp}")
-    }
-
-    pub fn id_to_path(os: &Os, id: &str) -> Result<PathBuf> {
-        Ok(os.env.current_dir()?.join(TODO_LIST_DIR).join(id))
-    }
-
-    pub async fn get_all_todos(os: &Os) -> Result<(Vec<Self>, Vec<Report>)> {
-        let todo_list_dir = os.env.current_dir()?.join(TODO_LIST_DIR);
-        let mut read_dir_output = os.fs.read_dir(todo_list_dir).await?;
-
-        let mut todos = Vec::new();
-        let mut errors = Vec::new();
-
-        while let Some(entry) = read_dir_output.next_entry().await? {
-            match Self::load(
-                os,
-                &entry
-                    .path()
-                    .file_name()
-                    .ok_or_eyre("Path is not a file")?
-                    .to_string_lossy(),
-            )
-            .await
-            {
-                Ok(todo) => todos.push(todo),
-                Err(e) => errors.push(e),
-            };
-        }
-
-        Ok((todos, errors))
-    }
-
-    pub async fn delete_todo(os: &Os, id: &str) -> Result<()> {
-        os.fs.remove_file(Self::id_to_path(os, id)?).await?;
-        Ok(())
-    }
-}
-
-impl TodoInput {
+impl TodoList {
     pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
         let (state, id) = match self {
-            TodoInput::Create {
+            TodoList::Create {
                 tasks,
                 todo_list_description: task_description,
             } => {
-                let new_id = TodoState::generate_new_id();
+                let new_id = generate_new_todo_id();
 
                 // Create a new todo list with the given tasks and save state
-                let state = TodoState {
+                let state = TodoListState {
                     tasks: tasks.clone(),
                     completed: vec![false; tasks.len()],
                     description: task_description.clone(),
@@ -206,13 +216,13 @@ impl TodoInput {
                 state.display_list(output)?;
                 (state, new_id)
             },
-            TodoInput::Complete {
+            TodoList::Complete {
                 completed_indices,
                 context_update,
                 modified_files,
                 current_id: id,
             } => {
-                let mut state = TodoState::load(os, id).await?;
+                let mut state = TodoListState::load(os, id).await?;
 
                 for i in completed_indices.iter() {
                     state.completed[*i] = true;
@@ -231,7 +241,7 @@ impl TodoInput {
                 if *last_completed == state.tasks.len() - 1 || state.completed.iter().all(|c| *c) {
                     state.display_list(output)?;
                 } else {
-                    let mut display_list = TodoState {
+                    let mut display_list = TodoListState {
                         tasks: completed_indices.iter().map(|i| state.tasks[*i].clone()).collect(),
                         ..Default::default()
                     };
@@ -248,18 +258,18 @@ impl TodoInput {
                 }
                 (state, id.clone())
             },
-            TodoInput::Load { load_id: id } => {
-                let state = TodoState::load(os, id).await?;
+            TodoList::Load { load_id: id } => {
+                let state = TodoListState::load(os, id).await?;
                 state.display_list(output)?;
                 (state, id.clone())
             },
-            TodoInput::Add {
+            TodoList::Add {
                 new_tasks,
                 insert_indices,
                 new_description,
                 current_id: id,
             } => {
-                let mut state = TodoState::load(os, id).await?;
+                let mut state = TodoListState::load(os, id).await?;
                 for (i, task) in insert_indices.iter().zip(new_tasks.iter()) {
                     state.tasks.insert(*i, task.clone());
                     state.completed.insert(*i, false);
@@ -271,12 +281,12 @@ impl TodoInput {
                 state.display_list(output)?;
                 (state, id.clone())
             },
-            TodoInput::Remove {
+            TodoList::Remove {
                 remove_indices,
                 new_description,
                 current_id: id,
             } => {
-                let mut state = TodoState::load(os, id).await?;
+                let mut state = TodoListState::load(os, id).await?;
 
                 // Remove entries in reverse order so indices aren't mismatched
                 let mut remove_indices = remove_indices.clone();
@@ -302,7 +312,7 @@ impl TodoInput {
 
     pub async fn validate(&mut self, os: &Os) -> Result<()> {
         match self {
-            TodoInput::Create {
+            TodoList::Create {
                 tasks,
                 todo_list_description: task_description,
             } => {
@@ -314,58 +324,67 @@ impl TodoInput {
                     bail!("No task description was provided");
                 }
             },
-            TodoInput::Complete {
+            TodoList::Complete {
                 completed_indices,
                 context_update,
                 current_id,
                 ..
             } => {
-                let state = TodoState::load(os, current_id).await?;
+                let state = TodoListState::load(os, current_id).await?;
                 if completed_indices.is_empty() {
                     bail!("At least one completed index must be provided");
-                } else if completed_indices.iter().any(|i| *i >= state.completed.len()) {
-                    bail!("Completed index is out of bounds");
                 } else if context_update.is_empty() {
                     bail!("No context update was provided");
                 }
+                for i in completed_indices.iter() {
+                    if *i >= state.tasks.len() {
+                        bail!("Index {i} is out of bounds for length {}, ", state.tasks.len());
+                    }
+                }
             },
-            TodoInput::Load { load_id: id } => {
-                let state = TodoState::load(os, id).await?;
+            TodoList::Load { load_id: id } => {
+                let state = TodoListState::load(os, id).await?;
                 if state.tasks.is_empty() {
                     bail!("Loaded todo list is empty");
                 }
             },
-            TodoInput::Add {
+            TodoList::Add {
                 new_tasks,
                 insert_indices,
                 new_description,
                 current_id: id,
             } => {
-                let state = TodoState::load(os, id).await?;
+                let state = TodoListState::load(os, id).await?;
                 if new_tasks.iter().any(|task| task.trim().is_empty()) {
                     bail!("New tasks cannot be empty");
                 } else if has_duplicates(insert_indices) {
                     bail!("Insertion indices must be unique")
                 } else if new_tasks.len() != insert_indices.len() {
                     bail!("Must provide an index for every new task");
-                } else if insert_indices.iter().any(|i| *i > state.tasks.len()) {
-                    bail!("Index is out of bounds");
                 } else if new_description.is_some() && new_description.as_ref().unwrap().trim().is_empty() {
                     bail!("New description cannot be empty");
                 }
+                for i in insert_indices.iter() {
+                    if *i > state.tasks.len() {
+                        bail!("Index {i} is out of bounds for length {}, ", state.tasks.len());
+                    }
+                }
             },
-            TodoInput::Remove {
+            TodoList::Remove {
                 remove_indices,
                 new_description,
                 current_id: id,
             } => {
-                let state = TodoState::load(os, id).await?;
+                let state = TodoListState::load(os, id).await?;
                 if has_duplicates(remove_indices) {
                     bail!("Removal indices must be unique")
-                } else if remove_indices.iter().any(|i| *i > state.tasks.len()) {
-                    bail!("Index is out of bounds");
                 } else if new_description.is_some() && new_description.as_ref().unwrap().trim().is_empty() {
                     bail!("New description cannot be empty");
+                }
+                for i in remove_indices.iter() {
+                    if *i >= state.tasks.len() {
+                        bail!("Index {i} is out of bounds for length {}, ", state.tasks.len());
+                    }
                 }
             },
         }

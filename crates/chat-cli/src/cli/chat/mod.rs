@@ -131,7 +131,7 @@ use crate::api_client::{
 };
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
-use crate::cli::TodoState;
+use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::prompts::{
@@ -655,7 +655,7 @@ impl ChatSession {
         // Create for cleaner error handling for todo lists
         // This is more of a convenience thing but is not required, so the Result
         // is ignored
-        let _ = TodoState::init_dir(os).await;
+        let _ = TodoListState::init_dir(os).await;
 
         Ok(Self {
             stdout,
@@ -2802,7 +2802,7 @@ impl ChatSession {
     pub async fn resume_todo_request(&mut self, os: &mut Os, id: &str) -> Result<ChatState, ChatError> {
         // Have to unpack each value separately since Reports can't be converted to
         // ChatError
-        let todo_list = match TodoState::load(os, id).await {
+        let todo_list = match TodoListState::load(os, id).await {
             Ok(todo) => todo,
             Err(e) => {
                 return Err(ChatError::Custom(format!("Error getting todo list: {e}").into()));
