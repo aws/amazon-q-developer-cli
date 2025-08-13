@@ -5,7 +5,7 @@ default-members = ["crates/chat-cli"]
 
 [workspace.package]
 authors = ["Amazon Q CLI Team (q-cli@amazon.com)", "Chay Nabors (nabochay@amazon.com)", "Brandon Kiser (bskiser@amazon.com)", "Felix Ding (dingfeli@amazon.com)"]
-edition = "2024"
+edition = "2021"
 homepage = "https://aws.amazon.com/q/"
 publish = false
 version = "1.19.0"

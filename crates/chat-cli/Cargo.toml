@@ -65,7 +65,6 @@ indicatif.workspace = true
 indoc.workspace = true
 insta.workspace = true
 libc.workspace = true
-mimalloc.workspace = true
 nix.workspace = true
 owo-colors.workspace = true
 parking_lot.workspace = true

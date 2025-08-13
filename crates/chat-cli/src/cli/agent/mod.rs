@@ -768,6 +768,29 @@ impl Agents {
                 agent
             });
 
+            // Only add in-memory default agent if no default agent was loaded from files
+            if !all_agents.iter().any(|a| a.name == "default") {
+                tracing::debug!("No default agent found in files, creating in-memory default");
+                let mut agent = Agent::default();
+                
+                // Load legacy MCP config for the in-memory default agent
+                let legacy_mcp_config = if agent.use_legacy_mcp_json {
+                    load_legacy_mcp_config(os).await.unwrap_or(None)
+                } else {
+                    None
+                };
+                
+                // Call thaw to load the legacy MCP config, using a dummy path
+                let dummy_path = PathBuf::from("(in-memory default)");
+                if let Err(e) = agent.thaw(&dummy_path, legacy_mcp_config.as_ref()) {
+                    tracing::error!("Failed to thaw in-memory default agent: {e}");
+                }
+                
+                all_agents.push(agent);
+            } else {
+                tracing::debug!("Default agent already loaded from file, skipping in-memory default");
+            }
+
             DEFAULT_AGENT_NAME.to_string()
         };
 
