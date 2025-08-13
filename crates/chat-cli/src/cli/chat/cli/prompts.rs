@@ -38,8 +38,6 @@ pub enum GetPromptError {
     MissingClient,
     #[error("Missing prompt name")]
     MissingPromptName,
-    #[error("Synchronization error: {0}")]
-    Synchronization(String),
     #[error("Missing prompt bundle")]
     MissingPromptInfo,
     #[error(transparent)]

@@ -730,6 +730,15 @@ impl ToolManagerBuilder {
                         pending_clone.write().await.insert(server_name.clone());
                         loading_servers.insert(server_name, std::time::Instant::now());
                     },
+                    UpdateEventMessage::Deinit { server_name } => {
+                        // Only prompts are stored here so we'll just be clearing that
+                        // In the future if we are also storing tools, we need to make sure that
+                        // the tools are also pruned.
+                        for (_prompt_name, bundles) in prompts.iter_mut() {
+                            bundles.retain(|bundle| bundle.server_name != server_name);
+                        }
+                        prompts.retain(|_, bundles| !bundles.is_empty());
+                    },
                 }
             }
 
@@ -763,7 +772,12 @@ impl ToolManagerBuilder {
                                 &mut prompts,
                                 total
                             ).await;
-                    }
+                    },
+                    // Nothing else to poll
+                    else => {
+                        tracing::info!("Tool manager orchestrator task exited");
+                        break;
+                    },
                 }
             }
         });
@@ -959,8 +973,9 @@ pub struct ToolManager {
     /// List of disabled MCP server names for display purposes
     disabled_servers: Vec<String>,
 
-    /// A collection of preferences that pertains to the conversation.
+    /// A collection of preferences that pertains to the conversation
     /// As far as tool manager goes, this is relevant for tool and server filters
+    /// We need to put this behind a lock because the orchestrator task depends on agent
     pub agent: Arc<Mutex<Agent>>,
 }
 
@@ -982,6 +997,39 @@ impl Clone for ToolManager {
 }
 
 impl ToolManager {
+    /// Swapping agent involves the following:
+    /// - Drop all clients
+    /// - Clear all pending server names
+    /// - Clear new_tool_specs
+    /// - Clear tn_map
+    /// - Clear schema
+    /// - Clear mcp_load_record
+    /// - Clear disabled_servers
+    /// - Swap out agent
+    /// - Init servers
+    /// - Flip has_new_stuff to true (this is because we are removing stuff)
+    /// - Load tools again
+    pub async fn swap_agent(&mut self, agent: &Agent) {
+        self.clients.clear();
+
+        let mut pending_clients = Arc::new(RwLock::new(HashSet::new()));
+        std::mem::swap(&mut self.pending_clients, &mut pending_clients);
+
+        let mut new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
+        std::mem::swap(&mut self.new_tool_specs, &mut new_tool_specs);
+
+        self.tn_map.clear();
+        self.schema.clear();
+
+        let mut mcp_load_record = Arc::new(Mutex::new(HashMap::new()));
+        std::mem::swap(&mut self.mcp_load_record, &mut mcp_load_record);
+
+        self.disabled_servers.clear();
+
+        let mut current_agent = self.agent.lock().await;
+        *current_agent = agent.clone();
+    }
+
     pub async fn load_tools(
         &mut self,
         os: &mut Os,

@@ -60,10 +60,13 @@ use crate::api_client::model::{
     ToolSpecification,
     UserInputMessage,
 };
-use crate::cli::agent::Agents;
 use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
+};
+use crate::cli::agent::{
+    Agent,
+    Agents,
 };
 use crate::cli::chat::ChatError;
 use crate::mcp_client::Prompt;
@@ -676,6 +679,21 @@ impl ConversationState {
             self.transcript.pop_front();
         }
         self.transcript.push_back(message);
+    }
+
+    /// Swapping agent involves the following:
+    /// - Reinstantiate the context manager
+    /// - Swap agent on tool manager
+    pub async fn swap_agent(&mut self, agent_name: &str) -> Result<(), ChatError> {
+        let agent = self.agents.switch(agent_name).map_err(|e| ChatError::AgentSwapError)?;
+        self.context_manager.replace({
+            ContextManager::from_agent(agent, calc_max_context_files_size(self.model.as_deref()))
+                .map_err(|e| ChatError::Custom(format!("Context manager has failed to instantiate: {e}").into()))?
+        });
+
+        self.tool_manager.swap_agent(agent).await;
+
+        Ok(())
     }
 }
 

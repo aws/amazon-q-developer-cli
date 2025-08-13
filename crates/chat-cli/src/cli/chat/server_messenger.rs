@@ -35,6 +35,9 @@ pub enum UpdateEventMessage {
     InitStart {
         server_name: String,
     },
+    Deinit {
+        server_name: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -125,6 +128,12 @@ impl Messenger for ServerMessenger {
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
+    }
+
+    fn send_deinit_msg(&self) {
+        self.update_event_sender.blocking_send(UpdateEventMessage::Deinit {
+            server_name: self.server_name.clone(),
+        });
     }
 
     fn duplicate(&self) -> Box<dyn Messenger> {

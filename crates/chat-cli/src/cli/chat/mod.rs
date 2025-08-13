@@ -473,6 +473,8 @@ pub enum ChatError {
     NonInteractiveToolApproval,
     #[error("The conversation history is too large to compact")]
     CompactHistoryFailure,
+    #[error("Failed to swap to agent")]
+    AgentSwapError,
 }
 
 impl ChatError {
@@ -489,6 +491,7 @@ impl ChatError {
             ChatError::GetPromptError(_) => None,
             ChatError::NonInteractiveToolApproval => None,
             ChatError::CompactHistoryFailure => None,
+            ChatError::AgentSwapError => None,
         }
     }
 }
@@ -507,6 +510,7 @@ impl ReasonCode for ChatError {
             ChatError::Auth(_) => "AuthError".to_string(),
             ChatError::NonInteractiveToolApproval => "NonInteractiveToolApproval".to_string(),
             ChatError::CompactHistoryFailure => "CompactHistoryFailure".to_string(),
+            ChatError::AgentSwapError => "AgentSwapError".to_string(),
         }
     }
 }

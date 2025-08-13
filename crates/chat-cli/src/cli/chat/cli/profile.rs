@@ -77,6 +77,8 @@ pub enum AgentSubcommand {
         #[arg(long, short)]
         name: String,
     },
+    /// Swap to a new agent at runtime
+    Swap { name: String },
 }
 
 impl AgentSubcommand {
@@ -224,6 +226,7 @@ impl AgentSubcommand {
                     )?;
                 },
             },
+            Self::Swap { name } => {},
         }
 
         Ok(ChatState::PromptUser {
@@ -239,6 +242,7 @@ impl AgentSubcommand {
             Self::Set { .. } => "set",
             Self::Schema => "schema",
             Self::SetDefault { .. } => "set_default",
+            Self::Swap { .. } => "swap",
         }
     }
 }

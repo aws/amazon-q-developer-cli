@@ -276,6 +276,9 @@ where
         if let Some(process_id) = self.server_process_id {
             let _ = terminate_process(process_id);
         }
+        if let Some(ref messenger) = self.messenger {
+            messenger.send_deinit_msg();
+        }
     }
 }
 
