@@ -1,7 +1,12 @@
+use serde::{
+    Deserialize,
+    Serialize,
+};
+
 use crate::error::Result;
 
 /// Embedding engine type to use
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum EmbeddingType {
     /// Use Candle embedding engine (not available on Linux ARM)
     #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]

@@ -7,17 +7,20 @@ Rust library for managing semantic memory contexts with vector embeddings, enabl
 
 ## Features
 
+- **Async-First Design**: Built for modern async Rust applications with tokio
 - **Semantic Memory Management**: Create, store, and search through semantic memory contexts
+- **Pattern Filtering**: Include/exclude files using glob-style patterns during indexing
 - **Vector Embeddings**: Generate high-quality text embeddings for semantic similarity search
 - **Multi-Platform Support**: Works on macOS, Windows, and Linux with optimized backends
 - **Hardware Acceleration**: Uses Metal on macOS and optimized backends on other platforms
 - **File Processing**: Process various file types including text, markdown, JSON, and code
 - **Persistent Storage**: Save contexts to disk for long-term storage and retrieval
-- **Progress Tracking**: Detailed progress reporting for long-running operations
+- **Background Processing**: Non-blocking indexing with progress tracking and cancellation
 - **Parallel Processing**: Efficiently process large directories with parallel execution
 - **Memory Efficient**: Stream large files and directories without excessive memory usage
 - **Cross-Platform Compatibility**: Fallback mechanisms for all platforms and architectures
 - **🆕 Configurable File Limits**: Built-in protection against indexing too many files (default: 5,000 files)
+- **🆕 Database Settings Integration**: Configurable chunk sizes, overlap, and limits
 
 ## Installation
 
@@ -31,30 +34,38 @@ semantic_search_client = "0.1.0"
 ## Quick Start
 
 ```rust
-use semantic_search_client::{SemanticSearchClient, SemanticSearchConfig, Result};
-use std::path::Path;
+use semantic_search_client::{AsyncSemanticSearchClient, AddContextRequest, Result};
+use std::path::PathBuf;
 
-fn main() -> Result<()> {
-    // Create a new client with default settings (5,000 file limit)
-    let mut client = SemanticSearchClient::new_with_default_dir()?;
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Create a new async client with default settings
+    let client = AsyncSemanticSearchClient::new_with_default_dir().await?;
     
-    // Add a context from a directory
-    let context_id = client.add_context_from_path(
-        Path::new("/path/to/project"),
-        "My Project",
-        "Code and documentation for my project",
-        true, // make it persistent
-        None, // no progress callback
-    )?;
+    // Add a context using the new structured request API
+    let request = AddContextRequest {
+        path: PathBuf::from("/path/to/project"),
+        name: "My Project".to_string(),
+        description: "Code and documentation for my project".to_string(),
+        persistent: true,
+        include_patterns: Some(vec!["**/*.rs".to_string(), "**/*.md".to_string()]),
+        exclude_patterns: Some(vec!["target/**".to_string(), "**/.git/**".to_string()]),
+    };
     
-    // Search within the context
-    let results = client.search_context(&context_id, "implement authentication", 5)?;
+    let (operation_id, _cancel_token) = client.add_context(request).await?;
+    println!("Started indexing with operation ID: {}", operation_id);
+    
+    // Search across all contexts
+    let results = client.search_all("implement authentication", None).await?;
     
     // Print the results
-    for result in results {
-        println!("Score: {}", result.distance);
-        if let Some(text) = result.text() {
-            println!("Text: {}", text);
+    for (context_id, context_results) in results {
+        println!("Results from context {}", context_id);
+        for result in context_results {
+            println!("Score: {}", result.distance);
+            if let Some(text) = result.text() {
+                println!("Text: {}", text);
+            }
         }
     }
     
@@ -126,29 +137,18 @@ The default selection logic prioritizes performance where possible:
 ### Creating a Client
 
 ```rust
-// With default settings (5,000 file limit)
-let client = SemanticSearchClient::new_with_default_dir()?;
+// Create async client with default settings
+let client = AsyncSemanticSearchClient::new_with_default_dir().await?;
 
 // With custom directory
-let client = SemanticSearchClient::new("/path/to/storage")?;
+let client = AsyncSemanticSearchClient::new("/path/to/storage").await?;
 
 // With custom configuration
 let config = SemanticSearchConfig::default()
     .set_max_files(10000)      // Allow up to 10,000 files
     .set_chunk_size(1024);     // Custom chunk size
-let client = SemanticSearchClient::with_config("/path/to/storage", config)?;
-
-// With specific embedding type
-use semantic_search_client::embedding::EmbeddingType;
-let client = SemanticSearchClient::new_with_embedding_type(EmbeddingType::Candle)?;
-
-// With both custom config and embedding type
-let config = SemanticSearchConfig::with_max_files(15000); // 15,000 file limit
-let client = SemanticSearchClient::with_config_and_embedding_type(
-    "/path/to/storage",
-    config,
-    EmbeddingType::Candle
-)?;
+let client = AsyncSemanticSearchClient::with_config("/path/to/storage", config).await?;
+```
 ```
 
 ### Configuration Options
@@ -210,52 +210,53 @@ let client = SemanticSearchClient::with_config(path, config)?;
 ### Adding Contexts
 
 ```rust
-// From a file
-let file_context_id = client.add_context_from_file(
-    "/path/to/document.md",
-    "Documentation",
-    "Project documentation",
-    true, // persistent
-    None, // no progress callback
-)?;
+use semantic_search_client::AddContextRequest;
+use std::path::PathBuf;
 
-// From a directory with progress reporting
-let dir_context_id = client.add_context_from_directory(
-    "/path/to/codebase",
-    "Codebase",
-    "Project source code",
-    true, // persistent
-    Some(|status| {
-        match status {
-            ProgressStatus::CountingFiles => println!("Counting files..."),
-            ProgressStatus::StartingIndexing(count) => println!("Starting indexing {} files", count),
-            ProgressStatus::Indexing(current, total) => 
-                println!("Indexing file {}/{}", current, total),
-            ProgressStatus::CreatingSemanticContext => 
-                println!("Creating semantic context..."),
-            ProgressStatus::GeneratingEmbeddings(current, total) => 
-                println!("Generating embeddings {}/{}", current, total),
-            ProgressStatus::BuildingIndex => println!("Building index..."),
-            ProgressStatus::Finalizing => println!("Finalizing..."),
-            ProgressStatus::Complete => println!("Indexing complete!"),
-        }
-    }),
-)?;
+// Add context with pattern filtering
+let request = AddContextRequest {
+    path: PathBuf::from("/path/to/codebase"),
+    name: "Rust Codebase".to_string(),
+    description: "Main Rust project source code".to_string(),
+    persistent: true,
+    include_patterns: Some(vec![
+        "**/*.rs".to_string(),
+        "**/*.toml".to_string(),
+        "**/*.md".to_string(),
+    ]),
+    exclude_patterns: Some(vec![
+        "target/**".to_string(),
+        "**/.git/**".to_string(),
+        "**/node_modules/**".to_string(),
+    ]),
+};
 
-// From raw text
-let text_context_id = client.add_context_from_text(
-    "This is some text to remember",
-    "Note",
-    "Important information",
-    false, // volatile
-)?;
+let (operation_id, cancel_token) = client.add_context(request).await?;
+println!("Started indexing with operation ID: {}", operation_id);
+
+// Add context without pattern filtering
+let simple_request = AddContextRequest {
+    path: PathBuf::from("/path/to/docs"),
+    name: "Documentation".to_string(),
+    description: "Project documentation".to_string(),
+    persistent: true,
+    include_patterns: None,
+    exclude_patterns: None,
+};
+
+let (operation_id, _) = client.add_context(simple_request).await?;
+
+// Monitor progress (the client runs indexing in background)
+let status = client.get_status_data().await?;
+println!("Active operations: {}", status.active_count);
+```
 ```
 
 ### Searching
 
 ```rust
 // Search across all contexts
-let all_results = client.search_all("authentication implementation", 5)?;
+let all_results = client.search_all("authentication implementation", None).await?;
 for (context_id, results) in all_results {
     println!("Results from context {}", context_id);
     for result in results {
@@ -266,38 +267,101 @@ for (context_id, results) in all_results {
     }
 }
 
-// Search in a specific context
-let context_results = client.search_context(
-    &context_id,
-    "authentication implementation",
-    5,
-)?;
+// Get all contexts first, then search specific ones
+let contexts = client.get_contexts().await;
+for context in &contexts {
+    println!("Available context: {} ({})", context.name, context.id);
+}
+```
 ```
 
 ### Managing Contexts
 
 ```rust
 // Get all contexts
-let contexts = client.get_all_contexts();
+let contexts = client.get_contexts().await;
 for context in contexts {
     println!("Context: {} ({})", context.name, context.id);
     println!("  Description: {}", context.description);
     println!("  Created: {}", context.created_at);
     println!("  Items: {}", context.item_count);
+    println!("  Include patterns: {:?}", context.include_patterns);
+    println!("  Exclude patterns: {:?}", context.exclude_patterns);
 }
 
-// Make a volatile context persistent
-client.make_persistent(
-    &context_id,
-    "Saved Context",
-    "Important information saved for later",
-)?;
+// Remove contexts
+client.remove_context_by_id("context-id").await?;
+client.remove_context_by_name("Context Name").await?;
+client.remove_context_by_path("/path/to/indexed/directory").await?;
 
-// Remove a context
-client.remove_context_by_id(&context_id, true)?; // true to delete persistent storage
-client.remove_context_by_name("My Context", true)?;
-client.remove_context_by_path("/path/to/indexed/directory", true)?;
+// Cancel ongoing operations
+client.cancel_operation(operation_id).await?;
+client.cancel_all_operations().await?;
+
+// Get system status
+let status = client.get_status_data().await?;
+println!("Total contexts: {}", status.total_contexts);
+println!("Active operations: {}", status.active_count);
 ```
+```
+
+## Pattern Filtering
+
+The library supports glob-style pattern filtering to control which files are indexed:
+
+### Include Patterns
+Only files matching these patterns will be indexed:
+```rust
+let request = AddContextRequest {
+    // ... other fields
+    include_patterns: Some(vec![
+        "**/*.rs".to_string(),      // All Rust files
+        "**/*.md".to_string(),      // All Markdown files
+        "src/**/*.toml".to_string(), // TOML files in src directory
+    ]),
+    exclude_patterns: None,
+};
+```
+
+### Exclude Patterns
+Files matching these patterns will be skipped:
+```rust
+let request = AddContextRequest {
+    // ... other fields
+    include_patterns: None,
+    exclude_patterns: Some(vec![
+        "target/**".to_string(),        // Build artifacts
+        "**/.git/**".to_string(),       // Git metadata
+        "**/node_modules/**".to_string(), // Node.js dependencies
+        "**/*.log".to_string(),         // Log files
+    ]),
+};
+```
+
+### Combined Filtering
+Use both include and exclude patterns for precise control:
+```rust
+let request = AddContextRequest {
+    // ... other fields
+    include_patterns: Some(vec![
+        "**/*.rs".to_string(),
+        "**/*.toml".to_string(),
+        "**/*.md".to_string(),
+    ]),
+    exclude_patterns: Some(vec![
+        "target/**".to_string(),
+        "**/tests/**".to_string(),  // Skip test files
+        "**/*_test.rs".to_string(), // Skip test files
+    ]),
+};
+```
+
+### Pattern Syntax
+- `**` matches any number of directories
+- `*` matches any characters within a single path segment
+- `?` matches a single character
+- `[abc]` matches any character in the set
+- `{a,b,c}` matches any of the alternatives
 
 ## Advanced Features
 
@@ -326,6 +390,7 @@ let client = SemanticSearchClient::with_embedding_type(
     "/path/to/storage",
     EmbeddingType::BM25,
 )?;
+```
 ```
 
 ### Parallel Processing

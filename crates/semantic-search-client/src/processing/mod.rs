@@ -7,5 +7,6 @@ pub use file_processor::{
     get_file_type,
     process_directory,
     process_file,
+    process_file_with_config,
 };
 pub use text_chunker::chunk_text;
