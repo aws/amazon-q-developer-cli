@@ -15,6 +15,8 @@ RUN_SESSION_MGMT=true
 RUN_INTEGRATION=true
 RUN_MCP=true
 RUN_AI_PROMPTS=true
+RUN_ISSUE_REPORTING=true
+RUN_TOOLS=true
 # ============================================================================
 
 Q_BINARY="q"
@@ -191,6 +193,22 @@ fi
 
 if [ "$RUN_AI_PROMPTS" = true ]; then
     if run_category "ai_prompts" "AI Prompts"; then
+        ((total_passed++))
+    else
+        ((total_failed++))
+    fi
+fi
+
+if [ "$RUN_ISSUE_REPORTING" = true ]; then
+    if run_category "issue_reporting" "ISSUE REPORTING"; then
+        ((total_passed++))
+    else
+        ((total_failed++))
+    fi
+fi
+
+if [ "$RUN_TOOLS" = true ]; then
+    if run_category "tools" "TOOLS"; then
         ((total_passed++))
     else
         ((total_failed++))

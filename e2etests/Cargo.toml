@@ -19,6 +19,8 @@ session_mgmt = []
 integration = []
 mcp = []
 ai_prompts = []
+issue_reporting = []
+tools=[]
 
 [[test]]
 name = "test_help_command"
