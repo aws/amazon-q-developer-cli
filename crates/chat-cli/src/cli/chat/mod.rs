@@ -16,7 +16,6 @@ mod server_messenger;
 mod skim_integration;
 mod token_counter;
 pub mod tool_manager;
-use crate::cli::chat::cli::model::find_model;
 pub mod tools;
 pub mod util;
 use std::borrow::Cow;
@@ -134,6 +133,7 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
 use crate::cli::chat::cli::SlashCommand;
+use crate::cli::chat::cli::model::find_model;
 use crate::cli::chat::cli::prompts::{
     GetPromptError,
     PromptsSubcommand,
