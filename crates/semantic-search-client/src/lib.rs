@@ -16,6 +16,8 @@ pub mod error;
 pub mod index;
 /// Model validation for SHA verification
 pub mod model_validator;
+/// Pattern filtering for file selection
+pub mod pattern_filter;
 /// File processing utilities
 pub mod processing;
 /// Data types for semantic search operations

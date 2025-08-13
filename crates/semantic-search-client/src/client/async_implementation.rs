@@ -32,9 +32,11 @@ use crate::error::{
     SemanticSearchError,
 };
 use crate::types::{
+    AddContextRequest,
     ContextId,
     DataPoint,
     IndexingJob,
+    IndexingParams,
     KnowledgeContext,
     OperationHandle,
     OperationStatus,
@@ -84,9 +86,68 @@ struct BackgroundWorker {
 const MAX_CONCURRENT_OPERATIONS: usize = 3;
 
 impl AsyncSemanticSearchClient {
-    /// Create a new async semantic search client
+    /// Create a new async semantic search client with custom config
+    pub async fn with_config(base_dir: impl AsRef<Path>, config: SemanticSearchConfig) -> Result<Self> {
+        let base_dir = base_dir.as_ref().to_path_buf();
+
+        tokio::fs::create_dir_all(&base_dir).await?;
+
+        // Create models directory
+        crate::config::ensure_models_dir(&base_dir)?;
+
+        // Pre-download models if the embedding type requires them
+        Self::ensure_models_downloaded(&config.embedding_type).await?;
+
+        let embedder = embedder_factory::create_embedder(config.embedding_type)?;
+
+        // Load metadata for persistent contexts
+        let contexts_file = base_dir.join("contexts.json");
+        let persistent_contexts: HashMap<ContextId, KnowledgeContext> = utils::load_json_from_file(&contexts_file)?;
+
+        let contexts = Arc::new(RwLock::new(persistent_contexts));
+        let volatile_contexts = Arc::new(RwLock::new(HashMap::new()));
+        let active_operations = Arc::new(RwLock::new(HashMap::new()));
+        let (job_tx, job_rx) = mpsc::unbounded_channel();
+
+        // Start background worker
+        let worker_embedder = embedder_factory::create_embedder(config.embedding_type)?;
+        let worker = BackgroundWorker {
+            job_rx,
+            contexts: contexts.clone(),
+            volatile_contexts: volatile_contexts.clone(),
+            active_operations: active_operations.clone(),
+            embedder: worker_embedder,
+            config: config.clone(),
+            base_dir: base_dir.clone(),
+            indexing_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_OPERATIONS)),
+        };
+
+        tokio::spawn(worker.run());
+
+        let mut client = Self {
+            base_dir,
+            contexts,
+            volatile_contexts,
+            embedder,
+            config,
+            job_tx,
+            active_operations,
+        };
+
+        // Load all persistent contexts
+        client.load_persistent_contexts().await?;
+
+        Ok(client)
+    }
+
+    /// Create a new async semantic search client with default config
     pub async fn new(base_dir: impl AsRef<Path>) -> Result<Self> {
-        Self::with_embedding_type(base_dir, EmbeddingType::default()).await
+        let base_dir_path = base_dir.as_ref().to_path_buf();
+        let config = SemanticSearchConfig {
+            base_dir: base_dir_path,
+            ..Default::default()
+        };
+        Self::with_config(base_dir, config).await
     }
 
     /// Create a new semantic search client with the default base directory
@@ -157,82 +218,27 @@ impl AsyncSemanticSearchClient {
         config::get_default_base_dir()
     }
 
-    /// Create a new async semantic search client with custom configuration and embedding type
-    pub async fn with_embedding_type(base_dir: impl AsRef<Path>, embedding_type: EmbeddingType) -> Result<Self> {
-        let base_dir = base_dir.as_ref().to_path_buf();
-        tokio::fs::create_dir_all(&base_dir).await?;
-
-        // Create models directory
-        config::ensure_models_dir(&base_dir)?;
-
-        // Initialize the configuration
-        if let Err(e) = config::init_config(&base_dir) {
-            tracing::error!("Failed to initialize semantic search configuration: {}", e);
-        }
-
-        // Pre-download models if the embedding type requires them
-        Self::ensure_models_downloaded(&embedding_type).await?;
-
-        let embedder = embedder_factory::create_embedder(embedding_type)?;
-
-        // Load metadata for persistent contexts
-        let contexts_file = base_dir.join("contexts.json");
-        let persistent_contexts: HashMap<ContextId, KnowledgeContext> = utils::load_json_from_file(&contexts_file)?;
-
-        let contexts = Arc::new(RwLock::new(persistent_contexts));
-        let volatile_contexts = Arc::new(RwLock::new(HashMap::new()));
-        let active_operations = Arc::new(RwLock::new(HashMap::new()));
-        let (job_tx, job_rx) = mpsc::unbounded_channel();
-
-        // Start background worker - we'll need to create a new embedder for the worker
-        // Models should already be downloaded by now
-        let worker_embedder = embedder_factory::create_embedder(embedding_type)?;
-        // Makes sure it respects configuration even if tweaked by user.
-        let loaded_config = config::get_config().clone();
-        let worker = BackgroundWorker {
-            job_rx,
-            contexts: contexts.clone(),
-            volatile_contexts: volatile_contexts.clone(),
-            active_operations: active_operations.clone(),
-            embedder: worker_embedder,
-            config: loaded_config.clone(),
-            base_dir: base_dir.clone(),
-            indexing_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_OPERATIONS)),
-        };
-
-        tokio::spawn(worker.run());
-
-        let mut client = Self {
-            base_dir,
-            contexts,
-            volatile_contexts,
-            embedder,
-            config: loaded_config,
-            job_tx,
-            active_operations,
-        };
-
-        // Load all persistent contexts
-        client.load_persistent_contexts().await?;
-
-        Ok(client)
-    }
-
-    /// Add a context from a path (async, cancellable)
-    pub async fn add_context_from_path(
-        &self,
-        path: impl AsRef<Path>,
-        name: &str,
-        description: &str,
-        persistent: bool,
-    ) -> Result<(Uuid, CancellationToken)> {
-        let path = path.as_ref();
-        let canonical_path = path.canonicalize().map_err(|_e| {
-            SemanticSearchError::InvalidPath(format!("Path does not exist or is not accessible: {}", path.display()))
+    /// Add context using structured request
+    pub async fn add_context(&self, request: AddContextRequest) -> Result<(Uuid, CancellationToken)> {
+        let canonical_path = request.path.canonicalize().map_err(|_e| {
+            SemanticSearchError::InvalidPath(format!(
+                "Path does not exist or is not accessible: {}",
+                request.path.display()
+            ))
         })?;
 
         // Check for conflicts
         self.check_path_exists(&canonical_path).await?;
+
+        // Validate patterns early to fail fast
+        if let Some(ref include_patterns) = request.include_patterns {
+            crate::pattern_filter::PatternFilter::new(include_patterns, &[])
+                .map_err(|e| SemanticSearchError::InvalidArgument(format!("Invalid include pattern: {}", e)))?;
+        }
+        if let Some(ref exclude_patterns) = request.exclude_patterns {
+            crate::pattern_filter::PatternFilter::new(&[], exclude_patterns)
+                .map_err(|e| SemanticSearchError::InvalidArgument(format!("Invalid exclude pattern: {}", e)))?;
+        }
 
         let operation_id = Uuid::new_v4();
         let cancel_token = CancellationToken::new();
@@ -241,7 +247,7 @@ impl AsyncSemanticSearchClient {
         self.register_operation(
             operation_id,
             OperationType::Indexing {
-                name: name.to_string(),
+                name: request.name.clone(),
                 path: canonical_path.to_string_lossy().to_string(),
             },
             cancel_token.clone(),
@@ -253,9 +259,11 @@ impl AsyncSemanticSearchClient {
             id: operation_id,
             cancel: cancel_token.clone(),
             path: canonical_path,
-            name: name.to_string(),
-            description: description.to_string(),
-            persistent,
+            name: request.name,
+            description: request.description,
+            persistent: request.persistent,
+            include_patterns: request.include_patterns,
+            exclude_patterns: request.exclude_patterns,
         };
 
         self.job_tx
@@ -369,6 +377,33 @@ impl AsyncSemanticSearchClient {
                 "Operation not found: {}",
                 &operation_id.to_string()[..8]
             )))
+        }
+    }
+
+    /// Cancel the most recent operation
+    pub async fn cancel_most_recent_operation(&self) -> Result<String> {
+        let operations = self.active_operations.read().await;
+
+        if operations.is_empty() {
+            return Err(SemanticSearchError::OperationFailed(
+                "No active operations to cancel".to_string(),
+            ));
+        }
+
+        // Find the most recent operation (highest started_at time)
+        let most_recent = operations
+            .iter()
+            .max_by_key(|(_, handle)| handle.started_at)
+            .map(|(id, _)| *id);
+
+        drop(operations); // Release the read lock
+
+        if let Some(operation_id) = most_recent {
+            self.cancel_operation(operation_id).await
+        } else {
+            Err(SemanticSearchError::OperationFailed(
+                "No active operations found".to_string(),
+            ))
         }
     }
 
@@ -652,7 +687,8 @@ impl AsyncSemanticSearchClient {
         }
 
         // Create a new semantic context
-        let semantic_context = SemanticContext::new(context_dir.join("data.json"))?;
+        let data_file = context_dir.join("data.json");
+        let semantic_context = SemanticContext::new(data_file)?;
 
         // Store the semantic context
         let mut volatile_contexts = self.volatile_contexts.write().await;
@@ -770,6 +806,22 @@ impl AsyncSemanticSearchClient {
 
 // Background Worker Implementation
 impl BackgroundWorker {
+    /// Create pattern filter from include/exclude patterns
+    fn create_pattern_filter(
+        include_patterns: &Option<Vec<String>>,
+        exclude_patterns: &Option<Vec<String>>,
+    ) -> std::result::Result<Option<crate::pattern_filter::PatternFilter>, String> {
+        if include_patterns.is_some() || exclude_patterns.is_some() {
+            let inc = include_patterns.as_deref().unwrap_or(&[]);
+            let exc = exclude_patterns.as_deref().unwrap_or(&[]);
+            Ok(Some(
+                crate::pattern_filter::PatternFilter::new(inc, exc).map_err(|e| format!("Invalid patterns: {}", e))?,
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
     async fn run(mut self) {
         debug!("Background worker started for async semantic search client");
 
@@ -782,9 +834,18 @@ impl BackgroundWorker {
                     name,
                     description,
                     persistent,
+                    include_patterns,
+                    exclude_patterns,
                 } => {
-                    self.process_add_directory(id, path, name, description, persistent, cancel)
-                        .await;
+                    let params = IndexingParams {
+                        path,
+                        name,
+                        description,
+                        persistent,
+                        include_patterns,
+                        exclude_patterns,
+                    };
+                    self.process_add_directory(id, params, cancel).await;
                 },
                 IndexingJob::Clear { id, cancel } => {
                     self.process_clear(id, cancel).await;
@@ -795,16 +856,12 @@ impl BackgroundWorker {
         debug!("Background worker stopped");
     }
 
-    async fn process_add_directory(
-        &self,
-        operation_id: Uuid,
-        path: PathBuf,
-        name: String,
-        description: String,
-        persistent: bool,
-        cancel_token: CancellationToken,
-    ) {
-        debug!("Processing AddDirectory job: {} -> {}", name, path.display());
+    async fn process_add_directory(&self, operation_id: Uuid, params: IndexingParams, cancel_token: CancellationToken) {
+        debug!(
+            "Processing AddDirectory job: {} -> {}",
+            params.name,
+            params.path.display()
+        );
 
         if cancel_token.is_cancelled() {
             self.mark_operation_cancelled(operation_id).await;
@@ -846,9 +903,15 @@ impl BackgroundWorker {
         };
 
         // Perform actual indexing
-        let result = self
-            .perform_indexing(operation_id, path, name, description, persistent, cancel_token)
-            .await;
+        let indexing_params = IndexingParams {
+            path: params.path,
+            name: params.name,
+            description: params.description,
+            persistent: params.persistent,
+            include_patterns: params.include_patterns,
+            exclude_patterns: params.exclude_patterns,
+        };
+        let result = self.perform_indexing(operation_id, indexing_params, cancel_token).await;
 
         match result {
             Ok(context_id) => {
@@ -865,14 +928,11 @@ impl BackgroundWorker {
     async fn perform_indexing(
         &self,
         operation_id: Uuid,
-        path: PathBuf,
-        name: String,
-        description: String,
-        persistent: bool,
+        params: IndexingParams,
         cancel_token: CancellationToken,
     ) -> std::result::Result<String, String> {
-        if !path.exists() {
-            return Err(format!("Path '{}' does not exist", path.display()));
+        if !params.path.exists() {
+            return Err(format!("Path '{}' does not exist", params.path.display()));
         }
 
         // Check for cancellation before starting
@@ -893,7 +953,7 @@ impl BackgroundWorker {
         let cancel_token_clone = cancel_token.clone();
 
         // Create context directory
-        let context_dir = if persistent {
+        let context_dir = if params.persistent {
             base_dir.join(&context_id)
         } else {
             std::env::temp_dir().join("semantic_search").join(&context_id)
@@ -909,7 +969,14 @@ impl BackgroundWorker {
         }
 
         // Count files and notify progress
-        let file_count = self.count_files_in_directory(&path, operation_id).await?;
+        let file_count = self
+            .count_files_in_directory(
+                &params.path,
+                operation_id,
+                &params.include_patterns,
+                &params.exclude_patterns,
+            )
+            .await?;
 
         // Check if file count exceeds the configured limit
         if file_count > config.max_files {
@@ -941,7 +1008,14 @@ impl BackgroundWorker {
 
         // Process files with cancellation checks
         let items = self
-            .process_directory_files(&path, file_count, operation_id, &cancel_token_clone)
+            .process_directory_files(
+                &params.path,
+                file_count,
+                operation_id,
+                &cancel_token_clone,
+                &params.include_patterns,
+                &params.exclude_patterns,
+            )
             .await?;
 
         // Check cancellation before creating semantic context
@@ -972,7 +1046,7 @@ impl BackgroundWorker {
         }
 
         // Save context if persistent
-        if persistent {
+        if params.persistent {
             semantic_context
                 .save()
                 .map_err(|e| format!("Failed to save context: {}", e))?;
@@ -981,10 +1055,12 @@ impl BackgroundWorker {
         // Store the context
         self.store_context(
             &context_id,
-            &name,
-            &description,
-            persistent,
-            Some(path.to_string_lossy().to_string()),
+            &params.name,
+            &params.description,
+            params.persistent,
+            Some(params.path.to_string_lossy().to_string()),
+            &params.include_patterns,
+            &params.exclude_patterns,
             semantic_context,
             file_count,
         )
@@ -1228,6 +1304,8 @@ impl BackgroundWorker {
         description: &str,
         persistent: bool,
         source_path: Option<String>,
+        include_patterns: &Option<Vec<String>>,
+        exclude_patterns: &Option<Vec<String>>,
         semantic_context: SemanticContext,
         item_count: usize,
     ) -> std::result::Result<(), String> {
@@ -1238,6 +1316,10 @@ impl BackgroundWorker {
             description,
             persistent,
             source_path,
+            (
+                include_patterns.as_deref().unwrap_or(&[]).to_vec(),
+                exclude_patterns.as_deref().unwrap_or(&[]).to_vec(),
+            ),
             item_count,
         );
 
@@ -1266,6 +1348,8 @@ impl BackgroundWorker {
         &self,
         dir_path: &Path,
         operation_id: Uuid,
+        include_patterns: &Option<Vec<String>>,
+        exclude_patterns: &Option<Vec<String>>,
     ) -> std::result::Result<usize, String> {
         self.update_operation_status(operation_id, "Counting files...".to_string())
             .await;
@@ -1273,6 +1357,9 @@ impl BackgroundWorker {
         // Use tokio::task::spawn_blocking to make the synchronous walkdir operation non-blocking
         let dir_path = dir_path.to_path_buf();
         let active_operations = self.active_operations.clone();
+
+        // Create pattern filter if patterns are provided
+        let pattern_filter = Self::create_pattern_filter(include_patterns, exclude_patterns)?;
 
         let count_result = tokio::task::spawn_blocking(move || {
             let mut count = 0;
@@ -1289,6 +1376,12 @@ impl BackgroundWorker {
                         .file_name()
                         .and_then(|n| n.to_str())
                         .is_some_and(|s| s.starts_with('.'))
+                })
+                .filter(|e| {
+                    // Apply pattern filter if present
+                    pattern_filter
+                        .as_ref()
+                        .is_none_or(|filter| filter.should_include(e.path()))
                 })
             {
                 count += 1;
@@ -1334,11 +1427,16 @@ impl BackgroundWorker {
         file_count: usize,
         operation_id: Uuid,
         cancel_token: &CancellationToken,
+        include_patterns: &Option<Vec<String>>,
+        exclude_patterns: &Option<Vec<String>>,
     ) -> std::result::Result<Vec<serde_json::Value>, String> {
-        use crate::processing::process_file;
+        use crate::processing::process_file_with_config;
 
         self.update_operation_status(operation_id, format!("Starting indexing ({} files)", file_count))
             .await;
+
+        // Create pattern filter if patterns are provided
+        let pattern_filter = Self::create_pattern_filter(include_patterns, exclude_patterns)?;
 
         let mut processed_files = 0;
         let mut items = Vec::new();
@@ -1348,6 +1446,12 @@ impl BackgroundWorker {
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
+            .filter(|e| {
+                // Apply pattern filter if present
+                pattern_filter
+                    .as_ref()
+                    .is_none_or(|filter| filter.should_include(e.path()))
+            })
         {
             // Check for cancellation frequently
             if cancel_token.is_cancelled() {
@@ -1366,7 +1470,7 @@ impl BackgroundWorker {
             }
 
             // Process the file
-            match process_file(path) {
+            match process_file_with_config(path, Some(self.config.chunk_size), Some(self.config.chunk_overlap)) {
                 Ok(mut file_items) => items.append(&mut file_items),
                 Err(_) => continue, // Skip files that fail to process
             }

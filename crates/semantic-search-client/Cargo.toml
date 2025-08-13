@@ -24,6 +24,7 @@ rayon.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+glob.workspace = true
 
 # Vector search library - pin to avoid edition2024 requirement
 hnsw_rs = "=0.3.1"
