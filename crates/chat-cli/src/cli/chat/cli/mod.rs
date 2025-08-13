@@ -1,3 +1,4 @@
+pub mod capture;
 pub mod clear;
 pub mod compact;
 pub mod context;
@@ -27,6 +28,7 @@ use profile::AgentSubcommand;
 use prompts::PromptsArgs;
 use tools::ToolsArgs;
 
+use crate::cli::chat::cli::capture::CaptureSubcommand;
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
 use crate::cli::chat::cli::usage::UsageArgs;
 use crate::cli::chat::consts::AGENT_MIGRATION_DOC_URL;
@@ -85,6 +87,8 @@ pub enum SlashCommand {
     Persist(PersistSubcommand),
     // #[command(flatten)]
     // Root(RootSubcommand),
+    #[command(subcommand)]
+    Capture(CaptureSubcommand),
 }
 
 impl SlashCommand {
@@ -146,6 +150,7 @@ impl SlashCommand {
             //         skip_printing_tools: true,
             //     })
             // },
+            Self::Capture(subcommand) => subcommand.execute(os, session).await,
         }
     }
 
@@ -171,6 +176,7 @@ impl SlashCommand {
                 PersistSubcommand::Save { .. } => "save",
                 PersistSubcommand::Load { .. } => "load",
             },
+            Self::Capture(_) => "capture",
         }
     }
 

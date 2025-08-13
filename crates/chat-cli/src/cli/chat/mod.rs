@@ -6,7 +6,11 @@ mod error_formatter;
 mod input_source;
 mod message;
 mod parse;
-use std::path::MAIN_SEPARATOR;
+use std::path::{
+    MAIN_SEPARATOR,
+    PathBuf,
+};
+pub mod capture;
 mod line_tracker;
 mod parser;
 mod prompt;
@@ -18,6 +22,7 @@ mod token_counter;
 pub mod tool_manager;
 pub mod tools;
 pub mod util;
+
 use std::borrow::Cow;
 use std::collections::{
     HashMap,
@@ -132,6 +137,11 @@ use crate::api_client::{
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
+use crate::cli::chat::capture::{
+    CAPTURE_MESSAGE_MAX_LENGTH,
+    CaptureManager,
+    truncate_message,
+};
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::prompts::{
     GetPromptError,
@@ -1198,6 +1208,29 @@ impl ChatSession {
             }
         }
 
+        // Initialize checkpointing if possible
+        let capture_manager = if CaptureManager::is_git_installed() {
+            let path =
+                PathBuf::from(crate::cli::chat::consts::SHADOW_REPO_DIR).join(self.conversation.conversation_id());
+            match CaptureManager::init(path) {
+                Ok(manager) => {
+                    execute!(self.stderr, style::Print("Captures are enabled!\n\n".blue().bold()))?;
+                    Some(manager)
+                },
+                Err(e) => {
+                    execute!(
+                        self.stderr,
+                        style::Print(format!("Captures could not be enabled: {e}\n").blue())
+                    )?;
+                    None
+                }
+            }
+        } else {
+            execute!(self.stderr, style::Print("Captures could not be enabled because git is not installed. Please install git to enable checkpointing features.\n".blue()))?;
+            None
+        };
+        self.conversation.capture_manager = capture_manager;
+
         if let Some(user_input) = self.initial_input.take() {
             self.inner = Some(ChatState::HandleInput { input: user_input });
         }
@@ -1920,6 +1953,33 @@ impl ChatSession {
             }
             execute!(self.stdout, style::Print("\n"))?;
 
+            let tag = if invoke_result.is_ok() {
+                if let Some(mut manager) = self.conversation.capture_manager.take() {
+                    let res = if manager.has_uncommitted_changes() {
+                        manager.num_tools_this_turn += 1;
+                        let tag = format!("{}.{}", manager.num_turns + 1, manager.num_tools_this_turn);
+                        let commit_message = match tool.tool.get_summary() {
+                            Some(summary) => summary,
+                            None => tool.tool.display_name(),
+                        };
+                        if let Err(e) =
+                            manager.create_capture(&tag, &commit_message, self.conversation.history().len() + 1)
+                        {
+                            debug!("{e}");
+                        }
+                        tag
+                    } else {
+                        "".to_string()
+                    };
+                    self.conversation.capture_manager = Some(manager);
+                    res
+                } else {
+                    "".to_string()
+                }
+            } else {
+                "".to_string()
+            };
+
             let tool_end_time = Instant::now();
             let tool_time = tool_end_time.duration_since(tool_start);
             tool_telemetry = tool_telemetry.and_modify(|ev| {
@@ -1962,8 +2022,11 @@ impl ChatSession {
                         style::SetAttribute(Attribute::Bold),
                         style::Print(format!(" ● Completed in {}s", tool_time)),
                         style::SetForegroundColor(Color::Reset),
-                        style::Print("\n\n"),
                     )?;
+                    if !tag.is_empty() {
+                        execute!(self.stdout, style::Print(format!(" [{tag}]").blue().bold()))?;
+                    }
+                    execute!(self.stdout, style::Print("\n\n"))?;
 
                     tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
                     if let Tool::Custom(_) = &tool.tool {
@@ -2084,6 +2147,12 @@ impl ChatSession {
         state: crate::api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
+        let user_message = match state.user_input_message.content.len() {
+            0 => "No description provided".to_string(),
+            _ => state.user_input_message.content.clone(),
+        };
+
+
         let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
 
         let request_id = rx.request_id().map(String::from);
@@ -2355,6 +2424,33 @@ impl ChatSession {
             self.tool_uses.clear();
             self.pending_tool_index = None;
             self.tool_turn_start_time = None;
+
+            if let Some(mut manager) = self.conversation.capture_manager.take() {
+                if manager.num_tools_this_turn > 0 {
+                    manager.num_turns += 1;
+                    match manager.create_capture(
+                        &manager.num_turns.to_string(),
+                        &truncate_message(&user_message, CAPTURE_MESSAGE_MAX_LENGTH),
+                        self.conversation.history().len(),
+                    ) {
+                        Ok(_) => execute!(
+                            self.stderr,
+                            style::Print(style::Print(
+                                format!("Created snapshot: {}\n\n", manager.num_turns).blue().bold()
+                            ))
+                        )?,
+                        Err(e) => {
+                            execute!(
+                                self.stderr,
+                                style::Print(style::Print(
+                                    format!("Could not create automatic snapshot: {}\n\n", e).blue()
+                                ))
+                            )?;
+                        },
+                    }
+                }
+                self.conversation.capture_manager = Some(manager)
+            }
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;

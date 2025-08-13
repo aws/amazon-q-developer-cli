@@ -66,6 +66,7 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
+use crate::cli::chat::capture::CaptureManager;
 use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
@@ -124,6 +125,8 @@ pub struct ConversationState {
     /// Maps from a file path to [FileLineTracker]
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
+
+    pub capture_manager: Option<CaptureManager>,
 }
 
 impl ConversationState {
@@ -180,6 +183,7 @@ impl ConversationState {
             model: None,
             model_info: model,
             file_line_tracker: HashMap::new(),
+            capture_manager: None,
         }
     }
 
@@ -698,6 +702,11 @@ impl ConversationState {
             self.transcript.pop_front();
         }
         self.transcript.push_back(message);
+    }
+
+    pub fn pop_from_history(&mut self) -> Option<()> {
+        self.history.pop_back()?;
+        Some(())
     }
 }
 

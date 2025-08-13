@@ -406,7 +406,7 @@ impl FsWrite {
     }
 
     /// Returns the summary from any variant of the FsWrite enum
-    fn get_summary(&self) -> Option<&String> {
+    pub fn get_summary(&self) -> Option<&String> {
         match self {
             FsWrite::Create { summary, .. } => summary.as_ref(),
             FsWrite::StrReplace { summary, .. } => summary.as_ref(),

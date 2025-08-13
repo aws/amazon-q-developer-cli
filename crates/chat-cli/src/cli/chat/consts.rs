@@ -32,3 +32,6 @@ pub const USER_AGENT_ENV_VAR: &str = "AWS_EXECUTION_ENV";
 pub const USER_AGENT_APP_NAME: &str = "AmazonQ-For-CLI";
 pub const USER_AGENT_VERSION_KEY: &str = "Version";
 pub const USER_AGENT_VERSION_VALUE: &str = env!("CARGO_PKG_VERSION");
+
+// The shadow repo path that MUST be appended with a session-specific directory
+pub const SHADOW_REPO_DIR: &str = "./.amazonq/captures";
