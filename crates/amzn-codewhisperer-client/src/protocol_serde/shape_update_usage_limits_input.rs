@@ -9,17 +9,20 @@ pub fn ser_update_usage_limits_input_input(
     if let Some(var_2) = &input.accountless_user_id {
         object.key("accountlessUserId").string(var_2.as_str());
     }
-    if let Some(var_3) = &input.feature_type {
-        object.key("featureType").string(var_3.as_str());
+    if let Some(var_3) = &input.directory_id {
+        object.key("directoryId").string(var_3.as_str());
     }
-    if let Some(var_4) = &input.requested_limit {
+    if let Some(var_4) = &input.feature_type {
+        object.key("featureType").string(var_4.as_str());
+    }
+    if let Some(var_5) = &input.requested_limit {
         object.key("requestedLimit").number(
             #[allow(clippy::useless_conversion)]
-            ::aws_smithy_types::Number::NegInt((*var_4).into()),
+            ::aws_smithy_types::Number::NegInt((*var_5).into()),
         );
     }
-    if let Some(var_5) = &input.justification {
-        object.key("justification").string(var_5.as_str());
+    if let Some(var_6) = &input.justification {
+        object.key("justification").string(var_6.as_str());
     }
     Ok(())
 }

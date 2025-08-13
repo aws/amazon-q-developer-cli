@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::path::{
+    PathBuf,
+    StripPrefixError,
+};
 
 use thiserror::Error;
 
@@ -23,9 +26,14 @@ pub enum DirectoryError {
     FromVecWithNul(#[from] std::ffi::FromVecWithNulError),
     #[error(transparent)]
     IntoString(#[from] std::ffi::IntoStringError),
+    #[error(transparent)]
+    StripPrefix(#[from] StripPrefixError),
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
+
+const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
+const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
 
 /// The directory of the users home
 ///
@@ -129,12 +137,50 @@ pub fn logs_dir() -> Result<PathBuf> {
     }
 }
 
+/// Example agent config path
+pub fn example_agent_config(os: &Os) -> Result<PathBuf> {
+    let global_path = chat_global_agent_path(os)?;
+    Ok(global_path.join("agent_config.json.example"))
+}
+
+/// Legacy global MCP server config path
+pub fn chat_legacy_global_mcp_config(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(".aws").join("amazonq").join("mcp.json"))
+}
+
+/// Legacy workspace MCP server config path
+pub fn chat_legacy_workspace_mcp_config(os: &Os) -> Result<PathBuf> {
+    let cwd = os.env.current_dir()?;
+    Ok(cwd.join(".amazonq").join("mcp.json"))
+}
+
+/// The directory to the directory containing global agents
+pub fn chat_global_agent_path(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(GLOBAL_AGENT_DIR_RELATIVE_TO_HOME))
+}
+
+/// The directory to the directory containing config for the `/context` feature in `q chat`.
+pub fn chat_local_agent_dir(os: &Os) -> Result<PathBuf> {
+    let cwd = os.env.current_dir()?;
+    Ok(cwd.join(WORKSPACE_AGENT_DIR_RELATIVE))
+}
+
+/// Derives the absolute path to an agent config directory given a "workspace directory".
+/// A workspace directory is a directory where q chat is to be launched
+///
+/// For example, if the given path is /path/one, then the derived config path would be
+/// `/path/one/.amazonq/agents`
+pub fn agent_config_dir(workspace_dir: PathBuf) -> Result<PathBuf> {
+    Ok(workspace_dir.join(WORKSPACE_AGENT_DIR_RELATIVE))
+}
+
 /// The directory to the directory containing config for the `/context` feature in `q chat`.
 pub fn chat_global_context_path(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("global_context.json"))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `q chat`.
+#[allow(dead_code)]
 pub fn chat_profiles_dir(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("profiles"))
 }

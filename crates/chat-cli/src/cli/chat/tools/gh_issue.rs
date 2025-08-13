@@ -1,7 +1,4 @@
-use std::collections::{
-    HashMap,
-    VecDeque,
-};
+use std::collections::VecDeque;
 use std::io::Write;
 
 use crossterm::style::Color;
@@ -18,10 +15,7 @@ use serde::Deserialize;
 
 use super::super::context::ContextManager;
 use super::super::util::issue::IssueCreator;
-use super::{
-    InvokeOutput,
-    ToolPermission,
-};
+use super::InvokeOutput;
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::os::Os;
 
@@ -41,7 +35,7 @@ pub struct GhIssueContext {
     pub context_manager: Option<ContextManager>,
     pub transcript: VecDeque<String>,
     pub failed_request_ids: Vec<String>,
-    pub tool_permissions: HashMap<String, ToolPermission>,
+    pub tool_permissions: Vec<String>,
 }
 
 /// Max amount of characters to include in the transcript.
@@ -147,29 +141,18 @@ impl GhIssue {
         };
 
         os_str.push_str(&format!("current_profile={}\n", os_manager.current_profile));
-        match os_manager.list_profiles(os).await {
-            Ok(profiles) if !profiles.is_empty() => {
-                os_str.push_str(&format!("profiles=\n{}\n\n", profiles.join("\n")));
-            },
-            _ => os_str.push_str("profiles=none\n\n"),
-        }
 
-        // Context file categories
-        if os_manager.global_config.paths.is_empty() {
-            os_str.push_str("global_context=none\n\n");
-        } else {
-            os_str.push_str(&format!(
-                "global_context=\n{}\n\n",
-                &os_manager.global_config.paths.join("\n")
-            ));
-        }
-
-        if os_manager.profile_config.paths.is_empty() {
+        if os_manager.paths.is_empty() {
             os_str.push_str("profile_context=none\n\n");
         } else {
             os_str.push_str(&format!(
                 "profile_context=\n{}\n\n",
-                &os_manager.profile_config.paths.join("\n")
+                &os_manager
+                    .paths
+                    .iter()
+                    .map(|p| p.get_path_as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
             ));
         }
 
@@ -196,8 +179,8 @@ impl GhIssue {
     fn get_chat_settings(context: &GhIssueContext) -> String {
         let mut result_str = "[chat-settings]\n".to_string();
         result_str.push_str("\n\n[chat-trusted_tools]");
-        for (tool, permission) in context.tool_permissions.iter() {
-            result_str.push_str(&format!("\n{tool}={}", permission.trusted));
+        for tool in context.tool_permissions.iter() {
+            result_str.push_str(&format!("\n{tool}=trusted"));
         }
 
         result_str

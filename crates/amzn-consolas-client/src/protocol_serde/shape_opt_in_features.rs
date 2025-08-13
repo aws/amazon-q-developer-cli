@@ -39,6 +39,18 @@ pub fn ser_opt_in_features(
         crate::protocol_serde::shape_workspace_context::ser_workspace_context(&mut object_12, var_11)?;
         object_12.finish();
     }
+    if let Some(var_13) = &input.overage_configuration {
+        #[allow(unused_mut)]
+        let mut object_14 = object.key("overageConfiguration").start_object();
+        crate::protocol_serde::shape_overage_configuration::ser_overage_configuration(&mut object_14, var_13)?;
+        object_14.finish();
+    }
+    if let Some(var_15) = &input.mcp_configuration {
+        #[allow(unused_mut)]
+        let mut object_16 = object.key("mcpConfiguration").start_object();
+        crate::protocol_serde::shape_mcp_configuration::ser_mcp_configuration(&mut object_16, var_15)?;
+        object_16.finish();
+    }
     Ok(())
 }
 
@@ -61,35 +73,46 @@ where
             loop {
                 match tokens.next().transpose()? {
                     Some(::aws_smithy_json::deserialize::Token::EndObject { .. }) => break,
-                    Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => {
-                        match key.to_unescaped()?.as_ref() {
-                            "promptLogging" => {
-                                builder = builder.set_prompt_logging(
-                                    crate::protocol_serde::shape_prompt_logging::de_prompt_logging(tokens)?,
-                                );
-                            },
-                            "byUserAnalytics" => {
-                                builder = builder.set_by_user_analytics(
-                                    crate::protocol_serde::shape_by_user_analytics::de_by_user_analytics(tokens)?,
-                                );
-                            },
-                            "dashboardAnalytics" => {
-                                builder = builder.set_dashboard_analytics(
-                                    crate::protocol_serde::shape_dashboard_analytics::de_dashboard_analytics(tokens)?,
-                                );
-                            },
-                            "notifications" => {
-                                builder = builder.set_notifications(
-                                    crate::protocol_serde::shape_notifications::de_notifications(tokens)?,
-                                );
-                            },
-                            "workspaceContext" => {
-                                builder = builder.set_workspace_context(
-                                    crate::protocol_serde::shape_workspace_context::de_workspace_context(tokens)?,
-                                );
-                            },
-                            _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
-                        }
+                    Some(::aws_smithy_json::deserialize::Token::ObjectKey { key, .. }) => match key
+                        .to_unescaped()?
+                        .as_ref()
+                    {
+                        "promptLogging" => {
+                            builder = builder.set_prompt_logging(
+                                crate::protocol_serde::shape_prompt_logging::de_prompt_logging(tokens)?,
+                            );
+                        },
+                        "byUserAnalytics" => {
+                            builder = builder.set_by_user_analytics(
+                                crate::protocol_serde::shape_by_user_analytics::de_by_user_analytics(tokens)?,
+                            );
+                        },
+                        "dashboardAnalytics" => {
+                            builder = builder.set_dashboard_analytics(
+                                crate::protocol_serde::shape_dashboard_analytics::de_dashboard_analytics(tokens)?,
+                            );
+                        },
+                        "notifications" => {
+                            builder = builder.set_notifications(
+                                crate::protocol_serde::shape_notifications::de_notifications(tokens)?,
+                            );
+                        },
+                        "workspaceContext" => {
+                            builder = builder.set_workspace_context(
+                                crate::protocol_serde::shape_workspace_context::de_workspace_context(tokens)?,
+                            );
+                        },
+                        "overageConfiguration" => {
+                            builder = builder.set_overage_configuration(
+                                crate::protocol_serde::shape_overage_configuration::de_overage_configuration(tokens)?,
+                            );
+                        },
+                        "mcpConfiguration" => {
+                            builder = builder.set_mcp_configuration(
+                                crate::protocol_serde::shape_mcp_configuration::de_mcp_configuration(tokens)?,
+                            );
+                        },
+                        _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                     },
                     other => {
                         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(

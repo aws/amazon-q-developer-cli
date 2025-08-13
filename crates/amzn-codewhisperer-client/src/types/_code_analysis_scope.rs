@@ -12,6 +12,7 @@
 /// ```text
 /// # let codeanalysisscope = unimplemented!();
 /// match codeanalysisscope {
+///     CodeAnalysisScope::Agentic => { /* ... */ },
 ///     CodeAnalysisScope::File => { /* ... */ },
 ///     CodeAnalysisScope::Project => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
@@ -48,6 +49,8 @@
 )]
 pub enum CodeAnalysisScope {
     #[allow(missing_docs)] // documentation missing in model
+    Agentic,
+    #[allow(missing_docs)] // documentation missing in model
     File,
     #[allow(missing_docs)] // documentation missing in model
     Project,
@@ -60,6 +63,7 @@ pub enum CodeAnalysisScope {
 impl ::std::convert::From<&str> for CodeAnalysisScope {
     fn from(s: &str) -> Self {
         match s {
+            "AGENTIC" => CodeAnalysisScope::Agentic,
             "FILE" => CodeAnalysisScope::File,
             "PROJECT" => CodeAnalysisScope::Project,
             other => CodeAnalysisScope::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
@@ -79,6 +83,7 @@ impl CodeAnalysisScope {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            CodeAnalysisScope::Agentic => "AGENTIC",
             CodeAnalysisScope::File => "FILE",
             CodeAnalysisScope::Project => "PROJECT",
             CodeAnalysisScope::Unknown(value) => value.as_str(),
@@ -87,7 +92,7 @@ impl CodeAnalysisScope {
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["FILE", "PROJECT"]
+        &["AGENTIC", "FILE", "PROJECT"]
     }
 }
 impl ::std::convert::AsRef<str> for CodeAnalysisScope {
@@ -110,6 +115,7 @@ impl CodeAnalysisScope {
 impl ::std::fmt::Display for CodeAnalysisScope {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            CodeAnalysisScope::Agentic => write!(f, "AGENTIC"),
             CodeAnalysisScope::File => write!(f, "FILE"),
             CodeAnalysisScope::Project => write!(f, "PROJECT"),
             CodeAnalysisScope::Unknown(value) => write!(f, "{}", value),

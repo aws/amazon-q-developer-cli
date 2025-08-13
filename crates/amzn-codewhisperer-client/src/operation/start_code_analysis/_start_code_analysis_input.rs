@@ -15,6 +15,8 @@ pub struct StartCodeAnalysisInput {
     /// Code analysis scan name
     pub code_scan_name: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
+    pub code_diff_metadata: ::std::option::Option<crate::types::CodeDiffMetadata>,
+    #[allow(missing_docs)] // documentation missing in model
     pub profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartCodeAnalysisInput {
@@ -46,6 +48,11 @@ impl StartCodeAnalysisInput {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn code_diff_metadata(&self) -> ::std::option::Option<&crate::types::CodeDiffMetadata> {
+        self.code_diff_metadata.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
@@ -69,6 +76,7 @@ pub struct StartCodeAnalysisInputBuilder {
     pub(crate) client_token: ::std::option::Option<::std::string::String>,
     pub(crate) scope: ::std::option::Option<crate::types::CodeAnalysisScope>,
     pub(crate) code_scan_name: ::std::option::Option<::std::string::String>,
+    pub(crate) code_diff_metadata: ::std::option::Option<crate::types::CodeDiffMetadata>,
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
 }
 impl StartCodeAnalysisInputBuilder {
@@ -172,6 +180,23 @@ impl StartCodeAnalysisInputBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
+    pub fn code_diff_metadata(mut self, input: crate::types::CodeDiffMetadata) -> Self {
+        self.code_diff_metadata = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_code_diff_metadata(mut self, input: ::std::option::Option<crate::types::CodeDiffMetadata>) -> Self {
+        self.code_diff_metadata = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_code_diff_metadata(&self) -> &::std::option::Option<crate::types::CodeDiffMetadata> {
+        &self.code_diff_metadata
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
     pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
         self.profile_arn = ::std::option::Option::Some(input.into());
         self
@@ -202,6 +227,7 @@ impl StartCodeAnalysisInputBuilder {
             client_token: self.client_token,
             scope: self.scope,
             code_scan_name: self.code_scan_name,
+            code_diff_metadata: self.code_diff_metadata,
             profile_arn: self.profile_arn,
         })
     }

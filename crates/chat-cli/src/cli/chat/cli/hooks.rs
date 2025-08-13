@@ -7,10 +7,7 @@ use std::time::{
 };
 
 use bstr::ByteSlice;
-use clap::{
-    Args,
-    Subcommand,
-};
+use clap::Args;
 use crossterm::style::{
     self,
     Attribute,
@@ -24,7 +21,6 @@ use crossterm::{
     terminal,
 };
 use eyre::{
-    ErrReport,
     Result,
     eyre,
 };
@@ -32,104 +28,22 @@ use futures::stream::{
     FuturesUnordered,
     StreamExt,
 };
-use serde::{
-    Deserialize,
-    Serialize,
-};
 use spinners::{
     Spinner,
     Spinners,
 };
 
+use crate::cli::agent::hook::{
+    Hook,
+    HookTrigger,
+};
+use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
 };
-use crate::os::Os;
-
-const DEFAULT_TIMEOUT_MS: u64 = 30_000;
-const DEFAULT_MAX_OUTPUT_SIZE: usize = 1024 * 10;
-const DEFAULT_CACHE_TTL_SECONDS: u64 = 0;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Hook {
-    pub trigger: HookTrigger,
-
-    pub r#type: HookType,
-
-    #[serde(default = "Hook::default_disabled")]
-    pub disabled: bool,
-
-    /// Max time the hook can run before it throws a timeout error
-    #[serde(default = "Hook::default_timeout_ms")]
-    pub timeout_ms: u64,
-
-    /// Max output size of the hook before it is truncated
-    #[serde(default = "Hook::default_max_output_size")]
-    pub max_output_size: usize,
-
-    /// How long the hook output is cached before it will be executed again
-    #[serde(default = "Hook::default_cache_ttl_seconds")]
-    pub cache_ttl_seconds: u64,
-
-    // Type-specific fields
-    /// The bash command to execute
-    pub command: Option<String>, // For inline hooks
-
-    // Internal data
-    #[serde(skip)]
-    pub name: String,
-    #[serde(skip)]
-    pub is_global: bool,
-}
-
-impl Hook {
-    pub fn new_inline_hook(trigger: HookTrigger, command: String) -> Self {
-        Self {
-            trigger,
-            r#type: HookType::Inline,
-            disabled: Self::default_disabled(),
-            timeout_ms: Self::default_timeout_ms(),
-            max_output_size: Self::default_max_output_size(),
-            cache_ttl_seconds: Self::default_cache_ttl_seconds(),
-            command: Some(command),
-            is_global: false,
-            name: "new hook".to_string(),
-        }
-    }
-
-    fn default_disabled() -> bool {
-        false
-    }
-
-    fn default_timeout_ms() -> u64 {
-        DEFAULT_TIMEOUT_MS
-    }
-
-    fn default_max_output_size() -> usize {
-        DEFAULT_MAX_OUTPUT_SIZE
-    }
-
-    fn default_cache_ttl_seconds() -> u64 {
-        DEFAULT_CACHE_TTL_SECONDS
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum HookType {
-    // Execute an inline shell command
-    Inline,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum HookTrigger {
-    ConversationStart,
-    PerPrompt,
-}
 
 #[derive(Debug, Clone)]
 pub struct CachedHook {
@@ -140,56 +54,43 @@ pub struct CachedHook {
 /// Maps a hook name to a [`CachedHook`]
 #[derive(Debug, Clone, Default)]
 pub struct HookExecutor {
-    pub global_cache: HashMap<String, CachedHook>,
-    pub profile_cache: HashMap<String, CachedHook>,
+    pub cache: HashMap<(HookTrigger, Hook), CachedHook>,
 }
 
 impl HookExecutor {
     pub fn new() -> Self {
-        Self {
-            global_cache: HashMap::new(),
-            profile_cache: HashMap::new(),
-        }
+        Self { cache: HashMap::new() }
     }
 
     /// Run and cache [`Hook`]s. Any hooks that are already cached will be returned without
-    /// executing. Hooks that fail to execute will not be returned.
+    /// executing. Hooks that fail to execute will not be returned. Returned hook order is
+    /// undefined.
     ///
     /// If `updates` is `Some`, progress on hook execution will be written to it.
     /// Errors encountered with write operations to `updates` are ignored.
     ///
-    /// Note: [`HookTrigger::ConversationStart`] hooks never leave the cache.
+    /// Note: [`HookTrigger::AgentSpawn`] hooks never leave the cache.
     pub async fn run_hooks(
         &mut self,
-        hooks: Vec<&Hook>,
+        hooks: HashMap<HookTrigger, Vec<Hook>>,
         output: &mut impl Write,
-    ) -> Result<Vec<(Hook, String)>, ChatError> {
-        let mut results = Vec::with_capacity(hooks.len());
+        prompt: Option<&str>,
+    ) -> Result<Vec<((HookTrigger, Hook), String)>, ChatError> {
+        let mut cached = vec![];
         let mut futures = FuturesUnordered::new();
-
-        // Start all hook future OR fetch from cache if available
-        // Why enumerate? We want to return the hook results in the order of hooks that we received,
-        // however, for output display we want to process hooks as they complete rather than the
-        // order they were started in. The index will be used later to sort them back to output order.
-        for (index, hook) in hooks.into_iter().enumerate() {
-            if hook.disabled {
+        for hook in hooks
+            .into_iter()
+            .flat_map(|(trigger, hooks)| hooks.into_iter().map(move |hook| (trigger, hook)))
+        {
+            if let Some(cache) = self.get_cache(&hook) {
+                cached.push((hook.clone(), cache.clone()));
                 continue;
             }
-
-            if let Some(cached) = self.get_cache(hook) {
-                results.push((index, (hook.clone(), cached.clone())));
-                continue;
-            }
-            let future = self.execute_hook(hook);
-            futures.push(async move { (index, future.await) });
+            futures.push(self.run_hook(hook, prompt));
         }
 
-        // Start caching the results added after whats already their (they are from the cache already)
-        let start_cache_index = results.len();
-
-        let mut succeeded = 0;
+        let mut complete = 0;
         let total = futures.len();
-
         let mut spinner = None;
         let spinner_text = |complete: usize, total: usize| {
             format!(
@@ -200,12 +101,13 @@ impl HookExecutor {
         };
 
         if total != 0 {
-            spinner = Some(Spinner::new(Spinners::Dots12, spinner_text(succeeded, total)));
+            spinner = Some(Spinner::new(Spinners::Dots12, spinner_text(complete, total)));
         }
 
         // Process results as they complete
+        let mut results = vec![];
         let start_time = Instant::now();
-        while let Some((index, (hook, result, duration))) = futures.next().await {
+        while let Some((hook, result, duration)) = futures.next().await {
             // If output is enabled, handle that first
             if let Some(spinner) = spinner.as_mut() {
                 spinner.stop();
@@ -219,48 +121,32 @@ impl HookExecutor {
                 )?;
             }
 
-            match &result {
-                Ok(_) => {
-                    queue!(
-                        output,
-                        style::SetForegroundColor(style::Color::Green),
-                        style::Print("✓ "),
-                        style::SetForegroundColor(style::Color::Blue),
-                        style::Print(&hook.name),
-                        style::ResetColor,
-                        style::Print(" finished in "),
-                        style::SetForegroundColor(style::Color::Yellow),
-                        style::Print(format!("{:.2} s\n", duration.as_secs_f32())),
-                        style::ResetColor,
-                    )?;
-                },
-                Err(e) => {
-                    queue!(
-                        output,
-                        style::SetForegroundColor(style::Color::Red),
-                        style::Print("✗ "),
-                        style::SetForegroundColor(style::Color::Blue),
-                        style::Print(&hook.name),
-                        style::ResetColor,
-                        style::Print(" failed after "),
-                        style::SetForegroundColor(style::Color::Yellow),
-                        style::Print(format!("{:.2} s", duration.as_secs_f32())),
-                        style::ResetColor,
-                        style::Print(format!(": {}\n", e)),
-                    )?;
-                },
+            if let Err(err) = &result {
+                queue!(
+                    output,
+                    style::SetForegroundColor(style::Color::Red),
+                    style::Print("✗ "),
+                    style::SetForegroundColor(style::Color::Blue),
+                    style::Print(&hook.1.command),
+                    style::ResetColor,
+                    style::Print(" failed after "),
+                    style::SetForegroundColor(style::Color::Yellow),
+                    style::Print(format!("{:.2} s", duration.as_secs_f32())),
+                    style::ResetColor,
+                    style::Print(format!(": {}\n", err)),
+                )?;
             }
 
             // Process results regardless of output enabled
             if let Ok(output) = result {
-                succeeded += 1;
-                results.push((index, (hook.clone(), output)));
+                complete += 1;
+                results.push((hook, output));
             }
 
             // Display ending summary or add a new spinner
             // The futures set size decreases each time we process one
             if futures.is_empty() {
-                let symbol = if total == succeeded {
+                let symbol = if total == complete {
                     "✓".to_string().green()
                 } else {
                     "✗".to_string().red()
@@ -269,77 +155,82 @@ impl HookExecutor {
                 queue!(
                     output,
                     style::SetForegroundColor(Color::Blue),
-                    style::Print(format!("{symbol} {} in ", spinner_text(succeeded, total))),
+                    style::Print(format!("{symbol} {} in ", spinner_text(complete, total))),
                     style::SetForegroundColor(style::Color::Yellow),
                     style::Print(format!("{:.2} s\n", start_time.elapsed().as_secs_f32())),
                     style::ResetColor,
                 )?;
             } else {
-                spinner = Some(Spinner::new(Spinners::Dots, spinner_text(succeeded, total)));
+                spinner = Some(Spinner::new(Spinners::Dots, spinner_text(complete, total)));
             }
         }
-
         drop(futures);
 
         // Fill cache with executed results, skipping what was already from cache
-        results.iter().skip(start_cache_index).for_each(|(_, (hook, output))| {
-            let expiry = match hook.trigger {
-                HookTrigger::ConversationStart => None,
-                HookTrigger::PerPrompt => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
-            };
-            self.insert_cache(hook, CachedHook {
+        for ((trigger, hook), output) in &results {
+            self.cache.insert((*trigger, hook.clone()), CachedHook {
                 output: output.clone(),
-                expiry,
+                expiry: match trigger {
+                    HookTrigger::AgentSpawn => None,
+                    HookTrigger::UserPromptSubmit => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
+                },
             });
-        });
+        }
 
-        // Return back to order at request start
-        results.sort_by_key(|(idx, _)| *idx);
-        Ok(results.into_iter().map(|(_, r)| r).collect())
+        results.append(&mut cached);
+
+        Ok(results)
     }
 
-    async fn execute_hook<'a>(&self, hook: &'a Hook) -> (&'a Hook, Result<String>, Duration) {
+    async fn run_hook(
+        &self,
+        hook: (HookTrigger, Hook),
+        prompt: Option<&str>,
+    ) -> ((HookTrigger, Hook), Result<String>, Duration) {
         let start_time = Instant::now();
-        let result = match hook.r#type {
-            HookType::Inline => self.execute_inline_hook(hook).await,
-        };
 
-        (hook, result, start_time.elapsed())
-    }
-
-    async fn execute_inline_hook(&self, hook: &Hook) -> Result<String> {
-        let command = hook.command.as_ref().ok_or_else(|| eyre!("no command specified"))?;
+        let command = &hook.1.command;
 
         #[cfg(unix)]
-        let command_future = tokio::process::Command::new("bash")
+        let mut cmd = tokio::process::Command::new("bash");
+        #[cfg(unix)]
+        let cmd = cmd
             .arg("-c")
             .arg(command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
+            .stderr(Stdio::piped());
 
         #[cfg(windows)]
-        let command_future = tokio::process::Command::new("cmd")
+        let mut cmd = tokio::process::Command::new("cmd");
+        #[cfg(windows)]
+        let cmd = cmd
             .arg("/C")
             .arg(command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
+            .stderr(Stdio::piped());
 
-        let timeout = Duration::from_millis(hook.timeout_ms);
+        let timeout = Duration::from_millis(hook.1.timeout_ms);
+
+        // Set USER_PROMPT environment variable if provided
+        if let Some(prompt) = prompt {
+            // Sanitize the prompt to avoid issues with special characters
+            let sanitized_prompt = sanitize_user_prompt(prompt);
+            cmd.env("USER_PROMPT", sanitized_prompt);
+        }
+
+        let command_future = cmd.output();
 
         // Run with timeout
-        match tokio::time::timeout(timeout, command_future).await {
-            Ok(result) => {
-                let result = result?;
+        let result = match tokio::time::timeout(timeout, command_future).await {
+            Ok(Ok(result)) => {
                 if result.status.success() {
                     let stdout = result.stdout.to_str_lossy();
                     let stdout = format!(
                         "{}{}",
-                        truncate_safe(&stdout, hook.max_output_size),
-                        if stdout.len() > hook.max_output_size {
+                        truncate_safe(&stdout, hook.1.max_output_size),
+                        if stdout.len() > hook.1.max_output_size {
                             " ... truncated"
                         } else {
                             ""
@@ -350,19 +241,16 @@ impl HookExecutor {
                     Err(eyre!("command returned non-zero exit code: {}", result.status))
                 }
             },
+            Ok(Err(err)) => Err(eyre!("failed to execute command: {}", err)),
             Err(_) => Err(eyre!("command timed out after {} ms", timeout.as_millis())),
-        }
+        };
+
+        (hook, result, start_time.elapsed())
     }
 
     /// Will return a cached hook's output if it exists and isn't expired.
-    fn get_cache(&self, hook: &Hook) -> Option<String> {
-        let cache = if hook.is_global {
-            &self.global_cache
-        } else {
-            &self.profile_cache
-        };
-
-        cache.get(&hook.name).and_then(|o| {
+    fn get_cache(&self, hook: &(HookTrigger, Hook)) -> Option<String> {
+        self.cache.get(hook).and_then(|o| {
             if let Some(expiry) = o.expiry {
                 if Instant::now() < expiry {
                     Some(o.output.clone())
@@ -374,751 +262,70 @@ impl HookExecutor {
             }
         })
     }
+}
 
-    fn insert_cache(&mut self, hook: &Hook, hook_output: CachedHook) {
-        let cache = if hook.is_global {
-            &mut self.global_cache
-        } else {
-            &mut self.profile_cache
-        };
+/// Sanitizes a string value to be used as an environment variable
+fn sanitize_user_prompt(input: &str) -> String {
+    // Limit the size of input to first 4096 characters
+    let truncated = if input.len() > 4096 { &input[0..4096] } else { input };
 
-        cache.insert(hook.name.clone(), hook_output);
-    }
+    // Remove any potentially problematic characters
+    truncated.replace(|c: char| c.is_control() && c != '\n' && c != '\r' && c != '\t', "")
 }
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 #[command(
     before_long_help = "Use context hooks to specify shell commands to run. The output from these 
-commands will be appended to the prompt to Amazon Q. Hooks can be defined 
-in global or local profiles.
+commands will be appended to the prompt to Amazon Q.
+
+Refer to the documentation for how to configure hooks with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#hooks-field
 
 Notes:
 • Hooks are executed in parallel
 • 'conversation_start' hooks run on the first user prompt and are attached once to the conversation history sent to Amazon Q
 • 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history"
 )]
-pub struct HooksArgs {
-    #[command(subcommand)]
-    subcommand: Option<HooksSubcommand>,
-}
+pub struct HooksArgs;
 
 impl HooksArgs {
-    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        if let Some(subcommand) = self.subcommand {
-            return subcommand.execute(os, session).await;
-        }
-
+    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let Some(context_manager) = &mut session.conversation.context_manager else {
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
             });
         };
 
-        queue!(
-            session.stderr,
-            style::SetAttribute(Attribute::Bold),
-            style::SetForegroundColor(Color::Magenta),
-            style::Print("\n🌍 global:\n"),
-            style::SetAttribute(Attribute::Reset),
-        )?;
-
-        print_hook_section(
-            &mut session.stderr,
-            &context_manager.global_config.hooks,
-            HookTrigger::ConversationStart,
-        )
-        .map_err(map_chat_error)?;
-        print_hook_section(
-            &mut session.stderr,
-            &context_manager.global_config.hooks,
-            HookTrigger::PerPrompt,
-        )
-        .map_err(map_chat_error)?;
-
-        queue!(
-            session.stderr,
-            style::SetAttribute(Attribute::Bold),
-            style::SetForegroundColor(Color::Magenta),
-            style::Print(format!("\n👤 profile ({}):\n", &context_manager.current_profile)),
-            style::SetAttribute(Attribute::Reset),
-        )?;
-
-        print_hook_section(
-            &mut session.stderr,
-            &context_manager.profile_config.hooks,
-            HookTrigger::ConversationStart,
-        )
-        .map_err(map_chat_error)?;
-        print_hook_section(
-            &mut session.stderr,
-            &context_manager.profile_config.hooks,
-            HookTrigger::PerPrompt,
-        )
-        .map_err(map_chat_error)?;
-
-        execute!(
-            session.stderr,
-            style::Print(format!(
-                "\nUse {} to manage hooks.\n\n",
-                "/hooks help".to_string().dark_green()
-            )),
-        )?;
-
-        Ok(ChatState::PromptUser {
-            skip_printing_tools: true,
-        })
-    }
-}
-
-#[deny(missing_docs)]
-#[derive(Clone, Debug, PartialEq, Subcommand)]
-pub enum HooksSubcommand {
-    /// Add a new command context hook
-    Add {
-        /// The name of the hook
-        name: String,
-        /// When to trigger the hook, valid options: `per_prompt` or `conversation_start`
-        #[arg(long, value_parser = ["per_prompt", "conversation_start"])]
-        trigger: String,
-        /// Shell command to execute
-        #[arg(long, value_parser = clap::value_parser!(String))]
-        command: String,
-        /// Add to global hooks
-        #[arg(long)]
-        global: bool,
-    },
-    /// Remove an existing context hook
-    #[command(name = "rm")]
-    Remove {
-        /// The name of the hook
-        name: String,
-        /// Remove from global hooks
-        #[arg(long)]
-        global: bool,
-    },
-    /// Enable an existing context hook
-    Enable {
-        /// The name of the hook
-        name: String,
-        /// Enable in global hooks
-        #[arg(long)]
-        global: bool,
-    },
-    /// Disable an existing context hook
-    Disable {
-        /// The name of the hook
-        name: String,
-        /// Disable in global hooks
-        #[arg(long)]
-        global: bool,
-    },
-    /// Enable all existing context hooks
-    EnableAll {
-        /// Enable all in global hooks
-        #[arg(long)]
-        global: bool,
-    },
-    /// Disable all existing context hooks
-    DisableAll {
-        /// Disable all in global hooks
-        #[arg(long)]
-        global: bool,
-    },
-    /// Display the context rule configuration and matched files
-    Show,
-}
-
-impl HooksSubcommand {
-    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        let Some(context_manager) = &mut session.conversation.context_manager else {
-            return Ok(ChatState::PromptUser {
-                skip_printing_tools: true,
-            });
-        };
-
-        let scope = |g: bool| if g { "global" } else { "profile" };
-
-        match self {
-            Self::Add {
-                name,
-                trigger,
-                command,
-                global,
-            } => {
-                let trigger = if trigger == "conversation_start" {
-                    HookTrigger::ConversationStart
-                } else {
-                    HookTrigger::PerPrompt
-                };
-
-                let result = context_manager
-                    .add_hook(os, name.clone(), Hook::new_inline_hook(trigger, command), global)
-                    .await;
-                match result {
-                    Ok(_) => {
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nAdded {} hook '{name}'.\n\n", scope(global))),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                    Err(e) => {
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Red),
-                            style::Print(format!("\nCannot add {} hook '{name}': {}\n\n", scope(global), e)),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                }
-            },
-            Self::Remove { name, global } => {
-                let result = context_manager.remove_hook(os, &name, global).await;
-                match result {
-                    Ok(_) => {
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nRemoved {} hook '{name}'.\n\n", scope(global))),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                    Err(e) => {
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Red),
-                            style::Print(format!("\nCannot remove {} hook '{name}': {}\n\n", scope(global), e)),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                }
-            },
-            Self::Enable { name, global } => {
-                let result = context_manager.set_hook_disabled(os, &name, global, false).await;
-                match result {
-                    Ok(_) => {
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nEnabled {} hook '{name}'.\n\n", scope(global))),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                    Err(e) => {
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Red),
-                            style::Print(format!("\nCannot enable {} hook '{name}': {}\n\n", scope(global), e)),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                }
-            },
-            Self::Disable { name, global } => {
-                let result = context_manager.set_hook_disabled(os, &name, global, true).await;
-                match result {
-                    Ok(_) => {
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nDisabled {} hook '{name}'.\n\n", scope(global))),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                    Err(e) => {
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Red),
-                            style::Print(format!("\nCannot disable {} hook '{name}': {}\n\n", scope(global), e)),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                }
-            },
-            Self::EnableAll { global } => {
-                context_manager
-                    .set_all_hooks_disabled(os, global, false)
-                    .await
-                    .map_err(map_chat_error)?;
-                execute!(
-                    session.stderr,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format!("\nEnabled all {} hooks.\n\n", scope(global))),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
-            },
-            Self::DisableAll { global } => {
-                context_manager
-                    .set_all_hooks_disabled(os, global, true)
-                    .await
-                    .map_err(map_chat_error)?;
-                execute!(
-                    session.stderr,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format!("\nDisabled all {} hooks.\n\n", scope(global))),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
-            },
-            Self::Show => {
-                // Display global context
-                execute!(
-                    session.stderr,
-                    style::SetAttribute(Attribute::Bold),
-                    style::SetForegroundColor(Color::Magenta),
-                    style::Print("\n🌍 global:\n"),
-                    style::SetAttribute(Attribute::Reset),
-                )?;
-
-                print_hook_section(
-                    &mut session.stderr,
-                    &context_manager.global_config.hooks,
-                    HookTrigger::ConversationStart,
-                )
-                .map_err(map_chat_error)?;
-                print_hook_section(
-                    &mut session.stderr,
-                    &context_manager.global_config.hooks,
-                    HookTrigger::PerPrompt,
-                )
-                .map_err(map_chat_error)?;
-
-                // Display profile hooks
-                execute!(
-                    session.stderr,
-                    style::SetAttribute(Attribute::Bold),
-                    style::SetForegroundColor(Color::Magenta),
-                    style::Print(format!("\n👤 profile ({}):\n", context_manager.current_profile)),
-                    style::SetAttribute(Attribute::Reset),
-                )?;
-
-                print_hook_section(
-                    &mut session.stderr,
-                    &context_manager.profile_config.hooks,
-                    HookTrigger::ConversationStart,
-                )
-                .map_err(map_chat_error)?;
-                print_hook_section(
-                    &mut session.stderr,
-                    &context_manager.profile_config.hooks,
-                    HookTrigger::PerPrompt,
-                )
-                .map_err(map_chat_error)?;
-                execute!(session.stderr, style::Print("\n"))?;
-            },
-        }
-
-        Ok(ChatState::PromptUser {
-            skip_printing_tools: true,
-        })
-    }
-}
-
-/// Prints hook configuration grouped by trigger: conversation session start or per user message
-pub fn print_hook_section(output: &mut impl Write, hooks: &HashMap<String, Hook>, trigger: HookTrigger) -> Result<()> {
-    let section = match trigger {
-        HookTrigger::ConversationStart => "On Session Start",
-        HookTrigger::PerPrompt => "Per User Message",
-    };
-    let hooks: Vec<(&String, &Hook)> = hooks.iter().filter(|(_, h)| h.trigger == trigger).collect();
-
-    queue!(
-        output,
-        style::SetForegroundColor(Color::Cyan),
-        style::Print(format!("    {section}:\n")),
-        style::SetForegroundColor(Color::Reset),
-    )?;
-
-    if hooks.is_empty() {
-        queue!(
-            output,
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print("      <none>\n"),
-            style::SetForegroundColor(Color::Reset)
-        )?;
-    } else {
-        for (name, hook) in hooks {
-            if hook.disabled {
-                queue!(
-                    output,
-                    style::SetForegroundColor(Color::DarkGrey),
-                    style::Print(format!("      {} (disabled)\n", name)),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
-            } else {
-                queue!(output, style::Print(format!("      {}\n", name)),)?;
+        let mut out = Vec::new();
+        for (trigger, hooks) in &context_manager.hooks {
+            writeln!(&mut out, "{trigger}:")?;
+            match hooks.is_empty() {
+                true => writeln!(&mut out, "<none>")?,
+                false => {
+                    for hook in hooks {
+                        writeln!(&mut out, "  - {}", hook.command)?;
+                    }
+                },
             }
         }
-    }
-    Ok(())
-}
 
-pub fn map_chat_error(e: ErrReport) -> ChatError {
-    ChatError::Custom(e.to_string().into())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use tokio::time::sleep;
-
-    use super::*;
-    use crate::cli::chat::util::test::create_test_context_manager;
-
-    #[tokio::test]
-    async fn test_add_hook() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
-        let hook = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-
-        // Test adding hook to profile config
-        manager
-            .add_hook(&os, "test_hook".to_string(), hook.clone(), false)
-            .await?;
-        assert!(manager.profile_config.hooks.contains_key("test_hook"));
-
-        // Test adding hook to global config
-        manager
-            .add_hook(&os, "global_hook".to_string(), hook.clone(), true)
-            .await?;
-        assert!(manager.global_config.hooks.contains_key("global_hook"));
-
-        // Test adding duplicate hook name
-        assert!(
-            manager
-                .add_hook(&os, "test_hook".to_string(), hook, false)
-                .await
-                .is_err()
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_remove_hook() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
-        let hook = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-
-        manager.add_hook(&os, "test_hook".to_string(), hook, false).await?;
-
-        // Test removing existing hook
-        manager.remove_hook(&os, "test_hook", false).await?;
-        assert!(!manager.profile_config.hooks.contains_key("test_hook"));
-
-        // Test removing non-existent hook
-        assert!(manager.remove_hook(&os, "test_hook", false).await.is_err());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_set_hook_disabled() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
-        let hook = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-
-        manager.add_hook(&os, "test_hook".to_string(), hook, false).await?;
-
-        // Test disabling hook
-        manager.set_hook_disabled(&os, "test_hook", false, true).await?;
-        assert!(manager.profile_config.hooks.get("test_hook").unwrap().disabled);
-
-        // Test enabling hook
-        manager.set_hook_disabled(&os, "test_hook", false, false).await?;
-        assert!(!manager.profile_config.hooks.get("test_hook").unwrap().disabled);
-
-        // Test with non-existent hook
-        assert!(
-            manager
-                .set_hook_disabled(&os, "nonexistent", false, true)
-                .await
-                .is_err()
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_set_all_hooks_disabled() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
-        let hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-        let hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-
-        manager.add_hook(&os, "hook1".to_string(), hook1, false).await?;
-        manager.add_hook(&os, "hook2".to_string(), hook2, false).await?;
-
-        // Test disabling all hooks
-        manager.set_all_hooks_disabled(&os, false, true).await?;
-        assert!(manager.profile_config.hooks.values().all(|h| h.disabled));
-
-        // Test enabling all hooks
-        manager.set_all_hooks_disabled(&os, false, false).await?;
-        assert!(manager.profile_config.hooks.values().all(|h| !h.disabled));
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_run_hooks() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
-        let hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-        let hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-
-        manager.add_hook(&os, "hook1".to_string(), hook1, false).await?;
-        manager.add_hook(&os, "hook2".to_string(), hook2, false).await?;
-
-        // Run the hooks
-        let results = manager.run_hooks(&mut vec![]).await.unwrap();
-        assert_eq!(results.len(), 2); // Should include both hooks
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_hooks_across_profiles() -> Result<()> {
-        let os = Os::new().await.unwrap();
-        let mut manager = create_test_context_manager(None).await?;
-        let hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-        let hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo test".to_string());
-
-        manager.add_hook(&os, "profile_hook".to_string(), hook1, false).await?;
-        manager.add_hook(&os, "global_hook".to_string(), hook2, true).await?;
-
-        let results = manager.run_hooks(&mut vec![]).await.unwrap();
-        assert_eq!(results.len(), 2); // Should include both hooks
-
-        // Create and switch to a new profile
-        manager.create_profile(&os, "test_profile").await?;
-        manager.switch_profile(&os, "test_profile").await?;
-
-        let results = manager.run_hooks(&mut vec![]).await.unwrap();
-        assert_eq!(results.len(), 1); // Should include global hook
-        assert_eq!(results[0].0.name, "global_hook");
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_hook_creation() {
-        let command = "echo 'hello'";
-        let hook = Hook::new_inline_hook(HookTrigger::PerPrompt, command.to_string());
-
-        assert_eq!(hook.r#type, HookType::Inline);
-        assert!(!hook.disabled);
-        assert_eq!(hook.timeout_ms, DEFAULT_TIMEOUT_MS);
-        assert_eq!(hook.max_output_size, DEFAULT_MAX_OUTPUT_SIZE);
-        assert_eq!(hook.cache_ttl_seconds, DEFAULT_CACHE_TTL_SECONDS);
-        assert_eq!(hook.command, Some(command.to_string()));
-        assert_eq!(hook.trigger, HookTrigger::PerPrompt);
-        assert!(!hook.is_global);
-    }
-
-    #[tokio::test]
-    async fn test_hook_executor_cached_conversation_start() {
-        let mut executor = HookExecutor::new();
-        let mut hook1 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo 'test1'".to_string());
-        hook1.is_global = true;
-
-        let mut hook2 = Hook::new_inline_hook(HookTrigger::ConversationStart, "echo 'test2'".to_string());
-        hook2.is_global = false;
-
-        // First execution should run the command
-        let mut output = vec![];
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
-
-        assert_eq!(results.len(), 2);
-        assert!(results[0].1.contains("test1"));
-        assert!(results[1].1.contains("test2"));
-        assert!(!output.is_empty());
-
-        // Second execution should use cache
-        let mut output = Vec::new();
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
-
-        assert_eq!(results.len(), 2);
-        assert!(results[0].1.contains("test1"));
-        assert!(results[1].1.contains("test2"));
-        assert!(output.is_empty()); // Should not have run the hook, so no output.
-    }
-
-    #[tokio::test]
-    async fn test_hook_executor_cached_per_prompt() {
-        let mut executor = HookExecutor::new();
-        let mut hook1 = Hook::new_inline_hook(HookTrigger::PerPrompt, "echo 'test1'".to_string());
-        hook1.is_global = true;
-        hook1.cache_ttl_seconds = 60;
-
-        let mut hook2 = Hook::new_inline_hook(HookTrigger::PerPrompt, "echo 'test2'".to_string());
-        hook2.is_global = false;
-        hook2.cache_ttl_seconds = 60;
-
-        // First execution should run the command
-        let mut output = vec![];
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
-
-        assert_eq!(results.len(), 2);
-        assert!(results[0].1.contains("test1"));
-        assert!(results[1].1.contains("test2"));
-        assert!(!output.is_empty());
-
-        // Second execution should use cache
-        let mut output = Vec::new();
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
-
-        assert_eq!(results.len(), 2);
-        assert!(results[0].1.contains("test1"));
-        assert!(results[1].1.contains("test2"));
-        assert!(output.is_empty()); // Should not have run the hook, so no output.
-    }
-
-    #[tokio::test]
-    async fn test_hook_executor_not_cached_per_prompt() {
-        let mut executor = HookExecutor::new();
-        let mut hook1 = Hook::new_inline_hook(HookTrigger::PerPrompt, "echo 'test1'".to_string());
-        hook1.is_global = true;
-
-        let mut hook2 = Hook::new_inline_hook(HookTrigger::PerPrompt, "echo 'test2'".to_string());
-        hook2.is_global = false;
-
-        // First execution should run the command
-        let mut output = Vec::new();
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
-
-        assert_eq!(results.len(), 2);
-        assert!(results[0].1.contains("test1"));
-        assert!(results[1].1.contains("test2"));
-        assert!(!output.is_empty());
-
-        // Second execution should use cache
-        let mut output = Vec::new();
-        let results = executor.run_hooks(vec![&hook1, &hook2], &mut output).await.unwrap();
-
-        assert_eq!(results.len(), 2);
-        assert!(results[0].1.contains("test1"));
-        assert!(results[1].1.contains("test2"));
-        assert!(!output.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_hook_timeout() {
-        let mut executor = HookExecutor::new();
-        let mut hook = Hook::new_inline_hook(HookTrigger::PerPrompt, "sleep 2".to_string());
-        hook.timeout_ms = 100; // Set very short timeout
-
-        let results = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
-
-        assert_eq!(results.len(), 0); // Should fail due to timeout
-    }
-
-    #[tokio::test]
-    async fn test_disabled_hook() {
-        let mut executor = HookExecutor::new();
-        let mut hook = Hook::new_inline_hook(HookTrigger::PerPrompt, "echo 'test'".to_string());
-        hook.disabled = true;
-
-        let results = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
-
-        assert_eq!(results.len(), 0); // Disabled hook should not run
-    }
-
-    #[tokio::test]
-    async fn test_cache_expiration() {
-        let mut executor = HookExecutor::new();
-        let mut hook = Hook::new_inline_hook(HookTrigger::PerPrompt, "echo 'test'".to_string());
-        hook.cache_ttl_seconds = 1;
-
-        // First execution
-        let results1 = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
-        assert_eq!(results1.len(), 1);
-
-        // Wait for cache to expire
-        sleep(Duration::from_millis(1001)).await;
-
-        // Second execution should run command again
-        let results2 = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
-        assert_eq!(results2.len(), 1);
-    }
-
-    #[test]
-    fn test_hook_cache_storage() {
-        let mut executor: HookExecutor = HookExecutor::new();
-        let hook = Hook::new_inline_hook(HookTrigger::PerPrompt, "".to_string());
-
-        let cached_hook = CachedHook {
-            output: "test output".to_string(),
-            expiry: None,
-        };
-
-        executor.insert_cache(&hook, cached_hook.clone());
-
-        assert_eq!(executor.get_cache(&hook), Some("test output".to_string()));
-    }
-
-    #[test]
-    fn test_hook_cache_storage_expired() {
-        let mut executor: HookExecutor = HookExecutor::new();
-        let hook = Hook::new_inline_hook(HookTrigger::PerPrompt, "".to_string());
-
-        let cached_hook = CachedHook {
-            output: "test output".to_string(),
-            expiry: Some(Instant::now()),
-        };
-
-        executor.insert_cache(&hook, cached_hook.clone());
-
-        // Item should not return since it is expired
-        assert_eq!(executor.get_cache(&hook), None);
-    }
-
-    #[tokio::test]
-    async fn test_max_output_size() {
-        let mut executor = HookExecutor::new();
-
-        // Use different commands based on OS
-        #[cfg(unix)]
-        let command = "for i in {1..1000}; do echo $i; done";
-
-        #[cfg(windows)]
-        let command = "for /L %i in (1,1,1000) do @echo %i";
-
-        let mut hook = Hook::new_inline_hook(HookTrigger::PerPrompt, command.to_string());
-        hook.max_output_size = 100;
-
-        let results = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
-
-        assert!(results[0].1.len() <= hook.max_output_size + " ... truncated".len());
-    }
-
-    #[tokio::test]
-    async fn test_os_specific_command_execution() {
-        let mut executor = HookExecutor::new();
-
-        // Create a simple command that outputs the shell name
-        #[cfg(unix)]
-        let command = "echo $SHELL";
-
-        #[cfg(windows)]
-        let command = "echo %ComSpec%";
-
-        let hook = Hook::new_inline_hook(HookTrigger::PerPrompt, command.to_string());
-
-        let results = executor.run_hooks(vec![&hook], &mut vec![]).await.unwrap();
-
-        assert_eq!(results.len(), 1, "Command execution should succeed");
-
-        // Verify output contains expected shell information
-        #[cfg(unix)]
-        assert!(results[0].1.contains("/"), "Unix shell path should contain '/'");
-
-        #[cfg(windows)]
-        assert!(
-            results[0].1.to_lowercase().contains("cmd.exe") || results[0].1.to_lowercase().contains("command.com"),
-            "Windows shell path should contain cmd.exe or command.com"
-        );
+        if out.is_empty() {
+            queue!(
+                session.stderr,
+                style::Print(
+                    "No hooks are configured.\n\nRefer to the documentation for how to add hooks to your agent: "
+                ),
+                style::SetForegroundColor(Color::Green),
+                style::Print(AGENT_FORMAT_HOOKS_DOC_URL),
+                style::SetAttribute(Attribute::Reset),
+                style::Print("\n"),
+            )?;
+        } else {
+            session.stdout.write_all(&out)?;
+        }
+
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
     }
 }

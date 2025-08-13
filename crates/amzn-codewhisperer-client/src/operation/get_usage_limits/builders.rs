@@ -137,4 +137,38 @@ impl GetUsageLimitsFluentBuilder {
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_profile_arn()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn resource_type(mut self, input: crate::types::ResourceType) -> Self {
+        self.inner = self.inner.resource_type(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_resource_type(mut self, input: ::std::option::Option<crate::types::ResourceType>) -> Self {
+        self.inner = self.inner.set_resource_type(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_resource_type(&self) -> &::std::option::Option<crate::types::ResourceType> {
+        self.inner.get_resource_type()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn is_email_required(mut self, input: bool) -> Self {
+        self.inner = self.inner.is_email_required(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_is_email_required(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.inner = self.inner.set_is_email_required(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_is_email_required(&self) -> &::std::option::Option<bool> {
+        self.inner.get_is_email_required()
+    }
 }

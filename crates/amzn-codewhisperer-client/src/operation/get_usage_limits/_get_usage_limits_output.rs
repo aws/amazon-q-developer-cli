@@ -4,21 +4,67 @@
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub struct GetUsageLimitsOutput {
     #[allow(missing_docs)] // documentation missing in model
-    pub limits: ::std::vec::Vec<crate::types::UsageLimitList>,
+    pub limits: ::std::option::Option<::std::vec::Vec<crate::types::UsageLimitList>>,
+    /// The next reset date in UTC timezone.
+    pub next_date_reset: ::std::option::Option<::aws_smithy_types::DateTime>,
     /// Number of days remaining until the usage metrics reset
-    pub days_until_reset: i32,
+    pub days_until_reset: ::std::option::Option<i32>,
+    /// Usage breakdown by SKU type
+    pub usage_breakdown: ::std::option::Option<crate::types::UsageBreakdown>,
+    /// List of usage by resource type
+    pub usage_breakdown_list: ::std::option::Option<::std::vec::Vec<crate::types::UsageBreakdown>>,
+    /// Subscription Info
+    pub subscription_info: ::std::option::Option<crate::types::SubscriptionInfo>,
+    /// Overage Configuration
+    pub overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
+    /// User Information
+    pub user_info: ::std::option::Option<crate::types::UserInfo>,
     _request_id: Option<String>,
 }
 impl GetUsageLimitsOutput {
     #[allow(missing_docs)] // documentation missing in model
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.limits.is_none()`.
     pub fn limits(&self) -> &[crate::types::UsageLimitList] {
-        use std::ops::Deref;
-        self.limits.deref()
+        self.limits.as_deref().unwrap_or_default()
+    }
+
+    /// The next reset date in UTC timezone.
+    pub fn next_date_reset(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
+        self.next_date_reset.as_ref()
     }
 
     /// Number of days remaining until the usage metrics reset
-    pub fn days_until_reset(&self) -> i32 {
+    pub fn days_until_reset(&self) -> ::std::option::Option<i32> {
         self.days_until_reset
+    }
+
+    /// Usage breakdown by SKU type
+    pub fn usage_breakdown(&self) -> ::std::option::Option<&crate::types::UsageBreakdown> {
+        self.usage_breakdown.as_ref()
+    }
+
+    /// List of usage by resource type
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.usage_breakdown_list.is_none()`.
+    pub fn usage_breakdown_list(&self) -> &[crate::types::UsageBreakdown] {
+        self.usage_breakdown_list.as_deref().unwrap_or_default()
+    }
+
+    /// Subscription Info
+    pub fn subscription_info(&self) -> ::std::option::Option<&crate::types::SubscriptionInfo> {
+        self.subscription_info.as_ref()
+    }
+
+    /// Overage Configuration
+    pub fn overage_configuration(&self) -> ::std::option::Option<&crate::types::OverageConfiguration> {
+        self.overage_configuration.as_ref()
+    }
+
+    /// User Information
+    pub fn user_info(&self) -> ::std::option::Option<&crate::types::UserInfo> {
+        self.user_info.as_ref()
     }
 }
 impl ::aws_types::request_id::RequestId for GetUsageLimitsOutput {
@@ -40,7 +86,13 @@ impl GetUsageLimitsOutput {
 #[non_exhaustive]
 pub struct GetUsageLimitsOutputBuilder {
     pub(crate) limits: ::std::option::Option<::std::vec::Vec<crate::types::UsageLimitList>>,
+    pub(crate) next_date_reset: ::std::option::Option<::aws_smithy_types::DateTime>,
     pub(crate) days_until_reset: ::std::option::Option<i32>,
+    pub(crate) usage_breakdown: ::std::option::Option<crate::types::UsageBreakdown>,
+    pub(crate) usage_breakdown_list: ::std::option::Option<::std::vec::Vec<crate::types::UsageBreakdown>>,
+    pub(crate) subscription_info: ::std::option::Option<crate::types::SubscriptionInfo>,
+    pub(crate) overage_configuration: ::std::option::Option<crate::types::OverageConfiguration>,
+    pub(crate) user_info: ::std::option::Option<crate::types::UserInfo>,
     _request_id: Option<String>,
 }
 impl GetUsageLimitsOutputBuilder {
@@ -65,8 +117,24 @@ impl GetUsageLimitsOutputBuilder {
         &self.limits
     }
 
+    /// The next reset date in UTC timezone.
+    pub fn next_date_reset(mut self, input: ::aws_smithy_types::DateTime) -> Self {
+        self.next_date_reset = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The next reset date in UTC timezone.
+    pub fn set_next_date_reset(mut self, input: ::std::option::Option<::aws_smithy_types::DateTime>) -> Self {
+        self.next_date_reset = input;
+        self
+    }
+
+    /// The next reset date in UTC timezone.
+    pub fn get_next_date_reset(&self) -> &::std::option::Option<::aws_smithy_types::DateTime> {
+        &self.next_date_reset
+    }
+
     /// Number of days remaining until the usage metrics reset
-    /// This field is required.
     pub fn days_until_reset(mut self, input: i32) -> Self {
         self.days_until_reset = ::std::option::Option::Some(input);
         self
@@ -83,6 +151,104 @@ impl GetUsageLimitsOutputBuilder {
         &self.days_until_reset
     }
 
+    /// Usage breakdown by SKU type
+    pub fn usage_breakdown(mut self, input: crate::types::UsageBreakdown) -> Self {
+        self.usage_breakdown = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Usage breakdown by SKU type
+    pub fn set_usage_breakdown(mut self, input: ::std::option::Option<crate::types::UsageBreakdown>) -> Self {
+        self.usage_breakdown = input;
+        self
+    }
+
+    /// Usage breakdown by SKU type
+    pub fn get_usage_breakdown(&self) -> &::std::option::Option<crate::types::UsageBreakdown> {
+        &self.usage_breakdown
+    }
+
+    /// Appends an item to `usage_breakdown_list`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_usage_breakdown_list`](Self::set_usage_breakdown_list).
+    ///
+    /// List of usage by resource type
+    pub fn usage_breakdown_list(mut self, input: crate::types::UsageBreakdown) -> Self {
+        let mut v = self.usage_breakdown_list.unwrap_or_default();
+        v.push(input);
+        self.usage_breakdown_list = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// List of usage by resource type
+    pub fn set_usage_breakdown_list(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::UsageBreakdown>>,
+    ) -> Self {
+        self.usage_breakdown_list = input;
+        self
+    }
+
+    /// List of usage by resource type
+    pub fn get_usage_breakdown_list(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::UsageBreakdown>> {
+        &self.usage_breakdown_list
+    }
+
+    /// Subscription Info
+    pub fn subscription_info(mut self, input: crate::types::SubscriptionInfo) -> Self {
+        self.subscription_info = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Subscription Info
+    pub fn set_subscription_info(mut self, input: ::std::option::Option<crate::types::SubscriptionInfo>) -> Self {
+        self.subscription_info = input;
+        self
+    }
+
+    /// Subscription Info
+    pub fn get_subscription_info(&self) -> &::std::option::Option<crate::types::SubscriptionInfo> {
+        &self.subscription_info
+    }
+
+    /// Overage Configuration
+    pub fn overage_configuration(mut self, input: crate::types::OverageConfiguration) -> Self {
+        self.overage_configuration = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Overage Configuration
+    pub fn set_overage_configuration(
+        mut self,
+        input: ::std::option::Option<crate::types::OverageConfiguration>,
+    ) -> Self {
+        self.overage_configuration = input;
+        self
+    }
+
+    /// Overage Configuration
+    pub fn get_overage_configuration(&self) -> &::std::option::Option<crate::types::OverageConfiguration> {
+        &self.overage_configuration
+    }
+
+    /// User Information
+    pub fn user_info(mut self, input: crate::types::UserInfo) -> Self {
+        self.user_info = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// User Information
+    pub fn set_user_info(mut self, input: ::std::option::Option<crate::types::UserInfo>) -> Self {
+        self.user_info = input;
+        self
+    }
+
+    /// User Information
+    pub fn get_user_info(&self) -> &::std::option::Option<crate::types::UserInfo> {
+        &self.user_info
+    }
+
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
         self._request_id = Some(request_id.into());
         self
@@ -94,30 +260,18 @@ impl GetUsageLimitsOutputBuilder {
     }
 
     /// Consumes the builder and constructs a
-    /// [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput). This
-    /// method will fail if any of the following fields are not set:
-    /// - [`limits`](crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder::limits)
-    /// - [`days_until_reset`](crate::operation::get_usage_limits::builders::GetUsageLimitsOutputBuilder::days_until_reset)
-    pub fn build(
-        self,
-    ) -> ::std::result::Result<
-        crate::operation::get_usage_limits::GetUsageLimitsOutput,
-        ::aws_smithy_types::error::operation::BuildError,
-    > {
-        ::std::result::Result::Ok(crate::operation::get_usage_limits::GetUsageLimitsOutput {
-            limits: self.limits.ok_or_else(|| {
-                ::aws_smithy_types::error::operation::BuildError::missing_field(
-                    "limits",
-                    "limits was not specified but it is required when building GetUsageLimitsOutput",
-                )
-            })?,
-            days_until_reset: self.days_until_reset.ok_or_else(|| {
-                ::aws_smithy_types::error::operation::BuildError::missing_field(
-                    "days_until_reset",
-                    "days_until_reset was not specified but it is required when building GetUsageLimitsOutput",
-                )
-            })?,
+    /// [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput).
+    pub fn build(self) -> crate::operation::get_usage_limits::GetUsageLimitsOutput {
+        crate::operation::get_usage_limits::GetUsageLimitsOutput {
+            limits: self.limits,
+            next_date_reset: self.next_date_reset,
+            days_until_reset: self.days_until_reset,
+            usage_breakdown: self.usage_breakdown,
+            usage_breakdown_list: self.usage_breakdown_list,
+            subscription_info: self.subscription_info,
+            overage_configuration: self.overage_configuration,
+            user_info: self.user_info,
             _request_id: self._request_id,
-        })
+        }
     }
 }

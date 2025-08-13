@@ -6,11 +6,19 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`profile_arn(impl Into<String>)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::set_profile_arn):<br>required: **false**<br>The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder ID users.<br>
+    ///   - [`resource_type(ResourceType)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::resource_type) / [`set_resource_type(Option<ResourceType>)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::set_resource_type):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`is_email_required(bool)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::is_email_required) / [`set_is_email_required(Option<bool>)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::set_is_email_required):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`GetUsageLimitsOutput`](crate::operation::get_usage_limits::GetUsageLimitsOutput) with
     ///   field(s):
-    ///   - [`limits(Vec::<UsageLimitList>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::limits): (undocumented)
-    ///   - [`days_until_reset(i32)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::days_until_reset): Number of days remaining until the usage metrics reset
+    ///   - [`limits(Option<Vec::<UsageLimitList>>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::limits): (undocumented)
+    ///   - [`next_date_reset(Option<DateTime>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::next_date_reset): The next reset date in UTC timezone.
+    ///   - [`days_until_reset(Option<i32>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::days_until_reset): Number of days remaining until the usage metrics reset
+    ///   - [`usage_breakdown(Option<UsageBreakdown>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::usage_breakdown): Usage breakdown by SKU type
+    ///   - [`usage_breakdown_list(Option<Vec::<UsageBreakdown>>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::usage_breakdown_list): List of usage by resource type
+    ///   - [`subscription_info(Option<SubscriptionInfo>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::subscription_info): Subscription Info
+    ///   - [`overage_configuration(Option<OverageConfiguration>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::overage_configuration): Overage Configuration
+    ///   - [`user_info(Option<UserInfo>)`](crate::operation::get_usage_limits::GetUsageLimitsOutput::user_info): User Information
     /// - On failure, responds with
     ///   [`SdkError<GetUsageLimitsError>`](crate::operation::get_usage_limits::GetUsageLimitsError)
     pub fn get_usage_limits(&self) -> crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder {

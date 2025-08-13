@@ -6,6 +6,8 @@
 pub struct ConversationState {
     /// Unique identifier for the chat conversation stream
     pub conversation_id: ::std::option::Option<::std::string::String>,
+    /// Unique identifier for remote workspace
+    pub workspace_id: ::std::option::Option<::std::string::String>,
     /// Holds the history of chat messages.
     pub history: ::std::option::Option<::std::vec::Vec<crate::types::ChatMessage>>,
     /// Holds the current message being processed or displayed.
@@ -14,11 +16,20 @@ pub struct ConversationState {
     pub chat_trigger_type: crate::types::ChatTriggerType,
     #[allow(missing_docs)] // documentation missing in model
     pub customization_arn: ::std::option::Option<::std::string::String>,
+    /// Unique identifier for the agent task execution
+    pub agent_continuation_id: ::std::option::Option<::std::string::String>,
+    /// Type of agent task
+    pub agent_task_type: ::std::option::Option<crate::types::AgentTaskType>,
 }
 impl ConversationState {
     /// Unique identifier for the chat conversation stream
     pub fn conversation_id(&self) -> ::std::option::Option<&str> {
         self.conversation_id.as_deref()
+    }
+
+    /// Unique identifier for remote workspace
+    pub fn workspace_id(&self) -> ::std::option::Option<&str> {
+        self.workspace_id.as_deref()
     }
 
     /// Holds the history of chat messages.
@@ -43,6 +54,16 @@ impl ConversationState {
     pub fn customization_arn(&self) -> ::std::option::Option<&str> {
         self.customization_arn.as_deref()
     }
+
+    /// Unique identifier for the agent task execution
+    pub fn agent_continuation_id(&self) -> ::std::option::Option<&str> {
+        self.agent_continuation_id.as_deref()
+    }
+
+    /// Type of agent task
+    pub fn agent_task_type(&self) -> ::std::option::Option<&crate::types::AgentTaskType> {
+        self.agent_task_type.as_ref()
+    }
 }
 impl ConversationState {
     /// Creates a new builder-style object to manufacture
@@ -57,10 +78,13 @@ impl ConversationState {
 #[non_exhaustive]
 pub struct ConversationStateBuilder {
     pub(crate) conversation_id: ::std::option::Option<::std::string::String>,
+    pub(crate) workspace_id: ::std::option::Option<::std::string::String>,
     pub(crate) history: ::std::option::Option<::std::vec::Vec<crate::types::ChatMessage>>,
     pub(crate) current_message: ::std::option::Option<crate::types::ChatMessage>,
     pub(crate) chat_trigger_type: ::std::option::Option<crate::types::ChatTriggerType>,
     pub(crate) customization_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) agent_continuation_id: ::std::option::Option<::std::string::String>,
+    pub(crate) agent_task_type: ::std::option::Option<crate::types::AgentTaskType>,
 }
 impl ConversationStateBuilder {
     /// Unique identifier for the chat conversation stream
@@ -78,6 +102,23 @@ impl ConversationStateBuilder {
     /// Unique identifier for the chat conversation stream
     pub fn get_conversation_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.conversation_id
+    }
+
+    /// Unique identifier for remote workspace
+    pub fn workspace_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.workspace_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unique identifier for remote workspace
+    pub fn set_workspace_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.workspace_id = input;
+        self
+    }
+
+    /// Unique identifier for remote workspace
+    pub fn get_workspace_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.workspace_id
     }
 
     /// Appends an item to `history`.
@@ -156,6 +197,40 @@ impl ConversationStateBuilder {
         &self.customization_arn
     }
 
+    /// Unique identifier for the agent task execution
+    pub fn agent_continuation_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.agent_continuation_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unique identifier for the agent task execution
+    pub fn set_agent_continuation_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.agent_continuation_id = input;
+        self
+    }
+
+    /// Unique identifier for the agent task execution
+    pub fn get_agent_continuation_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.agent_continuation_id
+    }
+
+    /// Type of agent task
+    pub fn agent_task_type(mut self, input: crate::types::AgentTaskType) -> Self {
+        self.agent_task_type = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Type of agent task
+    pub fn set_agent_task_type(mut self, input: ::std::option::Option<crate::types::AgentTaskType>) -> Self {
+        self.agent_task_type = input;
+        self
+    }
+
+    /// Type of agent task
+    pub fn get_agent_task_type(&self) -> &::std::option::Option<crate::types::AgentTaskType> {
+        &self.agent_task_type
+    }
+
     /// Consumes the builder and constructs a
     /// [`ConversationState`](crate::types::ConversationState). This method will fail if any of
     /// the following fields are not set:
@@ -166,6 +241,7 @@ impl ConversationStateBuilder {
     ) -> ::std::result::Result<crate::types::ConversationState, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::ConversationState {
             conversation_id: self.conversation_id,
+            workspace_id: self.workspace_id,
             history: self.history,
             current_message: self.current_message.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
@@ -180,6 +256,8 @@ impl ConversationStateBuilder {
                 )
             })?,
             customization_arn: self.customization_arn,
+            agent_continuation_id: self.agent_continuation_id,
+            agent_task_type: self.agent_task_type,
         })
     }
 }

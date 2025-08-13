@@ -9,7 +9,7 @@ use crossterm::{
     style,
 };
 
-use crate::cli::chat::consts::CONTEXT_WINDOW_SIZE;
+use super::model::context_window_tokens;
 use crate::cli::chat::token_counter::{
     CharCount,
     TokenCount,
@@ -62,14 +62,15 @@ impl UsageArgs {
         // set a max width for the progress bar for better aesthetic
         let progress_bar_width = std::cmp::min(window_width, 80);
 
+        let context_window_size = context_window_tokens(session.conversation.model_info.as_ref());
         let context_width =
-            ((context_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
+            ((context_token_count.value() as f64 / context_window_size as f64) * progress_bar_width as f64) as usize;
         let assistant_width =
-            ((assistant_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
+            ((assistant_token_count.value() as f64 / context_window_size as f64) * progress_bar_width as f64) as usize;
         let tools_width =
-            ((tools_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
+            ((tools_token_count.value() as f64 / context_window_size as f64) * progress_bar_width as f64) as usize;
         let user_width =
-            ((user_token_count.value() as f64 / CONTEXT_WINDOW_SIZE as f64) * progress_bar_width as f64) as usize;
+            ((user_token_count.value() as f64 / context_window_size as f64) * progress_bar_width as f64) as usize;
 
         let left_over_width = progress_bar_width
             - std::cmp::min(
@@ -85,7 +86,7 @@ impl UsageArgs {
                 style::Print(format!(
                     "\nCurrent context window ({} of {}k tokens used)\n",
                     total_token_used,
-                    CONTEXT_WINDOW_SIZE / 1000
+                    context_window_size / 1000
                 )),
                 style::SetForegroundColor(Color::DarkRed),
                 style::Print("█".repeat(progress_bar_width)),
@@ -93,7 +94,7 @@ impl UsageArgs {
                 style::Print(" "),
                 style::Print(format!(
                     "{:.2}%",
-                    (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    (total_token_used.value() as f32 / context_window_size as f32) * 100.0
                 )),
             )?;
         } else {
@@ -102,11 +103,11 @@ impl UsageArgs {
                 style::Print(format!(
                     "\nCurrent context window ({} of {}k tokens used)\n",
                     total_token_used,
-                    CONTEXT_WINDOW_SIZE / 1000
+                    context_window_size / 1000
                 )),
                 // Context files
                 style::SetForegroundColor(Color::DarkCyan),
-                // add a nice visual to mimic "tiny" progress, so the overral progress bar doesn't look too
+                // add a nice visual to mimic "tiny" progress, so the overrall progress bar doesn't look too
                 // empty
                 style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
                     1
@@ -140,7 +141,7 @@ impl UsageArgs {
                 style::SetForegroundColor(Color::Reset),
                 style::Print(format!(
                     "{:.2}%",
-                    (total_token_used.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                    (total_token_used.value() as f32 / context_window_size as f32) * 100.0
                 )),
             )?;
         }
@@ -155,7 +156,7 @@ impl UsageArgs {
             style::Print(format!(
                 "~{} tokens ({:.2}%)\n",
                 context_token_count,
-                (context_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                (context_token_count.value() as f32 / context_window_size as f32) * 100.0
             )),
             style::SetForegroundColor(Color::DarkRed),
             style::Print("█ Tools:    "),
@@ -163,7 +164,7 @@ impl UsageArgs {
             style::Print(format!(
                 " ~{} tokens ({:.2}%)\n",
                 tools_token_count,
-                (tools_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                (tools_token_count.value() as f32 / context_window_size as f32) * 100.0
             )),
             style::SetForegroundColor(Color::Blue),
             style::Print("█ Q responses: "),
@@ -171,7 +172,7 @@ impl UsageArgs {
             style::Print(format!(
                 "  ~{} tokens ({:.2}%)\n",
                 assistant_token_count,
-                (assistant_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                (assistant_token_count.value() as f32 / context_window_size as f32) * 100.0
             )),
             style::SetForegroundColor(Color::Magenta),
             style::Print("█ Your prompts: "),
@@ -179,7 +180,7 @@ impl UsageArgs {
             style::Print(format!(
                 " ~{} tokens ({:.2}%)\n\n",
                 user_token_count,
-                (user_token_count.value() as f32 / CONTEXT_WINDOW_SIZE as f32) * 100.0
+                (user_token_count.value() as f32 / context_window_size as f32) * 100.0
             )),
         )?;
 

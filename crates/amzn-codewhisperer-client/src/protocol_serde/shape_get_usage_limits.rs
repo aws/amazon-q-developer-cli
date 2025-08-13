@@ -112,9 +112,7 @@ pub fn de_get_usage_limits_http_response(
         output = crate::protocol_serde::shape_get_usage_limits::de_get_usage_limits(_response_body, output)
             .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?;
         output._set_request_id(::aws_types::request_id::RequestId::request_id(_response_headers).map(str::to_string));
-        crate::serde_util::get_usage_limits_output_output_correct_errors(output)
-            .build()
-            .map_err(crate::operation::get_usage_limits::GetUsageLimitsError::unhandled)?
+        output.build()
     })
 }
 
@@ -147,12 +145,42 @@ pub(crate) fn de_get_usage_limits(
                 "limits" => {
                     builder = builder.set_limits(crate::protocol_serde::shape_usage_limits::de_usage_limits(tokens)?);
                 },
+                "nextDateReset" => {
+                    builder =
+                        builder.set_next_date_reset(::aws_smithy_json::deserialize::token::expect_timestamp_or_null(
+                            tokens.next(),
+                            ::aws_smithy_types::date_time::Format::EpochSeconds,
+                        )?);
+                },
                 "daysUntilReset" => {
                     builder = builder.set_days_until_reset(
                         ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                             .map(i32::try_from)
                             .transpose()?,
                     );
+                },
+                "usageBreakdown" => {
+                    builder = builder.set_usage_breakdown(
+                        crate::protocol_serde::shape_usage_breakdown::de_usage_breakdown(tokens)?,
+                    );
+                },
+                "usageBreakdownList" => {
+                    builder = builder.set_usage_breakdown_list(
+                        crate::protocol_serde::shape_usage_breakdown_list::de_usage_breakdown_list(tokens)?,
+                    );
+                },
+                "subscriptionInfo" => {
+                    builder = builder.set_subscription_info(
+                        crate::protocol_serde::shape_subscription_info::de_subscription_info(tokens)?,
+                    );
+                },
+                "overageConfiguration" => {
+                    builder = builder.set_overage_configuration(
+                        crate::protocol_serde::shape_overage_configuration::de_overage_configuration(tokens)?,
+                    );
+                },
+                "userInfo" => {
+                    builder = builder.set_user_info(crate::protocol_serde::shape_user_info::de_user_info(tokens)?);
                 },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },

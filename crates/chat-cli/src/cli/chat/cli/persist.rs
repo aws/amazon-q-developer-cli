@@ -94,7 +94,12 @@ impl PersistSubcommand {
                 };
 
                 let mut new_state: ConversationState = tri!(serde_json::from_str(&contents), "import from", &path);
-                new_state.reload_serialized_state(os).await;
+                std::mem::swap(&mut new_state.tool_manager, &mut session.conversation.tool_manager);
+                std::mem::swap(
+                    &mut new_state.context_manager,
+                    &mut session.conversation.context_manager,
+                );
+                std::mem::swap(&mut new_state.agents, &mut session.conversation.agents);
                 session.conversation = new_state;
 
                 execute!(

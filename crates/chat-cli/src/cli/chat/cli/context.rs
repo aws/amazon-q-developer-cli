@@ -10,12 +10,11 @@ use crossterm::{
     style,
 };
 
-use crate::cli::chat::cli::hooks::{
-    HookTrigger,
-    map_chat_error,
-    print_hook_section,
+use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
+use crate::cli::chat::context::{
+    ContextFilePath,
+    calc_max_context_files_size,
 };
-use crate::cli::chat::consts::CONTEXT_FILES_MAX_SIZE;
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::cli::chat::util::drop_matched_context_files;
 use crate::cli::chat::{
@@ -29,15 +28,15 @@ use crate::os::Os;
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
     before_long_help = "Context rules determine which files are included in your Amazon Q session. 
+They are derived from the current active agent.
 The files matched by these rules provide Amazon Q with additional information 
 about your project or environment. Adding relevant files helps Q generate 
 more accurate and helpful responses.
 
 Notes:
 • You can add specific files or use glob patterns (e.g., \"*.py\", \"src/**/*.js\")
-• Profile rules apply only to the current profile
-• Global rules apply across all profiles
-• Context is preserved between chat sessions"
+• Agent rules apply only to the current agent 
+• Context changes are NOT preserved between chat sessions. To make these changes permanent, edit the agent config file."
 )]
 pub enum ContextSubcommand {
     /// Display the context rule configuration and matched files
@@ -49,29 +48,20 @@ pub enum ContextSubcommand {
     },
     /// Add context rules (filenames or glob patterns)
     Add {
-        /// Add to global rules (available in all profiles)
-        #[arg(short, long)]
-        global: bool,
         /// Include even if matched files exceed size limits
         #[arg(short, long)]
         force: bool,
         #[arg(required = true)]
         paths: Vec<String>,
     },
-    /// Remove specified rules from current profile
+    /// Remove specified rules
+    #[command(alias = "rm")]
     Remove {
-        /// Remove specified rules globally
-        #[arg(short, long)]
-        global: bool,
         #[arg(required = true)]
         paths: Vec<String>,
     },
-    /// Remove all rules from current profile
-    Clear {
-        /// Remove global rules
-        #[arg(short, long)]
-        global: bool,
-    },
+    /// Remove all rules
+    Clear,
     #[command(hide = true)]
     Hooks,
 }
@@ -93,75 +83,24 @@ impl ContextSubcommand {
 
         match self {
             Self::Show { expand } => {
-                // Display global context
+                // the bool signifies if the resources is temporary (i.e. is it session based as
+                // opposed to agent based)
+                let mut profile_context_files = HashSet::<(String, String, bool)>::new();
+
+                let (agent_owned_list, session_owned_list) = context_manager
+                    .paths
+                    .iter()
+                    .partition::<Vec<_>, _>(|p| matches!(**p, ContextFilePath::Agent(_)));
+
                 execute!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     style::SetForegroundColor(Color::Magenta),
-                    style::Print("\n🌍 global:\n"),
-                    style::SetAttribute(Attribute::Reset),
-                )?;
-                let mut global_context_files = HashSet::new();
-                let mut profile_context_files = HashSet::new();
-                if context_manager.global_config.paths.is_empty() {
-                    execute!(
-                        session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
-                        style::Print("    <none>\n"),
-                        style::SetForegroundColor(Color::Reset)
-                    )?;
-                } else {
-                    for path in &context_manager.global_config.paths {
-                        execute!(session.stderr, style::Print(format!("    {} ", path)))?;
-                        if let Ok(context_files) = context_manager.get_context_files_by_path(os, path).await {
-                            execute!(
-                                session.stderr,
-                                style::SetForegroundColor(Color::Green),
-                                style::Print(format!(
-                                    "({} match{})",
-                                    context_files.len(),
-                                    if context_files.len() == 1 { "" } else { "es" }
-                                )),
-                                style::SetForegroundColor(Color::Reset)
-                            )?;
-                            global_context_files.extend(context_files);
-                        }
-                        execute!(session.stderr, style::Print("\n"))?;
-                    }
-                }
-
-                if expand {
-                    execute!(
-                        session.stderr,
-                        style::SetAttribute(Attribute::Bold),
-                        style::SetForegroundColor(Color::DarkYellow),
-                        style::Print("\n    🔧 Hooks:\n")
-                    )?;
-                    print_hook_section(
-                        &mut session.stderr,
-                        &context_manager.global_config.hooks,
-                        HookTrigger::ConversationStart,
-                    )
-                    .map_err(map_chat_error)?;
-
-                    print_hook_section(
-                        &mut session.stderr,
-                        &context_manager.global_config.hooks,
-                        HookTrigger::PerPrompt,
-                    )
-                    .map_err(map_chat_error)?;
-                }
-
-                // Display profile context
-                execute!(
-                    session.stderr,
-                    style::SetAttribute(Attribute::Bold),
-                    style::SetForegroundColor(Color::Magenta),
-                    style::Print(format!("\n👤 profile ({}):\n", context_manager.current_profile)),
+                    style::Print(format!("👤 Agent ({}):\n", context_manager.current_profile)),
                     style::SetAttribute(Attribute::Reset),
                 )?;
 
-                if context_manager.profile_config.paths.is_empty() {
+                if agent_owned_list.is_empty() {
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::DarkGrey),
@@ -169,9 +108,12 @@ impl ContextSubcommand {
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 } else {
-                    for path in &context_manager.profile_config.paths {
-                        execute!(session.stderr, style::Print(format!("    {} ", path)))?;
-                        if let Ok(context_files) = context_manager.get_context_files_by_path(os, path).await {
+                    for path in &agent_owned_list {
+                        execute!(session.stderr, style::Print(format!("    {} ", path.get_path_as_str())))?;
+                        if let Ok(context_files) = context_manager
+                            .get_context_files_by_path(os, path.get_path_as_str())
+                            .await
+                        {
                             execute!(
                                 session.stderr,
                                 style::SetForegroundColor(Color::Green),
@@ -182,36 +124,55 @@ impl ContextSubcommand {
                                 )),
                                 style::SetForegroundColor(Color::Reset)
                             )?;
-                            profile_context_files.extend(context_files);
+                            profile_context_files
+                                .extend(context_files.into_iter().map(|(path, content)| (path, content, false)));
                         }
                         execute!(session.stderr, style::Print("\n"))?;
                     }
                     execute!(session.stderr, style::Print("\n"))?;
                 }
 
-                if expand {
+                execute!(
+                    session.stderr,
+                    style::SetAttribute(Attribute::Bold),
+                    style::SetForegroundColor(Color::Magenta),
+                    style::Print("💬 Session (temporary):\n"),
+                    style::SetAttribute(Attribute::Reset),
+                )?;
+
+                if session_owned_list.is_empty() {
                     execute!(
                         session.stderr,
-                        style::SetAttribute(Attribute::Bold),
-                        style::SetForegroundColor(Color::DarkYellow),
-                        style::Print("    🔧 Hooks:\n")
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print("    <none>\n\n"),
+                        style::SetForegroundColor(Color::Reset)
                     )?;
-                    print_hook_section(
-                        &mut session.stderr,
-                        &context_manager.profile_config.hooks,
-                        HookTrigger::ConversationStart,
-                    )
-                    .map_err(map_chat_error)?;
-                    print_hook_section(
-                        &mut session.stderr,
-                        &context_manager.profile_config.hooks,
-                        HookTrigger::PerPrompt,
-                    )
-                    .map_err(map_chat_error)?;
+                } else {
+                    for path in &session_owned_list {
+                        execute!(session.stderr, style::Print(format!("    {} ", path.get_path_as_str())))?;
+                        if let Ok(context_files) = context_manager
+                            .get_context_files_by_path(os, path.get_path_as_str())
+                            .await
+                        {
+                            execute!(
+                                session.stderr,
+                                style::SetForegroundColor(Color::Green),
+                                style::Print(format!(
+                                    "({} match{})",
+                                    context_files.len(),
+                                    if context_files.len() == 1 { "" } else { "es" }
+                                )),
+                                style::SetForegroundColor(Color::Reset)
+                            )?;
+                            profile_context_files
+                                .extend(context_files.into_iter().map(|(path, content)| (path, content, true)));
+                        }
+                        execute!(session.stderr, style::Print("\n"))?;
+                    }
                     execute!(session.stderr, style::Print("\n"))?;
                 }
 
-                if global_context_files.is_empty() && profile_context_files.is_empty() {
+                if profile_context_files.is_empty() {
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::DarkGrey),
@@ -219,15 +180,11 @@ impl ContextSubcommand {
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 } else {
-                    let total = global_context_files.len() + profile_context_files.len();
-                    let total_tokens = global_context_files
+                    let total = profile_context_files.len();
+                    let total_tokens = profile_context_files
                         .iter()
-                        .map(|(_, content)| TokenCounter::count_tokens(content))
-                        .sum::<usize>()
-                        + profile_context_files
-                            .iter()
-                            .map(|(_, content)| TokenCounter::count_tokens(content))
-                            .sum::<usize>();
+                        .map(|(_, content, _)| TokenCounter::count_tokens(content))
+                        .sum::<usize>();
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::Green),
@@ -241,30 +198,12 @@ impl ContextSubcommand {
                         style::SetAttribute(Attribute::Reset)
                     )?;
 
-                    for (filename, content) in &global_context_files {
+                    for (filename, content, is_temporary) in &profile_context_files {
                         let est_tokens = TokenCounter::count_tokens(content);
+                        let icon = if *is_temporary { "💬" } else { "👤" };
                         execute!(
                             session.stderr,
-                            style::Print(format!("🌍 {} ", filename)),
-                            style::SetForegroundColor(Color::DarkGrey),
-                            style::Print(format!("(~{} tkns)\n", est_tokens)),
-                            style::SetForegroundColor(Color::Reset),
-                        )?;
-                        if expand {
-                            execute!(
-                                session.stderr,
-                                style::SetForegroundColor(Color::DarkGrey),
-                                style::Print(format!("{}\n\n", content)),
-                                style::SetForegroundColor(Color::Reset)
-                            )?;
-                        }
-                    }
-
-                    for (filename, content) in &profile_context_files {
-                        let est_tokens = TokenCounter::count_tokens(content);
-                        execute!(
-                            session.stderr,
-                            style::Print(format!("👤 {} ", filename)),
+                            style::Print(format!("{} {} ", icon, filename)),
                             style::SetForegroundColor(Color::DarkGrey),
                             style::Print(format!("(~{} tkns)\n", est_tokens)),
                             style::SetForegroundColor(Color::Reset),
@@ -283,13 +222,12 @@ impl ContextSubcommand {
                         execute!(session.stderr, style::Print(format!("{}\n\n", "▔".repeat(3))),)?;
                     }
 
-                    let mut combined_files: Vec<(String, String)> = global_context_files
+                    let context_files_max_size = calc_max_context_files_size(session.conversation.model_info.as_ref());
+                    let mut files_as_vec = profile_context_files
                         .iter()
-                        .chain(profile_context_files.iter())
-                        .cloned()
-                        .collect();
-
-                    let dropped_files = drop_matched_context_files(&mut combined_files, CONTEXT_FILES_MAX_SIZE).ok();
+                        .map(|(path, content, _)| (path.clone(), content.clone()))
+                        .collect::<Vec<_>>();
+                    let dropped_files = drop_matched_context_files(&mut files_as_vec, context_files_max_size).ok();
 
                     execute!(
                         session.stderr,
@@ -303,7 +241,7 @@ impl ContextSubcommand {
                                 style::SetForegroundColor(Color::DarkYellow),
                                 style::Print(format!(
                                     "Total token count exceeds limit: {}. The following files will be automatically dropped when interacting with Q. Consider removing them. \n\n",
-                                    CONTEXT_FILES_MAX_SIZE
+                                    context_files_max_size
                                 )),
                                 style::SetForegroundColor(Color::Reset)
                             )?;
@@ -356,38 +294,13 @@ impl ContextSubcommand {
                     }
                 }
             },
-            Self::Add { global, force, paths } => {
-                match context_manager.add_paths(os, paths.clone(), global, force).await {
-                    Ok(_) => {
-                        let target = if global { "global" } else { "profile" };
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nAdded {} path(s) to {} context.\n\n", paths.len(), target)),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                    Err(e) => {
-                        execute!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Red),
-                            style::Print(format!("\nError: {}\n\n", e)),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    },
-                }
-            },
-            Self::Remove { global, paths } => match context_manager.remove_paths(os, paths.clone(), global).await {
+            Self::Add { force, paths } => match context_manager.add_paths(os, paths.clone(), force).await {
                 Ok(_) => {
-                    let target = if global { "global" } else { "profile" };
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::Green),
-                        style::Print(format!(
-                            "\nRemoved {} path(s) from {} context.\n\n",
-                            paths.len(),
-                            target
-                        )),
+                        style::Print(format!("\nAdded {} path(s) to context.\n", paths.len())),
+                        style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 },
@@ -400,17 +313,13 @@ impl ContextSubcommand {
                     )?;
                 },
             },
-            Self::Clear { global } => match context_manager.clear(os, global).await {
+            Self::Remove { paths } => match context_manager.remove_paths(paths.clone()) {
                 Ok(_) => {
-                    let target = if global {
-                        "global".to_string()
-                    } else {
-                        format!("profile '{}'", context_manager.current_profile)
-                    };
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::Green),
-                        style::Print(format!("\nCleared context for {}\n\n", target)),
+                        style::Print(format!("\nRemoved {} path(s) from context.\n\n", paths.len(),)),
+                        style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 },
@@ -422,17 +331,28 @@ impl ContextSubcommand {
                         style::SetForegroundColor(Color::Reset)
                     )?;
                 },
+            },
+            Self::Clear => {
+                context_manager.clear();
+                execute!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("\nCleared context\n"),
+                    style::Print("Note: Context modifications via slash command is temporary.\n\n"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
             },
             Self::Hooks => {
                 execute!(
                     session.stderr,
                     style::SetForegroundColor(Color::Yellow),
-                    style::Print("The /context hooks command is deprecated. Use "),
+                    style::Print(
+                        "The /context hooks command is deprecated.\n\nConfigure hooks directly with your agent instead: "
+                    ),
                     style::SetForegroundColor(Color::Green),
-                    style::Print("/hooks"),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(" instead.\n\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    style::Print(AGENT_FORMAT_HOOKS_DOC_URL),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
                 )?;
             },
         }
@@ -440,5 +360,15 @@ impl ContextSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ContextSubcommand::Show { .. } => "show",
+            ContextSubcommand::Add { .. } => "add",
+            ContextSubcommand::Remove { .. } => "remove",
+            ContextSubcommand::Clear => "clear",
+            ContextSubcommand::Hooks => "hooks",
+        }
     }
 }

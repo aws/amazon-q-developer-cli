@@ -37,6 +37,12 @@ pub mod get_code_analysis;
 /// Types for the `GetCodeFixJob` operation.
 pub mod get_code_fix_job;
 
+/// Types for the `GetProfile` operation.
+pub mod get_profile;
+
+/// Types for the `GetRetrievals` operation.
+pub mod get_retrievals;
+
 /// Types for the `GetTaskAssistCodeGeneration` operation.
 pub mod get_task_assist_code_generation;
 
@@ -55,8 +61,14 @@ pub mod get_usage_limits;
 /// Types for the `ListAvailableCustomizations` operation.
 pub mod list_available_customizations;
 
+/// Types for the `ListAvailableModels` operation.
+pub mod list_available_models;
+
 /// Types for the `ListAvailableProfiles` operation.
 pub mod list_available_profiles;
+
+/// Types for the `ListAvailableSubscriptions` operation.
+pub mod list_available_subscriptions;
 
 /// Types for the `ListCodeAnalysisFindings` operation.
 pub mod list_code_analysis_findings;
@@ -81,6 +93,9 @@ pub mod resume_transformation;
 
 /// Types for the `SendTelemetryEvent` operation.
 pub mod send_telemetry_event;
+
+/// Types for the `SetUserPreference` operation.
+pub mod set_user_preference;
 
 /// Types for the `StartCodeAnalysis` operation.
 pub mod start_code_analysis;

@@ -649,6 +649,82 @@ impl From<crate::operation::get_code_fix_job::GetCodeFixJobError> for Error {
         }
     }
 }
+impl<R> From<::aws_smithy_runtime_api::client::result::SdkError<crate::operation::get_profile::GetProfileError, R>>
+    for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<crate::operation::get_profile::GetProfileError, R>,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::get_profile::GetProfileError> for Error {
+    fn from(err: crate::operation::get_profile::GetProfileError) -> Self {
+        match err {
+            crate::operation::get_profile::GetProfileError::ValidationError(inner) => Error::ValidationError(inner),
+            crate::operation::get_profile::GetProfileError::AccessDeniedError(inner) => Error::AccessDeniedError(inner),
+            crate::operation::get_profile::GetProfileError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::get_profile::GetProfileError::ThrottlingError(inner) => Error::ThrottlingError(inner),
+            crate::operation::get_profile::GetProfileError::ResourceNotFoundError(inner) => {
+                Error::ResourceNotFoundError(inner)
+            },
+            crate::operation::get_profile::GetProfileError::Unhandled(inner) => Error::Unhandled(inner),
+        }
+    }
+}
+impl<R>
+    From<::aws_smithy_runtime_api::client::result::SdkError<crate::operation::get_retrievals::GetRetrievalsError, R>>
+    for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::get_retrievals::GetRetrievalsError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::get_retrievals::GetRetrievalsError> for Error {
+    fn from(err: crate::operation::get_retrievals::GetRetrievalsError) -> Self {
+        match err {
+            crate::operation::get_retrievals::GetRetrievalsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::get_retrievals::GetRetrievalsError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::get_retrievals::GetRetrievalsError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::get_retrievals::GetRetrievalsError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::get_retrievals::GetRetrievalsError::ResourceNotFoundError(inner) => {
+                Error::ResourceNotFoundError(inner)
+            },
+            crate::operation::get_retrievals::GetRetrievalsError::Unhandled(inner) => Error::Unhandled(inner),
+        }
+    }
+}
 impl<R>
     From<
         ::aws_smithy_runtime_api::client::result::SdkError<
@@ -926,6 +1002,52 @@ impl From<crate::operation::list_available_customizations::ListAvailableCustomiz
 impl<R>
     From<
         ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::list_available_models::ListAvailableModelsError,
+            R,
+        >,
+    > for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::list_available_models::ListAvailableModelsError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::list_available_models::ListAvailableModelsError> for Error {
+    fn from(err: crate::operation::list_available_models::ListAvailableModelsError) -> Self {
+        match err {
+            crate::operation::list_available_models::ListAvailableModelsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::list_available_models::ListAvailableModelsError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::list_available_models::ListAvailableModelsError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::list_available_models::ListAvailableModelsError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::list_available_models::ListAvailableModelsError::Unhandled(inner) => {
+                Error::Unhandled(inner)
+            },
+        }
+    }
+}
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
             crate::operation::list_available_profiles::ListAvailableProfilesError,
             R,
         >,
@@ -964,6 +1086,52 @@ impl From<crate::operation::list_available_profiles::ListAvailableProfilesError>
                 Error::ThrottlingError(inner)
             },
             crate::operation::list_available_profiles::ListAvailableProfilesError::Unhandled(inner) => {
+                Error::Unhandled(inner)
+            },
+        }
+    }
+}
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError,
+            R,
+        >,
+    > for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError> for Error {
+    fn from(err: crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError) -> Self {
+        match err {
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::AccessDeniedError(
+                inner,
+            ) => Error::AccessDeniedError(inner),
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::InternalServerError(
+                inner,
+            ) => Error::InternalServerError(inner),
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError::Unhandled(inner) => {
                 Error::Unhandled(inner)
             },
         }
@@ -1327,6 +1495,50 @@ impl From<crate::operation::send_telemetry_event::SendTelemetryEventError> for E
             crate::operation::send_telemetry_event::SendTelemetryEventError::Unhandled(inner) => {
                 Error::Unhandled(inner)
             },
+        }
+    }
+}
+impl<R>
+    From<
+        ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::set_user_preference::SetUserPreferenceError,
+            R,
+        >,
+    > for Error
+where
+    R: Send + Sync + std::fmt::Debug + 'static,
+{
+    fn from(
+        err: ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::set_user_preference::SetUserPreferenceError,
+            R,
+        >,
+    ) -> Self {
+        match err {
+            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
+            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
+                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
+                source: err.into(),
+            }),
+        }
+    }
+}
+impl From<crate::operation::set_user_preference::SetUserPreferenceError> for Error {
+    fn from(err: crate::operation::set_user_preference::SetUserPreferenceError) -> Self {
+        match err {
+            crate::operation::set_user_preference::SetUserPreferenceError::ValidationError(inner) => {
+                Error::ValidationError(inner)
+            },
+            crate::operation::set_user_preference::SetUserPreferenceError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            },
+            crate::operation::set_user_preference::SetUserPreferenceError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::set_user_preference::SetUserPreferenceError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::set_user_preference::SetUserPreferenceError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
 }

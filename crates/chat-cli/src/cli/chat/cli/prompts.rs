@@ -170,8 +170,10 @@ impl PromptsArgs {
                             .is_some_and(|args| !args.is_empty())
                         {
                             let name_width = UnicodeWidthStr::width(bundle.prompt_get.name.as_str());
-                            let padding = arg_pos.saturating_sub(name_width) - UnicodeWidthStr::width("- ");
-                            " ".repeat(padding)
+                            let padding = arg_pos
+                                .saturating_sub(name_width)
+                                .saturating_sub(UnicodeWidthStr::width("- "));
+                            " ".repeat(padding.max(1))
                         } else {
                             "\n".to_owned()
                         }
@@ -197,6 +199,10 @@ impl PromptsArgs {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn subcommand_name(&self) -> Option<&'static str> {
+        self.subcommand.as_ref().map(|s| s.name())
     }
 }
 
@@ -302,5 +308,12 @@ impl PromptsSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            PromptsSubcommand::List { .. } => "list",
+            PromptsSubcommand::Get { .. } => "get",
+        }
     }
 }

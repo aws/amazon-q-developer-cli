@@ -6,12 +6,19 @@ pub struct ListProfilesInput {
     #[allow(missing_docs)] // documentation missing in model
     pub max_results: ::std::option::Option<i32>,
     #[allow(missing_docs)] // documentation missing in model
+    pub include_management_account: ::std::option::Option<bool>,
+    #[allow(missing_docs)] // documentation missing in model
     pub next_token: ::std::option::Option<::std::string::String>,
 }
 impl ListProfilesInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn max_results(&self) -> ::std::option::Option<i32> {
         self.max_results
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn include_management_account(&self) -> ::std::option::Option<bool> {
+        self.include_management_account
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -32,6 +39,7 @@ impl ListProfilesInput {
 #[non_exhaustive]
 pub struct ListProfilesInputBuilder {
     pub(crate) max_results: ::std::option::Option<i32>,
+    pub(crate) include_management_account: ::std::option::Option<bool>,
     pub(crate) next_token: ::std::option::Option<::std::string::String>,
 }
 impl ListProfilesInputBuilder {
@@ -50,6 +58,23 @@ impl ListProfilesInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_max_results(&self) -> &::std::option::Option<i32> {
         &self.max_results
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn include_management_account(mut self, input: bool) -> Self {
+        self.include_management_account = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_include_management_account(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.include_management_account = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_include_management_account(&self) -> &::std::option::Option<bool> {
+        &self.include_management_account
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -79,6 +104,7 @@ impl ListProfilesInputBuilder {
     > {
         ::std::result::Result::Ok(crate::operation::list_profiles::ListProfilesInput {
             max_results: self.max_results,
+            include_management_account: self.include_management_account,
             next_token: self.next_token,
         })
     }

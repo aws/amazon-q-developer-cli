@@ -28,10 +28,10 @@ phases:
       - mise install
       - eval "$(mise activate bash --shims)"
       # Install python deps
-      - pip3 install -r build-scripts/requirements.txt
+      - pip3 install -r scripts/requirements.txt
   build:
     commands:
-      - python3.11 build-scripts/qchatmain.py build
+      - python3.11 scripts/main.py build
 
 artifacts:
   discard-paths: "yes"

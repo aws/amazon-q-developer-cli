@@ -52,6 +52,43 @@ pub fn de_generate_assistant_response_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
+        "ServiceQuotaExceededError" => {
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ServiceQuotaExceededError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
+                    output = crate::protocol_serde::shape_service_quota_exceeded_error::de_service_quota_exceeded_error_json_err(_response_body, output)
+                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::service_quota_exceeded_error_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "ServiceUnavailableException" => {
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::ServiceUnavailableError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::ServiceUnavailableErrorBuilder::default();
+                    output =
+                    crate::protocol_serde::shape_service_unavailable_exception::de_service_unavailable_exception_json_err(_response_body, output)
+                        .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::service_unavailable_exception_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
         "ThrottlingError" => {
             crate::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError({
                 #[allow(unused_mut)]
@@ -145,6 +182,24 @@ pub fn de_generate_assistant_response_http_error(
         },
         _ => crate::operation::generate_assistant_response::GenerateAssistantResponseError::generic(generic),
     })
+}
+
+pub fn ser_generate_assistant_response_headers(
+    input: &crate::operation::generate_assistant_response::GenerateAssistantResponseInput,
+    mut builder: ::http::request::Builder,
+) -> std::result::Result<::http::request::Builder, ::aws_smithy_types::error::operation::BuildError> {
+    if let ::std::option::Option::Some(inner_1) = &input.agent_mode {
+        let formatted_2 = inner_1.as_str();
+        let header_value = formatted_2;
+        let header_value: ::http::HeaderValue = header_value.parse().map_err(|err| {
+            ::aws_smithy_types::error::operation::BuildError::invalid_field(
+                "agent_mode",
+                format!("`{}` cannot be used as a header value: {}", &header_value, err),
+            )
+        })?;
+        builder = builder.header("x-amzn-kiro-agent-mode", header_value);
+    }
+    Ok(builder)
 }
 
 pub fn ser_generate_assistant_response_input(

@@ -13,6 +13,10 @@ mod tests {
     use std::time::SystemTime;
 
     use super::*;
+    use crate::telemetry::core::{
+        ChatConversationType,
+        MessageMetaTag,
+    };
     use crate::telemetry::definitions::metrics::CodewhispererterminalAddChatMessage;
 
     #[test]
@@ -32,6 +36,14 @@ mod tests {
             reason_desc: None,
             status_code: None,
             codewhispererterminal_model: None,
+            codewhispererterminal_time_to_first_chunks_ms: Some(40.to_string().into()),
+            codewhispererterminal_time_between_chunks_ms: Some("1,2,3".to_string().into()),
+            codewhispererterminal_chat_conversation_type: Some(ChatConversationType::NotToolUse.into()),
+            codewhispererterminal_tool_use_id: None,
+            codewhispererterminal_tool_name: None,
+            codewhispererterminal_assistant_response_length: Some(20.into()),
+            codewhispererterminal_chat_message_meta_tags: Some([MessageMetaTag::Compact.to_string()].join(",").into()),
+            codewhispererterminal_client_application: None,
         });
 
         let s = serde_json::to_string_pretty(&metric_datum_init).unwrap();

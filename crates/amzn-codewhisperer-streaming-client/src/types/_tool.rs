@@ -4,6 +4,8 @@
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 pub enum Tool {
+    #[allow(missing_docs)] // documentation missing in model
+    CachePoint(crate::types::CachePoint),
     /// The specification for the tool.
     ToolSpecification(crate::types::ToolSpecification),
     /// The `Unknown` variant represents cases where new union variant was received. Consider
@@ -18,7 +20,22 @@ pub enum Tool {
     Unknown,
 }
 impl Tool {
-    #[allow(irrefutable_let_patterns)]
+    /// Tries to convert the enum instance into [`CachePoint`](crate::types::Tool::CachePoint),
+    /// extracting the inner [`CachePoint`](crate::types::CachePoint). Returns `Err(&Self)` if
+    /// it can't be converted.
+    pub fn as_cache_point(&self) -> ::std::result::Result<&crate::types::CachePoint, &Self> {
+        if let Tool::CachePoint(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a [`CachePoint`](crate::types::Tool::CachePoint).
+    pub fn is_cache_point(&self) -> bool {
+        self.as_cache_point().is_ok()
+    }
+
     /// Tries to convert the enum instance into
     /// [`ToolSpecification`](crate::types::Tool::ToolSpecification), extracting the inner
     /// [`ToolSpecification`](crate::types::ToolSpecification). Returns `Err(&Self)` if it can't

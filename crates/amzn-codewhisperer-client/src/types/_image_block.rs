@@ -6,7 +6,7 @@
 pub struct ImageBlock {
     #[allow(missing_docs)] // documentation missing in model
     pub format: crate::types::ImageFormat,
-    /// Image bytes limited to ~10MB considering overhead of base64 encoding
+    /// Image bytes
     pub source: crate::types::ImageSource,
 }
 impl ImageBlock {
@@ -15,7 +15,7 @@ impl ImageBlock {
         &self.format
     }
 
-    /// Image bytes limited to ~10MB considering overhead of base64 encoding
+    /// Image bytes
     pub fn source(&self) -> &crate::types::ImageSource {
         &self.source
     }
@@ -61,20 +61,20 @@ impl ImageBlockBuilder {
         &self.format
     }
 
-    /// Image bytes limited to ~10MB considering overhead of base64 encoding
+    /// Image bytes
     /// This field is required.
     pub fn source(mut self, input: crate::types::ImageSource) -> Self {
         self.source = ::std::option::Option::Some(input);
         self
     }
 
-    /// Image bytes limited to ~10MB considering overhead of base64 encoding
+    /// Image bytes
     pub fn set_source(mut self, input: ::std::option::Option<crate::types::ImageSource>) -> Self {
         self.source = input;
         self
     }
 
-    /// Image bytes limited to ~10MB considering overhead of base64 encoding
+    /// Image bytes
     pub fn get_source(&self) -> &::std::option::Option<crate::types::ImageSource> {
         &self.source
     }

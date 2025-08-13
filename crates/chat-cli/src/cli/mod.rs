@@ -1,3 +1,4 @@
+mod agent;
 mod chat;
 mod debug;
 mod diagnostics;
@@ -14,6 +15,7 @@ use std::io::{
 };
 use std::process::ExitCode;
 
+use agent::AgentArgs;
 use anstream::println;
 pub use chat::ConversationState;
 use clap::{
@@ -83,6 +85,8 @@ impl OutputFormat {
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum RootSubcommand {
+    /// Manage agents
+    Agent(AgentArgs),
     /// AI assistant in your terminal
     Chat(ChatArgs),
     /// Log in to Amazon Q
@@ -137,10 +141,14 @@ impl RootSubcommand {
 
         // Send executed telemetry.
         if self.valid_for_telemetry() {
-            os.telemetry.send_cli_subcommand_executed(&self).ok();
+            os.telemetry
+                .send_cli_subcommand_executed(&os.database, &self)
+                .await
+                .ok();
         }
 
         match self {
+            Self::Agent(args) => args.execute(os).await,
             Self::Diagnostic(args) => args.execute(os).await,
             Self::Login(args) => args.execute(os).await,
             Self::Logout => user::logout(os).await,
@@ -164,6 +172,7 @@ impl Default for RootSubcommand {
 impl Display for RootSubcommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
+            Self::Agent(_) => "agent",
             Self::Chat(_) => "chat",
             Self::Login(_) => "login",
             Self::Logout => "logout",
@@ -351,11 +360,11 @@ mod test {
             subcommand: Some(RootSubcommand::Chat(ChatArgs {
                 resume: false,
                 input: None,
-                profile: None,
+                agent: None,
                 model: None,
                 trust_all_tools: false,
                 trust_tools: None,
-                non_interactive: false
+                no_interactive: false,
             })),
             verbose: 2,
             help_all: false,
@@ -390,11 +399,11 @@ mod test {
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
                 input: None,
-                profile: Some("my-profile".to_string()),
+                agent: Some("my-profile".to_string()),
                 model: None,
                 trust_all_tools: false,
                 trust_tools: None,
-                non_interactive: false
+                no_interactive: false,
             })
         );
     }
@@ -406,11 +415,11 @@ mod test {
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
                 input: Some("Hello".to_string()),
-                profile: Some("my-profile".to_string()),
+                agent: Some("my-profile".to_string()),
                 model: None,
                 trust_all_tools: false,
                 trust_tools: None,
-                non_interactive: false
+                no_interactive: false,
             })
         );
     }
@@ -422,11 +431,11 @@ mod test {
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
                 input: None,
-                profile: Some("my-profile".to_string()),
+                agent: Some("my-profile".to_string()),
                 model: None,
                 trust_all_tools: true,
                 trust_tools: None,
-                non_interactive: false
+                no_interactive: false,
             })
         );
     }
@@ -438,11 +447,11 @@ mod test {
             RootSubcommand::Chat(ChatArgs {
                 resume: true,
                 input: None,
-                profile: None,
+                agent: None,
                 model: None,
                 trust_all_tools: false,
                 trust_tools: None,
-                non_interactive: true
+                no_interactive: true,
             })
         );
         assert_parse!(
@@ -450,11 +459,11 @@ mod test {
             RootSubcommand::Chat(ChatArgs {
                 resume: true,
                 input: None,
-                profile: None,
+                agent: None,
                 model: None,
                 trust_all_tools: false,
                 trust_tools: None,
-                non_interactive: true
+                no_interactive: true,
             })
         );
     }
@@ -466,11 +475,11 @@ mod test {
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
                 input: None,
-                profile: None,
+                agent: None,
                 model: None,
                 trust_all_tools: true,
                 trust_tools: None,
-                non_interactive: false
+                no_interactive: false,
             })
         );
     }
@@ -482,11 +491,11 @@ mod test {
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
                 input: None,
-                profile: None,
+                agent: None,
                 model: None,
                 trust_all_tools: false,
                 trust_tools: Some(vec!["".to_string()]),
-                non_interactive: false
+                no_interactive: false,
             })
         );
     }
@@ -498,11 +507,11 @@ mod test {
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
                 input: None,
-                profile: None,
+                agent: None,
                 model: None,
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
-                non_interactive: false
+                no_interactive: false,
             })
         );
     }

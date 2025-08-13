@@ -1,0 +1,56 @@
+[package]
+name = "semantic_search_client"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+dirs.workspace = true
+walkdir.workspace = true
+chrono.workspace = true
+indicatif.workspace = true
+rayon.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+
+# Vector search library - pin to avoid edition2024 requirement
+hnsw_rs = "=0.3.1"
+
+# BM25 implementation - works on all platforms including ARM
+bm25 = { version = "2.2.1", features = ["language_detection"] }
+
+# Common dependencies for all platforms
+anyhow = "1.0"
+reqwest = { workspace = true }
+zip = { version = "4.3.0", default-features = false, features = ["deflate", "time"] }
+tokio-stream = "0.1.17"
+sha2 = "0.10.9"
+
+# Candle dependencies - not used on Linux ARM
+[target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
+candle-core = { version = "0.9.1", features = [] }
+candle-nn = "0.9.1"
+candle-transformers = "0.9.1"
+tokenizers = "0.21.1"
+
+# Conditionally enable Metal on macOS
+[target.'cfg(all(target_os = "macos", not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies.candle-core]
+version = "0.9.1"
+features = []
+
+# Conditionally enable CUDA on Linux and Windows
+[target.'cfg(all(any(target_os = "linux", target_os = "windows"), not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies.candle-core]
+version = "0.9.1"
+features = []

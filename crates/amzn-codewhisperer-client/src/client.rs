@@ -103,6 +103,10 @@ mod get_code_analysis;
 
 mod get_code_fix_job;
 
+mod get_profile;
+
+mod get_retrievals;
+
 mod get_task_assist_code_generation;
 
 mod get_test_generation;
@@ -115,7 +119,11 @@ mod get_usage_limits;
 
 mod list_available_customizations;
 
+mod list_available_models;
+
 mod list_available_profiles;
+
+mod list_available_subscriptions;
 
 mod list_code_analysis_findings;
 
@@ -132,6 +140,8 @@ mod push_telemetry_event;
 mod resume_transformation;
 
 mod send_telemetry_event;
+
+mod set_user_preference;
 
 mod start_code_analysis;
 

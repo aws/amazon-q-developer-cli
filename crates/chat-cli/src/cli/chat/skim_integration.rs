@@ -26,13 +26,6 @@ use tempfile::NamedTempFile;
 use super::context::ContextManager;
 use crate::os::Os;
 
-pub fn select_profile_with_skim(os: &Os, context_manager: &ContextManager) -> Result<Option<String>> {
-    let profiles = context_manager.list_profiles_blocking(os)?;
-
-    launch_skim_selector(&profiles, "Select profile: ", false)
-        .map(|selected| selected.and_then(|s| s.into_iter().next()))
-}
-
 pub struct SkimCommandSelector {
     os: Os,
     context_manager: Arc<ContextManager>,
@@ -168,23 +161,16 @@ pub fn select_files_with_skim() -> Result<Option<Vec<String>>> {
 
 /// Select context paths using skim
 pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Result<Option<(Vec<String>, bool)>> {
-    let mut global_paths = Vec::new();
-    let mut profile_paths = Vec::new();
-
-    // Get global paths
-    for path in &context_manager.global_config.paths {
-        global_paths.push(format!("(global) {}", path));
-    }
+    let mut all_paths = Vec::new();
 
     // Get profile-specific paths
-    for path in &context_manager.profile_config.paths {
-        profile_paths.push(format!("(profile: {}) {}", context_manager.current_profile, path));
+    for path in &context_manager.paths {
+        all_paths.push(format!(
+            "(agent: {}) {}",
+            context_manager.current_profile,
+            path.get_path_as_str()
+        ));
     }
-
-    // Combine paths, but keep track of which are global
-    let mut all_paths = Vec::new();
-    all_paths.extend(global_paths);
-    all_paths.extend(profile_paths);
 
     if all_paths.is_empty() {
         return Ok(None); // No paths to select
@@ -226,7 +212,7 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
 }
 
 /// Launch the command selector and handle the selected command
-pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String]) -> Result<Option<String>> {
+pub fn select_command(_os: &Os, context_manager: &ContextManager, tools: &[String]) -> Result<Option<String>> {
     let commands = get_available_commands();
 
     match launch_skim_selector(&commands, "Select command: ", false)? {
@@ -282,17 +268,14 @@ pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String
                                                                      * command */
                     }
                 },
-                Some(cmd @ CommandType::Profile(_)) if cmd.needs_profile_selection() => {
+                Some(cmd @ CommandType::Agent(_)) if cmd.needs_agent_selection() => {
                     // For profile operations that need a profile name, show profile selector
-                    match select_profile_with_skim(os, context_manager)? {
-                        Some(profile) => {
-                            let full_cmd = format!("{} {}", selected_command, profile);
-                            Ok(Some(full_cmd))
-                        },
-                        None => Ok(Some(selected_command.clone())), // User cancelled profile selection
-                    }
+                    // As part of the agent implementation, we are disabling the ability to
+                    // switch profile after a session has started.
+                    // TODO: perhaps revive this after we have a decision on profile switching
+                    Ok(Some(selected_command.clone()))
                 },
-                Some(CommandType::Profile(_)) => {
+                Some(CommandType::Agent(_)) => {
                     // For other profile operations (like create), just return the command
                     Ok(Some(selected_command.clone()))
                 },
@@ -311,12 +294,12 @@ enum CommandType {
     ContextAdd(String),
     ContextRemove(String),
     Tools(&'static str),
-    Profile(&'static str),
+    Agent(&'static str),
 }
 
 impl CommandType {
-    fn needs_profile_selection(&self) -> bool {
-        matches!(self, CommandType::Profile("set" | "delete" | "rename"))
+    fn needs_agent_selection(&self) -> bool {
+        matches!(self, CommandType::Agent("set" | "delete" | "rename"))
     }
 
     fn from_str(cmd: &str) -> Option<CommandType> {
@@ -328,10 +311,10 @@ impl CommandType {
             match cmd {
                 "/tools trust" => Some(CommandType::Tools("trust")),
                 "/tools untrust" => Some(CommandType::Tools("untrust")),
-                "/profile set" => Some(CommandType::Profile("set")),
-                "/profile delete" => Some(CommandType::Profile("delete")),
-                "/profile rename" => Some(CommandType::Profile("rename")),
-                "/profile create" => Some(CommandType::Profile("create")),
+                "/agent set" => Some(CommandType::Agent("set")),
+                "/agent delete" => Some(CommandType::Agent("delete")),
+                "/agent rename" => Some(CommandType::Agent("rename")),
+                "/agent create" => Some(CommandType::Agent("create")),
                 _ => None,
             }
         }
@@ -354,15 +337,13 @@ mod tests {
         // List of hardcoded commands used in select_command
         let hardcoded_commands = vec![
             "/context add",
-            "/context add --global",
             "/context rm",
-            "/context rm --global",
             "/tools trust",
             "/tools untrust",
-            "/profile set",
-            "/profile delete",
-            "/profile rename",
-            "/profile create",
+            "/agent set",
+            "/agent delete",
+            "/agent rename",
+            "/agent create",
         ];
 
         // Check that each hardcoded command is in the COMMANDS array

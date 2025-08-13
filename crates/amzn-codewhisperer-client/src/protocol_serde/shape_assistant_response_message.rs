@@ -51,5 +51,11 @@ pub fn ser_assistant_response_message(
         }
         array_13.finish();
     }
+    if let Some(var_16) = &input.cache_point {
+        #[allow(unused_mut)]
+        let mut object_17 = object.key("cachePoint").start_object();
+        crate::protocol_serde::shape_cache_point::ser_cache_point(&mut object_17, var_16)?;
+        object_17.finish();
+    }
     Ok(())
 }

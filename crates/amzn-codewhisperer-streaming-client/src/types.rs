@@ -2,6 +2,7 @@
 pub use crate::types::_access_denied_exception_reason::AccessDeniedExceptionReason;
 pub use crate::types::_action::Action;
 pub use crate::types::_additional_content_entry::AdditionalContentEntry;
+pub use crate::types::_agent_task_type::AgentTaskType;
 pub use crate::types::_alert::Alert;
 pub use crate::types::_alert_component::AlertComponent;
 pub use crate::types::_alert_type::AlertType;
@@ -10,11 +11,14 @@ pub use crate::types::_assistant_response_event::AssistantResponseEvent;
 pub use crate::types::_assistant_response_message::AssistantResponseMessage;
 pub use crate::types::_binary_metadata_event::BinaryMetadataEvent;
 pub use crate::types::_binary_payload_event::BinaryPayloadEvent;
+pub use crate::types::_cache_point::CachePoint;
+pub use crate::types::_cache_point_type::CachePointType;
 pub use crate::types::_chat_message::ChatMessage;
 pub use crate::types::_chat_response_stream::ChatResponseStream;
 pub use crate::types::_chat_trigger_type::ChatTriggerType;
 pub use crate::types::_citation_event::CitationEvent;
 pub use crate::types::_citation_target::CitationTarget;
+pub use crate::types::_client_cache_config::ClientCacheConfig;
 pub use crate::types::_cloud_watch_troubleshooting_link::CloudWatchTroubleshootingLink;
 pub use crate::types::_code_description::CodeDescription;
 pub use crate::types::_code_event::CodeEvent;
@@ -52,9 +56,11 @@ pub use crate::types::_intents_event::IntentsEvent;
 pub use crate::types::_interaction_component::InteractionComponent;
 pub use crate::types::_interaction_component_entry::InteractionComponentEntry;
 pub use crate::types::_interaction_components_event::InteractionComponentsEvent;
+pub use crate::types::_internal_server_exception_reason::InternalServerExceptionReason;
 pub use crate::types::_invalid_state_event::InvalidStateEvent;
 pub use crate::types::_invalid_state_reason::InvalidStateReason;
 pub use crate::types::_message_metadata_event::MessageMetadataEvent;
+pub use crate::types::_metadata_event::MetadataEvent;
 pub use crate::types::_module_link::ModuleLink;
 pub use crate::types::_origin::Origin;
 pub use crate::types::_position::Position;
@@ -94,6 +100,7 @@ pub use crate::types::_text::Text;
 pub use crate::types::_text_document::TextDocument;
 pub use crate::types::_text_document_diagnostic::TextDocumentDiagnostic;
 pub use crate::types::_throttling_exception_reason::ThrottlingExceptionReason;
+pub use crate::types::_token_usage::TokenUsage;
 pub use crate::types::_tool::Tool;
 pub use crate::types::_tool_input_schema::ToolInputSchema;
 pub use crate::types::_tool_result::ToolResult;
@@ -120,6 +127,8 @@ mod _action;
 
 mod _additional_content_entry;
 
+mod _agent_task_type;
+
 mod _alert;
 
 mod _alert_component;
@@ -136,6 +145,10 @@ mod _binary_metadata_event;
 
 mod _binary_payload_event;
 
+mod _cache_point;
+
+mod _cache_point_type;
+
 mod _chat_message;
 
 mod _chat_response_stream;
@@ -145,6 +158,8 @@ mod _chat_trigger_type;
 mod _citation_event;
 
 mod _citation_target;
+
+mod _client_cache_config;
 
 mod _cloud_watch_troubleshooting_link;
 
@@ -220,11 +235,15 @@ mod _interaction_component_entry;
 
 mod _interaction_components_event;
 
+mod _internal_server_exception_reason;
+
 mod _invalid_state_event;
 
 mod _invalid_state_reason;
 
 mod _message_metadata_event;
+
+mod _metadata_event;
 
 mod _module_link;
 
@@ -303,6 +322,8 @@ mod _text_document;
 mod _text_document_diagnostic;
 
 mod _throttling_exception_reason;
+
+mod _token_usage;
 
 mod _tool;
 

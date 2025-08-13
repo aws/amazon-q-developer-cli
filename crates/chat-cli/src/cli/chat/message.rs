@@ -1,25 +1,43 @@
+use std::collections::HashMap;
 use std::env;
 
+use chrono::{
+    DateTime,
+    Utc,
+};
 use serde::{
     Deserialize,
     Serialize,
 };
-use tracing::error;
+use tracing::{
+    error,
+    warn,
+};
 
-use super::consts::MAX_CURRENT_WORKING_DIRECTORY_LEN;
+use super::consts::{
+    MAX_CURRENT_WORKING_DIRECTORY_LEN,
+    MAX_USER_MESSAGE_SIZE,
+};
+use super::conversation::{
+    CONTEXT_ENTRY_END_HEADER,
+    CONTEXT_ENTRY_START_HEADER,
+};
 use super::tools::{
     InvokeOutput,
     OutputKind,
+    ToolOrigin,
 };
 use super::util::{
     document_to_serde_value,
     serde_value_to_document,
     truncate_safe,
+    truncate_safe_in_place,
 };
 use crate::api_client::model::{
     AssistantResponseMessage,
     EnvState,
     ImageBlock,
+    Tool,
     ToolResult,
     ToolResultContentBlock,
     ToolResultStatus,
@@ -36,6 +54,7 @@ pub struct UserMessage {
     pub additional_context: String,
     pub env_context: UserEnvContext,
     pub content: UserMessageContent,
+    pub timestamp: Option<DateTime<Utc>>,
     pub images: Option<Vec<ImageBlock>>,
 }
 
@@ -55,21 +74,57 @@ pub enum UserMessageContent {
     },
 }
 
+impl UserMessageContent {
+    pub const TRUNCATED_SUFFIX: &str = "...content truncated due to length";
+
+    fn truncate_safe(&mut self, max_bytes: usize) {
+        match self {
+            UserMessageContent::Prompt { prompt } => {
+                truncate_safe_in_place(prompt, max_bytes, Self::TRUNCATED_SUFFIX);
+            },
+            UserMessageContent::CancelledToolUses {
+                prompt,
+                tool_use_results,
+            } => {
+                if let Some(prompt) = prompt {
+                    truncate_safe_in_place(prompt, max_bytes / 2, Self::TRUNCATED_SUFFIX);
+                    truncate_safe_tool_use_results(
+                        tool_use_results.as_mut_slice(),
+                        max_bytes / 2,
+                        Self::TRUNCATED_SUFFIX,
+                    );
+                } else {
+                    truncate_safe_tool_use_results(tool_use_results.as_mut_slice(), max_bytes, Self::TRUNCATED_SUFFIX);
+                }
+            },
+            UserMessageContent::ToolUseResults { tool_use_results } => {
+                truncate_safe_tool_use_results(tool_use_results.as_mut_slice(), max_bytes, Self::TRUNCATED_SUFFIX);
+            },
+        }
+    }
+}
+
 impl UserMessage {
     /// Creates a new [UserMessage::Prompt], automatically detecting and adding the user's
     /// environment [UserEnvContext].
-    pub fn new_prompt(prompt: String) -> Self {
+    pub fn new_prompt(prompt: String, timestamp: Option<DateTime<Utc>>) -> Self {
         Self {
             images: None,
+            timestamp,
             additional_context: String::new(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::Prompt { prompt },
         }
     }
 
-    pub fn new_cancelled_tool_uses<'a>(prompt: Option<String>, tool_use_ids: impl Iterator<Item = &'a str>) -> Self {
+    pub fn new_cancelled_tool_uses<'a>(
+        prompt: Option<String>,
+        tool_use_ids: impl Iterator<Item = &'a str>,
+        timestamp: Option<DateTime<Utc>>,
+    ) -> Self {
         Self {
             images: None,
+            timestamp,
             additional_context: String::new(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::CancelledToolUses {
@@ -90,6 +145,7 @@ impl UserMessage {
     pub fn new_tool_use_results(results: Vec<ToolUseResult>) -> Self {
         Self {
             additional_context: String::new(),
+            timestamp: None,
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::ToolUseResults {
                 tool_use_results: results,
@@ -98,9 +154,14 @@ impl UserMessage {
         }
     }
 
-    pub fn new_tool_use_results_with_images(results: Vec<ToolUseResult>, images: Vec<ImageBlock>) -> Self {
+    pub fn new_tool_use_results_with_images(
+        results: Vec<ToolUseResult>,
+        images: Vec<ImageBlock>,
+        timestamp: Option<DateTime<Utc>>,
+    ) -> Self {
         Self {
             additional_context: String::new(),
+            timestamp,
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::ToolUseResults {
                 tool_use_results: results,
@@ -112,9 +173,10 @@ impl UserMessage {
     /// Converts this message into a [UserInputMessage] to be stored in the history of
     /// [api_client::model::ConversationState].
     pub fn into_history_entry(self) -> UserInputMessage {
+        let content = self.content_with_context();
         UserInputMessage {
-            images: None,
-            content: self.prompt().unwrap_or_default().to_string(),
+            images: self.images.clone(),
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
                 tool_results: match self.content {
@@ -134,18 +196,15 @@ impl UserMessage {
 
     /// Converts this message into a [UserInputMessage] to be sent as
     /// [FigConversationState::user_input_message].
-    pub fn into_user_input_message(self) -> UserInputMessage {
-        let formatted_prompt = match self.prompt() {
-            Some(prompt) if !prompt.is_empty() => {
-                format!("{}{}{}", USER_ENTRY_START_HEADER, prompt, USER_ENTRY_END_HEADER)
-            },
-            _ => String::new(),
-        };
+    pub fn into_user_input_message(
+        self,
+        model_id: Option<String>,
+        tools: &HashMap<ToolOrigin, Vec<Tool>>,
+    ) -> UserInputMessage {
+        let content = self.content_with_context();
         UserInputMessage {
             images: self.images,
-            content: format!("{} {}", self.additional_context, formatted_prompt)
-                .trim()
-                .to_string(),
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
                 tool_results: match self.content {
@@ -155,11 +214,15 @@ impl UserMessage {
                     },
                     UserMessageContent::Prompt { .. } => None,
                 },
-                tools: None,
+                tools: if tools.is_empty() {
+                    None
+                } else {
+                    Some(tools.values().flatten().cloned().collect::<Vec<_>>())
+                },
                 ..Default::default()
             }),
             user_intent: None,
-            model_id: None,
+            model_id,
         }
     }
 
@@ -193,6 +256,68 @@ impl UserMessage {
             UserMessageContent::ToolUseResults { .. } => None,
         }
     }
+
+    /// Truncates the content contained in this user message to a maximum length of `max_bytes`.
+    pub fn truncate_safe(&mut self, max_bytes: usize) {
+        self.content.truncate_safe(max_bytes);
+    }
+
+    pub fn replace_content_with_tool_use_results(&mut self) {
+        if let Some(tool_results) = self.tool_use_results() {
+            let tool_content: Vec<String> = tool_results
+                .iter()
+                .flat_map(|tr| {
+                    tr.content.iter().map(|c| match c {
+                        ToolUseResultBlock::Json(document) => serde_json::to_string(&document)
+                            .map_err(|err| error!(?err, "failed to serialize tool result"))
+                            .unwrap_or_default(),
+                        ToolUseResultBlock::Text(s) => s.clone(),
+                    })
+                })
+                .collect::<_>();
+            let mut tool_content = tool_content.join(" ");
+            if tool_content.is_empty() {
+                // To avoid validation errors with empty content, we need to make sure
+                // something is set.
+                tool_content.push_str("<tool result redacted>");
+            }
+            let prompt = truncate_safe(&tool_content, MAX_USER_MESSAGE_SIZE).to_string();
+            self.content = UserMessageContent::Prompt { prompt };
+        }
+    }
+
+    /// Returns a formatted [String] containing [Self::additional_context], [Self::timestamp], and
+    /// [Self::prompt].
+    fn content_with_context(&self) -> String {
+        let mut content = String::new();
+
+        if let Some(ts) = self.timestamp {
+            content.push_str(&format!(
+                "{}Current UTC time: {}{}\n",
+                CONTEXT_ENTRY_START_HEADER,
+                // Format the time with iso8601 format using Z, e.g. 2025-08-08T17:43:28.672Z
+                ts.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                CONTEXT_ENTRY_END_HEADER,
+            ));
+        }
+
+        if !self.additional_context.is_empty() {
+            content.push_str(&self.additional_context);
+            content.push('\n');
+        }
+
+        // Only add special delimiters around the user's prompt if there is no timestamp or
+        // additional context to add.
+        match (content.is_empty(), self.prompt()) {
+            (false, Some(p)) => {
+                content.push_str(&format!("{}{}{}", USER_ENTRY_START_HEADER, p, USER_ENTRY_END_HEADER));
+            },
+            (true, Some(p)) => content.push_str(p),
+            _ => (),
+        };
+
+        content.trim().to_string()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,6 +346,31 @@ impl From<ToolUseResult> for ToolResult {
             tool_use_id: value.tool_use_id,
             content: value.content.into_iter().map(Into::into).collect(),
             status: value.status,
+        }
+    }
+}
+
+fn truncate_safe_tool_use_results(tool_use_results: &mut [ToolUseResult], max_bytes: usize, truncated_suffix: &str) {
+    let max_bytes = max_bytes / tool_use_results.len();
+    for result in tool_use_results {
+        for content in &mut result.content {
+            match content {
+                ToolUseResultBlock::Json(value) => match serde_json::to_string(value) {
+                    Ok(mut value_str) => {
+                        if value_str.len() > max_bytes {
+                            truncate_safe_in_place(&mut value_str, max_bytes, truncated_suffix);
+                            *content = ToolUseResultBlock::Text(value_str);
+                            return;
+                        }
+                    },
+                    Err(err) => {
+                        warn!(?err, "Unable to truncate JSON");
+                    },
+                },
+                ToolUseResultBlock::Text(t) => {
+                    truncate_safe_in_place(t, max_bytes, truncated_suffix);
+                },
+            }
         }
     }
 }
@@ -255,6 +405,7 @@ impl From<InvokeOutput> for ToolUseResultBlock {
             OutputKind::Text(text) => Self::Text(text),
             OutputKind::Json(value) => Self::Json(value),
             OutputKind::Images(_) => Self::Text("See images data supplied".to_string()),
+            OutputKind::Mixed { text, .. } => ToolUseResultBlock::Text(text),
         }
     }
 }
@@ -408,5 +559,48 @@ mod tests {
         assert!(env_state.current_working_directory.is_some());
         assert!(env_state.operating_system.as_ref().is_some_and(|os| !os.is_empty()));
         println!("{env_state:?}");
+    }
+
+    #[test]
+    fn test_user_input_message_timestamp_formatting() {
+        const USER_PROMPT: &str = "hello world";
+
+        let msg = UserMessage::new_prompt(USER_PROMPT.to_string(), Some(Utc::now()));
+
+        let msgs = [
+            msg.clone().into_user_input_message(None, &HashMap::new()),
+            msg.clone().into_history_entry(),
+        ];
+
+        for m in msgs {
+            println!("checking {:?}", m);
+            assert!(m.content.contains(CONTEXT_ENTRY_START_HEADER));
+            assert!(m.content.contains("Current UTC time"));
+            assert!(m.content.contains(CONTEXT_ENTRY_END_HEADER));
+            assert!(m.content.contains(USER_ENTRY_START_HEADER));
+            assert!(m.content.contains(USER_PROMPT));
+            assert!(m.content.contains(USER_ENTRY_END_HEADER.trim()));
+        }
+    }
+
+    #[test]
+    fn test_user_input_message_without_context() {
+        const USER_PROMPT: &str = "hello world";
+
+        let msg = UserMessage::new_prompt(USER_PROMPT.to_string(), None);
+
+        let msgs = [
+            msg.clone().into_user_input_message(None, &HashMap::new()),
+            msg.clone().into_history_entry(),
+        ];
+
+        for m in msgs {
+            assert!(!m.content.contains(CONTEXT_ENTRY_START_HEADER));
+            assert!(!m.content.contains("Current UTC time"));
+            assert!(!m.content.contains(CONTEXT_ENTRY_END_HEADER));
+            assert!(!m.content.contains(USER_ENTRY_START_HEADER));
+            assert!(m.content.contains(USER_PROMPT));
+            assert!(!m.content.contains(USER_ENTRY_END_HEADER.trim()));
+        }
     }
 }

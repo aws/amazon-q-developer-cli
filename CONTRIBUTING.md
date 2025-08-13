@@ -1,6 +1,6 @@
 # Contributing Guidelines
 
-Thank you for your interest in contributing to our project. Whether it's a bug report, new feature, correction, or additional
+Thank you for your interest in contributing to Amazon Q. Whether it's a bug report, new feature, correction, or additional
 documentation, we greatly value feedback and contributions from our community.
 
 Please read through this document before submitting any issues or pull requests to ensure we have all the necessary
@@ -19,6 +19,8 @@ reported the issue. Please try to include as much information as you can. Detail
 - Anything unusual about your environment or deployment
 
 ## Contributing via Pull Requests
+
+Before making changes around new features, please first make a feature request and get a statement from the team. This codebase moves quickly, and you work is likely to be lost if not first coordinated with us.
 
 Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
 

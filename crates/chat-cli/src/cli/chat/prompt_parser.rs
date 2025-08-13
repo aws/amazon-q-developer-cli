@@ -1,3 +1,5 @@
+use crate::cli::agent::DEFAULT_AGENT_NAME;
+
 /// Components extracted from a prompt string
 #[derive(Debug, PartialEq)]
 pub struct PromptComponents {
@@ -40,7 +42,7 @@ pub fn generate_prompt(current_profile: Option<&str>, warning: bool) -> String {
     // Generate plain text prompt that will be colored by highlight_prompt
     let warning_symbol = if warning { "!" } else { "" };
     let profile_part = current_profile
-        .filter(|&p| p != "default")
+        .filter(|&p| p != DEFAULT_AGENT_NAME)
         .map(|p| format!("[{p}] "))
         .unwrap_or_default();
 
@@ -58,7 +60,7 @@ mod tests {
         // Test default prompt with warning
         assert_eq!(generate_prompt(None, true), "!> ");
         // Test default profile (should be same as no profile)
-        assert_eq!(generate_prompt(Some("default"), false), "> ");
+        assert_eq!(generate_prompt(Some(DEFAULT_AGENT_NAME), false), "> ");
         // Test custom profile
         assert_eq!(generate_prompt(Some("test-profile"), false), "[test-profile] > ");
         // Test another custom profile with warning

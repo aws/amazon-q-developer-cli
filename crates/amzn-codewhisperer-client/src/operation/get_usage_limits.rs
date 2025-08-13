@@ -106,6 +106,7 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for GetUsag
             ),
         );
 
+        cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::SensitiveOutput);
         cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::Metadata::new(
             "GetUsageLimits",
             "codewhispererruntime",
@@ -206,6 +207,19 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GetUsageLimi
                 if let ::std::option::Option::Some(inner_1) = &_input.profile_arn {
                     {
                         query.push_kv("profileArn", &::aws_smithy_http::query::fmt_string(inner_1));
+                    }
+                }
+                if let ::std::option::Option::Some(inner_2) = &_input.resource_type {
+                    {
+                        query.push_kv("resourceType", &::aws_smithy_http::query::fmt_string(inner_2));
+                    }
+                }
+                if let ::std::option::Option::Some(inner_3) = &_input.is_email_required {
+                    {
+                        query.push_kv(
+                            "isEmailRequired",
+                            ::aws_smithy_types::primitive::Encoder::from(*inner_3).encode(),
+                        );
                     }
                 }
                 ::std::result::Result::Ok(())

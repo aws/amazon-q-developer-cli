@@ -16,6 +16,8 @@ pub struct AssistantResponseMessage {
     pub followup_prompt: ::std::option::Option<crate::types::FollowupPrompt>,
     /// ToolUse Request
     pub tool_uses: ::std::option::Option<::std::vec::Vec<crate::types::ToolUse>>,
+    /// Indicates whether this message is a cache point
+    pub cache_point: ::std::option::Option<crate::types::CachePoint>,
 }
 impl AssistantResponseMessage {
     /// Unique identifier for the chat message
@@ -57,6 +59,11 @@ impl AssistantResponseMessage {
     pub fn tool_uses(&self) -> &[crate::types::ToolUse] {
         self.tool_uses.as_deref().unwrap_or_default()
     }
+
+    /// Indicates whether this message is a cache point
+    pub fn cache_point(&self) -> ::std::option::Option<&crate::types::CachePoint> {
+        self.cache_point.as_ref()
+    }
 }
 impl ::std::fmt::Debug for AssistantResponseMessage {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -67,6 +74,7 @@ impl ::std::fmt::Debug for AssistantResponseMessage {
         formatter.field("references", &self.references);
         formatter.field("followup_prompt", &self.followup_prompt);
         formatter.field("tool_uses", &self.tool_uses);
+        formatter.field("cache_point", &self.cache_point);
         formatter.finish()
     }
 }
@@ -88,6 +96,7 @@ pub struct AssistantResponseMessageBuilder {
     pub(crate) references: ::std::option::Option<::std::vec::Vec<crate::types::Reference>>,
     pub(crate) followup_prompt: ::std::option::Option<crate::types::FollowupPrompt>,
     pub(crate) tool_uses: ::std::option::Option<::std::vec::Vec<crate::types::ToolUse>>,
+    pub(crate) cache_point: ::std::option::Option<crate::types::CachePoint>,
 }
 impl AssistantResponseMessageBuilder {
     /// Unique identifier for the chat message
@@ -217,6 +226,23 @@ impl AssistantResponseMessageBuilder {
         &self.tool_uses
     }
 
+    /// Indicates whether this message is a cache point
+    pub fn cache_point(mut self, input: crate::types::CachePoint) -> Self {
+        self.cache_point = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Indicates whether this message is a cache point
+    pub fn set_cache_point(mut self, input: ::std::option::Option<crate::types::CachePoint>) -> Self {
+        self.cache_point = input;
+        self
+    }
+
+    /// Indicates whether this message is a cache point
+    pub fn get_cache_point(&self) -> &::std::option::Option<crate::types::CachePoint> {
+        &self.cache_point
+    }
+
     /// Consumes the builder and constructs a
     /// [`AssistantResponseMessage`](crate::types::AssistantResponseMessage). This method will
     /// fail if any of the following fields are not set:
@@ -237,6 +263,7 @@ impl AssistantResponseMessageBuilder {
             references: self.references,
             followup_prompt: self.followup_prompt,
             tool_uses: self.tool_uses,
+            cache_point: self.cache_point,
         })
     }
 }
@@ -249,6 +276,7 @@ impl ::std::fmt::Debug for AssistantResponseMessageBuilder {
         formatter.field("references", &self.references);
         formatter.field("followup_prompt", &self.followup_prompt);
         formatter.field("tool_uses", &self.tool_uses);
+        formatter.field("cache_point", &self.cache_point);
         formatter.finish()
     }
 }

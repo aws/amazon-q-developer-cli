@@ -68,6 +68,8 @@ pub(crate) mod shape_send_message_output;
 
 pub(crate) mod shape_service_quota_exceeded_error;
 
+pub(crate) mod shape_service_unavailable_exception;
+
 pub(crate) mod shape_throttling_error;
 
 pub(crate) mod shape_validation_error;
@@ -111,6 +113,8 @@ pub(crate) mod shape_invalid_state_event;
 
 pub(crate) mod shape_message_metadata_event;
 
+pub(crate) mod shape_metadata_event;
+
 pub(crate) mod shape_programming_language;
 
 pub(crate) mod shape_supplementary_web_links_event;
@@ -127,7 +131,11 @@ pub(crate) mod shape_assistant_response_message;
 
 pub(crate) mod shape_user_input_message;
 
+pub(crate) mod shape_cache_point;
+
 pub(crate) mod shape_citation_target;
+
+pub(crate) mod shape_client_cache_config;
 
 pub(crate) mod shape_followup_prompt;
 
@@ -144,6 +152,8 @@ pub(crate) mod shape_references;
 pub(crate) mod shape_supplementary_web_link;
 
 pub(crate) mod shape_supplementary_web_links;
+
+pub(crate) mod shape_token_usage;
 
 pub(crate) mod shape_tool_result;
 

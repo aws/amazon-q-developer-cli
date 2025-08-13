@@ -21,5 +21,8 @@ pub(crate) const CLIENT_TYPE: &str = "public";
 // The start URL for public builder ID users
 pub const START_URL: &str = "https://view.awsapps.com/start";
 
+// The start URL for internal amzn users
+pub const AMZN_START_URL: &str = "https://amzn.awsapps.com/start";
+
 pub(crate) const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 pub(crate) const REFRESH_GRANT_TYPE: &str = "refresh_token";

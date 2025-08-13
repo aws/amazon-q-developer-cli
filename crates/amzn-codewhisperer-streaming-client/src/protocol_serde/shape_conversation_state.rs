@@ -6,29 +6,38 @@ pub fn ser_conversation_state(
     if let Some(var_1) = &input.conversation_id {
         object.key("conversationId").string(var_1.as_str());
     }
-    if let Some(var_2) = &input.history {
-        let mut array_3 = object.key("history").start_array();
-        for item_4 in var_2 {
+    if let Some(var_2) = &input.workspace_id {
+        object.key("workspaceId").string(var_2.as_str());
+    }
+    if let Some(var_3) = &input.history {
+        let mut array_4 = object.key("history").start_array();
+        for item_5 in var_3 {
             {
                 #[allow(unused_mut)]
-                let mut object_5 = array_3.value().start_object();
-                crate::protocol_serde::shape_chat_message::ser_chat_message(&mut object_5, item_4)?;
-                object_5.finish();
+                let mut object_6 = array_4.value().start_object();
+                crate::protocol_serde::shape_chat_message::ser_chat_message(&mut object_6, item_5)?;
+                object_6.finish();
             }
         }
-        array_3.finish();
+        array_4.finish();
     }
     {
         #[allow(unused_mut)]
-        let mut object_6 = object.key("currentMessage").start_object();
-        crate::protocol_serde::shape_chat_message::ser_chat_message(&mut object_6, &input.current_message)?;
-        object_6.finish();
+        let mut object_7 = object.key("currentMessage").start_object();
+        crate::protocol_serde::shape_chat_message::ser_chat_message(&mut object_7, &input.current_message)?;
+        object_7.finish();
     }
     {
         object.key("chatTriggerType").string(input.chat_trigger_type.as_str());
     }
-    if let Some(var_7) = &input.customization_arn {
-        object.key("customizationArn").string(var_7.as_str());
+    if let Some(var_8) = &input.customization_arn {
+        object.key("customizationArn").string(var_8.as_str());
+    }
+    if let Some(var_9) = &input.agent_continuation_id {
+        object.key("agentContinuationId").string(var_9.as_str());
+    }
+    if let Some(var_10) = &input.agent_task_type {
+        object.key("agentTaskType").string(var_10.as_str());
     }
     Ok(())
 }

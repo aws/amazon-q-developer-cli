@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{
+    BTreeSet,
+    HashSet,
+};
 use std::io::Write;
 
 use clap::{
@@ -15,7 +18,14 @@ use crossterm::{
 };
 
 use crate::api_client::model::Tool as FigTool;
-use crate::cli::chat::consts::DUMMY_TOOL_NAME;
+use crate::cli::agent::{
+    Agent,
+    DEFAULT_AGENT_NAME,
+};
+use crate::cli::chat::consts::{
+    AGENT_FORMAT_TOOLS_DOC_URL,
+    DUMMY_TOOL_NAME,
+};
 use crate::cli::chat::tools::ToolOrigin;
 use crate::cli::chat::{
     ChatError,
@@ -23,6 +33,7 @@ use crate::cli::chat::{
     ChatState,
     TRUST_ALL_TEXT,
 };
+use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
@@ -42,12 +53,28 @@ impl ToolsArgs {
         let terminal_width = session.terminal_width();
         let longest = session
             .conversation
-            .tools
+            .tool_manager
+            .tn_map
             .values()
-            .flatten()
-            .map(|FigTool::ToolSpecification(spec)| spec.name.len())
+            .map(|info| info.host_tool_name.len())
             .max()
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .max(
+                session
+                    .conversation
+                    .tools
+                    .get(&ToolOrigin::Native)
+                    .and_then(|tools| {
+                        tools
+                            .iter()
+                            .map(|tool| {
+                                let FigTool::ToolSpecification(t) = tool;
+                                t.name.len()
+                            })
+                            .max()
+                    })
+                    .unwrap_or(0),
+            );
 
         queue!(
             session.stderr,
@@ -55,7 +82,7 @@ impl ToolsArgs {
             style::SetAttribute(Attribute::Bold),
             style::Print({
                 // Adding 2 because of "- " preceding every tool name
-                let width = longest + 2 - "Tool".len() + 4;
+                let width = (longest + 2).saturating_sub("Tool".len()) + 4;
                 format!("Tool{:>width$}Permission", "", width = width)
             }),
             style::SetAttribute(Attribute::Reset),
@@ -73,31 +100,36 @@ impl ToolsArgs {
         });
 
         for (origin, tools) in origin_tools.iter() {
-            let mut sorted_tools: Vec<_> = tools
+            // Note that Tool is model facing and thus would have names recognized by model.
+            // Here we need to convert them to their host / user facing counter part.
+            let tn_map = &session.conversation.tool_manager.tn_map;
+            let sorted_tools = tools
                 .iter()
-                .filter(|FigTool::ToolSpecification(spec)| spec.name != DUMMY_TOOL_NAME)
-                .collect();
+                .filter_map(|FigTool::ToolSpecification(spec)| {
+                    if spec.name == DUMMY_TOOL_NAME {
+                        return None;
+                    }
 
-            sorted_tools.sort_by_key(|t| match t {
-                FigTool::ToolSpecification(spec) => &spec.name,
+                    tn_map
+                        .get(&spec.name)
+                        .map_or(Some(spec.name.as_str()), |info| Some(info.host_tool_name.as_str()))
+                })
+                .collect::<BTreeSet<_>>();
+
+            let to_display = sorted_tools.iter().fold(String::new(), |mut acc, tool_name| {
+                let width = longest - tool_name.len() + 4;
+                acc.push_str(
+                    format!(
+                        "- {}{:>width$}{}\n",
+                        tool_name,
+                        "",
+                        session.conversation.agents.display_label(tool_name, origin),
+                        width = width
+                    )
+                    .as_str(),
+                );
+                acc
             });
-
-            let to_display = sorted_tools
-                .iter()
-                .fold(String::new(), |mut acc, FigTool::ToolSpecification(spec)| {
-                    let width = longest - spec.name.len() + 4;
-                    acc.push_str(
-                        format!(
-                            "- {}{:>width$}{}\n",
-                            spec.name,
-                            "",
-                            session.tool_permissions.display_label(&spec.name),
-                            width = width
-                        )
-                        .as_str(),
-                    );
-                    acc
-                });
 
             let _ = queue!(
                 session.stderr,
@@ -124,21 +156,25 @@ impl ToolsArgs {
             }
         }
 
-        queue!(
-            session.stderr,
-            style::Print("\nTrusted tools will run without confirmation."),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print(format!("\n{}\n", "* Default settings")),
-            style::Print("\n💡 Use "),
-            style::SetForegroundColor(Color::Green),
-            style::Print("/tools help"),
-            style::SetForegroundColor(Color::Reset),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print(" to edit permissions.\n\n"),
-            style::SetForegroundColor(Color::Reset),
-        )?;
+        if origin_tools.is_empty() {
+            queue!(
+                session.stderr,
+                style::Print(
+                    "\nNo tools are currently enabled.\n\nRefer to the documentation for how to add tools to your agent: "
+                ),
+                style::SetForegroundColor(Color::Green),
+                style::Print(AGENT_FORMAT_TOOLS_DOC_URL),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+        }
 
         Ok(ChatState::default())
+    }
+
+    pub fn subcommand_name(&self) -> Option<&'static str> {
+        self.subcommand.as_ref().map(|s| s.name())
     }
 }
 
@@ -146,7 +182,9 @@ impl ToolsArgs {
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
     before_long_help = "By default, Amazon Q will ask for your permission to use certain tools. You can control which tools you
-trust so that no confirmation is required. These settings will last only for this session."
+trust so that no confirmation is required.
+
+Refer to the documentation for how to configure tools with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#tools-field"
 )]
 pub enum ToolsSubcommand {
     /// Show the input schema for all available tools
@@ -165,19 +203,35 @@ pub enum ToolsSubcommand {
     TrustAll,
     /// Reset all tools to default permission levels
     Reset,
-    /// Reset a single tool to default permission level
-    ResetSingle { tool_name: String },
 }
 
 impl ToolsSubcommand {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        let existing_tools: HashSet<&String> = session
+        // Here we need to obtain the list of host tool names
+        let existing_custom_tools = session
+            .conversation
+            .tool_manager
+            .tn_map
+            .values()
+            .cloned()
+            .collect::<HashSet<_>>();
+
+        // We also need to obtain a list of native tools since tn_map from ToolManager does not
+        // contain native tools
+        let native_tool_names = session
             .conversation
             .tools
-            .values()
-            .flatten()
-            .map(|FigTool::ToolSpecification(spec)| &spec.name)
-            .collect();
+            .get(&ToolOrigin::Native)
+            .map(|tools| {
+                tools
+                    .iter()
+                    .filter_map(|tool| match tool {
+                        FigTool::ToolSpecification(t) if t.name != DUMMY_TOOL_NAME => Some(t.name.clone()),
+                        FigTool::ToolSpecification(_) => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         match self {
             Self::Schema => {
@@ -186,9 +240,10 @@ impl ToolsSubcommand {
                 queue!(session.stderr, style::Print(schema_json), style::Print("\n"))?;
             },
             Self::Trust { tool_names } => {
-                let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) = tool_names
-                    .into_iter()
-                    .partition(|tool_name| existing_tools.contains(tool_name));
+                let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) =
+                    tool_names.into_iter().partition(|tool_name| {
+                        existing_custom_tools.contains(tool_name) || native_tool_names.contains(tool_name)
+                    });
 
                 if !invalid_tools.is_empty() {
                     queue!(
@@ -204,14 +259,26 @@ impl ToolsSubcommand {
                     )?;
                 }
                 if !valid_tools.is_empty() {
-                    valid_tools.iter().for_each(|t| session.tool_permissions.trust_tool(t));
+                    let tools_to_trust = valid_tools
+                        .into_iter()
+                        .filter_map(|tool_name| {
+                            if native_tool_names.contains(&tool_name) {
+                                Some(tool_name)
+                            } else {
+                                existing_custom_tools
+                                    .get(&tool_name)
+                                    .map(|info| format!("@{}{MCP_SERVER_TOOL_DELIMITER}{tool_name}", info.server_name))
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
                     queue!(
                         session.stderr,
                         style::SetForegroundColor(Color::Green),
-                        if valid_tools.len() > 1 {
-                            style::Print(format!("Tools '{}' are ", valid_tools.join("', '")))
+                        if tools_to_trust.len() > 1 {
+                            style::Print(format!("\nTools '{}' are ", tools_to_trust.join("', '")))
                         } else {
-                            style::Print(format!("Tool '{}' is ", valid_tools[0]))
+                            style::Print(format!("\nTool '{}' is ", tools_to_trust[0]))
                         },
                         style::Print("now trusted. I will "),
                         style::SetAttribute(Attribute::Bold),
@@ -220,7 +287,7 @@ impl ToolsSubcommand {
                         style::SetForegroundColor(Color::Green),
                         style::Print(format!(
                             " ask for confirmation before running {}.",
-                            if valid_tools.len() > 1 {
+                            if tools_to_trust.len() > 1 {
                                 "these tools"
                             } else {
                                 "this tool"
@@ -229,12 +296,15 @@ impl ToolsSubcommand {
                         style::Print("\n"),
                         style::SetForegroundColor(Color::Reset),
                     )?;
+
+                    session.conversation.agents.trust_tools(tools_to_trust);
                 }
             },
             Self::Untrust { tool_names } => {
-                let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) = tool_names
-                    .into_iter()
-                    .partition(|tool_name| existing_tools.contains(tool_name));
+                let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) =
+                    tool_names.into_iter().partition(|tool_name| {
+                        existing_custom_tools.contains(tool_name) || native_tool_names.contains(tool_name)
+                    });
 
                 if !invalid_tools.is_empty() {
                     queue!(
@@ -250,16 +320,28 @@ impl ToolsSubcommand {
                     )?;
                 }
                 if !valid_tools.is_empty() {
-                    valid_tools
-                        .iter()
-                        .for_each(|t| session.tool_permissions.untrust_tool(t));
+                    let tools_to_untrust = valid_tools
+                        .into_iter()
+                        .filter_map(|tool_name| {
+                            if native_tool_names.contains(&tool_name) {
+                                Some(tool_name)
+                            } else {
+                                existing_custom_tools
+                                    .get(&tool_name)
+                                    .map(|info| format!("@{}{MCP_SERVER_TOOL_DELIMITER}{tool_name}", info.server_name))
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
+                    session.conversation.agents.untrust_tools(&tools_to_untrust);
+
                     queue!(
                         session.stderr,
                         style::SetForegroundColor(Color::Green),
-                        if valid_tools.len() > 1 {
-                            style::Print(format!("Tools '{}' are ", valid_tools.join("', '")))
+                        if tools_to_untrust.len() > 1 {
+                            style::Print(format!("\nTools '{}' are ", tools_to_untrust.join("', '")))
                         } else {
-                            style::Print(format!("Tool '{}' is ", valid_tools[0]))
+                            style::Print(format!("\nTool '{}' is ", tools_to_untrust[0]))
                         },
                         style::Print("set to per-request confirmation.\n"),
                         style::SetForegroundColor(Color::Reset),
@@ -267,45 +349,45 @@ impl ToolsSubcommand {
                 }
             },
             Self::TrustAll => {
-                session
-                    .conversation
-                    .tools
-                    .values()
-                    .flatten()
-                    .for_each(|FigTool::ToolSpecification(spec)| {
-                        session.tool_permissions.trust_tool(spec.name.as_str());
-                    });
-                queue!(session.stderr, style::Print(TRUST_ALL_TEXT), style::Print("\n"))?;
+                session.conversation.agents.trust_all_tools = true;
+                queue!(session.stderr, style::Print(TRUST_ALL_TEXT))?;
             },
             Self::Reset => {
-                session.tool_permissions.reset();
+                session.conversation.agents.trust_all_tools = false;
+
+                let active_agent_path = session.conversation.agents.get_active().and_then(|a| a.path.clone());
+                if let Some(path) = active_agent_path {
+                    let result = async {
+                        let content = tokio::fs::read(&path).await?;
+                        let orig_agent = serde_json::from_slice::<Agent>(&content)?;
+                        // since all we're doing here is swapping the tool list, it's okay if we
+                        // don't thaw it here
+                        Ok::<Agent, Box<dyn std::error::Error>>(orig_agent)
+                    }
+                    .await;
+
+                    if let (Ok(orig_agent), Some(active_agent)) = (result, session.conversation.agents.get_active_mut())
+                    {
+                        active_agent.allowed_tools = orig_agent.allowed_tools;
+                    }
+                } else if session
+                    .conversation
+                    .agents
+                    .get_active()
+                    .is_some_and(|a| a.name.as_str() == DEFAULT_AGENT_NAME)
+                {
+                    // We only want to reset the tool permission and nothing else
+                    if let Some(active_agent) = session.conversation.agents.get_active_mut() {
+                        active_agent.allowed_tools = Default::default();
+                        active_agent.tools_settings = Default::default();
+                    }
+                }
                 queue!(
                     session.stderr,
                     style::SetForegroundColor(Color::Green),
-                    style::Print("Reset all tools to the default permission levels.\n"),
+                    style::Print("\nReset all tools to the permission levels as defined in agent."),
                     style::SetForegroundColor(Color::Reset),
                 )?;
-            },
-            Self::ResetSingle { tool_name } => {
-                if session.tool_permissions.has(&tool_name) || session.tool_permissions.trust_all {
-                    session.tool_permissions.reset_tool(&tool_name);
-                    queue!(
-                        session.stderr,
-                        style::SetForegroundColor(Color::Green),
-                        style::Print(format!("Reset tool '{}' to the default permission level.\n", tool_name)),
-                        style::SetForegroundColor(Color::Reset),
-                    )?;
-                } else {
-                    queue!(
-                        session.stderr,
-                        style::SetForegroundColor(Color::Red),
-                        style::Print(format!(
-                            "Tool '{}' does not exist or is already in default settings.\n",
-                            tool_name
-                        )),
-                        style::SetForegroundColor(Color::Reset),
-                    )?;
-                }
             },
         };
 
@@ -314,5 +396,15 @@ impl ToolsSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ToolsSubcommand::Schema => "schema",
+            ToolsSubcommand::Trust { .. } => "trust",
+            ToolsSubcommand::Untrust { .. } => "untrust",
+            ToolsSubcommand::TrustAll => "trust-all",
+            ToolsSubcommand::Reset => "reset",
+        }
     }
 }

@@ -33,5 +33,17 @@ pub fn ser_user_input_message(
     if let Some(var_9) = &input.model_id {
         object.key("modelId").string(var_9.as_str());
     }
+    if let Some(var_10) = &input.cache_point {
+        #[allow(unused_mut)]
+        let mut object_11 = object.key("cachePoint").start_object();
+        crate::protocol_serde::shape_cache_point::ser_cache_point(&mut object_11, var_10)?;
+        object_11.finish();
+    }
+    if let Some(var_12) = &input.client_cache_config {
+        #[allow(unused_mut)]
+        let mut object_13 = object.key("clientCacheConfig").start_object();
+        crate::protocol_serde::shape_client_cache_config::ser_client_cache_config(&mut object_13, var_12)?;
+        object_13.finish();
+    }
     Ok(())
 }

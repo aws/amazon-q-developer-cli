@@ -134,6 +134,21 @@ pub(crate) fn followup_prompt_correct_errors(
     builder
 }
 
+pub(crate) fn token_usage_correct_errors(
+    mut builder: crate::types::builders::TokenUsageBuilder,
+) -> crate::types::builders::TokenUsageBuilder {
+    if builder.uncached_input_tokens.is_none() {
+        builder.uncached_input_tokens = Some(Default::default())
+    }
+    if builder.output_tokens.is_none() {
+        builder.output_tokens = Some(Default::default())
+    }
+    if builder.total_tokens.is_none() {
+        builder.total_tokens = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn tool_result_correct_errors(
     mut builder: crate::types::builders::ToolResultBuilder,
 ) -> crate::types::builders::ToolResultBuilder {

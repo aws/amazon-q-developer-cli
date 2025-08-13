@@ -23,62 +23,83 @@
           "description": "A brief explanation of what the command does"
         }
       },
-      "required": ["command"]
+      "required": [
+        "command"
+      ]
     }
   },
   "fs_read": {
     "name": "fs_read",
-    "description": "Tool for reading files (for example, `cat -n`),  directories (for example, `ls -la`) and images. If user has supplied paths that appear to be leading to images, you should use this tool right away using Image mode. The behavior of this tool is determined by the `mode` parameter. The available modes are:\n- line: Show lines in a file, given by an optional `start_line` and optional `end_line`.\n- directory: List directory contents. Content is returned in the \"long format\" of ls (that is, `ls -la`).\n- search: Search for a pattern in a file. The pattern is a string. The matching is case insensitive.\n\nExample Usage:\n1. Read all lines from a file: command=\"line\", path=\"/path/to/file.txt\"\n2. Read the last 5 lines from a file: command=\"line\", path=\"/path/to/file.txt\", start_line=-5\n3. List the files in the home directory: command=\"line\", path=\"~\"\n4. Recursively list files in a directory to a max depth of 2: command=\"line\", path=\"/path/to/directory\", depth=2\n5. Search for all instances of \"test\" in a file: command=\"search\", path=\"/path/to/file.txt\", pattern=\"test\"\n",
+    "description": "Tool for reading files, directories and images. Always provide an 'operations' array.\n\nFor single operation: provide array with one element.\nFor batch operations: provide array with multiple elements.\n\nAvailable modes:\n- Line: Read lines from a file\n- Directory: List directory contents\n- Search: Search for patterns in files\n- Image: Read and process images\n\nExamples:\n1. Single: {\"operations\": [{\"mode\": \"Line\", \"path\": \"/file.txt\"}]}\n2. Batch: {\"operations\": [{\"mode\": \"Line\", \"path\": \"/file1.txt\"}, {\"mode\": \"Search\", \"path\": \"/file2.txt\", \"pattern\": \"test\"}]}",
     "input_schema": {
       "type": "object",
       "properties": {
-        "path": {
-          "description": "Path to the file or directory. The path should be absolute, or otherwise start with ~ for the user's home.",
-          "type": "string"
-        },
-        "image_paths": {
-          "description": "List of paths to the images. This is currently supported by the Image mode.",
+        "operations": {
           "type": "array",
+          "description": "Array of operations to execute. Provide one element for single operation, multiple for batch.",
           "items": {
-            "type": "string"
-          }
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "Line",
+                  "Directory",
+                  "Search",
+                  "Image"
+                ],
+                "description": "The operation mode to run in: `Line`, `Directory`, `Search`. `Line` and `Search` are only for text files, and `Directory` is only for directories. `Image` is for image files, in this mode `image_paths` is required."
+              },
+              "path": {
+                "type": "string",
+                "description": "Path to the file or directory. The path should be absolute, or otherwise start with ~ for the user's home (required for Line, Directory, Search modes)."
+              },
+              "image_paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "List of paths to the images. This is currently supported by the Image mode."
+              },
+              "start_line": {
+                "type": "integer",
+                "description": "Starting line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
+                "default": 1
+              },
+              "end_line": {
+                "type": "integer",
+                "description": "Ending line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
+                "default": -1
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Pattern to search for (required, for Search mode). Case insensitive. The pattern matching is performed per line."
+              },
+              "context_lines": {
+                "type": "integer",
+                "description": "Number of context lines around search results (optional, for Search mode)",
+                "default": 2
+              },
+              "depth": {
+                "type": "integer",
+                "description": "Depth of a recursive directory listing (optional, for Directory mode)",
+                "default": 0
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "minItems": 1
         },
-        "mode": {
+        "summary": {
           "type": "string",
-          "enum": [
-            "Line",
-            "Directory",
-            "Search",
-            "Image"
-          ],
-          "description": "The mode to run in: `Line`, `Directory`, `Search`. `Line` and `Search` are only for text files, and `Directory` is only for directories. `Image` is for image files, in this mode `image_paths` is required."
-        },
-        "start_line": {
-          "type": "integer",
-          "description": "Starting line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
-          "default": 1
-        },
-        "end_line": {
-          "type": "integer",
-          "description": "Ending line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
-          "default": -1
-        },
-        "pattern": {
-          "type": "string",
-          "description": "Pattern to search for (required, for Search mode). Case insensitive. The pattern matching is performed per line."
-        },
-        "context_lines": {
-          "type": "integer",
-          "description": "Number of context lines around search results (optional, for Search mode)",
-          "default": 2
-        },
-        "depth": {
-          "type": "integer",
-          "description": "Depth of a recursive directory listing (optional, for Directory mode)",
-          "default": 0
+          "description": "Optional description of the purpose of this batch operation (mainly useful for multiple operations)"
         }
       },
-      "required": ["path", "mode"]
+      "required": [
+        "operations"
+      ]
     }
   },
   "fs_write": {
@@ -89,7 +110,12 @@
       "properties": {
         "command": {
           "type": "string",
-          "enum": ["create", "str_replace", "insert", "append"],
+          "enum": [
+            "create",
+            "str_replace",
+            "insert",
+            "append"
+          ],
           "description": "The commands to run. Allowed options are: `create`, `str_replace`, `insert`, `append`."
         },
         "file_text": {
@@ -117,7 +143,10 @@
           "type": "string"
         }
       },
-      "required": ["command", "path"]
+      "required": [
+        "command",
+        "path"
+      ]
     }
   },
   "use_aws": {
@@ -151,7 +180,12 @@
           "description": "Human readable description of the api that is being called."
         }
       },
-      "required": ["region", "service_name", "operation_name", "label"]
+      "required": [
+        "region",
+        "service_name",
+        "operation_name",
+        "label"
+      ]
     }
   },
   "gh_issue": {
@@ -177,7 +211,9 @@
           "description": "Optional: Previous user chat requests or steps that were taken that may have resulted in the issue or error response."
         }
       },
-      "required": ["title"]
+      "required": [
+        "title"
+      ]
     }
   },
   "thinking": {
@@ -191,46 +227,59 @@
           "description": "A reflective note or intermediate reasoning step such as \"The user needs to prepare their application for production. I need to complete three major asks including 1: building their code from source, 2: bundling their release artifacts together, and 3: signing the application bundle."
         }
       },
-      "required": ["thought"]
+      "required": [
+        "thought"
+      ]
     }
   },
   "knowledge": {
-      "name": "knowledge",
-      "description": "Store and retrieve information in knowledge base across chat sessions. Provides semantic search capabilities for files, directories, and text content.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "command": {
-            "type": "string",
-            "enum": ["show", "add", "remove", "clear", "search", "update", "status", "cancel"],
-            "description": "The knowledge operation to perform:\n- 'show': List all knowledge contexts (no additional parameters required)\n- 'add': Add content to knowledge base (requires 'name' and 'value')\n- 'remove': Remove content from knowledge base (requires one of: 'name', 'context_id', or 'path')\n- 'clear': Remove all knowledge contexts.\n- 'search': Search across knowledge contexts (requires 'query', optional 'context_id')\n- 'update': Update existing context with new content (requires 'path' and one of: 'name', 'context_id')\n- 'status': Show background operation status and progress\n- 'cancel': Cancel background operations (optional 'operation_id' to cancel specific operation, or cancel all if not provided)"
-          },
-          "name": {
-            "type": "string",
-            "description": "A descriptive name for the knowledge context. Required for 'add' operations. Can be used for 'remove' and 'update' operations to identify the context."
-          },
-          "value": {
-            "type": "string",
-            "description": "The content to store in knowledge base. Required for 'add' operations. Can be either text content or a file/directory path. If it's a valid file or directory path, the content will be indexed; otherwise it's treated as text."
-          },
-          "context_id": {
-            "type": "string",
-            "description": "The unique context identifier for targeted operations. Can be obtained from 'show' command. Used for 'remove', 'update', and 'search' operations to specify which context to operate on."
-          },
-          "path": {
-            "type": "string",
-            "description": "File or directory path. Used in 'remove' operations to remove contexts by their source path, and required for 'update' operations to specify the new content location."
-          },
-          "query": {
-            "type": "string",
-            "description": "The search query string. Required for 'search' operations. Performs semantic search across knowledge contexts to find relevant content."
-          },
-          "operation_id": {
-            "type": "string",
-            "description": "Optional operation ID to cancel a specific operation. Used with 'cancel' command. If not provided, all active operations will be cancelled. Can be either the full operation ID or the short 8-character ID."
-          }
+    "name": "knowledge",
+    "description": "Store and retrieve information in knowledge base across chat sessions. Provides semantic search capabilities for files, directories, and text content.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "enum": [
+            "show",
+            "add",
+            "remove",
+            "clear",
+            "search",
+            "update",
+            "status",
+            "cancel"
+          ],
+          "description": "The knowledge operation to perform:\n- 'show': List all knowledge contexts (no additional parameters required)\n- 'add': Add content to knowledge base (requires 'name' and 'value')\n- 'remove': Remove content from knowledge base (requires one of: 'name', 'context_id', or 'path')\n- 'clear': Remove all knowledge contexts.\n- 'search': Search across knowledge contexts (requires 'query', optional 'context_id')\n- 'update': Update existing context with new content (requires 'path' and one of: 'name', 'context_id')\n- 'status': Show background operation status and progress\n- 'cancel': Cancel background operations (optional 'operation_id' to cancel specific operation, or cancel all if not provided)"
         },
-        "required": ["command"]
-      }
+        "name": {
+          "type": "string",
+          "description": "A descriptive name for the knowledge context. Required for 'add' operations. Can be used for 'remove' and 'update' operations to identify the context."
+        },
+        "value": {
+          "type": "string",
+          "description": "The content to store in knowledge base. Required for 'add' operations. Can be either text content or a file/directory path. If it's a valid file or directory path, the content will be indexed; otherwise it's treated as text."
+        },
+        "context_id": {
+          "type": "string",
+          "description": "The unique context identifier for targeted operations. Can be obtained from 'show' command. Used for 'remove', 'update', and 'search' operations to specify which context to operate on."
+        },
+        "path": {
+          "type": "string",
+          "description": "File or directory path. Used in 'remove' operations to remove contexts by their source path, and required for 'update' operations to specify the new content location."
+        },
+        "query": {
+          "type": "string",
+          "description": "The search query string. Required for 'search' operations. Performs semantic search across knowledge contexts to find relevant content."
+        },
+        "operation_id": {
+          "type": "string",
+          "description": "Optional operation ID to cancel a specific operation. Used with 'cancel' command. If not provided, all active operations will be cancelled. Can be either the full operation ID or the short 8-character ID."
+        }
+      },
+      "required": [
+        "command"
+      ]
+    }
   }
 }

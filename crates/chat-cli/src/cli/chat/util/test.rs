@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::cli::chat::consts::CONTEXT_FILES_MAX_SIZE;
+use crate::cli::agent::Agent;
 use crate::cli::chat::context::ContextManager;
 use crate::os::Os;
 
@@ -15,11 +15,10 @@ pub const TEST_FILE_PATH: &str = "/test_file.txt";
 pub const TEST_HIDDEN_FILE_PATH: &str = "/aaaa2/.hidden";
 
 // Helper function to create a test ContextManager with Context
-pub async fn create_test_context_manager(context_file_size: Option<usize>) -> Result<ContextManager> {
-    let context_file_size = context_file_size.unwrap_or(CONTEXT_FILES_MAX_SIZE);
-    let os = Os::new().await.unwrap();
-    let manager = ContextManager::new(&os, Some(context_file_size)).await?;
-    Ok(manager)
+pub fn create_test_context_manager(context_file_size: Option<usize>) -> Result<ContextManager> {
+    let context_file_size = context_file_size.unwrap_or(150_000);
+    let agent = Agent::default();
+    ContextManager::from_agent(&agent, context_file_size)
 }
 
 /// Sets up the following filesystem structure:
