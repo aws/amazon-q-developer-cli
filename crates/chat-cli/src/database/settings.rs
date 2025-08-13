@@ -22,6 +22,11 @@ pub enum Setting {
     ShareCodeWhispererContent,
     EnabledThinking,
     EnabledKnowledge,
+    KnowledgeDefaultIncludePatterns,
+    KnowledgeDefaultExcludePatterns,
+    KnowledgeMaxFiles,
+    KnowledgeChunkSize,
+    KnowledgeChunkOverlap,
     SkimCommandKey,
     ChatGreetingEnabled,
     ApiTimeout,
@@ -47,6 +52,11 @@ impl AsRef<str> for Setting {
             Self::ShareCodeWhispererContent => "codeWhisperer.shareCodeWhispererContentWithAWS",
             Self::EnabledThinking => "chat.enableThinking",
             Self::EnabledKnowledge => "chat.enableKnowledge",
+            Self::KnowledgeDefaultIncludePatterns => "knowledge.defaultIncludePatterns",
+            Self::KnowledgeDefaultExcludePatterns => "knowledge.defaultExcludePatterns",
+            Self::KnowledgeMaxFiles => "knowledge.maxFiles",
+            Self::KnowledgeChunkSize => "knowledge.chunkSize",
+            Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap",
             Self::SkimCommandKey => "chat.skimCommandKey",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
@@ -82,6 +92,11 @@ impl TryFrom<&str> for Setting {
             "codeWhisperer.shareCodeWhispererContentWithAWS" => Ok(Self::ShareCodeWhispererContent),
             "chat.enableThinking" => Ok(Self::EnabledThinking),
             "chat.enableKnowledge" => Ok(Self::EnabledKnowledge),
+            "knowledge.defaultIncludePatterns" => Ok(Self::KnowledgeDefaultIncludePatterns),
+            "knowledge.defaultExcludePatterns" => Ok(Self::KnowledgeDefaultExcludePatterns),
+            "knowledge.maxFiles" => Ok(Self::KnowledgeMaxFiles),
+            "knowledge.chunkSize" => Ok(Self::KnowledgeChunkSize),
+            "knowledge.chunkOverlap" => Ok(Self::KnowledgeChunkOverlap),
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),
@@ -164,6 +179,10 @@ impl Settings {
 
     pub fn get_int(&self, key: Setting) -> Option<i64> {
         self.get(key).and_then(|value| value.as_i64())
+    }
+
+    pub fn get_int_or(&self, key: Setting, default: usize) -> usize {
+        self.get_int(key).map_or(default, |v| v as usize)
     }
 
     pub async fn save_to_file(&self) -> Result<(), DatabaseError> {
