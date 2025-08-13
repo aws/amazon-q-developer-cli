@@ -214,8 +214,9 @@ pub fn normalize_model_name(name: &str) -> &str {
 pub fn find_model<'a>(models: &'a [ModelInfo], name: &str) -> Option<&'a ModelInfo> {
     let normalized = normalize_model_name(name);
     models.iter().find(|m| {
-        [name, normalized].iter().any(|n| {
-            m.model_id.eq_ignore_ascii_case(n) || m.model_name.as_deref().is_some_and(|mn| mn.eq_ignore_ascii_case(n))
-        })
+        m.model_name
+            .as_deref()
+            .is_some_and(|n| n.eq_ignore_ascii_case(normalized))
+            || m.model_id.eq_ignore_ascii_case(normalized)
     })
 }
