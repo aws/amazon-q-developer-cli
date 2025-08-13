@@ -176,6 +176,12 @@ impl ExecuteCommand {
         Ok(())
     }
 
+    pub fn allowable_field_to_be_overriden(settings: &serde_json::Value) -> Option<String> {
+        settings
+            .get("allowedCommands")
+            .map(|value| format!("allowedCommands: {}", value))
+    }
+
     pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]

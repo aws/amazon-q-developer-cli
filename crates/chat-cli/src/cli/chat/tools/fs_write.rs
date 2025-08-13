@@ -415,6 +415,12 @@ impl FsWrite {
         }
     }
 
+    pub fn allowable_field_to_be_overriden(settings: &serde_json::Value) -> Option<String> {
+        settings
+            .get("allowedPaths")
+            .map(|value| format!("allowedPaths: {}", value))
+    }
+
     pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]

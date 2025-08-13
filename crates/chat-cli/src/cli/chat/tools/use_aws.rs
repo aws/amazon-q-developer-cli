@@ -175,6 +175,12 @@ impl UseAws {
         }
     }
 
+    pub fn allowable_field_to_be_overriden(settings: &serde_json::Value) -> Option<String> {
+        settings
+            .get("allowedServices")
+            .map(|value| format!("allowedServices: {}", value))
+    }
+
     pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]

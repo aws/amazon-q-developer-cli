@@ -123,7 +123,10 @@ use util::{
 use winnow::Partial;
 use winnow::stream::Offset;
 
-use super::agent::PermissionEvalResult;
+use super::agent::{
+    DEFAULT_AGENT_NAME,
+    PermissionEvalResult,
+};
 use crate::api_client::model::ToolResultStatus;
 use crate::api_client::{
     self,
@@ -621,7 +624,7 @@ impl ChatSession {
                                 ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
                             ))
                         )?;
-                        let _ = agents.switch("default");
+                        let _ = agents.switch(DEFAULT_AGENT_NAME);
                     }
                 }
                 cs.agents = agents;
@@ -631,6 +634,10 @@ impl ChatSession {
             },
             false => ConversationState::new(conversation_id, agents, tool_config, tool_manager, model_id, os).await,
         };
+
+        if let Some(agent) = conversation.agents.get_active() {
+            agent.validate_tool_settings(&mut stderr)?;
+        }
 
         // Spawn a task for listening and broadcasting sigints.
         let (ctrlc_tx, ctrlc_rx) = tokio::sync::broadcast::channel(4);
