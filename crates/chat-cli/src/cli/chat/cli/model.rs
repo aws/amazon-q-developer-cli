@@ -196,9 +196,26 @@ fn get_fallback_models() -> Vec<ModelInfo> {
             context_window_tokens: 200_000,
         },
         ModelInfo {
-            model_name: Some("claude-4-sonnet".to_string()),
-            model_id: "claude-4-sonnet".to_string(),
+            model_name: Some("claude-sonnet-4".to_string()),
+            model_id: "claude-sonnet-4".to_string(),
             context_window_tokens: 200_000,
         },
     ]
+}
+
+pub fn normalize_model_name(name: &str) -> &str {
+    match name {
+        "claude-4-sonnet" => "claude-sonnet-4",
+        // can add more mapping for backward compatibility
+        _ => name,
+    }
+}
+
+pub fn find_model<'a>(models: &'a [ModelInfo], name: &str) -> Option<&'a ModelInfo> {
+    let normalized = normalize_model_name(name);
+    models.iter().find(|m| {
+        [name, normalized].iter().any(|n| {
+            m.model_id.eq_ignore_ascii_case(n) || m.model_name.as_deref().is_some_and(|mn| mn.eq_ignore_ascii_case(n))
+        })
+    })
 }

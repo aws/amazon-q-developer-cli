@@ -16,6 +16,7 @@ mod server_messenger;
 mod skim_integration;
 mod token_counter;
 pub mod tool_manager;
+use crate::cli::chat::cli::model::find_model;
 pub mod tools;
 pub mod util;
 use std::borrow::Cow;
@@ -315,13 +316,7 @@ impl ChatArgs {
         // Otherwise, CLI will use a default model when starting chat
         let (models, default_model_opt) = get_available_models(os).await?;
         let model_id: Option<String> = if let Some(requested) = self.model.as_ref() {
-            let requested_lower = requested.to_lowercase();
-            if let Some(m) = models.iter().find(|m| {
-                m.model_name
-                    .as_deref()
-                    .is_some_and(|n| n.eq_ignore_ascii_case(&requested_lower))
-                    || m.model_id.eq_ignore_ascii_case(&requested_lower)
-            }) {
+            if let Some(m) = find_model(&models, requested) {
                 Some(m.model_id.clone())
             } else {
                 let available = models
@@ -332,14 +327,9 @@ impl ChatArgs {
                 bail!("Model '{}' does not exist. Available models: {}", requested, available);
             }
         } else if let Some(saved) = os.database.settings.get_string(Setting::ChatDefaultModel) {
-            if let Some(m) = models.iter().find(|m| {
-                m.model_name.as_deref().is_some_and(|n| n.eq_ignore_ascii_case(&saved))
-                    || m.model_id.eq_ignore_ascii_case(&saved)
-            }) {
-                Some(m.model_id.clone())
-            } else {
-                Some(default_model_opt.model_id.clone())
-            }
+            find_model(&models, &saved)
+                .map(|m| m.model_id.clone())
+                .or(Some(default_model_opt.model_id.clone()))
         } else {
             Some(default_model_opt.model_id.clone())
         };
