@@ -69,7 +69,7 @@ impl ExecuteCommand {
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
-        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "${", "\n", "IFS"];
+        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "${", "\n", "\r", "IFS"];
 
         if args
             .iter()
@@ -300,8 +300,9 @@ mod tests {
             ("cat <<< 'some string here' > myimportantfile", true),
             ("echo '\n#!/usr/bin/env bash\necho hello\n' > myscript.sh", true),
             ("cat <<EOF > myimportantfile\nhello world\nEOF", true),
-            // newline check
+            // newline checks
             ("which ls\ntouch asdf", true),
+            ("which ls\rtouch asdf", true),
             // $IFS check
             (
                 r#"IFS=';'; for cmd in "which ls;touch asdf"; do eval "$cmd"; done"#,
