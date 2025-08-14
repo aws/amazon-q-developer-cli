@@ -1,5 +1,6 @@
 mod credentials;
 pub mod customization;
+mod delay_interceptor;
 mod endpoints;
 mod error;
 pub mod model;
@@ -41,6 +42,7 @@ use tracing::{
 };
 
 use crate::api_client::credentials::CredentialsChain;
+use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
 use crate::api_client::model::{
     ChatResponseStream,
     ConversationState,
@@ -163,6 +165,7 @@ impl ApiClient {
                     .http_client(crate::aws_common::http_client::client())
                     .interceptor(OptOutInterceptor::new(database))
                     .interceptor(UserAgentOverrideInterceptor::new())
+                    .interceptor(DelayTrackingInterceptor::new())
                     .app_name(app_name())
                     .endpoint_url(endpoint.url())
                     .retry_classifier(retry_classifier::QCliRetryClassifier::new())
@@ -176,6 +179,7 @@ impl ApiClient {
                         .http_client(crate::aws_common::http_client::client())
                         .interceptor(OptOutInterceptor::new(database))
                         .interceptor(UserAgentOverrideInterceptor::new())
+                        .interceptor(DelayTrackingInterceptor::new())
                         .bearer_token_resolver(BearerResolver)
                         .app_name(app_name())
                         .endpoint_url(endpoint.url())

@@ -17,6 +17,40 @@ use serde::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+/// Request for adding a new context to the knowledge base
+#[derive(Debug, Clone)]
+pub struct AddContextRequest {
+    /// Path to the directory or file to index
+    pub path: PathBuf,
+    /// Human-readable name for the context
+    pub name: String,
+    /// Description of the context
+    pub description: String,
+    /// Whether this context should be persistent
+    pub persistent: bool,
+    /// Optional patterns to include during indexing
+    pub include_patterns: Option<Vec<String>>,
+    /// Optional patterns to exclude during indexing
+    pub exclude_patterns: Option<Vec<String>>,
+}
+
+/// Parameters for indexing operations (internal use)
+#[derive(Debug, Clone)]
+pub struct IndexingParams {
+    /// Path to the directory or file to index
+    pub path: PathBuf,
+    /// Human-readable name for the context
+    pub name: String,
+    /// Description of the context
+    pub description: String,
+    /// Whether this context should be persistent
+    pub persistent: bool,
+    /// Optional patterns to include during indexing
+    pub include_patterns: Option<Vec<String>>,
+    /// Optional patterns to exclude during indexing
+    pub exclude_patterns: Option<Vec<String>>,
+}
+
 use crate::client::SemanticContext;
 
 /// Type alias for context ID
@@ -52,6 +86,14 @@ pub struct KnowledgeContext {
     /// Original source path if created from a directory
     pub source_path: Option<String>,
 
+    /// Include patterns used during indexing
+    #[serde(default)]
+    pub include_patterns: Vec<String>,
+
+    /// Exclude patterns used during indexing
+    #[serde(default)]
+    pub exclude_patterns: Vec<String>,
+
     /// Number of items in the context
     pub item_count: usize,
 }
@@ -64,6 +106,7 @@ impl KnowledgeContext {
         description: &str,
         persistent: bool,
         source_path: Option<String>,
+        patterns: (Vec<String>, Vec<String>),
         item_count: usize,
     ) -> Self {
         let now = Utc::now();
@@ -74,6 +117,8 @@ impl KnowledgeContext {
             created_at: now,
             updated_at: now,
             source_path,
+            include_patterns: patterns.0,
+            exclude_patterns: patterns.1,
             persistent,
             item_count,
         }
@@ -304,6 +349,8 @@ pub(crate) enum IndexingJob {
         name: String,
         description: String,
         persistent: bool,
+        include_patterns: Option<Vec<String>>,
+        exclude_patterns: Option<Vec<String>>,
     },
     Clear {
         id: Uuid,
