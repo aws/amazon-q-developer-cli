@@ -48,6 +48,11 @@ pub struct ExecuteCommand {
 
 impl ExecuteCommand {
     pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
+        // Always require acceptance for multi-line commands.
+        if self.command.contains("\n") || self.command.contains("\r") {
+            return true;
+        }
+
         let default_arr = vec![];
         let allowed_commands = allowed_commands.unwrap_or(&default_arr);
 
@@ -64,7 +69,7 @@ impl ExecuteCommand {
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
-        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";"];
+        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "${", "\n", "\r", "IFS"];
 
         if args
             .iter()
@@ -106,6 +111,7 @@ impl ExecuteCommand {
                             arg.contains("-exec") // includes -execdir
                                 || arg.contains("-delete")
                                 || arg.contains("-ok") // includes -okdir
+                                || arg.contains("-fprint") // includes -fprint0 and -fprintf
                         }) =>
                 {
                     return true;
@@ -114,7 +120,11 @@ impl ExecuteCommand {
                     // Special casing for `grep`. -P flag for perl regexp has RCE issues, apparently
                     // should not be supported within grep but is flagged as a possibility since this is perl
                     // regexp.
-                    if cmd == "grep" && cmd_args.iter().any(|arg| arg.contains("-P")) {
+                    if cmd == "grep"
+                        && cmd_args
+                            .iter()
+                            .any(|arg| arg.contains("-P") || arg.contains("--perl-regexp"))
+                    {
                         return true;
                     }
                     let is_cmd_read_only = READONLY_COMMANDS.contains(&cmd.as_str());
@@ -226,7 +236,9 @@ impl ExecuteCommand {
                     return PermissionEvalResult::Deny(denied_match_set);
                 }
 
-                if !is_in_allowlist || self.requires_acceptance(Some(&allowed_commands), allow_read_only) {
+                if is_in_allowlist {
+                    PermissionEvalResult::Allow
+                } else if self.requires_acceptance(Some(&allowed_commands), allow_read_only) {
                     PermissionEvalResult::Ask
                 } else {
                     PermissionEvalResult::Allow
@@ -293,6 +305,14 @@ mod tests {
             ("cat <<< 'some string here' > myimportantfile", true),
             ("echo '\n#!/usr/bin/env bash\necho hello\n' > myscript.sh", true),
             ("cat <<EOF > myimportantfile\nhello world\nEOF", true),
+            // newline checks
+            ("which ls\ntouch asdf", true),
+            ("which ls\rtouch asdf", true),
+            // $IFS check
+            (
+                r#"IFS=';'; for cmd in "which ls;touch asdf"; do eval "$cmd"; done"#,
+                true,
+            ),
             // Safe piped commands
             ("find . -name '*.rs' | grep main", false),
             ("ls -la | grep .git", false),
@@ -310,8 +330,12 @@ mod tests {
                 true,
             ),
             ("find important-dir/ -name '*.txt'", false),
+            (r#"find / -fprintf "/path/to/file" <data-to-write> -quit"#, true),
+            (r"find . -${t}exec touch asdf \{\} +", true),
+            (r"find . -${t:=exec} touch asdf2 \{\} +", true),
             // `grep` command arguments
             ("echo 'test data' | grep -P '(?{system(\"date\")})'", true),
+            ("echo 'test data' | grep --perl-regexp '(?{system(\"date\")})'", true),
         ];
         for (cmd, expected) in cmds {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
@@ -412,6 +436,7 @@ mod tests {
                 map.insert(
                     ToolSettingTarget(tool_name.to_string()),
                     serde_json::json!({
+                        "allowedCommands": ["allow_wild_card .*", "allow_exact"],
                         "deniedCommands": ["git .*"]
                     }),
                 );
@@ -429,12 +454,33 @@ mod tests {
         assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
 
         let tool_two = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
-            "command": "echo hello",
+            "command": "this_is_not_a_read_only_command",
         }))
         .unwrap();
 
         let res = tool_two.eval_perm(&agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
+
+        let tool_allow_wild_card = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "allow_wild_card some_arg",
+        }))
+        .unwrap();
+        let res = tool_allow_wild_card.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        let tool_allow_exact_should_ask = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "allow_exact some_arg",
+        }))
+        .unwrap();
+        let res = tool_allow_exact_should_ask.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Ask));
+
+        let tool_allow_exact_should_allow = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "allow_exact",
+        }))
+        .unwrap();
+        let res = tool_allow_exact_should_allow.eval_perm(&agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
 
         agent.allowed_tools.insert(tool_name.to_string());
 
@@ -444,9 +490,6 @@ mod tests {
         // Denied list should remain denied
         let res = tool_one.eval_perm(&agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
-
-        let res = tool_two.eval_perm(&agent);
-        assert!(matches!(res, PermissionEvalResult::Allow));
     }
 
     #[tokio::test]
