@@ -97,9 +97,7 @@ impl OperationManager {
         let operations = self.active_operations.read().await;
 
         if operations.is_empty() {
-            return Err(SemanticSearchError::OperationFailed(
-                "No active operations to cancel".to_string(),
-            ));
+            return Ok("No active operations to cancel".to_string());
         }
 
         // Find the most recent operation (highest started_at time)

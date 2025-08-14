@@ -350,10 +350,10 @@ impl KnowledgeStore {
     /// Cancel operation - delegates to async client
     pub async fn cancel_operation(&mut self, operation_id: Option<&str>) -> Result<String, String> {
         if let Some(short_id) = operation_id {
-            // Debug: List all available operations
             let available_ops = self.client.list_operation_ids().await;
             if available_ops.is_empty() {
-                return Err("No active operations found".to_string());
+                //This is fine.
+                return Ok("No operations to cancel".to_string());
             }
 
             // Try to parse as full UUID first
