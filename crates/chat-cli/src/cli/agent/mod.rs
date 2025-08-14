@@ -693,18 +693,31 @@ impl Agents {
 
     /// Returns a label to describe the permission status for a given tool.
     pub fn display_label(&self, tool_name: &str, origin: &ToolOrigin) -> String {
+        use crate::util::pattern_matching::matches_any_pattern;
+        
         let tool_trusted = self.get_active().is_some_and(|a| {
+            if matches!(origin, &ToolOrigin::Native) {
+                return matches_any_pattern(&a.allowed_tools, tool_name);
+            }
+            
             a.allowed_tools.iter().any(|name| {
-                // Here the tool names can take the following forms:
-                // - @{server_name}{delimiter}{tool_name}
-                // - native_tool_name
-                name == tool_name && matches!(origin, &ToolOrigin::Native)
-                    || name.strip_prefix("@").is_some_and(|remainder| {
-                        remainder
-                            .split_once(MCP_SERVER_TOOL_DELIMITER)
-                            .is_some_and(|(_left, right)| right == tool_name)
-                            || remainder == <ToolOrigin as Borrow<str>>::borrow(origin)
-                    })
+                name.strip_prefix("@").is_some_and(|remainder| {
+                    remainder
+                        .split_once(MCP_SERVER_TOOL_DELIMITER)
+                        .is_some_and(|(_left, right)| right == tool_name)
+                        || remainder == <ToolOrigin as Borrow<str>>::borrow(origin)
+                }) || {
+                    if let Some(server_name) = name.strip_prefix("@").and_then(|s| s.split('/').next()) {
+                        if server_name == <ToolOrigin as Borrow<str>>::borrow(origin) {
+                            let tool_pattern = format!("@{}/{}", server_name, tool_name);
+                            matches_any_pattern(&a.allowed_tools, &tool_pattern)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
             })
         });
 
