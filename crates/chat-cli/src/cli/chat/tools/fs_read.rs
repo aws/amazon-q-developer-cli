@@ -102,12 +102,6 @@ impl FsRead {
         }
     }
 
-    pub fn allowable_field_to_be_overridden(settings: &serde_json::Value) -> Option<String> {
-        settings
-            .get("allowedPaths")
-            .map(|value| format!("allowedPaths: {}", value))
-    }
-
     pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -126,7 +120,7 @@ impl FsRead {
 
         let is_in_allowlist = agent.allowed_tools.contains("fs_read");
         match agent.tools_settings.get("fs_read") {
-            Some(settings) => {
+            Some(settings) if is_in_allowlist => {
                 let Settings {
                     allowed_paths,
                     denied_paths,
@@ -188,7 +182,7 @@ impl FsRead {
 
                                     // We only want to ask if we are not allowing read only
                                     // operation
-                                    if !is_in_allowlist && !allow_read_only && !allow_set.is_match(path) {
+                                    if !allow_read_only && !allow_set.is_match(path) {
                                         ask = true;
                                     }
                                 },
@@ -209,10 +203,7 @@ impl FsRead {
 
                                     // We only want to ask if we are not allowing read only
                                     // operation
-                                    if !is_in_allowlist
-                                        && !allow_read_only
-                                        && !paths.iter().any(|path| allow_set.is_match(path))
-                                    {
+                                    if !allow_read_only && !paths.iter().any(|path| allow_set.is_match(path)) {
                                         ask = true;
                                     }
                                 },
@@ -847,7 +838,10 @@ fn format_mode(mode: u32) -> [char; 9] {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{
+        HashMap,
+        HashSet,
+    };
 
     use super::*;
     use crate::cli::agent::ToolSettingTarget;
@@ -1387,8 +1381,13 @@ mod tests {
         const DENIED_PATH_ONE: &str = "/some/denied/path";
         const DENIED_PATH_GLOB: &str = "/denied/glob/**/path";
 
-        let mut agent = Agent {
+        let agent = Agent {
             name: "test_agent".to_string(),
+            allowed_tools: {
+                let mut allowed_tools = HashSet::<String>::new();
+                allowed_tools.insert("fs_read".to_string());
+                allowed_tools
+            },
             tools_settings: {
                 let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
                 map.insert(
@@ -1402,7 +1401,7 @@ mod tests {
             ..Default::default()
         };
 
-        let tool_one = serde_json::from_value::<FsRead>(serde_json::json!({
+        let tool = serde_json::from_value::<FsRead>(serde_json::json!({
             "operations": [
                 { "path": DENIED_PATH_ONE, "mode": "Line", "start_line": 1, "end_line": 2 },
                 { "path": "/denied/glob", "mode": "Directory" },
@@ -1413,17 +1412,7 @@ mod tests {
         }))
         .unwrap();
 
-        let res = tool_one.eval_perm(&agent);
-        assert!(matches!(
-            res,
-            PermissionEvalResult::Deny(ref deny_list)
-                if deny_list.iter().filter(|p| *p == DENIED_PATH_GLOB).collect::<Vec<_>>().len() == 2
-                && deny_list.iter().filter(|p| *p == DENIED_PATH_ONE).collect::<Vec<_>>().len() == 1
-        ));
-
-        agent.allowed_tools.insert("fs_read".to_string());
-
-        let res = tool_one.eval_perm(&agent);
+        let res = tool.eval_perm(&agent);
         assert!(matches!(
             res,
             PermissionEvalResult::Deny(ref deny_list)
