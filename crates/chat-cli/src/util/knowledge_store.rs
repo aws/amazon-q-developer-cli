@@ -62,7 +62,7 @@ impl AddOptions {
         let default_embedding_type = os
             .database
             .settings
-            .get(crate::database::settings::Setting::KnowledgeEmbeddingType)
+            .get(crate::database::settings::Setting::KnowledgeIndexType)
             .and_then(|v| v.as_str().map(|s| s.to_string()));
 
         Self {
@@ -212,7 +212,7 @@ impl KnowledgeStore {
         let embedding_type = os
             .database
             .settings
-            .get_string(Setting::KnowledgeEmbeddingType)
+            .get_string(Setting::KnowledgeIndexType)
             .and_then(|s| EmbeddingType::from_str(&s))
             .unwrap_or_default();
 

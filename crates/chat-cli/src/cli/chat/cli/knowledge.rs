@@ -37,9 +37,9 @@ pub enum KnowledgeSubcommand {
         /// Exclude patterns (e.g., `node_modules/**`, `target/**`)
         #[arg(long, action = clap::ArgAction::Append)]
         exclude: Vec<String>,
-        /// Embedding type to use (fast, best)
+        /// Index type to use (Fast, Best)
         #[arg(long)]
-        embedding_type: Option<String>,
+        index_type: Option<String>,
     },
     /// Remove specified knowledge base entry by path
     #[command(alias = "rm")]
@@ -115,8 +115,8 @@ impl KnowledgeSubcommand {
                 path,
                 include,
                 exclude,
-                embedding_type,
-            } => Self::handle_add(os, path, include, exclude, embedding_type).await,
+                index_type,
+            } => Self::handle_add(os, path, include, exclude, index_type).await,
             KnowledgeSubcommand::Remove { path } => Self::handle_remove(os, path).await,
             KnowledgeSubcommand::Update { path } => Self::handle_update(os, path).await,
             KnowledgeSubcommand::Clear => Self::handle_clear(os, session).await,
@@ -215,7 +215,7 @@ impl KnowledgeSubcommand {
             style::SetForegroundColor(Color::Yellow),
             style::Print(entry.item_count.to_string()),
             style::SetForegroundColor(Color::Reset),
-            style::Print(" | Embedding: "),
+            style::Print(" | Index Type: "),
             style::SetForegroundColor(Color::Magenta),
             style::Print(entry.embedding_type.description().to_string()),
             style::SetForegroundColor(Color::Reset),
@@ -257,7 +257,7 @@ impl KnowledgeSubcommand {
         path: &str,
         include_patterns: &[String],
         exclude_patterns: &[String],
-        embedding_type: &Option<String>,
+        index_type: &Option<String>,
     ) -> OperationResult {
         match Self::validate_and_sanitize_path(os, path) {
             Ok(sanitized_path) => {
@@ -279,10 +279,10 @@ impl KnowledgeSubcommand {
                     exclude_patterns.to_vec()
                 };
 
-                let embedding_type_resolved = embedding_type.clone().or_else(|| {
+                let embedding_type_resolved = index_type.clone().or_else(|| {
                     os.database
                         .settings
-                        .get(crate::database::settings::Setting::KnowledgeEmbeddingType)
+                        .get(crate::database::settings::Setting::KnowledgeIndexType)
                         .and_then(|v| v.as_str().map(|s| s.to_string()))
                 });
 
@@ -624,7 +624,10 @@ mod tests {
         assert!(result.is_ok());
         let cli = result.unwrap();
 
-        if let KnowledgeSubcommand::Add { path, include, exclude } = cli.knowledge {
+        if let KnowledgeSubcommand::Add {
+            path, include, exclude, ..
+        } = cli.knowledge
+        {
             assert_eq!(path, "/some/path");
             assert_eq!(include, vec!["*.rs", "**/*.md"]);
             assert_eq!(exclude, vec!["node_modules/**", "target/**"]);
@@ -653,7 +656,10 @@ mod tests {
         assert!(result.is_ok());
 
         let cli = result.unwrap();
-        if let KnowledgeSubcommand::Add { path, include, exclude } = cli.knowledge {
+        if let KnowledgeSubcommand::Add {
+            path, include, exclude, ..
+        } = cli.knowledge
+        {
             assert_eq!(path, "/some/path");
             assert!(include.is_empty());
             assert!(exclude.is_empty());

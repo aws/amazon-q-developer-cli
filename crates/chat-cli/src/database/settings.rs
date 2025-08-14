@@ -27,7 +27,7 @@ pub enum Setting {
     KnowledgeMaxFiles,
     KnowledgeChunkSize,
     KnowledgeChunkOverlap,
-    KnowledgeEmbeddingType,
+    KnowledgeIndexType,
     SkimCommandKey,
     ChatGreetingEnabled,
     ApiTimeout,
@@ -58,7 +58,7 @@ impl AsRef<str> for Setting {
             Self::KnowledgeMaxFiles => "knowledge.maxFiles",
             Self::KnowledgeChunkSize => "knowledge.chunkSize",
             Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap",
-            Self::KnowledgeEmbeddingType => "knowledge.embeddingType",
+            Self::KnowledgeIndexType => "knowledge.indexType",
             Self::SkimCommandKey => "chat.skimCommandKey",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
@@ -99,7 +99,7 @@ impl TryFrom<&str> for Setting {
             "knowledge.maxFiles" => Ok(Self::KnowledgeMaxFiles),
             "knowledge.chunkSize" => Ok(Self::KnowledgeChunkSize),
             "knowledge.chunkOverlap" => Ok(Self::KnowledgeChunkOverlap),
-            "knowledge.embeddingType" => Ok(Self::KnowledgeEmbeddingType),
+            "knowledge.indexType" => Ok(Self::KnowledgeIndexType),
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),
@@ -236,7 +236,7 @@ mod test {
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
-        assert_eq!(settings.get(Setting::KnowledgeEmbeddingType), None);
+        assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
         assert_eq!(settings.get(Setting::ChatDefaultModel), None);
         assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
@@ -244,7 +244,7 @@ mod test {
         settings.set(Setting::TelemetryEnabled, true).await.unwrap();
         settings.set(Setting::OldClientId, "test").await.unwrap();
         settings.set(Setting::ShareCodeWhispererContent, false).await.unwrap();
-        settings.set(Setting::KnowledgeEmbeddingType, "fast").await.unwrap();
+        settings.set(Setting::KnowledgeIndexType, "fast").await.unwrap();
         settings.set(Setting::McpLoadedBefore, true).await.unwrap();
         settings.set(Setting::ChatDefaultModel, "model 1").await.unwrap();
         settings
@@ -262,7 +262,7 @@ mod test {
             Some(&Value::Bool(false))
         );
         assert_eq!(
-            settings.get(Setting::KnowledgeEmbeddingType),
+            settings.get(Setting::KnowledgeIndexType),
             Some(&Value::String("fast".to_string()))
         );
         assert_eq!(settings.get(Setting::McpLoadedBefore), Some(&Value::Bool(true)));
@@ -278,14 +278,14 @@ mod test {
         settings.remove(Setting::TelemetryEnabled).await.unwrap();
         settings.remove(Setting::OldClientId).await.unwrap();
         settings.remove(Setting::ShareCodeWhispererContent).await.unwrap();
-        settings.remove(Setting::KnowledgeEmbeddingType).await.unwrap();
+        settings.remove(Setting::KnowledgeIndexType).await.unwrap();
         settings.remove(Setting::McpLoadedBefore).await.unwrap();
         settings.remove(Setting::ChatDisableMarkdownRendering).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
-        assert_eq!(settings.get(Setting::KnowledgeEmbeddingType), None);
+        assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
         assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
     }
