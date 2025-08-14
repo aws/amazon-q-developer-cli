@@ -38,4 +38,3 @@ artifacts:
     - ./*.zip
     # Hashes
     - ./*.sha256
-
