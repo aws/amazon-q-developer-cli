@@ -204,16 +204,17 @@ impl ColorTheme {
                     ThemeName::Nord => Self::nord_theme(),
                 };
                 
-                // Apply any individual color overrides on top of the base theme
+                // Apply any theme-specific color overrides on top of the base theme
+                let theme_prefix = format!("chat.theme.{}", theme.as_str());
                 return Self {
-                    success: settings.get_color(Setting::ChatThemeSuccess).unwrap_or(base_theme.success),
-                    error: settings.get_color(Setting::ChatThemeError).unwrap_or(base_theme.error),
-                    warning: settings.get_color(Setting::ChatThemeWarning).unwrap_or(base_theme.warning),
-                    info: settings.get_color(Setting::ChatThemeInfo).unwrap_or(base_theme.info),
-                    secondary: settings.get_color(Setting::ChatThemeSecondary).unwrap_or(base_theme.secondary),
-                    primary: settings.get_color(Setting::ChatThemePrimary).unwrap_or(base_theme.primary),
-                    action: settings.get_color(Setting::ChatThemeAction).unwrap_or(base_theme.action),
-                    data: settings.get_color(Setting::ChatThemeData).unwrap_or(base_theme.data),
+                    success: settings.get_color_by_key(&format!("{}.success", theme_prefix)).unwrap_or(base_theme.success),
+                    error: settings.get_color_by_key(&format!("{}.error", theme_prefix)).unwrap_or(base_theme.error),
+                    warning: settings.get_color_by_key(&format!("{}.warning", theme_prefix)).unwrap_or(base_theme.warning),
+                    info: settings.get_color_by_key(&format!("{}.info", theme_prefix)).unwrap_or(base_theme.info),
+                    secondary: settings.get_color_by_key(&format!("{}.secondary", theme_prefix)).unwrap_or(base_theme.secondary),
+                    primary: settings.get_color_by_key(&format!("{}.primary", theme_prefix)).unwrap_or(base_theme.primary),
+                    action: settings.get_color_by_key(&format!("{}.action", theme_prefix)).unwrap_or(base_theme.action),
+                    data: settings.get_color_by_key(&format!("{}.data", theme_prefix)).unwrap_or(base_theme.data),
                 };
             }
         }
@@ -380,6 +381,30 @@ impl Settings {
     /// Get a color setting, parsing from string representation
     pub fn get_color(&self, key: Setting) -> Option<Color> {
         self.get_string(key).and_then(|color_str| parse_color(&color_str))
+    }
+
+    /// Get color by string key (for theme-specific settings)
+    pub fn get_color_by_key(&self, key: &str) -> Option<Color> {
+        self.get_string_by_key(key).and_then(|color_str| parse_color(&color_str))
+    }
+
+    /// Get string value by string key
+    pub fn get_string_by_key(&self, key: &str) -> Option<String> {
+        self.0.get(key).and_then(|value| value.as_str().map(|s| s.to_string()))
+    }
+
+    /// Set a color setting
+    pub async fn set_color(&mut self, key: Setting, color: Color) -> Result<(), DatabaseError> {
+        let color_str = format_color(color);
+        self.set(key, color_str).await
+    }
+
+    /// Set theme-specific color setting
+    pub async fn set_theme_color(&mut self, theme: ThemeName, category: &str, color: Color) -> Result<(), DatabaseError> {
+        let key = format!("chat.theme.{}.{}", theme.as_str(), category);
+        let color_str = format_color(color);
+        self.0.insert(key, Value::String(color_str));
+        self.save_to_file().await
     }
 
     /// Get the current color theme
@@ -638,5 +663,30 @@ fn parse_color(color_str: &str) -> Option<Color> {
             }
             None
         }
+    }
+}
+
+/// Format a color to string representation
+fn format_color(color: Color) -> String {
+    match color {
+        Color::Black => "black".to_string(),
+        Color::DarkGrey => "darkgrey".to_string(),
+        Color::Red => "red".to_string(),
+        Color::DarkRed => "darkred".to_string(),
+        Color::Green => "green".to_string(),
+        Color::DarkGreen => "darkgreen".to_string(),
+        Color::Yellow => "yellow".to_string(),
+        Color::DarkYellow => "darkyellow".to_string(),
+        Color::Blue => "blue".to_string(),
+        Color::DarkBlue => "darkblue".to_string(),
+        Color::Magenta => "magenta".to_string(),
+        Color::DarkMagenta => "darkmagenta".to_string(),
+        Color::Cyan => "cyan".to_string(),
+        Color::DarkCyan => "darkcyan".to_string(),
+        Color::White => "white".to_string(),
+        Color::Grey => "grey".to_string(),
+        Color::Reset => "reset".to_string(),
+        Color::Rgb { r, g, b } => format!("rgb({},{},{})", r, g, b),
+        Color::AnsiValue(v) => format!("ansi({})", v),
     }
 }
