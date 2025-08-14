@@ -234,7 +234,7 @@ The `useLegacyMcpJson` field determines whether to include MCP servers defined i
 }
 ```
 
-When set to `true`, the agent will have access to all MCP servers defined in the global configuration in addition to those defined in the agent's `mcpServers` field.
+When set to `true`, the agent will have access to all MCP servers defined in the global and local configurations in addition to those defined in the agent's `mcpServers` field.
 
 ## Complete Example
 
