@@ -175,12 +175,6 @@ impl UseAws {
         }
     }
 
-    pub fn allowable_field_to_be_overridden(settings: &serde_json::Value) -> Option<String> {
-        settings
-            .get("allowedServices")
-            .map(|value| format!("allowedServices: {}", value))
-    }
-
     pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -194,7 +188,7 @@ impl UseAws {
         let Self { service_name, .. } = self;
         let is_in_allowlist = agent.allowed_tools.contains("use_aws");
         match agent.tools_settings.get("use_aws") {
-            Some(settings) => {
+            Some(settings) if is_in_allowlist => {
                 let settings = match serde_json::from_value::<Settings>(settings.clone()) {
                     Ok(settings) => settings,
                     Err(e) => {
@@ -205,7 +199,7 @@ impl UseAws {
                 if settings.denied_services.contains(service_name) {
                     return PermissionEvalResult::Deny(vec![service_name.clone()]);
                 }
-                if is_in_allowlist || settings.allowed_services.contains(service_name) {
+                if settings.allowed_services.contains(service_name) {
                     return PermissionEvalResult::Allow;
                 }
                 PermissionEvalResult::Ask
@@ -224,6 +218,8 @@ impl UseAws {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use crate::cli::agent::ToolSettingTarget;
 
@@ -349,7 +345,7 @@ mod tests {
 
     #[test]
     fn test_eval_perm() {
-        let cmd_one = use_aws! {{
+        let cmd = use_aws! {{
             "service_name": "s3",
             "operation_name": "put-object",
             "region": "us-west-2",
@@ -357,8 +353,13 @@ mod tests {
             "label": ""
         }};
 
-        let mut agent = Agent {
+        let agent = Agent {
             name: "test_agent".to_string(),
+            allowed_tools: {
+                let mut allowed_tools = HashSet::<String>::new();
+                allowed_tools.insert("use_aws".to_string());
+                allowed_tools
+            },
             tools_settings: {
                 let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
                 map.insert(
@@ -372,10 +373,10 @@ mod tests {
             ..Default::default()
         };
 
-        let res = cmd_one.eval_perm(&agent);
+        let res = cmd.eval_perm(&agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
 
-        let cmd_two = use_aws! {{
+        let cmd = use_aws! {{
             "service_name": "api_gateway",
             "operation_name": "request",
             "region": "us-west-2",
@@ -383,16 +384,7 @@ mod tests {
             "label": ""
         }};
 
-        let res = cmd_two.eval_perm(&agent);
+        let res = cmd.eval_perm(&agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
-
-        agent.allowed_tools.insert("use_aws".to_string());
-
-        let res = cmd_two.eval_perm(&agent);
-        assert!(matches!(res, PermissionEvalResult::Allow));
-
-        // Denied services should still be denied after trusting tool
-        let res = cmd_one.eval_perm(&agent);
-        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
     }
 }

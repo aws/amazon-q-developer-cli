@@ -160,7 +160,6 @@ Unlike the `tools` field, the `allowedTools` field does not support the `"*"` wi
 ## ToolsSettings Field
 
 The `toolsSettings` field provides configuration for specific tools. Each tool can have its own unique configuration options.
-Note that specifications that configure allowable patterns will be overridden if the tool is also included in `allowedTools`.
 
 ```json
 {
