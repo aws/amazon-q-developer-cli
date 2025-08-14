@@ -254,37 +254,37 @@ impl Agent {
                 // currently we only have four native tools that offers tool settings
                 match allowed_tool.as_str() {
                     "fs_read" => {
-                        if let Some(overriden_settings) = FsRead::allowable_field_to_be_overriden(settings) {
+                        if let Some(overridden_settings) = FsRead::allowable_field_to_be_overridden(settings) {
                             queue_permission_override_warning(
                                 allowed_tool.as_str(),
-                                overriden_settings.as_str(),
+                                overridden_settings.as_str(),
                                 output,
                             )?;
                         }
                     },
                     "fs_write" => {
-                        if let Some(overriden_settings) = FsWrite::allowable_field_to_be_overriden(settings) {
+                        if let Some(overridden_settings) = FsWrite::allowable_field_to_be_overridden(settings) {
                             queue_permission_override_warning(
                                 allowed_tool.as_str(),
-                                overriden_settings.as_str(),
+                                overridden_settings.as_str(),
                                 output,
                             )?;
                         }
                     },
                     "use_aws" => {
-                        if let Some(overriden_settings) = UseAws::allowable_field_to_be_overriden(settings) {
+                        if let Some(overridden_settings) = UseAws::allowable_field_to_be_overridden(settings) {
                             queue_permission_override_warning(
                                 allowed_tool.as_str(),
-                                overriden_settings.as_str(),
+                                overridden_settings.as_str(),
                                 output,
                             )?;
                         }
                     },
                     name if name == execute_name => {
-                        if let Some(overriden_settings) = ExecuteCommand::allowable_field_to_be_overriden(settings) {
+                        if let Some(overridden_settings) = ExecuteCommand::allowable_field_to_be_overridden(settings) {
                             queue_permission_override_warning(
                                 allowed_tool.as_str(),
-                                overriden_settings.as_str(),
+                                overridden_settings.as_str(),
                                 output,
                             )?;
                         }

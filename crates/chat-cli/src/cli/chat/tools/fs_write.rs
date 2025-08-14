@@ -415,7 +415,7 @@ impl FsWrite {
         }
     }
 
-    pub fn allowable_field_to_be_overriden(settings: &serde_json::Value) -> Option<String> {
+    pub fn allowable_field_to_be_overridden(settings: &serde_json::Value) -> Option<String> {
         settings
             .get("allowedPaths")
             .map(|value| format!("allowedPaths: {}", value))

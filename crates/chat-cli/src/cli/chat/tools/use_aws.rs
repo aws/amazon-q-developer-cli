@@ -175,7 +175,7 @@ impl UseAws {
         }
     }
 
-    pub fn allowable_field_to_be_overriden(settings: &serde_json::Value) -> Option<String> {
+    pub fn allowable_field_to_be_overridden(settings: &serde_json::Value) -> Option<String> {
         settings
             .get("allowedServices")
             .map(|value| format!("allowedServices: {}", value))

@@ -1756,6 +1756,12 @@ impl ChatSession {
                             .clone()
                             .unwrap_or(tool_use.name.clone());
                         self.conversation.agents.trust_tools(vec![formatted_tool_name]);
+
+                        if let Some(agent) = self.conversation.agents.get_active() {
+                            agent
+                                .validate_tool_settings(&mut self.stderr)
+                                .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
+                        }
                     }
                     tool_use.accepted = true;
 
