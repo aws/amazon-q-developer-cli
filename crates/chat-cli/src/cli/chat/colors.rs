@@ -28,13 +28,6 @@ impl ColorManager {
         }
     }
 
-    /// Create a new color manager with high contrast theme
-    pub fn high_contrast() -> Self {
-        Self {
-            theme: ColorTheme::high_contrast_theme(),
-        }
-    }
-
     /// Get color for a specific category
     pub fn get(&self, category: ColorCategory) -> Color {
         self.theme.get_color(category)
@@ -166,19 +159,6 @@ mod tests {
         assert_eq!(manager.warning(), Color::Yellow);
         assert_eq!(manager.info(), Color::Blue);
         assert_eq!(manager.secondary(), Color::DarkGrey);
-        assert_eq!(manager.primary(), Color::Cyan);
-        assert_eq!(manager.action(), Color::Magenta);
-        assert_eq!(manager.data(), Color::DarkCyan);
-    }
-
-    #[tokio::test]
-    async fn test_color_manager_high_contrast() {
-        let manager = ColorManager::high_contrast();
-        assert_eq!(manager.success(), Color::Green);
-        assert_eq!(manager.error(), Color::Red);
-        assert_eq!(manager.warning(), Color::Yellow);
-        assert_eq!(manager.info(), Color::Blue);
-        assert_eq!(manager.secondary(), Color::White); // Changed from DarkGrey
         assert_eq!(manager.primary(), Color::Cyan);
         assert_eq!(manager.action(), Color::Magenta);
         assert_eq!(manager.data(), Color::DarkCyan);

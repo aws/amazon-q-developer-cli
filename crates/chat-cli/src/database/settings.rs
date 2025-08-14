@@ -393,20 +393,6 @@ impl Settings {
         self.0.get(key).and_then(|value| value.as_str().map(|s| s.to_string()))
     }
 
-    /// Set a color setting
-    pub async fn set_color(&mut self, key: Setting, color: Color) -> Result<(), DatabaseError> {
-        let color_str = format_color(color);
-        self.set(key, color_str).await
-    }
-
-    /// Set theme-specific color setting
-    pub async fn set_theme_color(&mut self, theme: ThemeName, category: &str, color: Color) -> Result<(), DatabaseError> {
-        let key = format!("chat.theme.{}.{}", theme.as_str(), category);
-        let color_str = format_color(color);
-        self.0.insert(key, Value::String(color_str));
-        self.save_to_file().await
-    }
-
     /// Get the current color theme
     pub fn get_color_theme(&self) -> ColorTheme {
         ColorTheme::from_settings(self)
@@ -663,30 +649,5 @@ fn parse_color(color_str: &str) -> Option<Color> {
             }
             None
         }
-    }
-}
-
-/// Format a color to string representation
-fn format_color(color: Color) -> String {
-    match color {
-        Color::Black => "black".to_string(),
-        Color::DarkGrey => "darkgrey".to_string(),
-        Color::Red => "red".to_string(),
-        Color::DarkRed => "darkred".to_string(),
-        Color::Green => "green".to_string(),
-        Color::DarkGreen => "darkgreen".to_string(),
-        Color::Yellow => "yellow".to_string(),
-        Color::DarkYellow => "darkyellow".to_string(),
-        Color::Blue => "blue".to_string(),
-        Color::DarkBlue => "darkblue".to_string(),
-        Color::Magenta => "magenta".to_string(),
-        Color::DarkMagenta => "darkmagenta".to_string(),
-        Color::Cyan => "cyan".to_string(),
-        Color::DarkCyan => "darkcyan".to_string(),
-        Color::White => "white".to_string(),
-        Color::Grey => "grey".to_string(),
-        Color::Reset => "reset".to_string(),
-        Color::Rgb { r, g, b } => format!("rgb({},{},{})", r, g, b),
-        Color::AnsiValue(v) => format!("ansi({})", v),
     }
 }
