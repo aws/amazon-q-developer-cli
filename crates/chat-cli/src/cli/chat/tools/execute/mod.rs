@@ -49,7 +49,7 @@ pub struct ExecuteCommand {
 impl ExecuteCommand {
     pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
         // Always require acceptance for multi-line commands.
-        if self.command.contains("\n") {
+        if self.command.contains("\n") || self.command.contains("\r") {
             return true;
         }
 
