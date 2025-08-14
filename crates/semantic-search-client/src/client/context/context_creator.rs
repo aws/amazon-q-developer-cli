@@ -128,6 +128,8 @@ impl ContextCreator {
             .add_data_points(data_points)
             .map_err(|e| format!("Failed to add BM25 data points: {}", e))?;
 
+        let _ = bm25_context.save();
+
         // Store the BM25 context
         let context_id = context_dir
             .file_name()
@@ -202,6 +204,9 @@ impl ContextCreator {
         semantic_context
             .add_data_points(data_points)
             .map_err(|e| format!("Failed to add data points: {}", e))?;
+
+        //Persist context.
+        let _ = semantic_context.save();
 
         // Store the semantic context
         let context_id = context_dir

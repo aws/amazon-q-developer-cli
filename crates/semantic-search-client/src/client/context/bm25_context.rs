@@ -92,9 +92,6 @@ impl BM25Context {
             self.rebuild_index()?;
         }
 
-        // Save to disk
-        self.save()?;
-
         Ok(count)
     }
 
