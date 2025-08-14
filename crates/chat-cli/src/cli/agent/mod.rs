@@ -867,7 +867,7 @@ pub fn queue_permission_override_warning(
     Ok(queue!(
         output,
         style::SetForegroundColor(Color::Yellow),
-        style::Print("WARN: "),
+        style::Print("WARNING: "),
         style::ResetColor,
         style::Print("You have trusted "),
         style::SetForegroundColor(Color::Green),

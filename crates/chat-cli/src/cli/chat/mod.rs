@@ -635,10 +635,6 @@ impl ChatSession {
             false => ConversationState::new(conversation_id, agents, tool_config, tool_manager, model_id, os).await,
         };
 
-        if let Some(agent) = conversation.agents.get_active() {
-            agent.validate_tool_settings(&mut stderr)?;
-        }
-
         // Spawn a task for listening and broadcasting sigints.
         let (ctrlc_tx, ctrlc_rx) = tokio::sync::broadcast::channel(4);
         tokio::spawn(async move {
@@ -1189,6 +1185,11 @@ impl ChatSession {
                 ))
             )?;
         }
+
+        if let Some(agent) = self.conversation.agents.get_active() {
+            agent.validate_tool_settings(&mut self.stderr)?;
+        }
+
         self.stderr.flush()?;
 
         if let Some(ref model_info) = self.conversation.model_info {
