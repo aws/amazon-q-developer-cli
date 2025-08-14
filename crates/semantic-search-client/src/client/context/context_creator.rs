@@ -205,7 +205,7 @@ impl ContextCreator {
             .add_data_points(data_points)
             .map_err(|e| format!("Failed to add data points: {}", e))?;
 
-        //Persist context.
+        // Persist context.
         let _ = semantic_context.save();
 
         // Store the semantic context

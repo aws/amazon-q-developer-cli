@@ -352,7 +352,7 @@ impl KnowledgeStore {
         if let Some(short_id) = operation_id {
             let available_ops = self.client.list_operation_ids().await;
             if available_ops.is_empty() {
-                //This is fine.
+                // This is fine.
                 return Ok("No operations to cancel".to_string());
             }
 
