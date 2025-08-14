@@ -98,6 +98,9 @@ impl SemanticContext {
         // Update the index
         self.update_index_by_range(start_idx, end_idx)?;
 
+        // Save to disk
+        self.save()?;
+
         Ok(count)
     }
 

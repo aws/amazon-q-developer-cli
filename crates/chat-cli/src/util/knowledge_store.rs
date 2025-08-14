@@ -7,6 +7,7 @@ use std::sync::{
 use eyre::Result;
 use semantic_search_client::KnowledgeContext;
 use semantic_search_client::client::AsyncSemanticSearchClient;
+use semantic_search_client::embedding::EmbeddingType;
 use semantic_search_client::types::{
     AddContextRequest,
     SearchResult,
@@ -24,6 +25,7 @@ pub struct AddOptions {
     pub description: Option<String>,
     pub include_patterns: Vec<String>,
     pub exclude_patterns: Vec<String>,
+    pub embedding_type: Option<String>,
 }
 
 impl AddOptions {
@@ -57,10 +59,17 @@ impl AddOptions {
             })
             .unwrap_or_default();
 
+        let default_embedding_type = os
+            .database
+            .settings
+            .get(crate::database::settings::Setting::KnowledgeEmbeddingType)
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+
         Self {
             description: None,
             include_patterns: default_include,
             exclude_patterns: default_exclude,
+            embedding_type: default_embedding_type,
         }
     }
 
@@ -71,6 +80,11 @@ impl AddOptions {
 
     pub fn with_exclude_patterns(mut self, patterns: Vec<String>) -> Self {
         self.exclude_patterns = patterns;
+        self
+    }
+
+    pub fn with_embedding_type(mut self, embedding_type: Option<String>) -> Self {
+        self.embedding_type = embedding_type;
         self
     }
 }
@@ -170,6 +184,7 @@ impl KnowledgeStore {
         base_dir: PathBuf,
     ) -> semantic_search_client::config::SemanticSearchConfig {
         use semantic_search_client::config::SemanticSearchConfig;
+        use semantic_search_client::embedding::EmbeddingType;
 
         use crate::database::settings::Setting;
 
@@ -193,10 +208,19 @@ impl KnowledgeStore {
             .settings
             .get_int_or(Setting::KnowledgeMaxFiles, default_config.max_files);
 
+        // Get embedding type from settings
+        let embedding_type = os
+            .database
+            .settings
+            .get_string(Setting::KnowledgeEmbeddingType)
+            .and_then(|s| EmbeddingType::from_str(&s))
+            .unwrap_or_default();
+
         SemanticSearchConfig {
             chunk_size,
             chunk_overlap,
             max_files,
+            embedding_type,
             base_dir,
             ..default_config
         }
@@ -250,6 +274,15 @@ impl KnowledgeStore {
                 None
             } else {
                 Some(options.exclude_patterns.clone())
+            },
+            embedding_type: match options.embedding_type.as_ref() {
+                Some(s) => match EmbeddingType::from_str(s) {
+                    Some(et) => Some(et),
+                    None => {
+                        return Err(format!("Invalid embedding type '{}'. Valid options are: fast, best", s));
+                    },
+                },
+                None => None,
             },
         };
 
@@ -412,6 +445,7 @@ impl KnowledgeStore {
                 description: None,
                 include_patterns: context.include_patterns.clone(),
                 exclude_patterns: context.exclude_patterns.clone(),
+                embedding_type: None,
             };
             self.add(&context.name, path_str, options).await
         } else {
@@ -450,6 +484,7 @@ impl KnowledgeStore {
             description: None,
             include_patterns: context.include_patterns.clone(),
             exclude_patterns: context.exclude_patterns.clone(),
+            embedding_type: None,
         };
         self.add(&context_name, path_str, options).await
     }
@@ -468,6 +503,7 @@ impl KnowledgeStore {
                 description: None,
                 include_patterns: context.include_patterns.clone(),
                 exclude_patterns: context.exclude_patterns.clone(),
+                embedding_type: None,
             };
             self.add(name, path_str, options).await
         } else {
