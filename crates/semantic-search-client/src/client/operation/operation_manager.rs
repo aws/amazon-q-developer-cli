@@ -92,6 +92,33 @@ impl OperationManager {
         }
     }
 
+    /// Cancel the most recent operation
+    pub async fn cancel_most_recent_operation(&self) -> Result<String> {
+        let operations = self.active_operations.read().await;
+
+        if operations.is_empty() {
+            return Err(SemanticSearchError::OperationFailed(
+                "No active operations to cancel".to_string(),
+            ));
+        }
+
+        // Find the most recent operation (highest started_at time)
+        let most_recent = operations
+            .iter()
+            .max_by_key(|(_, handle)| handle.started_at)
+            .map(|(id, _)| *id);
+
+        drop(operations); // Release the read lock
+
+        if let Some(operation_id) = most_recent {
+            self.cancel_operation(operation_id).await
+        } else {
+            Err(SemanticSearchError::OperationFailed(
+                "No active operations found".to_string(),
+            ))
+        }
+    }
+
     /// Cancel all operations
     pub async fn cancel_all_operations(&self) -> Result<String> {
         let mut operations = self.active_operations.write().await;

@@ -17,7 +17,10 @@ use super::{
     SemanticContext,
 };
 use crate::client::utils;
-use crate::embedding::{EmbeddingType, TextEmbedderTrait};
+use crate::embedding::{
+    EmbeddingType,
+    TextEmbedderTrait,
+};
 use crate::error::{
     Result,
     SemanticSearchError,
