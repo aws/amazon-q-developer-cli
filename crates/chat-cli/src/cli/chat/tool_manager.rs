@@ -146,7 +146,6 @@ pub enum LoadingRecord {
     Err(String),
 }
 
-#[derive(Default)]
 pub struct ToolManagerBuilder {
     prompt_query_result_sender: Option<tokio::sync::broadcast::Sender<PromptQueryResult>>,
     prompt_query_receiver: Option<tokio::sync::broadcast::Receiver<PromptQuery>>,
@@ -157,7 +156,26 @@ pub struct ToolManagerBuilder {
     has_new_stuff: Arc<AtomicBool>,
     mcp_load_record: Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
     new_tool_specs: NewToolSpecs,
+    is_first_launch: bool,
     agent: Option<Arc<Mutex<Agent>>>,
+}
+
+impl Default for ToolManagerBuilder {
+    fn default() -> Self {
+        Self {
+            prompt_query_result_sender: Default::default(),
+            prompt_query_receiver: Default::default(),
+            prompt_query_sender: Default::default(),
+            prompt_query_result_receiver: Default::default(),
+            messenger_builder: Default::default(),
+            conversation_id: Default::default(),
+            has_new_stuff: Default::default(),
+            mcp_load_record: Default::default(),
+            new_tool_specs: Default::default(),
+            is_first_launch: true,
+            agent: Default::default(),
+        }
+    }
 }
 
 impl From<&mut ToolManager> for ToolManagerBuilder {
@@ -174,6 +192,9 @@ impl From<&mut ToolManager> for ToolManagerBuilder {
             has_new_stuff: value.has_new_stuff.clone(),
             mcp_load_record: value.mcp_load_record.clone(),
             new_tool_specs: value.new_tool_specs.clone(),
+            // if we are getting a builder from an instantiated tool manager this field would be
+            // false
+            is_first_launch: false,
             ..Default::default()
         }
     }
@@ -844,6 +865,7 @@ impl ToolManagerBuilder {
                 }
             },
             messenger_builder: Some(messenger_builder),
+            is_first_launch: self.is_first_launch,
             ..Default::default()
         })
     }
@@ -1000,6 +1022,8 @@ pub struct ToolManager {
     /// As far as tool manager goes, this is relevant for tool and server filters
     /// We need to put this behind a lock because the orchestrator task depends on agent
     pub agent: Arc<Mutex<Agent>>,
+
+    is_first_launch: bool,
 }
 
 impl Clone for ToolManager {
@@ -1021,19 +1045,11 @@ impl Clone for ToolManager {
 
 impl ToolManager {
     /// Swapping agent involves the following:
-    /// - Drop all clients
-    /// - Clear all pending server names
-    /// - Clear new_tool_specs
-    /// - Clear tn_map
-    /// - Clear schema
-    /// - Clear mcp_load_record
-    /// - Clear disabled_servers
-    /// - Swap out agent
-    /// - Init servers
-    /// - Flip has_new_stuff to true (this is because we are removing stuff)
-    /// - Load tools again
+    /// - Dropping all of the clients first to avoid resource contention
+    /// - Building a new tool manager builder from the current tool manager
+    /// - Building a tool manager from said tool manager builder
+    /// - Calling load tools
     pub async fn swap_agent(&mut self, os: &mut Os, output: &mut impl Write, agent: &Agent) -> eyre::Result<()> {
-        // Clear the clients first to avoid resource contention
         self.clients.clear();
 
         let mut agent_lock = self.agent.lock().await;
@@ -1044,9 +1060,9 @@ impl ToolManager {
         let mut new_tool_manager = builder.build(os, Box::new(std::io::sink()), true).await?;
         std::mem::swap(self, &mut new_tool_manager);
 
-        eprintln!("before load tools");
-        let _ = self.load_tools(os, output).await;
-        eprintln!("after load tools");
+        // we can discard the output here and let background server load take care of getting the
+        // new tools
+        let _ = self.load_tools(os, output).await?;
 
         Ok(())
     }
@@ -1126,7 +1142,7 @@ impl ToolManager {
         });
         // We need to cast it to erase the type otherwise the compiler will default to static
         // dispatch, which would result in an error of inconsistent match arm return type.
-        let timeout_fut: Pin<Box<dyn Future<Output = ()>>> = if self.clients.is_empty() {
+        let timeout_fut: Pin<Box<dyn Future<Output = ()>>> = if self.clients.is_empty() || !self.is_first_launch {
             // If there is no server loaded, we want to resolve immediately
             Box::pin(future::ready(()))
         } else if self.is_interactive {
