@@ -25,12 +25,56 @@ Once enabled, you can use `/knowledge` commands within your chat session:
 
 Display all entries in your knowledge base with detailed information including creation dates, item counts, and persistence status.
 
-#### `/knowledge add <name> <path> [--include pattern] [--exclude pattern]`
+#### `/knowledge add <name> <path> [--include pattern] [--exclude pattern] [--index-type Fast|Best]`
 
 Add files or directories to your knowledge base. The system will recursively index all supported files in directories.
 
 `/knowledge add "project-docs" /path/to/documentation`
 `/knowledge add "config-files" /path/to/config.json`
+`/knowledge add "fast-search" /path/to/logs --index-type Fast`
+`/knowledge add "semantic-search" /path/to/docs --index-type Best`
+
+**Index Types**
+
+Choose the indexing approach that best fits your needs:
+
+- **`--index-type Fast`** (Lexical - BM25): 
+  - ✅ **Lightning-fast indexing** - processes files quickly
+  - ✅ **Instant search** - keyword-based search with immediate results
+  - ✅ **Low resource usage** - minimal CPU and memory requirements
+  - ✅ **Perfect for logs, configs, and large codebases**
+  - ❌ Less intelligent - requires exact keyword matches
+
+- **`--index-type Best`** (Semantic - all-MiniLM-L6-v2):
+  - ✅ **Intelligent search** - understands context and meaning
+  - ✅ **Natural language queries** - search with full sentences
+  - ✅ **Finds related concepts** - even without exact keyword matches
+  - ✅ **Perfect for documentation, research, and complex content**
+  - ❌ Slower indexing - requires AI model processing
+  - ❌ Higher resource usage - more CPU and memory intensive
+
+**When to Use Each Type:**
+
+| Use Case | Recommended Type | Why |
+|----------|------------------|-----|
+| Log files, error messages | `Fast` | Quick keyword searches, large volumes |
+| Configuration files | `Fast` | Exact parameter/value lookups |
+| Large codebases | `Fast` | Fast symbol and function searches |
+| Documentation | `Best` | Natural language understanding |
+| Research papers | `Best` | Concept-based searching |
+| Mixed content | `Best` | Better overall search experience |
+
+**Default Behavior:**
+
+If you don't specify `--index-type`, the system uses your configured default:
+
+```bash
+# Set your preferred default
+q settings knowledge.indexType Fast   # or Best
+
+# This will use your default setting
+/knowledge add "my-project" /path/to/project
+```
 
 **Default Pattern Behavior**
 
@@ -118,6 +162,7 @@ Configure knowledge base behavior:
 `q settings knowledge.maxFiles 10000` # Maximum files per knowledge base
 `q settings knowledge.chunkSize 1024` # Text chunk size for processing
 `q settings knowledge.chunkOverlap 256` # Overlap between chunks
+`q settings knowledge.indexType Fast` # Default index type (Fast or Best)
 `q settings knowledge.defaultIncludePatterns '["**/*.rs", "**/*.md"]'` # Default include patterns
 `q settings knowledge.defaultExcludePatterns '["target/**", "node_modules/**"]'` # Default exclude patterns
 
