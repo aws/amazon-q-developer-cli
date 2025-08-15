@@ -709,7 +709,7 @@ impl ConversationState {
     pub async fn swap_agent(&mut self, agent_name: &str) -> Result<(), ChatError> {
         let agent = self.agents.switch(agent_name).map_err(|e| ChatError::AgentSwapError)?;
         self.context_manager.replace({
-            ContextManager::from_agent(agent, calc_max_context_files_size(self.model.as_deref()))
+            ContextManager::from_agent(agent, calc_max_context_files_size(self.model_info.as_ref()))
                 .map_err(|e| ChatError::Custom(format!("Context manager has failed to instantiate: {e}").into()))?
         });
 

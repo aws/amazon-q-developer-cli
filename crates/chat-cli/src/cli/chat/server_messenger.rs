@@ -131,8 +131,10 @@ impl Messenger for ServerMessenger {
     }
 
     fn send_deinit_msg(&self) {
-        self.update_event_sender.blocking_send(UpdateEventMessage::Deinit {
-            server_name: self.server_name.clone(),
+        let sender = self.update_event_sender.clone();
+        let server_name = self.server_name.clone();
+        tokio::spawn(async move {
+            let _ = sender.send(UpdateEventMessage::Deinit { server_name }).await;
         });
     }
 
