@@ -3,6 +3,7 @@ mod chat;
 mod debug;
 mod diagnostics;
 mod feed;
+mod history;
 mod issue;
 mod mcp;
 mod settings;
@@ -31,6 +32,7 @@ use eyre::{
     bail,
 };
 use feed::Feed;
+use history::HistoryArgs;
 use serde::Serialize;
 use tracing::{
     Level,
@@ -89,6 +91,8 @@ pub enum RootSubcommand {
     Agent(AgentArgs),
     /// AI assistant in your terminal
     Chat(ChatArgs),
+    /// Browse chat history
+    History(HistoryArgs),
     /// Log in to Amazon Q
     Login(LoginArgs),
     /// Log out of Amazon Q
@@ -150,6 +154,7 @@ impl RootSubcommand {
         match self {
             Self::Agent(args) => args.execute(os).await,
             Self::Diagnostic(args) => args.execute(os).await,
+            Self::History(args) => args.execute(os).await,
             Self::Login(args) => args.execute(os).await,
             Self::Logout => user::logout(os).await,
             Self::Whoami(args) => args.execute(os).await,
@@ -174,6 +179,7 @@ impl Display for RootSubcommand {
         let name = match self {
             Self::Agent(_) => "agent",
             Self::Chat(_) => "chat",
+            Self::History(_) => "history",
             Self::Login(_) => "login",
             Self::Logout => "logout",
             Self::Whoami(_) => "whoami",

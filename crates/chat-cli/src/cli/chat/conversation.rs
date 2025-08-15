@@ -84,6 +84,13 @@ pub struct HistoryEntry {
     request_metadata: Option<RequestMetadata>,
 }
 
+impl HistoryEntry {
+    /// Get a reference to the user message
+    pub fn user(&self) -> &UserMessage {
+        &self.user
+    }
+}
+
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationState {
