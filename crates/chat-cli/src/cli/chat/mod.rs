@@ -2313,7 +2313,7 @@ impl ChatSession {
             // Print the response for normal cases
             loop {
                 let input = Partial::new(&buf[offset..]);
-                match interpret_markdown(input, &mut self.stdout, &mut state, &self.colors) {
+                match interpret_markdown(input, &mut self.stdout, &mut state) {
                     Ok(parsed) => {
                         offset += parsed.offset_from(&input);
                         self.stdout.flush()?;

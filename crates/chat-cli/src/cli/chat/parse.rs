@@ -13,8 +13,6 @@ use unicode_width::{
     UnicodeWidthChar,
     UnicodeWidthStr,
 };
-
-use super::colors::ColorManager;
 use winnow::Partial;
 use winnow::ascii::{
     self,
@@ -47,25 +45,11 @@ use winnow::token::{
     take_while,
 };
 
-pub struct MarkdownColors {
-    pub code: Color,
-    pub heading: Color,
-    pub blockquote: Color,
-    pub url_text: Color,
-    pub url_link: Color,
-}
-
-impl MarkdownColors {
-    pub fn from_color_manager(colors: &ColorManager) -> Self {
-        Self {
-            code: colors.success(),
-            heading: colors.primary(),
-            blockquote: colors.secondary(),
-            url_text: colors.info(),
-            url_link: colors.secondary(),
-        }
-    }
-}
+const CODE_COLOR: Color = Color::Green;
+const HEADING_COLOR: Color = Color::Magenta;
+const BLOCKQUOTE_COLOR: Color = Color::DarkGrey;
+const URL_TEXT_COLOR: Color = Color::Blue;
+const URL_LINK_COLOR: Color = Color::DarkGrey;
 
 const DEFAULT_RULE_WIDTH: usize = 40;
 
@@ -130,31 +114,12 @@ pub fn interpret_markdown<'a, 'b>(
     mut i: Partial<&'a str>,
     mut o: impl Write + 'b,
     state: &mut ParseState,
-    colors: &ColorManager,
 ) -> PResult<Partial<&'a str>, Error<'a>> {
-    let markdown_colors = MarkdownColors::from_color_manager(colors);
     let mut error: Option<Error<'_>> = None;
     let start = i.checkpoint();
 
     macro_rules! stateful_alt {
         ($($fns:ident),*) => {
-            $({
-                i.reset(&start);
-                match $fns(&mut o, state, &markdown_colors).parse_next(&mut i) {
-                    Err(ErrMode::Backtrack(e)) => {
-                        error = match error {
-                            Some(error) => Some(error.or(e)),
-                            None => Some(e),
-                        };
-                    },
-                    res => {
-                        return res.map(|_| i);
-                    }
-                }
-            })*
-        };
-        // For functions that don't need colors
-        (no_colors: $($fns:ident),*) => {
             $({
                 i.reset(&start);
                 match $fns(&mut o, state).parse_next(&mut i) {
@@ -175,42 +140,26 @@ pub fn interpret_markdown<'a, 'b>(
     match (state.in_codeblock, state.markdown_disabled.unwrap_or(false)) {
         (_, true) => {
             // If markdown is disabled, do not include markdown-related parsers
-            stateful_alt!(no_colors: text, line_ending, fallback);
+            stateful_alt!(text, line_ending, fallback);
         },
         (false, false) => {
-            // Try functions that need colors first
-            i.reset(&start);
-            if let Ok(_) = heading(&mut o, state, &markdown_colors).parse_next(&mut i) {
-                return Ok(i);
-            }
-            i.reset(&start);
-            if let Ok(_) = blockquote(&mut o, state, &markdown_colors).parse_next(&mut i) {
-                return Ok(i);
-            }
-            i.reset(&start);
-            if let Ok(_) = codeblock_begin(&mut o, state, &markdown_colors).parse_next(&mut i) {
-                return Ok(i);
-            }
-            i.reset(&start);
-            if let Ok(_) = citation(&mut o, state, &markdown_colors).parse_next(&mut i) {
-                return Ok(i);
-            }
-            i.reset(&start);
-            if let Ok(_) = url(&mut o, state, &markdown_colors).parse_next(&mut i) {
-                return Ok(i);
-            }
-            
-            // Then try functions that don't need colors
-            stateful_alt!(no_colors:
+            stateful_alt!(
                 // This pattern acts as a short circuit for alphanumeric plaintext
                 // More importantly, it's needed to support manual wordwrapping
                 text,
+                // multiline patterns
+                blockquote,
+                // linted_codeblock,
+                codeblock_begin,
                 // single line patterns
                 horizontal_rule,
+                heading,
                 bulleted_item,
                 numbered_item,
                 // inline patterns
                 code,
+                citation,
+                url,
                 bold,
                 italic,
                 strikethrough,
@@ -225,7 +174,7 @@ pub fn interpret_markdown<'a, 'b>(
             );
         },
         (true, false) => {
-            stateful_alt!(no_colors:
+            stateful_alt!(
                 codeblock_less_than,
                 codeblock_greater_than,
                 codeblock_ampersand,
@@ -258,7 +207,6 @@ fn text<'a, 'b>(
 fn heading<'a, 'b>(
     mut o: impl Write + 'b,
     state: &'b mut ParseState,
-    colors: &'b MarkdownColors,
 ) -> impl FnMut(&mut Partial<&'a str>) -> PResult<(), Error<'a>> + 'b {
     move |i| {
         if !state.newline {
@@ -269,7 +217,7 @@ fn heading<'a, 'b>(
         let print = format!("{level} ");
 
         queue_newline_or_advance(&mut o, state, print.width())?;
-        queue(&mut o, style::SetForegroundColor(colors.heading))?;
+        queue(&mut o, style::SetForegroundColor(HEADING_COLOR))?;
         queue(&mut o, style::SetAttribute(Attribute::Bold))?;
         queue(&mut o, style::Print(print))
     }
@@ -342,7 +290,7 @@ fn code<'a, 'b>(
         let out = code.replace("&amp;", "&").replace("&gt;", ">").replace("&lt;", "<");
 
         queue_newline_or_advance(&mut o, state, out.width())?;
-        queue(&mut o, style::SetForegroundColor(ColorManager::default().success()))?;
+        queue(&mut o, style::SetForegroundColor(CODE_COLOR))?;
         queue(&mut o, style::Print(out))?;
         queue(&mut o, style::ResetColor)
     }
@@ -351,7 +299,6 @@ fn code<'a, 'b>(
 fn blockquote<'a, 'b>(
     mut o: impl Write + 'b,
     state: &'b mut ParseState,
-    colors: &'b MarkdownColors,
 ) -> impl FnMut(&mut Partial<&'a str>) -> PResult<(), Error<'a>> + 'b {
     move |i| {
         if !state.newline {
@@ -363,7 +310,7 @@ fn blockquote<'a, 'b>(
             .len();
         let print = "│ ".repeat(level);
 
-        queue(&mut o, style::SetForegroundColor(colors.blockquote))?;
+        queue(&mut o, style::SetForegroundColor(BLOCKQUOTE_COLOR))?;
         queue_newline_or_advance(&mut o, state, print.width())?;
         queue(&mut o, style::Print(print))
     }
@@ -444,7 +391,6 @@ fn strikethrough<'a, 'b>(
 fn citation<'a, 'b>(
     mut o: impl Write + 'b,
     state: &'b mut ParseState,
-    colors: &'b MarkdownColors,
 ) -> impl FnMut(&mut Partial<&'a str>) -> PResult<(), Error<'a>> + 'b {
     move |i| {
         let num = delimited("[[", digit1, "]]").parse_next(i)?;
@@ -453,7 +399,7 @@ fn citation<'a, 'b>(
         state.citations.push((num.to_owned(), link.to_owned()));
 
         queue_newline_or_advance(&mut o, state, num.width() + 1)?;
-        queue(&mut o, style::SetForegroundColor(colors.url_text))?;
+        queue(&mut o, style::SetForegroundColor(URL_TEXT_COLOR))?;
         queue(&mut o, style::Print(format!("[^{num}]")))?;
         queue(&mut o, style::ResetColor)
     }
@@ -462,7 +408,6 @@ fn citation<'a, 'b>(
 fn url<'a, 'b>(
     mut o: impl Write + 'b,
     state: &'b mut ParseState,
-    colors: &'b MarkdownColors,
 ) -> impl FnMut(&mut Partial<&'a str>) -> PResult<(), Error<'a>> + 'b {
     move |i| {
         // Save the current input position
@@ -490,9 +435,9 @@ fn url<'a, 'b>(
 
         // Only generate output if the complete URL pattern matches
         queue_newline_or_advance(&mut o, state, display.width() + 1)?;
-        queue(&mut o, style::SetForegroundColor(colors.url_text))?;
+        queue(&mut o, style::SetForegroundColor(URL_TEXT_COLOR))?;
         queue(&mut o, style::Print(format!("{display} ")))?;
-        queue(&mut o, style::SetForegroundColor(colors.url_link))?;
+        queue(&mut o, style::SetForegroundColor(URL_LINK_COLOR))?;
         state.column += link.width();
         queue(&mut o, style::Print(link))?;
         queue(&mut o, style::ResetColor)
@@ -604,7 +549,6 @@ fn queue<'a>(mut o: impl Write, command: impl Command) -> Result<(), ErrMode<Err
 fn codeblock_begin<'a, 'b>(
     mut o: impl Write + 'b,
     state: &'b mut ParseState,
-    colors: &'b MarkdownColors,
 ) -> impl FnMut(&mut Partial<&'a str>) -> PResult<(), Error<'a>> + 'b {
     move |i| {
         if !state.newline {
@@ -622,7 +566,7 @@ fn codeblock_begin<'a, 'b>(
             queue(&mut o, style::Print(format!("{}\n", language).bold()))?;
         }
 
-        queue(&mut o, style::SetForegroundColor(colors.code))?;
+        queue(&mut o, style::SetForegroundColor(CODE_COLOR))?;
 
         Ok(())
     }
@@ -723,7 +667,7 @@ mod tests {
 
                 loop {
                     let input = Partial::new(&input[offset..]);
-                    match interpret_markdown(input, &mut presult, &mut state, &ColorManager::default()) {
+                    match interpret_markdown(input, &mut presult, &mut state) {
                         Ok(parsed) => {
                             offset += parsed.offset_from(&input);
                             state.newline = state.set_newline;
@@ -759,24 +703,24 @@ mod tests {
         style::SetAttribute(Attribute::Bold),
         style::Print("java\n"),
         style::SetAttribute(Attribute::Reset),
-        style::SetForegroundColor(ColorManager::default().success()),
+        style::SetForegroundColor(CODE_COLOR),
         style::Print("hello world!"),
         style::ResetColor,
     ]);
     validate!(code_1, "`print`", [
-        style::SetForegroundColor(ColorManager::default().success()),
+        style::SetForegroundColor(CODE_COLOR),
         style::Print("print"),
         style::ResetColor,
     ]);
     validate!(url_1, "[google](google.com)", [
-        style::SetForegroundColor(ColorManager::default().info()),
+        style::SetForegroundColor(URL_TEXT_COLOR),
         style::Print("google "),
-        style::SetForegroundColor(ColorManager::default().secondary()),
+        style::SetForegroundColor(URL_LINK_COLOR),
         style::Print("google.com"),
         style::ResetColor,
     ]);
     validate!(citation_1, "[[1]](google.com)", [
-        style::SetForegroundColor(ColorManager::default().info()),
+        style::SetForegroundColor(URL_TEXT_COLOR),
         style::Print("[^1]"),
         style::ResetColor,
     ]);
@@ -802,7 +746,7 @@ mod tests {
     validate!(fallback_1, "+ % @ . ? ", [style::Print("+ % @ . ?")]);
     validate!(horizontal_rule_1, "---", [style::Print("━".repeat(80))]);
     validate!(heading_1, "# Hello World", [
-        style::SetForegroundColor(ColorManager::default().action()),
+        style::SetForegroundColor(HEADING_COLOR),
         style::SetAttribute(Attribute::Bold),
         style::Print("# Hello World"),
     ]);
@@ -810,7 +754,7 @@ mod tests {
     validate!(bulleted_item_2, "* bullet", [style::Print("• bullet")]);
     validate!(numbered_item_1, "1. number", [style::Print("1. number")]);
     validate!(blockquote_1, "> hello", [
-        style::SetForegroundColor(ColorManager::default().primary()),
+        style::SetForegroundColor(BLOCKQUOTE_COLOR),
         style::Print("│ hello"),
     ]);
     validate!(square_bracket_1, "[test]", [style::Print("[test]")]);
