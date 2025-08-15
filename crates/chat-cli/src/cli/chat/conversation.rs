@@ -129,12 +129,15 @@ pub struct ConversationState {
 impl ConversationState {
     pub async fn new(
         conversation_id: &str,
-        agents: Agents,
+        mut agents: Agents,
         tool_config: HashMap<String, ToolSpec>,
         tool_manager: ToolManager,
         current_model_id: Option<String>,
         os: &Os,
     ) -> Self {
+        // Expand glob patterns in allowed_tools now that we have access to all available tools
+        Self::expand_agent_allowed_tools_patterns(&mut agents, &tool_config, &tool_manager);
+
         let model = if let Some(model_id) = current_model_id {
             match get_model_info(&model_id, os).await {
                 Ok(info) => Some(info),
@@ -181,6 +184,103 @@ impl ConversationState {
             model_info: model,
             file_line_tracker: HashMap::new(),
         }
+    }
+
+    /// Expands glob patterns in allowed_tools for all agents using available tools from tool_manager.
+    fn expand_agent_allowed_tools_patterns(
+        agents: &mut Agents,
+        tool_config: &HashMap<String, ToolSpec>,
+        tool_manager: &ToolManager,
+    ) {
+        use std::collections::HashSet;
+
+        // Get all available tool names from all sources
+        let mut available_tools = Vec::new();
+
+        // Add native tools from tool_config
+        for (tool_name, tool_spec) in tool_config {
+            if matches!(tool_spec.tool_origin, crate::cli::chat::tools::ToolOrigin::Native) {
+                available_tools.push(tool_name.clone());
+            }
+        }
+
+        // Add MCP tools from tool_manager
+        for (tool_name, tool_info) in tool_manager.tn_map.iter() {
+            // Add the tool with server prefix (e.g., "@amzn-mcp/cradle")
+            let prefixed_name = format!("@{}/{}", tool_info.server_name, tool_name);
+            available_tools.push(prefixed_name);
+        }
+
+        // Add MCP server-level names (e.g., "@git")
+        for tool_name in tool_manager.tn_map.values() {
+            available_tools.push(format!("@{}", tool_name.server_name));
+        }
+
+        // Expand patterns for all agents
+        for agent in agents.agents.values_mut() {
+            let patterns: Vec<String> = agent.allowed_tools.iter().cloned().collect();
+            let mut expanded_tools = HashSet::new();
+
+            for pattern in patterns {
+                if pattern.contains('*') {
+                    // This is a glob pattern - expand it
+                    for tool_name in &available_tools {
+                        if Self::glob_match(&pattern, tool_name) {
+                            expanded_tools.insert(tool_name.clone());
+                        }
+                    }
+                } else {
+                    // Exact match - keep as is
+                    expanded_tools.insert(pattern);
+                }
+            }
+
+            agent.allowed_tools = expanded_tools;
+        }
+    }
+
+    /// Simple glob pattern matching supporting * wildcard.
+    /// Returns true if the pattern matches the text.
+    fn glob_match(pattern: &str, text: &str) -> bool {
+        if !pattern.contains('*') {
+            return pattern == text;
+        }
+
+        let pattern_parts: Vec<&str> = pattern.split('*').collect();
+        if pattern_parts.is_empty() {
+            return true;
+        }
+
+        let mut text_pos = 0;
+        
+        // Check if text starts with the first part (if not empty)
+        if !pattern_parts[0].is_empty() {
+            if !text.starts_with(pattern_parts[0]) {
+                return false;
+            }
+            text_pos += pattern_parts[0].len();
+        }
+
+        // Check middle parts
+        for part in &pattern_parts[1..pattern_parts.len() - 1] {
+            if part.is_empty() {
+                continue;
+            }
+            if let Some(pos) = text[text_pos..].find(part) {
+                text_pos += pos + part.len();
+            } else {
+                return false;
+            }
+        }
+
+        // Check if text ends with the last part (if not empty)
+        if let Some(last_part) = pattern_parts.last() {
+            if !last_part.is_empty() {
+                return text[text_pos..].ends_with(last_part);
+            }
+        }
+
+        true
     }
 
     pub fn latest_summary(&self) -> Option<&str> {
@@ -1252,5 +1352,49 @@ mod tests {
             conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()), None);
             conversation.set_next_user_message(i.to_string()).await;
         }
+    }
+
+    #[test]
+    fn test_glob_match() {
+        // Exact matches
+        assert!(ConversationState::glob_match("fs_read", "fs_read"));
+        assert!(!ConversationState::glob_match("fs_read", "fs_write"));
+
+        // Simple wildcard patterns
+        assert!(ConversationState::glob_match("fs_*", "fs_read"));
+        assert!(ConversationState::glob_match("fs_*", "fs_write"));
+        assert!(!ConversationState::glob_match("fs_*", "execute_bash"));
+
+        // MCP server patterns
+        assert!(ConversationState::glob_match("@git/*", "@git/status"));
+        assert!(ConversationState::glob_match("@git/*", "@git/commit"));
+        assert!(!ConversationState::glob_match("@git/*", "@fetch/url"));
+        
+        // The specific case that was failing - server/* patterns
+        assert!(ConversationState::glob_match("@amzn-mcp/*", "@amzn-mcp/cradle"));
+        assert!(ConversationState::glob_match("@amzn-mcp/*", "@amzn-mcp/read_internal_website"));
+        assert!(ConversationState::glob_match("@amzn-mcp/*", "@amzn-mcp/sim_get_issue"));
+
+        // Prefix patterns
+        assert!(ConversationState::glob_match("get_*", "get_status"));
+        assert!(ConversationState::glob_match("get_*", "get_info"));
+        assert!(!ConversationState::glob_match("get_*", "set_value"));
+
+        // Multiple wildcards
+        assert!(ConversationState::glob_match("*_test_*", "my_test_file"));
+        assert!(ConversationState::glob_match("*_test_*", "a_test_b"));
+        assert!(!ConversationState::glob_match("*_test_*", "no_match"));
+
+        // MCP patterns with special characters (the bug we fixed)
+        assert!(ConversationState::glob_match("@amzn-mcp/read_*", "@amzn-mcp/read_internal_website"));
+        assert!(ConversationState::glob_match("@amzn-mcp/read_*", "@amzn-mcp/read_quip"));
+        assert!(ConversationState::glob_match("@amzn-mcp/sim_*", "@amzn-mcp/sim_get_issue"));
+        assert!(!ConversationState::glob_match("@amzn-mcp/read_*", "@amzn-mcp/sim_get_issue"));
+        assert!(!ConversationState::glob_match("@amzn-mcp/read_*", "@other-mcp/read_something"));
+
+        // Edge cases
+        assert!(ConversationState::glob_match("*", "anything"));
+        assert!(ConversationState::glob_match("**", "anything"));
+        assert!(ConversationState::glob_match("", ""));
     }
 }
