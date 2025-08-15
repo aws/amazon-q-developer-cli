@@ -19,7 +19,8 @@ jobs:
               "release_url": "${{ github.event.release.html_url }}",
               "author_name": "${{ github.event.release.author.login }}",
               "repository_name": "${{ github.event.repository.name }}",
-              "repository_url": "${{ github.event.repository.html_url }}"
+              "repository_url": "${{ github.event.repository.html_url }}",
+              "release_description": "${{ github.event.release.body }}"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} # Use the secret for the webhook URL
