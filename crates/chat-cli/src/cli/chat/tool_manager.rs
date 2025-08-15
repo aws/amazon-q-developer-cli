@@ -152,8 +152,31 @@ pub struct ToolManagerBuilder {
     prompt_query_receiver: Option<tokio::sync::broadcast::Receiver<PromptQuery>>,
     prompt_query_sender: Option<tokio::sync::broadcast::Sender<PromptQuery>>,
     prompt_query_result_receiver: Option<tokio::sync::broadcast::Receiver<PromptQueryResult>>,
+    messenger_builder: Option<ServerMessengerBuilder>,
     conversation_id: Option<String>,
-    agent: Option<Agent>,
+    has_new_stuff: Arc<AtomicBool>,
+    mcp_load_record: Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
+    new_tool_specs: NewToolSpecs,
+    agent: Option<Arc<Mutex<Agent>>>,
+}
+
+impl From<&mut ToolManager> for ToolManagerBuilder {
+    fn from(value: &mut ToolManager) -> Self {
+        Self {
+            conversation_id: Some(value.conversation_id.clone()),
+            agent: Some(value.agent.clone()),
+            prompt_query_sender: value
+                .prompts_sender_receiver_pair
+                .as_ref()
+                .map(|(sender, _)| sender.clone()),
+            prompt_query_result_receiver: value.prompts_sender_receiver_pair.take().map(|(_, receiver)| receiver),
+            messenger_builder: value.messenger_builder.take(),
+            has_new_stuff: value.has_new_stuff.clone(),
+            mcp_load_record: value.mcp_load_record.clone(),
+            new_tool_specs: value.new_tool_specs.clone(),
+            ..Default::default()
+        }
+    }
 }
 
 impl ToolManagerBuilder {
@@ -186,17 +209,21 @@ impl ToolManagerBuilder {
     }
 
     pub fn agent(mut self, agent: Agent) -> Self {
+        let agent = Arc::new(Mutex::new(agent));
         self.agent.replace(agent);
         self
     }
 
     pub async fn build(
-        self,
+        mut self,
         os: &mut Os,
         mut output: Box<dyn Write + Send + Sync + 'static>,
         interactive: bool,
     ) -> eyre::Result<ToolManager> {
-        let McpServerConfig { mcp_servers } = self.agent.as_ref().map(|a| a.mcp_servers.clone()).unwrap_or_default();
+        let McpServerConfig { mcp_servers } = match &self.agent {
+            Some(agent) => agent.lock().await.mcp_servers.clone(),
+            None => Default::default(),
+        };
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
 
@@ -214,22 +241,7 @@ impl ToolManagerBuilder {
         let pre_initialized = enabled_servers
             .into_iter()
             .filter_map(|(server_name, server_config)| {
-                if server_name.contains(MCP_SERVER_TOOL_DELIMITER) {
-                    let _ = queue!(
-                        output,
-                        style::SetForegroundColor(style::Color::Red),
-                        style::Print("✗ Invalid server name "),
-                        style::SetForegroundColor(style::Color::Blue),
-                        style::Print(&server_name),
-                        style::ResetColor,
-                        style::Print(". Server name cannot contain "),
-                        style::SetForegroundColor(style::Color::Yellow),
-                        style::Print(MCP_SERVER_TOOL_DELIMITER),
-                        style::ResetColor,
-                        style::Print("\n")
-                    );
-                    None
-                } else if server_name == "builtin" {
+                if server_name == "builtin" {
                     let _ = queue!(
                         output,
                         style::SetForegroundColor(style::Color::Red),
@@ -372,266 +384,345 @@ impl ToolManagerBuilder {
         let loading_status_sender_clone = loading_status_sender.clone();
         let conv_id_clone = conversation_id.clone();
         let regex = Regex::new(VALID_TOOL_NAME)?;
-        let new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
+        let new_tool_specs = self.new_tool_specs;
         let new_tool_specs_clone = new_tool_specs.clone();
-        let has_new_stuff = Arc::new(AtomicBool::new(false));
-        let has_new_stuff_clone = has_new_stuff.clone();
+        let has_new_stuff = self.has_new_stuff;
         let pending = Arc::new(RwLock::new(HashSet::<String>::new()));
         let pending_clone = pending.clone();
-        let (mut msg_rx, messenger_builder) = ServerMessengerBuilder::new(20);
         let telemetry_clone = os.telemetry.clone();
         let notify = Arc::new(Notify::new());
         let notify_weak = Arc::downgrade(&notify);
-        let load_record = Arc::new(Mutex::new(HashMap::<String, Vec<LoadingRecord>>::new()));
+        let load_record = self.mcp_load_record;
         let load_record_clone = load_record.clone();
-        let agent = Arc::new(Mutex::new(self.agent.unwrap_or_default()));
+        let agent = self.agent.unwrap_or_default();
         let agent_clone = agent.clone();
         let database = os.database.clone();
-        let mut prompt_list_sender = self.prompt_query_result_sender.clone();
-        let mut prompt_list_receiver = self.prompt_query_receiver.as_ref().map(|r| r.resubscribe());
+        let mut messenger_builder = self.messenger_builder.take();
 
-        tokio::spawn(async move {
-            use tokio::sync::broadcast::Sender as BroadcastSender;
-            use tokio::sync::mpsc::Sender as MpscSender;
+        // This is the orchestrator task that serves as a bridge between tool manager and mcp
+        // clients for server initiated async events
+        if let (Some(mut prompt_list_sender), Some(mut prompt_list_receiver)) = (
+            self.prompt_query_result_sender.clone(),
+            self.prompt_query_receiver.as_ref().map(|r| r.resubscribe()),
+        ) {
+            let (mut msg_rx, builder) = ServerMessengerBuilder::new(20);
+            messenger_builder.replace(builder);
 
-            let mut record_temp_buf = Vec::<u8>::new();
-            let mut initialized = HashSet::<String>::new();
-            let mut prompts = HashMap::<String, Vec<PromptBundle>>::new();
+            let has_new_stuff_clone = has_new_stuff.clone();
 
-            enum ToolFilter {
-                All,
-                List(HashSet<String>),
-            }
+            tokio::spawn(async move {
+                use tokio::sync::broadcast::Sender as BroadcastSender;
+                use tokio::sync::mpsc::Sender as MpscSender;
 
-            impl ToolFilter {
-                pub fn should_include(&self, tool_name: &str) -> bool {
-                    match self {
-                        Self::All => true,
-                        Self::List(set) => set.contains(tool_name),
+                let mut record_temp_buf = Vec::<u8>::new();
+                let mut initialized = HashSet::<String>::new();
+                let mut prompts = HashMap::<String, Vec<PromptBundle>>::new();
+
+                enum ToolFilter {
+                    All,
+                    List(HashSet<String>),
+                }
+
+                impl ToolFilter {
+                    pub fn should_include(&self, tool_name: &str) -> bool {
+                        match self {
+                            Self::All => true,
+                            Self::List(set) => set.contains(tool_name),
+                        }
                     }
                 }
-            }
 
-            // We separate this into its own function for ease of maintenance since things written
-            // in select arms don't have type hints
-            #[inline]
-            async fn handle_prompt_queries(
-                query: PromptQuery,
-                prompts: &HashMap<String, Vec<PromptBundle>>,
-                prompt_query_response_sender: &mut Option<BroadcastSender<PromptQueryResult>>,
-            ) {
-                match query {
-                    PromptQuery::List => {
-                        if let Some(sender) = prompt_query_response_sender {
+                // We separate this into its own function for ease of maintenance since things written
+                // in select arms don't have type hints
+                #[inline]
+                async fn handle_prompt_queries(
+                    query: PromptQuery,
+                    prompts: &HashMap<String, Vec<PromptBundle>>,
+                    prompt_query_response_sender: &mut BroadcastSender<PromptQueryResult>,
+                ) {
+                    match query {
+                        PromptQuery::List => {
                             let query_res = PromptQueryResult::List(prompts.clone());
-                            if let Err(e) = sender.send(query_res) {
+                            if let Err(e) = prompt_query_response_sender.send(query_res) {
                                 error!("Error sending prompts to chat helper: {:?}", e);
                             }
-                        }
-                    },
-                    PromptQuery::Search(search_word) => {
-                        let filtered_prompts = prompts
-                            .iter()
-                            .flat_map(|(prompt_name, bundles)| {
-                                if bundles.len() > 1 {
-                                    bundles
-                                        .iter()
-                                        .map(|b| format!("{}/{}", b.server_name, prompt_name))
-                                        .collect()
-                                } else {
-                                    vec![prompt_name.to_owned()]
-                                }
-                            })
-                            .filter(|n| {
-                                if let Some(p) = &search_word {
-                                    n.contains(p)
-                                } else {
-                                    true
-                                }
-                            })
-                            .collect::<Vec<_>>();
+                        },
+                        PromptQuery::Search(search_word) => {
+                            let filtered_prompts = prompts
+                                .iter()
+                                .flat_map(|(prompt_name, bundles)| {
+                                    if bundles.len() > 1 {
+                                        bundles
+                                            .iter()
+                                            .map(|b| format!("{}/{}", b.server_name, prompt_name))
+                                            .collect()
+                                    } else {
+                                        vec![prompt_name.to_owned()]
+                                    }
+                                })
+                                .filter(|n| {
+                                    if let Some(p) = &search_word {
+                                        n.contains(p)
+                                    } else {
+                                        true
+                                    }
+                                })
+                                .collect::<Vec<_>>();
 
-                        if let Some(sender) = prompt_query_response_sender {
                             let query_res = PromptQueryResult::Search(filtered_prompts);
-                            if let Err(e) = sender.send(query_res) {
+                            if let Err(e) = prompt_query_response_sender.send(query_res) {
                                 error!("Error sending prompts to chat helper: {:?}", e);
                             }
-                        }
-                    },
+                        },
+                    }
                 }
-            }
 
-            // We separate this into its own function for ease of maintenance since things written
-            // in select arms don't have type hints
-            #[inline]
-            #[allow(clippy::too_many_arguments)]
-            async fn handle_messenger_msg(
-                msg: UpdateEventMessage,
-                loading_servers: &mut HashMap<String, Instant>,
-                record_temp_buf: &mut Vec<u8>,
-                pending_clone: &Arc<RwLock<HashSet<String>>>,
-                agent_clone: &Arc<Mutex<Agent>>,
-                database: &Database,
-                conv_id_clone: &str,
-                regex: &Regex,
-                telemetry_clone: &TelemetryThread,
-                mut loading_status_sender_clone: Option<&MpscSender<LoadingMsg>>,
-                new_tool_specs_clone: &NewToolSpecs,
-                has_new_stuff_clone: &Arc<AtomicBool>,
-                load_record_clone: &Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
-                notify_weak: &std::sync::Weak<Notify>,
-                initialized: &mut HashSet<String>,
-                prompts: &mut HashMap<String, Vec<PromptBundle>>,
-                total: usize,
-            ) {
-                record_temp_buf.clear();
-                // For now we will treat every list result as if they contain the
-                // complete set of tools. This is not necessarily true in the future when
-                // request method on the mcp client no longer buffers all the pages from
-                // list calls.
-                match msg {
-                    UpdateEventMessage::ToolsListResult { server_name, result } => {
-                        let time_taken = loading_servers
-                            .remove(&server_name)
-                            .map_or("0.0".to_owned(), |init_time| {
-                                let time_taken = (std::time::Instant::now() - init_time).as_secs_f64().abs();
-                                format!("{:.2}", time_taken)
-                            });
-                        pending_clone.write().await.remove(&server_name);
-                        let (tool_filter, alias_list) = {
-                            let agent_lock = agent_clone.lock().await;
+                // We separate this into its own function for ease of maintenance since things written
+                // in select arms don't have type hints
+                #[inline]
+                #[allow(clippy::too_many_arguments)]
+                async fn handle_messenger_msg(
+                    msg: UpdateEventMessage,
+                    loading_servers: &mut HashMap<String, Instant>,
+                    record_temp_buf: &mut Vec<u8>,
+                    pending_clone: &Arc<RwLock<HashSet<String>>>,
+                    agent_clone: &Arc<Mutex<Agent>>,
+                    database: &Database,
+                    conv_id_clone: &str,
+                    regex: &Regex,
+                    telemetry_clone: &TelemetryThread,
+                    mut loading_status_sender_clone: Option<&MpscSender<LoadingMsg>>,
+                    new_tool_specs_clone: &NewToolSpecs,
+                    has_new_stuff_clone: &Arc<AtomicBool>,
+                    load_record_clone: &Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
+                    notify_weak: &std::sync::Weak<Notify>,
+                    initialized: &mut HashSet<String>,
+                    prompts: &mut HashMap<String, Vec<PromptBundle>>,
+                    total: usize,
+                ) {
+                    record_temp_buf.clear();
+                    // For now we will treat every list result as if they contain the
+                    // complete set of tools. This is not necessarily true in the future when
+                    // request method on the mcp client no longer buffers all the pages from
+                    // list calls.
+                    match msg {
+                        UpdateEventMessage::ToolsListResult { server_name, result } => {
+                            let time_taken =
+                                loading_servers
+                                    .remove(&server_name)
+                                    .map_or("0.0".to_owned(), |init_time| {
+                                        let time_taken = (std::time::Instant::now() - init_time).as_secs_f64().abs();
+                                        format!("{:.2}", time_taken)
+                                    });
+                            pending_clone.write().await.remove(&server_name);
+                            let (tool_filter, alias_list) = {
+                                let agent_lock = agent_clone.lock().await;
 
-                            // We will assume all tools are allowed if the tool list consists of 1
-                            // element and it's a *
-                            let tool_filter = if agent_lock.tools.len() == 1
-                                && agent_lock.tools.first().map(String::as_str).is_some_and(|c| c == "*")
-                            {
-                                ToolFilter::All
-                            } else {
-                                let set = agent_lock
-                                    .tools
-                                    .iter()
-                                    .filter(|tool_name| tool_name.starts_with(&format!("@{server_name}")))
-                                    .map(|full_name| {
-                                        match full_name.split_once(MCP_SERVER_TOOL_DELIMITER) {
-                                            Some((_, tool_name)) if !tool_name.is_empty() => tool_name,
-                                            _ => "*",
-                                        }
-                                        .to_string()
-                                    })
-                                    .collect::<HashSet<_>>();
-
-                                if set.contains("*") {
+                                // We will assume all tools are allowed if the tool list consists of 1
+                                // element and it's a *
+                                let tool_filter = if agent_lock.tools.len() == 1
+                                    && agent_lock.tools.first().map(String::as_str).is_some_and(|c| c == "*")
+                                {
                                     ToolFilter::All
                                 } else {
-                                    ToolFilter::List(set)
-                                }
+                                    let set = agent_lock
+                                        .tools
+                                        .iter()
+                                        .filter(|tool_name| tool_name.starts_with(&format!("@{server_name}")))
+                                        .map(|full_name| {
+                                            match full_name.split_once(MCP_SERVER_TOOL_DELIMITER) {
+                                                Some((_, tool_name)) if !tool_name.is_empty() => tool_name,
+                                                _ => "*",
+                                            }
+                                            .to_string()
+                                        })
+                                        .collect::<HashSet<_>>();
+
+                                    if set.contains("*") {
+                                        ToolFilter::All
+                                    } else {
+                                        ToolFilter::List(set)
+                                    }
+                                };
+
+                                let server_prefix = format!("@{server_name}");
+                                let alias_list = agent_lock.tool_aliases.iter().fold(
+                                    HashMap::<HostToolName, ModelToolName>::new(),
+                                    |mut acc, (full_path, model_tool_name)| {
+                                        if full_path.starts_with(&server_prefix) {
+                                            if let Some((_, host_tool_name)) =
+                                                full_path.split_once(MCP_SERVER_TOOL_DELIMITER)
+                                            {
+                                                acc.insert(host_tool_name.to_string(), model_tool_name.clone());
+                                            }
+                                        }
+                                        acc
+                                    },
+                                );
+
+                                (tool_filter, alias_list)
                             };
 
-                            let server_prefix = format!("@{server_name}");
-                            let alias_list = agent_lock.tool_aliases.iter().fold(
-                                HashMap::<HostToolName, ModelToolName>::new(),
-                                |mut acc, (full_path, model_tool_name)| {
-                                    if full_path.starts_with(&server_prefix) {
-                                        if let Some((_, host_tool_name)) =
-                                            full_path.split_once(MCP_SERVER_TOOL_DELIMITER)
-                                        {
-                                            acc.insert(host_tool_name.to_string(), model_tool_name.clone());
+                            match result {
+                                Ok(result) => {
+                                    let mut specs = result
+                                        .tools
+                                        .into_iter()
+                                        .filter_map(|v| serde_json::from_value::<ToolSpec>(v).ok())
+                                        .filter(|spec| tool_filter.should_include(&spec.name))
+                                        .collect::<Vec<_>>();
+                                    let mut sanitized_mapping = HashMap::<ModelToolName, ToolInfo>::new();
+                                    let process_result = process_tool_specs(
+                                        database,
+                                        conv_id_clone,
+                                        &server_name,
+                                        &mut specs,
+                                        &mut sanitized_mapping,
+                                        &alias_list,
+                                        regex,
+                                        telemetry_clone,
+                                    )
+                                    .await;
+                                    if let Some(sender) = &loading_status_sender_clone {
+                                        // Anomalies here are not considered fatal, thus we shall give
+                                        // warnings.
+                                        let msg = match process_result {
+                                            Ok(_) => LoadingMsg::Done {
+                                                name: server_name.clone(),
+                                                time: time_taken.clone(),
+                                            },
+                                            Err(ref e) => LoadingMsg::Warn {
+                                                name: server_name.clone(),
+                                                msg: eyre::eyre!(e.to_string()),
+                                                time: time_taken.clone(),
+                                            },
+                                        };
+                                        if let Err(e) = sender.send(msg).await {
+                                            warn!(
+                                                "Error sending update message to display task: {:?}\nAssume display task has completed",
+                                                e
+                                            );
+                                            loading_status_sender_clone.take();
                                         }
                                     }
-                                    acc
-                                },
-                            );
-
-                            (tool_filter, alias_list)
-                        };
-
-                        match result {
-                            Ok(result) => {
-                                let mut specs = result
-                                    .tools
-                                    .into_iter()
-                                    .filter_map(|v| serde_json::from_value::<ToolSpec>(v).ok())
-                                    .filter(|spec| tool_filter.should_include(&spec.name))
-                                    .collect::<Vec<_>>();
-                                let mut sanitized_mapping = HashMap::<ModelToolName, ToolInfo>::new();
-                                let process_result = process_tool_specs(
-                                    database,
-                                    conv_id_clone,
-                                    &server_name,
-                                    &mut specs,
-                                    &mut sanitized_mapping,
-                                    &alias_list,
-                                    regex,
-                                    telemetry_clone,
-                                )
-                                .await;
-                                if let Some(sender) = &loading_status_sender_clone {
-                                    // Anomalies here are not considered fatal, thus we shall give
-                                    // warnings.
-                                    let msg = match process_result {
-                                        Ok(_) => LoadingMsg::Done {
-                                            name: server_name.clone(),
-                                            time: time_taken.clone(),
-                                        },
-                                        Err(ref e) => LoadingMsg::Warn {
-                                            name: server_name.clone(),
-                                            msg: eyre::eyre!(e.to_string()),
-                                            time: time_taken.clone(),
-                                        },
-                                    };
-                                    if let Err(e) = sender.send(msg).await {
-                                        warn!(
-                                            "Error sending update message to display task: {:?}\nAssume display task has completed",
-                                            e
+                                    new_tool_specs_clone
+                                        .lock()
+                                        .await
+                                        .insert(server_name.clone(), (sanitized_mapping, specs));
+                                    has_new_stuff_clone.store(true, Ordering::Release);
+                                    // Maintain a record of the server load:
+                                    let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
+                                    if let Err(e) = &process_result {
+                                        let _ = queue_warn_message(
+                                            server_name.as_str(),
+                                            e,
+                                            time_taken.as_str(),
+                                            &mut buf_writer,
                                         );
-                                        loading_status_sender_clone.take();
+                                    } else {
+                                        let _ = queue_success_message(
+                                            server_name.as_str(),
+                                            time_taken.as_str(),
+                                            &mut buf_writer,
+                                        );
                                     }
+                                    let _ = buf_writer.flush();
+                                    drop(buf_writer);
+                                    let record = String::from_utf8_lossy(record_temp_buf).to_string();
+                                    let record = if process_result.is_err() {
+                                        LoadingRecord::Warn(record)
+                                    } else {
+                                        LoadingRecord::Success(record)
+                                    };
+                                    load_record_clone
+                                        .lock()
+                                        .await
+                                        .entry(server_name.clone())
+                                        .and_modify(|load_record| {
+                                            load_record.push(record.clone());
+                                        })
+                                        .or_insert(vec![record]);
+                                },
+                                Err(e) => {
+                                    // Log error to chat Log
+                                    error!("Error loading server {server_name}: {:?}", e);
+                                    // Maintain a record of the server load:
+                                    let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
+                                    let _ =
+                                        queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer);
+                                    let _ = buf_writer.flush();
+                                    drop(buf_writer);
+                                    let record = String::from_utf8_lossy(record_temp_buf).to_string();
+                                    let record = LoadingRecord::Err(record);
+                                    load_record_clone
+                                        .lock()
+                                        .await
+                                        .entry(server_name.clone())
+                                        .and_modify(|load_record| {
+                                            load_record.push(record.clone());
+                                        })
+                                        .or_insert(vec![record]);
+                                    // Errors surfaced at this point (i.e. before [process_tool_specs]
+                                    // is called) are fatals and should be considered errors
+                                    if let Some(sender) = &loading_status_sender_clone {
+                                        let msg = LoadingMsg::Error {
+                                            name: server_name.clone(),
+                                            msg: e,
+                                            time: time_taken,
+                                        };
+                                        if let Err(e) = sender.send(msg).await {
+                                            warn!(
+                                                "Error sending update message to display task: {:?}\nAssume display task has completed",
+                                                e
+                                            );
+                                            loading_status_sender_clone.take();
+                                        }
+                                    }
+                                },
+                            }
+                            if let Some(notify) = notify_weak.upgrade() {
+                                initialized.insert(server_name);
+                                if initialized.len() >= total {
+                                    notify.notify_one();
                                 }
-                                new_tool_specs_clone
-                                    .lock()
-                                    .await
-                                    .insert(server_name.clone(), (sanitized_mapping, specs));
-                                has_new_stuff_clone.store(true, Ordering::Release);
-                                // Maintain a record of the server load:
-                                let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                                if let Err(e) = &process_result {
-                                    let _ = queue_warn_message(
-                                        server_name.as_str(),
-                                        e,
-                                        time_taken.as_str(),
-                                        &mut buf_writer,
-                                    );
-                                } else {
-                                    let _ = queue_success_message(
-                                        server_name.as_str(),
-                                        time_taken.as_str(),
-                                        &mut buf_writer,
-                                    );
+                            }
+                        },
+                        UpdateEventMessage::PromptsListResult { server_name, result } => match result {
+                            Ok(prompt_list_result) => {
+                                tracing::error!("## swap: received prompts from {server_name}");
+                                // We first need to clear all the PromptGets that are associated with
+                                // this server because PromptsListResult is declaring what is available
+                                // (and not the diff)
+                                prompts
+                                    .values_mut()
+                                    .for_each(|bundles| bundles.retain(|bundle| bundle.server_name != server_name));
+
+                                // And then we update them with the new comers
+                                for result in prompt_list_result.prompts {
+                                    let Ok(prompt_get) = serde_json::from_value::<PromptGet>(result) else {
+                                        error!("Failed to deserialize prompt get from server {server_name}");
+                                        continue;
+                                    };
+                                    prompts
+                                        .entry(prompt_get.name.clone())
+                                        .and_modify(|bundles| {
+                                            bundles.push(PromptBundle {
+                                                server_name: server_name.clone(),
+                                                prompt_get: prompt_get.clone(),
+                                            });
+                                        })
+                                        .or_insert_with(|| {
+                                            vec![PromptBundle {
+                                                server_name: server_name.clone(),
+                                                prompt_get,
+                                            }]
+                                        });
                                 }
-                                let _ = buf_writer.flush();
-                                drop(buf_writer);
-                                let record = String::from_utf8_lossy(record_temp_buf).to_string();
-                                let record = if process_result.is_err() {
-                                    LoadingRecord::Warn(record)
-                                } else {
-                                    LoadingRecord::Success(record)
-                                };
-                                load_record_clone
-                                    .lock()
-                                    .await
-                                    .entry(server_name.clone())
-                                    .and_modify(|load_record| {
-                                        load_record.push(record.clone());
-                                    })
-                                    .or_insert(vec![record]);
                             },
                             Err(e) => {
-                                // Log error to chat Log
-                                error!("Error loading server {server_name}: {:?}", e);
-                                // Maintain a record of the server load:
+                                error!("Error fetching prompts from server {server_name}: {:?}", e);
                                 let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                                let _ = queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer);
+                                let _ = queue_prompts_load_message(&server_name, &e, &mut buf_writer);
                                 let _ = buf_writer.flush();
                                 drop(buf_writer);
                                 let record = String::from_utf8_lossy(record_temp_buf).to_string();
@@ -644,144 +735,70 @@ impl ToolManagerBuilder {
                                         load_record.push(record.clone());
                                     })
                                     .or_insert(vec![record]);
-                                // Errors surfaced at this point (i.e. before [process_tool_specs]
-                                // is called) are fatals and should be considered errors
-                                if let Some(sender) = &loading_status_sender_clone {
-                                    let msg = LoadingMsg::Error {
-                                        name: server_name.clone(),
-                                        msg: e,
-                                        time: time_taken,
-                                    };
-                                    if let Err(e) = sender.send(msg).await {
-                                        warn!(
-                                            "Error sending update message to display task: {:?}\nAssume display task has completed",
-                                            e
-                                        );
-                                        loading_status_sender_clone.take();
-                                    }
-                                }
                             },
-                        }
-                        if let Some(notify) = notify_weak.upgrade() {
-                            initialized.insert(server_name);
-                            if initialized.len() >= total {
-                                notify.notify_one();
-                            }
-                        }
-                    },
-                    UpdateEventMessage::PromptsListResult { server_name, result } => match result {
-                        Ok(prompt_list_result) => {
-                            // We first need to clear all the PromptGets that are associated with
-                            // this server because PromptsListResult is declaring what is available
-                            // (and not the diff)
-                            prompts
-                                .values_mut()
-                                .for_each(|bundles| bundles.retain(|bundle| bundle.server_name != server_name));
-
-                            // And then we update them with the new comers
-                            for result in prompt_list_result.prompts {
-                                let Ok(prompt_get) = serde_json::from_value::<PromptGet>(result) else {
-                                    error!("Failed to deserialize prompt get from server {server_name}");
-                                    continue;
-                                };
-                                prompts
-                                    .entry(prompt_get.name.clone())
-                                    .and_modify(|bundles| {
-                                        bundles.push(PromptBundle {
-                                            server_name: server_name.clone(),
-                                            prompt_get: prompt_get.clone(),
-                                        });
-                                    })
-                                    .or_insert_with(|| {
-                                        vec![PromptBundle {
-                                            server_name: server_name.clone(),
-                                            prompt_get,
-                                        }]
-                                    });
-                            }
                         },
-                        Err(e) => {
-                            error!("Error fetching prompts from server {server_name}: {:?}", e);
-                            let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                            let _ = queue_prompts_load_message(&server_name, &e, &mut buf_writer);
-                            let _ = buf_writer.flush();
-                            drop(buf_writer);
-                            let record = String::from_utf8_lossy(record_temp_buf).to_string();
-                            let record = LoadingRecord::Err(record);
-                            load_record_clone
-                                .lock()
-                                .await
-                                .entry(server_name.clone())
-                                .and_modify(|load_record| {
-                                    load_record.push(record.clone());
-                                })
-                                .or_insert(vec![record]);
+                        UpdateEventMessage::ResourcesListResult {
+                            server_name: _,
+                            result: _,
+                        } => {},
+                        UpdateEventMessage::ResourceTemplatesListResult {
+                            server_name: _,
+                            result: _,
+                        } => {},
+                        UpdateEventMessage::InitStart { server_name } => {
+                            pending_clone.write().await.insert(server_name.clone());
+                            loading_servers.insert(server_name, std::time::Instant::now());
                         },
-                    },
-                    UpdateEventMessage::ResourcesListResult {
-                        server_name: _,
-                        result: _,
-                    } => {},
-                    UpdateEventMessage::ResourceTemplatesListResult {
-                        server_name: _,
-                        result: _,
-                    } => {},
-                    UpdateEventMessage::InitStart { server_name } => {
-                        pending_clone.write().await.insert(server_name.clone());
-                        loading_servers.insert(server_name, std::time::Instant::now());
-                    },
-                    UpdateEventMessage::Deinit { server_name } => {
-                        // Only prompts are stored here so we'll just be clearing that
-                        // In the future if we are also storing tools, we need to make sure that
-                        // the tools are also pruned.
-                        for (_prompt_name, bundles) in prompts.iter_mut() {
-                            bundles.retain(|bundle| bundle.server_name != server_name);
-                        }
-                        prompts.retain(|_, bundles| !bundles.is_empty());
-                    },
+                        UpdateEventMessage::Deinit { server_name } => {
+                            // Only prompts are stored here so we'll just be clearing that
+                            // In the future if we are also storing tools, we need to make sure that
+                            // the tools are also pruned.
+                            for (_prompt_name, bundles) in prompts.iter_mut() {
+                                bundles.retain(|bundle| bundle.server_name != server_name);
+                            }
+                            prompts.retain(|_, bundles| !bundles.is_empty());
+                        },
+                    }
                 }
-            }
 
-            loop {
-                tokio::select! {
-                    Ok(query) = async {
-                        match prompt_list_receiver.as_mut() {
-                            Some(receiver) => receiver.recv().await,
-                            None => std::future::pending().await,
-                        }
-                    } => {
-                        handle_prompt_queries(query, &prompts, &mut prompt_list_sender).await;
-                    },
-                    Some(msg) = msg_rx.recv() => {
-                        handle_messenger_msg(
-                                msg,
-                                &mut loading_servers,
-                                &mut record_temp_buf,
-                                &pending_clone,
-                                &agent_clone,
-                                &database,
-                                conv_id_clone.as_str(),
-                                &regex,
-                                &telemetry_clone,
-                                loading_status_sender_clone.as_ref(),
-                                &new_tool_specs_clone,
-                                &has_new_stuff_clone,
-                                &load_record_clone,
-                                &notify_weak,
-                                &mut initialized,
-                                &mut prompts,
-                                total
-                            ).await;
-                    },
-                    // Nothing else to poll
-                    else => {
-                        tracing::info!("Tool manager orchestrator task exited");
-                        break;
-                    },
+                loop {
+                    tokio::select! {
+                        Ok(query) = prompt_list_receiver.recv() => {
+                            handle_prompt_queries(query, &prompts, &mut prompt_list_sender).await;
+                        },
+                        Some(msg) = msg_rx.recv() => {
+                            handle_messenger_msg(
+                                    msg,
+                                    &mut loading_servers,
+                                    &mut record_temp_buf,
+                                    &pending_clone,
+                                    &agent_clone,
+                                    &database,
+                                    conv_id_clone.as_str(),
+                                    &regex,
+                                    &telemetry_clone,
+                                    loading_status_sender_clone.as_ref(),
+                                    &new_tool_specs_clone,
+                                    &has_new_stuff_clone,
+                                    &load_record_clone,
+                                    &notify_weak,
+                                    &mut initialized,
+                                    &mut prompts,
+                                    total
+                                ).await;
+                        },
+                        // Nothing else to poll
+                        else => {
+                            tracing::info!("Tool manager orchestrator task exited");
+                            break;
+                        },
+                    }
                 }
-            }
-        });
+            });
+        }
 
+        debug_assert!(messenger_builder.is_some());
+        let messenger_builder = messenger_builder.unwrap();
         for (mut name, init_res) in pre_initialized {
             let messenger = messenger_builder.build_with_name(name.clone());
             match init_res {
@@ -826,6 +843,7 @@ impl ToolManagerBuilder {
                     None
                 }
             },
+            messenger_builder: Some(messenger_builder),
             ..Default::default()
         })
     }
@@ -973,6 +991,11 @@ pub struct ToolManager {
     /// List of disabled MCP server names for display purposes
     disabled_servers: Vec<String>,
 
+    /// A builder for mcp clients to communicate with the orchestrator task
+    /// We need to store this for when we switch agent - we need to be spawning messengers that are
+    /// already listened to by the orchestrator task
+    messenger_builder: Option<ServerMessengerBuilder>,
+
     /// A collection of preferences that pertains to the conversation
     /// As far as tool manager goes, this is relevant for tool and server filters
     /// We need to put this behind a lock because the orchestrator task depends on agent
@@ -1009,25 +1032,23 @@ impl ToolManager {
     /// - Init servers
     /// - Flip has_new_stuff to true (this is because we are removing stuff)
     /// - Load tools again
-    pub async fn swap_agent(&mut self, agent: &Agent) {
+    pub async fn swap_agent(&mut self, os: &mut Os, output: &mut impl Write, agent: &Agent) -> eyre::Result<()> {
+        // Clear the clients first to avoid resource contention
         self.clients.clear();
 
-        let mut pending_clients = Arc::new(RwLock::new(HashSet::new()));
-        std::mem::swap(&mut self.pending_clients, &mut pending_clients);
+        let mut agent_lock = self.agent.lock().await;
+        *agent_lock = agent.clone();
+        drop(agent_lock);
 
-        let mut new_tool_specs = Arc::new(Mutex::new(HashMap::new()));
-        std::mem::swap(&mut self.new_tool_specs, &mut new_tool_specs);
+        let builder = ToolManagerBuilder::from(&mut *self);
+        let mut new_tool_manager = builder.build(os, Box::new(std::io::sink()), true).await?;
+        std::mem::swap(self, &mut new_tool_manager);
 
-        self.tn_map.clear();
-        self.schema.clear();
+        eprintln!("before load tools");
+        let _ = self.load_tools(os, output).await;
+        eprintln!("after load tools");
 
-        let mut mcp_load_record = Arc::new(Mutex::new(HashMap::new()));
-        std::mem::swap(&mut self.mcp_load_record, &mut mcp_load_record);
-
-        self.disabled_servers.clear();
-
-        let mut current_agent = self.agent.lock().await;
-        *current_agent = agent.clone();
+        Ok(())
     }
 
     pub async fn load_tools(

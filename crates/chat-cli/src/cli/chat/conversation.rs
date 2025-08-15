@@ -706,14 +706,24 @@ impl ConversationState {
     /// Swapping agent involves the following:
     /// - Reinstantiate the context manager
     /// - Swap agent on tool manager
-    pub async fn swap_agent(&mut self, agent_name: &str) -> Result<(), ChatError> {
-        let agent = self.agents.switch(agent_name).map_err(|e| ChatError::AgentSwapError)?;
+    pub async fn swap_agent(
+        &mut self,
+        os: &mut Os,
+        output: &mut impl Write,
+        agent_name: &str,
+    ) -> Result<(), ChatError> {
+        let agent = self.agents.switch(agent_name).map_err(ChatError::AgentSwapError)?;
         self.context_manager.replace({
             ContextManager::from_agent(agent, calc_max_context_files_size(self.model_info.as_ref()))
                 .map_err(|e| ChatError::Custom(format!("Context manager has failed to instantiate: {e}").into()))?
         });
 
-        self.tool_manager.swap_agent(agent).await;
+        self.tool_manager
+            .swap_agent(os, output, agent)
+            .await
+            .map_err(ChatError::AgentSwapError)?;
+
+        self.update_state(true).await;
 
         Ok(())
     }

@@ -226,7 +226,9 @@ impl AgentSubcommand {
                     )?;
                 },
             },
-            Self::Swap { name } => {},
+            Self::Swap { name } => {
+                session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
+            },
         }
 
         Ok(ChatState::PromptUser {
