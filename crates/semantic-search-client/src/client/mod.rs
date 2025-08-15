@@ -1,18 +1,31 @@
-/// Async client implementation for semantic search operations with proper cancellation
-mod async_implementation;
-/// Factory for creating embedders
+/// Main client implementation
+pub mod async_implementation;
+/// Synchronous client implementation
+pub mod implementation;
+
+/// Background processing modules
+pub mod background;
+/// Context management modules
+pub mod context;
+/// Model management modules
+pub mod model;
+/// Operation management modules
+pub mod operation;
+
+/// Embedder factory utilities
 pub mod embedder_factory;
-/// Hosted model client for downloading models from CDN
-pub mod hosted_model_client;
-/// Client implementation for semantic search operations
-mod implementation;
-/// Semantic context implementation for search operations
-pub mod semantic_context;
-/// Utility functions for semantic search operations
+/// Utility functions
 pub mod utils;
 
-// Re-export types for external use
+#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+/// Hosted model client for downloading models
+pub mod hosted_model_client;
+
 pub use async_implementation::AsyncSemanticSearchClient;
+pub use context::{
+    BM25Context,
+    SemanticContext,
+};
+#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 pub use hosted_model_client::HostedModelClient;
 pub use implementation::SemanticSearchClient;
-pub use semantic_context::SemanticContext;

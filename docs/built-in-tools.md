@@ -159,7 +159,7 @@ Tools can be explicitly allowed in the `allowedTools` section of the agent confi
 }
 ```
 
-If a tool is not in the `allowedTools` list, the user will be prompted for permission when the tool is used.
+If a tool is not in the `allowedTools` list, the user will be prompted for permission when the tool is used unless an allowed `toolSettings` configuration is set.
 
 Some tools have default permission behaviors:
 - `fs_read` and `report_issue` are trusted by default
