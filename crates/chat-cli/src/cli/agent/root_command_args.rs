@@ -73,7 +73,7 @@ pub struct AgentArgs {
 
 impl AgentArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
-        let colors = ColorManager::default();
+        let colors = ColorManager::from_settings(&os.database.settings);
         let mut stderr = std::io::stderr();
         match self.cmd {
             Some(AgentSubcommands::List) | None => {
@@ -134,7 +134,7 @@ impl AgentArgs {
             },
             Some(AgentSubcommands::Validate { path }) => {
                 let mut global_mcp_config = None::<McpServerConfig>;
-                let agent = Agent::load(os, path.as_str(), &mut global_mcp_config).await;
+                let agent = Agent::load(os, path.as_str(), &mut global_mcp_config, &colors).await;
 
                 'validate: {
                     match agent {

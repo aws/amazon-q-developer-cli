@@ -349,13 +349,14 @@ impl ConversationState {
 
         let context = self.backend_conversation_state(os, run_perprompt_hooks, stderr).await?;
         if !context.dropped_context_files.is_empty() {
+            let colors = ColorManager::from_settings(&os.database.settings);
             execute!(
                 stderr,
-                style::SetForegroundColor(ColorManager::default().warning()),
+                style::SetForegroundColor(colors.warning()),
                 style::Print("\nSome context files are dropped due to size limit, please run "),
-                style::SetForegroundColor(ColorManager::default().success()),
+                style::SetForegroundColor(colors.success()),
                 style::Print("/context show "),
-                style::SetForegroundColor(ColorManager::default().warning()),
+                style::SetForegroundColor(colors.warning()),
                 style::Print("to learn more.\n"),
                 style::SetForegroundColor(style::Color::Reset)
             )

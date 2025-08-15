@@ -366,13 +366,18 @@ fn supports_truecolor(os: &Os) -> bool {
 
 /// Helper function to display a purpose if available (for execute commands)
 pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Result<()> {
+    display_purpose_with_colors(purpose, updates, &ColorManager::default())
+}
+
+/// Helper function to display a purpose with custom colors
+pub fn display_purpose_with_colors(purpose: Option<&String>, updates: &mut impl Write, colors: &ColorManager) -> Result<()> {
     if let Some(purpose) = purpose {
         queue!(
             updates,
             style::Print(super::CONTINUATION_LINE),
             style::Print("\n"),
             style::Print(super::PURPOSE_ARROW),
-            style::SetForegroundColor(ColorManager::default().info()),
+            style::SetForegroundColor(colors.info()),
             style::Print("Purpose: "),
             style::ResetColor,
             style::Print(purpose),
@@ -390,13 +395,17 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
 /// * `is_error` - Whether this is an error message (changes formatting)
 /// * `use_bullet` - Whether to use a bullet point instead of a tick/exclamation
 pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: bool, use_bullet: bool) -> Result<()> {
+    queue_function_result_with_colors(result, updates, is_error, use_bullet, &ColorManager::default())
+}
+
+pub fn queue_function_result_with_colors(result: &str, updates: &mut impl Write, is_error: bool, use_bullet: bool, colors: &ColorManager) -> Result<()> {
     let lines = result.lines().collect::<Vec<_>>();
 
     // Determine symbol and color
     let (symbol, color) = match (is_error, use_bullet) {
-        (true, _) => (super::ERROR_EXCLAMATION, ColorManager::default().error()),
+        (true, _) => (super::ERROR_EXCLAMATION, colors.error()),
         (false, true) => (super::TOOL_BULLET, Color::Reset),
-        (false, false) => (super::SUCCESS_TICK, ColorManager::default().success()),
+        (false, false) => (super::SUCCESS_TICK, colors.success()),
     };
 
     queue!(updates, style::Print("\n"))?;

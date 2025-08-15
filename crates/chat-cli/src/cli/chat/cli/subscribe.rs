@@ -9,8 +9,6 @@ use crossterm::{
     style,
 };
 
-use super::super::colors::ColorManager;
-
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::chat::{
     ActualSubscriptionStatus,
@@ -138,7 +136,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     queue!(
         session.stderr,
         style::Print(SUBSCRIBE_TITLE_TEXT),
-        style::SetForegroundColor(ColorManager::default().secondary()),
+        style::SetForegroundColor(session.colors.secondary()),
         style::Print(format!("\n\n{}\n\n", SUBSCRIBE_TEXT)),
         style::SetForegroundColor(Color::Reset),
         cursor::Show

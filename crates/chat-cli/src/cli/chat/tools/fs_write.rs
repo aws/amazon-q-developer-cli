@@ -33,7 +33,6 @@ use tracing::{
 };
 
 use crate::cli::chat::colors::ColorManager;
-use crate::database::settings::Settings;
 use crate::{with_success, with_color};
 
 use super::{
@@ -114,8 +113,7 @@ impl FsWrite {
                     os.fs.create_dir_all(parent).await?;
                 }
 
-                let settings = Settings::default();
-                let color_manager = ColorManager::from_settings(&settings);
+                let color_manager = ColorManager::from_settings(&os.database.settings);
 
                 let invoke_description = if os.fs.exists(&path) {
                     "Replacing: "
@@ -135,8 +133,7 @@ impl FsWrite {
                 let file = os.fs.read_to_string(&path).await?;
                 let matches = file.match_indices(old_str).collect::<Vec<_>>();
 
-                let settings = Settings::default();
-                let color_manager = ColorManager::from_settings(&settings);
+                let color_manager = ColorManager::from_settings(&os.database.settings);
 
                 queue!(output, style::Print("Updating: "))?;
                 with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
@@ -156,8 +153,7 @@ impl FsWrite {
             } => {
                 let mut file = os.fs.read_to_string(&path).await?;
 
-                let settings = Settings::default();
-                let color_manager = ColorManager::from_settings(&settings);
+                let color_manager = ColorManager::from_settings(&os.database.settings);
 
                 queue!(output, style::Print("Updating: "))?;
                 with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
@@ -177,8 +173,7 @@ impl FsWrite {
             FsWrite::Append { path, new_str, .. } => {
                 let path = sanitize_path_tool_arg(os, path);
 
-                let settings = Settings::default();
-                let color_manager = ColorManager::from_settings(&settings);
+                let color_manager = ColorManager::from_settings(&os.database.settings);
 
                 queue!(output, style::Print("Appending to: "))?;
                 with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
@@ -256,8 +251,7 @@ impl FsWrite {
 
     pub fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {
         let cwd = os.env.current_dir()?;
-        let settings = Settings::default();
-        let color_manager = ColorManager::from_settings(&settings);
+        let color_manager = ColorManager::from_settings(&os.database.settings);
         
         self.print_relative_path(os, output)?;
         match self {
@@ -275,7 +269,7 @@ impl FsWrite {
                 print_diff(output, &prev, &new, 1, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
-                super::display_purpose(self.get_summary(), output)?;
+                super::display_purpose_with_colors(self.get_summary(), output, &color_manager)?;
 
                 Ok(())
             },
@@ -304,7 +298,7 @@ impl FsWrite {
                 print_diff(output, &old, &new, start_line, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
-                super::display_purpose(self.get_summary(), output)?;
+                super::display_purpose_with_colors(self.get_summary(), output, &color_manager)?;
 
                 Ok(())
             },
@@ -323,7 +317,7 @@ impl FsWrite {
                 print_diff(output, &old_str, &new_str, start_line, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
-                super::display_purpose(self.get_summary(), output)?;
+                super::display_purpose_with_colors(self.get_summary(), output, &color_manager)?;
 
                 Ok(())
             },
@@ -335,7 +329,7 @@ impl FsWrite {
                 print_diff(output, &Default::default(), &file, start_line, &color_manager)?;
 
                 // Display summary as purpose if available after the diff
-                super::display_purpose(self.get_summary(), output)?;
+                super::display_purpose_with_colors(self.get_summary(), output, &color_manager)?;
 
                 Ok(())
             },
@@ -380,8 +374,7 @@ impl FsWrite {
         let path = sanitize_path_tool_arg(os, path);
         let relative_path = format_path(cwd, &path);
 
-        let settings = Settings::default();
-        let color_manager = ColorManager::from_settings(&settings);
+        let color_manager = ColorManager::from_settings(&os.database.settings);
 
         queue!(output, style::Print("Path: "))?;
         with_success!(output, &color_manager, "{}", &relative_path)?;

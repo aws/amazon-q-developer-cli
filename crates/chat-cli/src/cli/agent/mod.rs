@@ -207,14 +207,13 @@ impl Agent {
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
     /// For example, converting the mcp array to actual mcp config and populate the agent file path.
-    fn thaw(&mut self, path: &Path, legacy_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
+    fn thaw(&mut self, path: &Path, legacy_mcp_config: Option<&McpServerConfig>, colors: &ColorManager) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         self.path = Some(path.to_path_buf());
 
         if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
             let mut stderr = std::io::stderr();
-            let colors = ColorManager::default();
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
@@ -249,7 +248,7 @@ impl Agent {
 
     /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
     /// and falling back to global dir if it does not exist in local.
-    pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
+    pub async fn get_agent_by_name(os: &Os, agent_name: &str, colors: &ColorManager) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
             let local_config_dir = directories::chat_local_agent_dir(os)?.join(format!("{agent_name}.json"));
@@ -275,7 +274,7 @@ impl Agent {
                     None
                 };
 
-                agent.thaw(&config_path, legacy_mcp_config.as_ref())?;
+                agent.thaw(&config_path, legacy_mcp_config.as_ref(), colors)?;
                 Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
@@ -286,6 +285,7 @@ impl Agent {
         os: &Os,
         agent_path: impl AsRef<Path>,
         legacy_mcp_config: &mut Option<McpServerConfig>,
+        colors: &ColorManager,
     ) -> Result<Agent, AgentConfigError> {
         let content = os.fs.read(&agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
@@ -300,7 +300,7 @@ impl Agent {
             }
         }
 
-        agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref())?;
+        agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), &colors)?;
         Ok(agent)
     }
 }
@@ -377,7 +377,7 @@ impl Agents {
         skip_migration: bool,
         output: &mut impl Write,
     ) -> (Self, AgentsLoadMetadata) {
-        let colors = ColorManager::default();
+        let colors = ColorManager::from_settings(&os.database.settings);
         
         // Tracking metadata about the performed load operation.
         let mut load_metadata = AgentsLoadMetadata::default();
@@ -425,7 +425,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, &colors).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -463,7 +463,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, &colors).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -746,6 +746,7 @@ async fn load_agents_from_entries(
     mut files: ReadDir,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
+    colors: &ColorManager,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
 
@@ -756,7 +757,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, file_path, global_mcp_config).await);
+            res.push(Agent::load(os, file_path, global_mcp_config, colors).await);
         }
     }
 

@@ -22,6 +22,9 @@ impl ColorManager {
     }
 
     /// Create a new color manager with default theme
+    /// 
+    /// WARNING: This bypasses user theme settings. Use `from_settings()` instead
+    /// when Settings are available to respect user configuration.
     pub fn default() -> Self {
         Self {
             theme: ColorTheme::default(),

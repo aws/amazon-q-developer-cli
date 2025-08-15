@@ -235,13 +235,14 @@ impl ChatArgs {
             .iter()
             .any(|arg| arg == "--profile" || arg.starts_with("--profile="))
         {
+            let colors = ColorManager::from_settings(&os.database.settings);
             execute!(
                 stderr,
-                style::SetForegroundColor(ColorManager::default().warning()),
+                style::SetForegroundColor(colors.warning()),
                 style::Print("WARNING: "),
                 style::SetForegroundColor(Color::Reset),
                 style::Print("--profile is deprecated, use "),
-                style::SetForegroundColor(ColorManager::default().success()),
+                style::SetForegroundColor(colors.success()),
                 style::Print("--agent"),
                 style::SetForegroundColor(Color::Reset),
                 style::Print(" instead\n")
@@ -341,7 +342,7 @@ impl ChatArgs {
             .prompt_list_receiver(prompt_request_receiver)
             .conversation_id(&conversation_id)
             .agent(agents.get_active().cloned().unwrap_or_default())
-            .build(os, Box::new(std::io::stderr()), !self.no_interactive, &ColorManager::default())
+            .build(os, Box::new(std::io::stderr()), !self.no_interactive, &ColorManager::from_settings(&os.database.settings))
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
 
@@ -626,9 +627,10 @@ impl ChatSession {
                 cs.tool_manager = tool_manager;
                 if let Some(profile) = cs.current_profile() {
                     if agents.switch(profile).is_err() {
+                        let colors = ColorManager::from_settings(&os.database.settings);
                         execute!(
                             stderr,
-                            style::SetForegroundColor(ColorManager::default().error()),
+                            style::SetForegroundColor(colors.error()),
                             style::Print("Error"),
                             style::ResetColor,
                             style::Print(format!(

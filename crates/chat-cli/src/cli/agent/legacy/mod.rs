@@ -27,7 +27,7 @@ use crate::util::directories;
 /// Returns [Some] with the newly migrated agents if the migration was performed, [None] if the
 /// migration was already done previously.
 pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>>> {
-    let colors = ColorManager::default();
+    let colors = ColorManager::from_settings(&os.database.settings);
     let has_migrated = os.database.get_has_migrated()?;
     if !force && has_migrated.is_some_and(|has_migrated| has_migrated) {
         return Ok(None);
