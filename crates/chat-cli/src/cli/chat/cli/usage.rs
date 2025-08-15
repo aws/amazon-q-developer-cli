@@ -62,8 +62,7 @@ impl UsageArgs {
         // set a max width for the progress bar for better aesthetic
         let progress_bar_width = std::cmp::min(window_width, 80);
 
-        let context_window_size = context_window_tokens(session.conversation.model.as_deref());
-
+        let context_window_size = context_window_tokens(session.conversation.model_info.as_ref());
         let context_width =
             ((context_token_count.value() as f64 / context_window_size as f64) * progress_bar_width as f64) as usize;
         let assistant_width =

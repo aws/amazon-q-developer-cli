@@ -18,7 +18,6 @@ mod token_counter;
 pub mod tool_manager;
 pub mod tools;
 pub mod util;
-
 use std::borrow::Cow;
 use std::collections::{
     HashMap,
@@ -44,7 +43,7 @@ use clap::{
 };
 use cli::compact::CompactStrategy;
 use cli::model::{
-    get_model_options,
+    get_available_models,
     select_model,
 };
 pub use conversation::ConversationState;
@@ -136,7 +135,7 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
 use crate::cli::chat::cli::SlashCommand;
-use crate::cli::chat::cli::model::default_model_id;
+use crate::cli::chat::cli::model::find_model;
 use crate::cli::chat::cli::prompts::{
     GetPromptError,
     PromptsSubcommand,
@@ -316,22 +315,25 @@ impl ChatArgs {
         };
 
         // If modelId is specified, verify it exists before starting the chat
-        let model_options = get_model_options(os).await?;
-        let model_id: Option<String> = if let Some(model_name) = self.model {
-            let model_name_lower = model_name.to_lowercase();
-            match model_options.iter().find(|opt| opt.name == model_name_lower) {
-                Some(opt) => Some((opt.model_id).to_string()),
-                None => {
-                    let available_names: Vec<&str> = model_options.iter().map(|opt| opt.name).collect();
-                    bail!(
-                        "Model '{}' does not exist. Available models: {}",
-                        model_name,
-                        available_names.join(", ")
-                    );
-                },
+        // Otherwise, CLI will use a default model when starting chat
+        let (models, default_model_opt) = get_available_models(os).await?;
+        let model_id: Option<String> = if let Some(requested) = self.model.as_ref() {
+            if let Some(m) = find_model(&models, requested) {
+                Some(m.model_id.clone())
+            } else {
+                let available = models
+                    .iter()
+                    .map(|m| m.model_name.as_deref().unwrap_or(&m.model_id))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                bail!("Model '{}' does not exist. Available models: {}", requested, available);
             }
+        } else if let Some(saved) = os.database.settings.get_string(Setting::ChatDefaultModel) {
+            find_model(&models, &saved)
+                .map(|m| m.model_id.clone())
+                .or(Some(default_model_opt.model_id.clone()))
         } else {
-            None
+            Some(default_model_opt.model_id.clone())
         };
 
         let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<PromptQuery>(5);
@@ -588,28 +590,6 @@ impl ChatSession {
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
     ) -> Result<Self> {
-        let model_options = get_model_options(os).await?;
-        let valid_model_id = match model_id {
-            Some(id) => id,
-            None => {
-                let from_settings = os
-                    .database
-                    .settings
-                    .get_string(Setting::ChatDefaultModel)
-                    .and_then(|model_name| {
-                        model_options
-                            .iter()
-                            .find(|opt| opt.name == model_name)
-                            .map(|opt| opt.model_id.to_owned())
-                    });
-
-                match from_settings {
-                    Some(id) => id,
-                    None => default_model_id(os).await.to_owned(),
-                }
-            },
-        };
-
         // Reload prior conversation
         let mut existing_conversation = false;
         let previous_conversation = std::env::current_dir()
@@ -648,9 +628,7 @@ impl ChatSession {
                 cs.enforce_tool_use_history_invariants();
                 cs
             },
-            false => {
-                ConversationState::new(conversation_id, agents, tool_config, tool_manager, Some(valid_model_id)).await
-            },
+            false => ConversationState::new(conversation_id, agents, tool_config, tool_manager, model_id, os).await,
         };
 
         // Spawn a task for listening and broadcasting sigints.
@@ -1205,13 +1183,14 @@ impl ChatSession {
         }
         self.stderr.flush()?;
 
-        if let Some(ref id) = self.conversation.model {
-            let model_options = get_model_options(os).await?;
-            if let Some(model_option) = model_options.iter().find(|option| option.model_id == *id) {
+        if let Some(ref model_info) = self.conversation.model_info {
+            let (models, _default_model) = get_available_models(os).await?;
+            if let Some(model_option) = models.iter().find(|option| option.model_id == model_info.model_id) {
+                let display_name = model_option.model_name.as_deref().unwrap_or(&model_option.model_id);
                 execute!(
                     self.stderr,
                     style::SetForegroundColor(Color::Cyan),
-                    style::Print(format!("🤖 You are chatting with {}\n", model_option.name)),
+                    style::Print(format!("🤖 You are chatting with {}\n", display_name)),
                     style::SetForegroundColor(Color::Reset),
                     style::Print("\n")
                 )?;
@@ -2395,11 +2374,14 @@ impl ChatSession {
         for tool_use in tool_uses {
             let tool_use_id = tool_use.id.clone();
             let tool_use_name = tool_use.name.clone();
-            let mut tool_telemetry =
-                ToolUseEventBuilder::new(conv_id.clone(), tool_use.id.clone(), self.conversation.model.clone())
-                    .set_tool_use_id(tool_use_id.clone())
-                    .set_tool_name(tool_use.name.clone())
-                    .utterance_id(self.conversation.message_id().map(|s| s.to_string()));
+            let mut tool_telemetry = ToolUseEventBuilder::new(
+                conv_id.clone(),
+                tool_use.id.clone(),
+                self.conversation.model_info.as_ref().map(|m| m.model_id.clone()),
+            )
+            .set_tool_use_id(tool_use_id.clone())
+            .set_tool_name(tool_use.name.clone())
+            .utterance_id(self.conversation.message_id().map(|s| s.to_string()));
             match self.conversation.tool_manager.get_tool_from_tool_use(tool_use) {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
@@ -2491,6 +2473,7 @@ impl ChatSession {
     }
 
     async fn retry_model_overload(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
+        os.client.invalidate_model_cache().await;
         match select_model(os, self).await {
             Ok(Some(_)) => (),
             Ok(None) => {
