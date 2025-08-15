@@ -351,11 +351,11 @@ impl ConversationState {
         if !context.dropped_context_files.is_empty() {
             execute!(
                 stderr,
-                style::SetForegroundColor(ColorManager::default().warning()),  // Changed from DarkYellow for better visibility
+                style::SetForegroundColor(ColorManager::default().warning()),
                 style::Print("\nSome context files are dropped due to size limit, please run "),
-                style::SetForegroundColor(ColorManager::default().success()),  // Changed from DarkGreen for better visibility
+                style::SetForegroundColor(ColorManager::default().success()),
                 style::Print("/context show "),
-                style::SetForegroundColor(ColorManager::default().warning()),  // Changed from DarkYellow for better visibility
+                style::SetForegroundColor(ColorManager::default().warning()),
                 style::Print("to learn more.\n"),
                 style::SetForegroundColor(style::Color::Reset)
             )

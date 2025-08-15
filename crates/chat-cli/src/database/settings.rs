@@ -194,7 +194,7 @@ impl ColorTheme {
             error: Color::Red,
             warning: Color::Yellow,
             info: Color::Blue,
-            secondary: Color::White,  // Changed from DarkGrey for better visibility
+            secondary: Color::White,
             primary: Color::Cyan,
             action: Color::Magenta,
             data: Color::DarkCyan,
