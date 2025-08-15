@@ -136,8 +136,6 @@ impl UseAws {
 
         if let Some(ref profile_name) = self.profile_name {
             queue!(output, style::Print(format!("Profile name: {}\n", profile_name)))?;
-        } else {
-            queue!(output, style::Print("Profile name: default\n".to_string()))?;
         }
 
         queue!(output, style::Print(format!("Region: {}", self.region)))?;
