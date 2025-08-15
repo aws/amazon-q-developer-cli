@@ -170,7 +170,7 @@ pub async fn get_available_models(os: &Os) -> Result<(Vec<ModelInfo>, ModelInfo)
         Err(e) => {
             tracing::error!("Failed to fetch models from API: {}, using fallback list", e);
 
-            let models = get_fallback_models(region);
+            let models = get_fallback_models();
             let default_model = models[0].clone();
 
             Ok((models, default_model))
@@ -188,33 +188,19 @@ fn default_context_window() -> usize {
     200_000
 }
 
-fn get_fallback_models(region: &str) -> Vec<ModelInfo> {
-    match region {
-        "eu-central-1" => vec![
-            ModelInfo {
-                model_name: Some("claude-sonnet-4".to_string()),
-                model_id: "claude-sonnet-4".to_string(),
-                context_window_tokens: 200_000,
-            },
-            ModelInfo {
-                model_name: Some("claude-3.5-sonnet-v1".to_string()),
-                model_id: "claude-3.5-sonnet-v1".to_string(),
-                context_window_tokens: 200_000,
-            },
-        ],
-        _ => vec![
-            ModelInfo {
-                model_name: Some("claude-sonnet-4".to_string()),
-                model_id: "claude-sonnet-4".to_string(),
-                context_window_tokens: 200_000,
-            },
-            ModelInfo {
-                model_name: Some("claude-3.7-sonnet".to_string()),
-                model_id: "claude-3.7-sonnet".to_string(),
-                context_window_tokens: 200_000,
-            },
-        ],
-    }
+fn get_fallback_models() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            model_name: Some("claude-sonnet-4".to_string()),
+            model_id: "claude-sonnet-4".to_string(),
+            context_window_tokens: 200_000,
+        },
+        ModelInfo {
+            model_name: Some("claude-3.7-sonnet".to_string()),
+            model_id: "claude-3.7-sonnet".to_string(),
+            context_window_tokens: 200_000,
+        },
+    ]
 }
 
 pub fn normalize_model_name(name: &str) -> &str {
