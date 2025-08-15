@@ -3,6 +3,7 @@ use std::io::SeekFrom;
 
 use crossterm::style::Color;
 use fd_lock::RwLock;
+use regex::Regex;
 use serde_json::{
     Map,
     Value,
@@ -15,6 +16,56 @@ use tokio::io::{
 };
 
 use super::DatabaseError;
+
+/// Setting key that can be either static (enum-based) or dynamic (namespace-based)
+#[derive(Clone, Debug)]
+pub enum SettingKey {
+    Static(Setting),
+    ThemeColor { theme: String, category: String },
+}
+
+impl SettingKey {
+    pub fn as_string(&self) -> String {
+        match self {
+            Self::Static(setting) => setting.as_ref().to_string(),
+            Self::ThemeColor { theme, category } => {
+                format!("chat.theme.{}.{}", theme, category)
+            }
+        }
+    }
+}
+
+impl TryFrom<&str> for SettingKey {
+    type Error = DatabaseError;
+    
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        // Try static settings first
+        if let Ok(setting) = Setting::try_from(value) {
+            return Ok(Self::Static(setting));
+        }
+        
+        // Check for theme color pattern: chat.theme.{theme}.{color}
+        static THEME_COLOR_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+        let regex = THEME_COLOR_REGEX.get_or_init(|| {
+            Regex::new(r"^chat\.theme\.([^.]+)\.([^.]+)$").unwrap()
+        });
+        
+        if let Some(captures) = regex.captures(value) {
+            let theme = captures.get(1).unwrap().as_str().to_string();
+            let category = captures.get(2).unwrap().as_str().to_string();
+            
+            // Validate color category
+            if !["success", "error", "warning", "info", "secondary", "primary", "action", "data"]
+                .contains(&category.as_str()) {
+                return Err(DatabaseError::InvalidSetting(value.to_string()));
+            }
+            
+            return Ok(Self::ThemeColor { theme, category });
+        }
+        
+        Err(DatabaseError::InvalidSetting(value.to_string()))
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Setting {
@@ -355,6 +406,11 @@ impl Settings {
         self.0.get(key.as_ref())
     }
 
+    /// Get value by string key (for dynamic settings)
+    pub fn get_by_key(&self, key: &str) -> Option<&Value> {
+        self.0.get(key)
+    }
+
     pub async fn set(&mut self, key: Setting, value: impl Into<serde_json::Value>) -> Result<(), DatabaseError> {
         self.0.insert(key.to_string(), value.into());
         self.save_to_file().await
@@ -407,6 +463,19 @@ impl Settings {
     pub fn get_theme(&self) -> Option<ThemeName> {
         self.get_string(Setting::ChatTheme)
             .and_then(|s| ThemeName::from_str(&s))
+    }
+
+    /// Set value by string key (for dynamic settings)
+    pub async fn set_by_key(&mut self, key: &str, value: impl Into<serde_json::Value>) -> Result<(), DatabaseError> {
+        self.0.insert(key.to_string(), value.into());
+        self.save_to_file().await
+    }
+
+    /// Remove value by string key (for dynamic settings)
+    pub async fn remove_by_key(&mut self, key: &str) -> Result<Option<Value>, DatabaseError> {
+        let value = self.0.remove(key);
+        self.save_to_file().await?;
+        Ok(value)
     }
 
     pub async fn save_to_file(&self) -> Result<(), DatabaseError> {

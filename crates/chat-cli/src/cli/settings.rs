@@ -15,7 +15,7 @@ use globset::Glob;
 use serde_json::json;
 
 use super::OutputFormat;
-use crate::database::settings::Setting;
+use crate::database::settings::SettingKey;
 use crate::os::Os;
 use crate::util::directories;
 
@@ -86,60 +86,86 @@ impl SettingsArgs {
                 Ok(ExitCode::SUCCESS)
             },
             None => {
-                let Some(key) = &self.key else {
+                let Some(key_str) = &self.key else {
                     return Ok(ExitCode::SUCCESS);
                 };
 
-                let key = Setting::try_from(key.as_str())?;
+                let key = SettingKey::try_from(key_str.as_str())?;
                 match (&self.value, self.delete) {
-                    (None, false) => match os.database.settings.get(key) {
-                        Some(value) => {
-                            match self.format {
-                                OutputFormat::Plain => match value.as_str() {
-                                    Some(value) => println!("{value}"),
-                                    None => println!("{value:#}"),
-                                },
-                                OutputFormat::Json => println!("{value}"),
-                                OutputFormat::JsonPretty => println!("{value:#}"),
-                            }
-                            Ok(ExitCode::SUCCESS)
-                        },
-                        None => match self.format {
-                            OutputFormat::Plain => Err(eyre::eyre!("No value associated with {key}")),
-                            OutputFormat::Json | OutputFormat::JsonPretty => {
-                                println!("null");
+                    (None, false) => {
+                        let value = match &key {
+                            SettingKey::Static(setting) => os.database.settings.get(*setting),
+                            SettingKey::ThemeColor { .. } => os.database.settings.get_by_key(&key.as_string()),
+                        };
+                        
+                        match value {
+                            Some(value) => {
+                                match self.format {
+                                    OutputFormat::Plain => match value.as_str() {
+                                        Some(value) => println!("{value}"),
+                                        None => println!("{value:#}"),
+                                    },
+                                    OutputFormat::Json => println!("{value}"),
+                                    OutputFormat::JsonPretty => println!("{value:#}"),
+                                }
                                 Ok(ExitCode::SUCCESS)
                             },
-                        },
+                            None => match self.format {
+                                OutputFormat::Plain => Err(eyre::eyre!("No value associated with {}", key.as_string())),
+                                OutputFormat::Json | OutputFormat::JsonPretty => {
+                                    println!("null");
+                                    Ok(ExitCode::SUCCESS)
+                                },
+                            },
+                        }
                     },
                     (Some(value_str), false) => {
                         let value = serde_json::from_str(value_str).unwrap_or_else(|_| json!(value_str));
-                        os.database.settings.set(key, value).await?;
+                        match &key {
+                            SettingKey::Static(setting) => {
+                                os.database.settings.set(*setting, value).await?;
+                            },
+                            SettingKey::ThemeColor { .. } => {
+                                os.database.settings.set_by_key(&key.as_string(), value).await?;
+                            }
+                        }
                         Ok(ExitCode::SUCCESS)
                     },
                     (None, true) => {
-                        let glob = Glob::new(key.as_ref())
+                        let key_string = key.as_string();
+                        let glob = Glob::new(&key_string)
                             .context("Could not create glob")?
                             .compile_matcher();
                         let map = os.database.settings.map();
-                        let keys_to_remove = map.keys().filter(|key| glob.is_match(key)).cloned().collect::<Vec<_>>();
+                        let keys_to_remove = map.keys().filter(|k| glob.is_match(k)).cloned().collect::<Vec<_>>();
 
                         match keys_to_remove.len() {
                             0 => {
-                                return Err(eyre::eyre!("No settings found matching {key}"));
+                                return Err(eyre::eyre!("No settings found matching {}", key_string));
                             },
                             1 => {
                                 println!("Removing {:?}", keys_to_remove[0]);
-                                os.database
-                                    .settings
-                                    .remove(Setting::try_from(keys_to_remove[0].as_str())?)
-                                    .await?;
+                                match &key {
+                                    SettingKey::Static(setting) => {
+                                        os.database.settings.remove(*setting).await?;
+                                    },
+                                    SettingKey::ThemeColor { .. } => {
+                                        os.database.settings.remove_by_key(&keys_to_remove[0]).await?;
+                                    }
+                                }
                             },
                             _ => {
-                                for key in &keys_to_remove {
-                                    if let Ok(key) = Setting::try_from(key.as_str()) {
-                                        println!("Removing `{key}`");
-                                        os.database.settings.remove(key).await?;
+                                for key_str in &keys_to_remove {
+                                    if let Ok(parsed_key) = SettingKey::try_from(key_str.as_str()) {
+                                        println!("Removing `{}`", parsed_key.as_string());
+                                        match &parsed_key {
+                                            SettingKey::Static(setting) => {
+                                                os.database.settings.remove(*setting).await?;
+                                            },
+                                            SettingKey::ThemeColor { .. } => {
+                                                os.database.settings.remove_by_key(key_str).await?;
+                                            }
+                                        }
                                     }
                                 }
                             },
