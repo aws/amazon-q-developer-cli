@@ -288,7 +288,8 @@ impl CustomTool {
     }
 
     pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
-        use crate::util::MCP_SERVER_TOOL_DELIMITER;
+        use crate::util::pattern_matching::matches_any_pattern;
+        
         let Self {
             name: tool_name,
             client,
@@ -296,15 +297,17 @@ impl CustomTool {
         } = self;
         let server_name = client.get_server_name();
 
-        if agent.allowed_tools.contains(&format!("@{server_name}"))
-            || agent
-                .allowed_tools
-                .contains(&format!("@{server_name}{MCP_SERVER_TOOL_DELIMITER}{tool_name}"))
-        {
-            PermissionEvalResult::Allow
-        } else {
-            PermissionEvalResult::Ask
+        let server_pattern = format!("@{server_name}");
+        if agent.allowed_tools.contains(&server_pattern) {
+            return PermissionEvalResult::Allow;
         }
+
+        let tool_pattern = format!("@{server_name}/{tool_name}");
+        if matches_any_pattern(&agent.allowed_tools, &tool_pattern) {
+            return PermissionEvalResult::Allow;
+        }
+
+        PermissionEvalResult::Ask
     }
 }
 
