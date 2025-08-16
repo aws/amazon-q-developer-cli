@@ -897,11 +897,13 @@ impl ToolManager {
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?
                     .into_iter()
                     .filter(|(name, _)| {
+                        use crate::cli::chat::tools::NATIVE_TOOLS;
                         name == DUMMY_TOOL_NAME
                             || is_allow_all
                             || is_allow_native
                             || tool_list.contains(name)
                             || tool_list.contains(&format!("@builtin/{name}"))
+                            || NATIVE_TOOLS.contains(&name.as_str())
                     })
                     .collect::<HashMap<_, _>>();
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled(os) {
