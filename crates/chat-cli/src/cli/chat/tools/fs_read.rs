@@ -102,6 +102,12 @@ impl FsRead {
         }
     }
 
+    pub fn allowable_field_to_be_overridden(settings: &serde_json::Value) -> Option<String> {
+        settings
+            .get("allowedPaths")
+            .map(|value| format!("allowedPaths: {}", value))
+    }
+
     pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -120,7 +126,7 @@ impl FsRead {
 
         let is_in_allowlist = agent.allowed_tools.contains("fs_read");
         match agent.tools_settings.get("fs_read") {
-            Some(settings) if is_in_allowlist => {
+            Some(settings) => {
                 let Settings {
                     allowed_paths,
                     denied_paths,
@@ -135,7 +141,11 @@ impl FsRead {
                 let allow_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &allowed_paths {
-                        if let Ok(glob) = Glob::new(path) {
+                        let path = path.strip_suffix('/').unwrap_or(path.as_str());
+                        let Ok(path) = shellexpand::full(path) else {
+                            continue;
+                        };
+                        if let Ok(glob) = Glob::new(path.as_ref() as &str) {
                             builder.add(glob);
                         } else {
                             warn!("Failed to create glob from path given: {path}. Ignoring.");
@@ -148,7 +158,11 @@ impl FsRead {
                 let deny_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &denied_paths {
-                        if let Ok(glob) = Glob::new(path) {
+                        let processed_path = path.strip_suffix('/').unwrap_or(path.as_str());
+                        let Ok(processed_path) = shellexpand::full(processed_path) else {
+                            continue;
+                        };
+                        if let Ok(glob) = Glob::new(processed_path.as_ref() as &str) {
                             sanitized_deny_list.push(path);
                             builder.add(glob);
                         } else {
@@ -168,7 +182,12 @@ impl FsRead {
                                 FsReadOperation::Line(FsLine { path, .. })
                                 | FsReadOperation::Directory(FsDirectory { path, .. })
                                 | FsReadOperation::Search(FsSearch { path, .. }) => {
-                                    let denied_match_set = deny_set.matches(path);
+                                    let path = path.strip_suffix('/').unwrap_or(path.as_str());
+                                    let Ok(path) = shellexpand::full(path) else {
+                                        ask = true;
+                                        continue;
+                                    };
+                                    let denied_match_set = deny_set.matches(path.as_ref() as &str);
                                     if !denied_match_set.is_empty() {
                                         let deny_res = PermissionEvalResult::Deny({
                                             denied_match_set
@@ -182,14 +201,25 @@ impl FsRead {
 
                                     // We only want to ask if we are not allowing read only
                                     // operation
-                                    if !allow_read_only && !allow_set.is_match(path) {
+                                    if !is_in_allowlist
+                                        && !allow_read_only
+                                        && !allow_set.is_match(path.as_ref() as &str)
+                                    {
                                         ask = true;
                                     }
                                 },
                                 FsReadOperation::Image(fs_image) => {
                                     let paths = &fs_image.image_paths;
-                                    let denied_match_set =
-                                        paths.iter().flat_map(|p| deny_set.matches(p)).collect::<Vec<_>>();
+                                    let denied_match_set = paths
+                                        .iter()
+                                        .flat_map(|path| {
+                                            let path = path.strip_suffix('/').unwrap_or(path.as_str());
+                                            let Ok(path) = shellexpand::full(path) else {
+                                                return vec![];
+                                            };
+                                            deny_set.matches(path.as_ref() as &str)
+                                        })
+                                        .collect::<Vec<_>>();
                                     if !denied_match_set.is_empty() {
                                         let deny_res = PermissionEvalResult::Deny({
                                             denied_match_set
@@ -203,7 +233,10 @@ impl FsRead {
 
                                     // We only want to ask if we are not allowing read only
                                     // operation
-                                    if !allow_read_only && !paths.iter().any(|path| allow_set.is_match(path)) {
+                                    if !is_in_allowlist
+                                        && !allow_read_only
+                                        && !paths.iter().any(|path| allow_set.is_match(path))
+                                    {
                                         ask = true;
                                     }
                                 },
@@ -838,10 +871,7 @@ fn format_mode(mode: u32) -> [char; 9] {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{
-        HashMap,
-        HashSet,
-    };
+    use std::collections::HashMap;
 
     use super::*;
     use crate::cli::agent::ToolSettingTarget;
@@ -1380,19 +1410,17 @@ mod tests {
     fn test_eval_perm() {
         const DENIED_PATH_ONE: &str = "/some/denied/path";
         const DENIED_PATH_GLOB: &str = "/denied/glob/**/path";
+        const ALLOW_PATH_ONE: &str = "/some/allow/path/**";
+        const ALLOW_PATH_GLOB: &str = "/allowed/glob/**/path/**";
 
-        let agent = Agent {
+        let mut agent = Agent {
             name: "test_agent".to_string(),
-            allowed_tools: {
-                let mut allowed_tools = HashSet::<String>::new();
-                allowed_tools.insert("fs_read".to_string());
-                allowed_tools
-            },
             tools_settings: {
                 let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
                 map.insert(
                     ToolSettingTarget("fs_read".to_string()),
                     serde_json::json!({
+                        "allowedPaths": [ALLOW_PATH_ONE, ALLOW_PATH_GLOB],
                         "deniedPaths": [DENIED_PATH_ONE, DENIED_PATH_GLOB]
                     }),
                 );
@@ -1401,9 +1429,10 @@ mod tests {
             ..Default::default()
         };
 
-        let tool = serde_json::from_value::<FsRead>(serde_json::json!({
+        let tool_one = serde_json::from_value::<FsRead>(serde_json::json!({
             "operations": [
                 { "path": DENIED_PATH_ONE, "mode": "Line", "start_line": 1, "end_line": 2 },
+                { "path": format!("{DENIED_PATH_ONE}/"), "mode": "Line", "start_line": 1, "end_line": 2 },
                 { "path": "/denied/glob", "mode": "Directory" },
                 { "path": "/denied/glob/child_one/path", "mode": "Directory" },
                 { "path": "/denied/glob/child_one/grand_child_one/path", "mode": "Directory" },
@@ -1412,12 +1441,23 @@ mod tests {
         }))
         .unwrap();
 
-        let res = tool.eval_perm(&agent);
+        let res = tool_one.eval_perm(&agent);
         assert!(matches!(
             res,
             PermissionEvalResult::Deny(ref deny_list)
                 if deny_list.iter().filter(|p| *p == DENIED_PATH_GLOB).collect::<Vec<_>>().len() == 2
-                && deny_list.iter().filter(|p| *p == DENIED_PATH_ONE).collect::<Vec<_>>().len() == 1
+                && deny_list.iter().filter(|p| *p == DENIED_PATH_ONE).collect::<Vec<_>>().len() == 2
+        ));
+
+        agent.allowed_tools.insert("fs_read".to_string());
+
+        // Denied set should remain denied
+        let res = tool_one.eval_perm(&agent);
+        assert!(matches!(
+            res,
+            PermissionEvalResult::Deny(ref deny_list)
+                if deny_list.iter().filter(|p| *p == DENIED_PATH_GLOB).collect::<Vec<_>>().len() == 2
+                && deny_list.iter().filter(|p| *p == DENIED_PATH_ONE).collect::<Vec<_>>().len() == 2
         ));
     }
 }
