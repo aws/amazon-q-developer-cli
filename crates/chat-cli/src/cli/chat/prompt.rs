@@ -2,36 +2,14 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 
 use eyre::Result;
-use rustyline::completion::{
-    Completer,
-    FilenameCompleter,
-    extract_word,
-};
+use rustyline::completion::{Completer, FilenameCompleter, extract_word};
 use rustyline::error::ReadlineError;
-use rustyline::highlight::{
-    CmdKind,
-    Highlighter,
-};
+use rustyline::highlight::{CmdKind, Highlighter};
 use rustyline::hint::Hinter as RustylineHinter;
 use rustyline::history::DefaultHistory;
-use rustyline::validate::{
-    ValidationContext,
-    ValidationResult,
-    Validator,
-};
+use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::{
-    Cmd,
-    Completer,
-    CompletionType,
-    Config,
-    Context,
-    EditMode,
-    Editor,
-    EventHandler,
-    Helper,
-    Hinter,
-    KeyCode,
-    KeyEvent,
+    Cmd, Completer, CompletionType, Config, Context, EditMode, Editor, EventHandler, Helper, Hinter, KeyCode, KeyEvent,
     Modifiers,
 };
 use winnow::stream::AsChar;
@@ -389,17 +367,22 @@ impl Highlighter for ChatHelper {
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
-            // Add profile part if present
+            // Add profile part if present (cyan)
             if let Some(profile) = components.profile {
                 result.push_str(&format!("[{}] ", profile).cyan().to_string());
             }
 
-            // Add warning symbol if present
+            // Add tangent indicator if present (yellow)
+            if components.tangent_mode {
+                result.push_str(&"↯ ".yellow().to_string());
+            }
+
+            // Add warning symbol if present (red)
             if components.warning {
                 result.push_str(&"!".red().to_string());
             }
 
-            // Add the prompt symbol
+            // Add the prompt symbol (magenta)
             result.push_str(&"> ".magenta().to_string());
 
             Cow::Owned(result)
@@ -456,6 +439,16 @@ pub fn rl(
     rl.bind_sequence(
         KeyEvent(KeyCode::Char('f'), Modifiers::CTRL),
         EventHandler::Simple(Cmd::CompleteHint),
+    );
+
+    // Add custom keybinding for Ctrl+T to toggle tangent mode (configurable)
+    let tangent_key_char = match os.database.settings.get_string(Setting::TangentModeKey) {
+        Some(key) if key.len() == 1 => key.chars().next().unwrap_or('t'),
+        _ => 't', // Default to 't' if setting is missing or invalid
+    };
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char(tangent_key_char), Modifiers::CTRL),
+        EventHandler::Simple(Cmd::Insert(1, "/tangent".to_string())),
     );
 
     Ok(rl)
@@ -590,6 +583,54 @@ mod tests {
         let invalid_prompt = "invalid prompt format";
         let highlighted = helper.highlight_prompt(invalid_prompt, true);
         assert_eq!(highlighted, invalid_prompt);
+    }
+
+    #[test]
+    fn test_highlight_prompt_tangent_mode() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true),
+            validator: MultiLineValidator,
+        };
+
+        // Test tangent mode prompt highlighting - ↯ yellow, > magenta
+        let highlighted = helper.highlight_prompt("↯ > ", true);
+        assert_eq!(highlighted, format!("{}{}", "↯ ".yellow(), "> ".magenta()));
+    }
+
+    #[test]
+    fn test_highlight_prompt_tangent_mode_with_warning() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true),
+            validator: MultiLineValidator,
+        };
+
+        // Test tangent mode with warning - ↯ yellow, ! red, > magenta
+        let highlighted = helper.highlight_prompt("↯ !> ", true);
+        assert_eq!(highlighted, format!("{}{}{}", "↯ ".yellow(), "!".red(), "> ".magenta()));
+    }
+
+    #[test]
+    fn test_highlight_prompt_profile_with_tangent_mode() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true),
+            validator: MultiLineValidator,
+        };
+
+        // Test profile with tangent mode - [dev] cyan, ↯ yellow, > magenta
+        let highlighted = helper.highlight_prompt("[dev] ↯ > ", true);
+        assert_eq!(
+            highlighted,
+            format!("{}{}{}", "[dev] ".cyan(), "↯ ".yellow(), "> ".magenta())
+        );
     }
 
     #[test]
