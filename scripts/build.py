@@ -8,7 +8,7 @@ import shutil
 import time
 from typing import Any, Mapping, Sequence, List, Optional
 from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
-from util import debug, info, isDarwin, isLinux, run_cmd, run_cmd_output, warn
+from util import debug, info, isDarwin, isLinux, isWindows, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets
 from importlib import import_module
 
@@ -494,6 +494,11 @@ def generate_sha(path: pathlib.Path) -> pathlib.Path:
         shasum_output = run_cmd_output(["shasum", "-a", "256", path])
     elif isLinux():
         shasum_output = run_cmd_output(["sha256sum", path])
+    elif isWindows():
+        # Use PowerShell's Get-FileHash cmdlet on Windows
+        shasum_output = run_cmd_output(["powershell", "-Command", f"Get-FileHash -Algorithm SHA256 '{path}' | Select-Object -ExpandProperty Hash"])
+        # PowerShell returns just the hash, so we need to format it like the Unix tools
+        shasum_output = f"{shasum_output.strip().lower()}  {path.name}"
     else:
         raise Exception("Unsupported platform")
 
@@ -531,6 +536,35 @@ def build_linux(chat_path: pathlib.Path, signer: GpgSigner | None):
     # clean up
     if signer:
         signer.clean()
+
+
+def build_windows(chat_path: pathlib.Path):
+    """
+    Creates qchat.zip and qchat.exe archives under `BUILD_DIR` for Windows.
+    """
+    # Copy the binary with .exe extension for Windows
+    chat_exe_name = f"{CHAT_BINARY_NAME}.exe"
+    chat_dst = BUILD_DIR / chat_exe_name
+    chat_dst.unlink(missing_ok=True)
+    shutil.copy2(chat_path, chat_dst)
+
+    # Create ZIP archive
+    zip_path = BUILD_DIR / f"{CHAT_BINARY_NAME}-windows.zip"
+    zip_path.unlink(missing_ok=True)
+    info(f"Creating Windows zip output to {zip_path}")
+    
+    # Use Python's zipfile module for cross-platform compatibility
+    import zipfile
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        zipf.write(chat_dst, chat_exe_name)
+    
+    generate_sha(zip_path)
+
+    # Also create a standalone executable copy for direct download
+    standalone_exe_path = BUILD_DIR / chat_exe_name
+    if standalone_exe_path != chat_dst:
+        shutil.copy2(chat_dst, standalone_exe_path)
+    generate_sha(standalone_exe_path)
 
 
 def build(
@@ -593,5 +627,7 @@ def build(
 
     if isDarwin():
         build_macos(chat_path, signing_data)
+    elif isWindows():
+        build_windows(chat_path)
     else:
         build_linux(chat_path, gpg_signer)
