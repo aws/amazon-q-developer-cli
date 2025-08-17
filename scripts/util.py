@@ -121,7 +121,7 @@ def run_cmd_status(
 
 def set_executable(path: pathlib.Path):
     st = os.stat(path)
-    os.chmod(path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
 
 
 class Variant(Enum):
