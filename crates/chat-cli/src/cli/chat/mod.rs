@@ -1604,7 +1604,7 @@ impl ChatSession {
             style::SetAttribute(Attribute::Reset)
         )?;
         let prompt = self.generate_tool_trust_prompt();
-        let user_input = match self.read_user_input(&prompt, false) {
+        let user_input = match self.read_user_input(os, &prompt, false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
         };
@@ -2609,10 +2609,10 @@ impl ChatSession {
     }
 
     /// Helper function to read user input with a prompt and Ctrl+C handling
-    fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
+    fn read_user_input(&mut self, os: &Os, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
         let mut ctrl_c = false;
         loop {
-            match (self.input_source.read_line(Some(prompt)), ctrl_c) {
+            match (self.input_source.read_line(Some(prompt), os), ctrl_c) {
                 (Ok(Some(line)), _) => {
                     if line.trim().is_empty() {
                         continue; // Reprompt if the input is empty

@@ -62,6 +62,9 @@ const IDC_REGION_KEY: &str = "auth.idc.region";
 const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
 const PROFILE_MIGRATION_KEY: &str = "profile.Migrated";
 
+const CHAT_READLINE_HISTORY_MAX_PER_DIRECTORY: i32 = 100;
+const CHAT_READLINE_HISTORY_MAX_TOTAL: i32 = 1000;
+
 const MIGRATIONS: &[Migration] = migrations![
     "000_migration_table",
     "001_history_table",
@@ -70,7 +73,8 @@ const MIGRATIONS: &[Migration] = migrations![
     "004_state_table",
     "005_auth_table",
     "006_make_state_blob",
-    "007_conversations_table"
+    "007_conversations_table",
+    "008_chat_readline_history_table"
 ];
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -463,6 +467,63 @@ impl Database {
 
         Ok(map)
     }
+
+    /// Add a chat input to the persistent history
+    pub fn add_chat_readline_history_entry(&self, input: &str, os: &crate::os::Os) -> Result<(), DatabaseError> {
+        // Skip empty or whitespace-only inputs
+        if input.trim().is_empty() {
+            return Ok(());
+        }
+
+        // Filter out confirmations (y/n/t)
+        let trimmed = input.trim();
+        if matches!(trimmed, "y" | "n" | "t") {
+            return Ok(());
+        }
+
+        let conn = self.pool.get()?;
+        let cwd = os.env.current_dir().unwrap_or_default().to_string_lossy().to_string();
+
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("INSERT INTO chat_readline_history (input, cwd) VALUES (?1, ?2)", params![input, cwd])?;
+
+        // Keep only last entries per directory
+        tx.execute(
+            "DELETE FROM chat_readline_history 
+            WHERE cwd = ?1 
+            AND id NOT IN (
+                SELECT id 
+                FROM chat_readline_history 
+                WHERE cwd = ?1 
+                ORDER BY timestamp DESC 
+                LIMIT ?2
+            )",
+            params![cwd, CHAT_READLINE_HISTORY_MAX_PER_DIRECTORY],
+        )?;
+
+        // Keep only last entries total across all directories
+        tx.execute(
+            "DELETE FROM chat_readline_history WHERE id NOT IN (
+                SELECT id
+                FROM chat_readline_history
+                ORDER BY timestamp DESC
+                LIMIT ?1
+            )",
+            params![CHAT_READLINE_HISTORY_MAX_TOTAL],
+        )?;
+        tx.commit()?;
+
+        Ok(())
+    }
+
+    /// Get all chat readline history entries for current working directory
+    pub fn get_chat_readline_history(&self, os: &crate::os::Os) -> Result<Vec<String>, DatabaseError> {
+        let conn = self.pool.get()?;
+        let cwd = os.env.current_dir().unwrap_or_default().to_string_lossy().to_string();
+        let mut stmt = conn.prepare("SELECT input FROM chat_readline_history WHERE cwd = ?1 ORDER BY timestamp")?;
+        let rows = stmt.query_map([cwd], |row| Ok(row.get(0)?))?;
+        rows.collect::<Result<Vec<String>, _>>().map_err(Into::into)
+    }
 }
 
 fn max_migration_version<C: Deref<Target = Connection>>(conn: &C) -> Option<i64> {
@@ -624,5 +685,77 @@ mod tests {
         assert_eq!(store.get_secret(key).await.unwrap().unwrap().0, "1234");
         store.delete_secret(key).await.unwrap();
         assert_eq!(store.get_secret(key).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn chat_readline_history_basic_operations() {
+        let db = Database::new().await.unwrap();
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Add entries
+        db.add_chat_readline_history_entry("chat 1", &os).unwrap();
+        db.add_chat_readline_history_entry("!ls", &os).unwrap();
+        db.add_chat_readline_history_entry("chat 2", &os).unwrap();
+
+        // Retrieve entries
+        let history = db.get_chat_readline_history(&os).unwrap();
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0], "chat 1");
+        assert_eq!(history[1], "!ls");
+        assert_eq!(history[2], "chat 2");
+    }
+
+    #[tokio::test]
+    async fn chat_readline_history_filtering() {
+        let db = Database::new().await.unwrap();
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Empty and whitespace inputs should be filtered
+        db.add_chat_readline_history_entry("", &os).unwrap();
+        db.add_chat_readline_history_entry("   ", &os).unwrap();
+        db.add_chat_readline_history_entry("\t\n", &os).unwrap();
+
+        // Confirmations should be filtered out
+        db.add_chat_readline_history_entry("y", &os).unwrap();
+        db.add_chat_readline_history_entry("n", &os).unwrap();
+        db.add_chat_readline_history_entry("t", &os).unwrap();
+        db.add_chat_readline_history_entry("  y  ", &os).unwrap(); // with whitespace
+
+        db.add_chat_readline_history_entry("valid command", &os).unwrap();
+
+        let history = db.get_chat_readline_history(&os).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0], "valid command");
+    }
+
+    #[tokio::test]
+    async fn chat_readline_history_cleanup() {
+        let db = Database::new().await.unwrap();
+        let os = crate::os::Os::new().await.unwrap();
+        let conn = db.pool.get().unwrap();
+
+        for i in 0..(CHAT_READLINE_HISTORY_MAX_PER_DIRECTORY + 5) {
+            db.add_chat_readline_history_entry(&format!("command {}", i), &os).unwrap();
+        }
+
+        // Check per-directory limit for current directory
+        let history = db.get_chat_readline_history(&os).unwrap();
+        assert!(history.len() <= CHAT_READLINE_HISTORY_MAX_PER_DIRECTORY as usize, "Should cleanup to max entries per directory");
+
+        // Manually insert records across multiple directories to exceed global limit
+        for i in 0..(CHAT_READLINE_HISTORY_MAX_TOTAL + 50) {
+            let cwd = format!("/test/dir{}", i % 5); // Rotate between 5 different directories
+            conn.execute(
+                "INSERT INTO chat_readline_history (input, cwd) VALUES (?1, ?2)",
+                params![format!("command {}", i), cwd],
+            ).unwrap();
+        }
+
+        // Trigger cleanup by adding one more entry through the normal method
+        db.add_chat_readline_history_entry("final command", &os).unwrap();
+
+        // Check global limit across all directories
+        let total_count: i32 = conn.query_row("SELECT COUNT(*) FROM chat_readline_history", [], |row| row.get(0)).unwrap();
+        assert!(total_count <= CHAT_READLINE_HISTORY_MAX_TOTAL, "Should cleanup to max entries total, got {}", total_count);
     }
 }

@@ -95,7 +95,7 @@ impl SlashCommand {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         match self {
             Self::Quit => Ok(ChatState::Exit),
-            Self::Clear(args) => args.execute(session).await,
+            Self::Clear(args) => args.execute(os, session).await,
             Self::Agent(subcommand) => subcommand.execute(os, session).await,
             Self::Profile => {
                 use crossterm::{

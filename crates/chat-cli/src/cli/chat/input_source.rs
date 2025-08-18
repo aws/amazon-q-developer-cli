@@ -33,7 +33,16 @@ mod inner {
 
 impl InputSource {
     pub fn new(os: &Os, sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Result<Self> {
-        Ok(Self(inner::Inner::Readline(rl(os, sender, receiver)?)))
+        let mut rl = rl(os, sender, receiver)?;
+        
+        // Load persistent chat readline history from database
+        if let Ok(history) = os.database.get_chat_readline_history(os) {
+            for entry in history {
+                let _ = rl.add_history_entry(&entry);
+            }
+        }
+        
+        Ok(Self(inner::Inner::Readline(rl)))
     }
 
     #[cfg(unix)]
@@ -71,7 +80,7 @@ impl InputSource {
         Self(inner::Inner::Mock { index: 0, lines })
     }
 
-    pub fn read_line(&mut self, prompt: Option<&str>) -> Result<Option<String>, ReadlineError> {
+    pub fn read_line(&mut self, prompt: Option<&str>, os: &Os) -> Result<Option<String>, ReadlineError> {
         match &mut self.0 {
             inner::Inner::Readline(rl) => {
                 let prompt = prompt.unwrap_or_default();
@@ -79,11 +88,10 @@ impl InputSource {
                 match curr_line {
                     Ok(line) => {
                         let _ = rl.add_history_entry(line.as_str());
-
+                        let _ = os.database.add_chat_readline_history_entry(&line, os);
                         if let Some(helper) = rl.helper_mut() {
                             helper.update_hinter_history(&line);
                         }
-
                         Ok(Some(line))
                     },
                     Err(ReadlineError::Interrupted | ReadlineError::Eof) => Ok(None),
@@ -97,6 +105,7 @@ impl InputSource {
         }
     }
 
+    // For testing mock input source without os dependency
     // We're keeping this method for potential future use
     #[allow(dead_code)]
     pub fn set_buffer(&mut self, content: &str) {
@@ -111,16 +120,17 @@ impl InputSource {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_mock_input_source() {
+    #[tokio::test]
+    async fn test_mock_input_source() {
         let l1 = "Hello,".to_string();
         let l2 = "Line 2".to_string();
         let l3 = "World!".to_string();
         let mut input = InputSource::new_mock(vec![l1.clone(), l2.clone(), l3.clone()]);
+        let os = crate::os::Os::new().await.unwrap();
 
-        assert_eq!(input.read_line(None).unwrap().unwrap(), l1);
-        assert_eq!(input.read_line(None).unwrap().unwrap(), l2);
-        assert_eq!(input.read_line(None).unwrap().unwrap(), l3);
-        assert!(input.read_line(None).unwrap().is_none());
+        assert_eq!(input.read_line(None, &os).unwrap().unwrap(), l1);
+        assert_eq!(input.read_line(None, &os).unwrap().unwrap(), l2);
+        assert_eq!(input.read_line(None, &os).unwrap().unwrap(), l3);
+        assert!(input.read_line(None, &os).unwrap().is_none());
     }
 }
