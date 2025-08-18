@@ -164,6 +164,13 @@ impl PromptCompleter {
             .map_err(|e| ReadlineError::Io(std::io::Error::other(e.to_string())))?;
         // We only want stuff from the current tail end onward
         let mut new_receiver = receiver.resubscribe();
+
+        // Here we poll on the receiver for [max_attempts] number of times.
+        // The reason for this is because we are trying to receive something managed by an async
+        // channel from a sync context.
+        // If we ever switch back to a single threaded runtime for whatever reason, this function
+        // will not panic but nothing will be fetched because the thread that is doing
+        // try_recv is also the thread that is supposed to be doing the sending.
         let mut attempts = 0;
         let max_attempts = 5;
         let query_res = loop {
