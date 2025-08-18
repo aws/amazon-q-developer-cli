@@ -170,6 +170,12 @@ impl CustomToolClient {
         }
     }
 
+    pub fn get_pid(&self) -> Option<u32> {
+        match self {
+            CustomToolClient::Stdio { client, .. } => client.server_process_id.as_ref().map(|pid| pid.as_u32()),
+        }
+    }
+
     #[allow(dead_code)]
     pub async fn notify(&self, method: &str, params: Option<serde_json::Value>) -> Result<()> {
         match self {

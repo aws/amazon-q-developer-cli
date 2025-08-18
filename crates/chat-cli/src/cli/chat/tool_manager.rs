@@ -47,6 +47,7 @@ use tokio::sync::{
 use tokio::task::JoinHandle;
 use tracing::{
     error,
+    info,
     warn,
 };
 
@@ -527,7 +528,18 @@ impl ToolManagerBuilder {
                     // request method on the mcp client no longer buffers all the pages from
                     // list calls.
                     match msg {
-                        UpdateEventMessage::ToolsListResult { server_name, result } => {
+                        UpdateEventMessage::ToolsListResult {
+                            server_name,
+                            result,
+                            pid,
+                        } => {
+                            let pid = pid.unwrap();
+                            if !is_process_running(pid) {
+                                info!(
+                                    "Received tool list result from {server_name} but its associated process {pid} is no longer running. Ignoring."
+                                );
+                                return;
+                            }
                             let time_taken =
                                 loading_servers
                                     .remove(&server_name)
@@ -708,9 +720,19 @@ impl ToolManagerBuilder {
                                 }
                             }
                         },
-                        UpdateEventMessage::PromptsListResult { server_name, result } => match result {
-                            Ok(prompt_list_result) => {
-                                tracing::error!("## swap: received prompts from {server_name}");
+                        UpdateEventMessage::PromptsListResult {
+                            server_name,
+                            result,
+                            pid,
+                        } => match result {
+                            Ok(prompt_list_result) if pid.is_some() => {
+                                let pid = pid.unwrap();
+                                if !is_process_running(pid) {
+                                    info!(
+                                        "Received prompt list result from {server_name} but its associated process {pid} is no longer running. Ignoring."
+                                    );
+                                    return;
+                                }
                                 // We first need to clear all the PromptGets that are associated with
                                 // this server because PromptsListResult is declaring what is available
                                 // (and not the diff)
@@ -740,6 +762,9 @@ impl ToolManagerBuilder {
                                         });
                                 }
                             },
+                            Ok(_) => {
+                                error!("Received prompt list result without pid from {server_name}. Ignoring.");
+                            },
                             Err(e) => {
                                 error!("Error fetching prompts from server {server_name}: {:?}", e);
                                 let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
@@ -761,16 +786,18 @@ impl ToolManagerBuilder {
                         UpdateEventMessage::ResourcesListResult {
                             server_name: _,
                             result: _,
+                            pid: _,
                         } => {},
                         UpdateEventMessage::ResourceTemplatesListResult {
                             server_name: _,
                             result: _,
+                            pid: _,
                         } => {},
-                        UpdateEventMessage::InitStart { server_name } => {
+                        UpdateEventMessage::InitStart { server_name, .. } => {
                             pending_clone.write().await.insert(server_name.clone());
                             loading_servers.insert(server_name, std::time::Instant::now());
                         },
-                        UpdateEventMessage::Deinit { server_name } => {
+                        UpdateEventMessage::Deinit { server_name, .. } => {
                             // Only prompts are stored here so we'll just be clearing that
                             // In the future if we are also storing tools, we need to make sure that
                             // the tools are also pruned.
@@ -821,9 +848,11 @@ impl ToolManagerBuilder {
         debug_assert!(messenger_builder.is_some());
         let messenger_builder = messenger_builder.unwrap();
         for (mut name, init_res) in pre_initialized {
-            let messenger = messenger_builder.build_with_name(name.clone());
+            let mut messenger = messenger_builder.build_with_name(name.clone());
             match init_res {
                 Ok(mut client) => {
+                    let pid = client.get_pid();
+                    messenger.pid = pid;
                     client.assign_messenger(Box::new(messenger));
                     let mut client = Arc::new(client);
                     while let Some(collided_client) = clients.insert(name.clone(), client) {
@@ -1608,6 +1637,39 @@ fn sanitize_name(orig: String, regex: &regex::Regex, hasher: &mut impl Hasher) -
             hasher.write(orig.as_bytes());
             format!("a{}", hasher.finish())
         },
+    }
+}
+
+// Add this function to check if a process is still running
+fn is_process_running(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // On Unix systems, we can use kill with signal 0 to check if process exists
+        std::process::Command::new("ps")
+            .arg("-p")
+            .arg(pid.to_string())
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        // On Windows, try to open the process handle
+        use std::ptr;
+
+        use winapi::um::handleapi::CloseHandle;
+        use winapi::um::processthreadsapi::OpenProcess;
+        use winapi::um::winnt::PROCESS_QUERY_INFORMATION;
+
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
+            if handle != ptr::null_mut() {
+                CloseHandle(handle);
+                true
+            } else {
+                false
+            }
+        }
     }
 }
 

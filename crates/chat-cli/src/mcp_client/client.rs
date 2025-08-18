@@ -124,7 +124,7 @@ pub struct Client<T: Transport> {
     server_name: String,
     transport: Arc<T>,
     timeout: u64,
-    server_process_id: Option<Pid>,
+    pub server_process_id: Option<Pid>,
     client_info: serde_json::Value,
     current_id: Arc<AtomicU64>,
     pub messenger: Option<Box<dyn Messenger>>,
