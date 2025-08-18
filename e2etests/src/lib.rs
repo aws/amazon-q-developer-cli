@@ -107,12 +107,12 @@ pub mod q_chat_helper {
                     },
                     Ok(_) => {
                         // No more data, but wait a bit more in case there's more coming
-                        std::thread::sleep(Duration::from_millis(300));
+                        std::thread::sleep(Duration::from_millis(1000));
                         if total_content.len() > 0 { break; }
                     },
                     Err(_) => break,
                 }
-                std::thread::sleep(Duration::from_millis(300));
+                std::thread::sleep(Duration::from_millis(1000));
             }
             
             Ok(total_content)
