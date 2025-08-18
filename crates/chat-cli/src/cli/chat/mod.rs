@@ -139,6 +139,7 @@ use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
 use crate::cli::chat::capture::{
     CAPTURE_MESSAGE_MAX_LENGTH,
+    CAPTURE_TEST_DIR,
     CaptureManager,
     truncate_message,
 };
@@ -1209,25 +1210,26 @@ impl ChatSession {
         }
 
         // Initialize checkpointing if possible
-        let capture_manager = if CaptureManager::is_git_installed() {
-            let path =
-                PathBuf::from(crate::cli::chat::consts::SHADOW_REPO_DIR).join(self.conversation.conversation_id());
-            match CaptureManager::init(path) {
-                Ok(manager) => {
-                    execute!(self.stderr, style::Print("Captures are enabled!\n\n".blue().bold()))?;
-                    Some(manager)
-                },
-                Err(e) => {
-                    execute!(
-                        self.stderr,
-                        style::Print(format!("Captures could not be enabled: {e}\n").blue())
-                    )?;
-                    None
-                }
-            }
-        } else {
-            execute!(self.stderr, style::Print("Captures could not be enabled because git is not installed. Please install git to enable checkpointing features.\n".blue()))?;
-            None
+        let path =
+        //    os.env.home().unwrap_or(os.env.current_dir()?).join(crate::cli::chat::consts::SHADOW_REPO_DIR).join(self.conversation.conversation_id());
+        PathBuf::from(CAPTURE_TEST_DIR).join(self.conversation.conversation_id());
+        let start = std::time::Instant::now();
+        let capture_manager = match CaptureManager::auto_init(path) {
+            Ok(manager) => {
+                execute!(
+                    self.stderr,
+                    style::Print(
+                        format!("Captures are enabled! (took {:.2}s)\n\n", start.elapsed().as_secs_f32())
+                            .blue()
+                            .bold()
+                    )
+                )?;
+                Some(manager)
+            },
+            Err(e) => {
+                execute!(self.stderr, style::Print(format!("{e}\n").blue()))?;
+                None
+            },
         };
         self.conversation.capture_manager = capture_manager;
 
@@ -1955,24 +1957,21 @@ impl ChatSession {
 
             let tag = if invoke_result.is_ok() {
                 if let Some(mut manager) = self.conversation.capture_manager.take() {
-                    let res = if manager.has_uncommitted_changes() {
-                        manager.num_tools_this_turn += 1;
-                        let tag = format!("{}.{}", manager.num_turns + 1, manager.num_tools_this_turn);
-                        let commit_message = match tool.tool.get_summary() {
-                            Some(summary) => summary,
-                            None => tool.tool.display_name(),
-                        };
-                        if let Err(e) =
-                            manager.create_capture(&tag, &commit_message, self.conversation.history().len() + 1)
-                        {
-                            debug!("{e}");
-                        }
-                        tag
-                    } else {
-                        "".to_string()
+                    let mut tag = format!("{}.{}", manager.num_turns + 1, manager.num_tools_this_turn + 1);
+                    let commit_message = match tool.tool.get_summary() {
+                        Some(summary) => summary,
+                        None => tool.tool.display_name(),
                     };
+
+                    match manager.create_capture(&tag, &commit_message, self.conversation.history().len() + 1, false, Some(tool.name.clone())) {
+                        Ok(_) => manager.num_tools_this_turn += 1,
+                        Err(e) => {
+                            debug!("{e}");
+                            tag = "".to_string();
+                        },
+                    }
                     self.conversation.capture_manager = Some(manager);
-                    res
+                    tag
                 } else {
                     "".to_string()
                 }
@@ -2151,7 +2150,6 @@ impl ChatSession {
             0 => "No description provided".to_string(),
             _ => state.user_input_message.content.clone(),
         };
-
 
         let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
 
@@ -2428,10 +2426,13 @@ impl ChatSession {
             if let Some(mut manager) = self.conversation.capture_manager.take() {
                 if manager.num_tools_this_turn > 0 {
                     manager.num_turns += 1;
+                    manager.num_tools_this_turn = 0;
                     match manager.create_capture(
                         &manager.num_turns.to_string(),
                         &truncate_message(&user_message, CAPTURE_MESSAGE_MAX_LENGTH),
                         self.conversation.history().len(),
+                        true,
+                        None,
                     ) {
                         Ok(_) => execute!(
                             self.stderr,
@@ -2449,7 +2450,7 @@ impl ChatSession {
                         },
                     }
                 }
-                self.conversation.capture_manager = Some(manager)
+                self.conversation.capture_manager = Some(manager);
             }
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
