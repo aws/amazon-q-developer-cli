@@ -33,6 +33,7 @@ use crate::cli::chat::{
     ChatState,
     TRUST_ALL_TEXT,
 };
+use crate::os::Os;
 use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;
 
 #[deny(missing_docs)]
@@ -43,7 +44,7 @@ pub struct ToolsArgs {
 }
 
 impl ToolsArgs {
-    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         if let Some(subcommand) = self.subcommand {
             return subcommand.execute(session).await;
         }
@@ -167,6 +168,25 @@ impl ToolsArgs {
                 style::SetForegroundColor(Color::Reset),
                 style::Print("\n"),
                 style::SetForegroundColor(Color::Reset),
+            )?;
+        }
+
+        let mcp_enabled = match os.client.is_mcp_enabled().await {
+            Ok(enabled) => enabled,
+            Err(err) => {
+                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+                true
+            },
+        };
+
+        if !mcp_enabled {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("\n"),
+                style::Print("⚠️  WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
             )?;
         }
 

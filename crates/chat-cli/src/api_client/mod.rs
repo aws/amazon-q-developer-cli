@@ -336,22 +336,19 @@ impl ApiClient {
     }
 
     pub async fn is_mcp_enabled(&self) -> Result<bool, ApiClientError> {
-        let request = self
-            .client
-            .get_profile()
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+        // let request = self
+        //     .client
+        //     .get_profile()
+        //     .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
 
-        let response = request.send().await?;
-        // yifan todo delete print
-        eprintln!("response {:?}", response);
-        tracing::debug!("response is {:?}", response);
-        let mcp_enabled = response
-            .profile()
-            .opt_in_features()
-            .and_then(|features| features.mcp_configuration())
-            .is_none_or(|config| matches!(config.toggle(), OptInFeatureToggle::On));
-        Ok(mcp_enabled)
-        // Ok(true)
+        // let response = request.send().await?;
+        // let mcp_enabled = response
+        //     .profile()
+        //     .opt_in_features()
+        //     .and_then(|features| features.mcp_configuration())
+        //     .is_none_or(|config| matches!(config.toggle(), OptInFeatureToggle::On));
+        // Ok(mcp_enabled)
+        Ok(false)
     }
 
     pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {

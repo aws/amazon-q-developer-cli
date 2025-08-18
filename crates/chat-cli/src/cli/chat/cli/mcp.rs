@@ -1,9 +1,10 @@
 use std::io::Write;
 
 use clap::Args;
-use crossterm::{
-    queue,
-    style,
+use crossterm::queue;
+use crossterm::style::{
+    self,
+    Color,
 };
 
 use crate::cli::chat::tool_manager::LoadingRecord;
@@ -12,13 +13,37 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::os::Os;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct McpArgs;
 
 impl McpArgs {
-    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        let mcp_enabled = match os.client.is_mcp_enabled().await {
+            Ok(enabled) => enabled,
+            Err(err) => {
+                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+                true
+            },
+        };
+
+        if !mcp_enabled {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("\n"),
+                style::Print("⚠️  WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
+            )?;
+            session.stderr.flush()?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
         let terminal_width = session.terminal_width();
         let still_loading = session
             .conversation

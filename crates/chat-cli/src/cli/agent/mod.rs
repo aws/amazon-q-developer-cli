@@ -470,24 +470,14 @@ impl Agents {
             },
         };
 
-        // Yifan delete log
-        let _ = queue!(
-            output,
-            style::SetForegroundColor(Color::Red),
-            style::Print("MCP status: "),
-            style::ResetColor,
-            style::Print(mcp_enabled),
-            style::Print("\n")
-        );
-
         if !mcp_enabled {
             let _ = execute!(
                 output,
                 style::SetForegroundColor(Color::Yellow),
+                style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
                 style::SetForegroundColor(Color::Reset),
-                style::Print("MCP functionality has been disabled by your administrator.\n"),
-                style::Print("MCP servers will not be loaded for this session.\n\n")
+                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
             );
         }
 
