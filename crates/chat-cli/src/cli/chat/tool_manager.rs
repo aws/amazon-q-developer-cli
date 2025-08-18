@@ -1075,6 +1075,8 @@ impl Clone for ToolManager {
 impl ToolManager {
     /// Swapping agent involves the following:
     /// - Dropping all of the clients first to avoid resource contention
+    /// - Clearing fields that are already referenced by background tasks. We can't simply spawn new
+    ///   instances of these fields because one or more background tasks are already depending on it
     /// - Building a new tool manager builder from the current tool manager
     /// - Building a tool manager from said tool manager builder
     /// - Calling load tools
@@ -1084,6 +1086,8 @@ impl ToolManager {
         let mut agent_lock = self.agent.lock().await;
         *agent_lock = agent.clone();
         drop(agent_lock);
+
+        self.mcp_load_record.lock().await.clear();
 
         let builder = ToolManagerBuilder::from(&mut *self);
         let mut new_tool_manager = builder.build(os, Box::new(std::io::sink()), true).await?;
@@ -1644,32 +1648,15 @@ fn sanitize_name(orig: String, regex: &regex::Regex, hasher: &mut impl Hasher) -
 fn is_process_running(pid: u32) -> bool {
     #[cfg(unix)]
     {
-        // On Unix systems, we can use kill with signal 0 to check if process exists
-        std::process::Command::new("ps")
-            .arg("-p")
-            .arg(pid.to_string())
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
+        let system = sysinfo::System::new_all();
+        system.process(sysinfo::Pid::from(pid as usize)).is_some()
     }
     #[cfg(windows)]
     {
-        // On Windows, try to open the process handle
-        use std::ptr;
-
-        use winapi::um::handleapi::CloseHandle;
-        use winapi::um::processthreadsapi::OpenProcess;
-        use winapi::um::winnt::PROCESS_QUERY_INFORMATION;
-
-        unsafe {
-            let handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
-            if handle != ptr::null_mut() {
-                CloseHandle(handle);
-                true
-            } else {
-                false
-            }
-        }
+        // TODO: fill in the process health check for windows when when we officially support
+        // windows
+        _ = pid;
+        true
     }
 }
 
