@@ -743,7 +743,7 @@ impl ToolManagerBuilder {
                             Err(e) => {
                                 error!("Error fetching prompts from server {server_name}: {:?}", e);
                                 let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                                let _ = queue_prompts_load_message(&server_name, &e, &mut buf_writer);
+                                let _ = queue_prompts_load_error_message(&server_name, &e, &mut buf_writer);
                                 let _ = buf_writer.flush();
                                 drop(buf_writer);
                                 let record = String::from_utf8_lossy(record_temp_buf).to_string();
@@ -1758,10 +1758,10 @@ fn queue_incomplete_load_message(
     )?)
 }
 
-fn queue_prompts_load_message(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+fn queue_prompts_load_error_message(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::Print("Prompt list failed with the following message: \n"),
+        style::Print(format!("Prompt list for {name} failed with the following message: \n")),
         style::Print(msg),
     )?)
 }

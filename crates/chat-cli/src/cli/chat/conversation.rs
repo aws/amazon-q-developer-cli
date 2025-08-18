@@ -60,13 +60,10 @@ use crate::api_client::model::{
     ToolSpecification,
     UserInputMessage,
 };
+use crate::cli::agent::Agents;
 use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
-};
-use crate::cli::agent::{
-    Agent,
-    Agents,
 };
 use crate::cli::chat::ChatError;
 use crate::cli::chat::cli::model::{
