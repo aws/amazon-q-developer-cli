@@ -118,6 +118,14 @@ pub mod q_chat_helper {
             Ok(total_content)
         }
         
+        /// Send key input (like arrow keys, Enter, etc.)
+        pub fn send_key_input(&mut self, key_sequence: &str) -> Result<String, Error> {
+            self.session.write_all(key_sequence.as_bytes())?;
+            self.session.flush()?;
+            std::thread::sleep(Duration::from_millis(200));
+            self.read_response()
+        }
+        
         /// Quit the Q Chat session
         pub fn quit(&mut self) -> Result<(), Error> {
             self.session.send_line("/quit")?;
