@@ -140,7 +140,15 @@ impl AgentSubcommand {
                     return Err(ChatError::Custom("Editor process did not exit with success".into()));
                 }
 
-                let new_agent = Agent::load(os, &path_with_file_name, &mut None).await;
+                let mcp_enabled = match os.client.is_mcp_enabled().await {
+                    Ok(enabled) => enabled,
+                    Err(err) => {
+                        tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+                        true
+                    },
+                };
+
+                let new_agent = Agent::load(os, &path_with_file_name, &mut None, mcp_enabled).await;
                 match new_agent {
                     Ok(agent) => {
                         session.conversation.agents.agents.insert(agent.name.clone(), agent);

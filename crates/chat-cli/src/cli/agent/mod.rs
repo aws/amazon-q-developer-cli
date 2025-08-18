@@ -342,6 +342,7 @@ impl Agent {
         os: &Os,
         agent_path: impl AsRef<Path>,
         legacy_mcp_config: &mut Option<McpServerConfig>,
+        mcp_enabled: bool,
     ) -> Result<Agent, AgentConfigError> {
         let content = os.fs.read(&agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
@@ -349,15 +350,36 @@ impl Agent {
             path: agent_path.as_ref().to_path_buf(),
         })?;
 
-        if agent.use_legacy_mcp_json && legacy_mcp_config.is_none() {
-            let config = load_legacy_mcp_config(os).await.unwrap_or_default();
-            if let Some(config) = config {
-                legacy_mcp_config.replace(config);
+        if mcp_enabled {
+            if agent.use_legacy_mcp_json && legacy_mcp_config.is_none() {
+                let config = load_legacy_mcp_config(os).await.unwrap_or_default();
+                if let Some(config) = config {
+                    legacy_mcp_config.replace(config);
+                }
             }
-        }
+            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref())?;
+        } else {
+            agent.mcp_servers = McpServerConfig::default();
+            agent.use_legacy_mcp_json = false;
 
-        agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref())?;
+            // Filter out MCP tools from the tools list
+            agent.tools.retain(|tool| !tool.starts_with("@"));
+
+            // Filter out MCP tools from allowed_tools
+            agent.allowed_tools.retain(|tool| !tool.starts_with("@"));
+
+            // Still thaw the agent but with empty MCP config
+            agent.thaw(agent_path.as_ref(), None)?;
+        }
         Ok(agent)
+    }
+
+    // Add a method to clear MCP configurations
+    pub fn clear_mcp_configs(&mut self) {
+        self.mcp_servers = McpServerConfig::default();
+        self.use_legacy_mcp_json = false;
+        self.tools.retain(|tool| !tool.starts_with("@"));
+        self.allowed_tools.retain(|tool| !tool.starts_with("@"));
     }
 }
 
@@ -439,6 +461,39 @@ impl Agents {
         skip_migration: bool,
         output: &mut impl Write,
     ) -> (Self, AgentsLoadMetadata) {
+        // Check MCP governance at the very beginning
+        let mcp_enabled = match os.client.is_mcp_enabled().await {
+            Ok(enabled) => enabled,
+            Err(err) => {
+                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+                true
+            },
+        };
+
+        // Yifan delete log
+        let _ = queue!(
+            output,
+            style::SetForegroundColor(Color::Red),
+            style::Print("MCP status: "),
+            style::ResetColor,
+            style::Print(mcp_enabled),
+            style::Print("\n")
+        );
+
+        if !mcp_enabled {
+            let _ = execute!(
+                output,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("⚠️  WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("MCP functionality has been disabled by your administrator.\n"),
+                style::Print("MCP servers will not be loaded for this session.\n\n")
+            );
+        }
+
+        // // Store MCP status in database for later use
+        // let _ = os.database.settings.set(Setting::McpEnabled, mcp_enabled).await;
+
         // Tracking metadata about the performed load operation.
         let mut load_metadata = AgentsLoadMetadata::default();
 
@@ -485,7 +540,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -523,7 +578,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -663,27 +718,30 @@ impl Agents {
 
             all_agents.push({
                 let mut agent = Agent::default();
-                'load_legacy_mcp_json: {
-                    if global_mcp_config.is_none() {
-                        let Ok(global_mcp_path) = directories::chat_legacy_global_mcp_config(os) else {
-                            tracing::error!("Error obtaining legacy mcp json path. Skipping");
-                            break 'load_legacy_mcp_json;
-                        };
-                        let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
-                            Ok(config) => config,
-                            Err(e) => {
-                                tracing::error!("Error loading global mcp json path: {e}. Skipping");
+                if mcp_enabled {
+                    'load_legacy_mcp_json: {
+                        if global_mcp_config.is_none() {
+                            let Ok(global_mcp_path) = directories::chat_legacy_global_mcp_config(os) else {
+                                tracing::error!("Error obtaining legacy mcp json path. Skipping");
                                 break 'load_legacy_mcp_json;
-                            },
-                        };
-                        global_mcp_config.replace(legacy_mcp_config);
+                            };
+                            let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+                                Ok(config) => config,
+                                Err(e) => {
+                                    tracing::error!("Error loading global mcp json path: {e}. Skipping");
+                                    break 'load_legacy_mcp_json;
+                                },
+                            };
+                            global_mcp_config.replace(legacy_mcp_config);
+                        }
                     }
-                }
 
-                if let Some(config) = &global_mcp_config {
-                    agent.mcp_servers = config.clone();
+                    if let Some(config) = &global_mcp_config {
+                        agent.mcp_servers = config.clone();
+                    }
+                } else {
+                    agent.mcp_servers = McpServerConfig::default();
                 }
-
                 agent
             });
 
@@ -806,6 +864,7 @@ async fn load_agents_from_entries(
     mut files: ReadDir,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
+    mcp_enabled: bool,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
 
@@ -816,7 +875,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, file_path, global_mcp_config).await);
+            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled).await);
         }
     }
 

@@ -133,7 +133,14 @@ impl AgentArgs {
             },
             Some(AgentSubcommands::Validate { path }) => {
                 let mut global_mcp_config = None::<McpServerConfig>;
-                let agent = Agent::load(os, path.as_str(), &mut global_mcp_config).await;
+                let mcp_enabled = match os.client.is_mcp_enabled().await {
+                    Ok(enabled) => enabled,
+                    Err(err) => {
+                        tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+                        true
+                    },
+                };
+                let agent = Agent::load(os, path.as_str(), &mut global_mcp_config, mcp_enabled).await;
 
                 'validate: {
                     match agent {
