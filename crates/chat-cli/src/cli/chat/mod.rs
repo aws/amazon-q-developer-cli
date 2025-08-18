@@ -1177,7 +1177,7 @@ impl ChatSession {
         }
 
         if let Some(agent) = self.conversation.agents.get_active() {
-            agent.validate_tool_settings(&mut self.stderr)?;
+            agent.print_overridden_permissions(&mut self.stderr)?;
         }
 
         self.stderr.flush()?;
@@ -1750,7 +1750,7 @@ impl ChatSession {
 
                         if let Some(agent) = self.conversation.agents.get_active() {
                             agent
-                                .validate_tool_settings(&mut self.stderr)
+                                .print_overridden_permissions(&mut self.stderr)
                                 .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
                         }
                     }
@@ -1820,7 +1820,7 @@ impl ChatSession {
                 self.conversation
                     .agents
                     .get_active()
-                    .is_some_and(|a| match tool.tool.requires_acceptance(a) {
+                    .is_some_and(|a| match tool.tool.requires_acceptance(os, a) {
                         PermissionEvalResult::Allow => true,
                         PermissionEvalResult::Ask => false,
                         PermissionEvalResult::Deny(matches) => {

@@ -175,13 +175,7 @@ impl UseAws {
         }
     }
 
-    pub fn allowable_field_to_be_overridden(settings: &serde_json::Value) -> Option<String> {
-        settings
-            .get("allowedServices")
-            .map(|value| format!("allowedServices: {}", value))
-    }
-
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {
@@ -347,8 +341,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_eval_perm() {
+    #[tokio::test]
+    async fn test_eval_perm() {
         let cmd_one = use_aws! {{
             "service_name": "s3",
             "operation_name": "put-object",
@@ -372,7 +366,9 @@ mod tests {
             ..Default::default()
         };
 
-        let res = cmd_one.eval_perm(&agent);
+        let os = Os::new().await.unwrap();
+
+        let res = cmd_one.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
 
         let cmd_two = use_aws! {{
@@ -383,16 +379,16 @@ mod tests {
             "label": ""
         }};
 
-        let res = cmd_two.eval_perm(&agent);
+        let res = cmd_two.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
 
         agent.allowed_tools.insert("use_aws".to_string());
 
-        let res = cmd_two.eval_perm(&agent);
+        let res = cmd_two.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
         // Denied services should still be denied after trusting tool
-        let res = cmd_one.eval_perm(&agent);
+        let res = cmd_one.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
     }
 }

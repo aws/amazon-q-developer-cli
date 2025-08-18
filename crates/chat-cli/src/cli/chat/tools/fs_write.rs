@@ -17,10 +17,7 @@ use eyre::{
     bail,
     eyre,
 };
-use globset::{
-    Glob,
-    GlobSetBuilder,
-};
+use globset::GlobSetBuilder;
 use serde::Deserialize;
 use similar::DiffableStr;
 use syntect::easy::HighlightLines;
@@ -47,6 +44,7 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
+use crate::util::directories;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
@@ -415,13 +413,7 @@ impl FsWrite {
         }
     }
 
-    pub fn allowable_field_to_be_overridden(settings: &serde_json::Value) -> Option<String> {
-        settings
-            .get("allowedPaths")
-            .map(|value| format!("allowedPaths: {}", value))
-    }
-
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, os: &Os, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {
@@ -447,14 +439,11 @@ impl FsWrite {
                 let allow_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &allowed_paths {
-                        let path = path.strip_suffix('/').unwrap_or(path.as_str());
-                        let Ok(path) = shellexpand::full(path) else {
+                        let Ok(path) = directories::canonicalizes_path(os, path) else {
                             continue;
                         };
-                        if let Ok(glob) = Glob::new(path.as_ref() as &str) {
-                            builder.add(glob);
-                        } else {
-                            warn!("Failed to create glob from path given: {path}. Ignoring.");
+                        if let Err(e) = directories::add_gitignore_globs(&mut builder, path.as_str()) {
+                            warn!("Failed to create glob from path given: {path}: {e}. Ignoring.");
                         }
                     }
                     builder.build()
@@ -464,15 +453,17 @@ impl FsWrite {
                 let deny_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &denied_paths {
-                        let processed_path = path.strip_suffix('/').unwrap_or(path.as_str());
-                        let Ok(processed_path) = shellexpand::full(processed_path) else {
+                        let Ok(processed_path) = directories::canonicalizes_path(os, path) else {
                             continue;
                         };
-                        if let Ok(glob) = Glob::new(processed_path.as_ref() as &str) {
-                            sanitized_deny_list.push(path);
-                            builder.add(glob);
-                        } else {
-                            warn!("Failed to create glob from path given: {path}. Ignoring.");
+                        match directories::add_gitignore_globs(&mut builder, processed_path.as_str()) {
+                            Ok(_) => {
+                                // Note that we need to push twice here because for each rule we
+                                // are creating two globs (one for file and one for directory)
+                                sanitized_deny_list.push(path);
+                                sanitized_deny_list.push(path);
+                            },
+                            Err(e) => warn!("Failed to create glob from path given: {path}: {e}. Ignoring."),
                         }
                     }
                     builder.build()
@@ -485,7 +476,7 @@ impl FsWrite {
                             | Self::Insert { path, .. }
                             | Self::Append { path, .. }
                             | Self::StrReplace { path, .. } => {
-                                let Ok(path) = shellexpand::full(path) else {
+                                let Ok(path) = directories::canonicalizes_path(os, path) else {
                                     return PermissionEvalResult::Ask;
                                 };
                                 let denied_match_set = deny_set.matches(path.as_ref() as &str);
@@ -1273,12 +1264,12 @@ mod tests {
         assert_eq!(nested_content, "content in nested path\n");
     }
 
-    #[test]
-    fn test_eval_perm() {
-        const DENIED_PATH_ONE: &str = "/some/denied/path/**";
-        const DENIED_PATH_GLOB: &str = "/denied/glob/**/path/**";
-        const ALLOW_PATH_ONE: &str = "/some/allow/path/**";
-        const ALLOW_PATH_GLOB: &str = "/allowed/glob/**/path/**";
+    #[tokio::test]
+    async fn test_eval_perm() {
+        const DENIED_PATH_ONE: &str = "/some/denied/path";
+        const DENIED_PATH_GLOB: &str = "/denied/glob/**/path";
+        const ALLOW_PATH_ONE: &str = "/some/allow/path";
+        const ALLOW_PATH_GLOB: &str = "/allowed/glob/**/path";
 
         let mut agent = Agent {
             name: "test_agent".to_string(),
@@ -1296,52 +1287,56 @@ mod tests {
             ..Default::default()
         };
 
-        let tool_one = serde_json::from_value::<FsWrite>(serde_json::json!({
+        let os = Os::new().await.unwrap();
+
+        // Test path not matching any patterns - should ask
+        let tool_should_ask = serde_json::from_value::<FsWrite>(serde_json::json!({
             "path": "/not/a/denied/path/file.txt",
             "command": "create",
             "file_text": "content in nested path"
         }))
         .unwrap();
 
-        let res = tool_one.eval_perm(&agent);
+        let res = tool_should_ask.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
 
-        let tool_two = serde_json::from_value::<FsWrite>(serde_json::json!({
+        // Test path matching denied pattern - should deny
+        let tool_should_deny = serde_json::from_value::<FsWrite>(serde_json::json!({
             "path": "/some/denied/path/file.txt",
             "command": "create",
             "file_text": "content in nested path"
         }))
         .unwrap();
 
-        let res = tool_two.eval_perm(&agent);
+        let res = tool_should_deny.eval_perm(&os, &agent);
         assert!(
             matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_ONE.to_string()))
         );
 
-        let tool_two_but_with_trailing_slash = serde_json::from_value::<FsWrite>(serde_json::json!({
-            "path": "/some/denied/path/",
+        let tool_should_deny = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/some/denied/path/subdir/",
             "command": "create",
             "file_text": "content in nested path"
         }))
         .unwrap();
 
-        let res = tool_two_but_with_trailing_slash.eval_perm(&agent);
-        assert!(
-            matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_ONE.to_string()))
-        );
+        let res = tool_should_deny.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Deny(ref deny_list) if
+        deny_list.contains(&DENIED_PATH_ONE.to_string())));
 
-        let tool_two_but_without_trailing_slash = serde_json::from_value::<FsWrite>(serde_json::json!({
+        let tool_should_deny = serde_json::from_value::<FsWrite>(serde_json::json!({
             "path": "/some/denied/path",
             "command": "create",
             "file_text": "content in nested path"
         }))
         .unwrap();
 
-        // ** is supposed to target any children and grand children but does not target the folder
-        // itself
-        let res = tool_two_but_without_trailing_slash.eval_perm(&agent);
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        let res = tool_should_deny.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_ONE.to_string()))
+        );
 
+        // Test nested glob pattern matching - should deny
         let tool_three = serde_json::from_value::<FsWrite>(serde_json::json!({
             "path": "/denied/glob/child_one/path/file.txt",
             "command": "create",
@@ -1349,11 +1344,12 @@ mod tests {
         }))
         .unwrap();
 
-        let res = tool_three.eval_perm(&agent);
+        let res = tool_three.eval_perm(&os, &agent);
         assert!(
             matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_GLOB.to_string()))
         );
 
+        // Test deeply nested glob pattern matching - should deny
         let tool_four = serde_json::from_value::<FsWrite>(serde_json::json!({
             "path": "/denied/glob/child_one/grand_child_one/path/file.txt",
             "command": "create",
@@ -1361,7 +1357,7 @@ mod tests {
         }))
         .unwrap();
 
-        let res = tool_four.eval_perm(&agent);
+        let res = tool_four.eval_perm(&os, &agent);
         assert!(
             matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_GLOB.to_string()))
         );
@@ -1373,17 +1369,17 @@ mod tests {
         }))
         .unwrap();
 
-        let res = tool_should_allow.eval_perm(&agent);
+        let res = tool_should_allow.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
-        let tool_should_allow_with_trailing_slash = serde_json::from_value::<FsWrite>(serde_json::json!({
-            "path": "/some/allow/path/",
+        let tool_should_allow_with_subdir = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/some/allow/path/subdir/file.txt",
             "command": "create",
             "file_text": "content in nested path"
         }))
         .unwrap();
 
-        let res = tool_should_allow_with_trailing_slash.eval_perm(&agent);
+        let res = tool_should_allow_with_subdir.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
         let tool_should_allow_glob = serde_json::from_value::<FsWrite>(serde_json::json!({
@@ -1393,18 +1389,26 @@ mod tests {
         }))
         .unwrap();
 
-        let res = tool_should_allow_glob.eval_perm(&agent);
+        let res = tool_should_allow_glob.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
+        // Test that denied patterns take precedence over allowed tools list
         agent.allowed_tools.insert("fs_write".to_string());
 
-        // Denied list should remained denied
-        let res = tool_four.eval_perm(&agent);
+        let res = tool_four.eval_perm(&os, &agent);
         assert!(
             matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_GLOB.to_string()))
         );
 
-        let res = tool_one.eval_perm(&agent);
+        // Test that exact directory name in allowed pattern works
+        let tool_exact_allowed_dir = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/some/allow/path",
+            "command": "create",
+            "file_text": "content"
+        }))
+        .unwrap();
+
+        let res = tool_exact_allowed_dir.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
     }
 

@@ -287,7 +287,7 @@ impl CustomTool {
             + TokenCounter::count_tokens(self.params.as_ref().map_or("", |p| p.as_str().unwrap_or_default()))
     }
 
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
         use crate::util::MCP_SERVER_TOOL_DELIMITER;
         let Self {
             name: tool_name,

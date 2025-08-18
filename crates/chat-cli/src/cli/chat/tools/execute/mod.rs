@@ -186,13 +186,7 @@ impl ExecuteCommand {
         Ok(())
     }
 
-    pub fn allowable_field_to_be_overridden(settings: &serde_json::Value) -> Option<String> {
-        settings
-            .get("allowedCommands")
-            .map(|value| format!("allowedCommands: {}", value))
-    }
-
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {
@@ -426,8 +420,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_eval_perm() {
+    #[tokio::test]
+    async fn test_eval_perm() {
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let mut agent = Agent {
             name: "test_agent".to_string(),
@@ -444,13 +438,14 @@ mod tests {
             },
             ..Default::default()
         };
+        let os = Os::new().await.unwrap();
 
         let tool_one = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "git status",
         }))
         .unwrap();
 
-        let res = tool_one.eval_perm(&agent);
+        let res = tool_one.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
 
         let tool_two = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
@@ -458,37 +453,37 @@ mod tests {
         }))
         .unwrap();
 
-        let res = tool_two.eval_perm(&agent);
+        let res = tool_two.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
 
         let tool_allow_wild_card = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_wild_card some_arg",
         }))
         .unwrap();
-        let res = tool_allow_wild_card.eval_perm(&agent);
+        let res = tool_allow_wild_card.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
         let tool_allow_exact_should_ask = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_exact some_arg",
         }))
         .unwrap();
-        let res = tool_allow_exact_should_ask.eval_perm(&agent);
+        let res = tool_allow_exact_should_ask.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
 
         let tool_allow_exact_should_allow = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_exact",
         }))
         .unwrap();
-        let res = tool_allow_exact_should_allow.eval_perm(&agent);
+        let res = tool_allow_exact_should_allow.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
         agent.allowed_tools.insert(tool_name.to_string());
 
-        let res = tool_two.eval_perm(&agent);
+        let res = tool_two.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
         // Denied list should remain denied
-        let res = tool_one.eval_perm(&agent);
+        let res = tool_one.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
     }
 

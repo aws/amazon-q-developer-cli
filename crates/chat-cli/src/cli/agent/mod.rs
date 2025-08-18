@@ -54,10 +54,6 @@ pub use wrapper_types::{
     tool_settings_schema,
 };
 
-use super::chat::tools::execute::ExecuteCommand;
-use super::chat::tools::fs_read::FsRead;
-use super::chat::tools::fs_write::FsWrite;
-use super::chat::tools::use_aws::UseAws;
 use super::chat::tools::{
     DEFAULT_APPROVE,
     NATIVE_TOOLS,
@@ -247,49 +243,22 @@ impl Agent {
         Ok(())
     }
 
-    pub fn validate_tool_settings(&self, output: &mut impl Write) -> Result<(), AgentConfigError> {
+    pub fn print_overridden_permissions(&self, output: &mut impl Write) -> Result<(), AgentConfigError> {
         let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         for allowed_tool in &self.allowed_tools {
             if let Some(settings) = self.tools_settings.get(allowed_tool.as_str()) {
                 // currently we only have four native tools that offers tool settings
-                match allowed_tool.as_str() {
-                    "fs_read" => {
-                        if let Some(overridden_settings) = FsRead::allowable_field_to_be_overridden(settings) {
-                            queue_permission_override_warning(
-                                allowed_tool.as_str(),
-                                overridden_settings.as_str(),
-                                output,
-                            )?;
-                        }
-                    },
-                    "fs_write" => {
-                        if let Some(overridden_settings) = FsWrite::allowable_field_to_be_overridden(settings) {
-                            queue_permission_override_warning(
-                                allowed_tool.as_str(),
-                                overridden_settings.as_str(),
-                                output,
-                            )?;
-                        }
-                    },
-                    "use_aws" => {
-                        if let Some(overridden_settings) = UseAws::allowable_field_to_be_overridden(settings) {
-                            queue_permission_override_warning(
-                                allowed_tool.as_str(),
-                                overridden_settings.as_str(),
-                                output,
-                            )?;
-                        }
-                    },
-                    name if name == execute_name => {
-                        if let Some(overridden_settings) = ExecuteCommand::allowable_field_to_be_overridden(settings) {
-                            queue_permission_override_warning(
-                                allowed_tool.as_str(),
-                                overridden_settings.as_str(),
-                                output,
-                            )?;
-                        }
-                    },
-                    _ => {},
+                let overridden_settings_key = match allowed_tool.as_str() {
+                    "fs_read" | "fs_write" => Some("allowedPaths"),
+                    "use_aws" => Some("allowedServices"),
+                    name if name == execute_name => Some("allowedCommands"),
+                    _ => None,
+                };
+
+                if let Some(key) = overridden_settings_key {
+                    if let Some(ref override_settings) = settings.get(key).map(|value| format!("{key}: {value}")) {
+                        queue_permission_override_warning(allowed_tool.as_str(), override_settings, output)?;
+                    }
                 }
             }
         }
