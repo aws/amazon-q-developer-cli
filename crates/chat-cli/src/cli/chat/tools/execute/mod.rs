@@ -23,6 +23,7 @@ use crate::cli::chat::tools::{
 };
 use crate::cli::chat::util::truncate_safe;
 use crate::os::Os;
+use crate::util::pattern_matching::matches_any_pattern;
 
 // Platform-specific modules
 #[cfg(windows)]
@@ -194,7 +195,7 @@ impl ExecuteCommand {
 
         let Self { command, .. } = self;
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        let is_in_allowlist = agent.allowed_tools.contains(tool_name);
+        let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, tool_name);
         match agent.tools_settings.get(tool_name) {
             Some(settings) if is_in_allowlist => {
                 let Settings {

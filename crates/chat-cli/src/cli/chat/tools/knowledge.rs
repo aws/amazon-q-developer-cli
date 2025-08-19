@@ -19,6 +19,7 @@ use crate::cli::agent::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::util::pattern_matching::matches_any_pattern;
 use crate::util::knowledge_store::KnowledgeStore;
 
 /// The Knowledge tool allows storing and retrieving information across chat sessions.
@@ -490,7 +491,7 @@ impl Knowledge {
 
     pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         _ = self;
-        if agent.allowed_tools.contains("knowledge") {
+        if matches_any_pattern(&agent.allowed_tools, "knowledge") {
             PermissionEvalResult::Allow
         } else {
             PermissionEvalResult::Ask
