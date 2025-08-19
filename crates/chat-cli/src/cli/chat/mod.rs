@@ -138,10 +138,7 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
 use crate::cli::chat::capture::{
-    CAPTURE_MESSAGE_MAX_LENGTH,
-    CAPTURE_TEST_DIR,
-    CaptureManager,
-    truncate_message,
+    truncate_message, CaptureManager, CAPTURE_MESSAGE_MAX_LENGTH, SHADOW_REPO_DIR
 };
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::prompts::{
@@ -1210,11 +1207,9 @@ impl ChatSession {
         }
 
         // Initialize checkpointing if possible
-        let path =
-        //    os.env.home().unwrap_or(os.env.current_dir()?).join(crate::cli::chat::consts::SHADOW_REPO_DIR).join(self.conversation.conversation_id());
-        PathBuf::from(CAPTURE_TEST_DIR).join(self.conversation.conversation_id());
+        let path = PathBuf::from(SHADOW_REPO_DIR).join(self.conversation.conversation_id());
         let start = std::time::Instant::now();
-        let capture_manager = match CaptureManager::auto_init(path) {
+        let capture_manager = match CaptureManager::auto_init(os, path).await {
             Ok(manager) => {
                 execute!(
                     self.stderr,
@@ -1227,7 +1222,7 @@ impl ChatSession {
                 Some(manager)
             },
             Err(e) => {
-                execute!(self.stderr, style::Print(format!("{e}\n").blue()))?;
+                execute!(self.stderr, style::Print(format!("{e}\n\n").blue()))?;
                 None
             },
         };
@@ -1607,6 +1602,13 @@ impl ChatSession {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
         };
+
+        if let Some(mut manager) = self.conversation.capture_manager.take() {
+            if manager.last_user_message.is_none() && !user_input.is_empty() {
+                manager.last_user_message = Some(user_input.clone());
+            }
+            self.conversation.capture_manager = Some(manager);
+        }
 
         self.conversation.append_user_transcript(&user_input);
         Ok(ChatState::HandleInput { input: user_input })
@@ -2146,10 +2148,6 @@ impl ChatSession {
         state: crate::api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
-        let user_message = match state.user_input_message.content.len() {
-            0 => "No description provided".to_string(),
-            _ => state.user_input_message.content.clone(),
-        };
 
         let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
 
@@ -2424,9 +2422,18 @@ impl ChatSession {
             self.tool_turn_start_time = None;
 
             if let Some(mut manager) = self.conversation.capture_manager.take() {
+                let user_message = match manager.last_user_message {
+                    Some(message) => {
+                        let message = message.clone();
+                        manager.last_user_message = None;
+                        message
+                    },
+                    None => "No description provided".to_string()
+                };
                 if manager.num_tools_this_turn > 0 {
                     manager.num_turns += 1;
                     manager.num_tools_this_turn = 0;
+
                     match manager.create_capture(
                         &manager.num_turns.to_string(),
                         &truncate_message(&user_message, CAPTURE_MESSAGE_MAX_LENGTH),

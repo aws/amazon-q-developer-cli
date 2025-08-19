@@ -2,19 +2,20 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use clap::Subcommand;
-use crossterm::style::{StyledContent, Stylize};
+use crossterm::style::{
+    StyledContent,
+    Stylize,
+};
 use crossterm::{
     execute,
     style,
 };
 use dialoguer::FuzzySelect;
-use eyre::{
-    Result,
-    bail,
-};
-use rustls::crypto::tls13::expand;
+use eyre::Result;
 
-use crate::cli::chat::capture::{self, Capture, CaptureManager, CAPTURE_TEST_DIR};
+use crate::cli::chat::capture::{
+    Capture, CaptureManager, SHADOW_REPO_DIR
+};
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -24,7 +25,6 @@ use crate::os::Os;
 
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum CaptureSubcommand {
-
     /// Manually initialize captures
     Init,
 
@@ -57,16 +57,23 @@ impl CaptureSubcommand {
             if session.conversation.capture_manager.is_some() {
                 execute!(
                     session.stderr,
-                    style::Print("Captures are already enabled for this session! Use /capture list to see current captures.\n".blue())
+                    style::Print(
+                        "Captures are already enabled for this session! Use /capture list to see current captures.\n"
+                            .blue()
+                    )
                 )?;
             } else {
+                let path = PathBuf::from(SHADOW_REPO_DIR).join(session.conversation.conversation_id());
                 let start = std::time::Instant::now();
-                session.conversation.capture_manager = Some(CaptureManager::manual_init(PathBuf::from(CAPTURE_TEST_DIR).join(session.conversation.conversation_id()))
-                    .map_err(|e| ChatError::Custom(format!("Captures could not be initialized: {e}").into()))?);
+                session.conversation.capture_manager = Some(
+                    CaptureManager::manual_init(os, path)
+                        .await
+                        .map_err(|e| ChatError::Custom(format!("Captures could not be initialized: {e}").into()))?,
+                );
                 execute!(
                     session.stderr,
                     style::Print(
-                        format!("Captures are enabled! (took {:.2}s)\n\n", start.elapsed().as_secs_f32())
+                        format!("Captures are enabled! (took {:.2}s)\n", start.elapsed().as_secs_f32())
                             .blue()
                             .bold()
                     )
@@ -94,16 +101,14 @@ impl CaptureSubcommand {
                     tag
                 } else {
                     // If the user doesn't provide a tag, allow them to fuzzy select a capture
-                    let display_entries = match gather_all_turn_captures(&manager){
+                    let display_entries = match gather_all_turn_captures(&manager) {
                         Ok(entries) => entries,
                         Err(e) => {
                             session.conversation.capture_manager = Some(manager);
                             return Err(ChatError::Custom(format!("Error getting captures: {e}\n").into()));
                         },
                     };
-                    if let Some(index) =
-                        fuzzy_select_captures(&display_entries, "Select a capture to restore:")
-                    {
+                    if let Some(index) = fuzzy_select_captures(&display_entries, "Select a capture to restore:") {
                         if index < display_entries.len() {
                             display_entries[index].tag.to_string()
                         } else {
@@ -119,8 +124,7 @@ impl CaptureSubcommand {
                         });
                     }
                 };
-                let result = manager
-                    .restore_capture(&mut session.conversation, &tag, hard);
+                let result = manager.restore_capture(&mut session.conversation, &tag, hard);
                 match result {
                     Ok(_) => {
                         execute!(
@@ -131,19 +135,26 @@ impl CaptureSubcommand {
                     Err(e) => {
                         session.conversation.capture_manager = Some(manager);
                         return Err(ChatError::Custom(format!("Could not restore capture: {}", e).into()));
-                    }
+                    },
                 }
-            } 
+            },
             Self::List { limit } => match print_turn_captures(&manager, &mut session.stderr, limit) {
                 Ok(_) => (),
                 Err(e) => {
                     session.conversation.capture_manager = Some(manager);
-                    return Err(ChatError::Custom(
-                        format!("Could not display all captures: {e}").into(),
-                    ));
+                    return Err(ChatError::Custom(format!("Could not display all captures: {e}").into()));
                 },
             },
-            Self::Clean => {},
+            Self::Clean => {
+                match manager.clean(os).await {
+                    Ok(()) => execute!(session.stderr, style::Print(format!("Delete shadow repository.\n").blue().bold()))?,
+                    Err(e) => {
+                        session.conversation.capture_manager = None;
+                        return Err(ChatError::Custom(format!("Could not display all captures: {e}").into()));
+                    }       
+                }
+                session.conversation.capture_manager = None;
+            },
             Self::Expand { tag } => match expand_capture(&manager, &mut session.stderr, tag.clone()) {
                 Ok(_) => (),
                 Err(e) => {
@@ -178,11 +189,20 @@ impl TryFrom<&Capture> for CaptureDisplayEntry {
             parts.push(format!("{} - {}", value.timestamp.format("%Y-%m-%d %H:%M:%S"), value.message).reset());
         } else {
             parts.push(format!("[{tag}] ",).blue());
-            parts.push(format!("{}: ", value.tool_name.clone().unwrap_or("No tool provided".to_string())).magenta());
+            parts.push(
+                format!(
+                    "{}: ",
+                    value.tool_name.clone().unwrap_or("No tool provided".to_string())
+                )
+                .magenta(),
+            );
             parts.push(format!("{}", value.message).reset());
         }
 
-        Ok(Self { tag, display_parts: parts })
+        Ok(Self {
+            tag,
+            display_parts: parts,
+        })
     }
 }
 
