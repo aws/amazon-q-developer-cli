@@ -362,13 +362,15 @@ impl Agent {
             agent.mcp_servers = McpServerConfig::default();
             agent.use_legacy_mcp_json = false;
 
-            // Filter out MCP tools from the tools list
-            agent.tools.retain(|tool| !tool.starts_with("@"));
+            // Remove MCP tools
+            agent.tools.retain(|tool| !is_mcp_ref(tool));
+            agent.allowed_tools.retain(|tool| !is_mcp_ref(tool));
+            agent.tool_aliases.retain(|orig, _alias| !is_mcp_ref(&orig.to_string()));
+            agent
+                .tools_settings
+                .retain(|target, _| !is_mcp_ref(&target.to_string()));
 
-            // Filter out MCP tools from allowed_tools
-            agent.allowed_tools.retain(|tool| !tool.starts_with("@"));
-
-            // Still thaw the agent but with empty MCP config
+            // Thaw the agent with empty MCP config to finalize normalization.
             agent.thaw(agent_path.as_ref(), None)?;
         }
         Ok(agent)
@@ -378,8 +380,10 @@ impl Agent {
     pub fn clear_mcp_configs(&mut self) {
         self.mcp_servers = McpServerConfig::default();
         self.use_legacy_mcp_json = false;
-        self.tools.retain(|tool| !tool.starts_with("@"));
-        self.allowed_tools.retain(|tool| !tool.starts_with("@"));
+        self.tools.retain(|tool| !is_mcp_ref(tool));
+        self.allowed_tools.retain(|tool| !is_mcp_ref(tool));
+        self.tool_aliases.retain(|orig, _alias| !is_mcp_ref(&orig.to_string()));
+        self.tools_settings.retain(|target, _| !is_mcp_ref(&target.to_string()));
     }
 }
 
@@ -932,6 +936,11 @@ pub fn queue_permission_override_warning(
 
 fn default_schema() -> String {
     "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
+}
+
+fn is_mcp_ref(s: &str) -> bool {
+    // Any tool reference starting with '@' is considered MCP (e.g., "@git", "@git/git_status").
+    s.starts_with('@')
 }
 
 #[cfg(test)]
