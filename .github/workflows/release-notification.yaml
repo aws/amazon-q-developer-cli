@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send Release Details to Slack
-        uses: slackapi/slack-github-action@v1.23.0 # Or the latest version of this action
+        uses: slackapi/slack-github-action@v2.1.1 # Or the latest version of this action
         with:
           payload: |
             {
