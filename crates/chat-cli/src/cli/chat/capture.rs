@@ -63,10 +63,10 @@ impl CaptureManager {
 
         let path = shadow_path.as_ref();
         os.fs.create_dir_all(path).await?;
-        
+
         let repo_root = get_git_repo_root()?;
         let output = Command::new("git")
-            .args(&[
+            .args([
                 "clone",
                 "--depth=1",
                 &repo_root.to_string_lossy(),
@@ -82,7 +82,7 @@ impl CaptureManager {
 
         // Remove remote origin to sever connection
         let output = Command::new("git")
-            .args(&[
+            .args([
                 &format!("--git-dir={}", cloned_git_dir.display()),
                 "remote",
                 "remove",
@@ -97,15 +97,14 @@ impl CaptureManager {
         config(&cloned_git_dir.to_string_lossy())?;
         stage_commit_tag(&cloned_git_dir.to_string_lossy(), "Inital capture", "0")?;
 
-        let mut captures = Vec::new();
-        captures.push(Capture {
+        let captures = vec![Capture {
             tag: "0".to_string(),
             timestamp: Local::now(),
             message: "Initial capture".to_string(),
             history_index: 0,
             is_turn: true,
             tool_name: None,
-        });
+        }];
 
         let mut tag_to_index = HashMap::new();
         tag_to_index.insert("0".to_string(), 0);
@@ -125,7 +124,7 @@ impl CaptureManager {
         os.fs.create_dir_all(path).await?;
 
         let output = Command::new("git")
-            .args(&["init", "--bare", &path.to_string_lossy()])
+            .args(["init", "--bare", &path.to_string_lossy()])
             .output()?;
 
         if !output.status.success() {
@@ -135,15 +134,14 @@ impl CaptureManager {
         config(&path.to_string_lossy())?;
         stage_commit_tag(&path.to_string_lossy(), "Initial capture", "0")?;
 
-        let mut captures = Vec::new();
-        captures.push(Capture {
+        let captures = vec![Capture {
             tag: "0".to_string(),
             timestamp: Local::now(),
             message: "Initial capture".to_string(),
             history_index: 0,
             is_turn: true,
             tool_name: None,
-        });
+        }];
 
         let mut tag_to_index = HashMap::new();
         tag_to_index.insert("0".to_string(), 0);
@@ -154,7 +152,7 @@ impl CaptureManager {
             tag_to_index,
             num_turns: 0,
             num_tools_this_turn: 0,
-            last_user_message: None
+            last_user_message: None,
         })
     }
 
@@ -258,14 +256,14 @@ pub fn is_git_installed() -> bool {
 
 pub fn is_in_git_repo() -> bool {
     Command::new("git")
-        .args(&["rev-parse", "--is-inside-work-tree"])
+        .args(["rev-parse", "--is-inside-work-tree"])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
 
 pub fn get_git_repo_root() -> Result<PathBuf> {
-    let output = Command::new("git").args(&["rev-parse", "--show-toplevel"]).output()?;
+    let output = Command::new("git").args(["rev-parse", "--show-toplevel"]).output()?;
 
     if !output.status.success() {
         bail!(

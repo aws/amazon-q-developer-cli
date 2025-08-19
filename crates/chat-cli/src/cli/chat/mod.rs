@@ -138,7 +138,10 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
 use crate::cli::chat::capture::{
-    truncate_message, CaptureManager, CAPTURE_MESSAGE_MAX_LENGTH, SHADOW_REPO_DIR
+    CAPTURE_MESSAGE_MAX_LENGTH,
+    CaptureManager,
+    SHADOW_REPO_DIR,
+    truncate_message,
 };
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::prompts::{
@@ -1965,7 +1968,13 @@ impl ChatSession {
                         None => tool.tool.display_name(),
                     };
 
-                    match manager.create_capture(&tag, &commit_message, self.conversation.history().len() + 1, false, Some(tool.name.clone())) {
+                    match manager.create_capture(
+                        &tag,
+                        &commit_message,
+                        self.conversation.history().len() + 1,
+                        false,
+                        Some(tool.name.clone()),
+                    ) {
                         Ok(_) => manager.num_tools_this_turn += 1,
                         Err(e) => {
                             debug!("{e}");
@@ -2148,7 +2157,6 @@ impl ChatSession {
         state: crate::api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
-
         let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
 
         let request_id = rx.request_id().map(String::from);
@@ -2428,7 +2436,7 @@ impl ChatSession {
                         manager.last_user_message = None;
                         message
                     },
-                    None => "No description provided".to_string()
+                    None => "No description provided".to_string(),
                 };
                 if manager.num_tools_this_turn > 0 {
                     manager.num_turns += 1;

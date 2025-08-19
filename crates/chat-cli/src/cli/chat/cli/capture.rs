@@ -14,7 +14,9 @@ use dialoguer::FuzzySelect;
 use eyre::Result;
 
 use crate::cli::chat::capture::{
-    Capture, CaptureManager, SHADOW_REPO_DIR
+    Capture,
+    CaptureManager,
+    SHADOW_REPO_DIR,
 };
 use crate::cli::chat::{
     ChatError,
@@ -110,7 +112,7 @@ impl CaptureSubcommand {
                     };
                     if let Some(index) = fuzzy_select_captures(&display_entries, "Select a capture to restore:") {
                         if index < display_entries.len() {
-                            display_entries[index].tag.to_string()
+                            display_entries[index].tag.clone()
                         } else {
                             session.conversation.capture_manager = Some(manager);
                             return Err(ChatError::Custom(
@@ -147,11 +149,14 @@ impl CaptureSubcommand {
             },
             Self::Clean => {
                 match manager.clean(os).await {
-                    Ok(()) => execute!(session.stderr, style::Print(format!("Deleted shadow repository.\n").blue().bold()))?,
+                    Ok(()) => execute!(
+                        session.stderr,
+                        style::Print("Deleted shadow repository.\n".to_string().blue().bold())
+                    )?,
                     Err(e) => {
                         session.conversation.capture_manager = None;
                         return Err(ChatError::Custom(format!("Could not delete shadow repo: {e}").into()));
-                    }       
+                    },
                 }
                 session.conversation.capture_manager = None;
             },
@@ -196,7 +201,7 @@ impl TryFrom<&Capture> for CaptureDisplayEntry {
                 )
                 .magenta(),
             );
-            parts.push(format!("{}", value.message).reset());
+            parts.push(value.message.clone().reset());
         }
 
         Ok(Self {
@@ -272,10 +277,10 @@ fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: String
     Ok(())
 }
 
-fn fuzzy_select_captures(entries: &Vec<CaptureDisplayEntry>, prompt_str: &str) -> Option<usize> {
+fn fuzzy_select_captures(entries: &[CaptureDisplayEntry], prompt_str: &str) -> Option<usize> {
     FuzzySelect::new()
         .with_prompt(prompt_str)
-        .items(&entries)
+        .items(entries)
         .report(false)
         .interact_opt()
         .unwrap_or(None)
