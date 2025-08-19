@@ -7,6 +7,7 @@ use std::sync::atomic::{
 };
 use std::sync::{
     Arc,
+    Mutex,
     RwLock as SyncRwLock,
 };
 use std::time::Duration;
@@ -19,11 +20,65 @@ use thiserror::Error;
 use tokio::time;
 use tokio::time::error::Elapsed;
 
+// MCP Sampling types
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SamplingMessage {
+    pub role: String,
+    pub content: SamplingContent,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
+pub enum SamplingContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image")]
+    Image { data: String, mime_type: String },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPreferences {
+    pub hints: Option<Vec<ModelHint>>,
+    pub cost_priority: Option<f64>,
+    pub speed_priority: Option<f64>,
+    pub intelligence_priority: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModelHint {
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SamplingRequest {
+    pub messages: Vec<SamplingMessage>,
+    pub model_preferences: Option<ModelPreferences>,
+    pub system_prompt: Option<String>,
+    pub include_context: Option<String>, // "none" | "thisServer" | "allServers"
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+    pub stop_sequences: Option<Vec<String>>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SamplingResponse {
+    pub role: String,
+    pub content: SamplingContent,
+    pub model: String,
+    pub stop_reason: String,
+}
+
 use super::transport::base_protocol::{
     JsonRpcMessage,
     JsonRpcNotification,
     JsonRpcRequest,
     JsonRpcVersion,
+    JsonRpcError,
 };
 use super::transport::stdio::JsonRpcStdioTransport;
 use super::transport::{
@@ -67,9 +122,14 @@ struct ClientCapabilities {
 
 impl From<ClientInfo> for ClientCapabilities {
     fn from(client_info: ClientInfo) -> Self {
+        let mut capabilities = HashMap::new();
+        // Declare sampling capability support
+        capabilities.insert("sampling".to_string(), serde_json::json!({}));
+
         ClientCapabilities {
+            protocol_version: JsonRpcVersion::default(),
+            capabilities,
             client_info,
-            ..Default::default()
         }
     }
 }
@@ -82,6 +142,8 @@ pub struct ClientConfig {
     pub timeout: u64,
     pub client_info: serde_json::Value,
     pub env: Option<HashMap<String, String>>,
+    #[serde(skip)]
+    pub sampling_sender: Option<tokio::sync::mpsc::UnboundedSender<crate::mcp_client::sampling_ipc::PendingSamplingRequest>>,
 }
 
 #[allow(dead_code)]
@@ -131,6 +193,8 @@ pub struct Client<T: Transport> {
     // TODO: move this to tool manager that way all the assets are treated equally
     pub prompt_gets: Arc<SyncRwLock<HashMap<String, PromptGet>>>,
     pub is_prompts_out_of_date: Arc<AtomicBool>,
+    sampling_sender: Option<tokio::sync::mpsc::UnboundedSender<crate::mcp_client::sampling_ipc::PendingSamplingRequest>>,
+    streaming_client: Arc<Mutex<Option<std::sync::Arc<crate::api_client::ApiClient>>>>,
 }
 
 impl<T: Transport> Clone for Client<T> {
@@ -147,6 +211,8 @@ impl<T: Transport> Clone for Client<T> {
             messenger: None,
             prompt_gets: self.prompt_gets.clone(),
             is_prompts_out_of_date: self.is_prompts_out_of_date.clone(),
+            sampling_sender: self.sampling_sender.clone(),
+            streaming_client: self.streaming_client.clone(),
         }
     }
 }
@@ -160,6 +226,7 @@ impl Client<StdioTransport> {
             timeout,
             client_info,
             env,
+            sampling_sender,
         } = config;
         let child = {
             let expanded_bin_path = shellexpand::tilde(&bin_path);
@@ -209,6 +276,8 @@ impl Client<StdioTransport> {
             messenger: None,
             prompt_gets: Arc::new(SyncRwLock::new(HashMap::new())),
             is_prompts_out_of_date: Arc::new(AtomicBool::new(false)),
+            sampling_sender,
+            streaming_client: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -374,7 +443,70 @@ where
                 match listener.recv().await {
                     Ok(msg) => {
                         match msg {
-                            JsonRpcMessage::Request(_req) => {},
+                            JsonRpcMessage::Request(req) => {
+                                // Handle incoming requests from the server
+                                let JsonRpcRequest { method, .. } = &req;
+                                match method.as_str() {
+                                    "sampling/createMessage" => {
+                                        tracing::info!(target: "mcp", "Received sampling request from server: {}", server_name);
+
+                                        // Handle sampling request asynchronously to avoid blocking the message loop
+                                        let client_ref = client_ref.clone();
+                                        let transport_ref = transport_ref.clone();
+                                        let req_clone = req.clone();
+                                        
+                                        tokio::spawn(async move {
+                                            tracing::debug!(target: "mcp", "Processing sampling request in spawned task");
+                                            match client_ref.handle_sampling_request(req_clone.clone()).await {
+                                                Ok(response) => {
+                                                    let msg = JsonRpcMessage::Response(response);
+                                                    if let Err(e) = transport_ref.send(&msg).await {
+                                                        tracing::error!(target: "mcp", "Failed to send sampling response: {}", e);
+                                                    } else {
+                                                        tracing::debug!(target: "mcp", "Successfully sent sampling response");
+                                                    }
+                                                },
+                                                Err(e) => {
+                                                    tracing::error!(target: "mcp", "Failed to handle sampling request: {}", e);
+                                                    // Send error response
+                                                    let error_response = JsonRpcResponse {
+                                                        jsonrpc: JsonRpcVersion::default(),
+                                                        id: req_clone.id,
+                                                        result: None,
+                                                        error: Some(JsonRpcError {
+                                                            code: -32603,
+                                                            message: format!("Internal error: {}", e),
+                                                            data: None,
+                                                        }),
+                                                    };
+                                                    let msg = JsonRpcMessage::Response(error_response);
+                                                    if let Err(e) = transport_ref.send(&msg).await {
+                                                        tracing::error!(target: "mcp", "Failed to send error response: {}", e);
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    },
+                                    _ => {
+                                        tracing::warn!(target: "mcp", "Received unsupported request method: {}", method);
+                                        // Send method not found error
+                                        let error_response = JsonRpcResponse {
+                                            jsonrpc: JsonRpcVersion::default(),
+                                            id: req.id,
+                                            result: None,
+                                            error: Some(JsonRpcError {
+                                                code: -32601,
+                                                message: format!("Method not found: {}", method),
+                                                data: None,
+                                            }),
+                                        };
+                                        let msg = JsonRpcMessage::Response(error_response);
+                                        if let Err(e) = transport_ref.send(&msg).await {
+                                            tracing::error!(target: "mcp", "Failed to send method not found response: {}", e);
+                                        }
+                                    }
+                                }
+                            },
                             JsonRpcMessage::Notification(notif) => {
                                 let JsonRpcNotification { method, params, .. } = notif;
                                 match method.as_str() {
@@ -590,6 +722,269 @@ where
     fn get_id(&self) -> u64 {
         self.current_id.fetch_add(1, Ordering::SeqCst)
     }
+
+    /// Set the StreamingClient for LLM integration in sampling requests
+    pub fn set_streaming_client(&self, api_client: std::sync::Arc<crate::api_client::ApiClient>) {
+        tracing::info!(target: "mcp", "Setting StreamingClient for server: {}", self.server_name);
+        if let Ok(mut client_guard) = self.streaming_client.lock() {
+            *client_guard = Some(api_client);
+        } else {
+            tracing::error!(target: "mcp", "Failed to acquire lock for StreamingClient on server: {}", self.server_name);
+        }
+    }
+
+    /// Handle sampling/createMessage requests from MCP servers
+    pub async fn handle_sampling_request(&self, request: JsonRpcRequest) -> Result<JsonRpcResponse, ClientError> {
+        tracing::info!(target: "mcp", "Received sampling request from server: {}", self.server_name);
+
+        // Parse the sampling request
+        let sampling_request: SamplingRequest = serde_json::from_value(
+            request.params.unwrap_or_default()
+        ).map_err(|e| ClientError::NegotiationError(format!("Invalid sampling request: {}", e)))?;
+
+        // Send sampling request to chat session for user approval
+        if let Some(ref sender) = self.sampling_sender {
+            tracing::info!(target: "mcp", "Forwarding sampling request to chat session for approval: {}", self.server_name);
+
+            // Extract prompt content
+            let prompt_content = sampling_request.messages
+                .iter()
+                .filter_map(|msg| match &msg.content {
+                    SamplingContent::Text { text } => Some(text.clone()),
+                    SamplingContent::Image { .. } => Some("[Image content]".to_string()),
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            // Create approval channel
+            let (approval_sender, approval_receiver) = tokio::sync::oneshot::channel();
+
+            // Create pending sampling request
+            let pending_request = crate::mcp_client::sampling_ipc::PendingSamplingRequest::new(
+                self.server_name.clone(),
+                prompt_content.clone(),
+                sampling_request.system_prompt.clone(),
+                sampling_request.model_preferences.clone(),
+                sampling_request.max_tokens,
+                approval_sender,
+            );
+
+            // Send to chat session
+            if let Err(_) = sender.send(pending_request) {
+                tracing::error!(target: "mcp", "Failed to send sampling request to chat session");
+                return Ok(JsonRpcResponse {
+                    jsonrpc: JsonRpcVersion::default(),
+                    id: request.id,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32603,
+                        message: "Failed to process sampling request".to_string(),
+                        data: None,
+                    }),
+                });
+            }
+
+            // Wait for approval result
+            match approval_receiver.await {
+                Ok(approval_result) => {
+                    if approval_result.approved {
+                        tracing::info!(target: "mcp", "Sampling request approved, making LLM call");
+                        match self.make_llm_call(&prompt_content, &sampling_request).await {
+                            Ok(llm_response) => {
+                                Ok(JsonRpcResponse {
+                                    jsonrpc: JsonRpcVersion::default(),
+                                    id: request.id,
+                                    result: Some(serde_json::to_value(llm_response).unwrap_or_default()),
+                                    error: None,
+                                })
+                            }
+                            Err(e) => {
+                                tracing::error!(target: "mcp", "Failed to process approved sampling request: {}", e);
+                                Ok(JsonRpcResponse {
+                                    jsonrpc: JsonRpcVersion::default(),
+                                    id: request.id,
+                                    result: None,
+                                    error: Some(JsonRpcError {
+                                        code: -32603,
+                                        message: format!("Failed to process sampling request: {}", e),
+                                        data: None,
+                                    }),
+                                })
+                            }
+                        }
+                    } else {
+                        tracing::info!(target: "mcp", "Sampling request denied by user");
+                        Ok(JsonRpcResponse {
+                            jsonrpc: JsonRpcVersion::default(),
+                            id: request.id,
+                            result: None,
+                            error: Some(JsonRpcError {
+                                code: -32601,
+                                message: approval_result.error_message.unwrap_or_else(|| "Sampling request denied".to_string()),
+                                data: None,
+                            }),
+                        })
+                    }
+                }
+                Err(_) => {
+                    tracing::error!(target: "mcp", "Failed to receive approval result for sampling request");
+                    Ok(JsonRpcResponse {
+                        jsonrpc: JsonRpcVersion::default(),
+                        id: request.id,
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32603,
+                            message: "Sampling request approval timeout".to_string(),
+                            data: None,
+                        }),
+                    })
+                }
+            }
+        } else {
+            // No sampling sender available
+            tracing::warn!(target: "mcp", "No sampling sender available for request from: {}", self.server_name);
+            Ok(JsonRpcResponse {
+                jsonrpc: JsonRpcVersion::default(),
+                id: request.id,
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32601,
+                    message: "Sampling requests not supported".to_string(),
+                    data: None,
+                }),
+            })
+        }
+    }
+
+    /// Make LLM call with approved prompt using the shared StreamingClient
+    async fn make_llm_call(
+        &self,
+        prompt: &str,
+        request: &SamplingRequest,
+    ) -> Result<SamplingResponse, ClientError> {
+        tracing::info!(target: "mcp", "Making LLM call for sampling request from server: {}", self.server_name);
+        tracing::debug!(target: "mcp", "Sampling request details - prompt length: {}, max_tokens: {:?}, temperature: {:?}", 
+            prompt.len(), request.max_tokens, request.temperature);
+
+        // Check if we have a streaming client available
+        let streaming_client = match self.streaming_client.lock() {
+            Ok(client_guard) => {
+                match client_guard.as_ref() {
+                    Some(client) => client.clone(),
+                    None => {
+                        tracing::error!(target: "mcp", "No StreamingClient available for sampling request from server: {}", self.server_name);
+                        return Err(ClientError::NegotiationError(
+                            "StreamingClient not available for sampling requests".to_string()
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!(target: "mcp", "Failed to acquire lock for StreamingClient on server {}: {}", self.server_name, e);
+                return Err(ClientError::NegotiationError(
+                    "Failed to access StreamingClient for sampling requests".to_string()
+                ));
+            }
+        };
+
+        // Convert SamplingRequest to ConversationState format
+        let user_message = crate::api_client::model::UserInputMessage {
+            content: prompt.to_string(),
+            user_input_message_context: None,
+            user_intent: None,
+            images: None,
+            model_id: request.model_preferences
+                .as_ref()
+                .and_then(|prefs| prefs.hints.as_ref())
+                .and_then(|hints| hints.first())
+                .map(|hint| hint.name.clone()),
+        };
+
+        let conversation_state = crate::api_client::model::ConversationState {
+            conversation_id: None, // New conversation for sampling
+            user_input_message: user_message,
+            history: None, // No history for sampling requests
+        };
+
+        // Make the LLM call using the shared ApiClient
+        tracing::debug!(target: "mcp", "Sending sampling request to LLM via ApiClient");
+        match streaming_client.send_message(conversation_state).await {
+            Ok(mut send_message_output) => {
+                tracing::debug!(target: "mcp", "Successfully sent message to LLM, waiting for response");
+
+                // Get the response stream and collect all content
+                let mut response_content = String::new();
+                while let Ok(Some(response_stream)) = send_message_output.recv().await {
+                    match response_stream {
+                        crate::api_client::model::ChatResponseStream::AssistantResponseEvent { content } => {
+                            response_content.push_str(&content);
+                        }
+                        crate::api_client::model::ChatResponseStream::CodeEvent { content } => {
+                            response_content.push_str(&content);
+                        }
+                        crate::api_client::model::ChatResponseStream::InvalidStateEvent { reason, message } => {
+                            tracing::error!(target: "mcp", "Invalid state during sampling: {} - {}", reason, message);
+                            break;
+                        }
+                        _ => {
+                            // Continue processing other event types
+                            continue;
+                        }
+                    }
+                }
+
+                let model_name = request.model_preferences
+                    .as_ref()
+                    .and_then(|prefs| prefs.hints.as_ref())
+                    .and_then(|hints| hints.first())
+                    .map(|hint| hint.name.clone())
+                    .unwrap_or_else(|| "default-model".to_string());
+
+                if response_content.is_empty() {
+                    tracing::warn!(target: "mcp", "No content received from LLM for sampling request");
+                    return Err(ClientError::NegotiationError("No content received from LLM".to_string()));
+                }
+
+                tracing::info!(target: "mcp", "Successfully received LLM response for sampling request (length: {})", response_content.len());
+
+                Ok(SamplingResponse {
+                    role: "assistant".to_string(),
+                    content: SamplingContent::Text {
+                        text: response_content,
+                    },
+                    model: model_name,
+                    stop_reason: "endTurn".to_string(),
+                })
+            }
+            Err(e) => {
+                tracing::error!(target: "mcp", "Failed to send sampling request to LLM: {}", e);
+
+                // Map API client errors to appropriate client errors with detailed logging
+                match e {
+                    crate::api_client::ApiClientError::QuotaBreach { message, status_code } => {
+                        tracing::warn!(target: "mcp", "Quota breach during sampling request: {} (status: {:?})", message, status_code);
+                        Err(ClientError::NegotiationError(format!("Quota exceeded: {}", message)))
+                    }
+                    crate::api_client::ApiClientError::ContextWindowOverflow { status_code } => {
+                        tracing::warn!(target: "mcp", "Context window overflow during sampling request (status: {:?})", status_code);
+                        Err(ClientError::NegotiationError("Input too long for model context window".to_string()))
+                    }
+                    crate::api_client::ApiClientError::ModelOverloadedError { request_id, status_code } => {
+                        tracing::warn!(target: "mcp", "Model overloaded during sampling request (request_id: {:?}, status: {:?})", request_id, status_code);
+                        Err(ClientError::NegotiationError("Model temporarily unavailable due to high load".to_string()))
+                    }
+                    crate::api_client::ApiClientError::MonthlyLimitReached { status_code } => {
+                        tracing::warn!(target: "mcp", "Monthly limit reached during sampling request (status: {:?})", status_code);
+                        Err(ClientError::NegotiationError("Monthly usage limit reached".to_string()))
+                    }
+                    _ => {
+                        tracing::error!(target: "mcp", "Unexpected error during sampling request: {}", e);
+                        Err(ClientError::NegotiationError(format!("LLM request failed: {}", e)))
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn examine_server_capabilities(ser_cap: &JsonRpcResponse) -> Result<(), ClientError> {
@@ -731,6 +1126,7 @@ mod tests {
                 map.insert("ENV_TWO".to_owned(), "2".to_owned());
                 Some(map)
             },
+            sampling_sender: None,
         };
         let client_info_two = serde_json::json!({
           "name": "TestClientTwo",
@@ -748,6 +1144,7 @@ mod tests {
                 map.insert("ENV_TWO".to_owned(), "2".to_owned());
                 Some(map)
             },
+            sampling_sender: None,
         };
         let mut client_one = Client::<StdioTransport>::from_config(client_config_one).expect("Failed to create client");
         let mut client_two = Client::<StdioTransport>::from_config(client_config_two).expect("Failed to create client");

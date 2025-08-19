@@ -249,7 +249,7 @@ impl ToolManagerBuilder {
         os: &mut Os,
         mut output: Box<dyn Write + Send + Sync + 'static>,
         interactive: bool,
-    ) -> eyre::Result<ToolManager> {
+    ) -> eyre::Result<(ToolManager, tokio::sync::mpsc::UnboundedReceiver<crate::mcp_client::sampling_ipc::PendingSamplingRequest>)> {
         let McpServerConfig { mcp_servers } = match &self.agent {
             Some(agent) => agent.lock().await.mcp_servers.clone(),
             None => Default::default(),
@@ -267,6 +267,9 @@ impl ToolManagerBuilder {
             .iter()
             .map(|(server_name, _)| server_name.clone())
             .collect();
+
+        // Create channel for sampling requests
+        let (sampling_sender, sampling_receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let pre_initialized = enabled_servers
             .into_iter()
@@ -287,7 +290,12 @@ impl ToolManagerBuilder {
                     );
                     None
                 } else {
-                    let custom_tool_client = CustomToolClient::from_config(server_name.clone(), server_config, os);
+                    let custom_tool_client = CustomToolClient::from_config(
+                        server_name.clone(),
+                        server_config,
+                        os,
+                        Some(sampling_sender.clone()),
+                    );
                     Some((server_name, custom_tool_client))
                 }
             })
@@ -382,7 +390,7 @@ impl ToolManagerBuilder {
             }
         }
 
-        Ok(ToolManager {
+        let tool_manager = ToolManager {
             conversation_id,
             clients,
             pending_clients: pending,
@@ -404,8 +412,11 @@ impl ToolManagerBuilder {
             },
             messenger_builder: Some(messenger_builder),
             is_first_launch: self.is_first_launch,
+            sampling_request_sender: Some(sampling_sender),
             ..Default::default()
-        })
+        };
+
+        Ok((tool_manager, sampling_receiver))
     }
 }
 
@@ -548,6 +559,9 @@ pub struct ToolManager {
     /// The value is the load message (i.e. load time, warnings, and errors)
     pub mcp_load_record: Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
 
+    /// Channel sender for MCP clients to send sampling requests for approval
+    pub sampling_request_sender: Option<tokio::sync::mpsc::UnboundedSender<crate::mcp_client::sampling_ipc::PendingSamplingRequest>>,
+
     /// List of disabled MCP server names for display purposes
     disabled_servers: Vec<String>,
 
@@ -576,6 +590,7 @@ impl Clone for ToolManager {
             is_interactive: self.is_interactive,
             mcp_load_record: self.mcp_load_record.clone(),
             disabled_servers: self.disabled_servers.clone(),
+            sampling_request_sender: self.sampling_request_sender.clone(),
             ..Default::default()
         }
     }
@@ -601,7 +616,7 @@ impl ToolManager {
         self.mcp_load_record.lock().await.clear();
 
         let builder = ToolManagerBuilder::from(&mut *self);
-        let mut new_tool_manager = builder.build(os, Box::new(std::io::sink()), true).await?;
+        let (mut new_tool_manager, _) = builder.build(os, Box::new(std::io::sink()), true).await?;
         std::mem::swap(self, &mut new_tool_manager);
 
         // we can discard the output here and let background server load take care of getting the
@@ -609,6 +624,17 @@ impl ToolManager {
         let _ = self.load_tools(os, output).await?;
 
         Ok(())
+    }
+
+    /// Set the ApiClient for all MCP clients that have sampling enabled
+    pub fn set_streaming_client(&self, api_client: std::sync::Arc<crate::api_client::ApiClient>) {
+        tracing::info!(target: "mcp", "Setting ApiClient for MCP clients with sampling enabled");
+
+        for (server_name, client) in &self.clients {
+            // Use the shared reference to call set_streaming_client
+            client.set_streaming_client(api_client.clone());
+            tracing::debug!(target: "mcp", "Set ApiClient for server: {}", server_name);
+        }
     }
 
     pub async fn load_tools(
