@@ -32,10 +32,9 @@ fn test_q_mcp_list_command() -> Result<(), Box<dyn std::error::Error>> {
     
     
     // Verify MCP server listing
-    //assert!(allow_response.contains("q_cli_default"), "Missing q_cli_default server");
-    // Verify server count summary with dynamic count
-    assert!(allow_response.contains("You have") && allow_response.contains("MCP server configured:"), "Missing correct server count summary");
-    assert!(allow_response.contains("Completed in"), "Missing completion indicator");
+    assert!(allow_response.contains("q_cli_default"), "Missing q_cli_default server");
+    assert!(allow_response.contains("default"), "Missing default tag");
+    assert!(allow_response.contains("global"), "Missing global tag");
     println!("✅ Found MCP server listing with  servers and completion");
     
     chat.quit()?;
