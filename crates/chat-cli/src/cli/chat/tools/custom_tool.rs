@@ -58,6 +58,9 @@ pub struct CustomToolConfig {
     /// A flag to denote whether this is a server from the legacy mcp.json
     #[serde(skip)]
     pub is_from_legacy_mcp_json: bool,
+    /// Auto-approve sampling requests from this server without user prompt
+    #[serde(default)]
+    pub trust_sampling: bool,
 }
 
 pub fn default_timeout() -> u64 {
@@ -91,20 +94,40 @@ pub enum CustomToolClient {
         server_name: String,
         client: McpClient<StdioTransport>,
         server_capabilities: RwLock<Option<ServerCapabilities>>,
+        /// Whether to auto-approve sampling requests from this server
+        trust_sampling: bool,
     },
 }
 
 impl CustomToolClient {
     // TODO: add support for http transport
-    pub fn from_config(server_name: String, config: CustomToolConfig, os: &crate::os::Os) -> Result<Self> {
+    /// Set the ApiClient for LLM integration in sampling requests
+    pub fn set_streaming_client(&self, api_client: std::sync::Arc<crate::api_client::ApiClient>) {
+        match self {
+            CustomToolClient::Stdio { client, .. } => {
+                client.set_streaming_client(api_client);
+            }
+        }
+    }
+
+    pub fn from_config(
+        server_name: String,
+        config: CustomToolConfig,
+        os: &crate::os::Os,
+        sampling_sender: Option<tokio::sync::mpsc::UnboundedSender<crate::mcp_client::sampling_ipc::PendingSamplingRequest>>,
+    ) -> Result<Self> {
         let CustomToolConfig {
             command,
             args,
             env,
             timeout,
             disabled: _,
-            ..
+            is_from_legacy_mcp_json: _,
+            trust_sampling,
         } = config;
+
+        // Pass sampling_sender to all servers - sampling permission is now based on tool call state
+        let conditional_sampling_sender = sampling_sender;
 
         // Process environment variables if present
         let processed_env = env.map(|mut env_vars| {
@@ -122,12 +145,14 @@ impl CustomToolClient {
                "version": "1.0.0"
             }),
             env: processed_env,
+            sampling_sender: conditional_sampling_sender,
         };
         let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
         Ok(CustomToolClient::Stdio {
             server_name,
             client,
             server_capabilities: RwLock::new(None),
+            trust_sampling,
         })
     }
 
@@ -203,9 +228,75 @@ pub struct CustomTool {
 }
 
 impl CustomTool {
-    pub async fn invoke(&self, _os: &Os, _updates: impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(
+        &self, 
+        _os: &Os, 
+        chat_session: &mut crate::cli::chat::ChatSession,
+    ) -> Result<InvokeOutput> {
+        // Run MCP request and sampling request processing concurrently
+        let request_future = self.client.request(self.method.as_str(), self.params.clone());
+        tokio::pin!(request_future);
+        
+        let resp = if chat_session.interactive {
+            loop {
+                tokio::select! {
+                    result = &mut request_future => {
+                        break result?;
+                    }
+                    sampling_request = chat_session.sampling_receiver.recv() => {
+                        if let Some(mut sampling_request) = sampling_request {
+                            tracing::info!(target: "mcp", "Processing sampling request during tool execution from: {}", sampling_request.server_name);
+                            
+                            if !chat_session.interactive {
+                                sampling_request.send_approval_result(
+                                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::rejected(
+                                        "Sampling not allowed in non-interactive mode".to_string()
+                                    )
+                                );
+                                continue;
+                            }
+
+                            // Check if this server is configured for auto-trust
+                            let auto_approve = match &self.client.as_ref() {
+                                CustomToolClient::Stdio { trust_sampling, .. } => *trust_sampling,
+                            };
+
+                            if auto_approve {
+                                tracing::info!(target: "mcp", "Auto-approved sampling request from trusted server: {}", sampling_request.server_name);
+                                sampling_request.send_approval_result(
+                                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::approved()
+                                );
+                                continue;
+                            }
+
+                            let approval_prompt = format!(
+                                "\n{}Allow this AI sampling request? [y/n]: \n",
+                                sampling_request.get_description()
+                            );
+                            
+                            if chat_session.ask_user_approval(&approval_prompt) {
+                                tracing::info!(target: "mcp", "User approved sampling request from server: {}", sampling_request.server_name);
+                                sampling_request.send_approval_result(
+                                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::approved()
+                                );
+                            } else {
+                                tracing::info!(target: "mcp", "User denied sampling request from server: {}", sampling_request.server_name);
+                                sampling_request.send_approval_result(
+                                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::rejected(
+                                        "User denied the sampling request".to_string()
+                                    )
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // No sampling support available, just run the request normally
+            request_future.await?
+        };
+
         // Assuming a response shape as per https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#calling-tools
-        let resp = self.client.request(self.method.as_str(), self.params.clone()).await?;
         let result = match resp.result {
             Some(result) => result,
             None => {

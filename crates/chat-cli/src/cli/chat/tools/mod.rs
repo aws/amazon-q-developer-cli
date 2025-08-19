@@ -12,7 +12,6 @@ use std::borrow::{
     Borrow,
     Cow,
 };
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::{
     Path,
@@ -52,7 +51,6 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
-use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
@@ -123,20 +121,18 @@ impl Tool {
     pub async fn invoke(
         &self,
         os: &Os,
-        stdout: &mut impl Write,
-        line_tracker: &mut HashMap<String, FileLineTracker>,
-        agent: Option<&crate::cli::agent::Agent>,
+        chat_session: &mut crate::cli::chat::ChatSession,
     ) -> Result<InvokeOutput> {
         match self {
-            Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
-            Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout, line_tracker).await,
-            Tool::ExecuteCommand(execute_command) => execute_command.invoke(os, stdout).await,
-            Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
-            Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
-            Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
-            Tool::Introspect(introspect) => introspect.invoke(os, stdout).await,
-            Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, agent).await,
-            Tool::Thinking(think) => think.invoke(stdout).await,
+            Tool::FsRead(fs_read) => fs_read.invoke(os, &mut chat_session.stdout).await,
+            Tool::FsWrite(fs_write) => fs_write.invoke(os, &mut chat_session.stdout, &mut chat_session.conversation.file_line_tracker).await,
+            Tool::ExecuteCommand(execute_command) => execute_command.invoke(os, &mut chat_session.stdout).await,
+            Tool::UseAws(use_aws) => use_aws.invoke(os, &mut chat_session.stdout).await,
+            Tool::Custom(custom_tool) => custom_tool.invoke(os, chat_session).await,
+            Tool::GhIssue(gh_issue) => gh_issue.invoke(os, &mut chat_session.stdout).await,
+            Tool::Introspect(introspect) => introspect.invoke(os, &mut chat_session.stdout).await,
+            Tool::Knowledge(knowledge) => knowledge.invoke(os, &mut chat_session.stdout, chat_session.conversation.agents.get_active()).await,
+            Tool::Thinking(think) => think.invoke(&mut chat_session.stdout).await,
         }
     }
 

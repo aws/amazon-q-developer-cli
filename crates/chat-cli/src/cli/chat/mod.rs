@@ -29,7 +29,10 @@ use std::io::{
     Write,
 };
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{
     Duration,
     Instant,
@@ -356,7 +359,7 @@ impl ChatArgs {
         let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (prompt_response_sender, prompt_response_receiver) =
             tokio::sync::broadcast::channel::<PromptQueryResult>(5);
-        let mut tool_manager = ToolManagerBuilder::default()
+        let (mut tool_manager, sampling_receiver) = ToolManagerBuilder::default()
             .prompt_query_result_sender(prompt_response_sender)
             .prompt_query_receiver(prompt_request_receiver)
             .prompt_query_sender(prompt_request_sender.clone())
@@ -366,6 +369,9 @@ impl ChatArgs {
             .build(os, Box::new(std::io::stderr()), !self.no_interactive)
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
+
+        // Set the ApiClient for MCP clients that have sampling enabled
+        tool_manager.set_streaming_client(std::sync::Arc::new(os.client.clone()));
 
         ChatSession::new(
             os,
@@ -382,6 +388,7 @@ impl ChatArgs {
             tool_config,
             !self.no_interactive,
             mcp_enabled,
+            sampling_receiver,
         )
         .await?
         .spawn(os)
@@ -580,6 +587,10 @@ pub struct ChatSession {
     tool_turn_start_time: Option<Instant>,
     /// [RequestMetadata] about the ongoing operation.
     user_turn_request_metadata: Vec<RequestMetadata>,
+    /// Channel receiver for incoming sampling requests from MCP servers
+    pub sampling_receiver: tokio::sync::mpsc::UnboundedReceiver<crate::mcp_client::sampling_ipc::PendingSamplingRequest>,
+    /// Tracks whether tool calls are currently active
+    active_tool_calls: Arc<AtomicBool>,
     /// Telemetry events to be sent as part of the conversation. The HashMap key is tool_use_id.
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
     /// State used to keep track of tool use relation
@@ -588,7 +599,7 @@ pub struct ChatSession {
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
     pending_prompts: VecDeque<Prompt>,
-    interactive: bool,
+    pub interactive: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
 }
@@ -610,6 +621,7 @@ impl ChatSession {
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
         mcp_enabled: bool,
+        sampling_receiver: tokio::sync::mpsc::UnboundedReceiver<crate::mcp_client::sampling_ipc::PendingSamplingRequest>,
     ) -> Result<Self> {
         // Reload prior conversation
         let mut existing_conversation = false;
@@ -694,6 +706,8 @@ impl ChatSession {
             user_turn_request_metadata: vec![],
             pending_tool_index: None,
             tool_turn_start_time: None,
+            sampling_receiver,
+            active_tool_calls: Arc::new(AtomicBool::new(false)),
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
             failed_request_ids: Vec::new(),
@@ -1599,6 +1613,40 @@ impl ChatSession {
                 .put_skim_command_selector(os, Arc::new(context_manager.clone()), tool_names);
         }
 
+        // Check for incoming sampling requests from MCP servers
+        while let Ok(mut sampling_request) = self.sampling_receiver.try_recv() {
+            // Check if tool calls are currently active
+            if !self.active_tool_calls.load(Ordering::Relaxed) {
+                tracing::info!(target: "mcp", "Denying sampling request from {}: no active tool calls", sampling_request.server_name);
+                sampling_request.send_approval_result(
+                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::rejected(
+                        "Sampling requests are only allowed during active tool execution".to_string()
+                    )
+                );
+                continue;
+            }
+
+            // Ask user for approval during active tool calls
+            let approval_prompt = format!(
+                "MCP server '{}' is requesting to use AI sampling. Allow this request? [y/n]: ",
+                sampling_request.server_name
+            );
+
+            if self.ask_user_approval(&approval_prompt) {
+                tracing::info!(target: "mcp", "User approved sampling request from server: {}", sampling_request.server_name);
+                sampling_request.send_approval_result(
+                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::approved()
+                );
+            } else {
+                tracing::info!(target: "mcp", "User denied sampling request from server: {}", sampling_request.server_name);
+                sampling_request.send_approval_result(
+                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::rejected(
+                        "User denied the sampling request".to_string()
+                    )
+                );
+            }
+        }
+
         execute!(
             self.stderr,
             style::SetForegroundColor(Color::Reset),
@@ -1904,6 +1952,9 @@ impl ChatSession {
                     style::SetForegroundColor(Color::Reset),
                 )?;
 
+                // Reset active tool calls on early return
+                self.active_tool_calls.store(false, Ordering::Relaxed);
+
                 return Ok(ChatState::HandleInput {
                     input: format!(
                         "Tool use with {} was rejected because the arguments supplied were forbidden",
@@ -1936,6 +1987,9 @@ impl ChatSession {
 
             self.pending_tool_index = Some(i);
 
+            // Reset active tool calls on early return
+            self.active_tool_calls.store(false, Ordering::Relaxed);
+
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
             });
@@ -1945,33 +1999,34 @@ impl ChatSession {
         let mut tool_results = vec![];
         let mut image_blocks: Vec<RichImageBlock> = Vec::new();
 
-        for tool in &self.tool_uses {
-            let tool_start = std::time::Instant::now();
-            let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
-            tool_telemetry = tool_telemetry.and_modify(|ev| {
-                ev.is_accepted = true;
-            });
+        // Clone the tools to avoid borrowing self during iteration
+        let tools_to_execute = self.tool_uses.clone();
 
-            // Extract AWS service name and operation name if available
-            if let Some(additional_info) = tool.tool.get_additional_info() {
-                if let Some(aws_service_name) = additional_info.get("aws_service_name").and_then(|v| v.as_str()) {
-                    tool_telemetry =
-                        tool_telemetry.and_modify(|ev| ev.aws_service_name = Some(aws_service_name.to_string()));
-                }
-                if let Some(aws_operation_name) = additional_info.get("aws_operation_name").and_then(|v| v.as_str()) {
-                    tool_telemetry =
+        for tool in &tools_to_execute {
+            let tool_start = std::time::Instant::now();
+
+            // Handle initial telemetry setup and drop the borrow
+            {
+                let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
+                tool_telemetry = tool_telemetry.and_modify(|ev| {
+                    ev.is_accepted = true;
+                });
+
+                // Extract AWS service name and operation name if available
+                if let Some(additional_info) = tool.tool.get_additional_info() {
+                    if let Some(aws_service_name) = additional_info.get("aws_service_name").and_then(|v| v.as_str()) {
+                        tool_telemetry =
+                            tool_telemetry.and_modify(|ev| ev.aws_service_name = Some(aws_service_name.to_string()));
+                    }
+                    if let Some(aws_operation_name) = additional_info.get("aws_operation_name").and_then(|v| v.as_str()) {
                         tool_telemetry.and_modify(|ev| ev.aws_operation_name = Some(aws_operation_name.to_string()));
+                    }
                 }
-            }
+            } // telemetry borrow dropped here so we can borrow `self` for tool call sampling/elicitation
 
             let invoke_result = tool
                 .tool
-                .invoke(
-                    os,
-                    &mut self.stdout,
-                    &mut self.conversation.file_line_tracker,
-                    self.conversation.agents.get_active(),
-                )
+                .invoke(os, self)
                 .await;
 
             if self.spinner.is_some() {
@@ -1986,6 +2041,9 @@ impl ChatSession {
 
             let tool_end_time = Instant::now();
             let tool_time = tool_end_time.duration_since(tool_start);
+
+            // Re-create telemetry borrow in function-global scope for post-execution updates
+            let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
             tool_telemetry = tool_telemetry.and_modify(|ev| {
                 ev.execution_duration = Some(tool_time);
                 ev.turn_duration = self.tool_turn_start_time.map(|t| tool_end_time.duration_since(t));
@@ -2128,6 +2186,10 @@ impl ChatSession {
         self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
             .await;
         self.send_tool_use_telemetry(os).await;
+
+        // Set active tool calls to false when tool execution completes
+        self.active_tool_calls.store(false, Ordering::Relaxed);
+
         return Ok(ChatState::HandleResponseStream(
             self.conversation
                 .as_sendable_conversation_state(os, &mut self.stderr, false)
@@ -2533,6 +2595,11 @@ impl ChatSession {
         self.tool_uses = queued_tools;
         self.pending_tool_index = Some(0);
         self.tool_turn_start_time = Some(Instant::now());
+
+        // Set active tool calls to true when tools are pending approval
+        // This allows sampling requests during the tool approval phase
+        self.active_tool_calls.store(true, Ordering::Relaxed);
+
         Ok(ChatState::ExecuteTools)
     }
 
@@ -2627,6 +2694,25 @@ impl ChatSession {
             .map_err(|e| ChatError::Custom(format!("failed to print tool, `{}`: {}", tool_use.name, e).into()))?;
 
         Ok(())
+    }
+
+    /// Helper function to ask user for approval during active tool calls
+    pub fn ask_user_approval(&mut self, prompt: &str) -> bool {
+        if !self.interactive {
+            return false; // Deny in non-interactive mode
+        }
+
+        execute!(
+            self.stderr,
+            style::SetForegroundColor(Color::Yellow),
+            style::Print(prompt),
+            style::SetForegroundColor(Color::Reset)
+        ).unwrap_or_default();
+
+        match self.read_user_input("", true) {
+            Some(input) => ["y", "Y", "yes", "Yes", "YES"].contains(&input.trim()),
+            None => false,
+        }
     }
 
     /// Helper function to read user input with a prompt and Ctrl+C handling
@@ -2995,6 +3081,12 @@ mod tests {
         agents
     }
 
+    #[cfg(test)]
+    fn create_dummy_sampling_receiver() -> tokio::sync::mpsc::UnboundedReceiver<crate::mcp_client::sampling_ipc::PendingSamplingRequest> {
+        let (_sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        receiver
+    }
+
     #[tokio::test]
     async fn test_flow() {
         let mut os = Os::new().await.unwrap();
@@ -3039,6 +3131,7 @@ mod tests {
             tool_config,
             true,
             false,
+            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()
@@ -3181,6 +3274,7 @@ mod tests {
             tool_config,
             true,
             false,
+            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()
@@ -3278,6 +3372,7 @@ mod tests {
             tool_config,
             true,
             false,
+            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()
@@ -3353,6 +3448,7 @@ mod tests {
             tool_config,
             true,
             false,
+            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()
@@ -3404,6 +3500,7 @@ mod tests {
             tool_config,
             true,
             false,
+            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()
