@@ -2,7 +2,18 @@ use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
 #[cfg(feature = "model")]
-fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
+fn test_all_model_commands() -> Result<(), Box<dyn std::error::Error>> {
+    let mut chat = QChatSession::new()?;
+    println!(":white_check_mark: Q Chat session started");
+    
+    test_model_dynamic_command(&mut chat)?;
+    test_model_help_command(&mut chat)?;
+    
+    chat.quit()?;
+    println!(":white_check_mark: All tests completed successfully");
+    Ok(())
+}
+fn test_model_dynamic_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /model command with dynamic selection...");
     
     let mut chat = QChatSession::new()?;
@@ -109,10 +120,40 @@ fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(confirm_response.contains(&format!("Using {}", selected_model)), 
            "Missing confirmation for selected model: {}", selected_model);
     println!("✅ Confirmed selection of: {}", selected_model);
+
+    Ok(())
+}
+
+fn test_model_help_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Testing /model --help command...");
     
-    chat.quit()?;
     
-    println!("✅ Test completed successfully");
+    let response = chat.execute_command("/model --help")?;
+    
+    println!("📝 Model help response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    /* Verify description
+    assert!(response.contains("Select") && response.contains("model"), "Missing model selection description");
+    println!("✅ Found model selection description");*/
+    
+    // Verify Usage section
+    assert!(response.contains("Usage:"), "Missing Usage section");
+    assert!(response.contains("/model"), "Missing /model command in usage section");
+    println!("✅ Found Usage section with /model command");
+    
+    // Verify Options section
+    assert!(response.contains("Options:"), "Missing Options section");
+    println!("✅ Found Options section");
+    
+    // Verify help flags
+    assert!(response.contains("-h") &&  response.contains("--help") && response.contains("Print help"), "Missing -h, --help flags");
+    assert!(response.contains("Print help"), "Missing Print help description");
+    println!("✅ Found help flags: -h, --help with Print help description");
+    
+    println!("✅ All model help content verified!");
     
     Ok(())
 }

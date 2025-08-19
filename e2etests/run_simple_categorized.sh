@@ -17,6 +17,11 @@ RUN_MCP=true
 RUN_AI_PROMPTS=true
 RUN_ISSUE_REPORTING=true
 RUN_TOOLS=true
+RUN_COMPACT=true
+RUN_HOOKS=true
+RUN_USAGE=true
+RUN_EDITOR=true
+RUN_SUBSCRIBE=true
 # ============================================================================
 
 Q_BINARY="q"
@@ -209,6 +214,46 @@ fi
 
 if [ "$RUN_TOOLS" = true ]; then
     if run_category "tools" "TOOLS"; then
+        ((total_passed++))
+    else
+        ((total_failed++))
+    fi
+fi
+
+if [ "$RUN_COMPACT" = true ]; then
+    if run_category "compact" "COMPACT"; then
+        ((total_passed++))
+    else
+        ((total_failed++))
+    fi
+fi
+
+if [ "$RUN_HOOKS" = true ]; then
+    if run_category "hooks" "HOOKS"; then
+        ((total_passed++))
+    else
+        ((total_failed++))
+    fi
+fi
+
+if [ "$RUN_USAGE" = true ]; then
+    if run_category "usage" "USAGE"; then
+        ((total_passed++))
+    else
+        ((total_failed++))
+    fi
+fi
+
+if [ "$RUN_EDITOR" = true ]; then
+    if run_category "editor" "EDITOR"; then
+        ((total_passed++))
+    else
+        ((total_failed++))
+    fi
+fi
+
+if [ "$RUN_SUBSCRIBE" = true ]; then
+    if run_category "subscribe" "SUBSCRIBE"; then
         ((total_passed++))
     else
         ((total_failed++))
