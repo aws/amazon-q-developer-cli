@@ -1,7 +1,11 @@
 use eyre::Result;
 use rustyline::error::ReadlineError;
 
-use super::prompt::rl;
+use super::prompt::{
+    PromptQueryResponseReceiver,
+    PromptQuerySender,
+    rl,
+};
 #[cfg(unix)]
 use super::skim_integration::SkimCommandSelector;
 use crate::os::Os;
@@ -28,11 +32,7 @@ mod inner {
 }
 
 impl InputSource {
-    pub fn new(
-        os: &Os,
-        sender: std::sync::mpsc::Sender<Option<String>>,
-        receiver: std::sync::mpsc::Receiver<Vec<String>>,
-    ) -> Result<Self> {
+    pub fn new(os: &Os, sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Result<Self> {
         Ok(Self(inner::Inner::Readline(rl(os, sender, receiver)?)))
     }
 
