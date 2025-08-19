@@ -1962,32 +1962,48 @@ impl ChatSession {
 
             let tag = if invoke_result.is_ok() {
                 if let Some(mut manager) = self.conversation.capture_manager.take() {
-                    let mut tag = format!("{}.{}", manager.num_turns + 1, manager.num_tools_this_turn + 1);
-                    let commit_message = match tool.tool.get_summary() {
-                        Some(summary) => summary,
-                        None => tool.tool.display_name(),
-                    };
-
-                    match manager.create_capture(
-                        &tag,
-                        &commit_message,
-                        self.conversation.history().len() + 1,
-                        false,
-                        Some(tool.name.clone()),
-                    ) {
-                        Ok(_) => manager.num_tools_this_turn += 1,
+                    let has_uncommitted = match manager.has_uncommitted_changes() {
+                        Ok(b) => b,
                         Err(e) => {
-                            debug!("{e}");
-                            tag = "".to_string();
+                            execute!(
+                                self.stderr,
+                                style::Print(format!("Could not check if uncommitted changes exist: {e}\n").blue())
+                            )?;
+                            execute!(self.stderr, style::Print("Saving anyways...\n".blue()))?;
+                            true
                         },
-                    }
+                    };
+                    let tag = if has_uncommitted {
+                        let mut tag = format!("{}.{}", manager.num_turns + 1, manager.num_tools_this_turn + 1);
+                        let commit_message = match tool.tool.get_summary() {
+                            Some(summary) => summary,
+                            None => tool.tool.display_name(),
+                        };
+
+                        match manager.create_capture(
+                            &tag,
+                            &commit_message,
+                            self.conversation.history().len() + 1,
+                            false,
+                            Some(tool.name.clone()),
+                        ) {
+                            Ok(_) => manager.num_tools_this_turn += 1,
+                            Err(e) => {
+                                debug!("{e}");
+                                tag = String::new();
+                            },
+                        }
+                        tag
+                    } else {
+                        String::new()
+                    };
                     self.conversation.capture_manager = Some(manager);
                     tag
                 } else {
-                    "".to_string()
+                    String::new()
                 }
             } else {
-                "".to_string()
+                String::new()
             };
 
             let tool_end_time = Instant::now();

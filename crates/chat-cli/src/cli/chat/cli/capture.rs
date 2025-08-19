@@ -51,6 +51,9 @@ pub enum CaptureSubcommand {
 
     /// Display more information about a turn-level snapshot
     Expand { tag: String },
+
+    /// Display a diff between two captures
+    Diff { tag1: String, tag2: String },
 }
 
 impl CaptureSubcommand {
@@ -151,7 +154,7 @@ impl CaptureSubcommand {
                 match manager.clean(os).await {
                     Ok(()) => execute!(
                         session.stderr,
-                        style::Print("Deleted shadow repository.\n".to_string().blue().bold())
+                        style::Print("Deleted shadow repository.\n".blue().bold())
                     )?,
                     Err(e) => {
                         session.conversation.capture_manager = None;
@@ -168,6 +171,10 @@ impl CaptureSubcommand {
                         format!("Could not expand checkpoint with tag {}: {e}", tag).into(),
                     ));
                 },
+            },
+            Self::Diff { tag1, tag2 } => match manager.diff(&tag1, &tag2) {
+                Ok(diff) => execute!(session.stderr, style::Print(diff))?,
+                Err(e) => return Err(ChatError::Custom(format!("Could not display diff: {e}").into())),
             },
         }
 

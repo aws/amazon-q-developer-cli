@@ -95,7 +95,7 @@ impl CaptureManager {
         }
 
         config(&cloned_git_dir.to_string_lossy())?;
-        stage_commit_tag(&cloned_git_dir.to_string_lossy(), "Inital capture", "0")?;
+        stage_commit_tag(&cloned_git_dir.to_string_lossy(), "Initial capture", "0")?;
 
         let captures = vec![Capture {
             tag: "0".to_string(),
@@ -180,30 +180,15 @@ impl CaptureManager {
     }
 
     pub fn restore_capture(&self, conversation: &mut ConversationState, tag: &str, hard: bool) -> Result<()> {
-        let Some(index) = self.tag_to_index.get(tag) else {
-            bail!("No capture with tag {tag}");
-        };
-        let capture = &self.captures[*index];
+        let capture = self.get_capture(tag)?;
+        let git_dir_arg = format!("--git-dir={}", self.shadow_repo_path.display());
         let output = if !hard {
             Command::new("git")
-                .args([
-                    &format!("--git-dir={}", self.shadow_repo_path.display()),
-                    "--work-tree=.",
-                    "checkout",
-                    tag,
-                    "--",
-                    ".",
-                ])
+                .args([&git_dir_arg, "--work-tree=.", "checkout", tag, "--", "."])
                 .output()?
         } else {
             Command::new("git")
-                .args([
-                    &format!("--git-dir={}", self.shadow_repo_path.display()),
-                    "--work-tree=.",
-                    "reset",
-                    "--hard",
-                    tag,
-                ])
+                .args([&git_dir_arg, "--work-tree=.", "reset", "--hard", tag])
                 .output()?
         };
 
@@ -229,6 +214,41 @@ impl CaptureManager {
         println!("Deleting path: {}", path.display());
         os.fs.remove_dir_all(path).await?;
         Ok(())
+    }
+
+    pub fn diff(&self, tag1: &str, tag2: &str) -> Result<String> {
+        let _ = self.get_capture(tag1)?;
+        let _ = self.get_capture(tag2)?;
+        let git_dir_arg = format!("--git-dir={}", self.shadow_repo_path.display());
+
+        let output = Command::new("git")
+            .args([&git_dir_arg, "diff", tag1, tag2, "--stat", "--color=always"])
+            .output()?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            bail!("Failed to get diff: {}", String::from_utf8_lossy(&output.stderr));
+        }
+    }
+
+    fn get_capture(&self, tag: &str) -> Result<&Capture> {
+        let Some(index) = self.tag_to_index.get(tag) else {
+            bail!("No capture with tag {tag}");
+        };
+        Ok(&self.captures[*index])
+    }
+
+    pub fn has_uncommitted_changes(&self) -> Result<bool> {
+        let git_dir_arg = format!("--git-dir={}", self.shadow_repo_path.display());
+        let output = Command::new("git")
+            .args([&git_dir_arg, "--work-tree=.", "status", "--porcelain"])
+            .output()?;
+
+        if !output.status.success() {
+            bail!("git status failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        Ok(!output.stdout.is_empty())
     }
 }
 
