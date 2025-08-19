@@ -223,7 +223,13 @@ impl CaptureManager {
     }
 
     pub async fn clean(&self, os: &Os) -> Result<()> {
-        os.fs.remove_dir_all(&self.shadow_repo_path).await?;
+        let path = if self.shadow_repo_path.file_name().unwrap() == ".git" {
+            self.shadow_repo_path.parent().unwrap()
+        } else {
+            self.shadow_repo_path.as_path()
+        };
+        println!("Deleting path: {}", path.display());
+        os.fs.remove_dir_all(path).await?;
         Ok(())
     }
 }

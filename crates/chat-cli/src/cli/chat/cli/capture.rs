@@ -147,10 +147,10 @@ impl CaptureSubcommand {
             },
             Self::Clean => {
                 match manager.clean(os).await {
-                    Ok(()) => execute!(session.stderr, style::Print(format!("Delete shadow repository.\n").blue().bold()))?,
+                    Ok(()) => execute!(session.stderr, style::Print(format!("Deleted shadow repository.\n").blue().bold()))?,
                     Err(e) => {
                         session.conversation.capture_manager = None;
-                        return Err(ChatError::Custom(format!("Could not display all captures: {e}").into()));
+                        return Err(ChatError::Custom(format!("Could not delete shadow repo: {e}").into()));
                     }       
                 }
                 session.conversation.capture_manager = None;
