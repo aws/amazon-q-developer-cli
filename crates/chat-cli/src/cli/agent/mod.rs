@@ -408,16 +408,8 @@ impl Agents {
         agent_name: Option<&str>,
         skip_migration: bool,
         output: &mut impl Write,
+        mcp_enabled: bool,
     ) -> (Self, AgentsLoadMetadata) {
-        // Check MCP governance at the very beginning
-        let mcp_enabled = match os.client.is_mcp_enabled().await {
-            Ok(enabled) => enabled,
-            Err(err) => {
-                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
-                true
-            },
-        };
-
         if !mcp_enabled {
             let _ = execute!(
                 output,

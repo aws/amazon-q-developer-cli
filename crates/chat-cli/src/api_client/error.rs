@@ -206,7 +206,7 @@ mod tests {
                 response(),
             )),
             ApiClientError::GetProfileError(SdkError::service_error(
-                ListAvailableModelsError::unhandled("<unhandled>"),
+                GetProfileError::unhandled("<unhandled>"),
                 response(),
             )),
             ApiClientError::ListAvailableModelsError(SdkError::service_error(
