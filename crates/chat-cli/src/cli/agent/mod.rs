@@ -303,21 +303,34 @@ impl Agent {
             }
             agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref())?;
         } else {
-            agent.mcp_servers = McpServerConfig::default();
-            agent.use_legacy_mcp_json = false;
-
-            // Remove MCP tools
-            agent.tools.retain(|tool| !is_mcp_ref(tool));
-            agent.allowed_tools.retain(|tool| !is_mcp_ref(tool));
-            agent.tool_aliases.retain(|orig, _alias| !is_mcp_ref(&orig.to_string()));
-            agent
-                .tools_settings
-                .retain(|target, _| !is_mcp_ref(&target.to_string()));
-
+            agent.clear_mcp_configs();
             // Thaw the agent with empty MCP config to finalize normalization.
             agent.thaw(agent_path.as_ref(), None)?;
         }
         Ok(agent)
+    }
+
+    /// Clear all MCP configurations while preserving built-in tools
+    pub fn clear_mcp_configs(&mut self) {
+        self.mcp_servers = McpServerConfig::default();
+        self.use_legacy_mcp_json = false;
+
+        // Transform tools: "*" → "@builtin", remove MCP refs
+        self.tools = self
+            .tools
+            .iter()
+            .filter_map(|tool| match tool.as_str() {
+                "*" => Some("@builtin".to_string()),
+                t if !is_mcp_tool_ref(t) => Some(t.to_string()),
+                _ => None,
+            })
+            .collect();
+
+        // Remove MCP references from other fields
+        self.allowed_tools.retain(|tool| !is_mcp_tool_ref(tool));
+        self.tool_aliases.retain(|orig, _| !is_mcp_tool_ref(&orig.to_string()));
+        self.tools_settings
+            .retain(|target, _| !is_mcp_tool_ref(&target.to_string()));
     }
 }
 
@@ -839,9 +852,11 @@ fn default_schema() -> String {
     "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
 }
 
-pub fn is_mcp_ref(s: &str) -> bool {
-    // Any tool reference starting with '@' is considered MCP (e.g., "@git", "@git/git_status").
-    s.starts_with('@')
+// Check if a tool reference is MCP-specific (not @builtin and starts with @)
+pub fn is_mcp_tool_ref(s: &str) -> bool {
+    // @builtin is not MCP, it's a reference to all built-in tools
+    // Any other @ prefix is MCP (e.g., "@git", "@git/git_status")
+    !s.starts_with("@builtin") && s.starts_with('@')
 }
 
 #[cfg(test)]
@@ -864,8 +879,9 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use serde_json::json;
 
+    use super::*;
     const INPUT: &str = r#"
             {
               "name": "some_agent",
@@ -978,5 +994,68 @@ mod tests {
         assert!(validate_agent_name("_invalid").is_err());
         assert!(validate_agent_name("invalid!").is_err());
         assert!(validate_agent_name("invalid space").is_err());
+    }
+
+    #[test]
+    fn test_clear_mcp_configs_with_builtin_variants() {
+        let mut agent: Agent = serde_json::from_value(json!({
+            "name": "test",
+            "tools": [
+                "@builtin",
+                "@builtin/fs_read",
+                "@builtin/execute_bash",
+                "@git",
+                "@git/status",
+                "fs_write"
+            ],
+            "allowedTools": [
+                "@builtin/fs_read",
+                "@git/status",
+                "fs_write"
+            ],
+            "toolAliases": {
+                "@builtin/fs_read": "read",
+                "@git/status": "git_st"
+            },
+            "toolsSettings": {
+                "@builtin/fs_write": { "allowedPaths": ["~/**"] },
+                "@git/commit": { "sign": true }
+            }
+        }))
+        .unwrap();
+
+        agent.clear_mcp_configs();
+
+        // All @builtin variants should be preserved while MCP tools should be removed
+        assert!(agent.tools.contains(&"@builtin".to_string()));
+        assert!(agent.tools.contains(&"@builtin/fs_read".to_string()));
+        assert!(agent.tools.contains(&"@builtin/execute_bash".to_string()));
+        assert!(agent.tools.contains(&"fs_write".to_string()));
+        assert!(!agent.tools.contains(&"@git".to_string()));
+        assert!(!agent.tools.contains(&"@git/status".to_string()));
+
+        assert!(agent.allowed_tools.contains("@builtin/fs_read"));
+        assert!(agent.allowed_tools.contains("fs_write"));
+        assert!(!agent.allowed_tools.contains("@git/status"));
+
+        // Check tool aliases - need to iterate since we can't construct OriginalToolName directly
+        let has_builtin_alias = agent
+            .tool_aliases
+            .iter()
+            .any(|(k, v)| k.to_string() == "@builtin/fs_read" && v == "read");
+        assert!(has_builtin_alias, "@builtin/fs_read alias should be preserved");
+
+        let has_git_alias = agent.tool_aliases.iter().any(|(k, _)| k.to_string() == "@git/status");
+        assert!(!has_git_alias, "@git/status alias should be removed");
+
+        // Check tool settings - need to iterate since we can't construct ToolSettingTarget directly
+        let has_builtin_setting = agent
+            .tools_settings
+            .iter()
+            .any(|(k, _)| k.to_string() == "@builtin/fs_write");
+        assert!(has_builtin_setting, "@builtin/fs_write settings should be preserved");
+
+        let has_git_setting = agent.tools_settings.iter().any(|(k, _)| k.to_string() == "@git/commit");
+        assert!(!has_git_setting, "@git/commit settings should be removed");
     }
 }
