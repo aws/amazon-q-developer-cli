@@ -401,14 +401,14 @@ impl Agents {
         mcp_enabled: bool,
     ) -> (Self, AgentsLoadMetadata) {
         if !mcp_enabled {
-            execute!(
+            let _ = execute!(
                 output,
                 style::SetForegroundColor(Color::Yellow),
                 style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
                 style::SetForegroundColor(Color::Reset),
                 style::Print("MCP functionality has been disabled by your administrator.\n\n"),
-            )?;
+            );
         }
 
         // Tracking metadata about the performed load operation.
