@@ -21,6 +21,11 @@ mcp = []
 ai_prompts = []
 issue_reporting = []
 tools=[]
+compact=[]
+hooks=[]
+usage=[]
+editor=[]
+subscribe=[]
 
 [[test]]
 name = "test_help_command"
