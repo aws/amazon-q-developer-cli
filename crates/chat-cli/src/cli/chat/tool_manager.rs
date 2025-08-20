@@ -43,6 +43,7 @@ use tokio::sync::{
     Mutex,
     Notify,
     RwLock,
+    mpsc::UnboundedReceiver,
 };
 use tokio::task::JoinHandle;
 use tracing::{
@@ -91,6 +92,7 @@ use crate::mcp_client::{
     JsonRpcResponse,
     Messenger,
     PromptGet,
+    sampling_ipc::PendingSamplingRequest,
 };
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
@@ -250,7 +252,7 @@ impl ToolManagerBuilder {
         os: &mut Os,
         mut output: Box<dyn Write + Send + Sync + 'static>,
         interactive: bool,
-    ) -> eyre::Result<(ToolManager, tokio::sync::mpsc::UnboundedReceiver<crate::mcp_client::sampling_ipc::PendingSamplingRequest>)> {
+    ) -> eyre::Result<ToolManager> {
         let McpServerConfig { mcp_servers } = match &self.agent {
             Some(agent) => agent.lock().await.mcp_servers.clone(),
             None => Default::default(),
@@ -423,10 +425,11 @@ impl ToolManagerBuilder {
             messenger_builder: Some(messenger_builder),
             is_first_launch: self.is_first_launch,
             sampling_request_sender: Some(sampling_sender),
+            sampling_receiver,
             ..Default::default()
         };
 
-        Ok((tool_manager, sampling_receiver))
+        Ok(tool_manager)
     }
 }
 
@@ -508,7 +511,7 @@ type PromptsChannelPair = (
     tokio::sync::broadcast::Receiver<PromptQueryResult>,
 );
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 /// Manages the lifecycle and interactions with tools from various sources, including MCP servers.
 /// This struct is responsible for initializing tools, handling tool requests, and maintaining
 /// a cache of available prompts from connected servers.
@@ -570,7 +573,10 @@ pub struct ToolManager {
     pub mcp_load_record: Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
 
     /// Channel sender for MCP clients to send sampling requests for approval
-    pub sampling_request_sender: Option<tokio::sync::mpsc::UnboundedSender<crate::mcp_client::sampling_ipc::PendingSamplingRequest>>,
+    pub sampling_request_sender: Option<tokio::sync::mpsc::UnboundedSender<PendingSamplingRequest>>,
+
+    /// Channel receiver for incoming sampling requests from MCP servers
+    pub sampling_receiver: UnboundedReceiver<PendingSamplingRequest>,
 
     /// List of disabled MCP server names for display purposes
     disabled_servers: Vec<String>,
@@ -586,6 +592,33 @@ pub struct ToolManager {
     pub agent: Arc<Mutex<Agent>>,
 
     is_first_launch: bool,
+}
+
+impl Default for ToolManager {
+    fn default() -> Self {
+        let (_sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        Self {
+            conversation_id: Default::default(),
+            clients: Default::default(),
+            pending_clients: Default::default(),
+            has_new_stuff: Default::default(),
+            prompts_sender_receiver_pair: Default::default(),
+            new_tool_specs: Default::default(),
+            notify: Default::default(),
+            loading_status_sender: Default::default(),
+            loading_display_task: Default::default(),
+            tn_map: Default::default(),
+            schema: Default::default(),
+            is_interactive: Default::default(),
+            mcp_load_record: Default::default(),
+            sampling_request_sender: Default::default(),
+            sampling_receiver: receiver,
+            disabled_servers: Default::default(),
+            messenger_builder: Default::default(),
+            agent: Default::default(),
+            is_first_launch: Default::default(),
+        }
+    }
 }
 
 impl Clone for ToolManager {
@@ -626,7 +659,7 @@ impl ToolManager {
         self.mcp_load_record.lock().await.clear();
 
         let builder = ToolManagerBuilder::from(&mut *self);
-        let (mut new_tool_manager, _) = builder.build(os, Box::new(std::io::sink()), true).await?;
+        let mut new_tool_manager = builder.build(os, Box::new(std::io::sink()), true).await?;
         std::mem::swap(self, &mut new_tool_manager);
 
         // we can discard the output here and let background server load take care of getting the
