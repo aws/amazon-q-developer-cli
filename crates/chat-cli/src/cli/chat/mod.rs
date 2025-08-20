@@ -342,7 +342,7 @@ impl ChatArgs {
         let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (prompt_response_sender, prompt_response_receiver) =
             tokio::sync::broadcast::channel::<PromptQueryResult>(5);
-        let (mut tool_manager, sampling_receiver) = ToolManagerBuilder::default()
+        let mut tool_manager = ToolManagerBuilder::default()
             .prompt_query_result_sender(prompt_response_sender)
             .prompt_query_receiver(prompt_request_receiver)
             .prompt_query_sender(prompt_request_sender.clone())
@@ -370,7 +370,6 @@ impl ChatArgs {
             model_id,
             tool_config,
             !self.no_interactive,
-            sampling_receiver,
         )
         .await?
         .spawn(os)
@@ -567,8 +566,6 @@ pub struct ChatSession {
     tool_turn_start_time: Option<Instant>,
     /// [RequestMetadata] about the ongoing operation.
     user_turn_request_metadata: Vec<RequestMetadata>,
-    /// Channel receiver for incoming sampling requests from MCP servers
-    pub sampling_receiver: tokio::sync::mpsc::UnboundedReceiver<crate::mcp_client::sampling_ipc::PendingSamplingRequest>,
     /// Tracks whether tool calls are currently active
     active_tool_calls: Arc<AtomicBool>,
     /// Telemetry events to be sent as part of the conversation. The HashMap key is tool_use_id.
@@ -600,7 +597,6 @@ impl ChatSession {
         model_id: Option<String>,
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
-        sampling_receiver: tokio::sync::mpsc::UnboundedReceiver<crate::mcp_client::sampling_ipc::PendingSamplingRequest>,
     ) -> Result<Self> {
         // Reload prior conversation
         let mut existing_conversation = false;
@@ -673,7 +669,6 @@ impl ChatSession {
             user_turn_request_metadata: vec![],
             pending_tool_index: None,
             tool_turn_start_time: None,
-            sampling_receiver,
             active_tool_calls: Arc::new(AtomicBool::new(false)),
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
@@ -1576,7 +1571,7 @@ impl ChatSession {
         }
 
         // Check for incoming sampling requests from MCP servers
-        while let Ok(mut sampling_request) = self.sampling_receiver.try_recv() {
+        while let Ok(mut sampling_request) = self.conversation.tool_manager.sampling_receiver.try_recv() {
             // Check if tool calls are currently active
             if !self.active_tool_calls.load(Ordering::Relaxed) {
                 tracing::info!(target: "mcp", "Denying sampling request from {}: no active tool calls", sampling_request.server_name);
@@ -3015,11 +3010,7 @@ mod tests {
         agents
     }
 
-    #[cfg(test)]
-    fn create_dummy_sampling_receiver() -> tokio::sync::mpsc::UnboundedReceiver<crate::mcp_client::sampling_ipc::PendingSamplingRequest> {
-        let (_sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        receiver
-    }
+
 
     #[tokio::test]
     async fn test_flow() {
@@ -3064,7 +3055,6 @@ mod tests {
             None,
             tool_config,
             true,
-            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()
@@ -3206,7 +3196,6 @@ mod tests {
             None,
             tool_config,
             true,
-            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()
@@ -3303,7 +3292,6 @@ mod tests {
             None,
             tool_config,
             true,
-            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()
@@ -3378,7 +3366,6 @@ mod tests {
             None,
             tool_config,
             true,
-            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()
@@ -3429,7 +3416,6 @@ mod tests {
             None,
             tool_config,
             true,
-            create_dummy_sampling_receiver(),
         )
         .await
         .unwrap()

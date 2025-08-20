@@ -33,6 +33,7 @@ use crate::mcp_client::{
     ServerCapabilities,
     StdioTransport,
     ToolCallResult,
+    sampling_ipc::PendingSamplingRequest,
 };
 use crate::os::Os;
 
@@ -112,7 +113,7 @@ impl CustomToolClient {
         server_name: String,
         config: CustomToolConfig,
         os: &crate::os::Os,
-        sampling_sender: Option<tokio::sync::mpsc::UnboundedSender<crate::mcp_client::sampling_ipc::PendingSamplingRequest>>,
+        sampling_sender: Option<tokio::sync::mpsc::UnboundedSender<PendingSamplingRequest>>,
     ) -> Result<Self> {
         let CustomToolConfig {
             command,
@@ -241,7 +242,7 @@ impl CustomTool {
                     result = &mut request_future => {
                         break result?;
                     }
-                    sampling_request = chat_session.sampling_receiver.recv() => {
+                    sampling_request = chat_session.conversation.tool_manager.sampling_receiver.recv() => {
                         if let Some(mut sampling_request) = sampling_request {
                             tracing::info!(target: "mcp", "Processing sampling request during tool execution from: {}", sampling_request.server_name);
                             
