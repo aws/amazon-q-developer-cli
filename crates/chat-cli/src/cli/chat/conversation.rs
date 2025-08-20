@@ -6,7 +6,7 @@ use std::collections::{
 use std::io::Write;
 use std::sync::atomic::Ordering;
 
-use chrono::Utc;
+use chrono::Local;
 use crossterm::style::Color;
 use crossterm::{
     execute,
@@ -254,7 +254,7 @@ impl ConversationState {
             input
         };
 
-        let msg = UserMessage::new_prompt(input, Some(Utc::now()));
+        let msg = UserMessage::new_prompt(input, Some(Local::now().fixed_offset()));
         self.next_message = Some(msg);
     }
 
@@ -346,7 +346,7 @@ impl ConversationState {
         self.next_message = Some(UserMessage::new_tool_use_results_with_images(
             tool_results,
             images,
-            Some(Utc::now()),
+            Some(Local::now().fixed_offset()),
         ));
     }
 
@@ -355,7 +355,7 @@ impl ConversationState {
         self.next_message = Some(UserMessage::new_cancelled_tool_uses(
             Some(deny_input),
             tools_to_be_abandoned.iter().map(|t| t.id.as_str()),
-            Some(Utc::now()),
+            Some(Local::now().fixed_offset()),
         ));
     }
 
