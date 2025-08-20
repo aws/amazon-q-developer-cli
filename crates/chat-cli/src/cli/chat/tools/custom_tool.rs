@@ -35,8 +35,8 @@ use crate::mcp_client::{
     ToolCallResult,
 };
 use crate::os::Os;
-use crate::util::pattern_matching::matches_any_pattern;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
+use crate::util::pattern_matching::matches_any_pattern;
 
 // TODO: support http transport type
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]

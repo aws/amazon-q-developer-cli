@@ -19,8 +19,8 @@ use crate::cli::agent::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::pattern_matching::matches_any_pattern;
 use crate::util::knowledge_store::KnowledgeStore;
+use crate::util::pattern_matching::matches_any_pattern;
 
 /// The Knowledge tool allows storing and retrieving information across chat sessions.
 /// It provides semantic search capabilities for files, directories, and text content.
