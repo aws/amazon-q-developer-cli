@@ -1,36 +1,8 @@
-use q_cli_e2e_tests::q_chat_helper::QChatSession;
-use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
+use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-static INIT: Once = Once::new();
-static mut CHAT_SESSION: Option<Mutex<QChatSession>> = None;
 static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
-static TOTAL_TESTS: usize = 8; // Updated for active tests
-
-fn get_chat_session() -> &'static Mutex<QChatSession> {
-    unsafe {
-        INIT.call_once(|| {
-            let chat = QChatSession::new().expect("Failed to create chat session");
-            println!("✅ Q Chat session started");
-            CHAT_SESSION = Some(Mutex::new(chat));
-        });
-        CHAT_SESSION.as_ref().unwrap()
-    }
-}
-
-fn cleanup_if_last_test() -> Result<(), Box<dyn std::error::Error>> {
-    let count = TEST_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
-    if count == TOTAL_TESTS {
-        unsafe {
-            if let Some(session) = &CHAT_SESSION {
-                if let Ok(mut chat) = session.lock() {
-                    chat.quit()?;
-                    println!("✅ Test completed successfully");
-                }
-            }
-        }
-    }
-    Ok(())
-}
+const TOTAL_TESTS: usize = 9; // Updated for active tests
 
 #[test]
 #[cfg(feature = "agent")]
@@ -78,7 +50,7 @@ fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     drop(chat);
     
     // Cleanup only if this is the last test
-    cleanup_if_last_test()?;
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
     Ok(())
 }
@@ -145,7 +117,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
     drop(chat);
     
     // Cleanup only if this is the last test
-    cleanup_if_last_test()?;
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
     Ok(())
 }
@@ -194,7 +166,7 @@ fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
     drop(chat);
     
     // Cleanup only if this is the last test
-    cleanup_if_last_test()?;
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
     Ok(())
 }
@@ -249,7 +221,7 @@ fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
     drop(chat);
     
     // Cleanup only if this is the last test
-    cleanup_if_last_test()?;
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
     Ok(())
 }
@@ -286,7 +258,7 @@ fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
     drop(chat);
     
     // Cleanup only if this is the last test
-    cleanup_if_last_test()?;
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
     Ok(())
 }
@@ -318,7 +290,7 @@ fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
     drop(chat);
     
     // Cleanup only if this is the last test
-    cleanup_if_last_test()?;
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
     Ok(())
 }
@@ -357,7 +329,7 @@ fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
 //     drop(chat);
     
 //     // Cleanup only if this is the last test
-//     cleanup_if_last_test()?;
+//     cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
 //     Ok(())
 // }
@@ -396,7 +368,7 @@ fn test_agent_set_default_command() -> Result<(), Box<dyn std::error::Error>> {
     drop(chat);
     
     // Cleanup only if this is the last test
-    cleanup_if_last_test()?;
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
     Ok(())
 }
@@ -444,7 +416,7 @@ fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error
     drop(chat);
     
     // Cleanup only if this is the last test
-    cleanup_if_last_test()?;
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
     Ok(())
 }
