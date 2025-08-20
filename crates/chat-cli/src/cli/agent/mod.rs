@@ -849,7 +849,7 @@ fn default_schema() -> String {
     "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
 }
 
-fn is_mcp_ref(s: &str) -> bool {
+pub fn is_mcp_ref(s: &str) -> bool {
     // Any tool reference starting with '@' is considered MCP (e.g., "@git", "@git/git_status").
     s.starts_with('@')
 }
