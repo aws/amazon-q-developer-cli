@@ -1,24 +1,23 @@
-use q_cli_e2e_tests::q_chat_helper::QChatSession;
+use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+// List of covered tests
+const TEST_NAMES: &[&str] = &[
+    "test_usage_command",
+    "test_usage_help_command",
+];
+const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
 #[cfg(feature = "usage")]
-fn test_all_usage_commands() -> Result<(), Box<dyn std::error::Error>> {
-    let mut chat = QChatSession::new()?;
-    println!(":white_check_mark: Q Chat session started");
-    
-    test_usage_command(&mut chat)?;
-    test_usage_help_command(&mut chat)?;
-    
-    chat.quit()?;
-    println!(":white_check_mark: All tests completed successfully");
-    Ok(())
-}
-fn test_usage_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error::Error>> {
+fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /usage command...");
     
-   let mut chat = QChatSession::new()?;
-    println!("✅ Q Chat session started");
-    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
     let response = chat.execute_command("/usage")?;
     
     println!("📝 Tools response: {} bytes", response.len());
@@ -59,18 +58,25 @@ fn test_usage_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error:
     
     println!("✅ All usage content verified!");
     
-    chat.quit()?;
     println!("✅ Test completed successfully");
     
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
     Ok(())
 }
 
-fn test_usage_help_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+#[cfg(feature = "usage")]
+fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /usage --help command...");
     
-    let mut chat = QChatSession::new()?;
-    println!("✅ Q Chat session started");
-    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
     let response = chat.execute_command("/usage --help")?;
     
     println!("📝 Usage help response: {} bytes", response.len());
@@ -97,8 +103,13 @@ fn test_usage_help_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::e
     
     println!("✅ All usage help content verified!");
     
-    chat.quit()?;
     println!("✅ Test completed successfully");
     
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
     Ok(())
 }

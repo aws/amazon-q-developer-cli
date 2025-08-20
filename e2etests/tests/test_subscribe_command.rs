@@ -1,20 +1,23 @@
-use q_cli_e2e_tests::q_chat_helper::QChatSession;
+use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+// List of covered tests
+const TEST_NAMES: &[&str] = &[
+    "test_subscribe_command",
+    "test_subscribe_help_command",
+];
+const TOTAL_TESTS: usize = TEST_NAMES.len();
+
 
 #[test]
 #[cfg(feature = "subscribe")]
-fn test_all_subscribe_commands() -> Result<(), Box<dyn std::error::Error>> {
-    let mut chat = QChatSession::new()?;
-    println!(":white_check_mark: Q Chat session started");
-    
-    test_subscribe_command(&mut chat)?;
-    test_subscribe_help_command(&mut chat)?;
-    
-    chat.quit()?;
-    println!(":white_check_mark: All tests completed successfully");
-    Ok(())
-}
-fn test_subscribe_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error::Error>> {
+fn test_subscribe_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /subscribe command...");
+
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
 
     let response = chat.execute_command("/subscribe")?;
     
@@ -29,12 +32,21 @@ fn test_subscribe_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::er
     
     println!("✅ All subscribe content verified!");
 
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
     
     Ok(())
 }
-
-fn test_subscribe_help_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+#[cfg(feature = "subscribe")]
+fn test_subscribe_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /subscribe --help command...");
+
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
 
     let response = chat.execute_command("/subscribe --help")?;
     
@@ -67,6 +79,11 @@ fn test_subscribe_help_command(chat: &mut QChatSession) -> Result<(), Box<dyn st
     
     println!("✅ All subscribe help content verified!");
     
+    // Release the lock before cleanup
+    drop(chat);
     
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
     Ok(())
 }

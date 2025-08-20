@@ -1,23 +1,23 @@
-use q_cli_e2e_tests::q_chat_helper::QChatSession;
+use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+// List of covered tests
+const TEST_NAMES: &[&str] = &[
+    "test_hooks_command",
+    "test_hooks_help_command",
+];
+const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
 #[cfg(feature = "hooks")]
-fn test_all_hoooks_commands() -> Result<(), Box<dyn std::error::Error>> {
-    let mut chat = QChatSession::new()?;
-    println!(":white_check_mark: Q Chat session started");
-    
-    test_hooks_command(&mut chat)?;
-    test_hooks_help_command(&mut chat)?;
-    
-    chat.quit()?;
-    println!(":white_check_mark: All tests completed successfully");
-    Ok(())
-}
-
-fn test_hooks_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error::Error>> {
+fn test_hooks_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /hooks command...");
     
-    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
     let response = chat.execute_command("/hooks")?;
     
     println!("📝 Hooks command response: {} bytes", response.len());
@@ -36,12 +36,23 @@ fn test_hooks_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error:
     
     println!("✅ All hooks command functionality verified!");
     
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
     Ok(())
 }
 
-fn test_hooks_help_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+#[cfg(feature = "hooks")]
+fn test_hooks_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /hooks --help command...");
     
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
     let response = chat.execute_command("/hooks --help")?;
     
     println!("📝 Hooks help response: {} bytes", response.len());
@@ -80,6 +91,11 @@ fn test_hooks_help_command(chat: &mut QChatSession) -> Result<(), Box<dyn std::e
     
     println!("✅ All hooks help content verified!");
     
+     // Release the lock before cleanup
+    drop(chat);
     
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
     Ok(())
 }
