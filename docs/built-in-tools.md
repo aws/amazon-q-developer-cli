@@ -57,8 +57,8 @@ Tool for reading files, directories, and images.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `allowedPaths` | array of strings | `[]` | List of paths that can be read without prompting. Supports glob patterns |
-| `deniedPaths` | array of strings | `[]` | List of paths that are denied. Supports glob patterns. Deny rules are evaluated before allow rules |
+| `allowedPaths` | array of strings | `[]` | List of paths that can be read without prompting. Supports glob patterns. Glob patterns have the same behavior as gitignore. For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
+| `deniedPaths` | array of strings | `[]` | List of paths that are denied. Supports glob patterns. Deny rules are evaluated before allow rules. Glob patterns have the same behavior as gitignore. For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild`  |
 
 ## Fs_write Tool
 
@@ -81,8 +81,8 @@ Tool for creating and editing files.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `allowedPaths` | array of strings | `[]` | List of paths that can be written to without prompting. Supports glob patterns |
-| `deniedPaths` | array of strings | `[]` | List of paths that are denied. Supports glob patterns. Deny rules are evaluated before allow rules |
+| `allowedPaths` | array of strings | `[]` | List of paths that can be written to without prompting. Supports glob patterns. Glob patterns have the same behavior as gitignore.For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
+| `deniedPaths` | array of strings | `[]` | List of paths that are denied. Supports glob patterns. Deny rules are evaluated before allow rules. Glob patterns have the same behavior as gitignore.For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
 
 ## Report_issue Tool
 
