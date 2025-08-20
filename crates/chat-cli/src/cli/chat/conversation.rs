@@ -135,7 +135,6 @@ impl ConversationState {
         current_model_id: Option<String>,
         os: &Os,
     ) -> Self {
-
         let model = if let Some(model_id) = current_model_id {
             match get_model_info(&model_id, os).await {
                 Ok(info) => Some(info),
@@ -1279,5 +1278,4 @@ mod tests {
             conversation.set_next_user_message(i.to_string()).await;
         }
     }
-
 }

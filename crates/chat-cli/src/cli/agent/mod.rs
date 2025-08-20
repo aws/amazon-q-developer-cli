@@ -694,12 +694,12 @@ impl Agents {
     /// Returns a label to describe the permission status for a given tool.
     pub fn display_label(&self, tool_name: &str, origin: &ToolOrigin) -> String {
         use crate::util::pattern_matching::matches_any_pattern;
-        
+
         let tool_trusted = self.get_active().is_some_and(|a| {
             if matches!(origin, &ToolOrigin::Native) {
                 return matches_any_pattern(&a.allowed_tools, tool_name);
             }
-            
+
             a.allowed_tools.iter().any(|name| {
                 name.strip_prefix("@").is_some_and(|remainder| {
                     remainder
@@ -959,42 +959,62 @@ mod tests {
     #[test]
     fn test_display_label_no_active_agent() {
         let agents = Agents::default();
-        
+
         let label = agents.display_label("fs_read", &ToolOrigin::Native);
         // With no active agent, it should fall back to default permissions
         // fs_read has a default of "trusted"
-        assert!(label.contains("trusted"), "fs_read should show default trusted permission, instead found: {}", label);
+        assert!(
+            label.contains("trusted"),
+            "fs_read should show default trusted permission, instead found: {}",
+            label
+        );
     }
 
     #[test]
     fn test_display_label_trust_all_tools() {
         let mut agents = Agents::default();
         agents.trust_all_tools = true;
-        
+
         // Should be trusted even if not in allowed_tools
         let label = agents.display_label("random_tool", &ToolOrigin::Native);
-        assert!(label.contains("trusted"), "trust_all_tools should make everything trusted, instead found: {}", label);
+        assert!(
+            label.contains("trusted"),
+            "trust_all_tools should make everything trusted, instead found: {}",
+            label
+        );
     }
 
     #[test]
     fn test_display_label_default_permissions() {
         let agents = Agents::default();
-        
+
         // Test default permissions for known tools
         let fs_read_label = agents.display_label("fs_read", &ToolOrigin::Native);
-        assert!(fs_read_label.contains("trusted"), "fs_read should be trusted by default, instead found: {}", fs_read_label);
-        
+        assert!(
+            fs_read_label.contains("trusted"),
+            "fs_read should be trusted by default, instead found: {}",
+            fs_read_label
+        );
+
         let fs_write_label = agents.display_label("fs_write", &ToolOrigin::Native);
-        assert!(fs_write_label.contains("not trusted"), "fs_write should not be trusted by default, instead found: {}", fs_write_label);
-        
+        assert!(
+            fs_write_label.contains("not trusted"),
+            "fs_write should not be trusted by default, instead found: {}",
+            fs_write_label
+        );
+
         let execute_bash_label = agents.display_label("execute_bash", &ToolOrigin::Native);
-        assert!(execute_bash_label.contains("read-only"), "execute_bash should show read-only by default, instead found: {}", execute_bash_label);
+        assert!(
+            execute_bash_label.contains("read-only"),
+            "execute_bash should show read-only by default, instead found: {}",
+            execute_bash_label
+        );
     }
 
     #[test]
     fn test_display_label_comprehensive_patterns() {
         let mut agents = Agents::default();
-        
+
         // Create agent with all types of patterns
         let mut allowed_tools = HashSet::new();
         // Native exact match
@@ -1007,7 +1027,7 @@ mod tests {
         allowed_tools.insert("@server2/specific_tool".to_string());
         // MCP tool wildcard
         allowed_tools.insert("@server3/tool_*".to_string());
-        
+
         let agent = Agent {
             schema: "test".to_string(),
             name: "test-agent".to_string(),
@@ -1023,40 +1043,72 @@ mod tests {
             use_legacy_mcp_json: false,
             path: None,
         };
-        
+
         agents.agents.insert("test-agent".to_string(), agent);
         agents.active_idx = "test-agent".to_string();
-        
+
         // Test 1: Native exact match
         let label = agents.display_label("fs_read", &ToolOrigin::Native);
-        assert!(label.contains("trusted"), "fs_read should be trusted (exact match), instead found: {}", label);
-        
+        assert!(
+            label.contains("trusted"),
+            "fs_read should be trusted (exact match), instead found: {}",
+            label
+        );
+
         // Test 2: Native wildcard match
         let label = agents.display_label("execute_bash", &ToolOrigin::Native);
-        assert!(label.contains("trusted"), "execute_bash should match execute_* pattern, instead found: {}", label);
-        
+        assert!(
+            label.contains("trusted"),
+            "execute_bash should match execute_* pattern, instead found: {}",
+            label
+        );
+
         // Test 3: Native no match
         let label = agents.display_label("fs_write", &ToolOrigin::Native);
-        assert!(!label.contains("trusted") || label.contains("not trusted"), "fs_write should not be trusted, instead found: {}", label);
-        
+        assert!(
+            !label.contains("trusted") || label.contains("not trusted"),
+            "fs_write should not be trusted, instead found: {}",
+            label
+        );
+
         // Test 4: MCP server exact match (allows any tool from server1)
         let label = agents.display_label("any_tool", &ToolOrigin::McpServer("server1".to_string()));
-        assert!(label.contains("trusted"), "Server-level permission should allow any tool, instead found: {}", label);
-        
+        assert!(
+            label.contains("trusted"),
+            "Server-level permission should allow any tool, instead found: {}",
+            label
+        );
+
         // Test 5: MCP tool exact match
         let label = agents.display_label("specific_tool", &ToolOrigin::McpServer("server2".to_string()));
-        assert!(label.contains("trusted"), "Exact MCP tool should be trusted, instead found: {}", label);
-        
+        assert!(
+            label.contains("trusted"),
+            "Exact MCP tool should be trusted, instead found: {}",
+            label
+        );
+
         // Test 6: MCP tool wildcard match
         let label = agents.display_label("tool_read", &ToolOrigin::McpServer("server3".to_string()));
-        assert!(label.contains("trusted"), "tool_read should match @server3/tool_* pattern, instead found: {}", label);
-        
+        assert!(
+            label.contains("trusted"),
+            "tool_read should match @server3/tool_* pattern, instead found: {}",
+            label
+        );
+
         // Test 7: MCP tool no match
         let label = agents.display_label("other_tool", &ToolOrigin::McpServer("server2".to_string()));
-        assert!(!label.contains("trusted") || label.contains("not trusted"), "Non-matching MCP tool should not be trusted, instead found: {}", label);
-        
+        assert!(
+            !label.contains("trusted") || label.contains("not trusted"),
+            "Non-matching MCP tool should not be trusted, instead found: {}",
+            label
+        );
+
         // Test 8: MCP server no match
         let label = agents.display_label("some_tool", &ToolOrigin::McpServer("unknown_server".to_string()));
-        assert!(!label.contains("trusted") || label.contains("not trusted"), "Unknown server should not be trusted, instead found: {}", label);
+        assert!(
+            !label.contains("trusted") || label.contains("not trusted"),
+            "Unknown server should not be trusted, instead found: {}",
+            label
+        );
     }
 }
