@@ -13,23 +13,14 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::os::Os;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct McpArgs;
 
 impl McpArgs {
-    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        let mcp_enabled = match os.client.is_mcp_enabled().await {
-            Ok(enabled) => enabled,
-            Err(err) => {
-                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
-                true
-            },
-        };
-
-        if !mcp_enabled {
+    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        if !session.conversation.mcp_enabled {
             queue!(
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),

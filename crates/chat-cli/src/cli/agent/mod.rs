@@ -421,9 +421,6 @@ impl Agents {
             );
         }
 
-        // // Store MCP status in database for later use
-        // let _ = os.database.settings.set(Setting::McpEnabled, mcp_enabled).await;
-
         // Tracking metadata about the performed load operation.
         let mut load_metadata = AgentsLoadMetadata::default();
 
