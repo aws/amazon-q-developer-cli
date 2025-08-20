@@ -54,10 +54,6 @@ pub use wrapper_types::{
     tool_settings_schema,
 };
 
-use super::chat::tools::execute::ExecuteCommand;
-use super::chat::tools::fs_read::FsRead;
-use super::chat::tools::fs_write::FsWrite;
-use super::chat::tools::use_aws::UseAws;
 use super::chat::tools::{
     DEFAULT_APPROVE,
     NATIVE_TOOLS,
@@ -217,8 +213,8 @@ impl Agent {
 
         self.path = Some(path.to_path_buf());
 
-        let mut stderr = std::io::stderr();
         if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
+            let mut stderr = std::io::stderr();
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
@@ -239,58 +235,6 @@ impl Agent {
                 let mut server_clone = legacy_server.clone();
                 server_clone.is_from_legacy_mcp_json = true;
                 mcp_servers.mcp_servers.insert(name.clone(), server_clone);
-            }
-        }
-
-        stderr.flush()?;
-
-        Ok(())
-    }
-
-    pub fn validate_tool_settings(&self, output: &mut impl Write) -> Result<(), AgentConfigError> {
-        let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        for allowed_tool in &self.allowed_tools {
-            if let Some(settings) = self.tools_settings.get(allowed_tool.as_str()) {
-                // currently we only have four native tools that offers tool settings
-                match allowed_tool.as_str() {
-                    "fs_read" => {
-                        if let Some(overridden_settings) = FsRead::allowable_field_to_be_overridden(settings) {
-                            queue_permission_override_warning(
-                                allowed_tool.as_str(),
-                                overridden_settings.as_str(),
-                                output,
-                            )?;
-                        }
-                    },
-                    "fs_write" => {
-                        if let Some(overridden_settings) = FsWrite::allowable_field_to_be_overridden(settings) {
-                            queue_permission_override_warning(
-                                allowed_tool.as_str(),
-                                overridden_settings.as_str(),
-                                output,
-                            )?;
-                        }
-                    },
-                    "use_aws" => {
-                        if let Some(overridden_settings) = UseAws::allowable_field_to_be_overridden(settings) {
-                            queue_permission_override_warning(
-                                allowed_tool.as_str(),
-                                overridden_settings.as_str(),
-                                output,
-                            )?;
-                        }
-                    },
-                    name if name == execute_name => {
-                        if let Some(overridden_settings) = ExecuteCommand::allowable_field_to_be_overridden(settings) {
-                            queue_permission_override_warning(
-                                allowed_tool.as_str(),
-                                overridden_settings.as_str(),
-                                output,
-                            )?;
-                        }
-                    },
-                    _ => {},
-                }
             }
         }
 
@@ -910,28 +854,6 @@ async fn load_legacy_mcp_config(os: &Os) -> eyre::Result<Option<McpServerConfig>
         (Some(wc), None) => Some(wc),
         _ => None,
     })
-}
-
-pub fn queue_permission_override_warning(
-    tool_name: &str,
-    overridden_settings: &str,
-    output: &mut impl Write,
-) -> Result<(), std::io::Error> {
-    Ok(queue!(
-        output,
-        style::SetForegroundColor(Color::Yellow),
-        style::Print("WARN: "),
-        style::ResetColor,
-        style::Print("You have trusted "),
-        style::SetForegroundColor(Color::Green),
-        style::Print(tool_name),
-        style::ResetColor,
-        style::Print(" tool, which overrides the toolsSettings: "),
-        style::SetForegroundColor(Color::Cyan),
-        style::Print(overridden_settings),
-        style::ResetColor,
-        style::Print("\n"),
-    )?)
 }
 
 fn default_schema() -> String {

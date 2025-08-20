@@ -124,7 +124,7 @@ pub struct Client<T: Transport> {
     server_name: String,
     transport: Arc<T>,
     timeout: u64,
-    server_process_id: Option<Pid>,
+    pub server_process_id: Option<Pid>,
     client_info: serde_json::Value,
     current_id: Arc<AtomicU64>,
     pub messenger: Option<Box<dyn Messenger>>,
@@ -275,6 +275,9 @@ where
     fn drop(&mut self) {
         if let Some(process_id) = self.server_process_id {
             let _ = terminate_process(process_id);
+        }
+        if let Some(ref messenger) = self.messenger {
+            messenger.send_deinit_msg();
         }
     }
 }
@@ -604,44 +607,34 @@ fn examine_server_capabilities(ser_cap: &JsonRpcResponse) -> Result<(), ClientEr
     Ok(())
 }
 
-// TODO: after we move prompts to tool manager, use the messenger to notify the listener spawned by
-// tool manager to update its own field. Currently this function does not make use of the
-// messesnger.
 #[allow(clippy::borrowed_box)]
-async fn fetch_prompts_and_notify_with_messenger<T>(client: &Client<T>, _messenger: Option<&Box<dyn Messenger>>)
+async fn fetch_prompts_and_notify_with_messenger<T>(client: &Client<T>, messenger: Option<&Box<dyn Messenger>>)
 where
     T: Transport,
 {
-    let Ok(resp) = client.request("prompts/list", None).await else {
-        tracing::error!("Prompt list query failed for {0}", client.server_name);
-        return;
+    let prompt_list_result = 'prompt_list_result: {
+        let Ok(resp) = client.request("prompts/list", None).await else {
+            tracing::error!("Prompt list query failed for {0}", client.server_name);
+            return;
+        };
+        let Some(result) = resp.result else {
+            tracing::warn!("Prompt list query returned no result for {0}", client.server_name);
+            return;
+        };
+        let prompt_list_result = match serde_json::from_value::<PromptsListResult>(result) {
+            Ok(res) => res,
+            Err(e) => {
+                let msg = format!("Failed to deserialize tool result from {}: {:?}", client.server_name, e);
+                break 'prompt_list_result Err(eyre::eyre!(msg));
+            },
+        };
+        Ok::<PromptsListResult, eyre::Report>(prompt_list_result)
     };
-    let Some(result) = resp.result else {
-        tracing::warn!("Prompt list query returned no result for {0}", client.server_name);
-        return;
-    };
-    let Some(prompts) = result.get("prompts") else {
-        tracing::warn!(
-            "Prompt list query result contained no field named prompts for {0}",
-            client.server_name
-        );
-        return;
-    };
-    let Ok(prompts) = serde_json::from_value::<Vec<PromptGet>>(prompts.clone()) else {
-        tracing::error!("Prompt list query deserialization failed for {0}", client.server_name);
-        return;
-    };
-    let Ok(mut lock) = client.prompt_gets.write() else {
-        tracing::error!(
-            "Failed to obtain write lock for prompt list query for {0}",
-            client.server_name
-        );
-        return;
-    };
-    lock.clear();
-    for prompt in prompts {
-        let name = prompt.name.clone();
-        lock.insert(name, prompt);
+
+    if let Some(messenger) = messenger {
+        if let Err(e) = messenger.send_prompts_list_result(prompt_list_result).await {
+            tracing::error!("Failed to send prompt result through messenger: {:?}", e);
+        }
     }
 }
 
@@ -674,11 +667,11 @@ where
         };
         Ok::<ToolsListResult, eyre::Report>(tool_list_result)
     };
+
     if let Some(messenger) = messenger {
-        let _ = messenger
-            .send_tools_list_result(tool_list_result)
-            .await
-            .map_err(|e| tracing::error!("Failed to send tool result through messenger {:?}", e));
+        if let Err(e) = messenger.send_tools_list_result(tool_list_result).await {
+            tracing::error!("Failed to send tool result through messenger {:?}", e);
+        }
     }
 }
 

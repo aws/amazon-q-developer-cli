@@ -37,6 +37,9 @@ pub enum KnowledgeSubcommand {
         /// Exclude patterns (e.g., `node_modules/**`, `target/**`)
         #[arg(long, action = clap::ArgAction::Append)]
         exclude: Vec<String>,
+        /// Index type to use (Fast, Best)
+        #[arg(long)]
+        index_type: Option<String>,
     },
     /// Remove specified knowledge base entry by path
     #[command(alias = "rm")]
@@ -108,7 +111,12 @@ impl KnowledgeSubcommand {
                     Err(e) => OperationResult::Error(format!("Failed to show knowledge base entries: {}", e)),
                 }
             },
-            KnowledgeSubcommand::Add { path, include, exclude } => Self::handle_add(os, path, include, exclude).await,
+            KnowledgeSubcommand::Add {
+                path,
+                include,
+                exclude,
+                index_type,
+            } => Self::handle_add(os, path, include, exclude, index_type).await,
             KnowledgeSubcommand::Remove { path } => Self::handle_remove(os, path).await,
             KnowledgeSubcommand::Update { path } => Self::handle_update(os, path).await,
             KnowledgeSubcommand::Clear => Self::handle_clear(os, session).await,
@@ -205,7 +213,11 @@ impl KnowledgeSubcommand {
             session.stderr,
             style::Print("   Items: "),
             style::SetForegroundColor(Color::Yellow),
-            style::Print(format!("{}", entry.item_count)),
+            style::Print(entry.item_count.to_string()),
+            style::SetForegroundColor(Color::Reset),
+            style::Print(" | Index Type: "),
+            style::SetForegroundColor(Color::Magenta),
+            style::Print(entry.embedding_type.description().to_string()),
             style::SetForegroundColor(Color::Reset),
             style::Print(" | Persistent: ")
         )?;
@@ -231,11 +243,21 @@ impl KnowledgeSubcommand {
     }
 
     /// Handle add operation
+    fn get_db_patterns(os: &crate::os::Os, setting: crate::database::settings::Setting) -> Vec<String> {
+        os.database
+            .settings
+            .get(setting)
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default()
+    }
+
     async fn handle_add(
         os: &Os,
         path: &str,
         include_patterns: &[String],
         exclude_patterns: &[String],
+        index_type: &Option<String>,
     ) -> OperationResult {
         match Self::validate_and_sanitize_path(os, path) {
             Ok(sanitized_path) => {
@@ -245,13 +267,29 @@ impl KnowledgeSubcommand {
                 };
                 let mut store = async_knowledge_store.lock().await;
 
-                let options = if include_patterns.is_empty() && exclude_patterns.is_empty() {
-                    crate::util::knowledge_store::AddOptions::with_db_defaults(os)
+                let include = if include_patterns.is_empty() {
+                    Self::get_db_patterns(os, crate::database::settings::Setting::KnowledgeDefaultIncludePatterns)
                 } else {
-                    crate::util::knowledge_store::AddOptions::new()
-                        .with_include_patterns(include_patterns.to_vec())
-                        .with_exclude_patterns(exclude_patterns.to_vec())
+                    include_patterns.to_vec()
                 };
+
+                let exclude = if exclude_patterns.is_empty() {
+                    Self::get_db_patterns(os, crate::database::settings::Setting::KnowledgeDefaultExcludePatterns)
+                } else {
+                    exclude_patterns.to_vec()
+                };
+
+                let embedding_type_resolved = index_type.clone().or_else(|| {
+                    os.database
+                        .settings
+                        .get(crate::database::settings::Setting::KnowledgeIndexType)
+                        .and_then(|v| v.as_str().map(|s| s.to_string()))
+                });
+
+                let options = crate::util::knowledge_store::AddOptions::new()
+                    .with_include_patterns(include)
+                    .with_exclude_patterns(exclude)
+                    .with_embedding_type(embedding_type_resolved);
 
                 match store.add(path, &sanitized_path.clone(), options).await {
                     Ok(message) => OperationResult::Info(message),
@@ -586,7 +624,10 @@ mod tests {
         assert!(result.is_ok());
         let cli = result.unwrap();
 
-        if let KnowledgeSubcommand::Add { path, include, exclude } = cli.knowledge {
+        if let KnowledgeSubcommand::Add {
+            path, include, exclude, ..
+        } = cli.knowledge
+        {
             assert_eq!(path, "/some/path");
             assert_eq!(include, vec!["*.rs", "**/*.md"]);
             assert_eq!(exclude, vec!["node_modules/**", "target/**"]);
@@ -615,7 +656,10 @@ mod tests {
         assert!(result.is_ok());
 
         let cli = result.unwrap();
-        if let KnowledgeSubcommand::Add { path, include, exclude } = cli.knowledge {
+        if let KnowledgeSubcommand::Add {
+            path, include, exclude, ..
+        } = cli.knowledge
+        {
             assert_eq!(path, "/some/path");
             assert!(include.is_empty());
             assert!(exclude.is_empty());

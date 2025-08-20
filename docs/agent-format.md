@@ -160,7 +160,6 @@ Unlike the `tools` field, the `allowedTools` field does not support the `"*"` wi
 ## ToolsSettings Field
 
 The `toolsSettings` field provides configuration for specific tools. Each tool can have its own unique configuration options.
-Note that specifications that configure allowable patterns will be overridden if the tool is also included in `allowedTools`.
 
 ```json
 {
@@ -234,7 +233,7 @@ The `useLegacyMcpJson` field determines whether to include MCP servers defined i
 }
 ```
 
-When set to `true`, the agent will have access to all MCP servers defined in the global configuration in addition to those defined in the agent's `mcpServers` field.
+When set to `true`, the agent will have access to all MCP servers defined in the global and local configurations in addition to those defined in the agent's `mcpServers` field.
 
 ## Complete Example
 

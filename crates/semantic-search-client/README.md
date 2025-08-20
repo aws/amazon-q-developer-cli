@@ -1,6 +1,6 @@
 # Semantic Search Client
 
-Rust library for managing semantic memory contexts with vector embeddings, enabling semantic search capabilities across text and code.
+Rust library for managing semantic memory contexts with multiple index types (BM25 and vector embeddings), enabling both fast keyword search and intelligent semantic search capabilities across text and code.
 
 [![Crate](https://img.shields.io/crates/v/semantic_search_client.svg)](https://crates.io/crates/semantic_search_client)
 [![Documentation](https://docs.rs/semantic_search_client/badge.svg)](https://docs.rs/semantic_search_client)
@@ -10,6 +10,7 @@ Rust library for managing semantic memory contexts with vector embeddings, enabl
 - **Async-First Design**: Built for modern async Rust applications with tokio
 - **Semantic Memory Management**: Create, store, and search through semantic memory contexts
 - **Pattern Filtering**: Include/exclude files using glob-style patterns during indexing
+- **Multiple Index Types**: Choose between Fast (BM25) for keyword search or Best (semantic) for intelligent search
 - **Vector Embeddings**: Generate high-quality text embeddings for semantic similarity search
 - **Multi-Platform Support**: Works on macOS, Windows, and Linux with optimized backends
 - **Hardware Acceleration**: Uses Metal on macOS and optimized backends on other platforms
@@ -110,21 +111,29 @@ Contexts can be either:
 
 Each context contains data points, which are individual pieces of text with associated metadata and vector embeddings. Data points are the atomic units of search.
 
-### Embeddings
+### Index Types
 
-Text is converted to vector embeddings using different backends based on platform and architecture:
+The library supports two index types for different use cases:
 
-- **macOS/Windows**: Uses ONNX Runtime with FastEmbed by default
-- **Linux (non-ARM)**: Uses Candle for embeddings
-- **Linux (ARM64)**: Uses BM25 keyword-based embeddings as a fallback
+**Fast (BM25)**:
+- Lightning-fast keyword-based search
+- Instant indexing with minimal resource usage
+- Perfect for logs, configuration files, and large codebases
+- Available on all platforms
 
-## Embedding Backends
+**Best (Semantic)**:
+- Intelligent semantic search with natural language understanding
+- Uses vector embeddings with different backends based on platform:
+  - **macOS/Windows**: Candle with optimized models
+  - **Linux (non-ARM)**: Candle for embeddings
+  - **Linux (ARM64)**: Falls back to BM25 when semantic models unavailable
 
-The library supports multiple embedding backends with automatic selection based on platform compatibility:
+## Index Types and Backends
 
-1. **ONNX**: Fastest option, available on macOS and Windows
-2. **Candle**: Good performance, used on Linux (non-ARM)
-3. **BM25**: Fallback option based on keyword matching, used on Linux ARM64
+The library supports multiple index types with automatic backend selection:
+
+1. **Candle**: Good performance, used on Linux (non-ARM)
+2. **BM25**: Keyword matching, used on Linux ARM64
 
 The default selection logic prioritizes performance where possible:
 - macOS/Windows: ONNX is the default
@@ -365,7 +374,7 @@ let request = AddContextRequest {
 
 ## Advanced Features
 
-### Custom Embedding Models
+### Custom Index Types
 
 The library supports different embedding backends:
 

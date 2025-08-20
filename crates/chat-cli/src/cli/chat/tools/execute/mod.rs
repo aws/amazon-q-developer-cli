@@ -186,12 +186,6 @@ impl ExecuteCommand {
         Ok(())
     }
 
-    pub fn allowable_field_to_be_overridden(settings: &serde_json::Value) -> Option<String> {
-        settings
-            .get("allowedCommands")
-            .map(|value| format!("allowedCommands: {}", value))
-    }
-
     pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -212,7 +206,7 @@ impl ExecuteCommand {
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let is_in_allowlist = agent.allowed_tools.contains(tool_name);
         match agent.tools_settings.get(tool_name) {
-            Some(settings) => {
+            Some(settings) if is_in_allowlist => {
                 let Settings {
                     allowed_commands,
                     denied_commands,
@@ -236,7 +230,7 @@ impl ExecuteCommand {
                     return PermissionEvalResult::Deny(denied_match_set);
                 }
 
-                if !is_in_allowlist || self.requires_acceptance(Some(&allowed_commands), allow_read_only) {
+                if self.requires_acceptance(Some(&allowed_commands), allow_read_only) {
                     PermissionEvalResult::Ask
                 } else {
                     PermissionEvalResult::Allow
@@ -273,7 +267,10 @@ pub fn format_output(output: &str, max_size: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{
+        HashMap,
+        HashSet,
+    };
 
     use super::*;
     use crate::cli::agent::ToolSettingTarget;
@@ -427,8 +424,13 @@ mod tests {
     #[test]
     fn test_eval_perm() {
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        let mut agent = Agent {
+        let agent = Agent {
             name: "test_agent".to_string(),
+            allowed_tools: {
+                let mut allowed_tools = HashSet::<String>::new();
+                allowed_tools.insert(tool_name.to_string());
+                allowed_tools
+            },
             tools_settings: {
                 let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
                 map.insert(
@@ -442,32 +444,20 @@ mod tests {
             ..Default::default()
         };
 
-        let tool_one = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+        let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "git status",
         }))
         .unwrap();
 
-        let res = tool_one.eval_perm(&agent);
+        let res = tool.eval_perm(&agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
 
-        let tool_two = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+        let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "echo hello",
         }))
         .unwrap();
 
-        let res = tool_two.eval_perm(&agent);
-        assert!(matches!(res, PermissionEvalResult::Ask));
-
-        agent.allowed_tools.insert(tool_name.to_string());
-
-        let res = tool_two.eval_perm(&agent);
-        assert!(matches!(res, PermissionEvalResult::Allow));
-
-        // Denied list should remain denied
-        let res = tool_one.eval_perm(&agent);
-        assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
-
-        let res = tool_two.eval_perm(&agent);
+        let res = tool.eval_perm(&agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
     }
 

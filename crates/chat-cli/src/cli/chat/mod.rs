@@ -96,6 +96,8 @@ use tokio::sync::{
     broadcast,
 };
 use tool_manager::{
+    PromptQuery,
+    PromptQueryResult,
     ToolManager,
     ToolManagerBuilder,
 };
@@ -123,10 +125,7 @@ use util::{
 use winnow::Partial;
 use winnow::stream::Offset;
 
-use super::agent::{
-    DEFAULT_AGENT_NAME,
-    PermissionEvalResult,
-};
+use super::agent::PermissionEvalResult;
 use crate::api_client::model::ToolResultStatus;
 use crate::api_client::{
     self,
@@ -337,11 +336,14 @@ impl ChatArgs {
             Some(default_model_opt.model_id.clone())
         };
 
-        let (prompt_request_sender, prompt_request_receiver) = std::sync::mpsc::channel::<Option<String>>();
-        let (prompt_response_sender, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (prompt_response_sender, prompt_response_receiver) =
+            tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let mut tool_manager = ToolManagerBuilder::default()
-            .prompt_list_sender(prompt_response_sender)
-            .prompt_list_receiver(prompt_request_receiver)
+            .prompt_query_result_sender(prompt_response_sender)
+            .prompt_query_receiver(prompt_request_receiver)
+            .prompt_query_sender(prompt_request_sender.clone())
+            .prompt_query_result_receiver(prompt_response_receiver.resubscribe())
             .conversation_id(&conversation_id)
             .agent(agents.get_active().cloned().unwrap_or_default())
             .build(os, Box::new(std::io::stderr()), !self.no_interactive)
@@ -473,6 +475,8 @@ pub enum ChatError {
     NonInteractiveToolApproval,
     #[error("The conversation history is too large to compact")]
     CompactHistoryFailure,
+    #[error("Failed to swap to agent: {0}")]
+    AgentSwapError(eyre::Report),
 }
 
 impl ChatError {
@@ -489,6 +493,7 @@ impl ChatError {
             ChatError::GetPromptError(_) => None,
             ChatError::NonInteractiveToolApproval => None,
             ChatError::CompactHistoryFailure => None,
+            ChatError::AgentSwapError(_) => None,
         }
     }
 }
@@ -507,6 +512,7 @@ impl ReasonCode for ChatError {
             ChatError::Auth(_) => "AuthError".to_string(),
             ChatError::NonInteractiveToolApproval => "NonInteractiveToolApproval".to_string(),
             ChatError::CompactHistoryFailure => "CompactHistoryFailure".to_string(),
+            ChatError::AgentSwapError(_) => "AgentSwapError".to_string(),
         }
     }
 }
@@ -614,7 +620,7 @@ impl ChatSession {
                                 ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
                             ))
                         )?;
-                        let _ = agents.switch(DEFAULT_AGENT_NAME);
+                        let _ = agents.switch("default");
                     }
                 }
                 cs.agents = agents;
@@ -624,10 +630,6 @@ impl ChatSession {
             },
             false => ConversationState::new(conversation_id, agents, tool_config, tool_manager, model_id, os).await,
         };
-
-        if let Some(agent) = conversation.agents.get_active() {
-            agent.validate_tool_settings(&mut stderr)?;
-        }
 
         // Spawn a task for listening and broadcasting sigints.
         let (ctrlc_tx, ctrlc_rx) = tokio::sync::broadcast::channel(4);
@@ -1609,6 +1611,7 @@ impl ChatSession {
                                 .await;
 
                             if matches!(chat_state, ChatState::Exit)
+                                || matches!(chat_state, ChatState::HandleResponseStream(_))
                                 || matches!(chat_state, ChatState::HandleInput { input: _ })
                                 // TODO(bskiser): this is just a hotfix for handling state changes
                                 // from manually running /compact, without impacting behavior of
@@ -1746,12 +1749,6 @@ impl ChatSession {
                             .clone()
                             .unwrap_or(tool_use.name.clone());
                         self.conversation.agents.trust_tools(vec![formatted_tool_name]);
-
-                        if let Some(agent) = self.conversation.agents.get_active() {
-                            agent
-                                .validate_tool_settings(&mut self.stderr)
-                                .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
-                        }
                     }
                     tool_use.accepted = true;
 

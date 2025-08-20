@@ -11,6 +11,7 @@ use crossterm::{
     execute,
     queue,
 };
+use dialoguer::Select;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{
     Style,
@@ -77,6 +78,9 @@ pub enum AgentSubcommand {
         #[arg(long, short)]
         name: String,
     },
+    /// Swap to a new agent at runtime
+    #[command(alias = "switch")]
+    Swap { name: Option<String> },
 }
 
 impl AgentSubcommand {
@@ -232,6 +236,49 @@ impl AgentSubcommand {
                     )?;
                 },
             },
+            Self::Swap { name } => {
+                if let Some(name) = name {
+                    session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
+                } else {
+                    let labels = session
+                        .conversation
+                        .agents
+                        .agents
+                        .keys()
+                        .map(|name| name.as_str())
+                        .collect::<Vec<_>>();
+
+                    let name = {
+                        let idx = match Select::with_theme(&crate::util::dialoguer_theme())
+                            .with_prompt("Choose one of the following agents")
+                            .items(&labels)
+                            .default(1)
+                            .interact_on_opt(&dialoguer::console::Term::stdout())
+                        {
+                            Ok(sel) => {
+                                let _ = crossterm::execute!(
+                                    std::io::stdout(),
+                                    crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
+                                );
+                                sel
+                            },
+                            // Ctrl‑C -> Err(Interrupted)
+                            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
+                            Err(e) => {
+                                return Err(ChatError::Custom(
+                                    format!("Dialog has failed to make a selection {e}").into(),
+                                ));
+                            },
+                        };
+
+                        idx.and_then(|idx| labels.get(idx).cloned().map(str::to_string))
+                    };
+
+                    if let Some(name) = name {
+                        session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
+                    }
+                }
+            },
         }
 
         Ok(ChatState::PromptUser {
@@ -247,6 +294,7 @@ impl AgentSubcommand {
             Self::Set { .. } => "set",
             Self::Schema => "schema",
             Self::SetDefault { .. } => "set_default",
+            Self::Swap { .. } => "swap",
         }
     }
 }

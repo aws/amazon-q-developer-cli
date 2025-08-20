@@ -11,7 +11,7 @@ use std::sync::{
 
 use serde_json::Value;
 
-use crate::client::semantic_context::SemanticContext;
+use crate::client::context::SemanticContext;
 use crate::client::{
     embedder_factory,
     utils,
@@ -539,6 +539,7 @@ impl SemanticSearchClient {
             source_path,
             (vec![], vec![]),
             item_count,
+            self.config.embedding_type,
         );
 
         // Store the context
@@ -694,6 +695,7 @@ impl SemanticSearchClient {
                     None,
                     (vec![], vec![]),
                     0,
+                    self.config.embedding_type, // Use client default
                 );
                 contexts.push(context);
             }
@@ -874,6 +876,7 @@ impl SemanticSearchClient {
             None,
             (vec![], vec![]),
             context_guard.get_data_points().len(),
+            self.config.embedding_type, // Use client default
         );
 
         // Store the context metadata
