@@ -1285,13 +1285,6 @@ fn spawn_orchestrator_task(
                     result,
                     pid,
                 } => {
-                    let pid = pid.unwrap();
-                    if !is_process_running(pid) {
-                        info!(
-                            "Received tool list result from {server_name} but its associated process {pid} is no longer running. Ignoring."
-                        );
-                        return;
-                    }
                     let time_taken = loading_servers
                         .remove(&server_name)
                         .map_or("0.0".to_owned(), |init_time| {
@@ -1347,6 +1340,36 @@ fn spawn_orchestrator_task(
 
                     match result {
                         Ok(result) => {
+                            if pid.is_none_or(|pid| !is_process_running(pid)) {
+                                let pid = pid.map_or("unknown".to_string(), |pid| pid.to_string());
+                                info!(
+                                    "Received tool list result from {server_name} but its associated process {pid} is no longer running. Ignoring."
+                                );
+
+                                let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
+                                let _ = queue_failure_message(
+                                    &server_name,
+                                    &eyre::eyre!("Process associated is no longer running"),
+                                    &time_taken,
+                                    &mut buf_writer,
+                                );
+                                let _ = buf_writer.flush();
+                                drop(buf_writer);
+                                let record_content = String::from_utf8_lossy(record_temp_buf).to_string();
+                                let record = LoadingRecord::Err(record_content);
+
+                                load_record
+                                    .lock()
+                                    .await
+                                    .entry(server_name.clone())
+                                    .and_modify(|load_record| {
+                                        load_record.push(record.clone());
+                                    })
+                                    .or_insert(vec![record]);
+
+                                return;
+                            }
+
                             let mut specs = result
                                 .tools
                                 .into_iter()
