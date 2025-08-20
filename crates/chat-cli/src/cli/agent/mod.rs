@@ -319,16 +319,6 @@ impl Agent {
         }
         Ok(agent)
     }
-
-    // Add a method to clear MCP configurations
-    pub fn clear_mcp_configs(&mut self) {
-        self.mcp_servers = McpServerConfig::default();
-        self.use_legacy_mcp_json = false;
-        self.tools.retain(|tool| !is_mcp_ref(tool));
-        self.allowed_tools.retain(|tool| !is_mcp_ref(tool));
-        self.tool_aliases.retain(|orig, _alias| !is_mcp_ref(&orig.to_string()));
-        self.tools_settings.retain(|target, _| !is_mcp_ref(&target.to_string()));
-    }
 }
 
 /// Result of evaluating tool permissions, indicating whether a tool should be allowed,
@@ -411,14 +401,14 @@ impl Agents {
         mcp_enabled: bool,
     ) -> (Self, AgentsLoadMetadata) {
         if !mcp_enabled {
-            let _ = execute!(
+            execute!(
                 output,
                 style::SetForegroundColor(Color::Yellow),
                 style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
                 style::SetForegroundColor(Color::Reset),
                 style::Print("MCP functionality has been disabled by your administrator.\n\n"),
-            );
+            )?;
         }
 
         // Tracking metadata about the performed load operation.
