@@ -190,6 +190,11 @@ pub fn knowledge_bases_dir(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("knowledge_bases"))
 }
 
+/// The directory for agent-specific knowledge base storage
+pub fn agent_knowledge_dir(os: &Os, agent_name: &str) -> Result<PathBuf> {
+    Ok(knowledge_bases_dir(os)?.join(agent_name))
+}
+
 /// The path to the fig settings file
 pub fn settings_path() -> Result<PathBuf> {
     Ok(fig_data_dir()?.join("settings.json"))
@@ -305,5 +310,31 @@ mod tests {
     fn macos_tempdir_test() {
         let tmpdir = macos_tempdir().unwrap();
         println!("{:?}", tmpdir);
+    }
+
+    #[tokio::test]
+    async fn test_agent_knowledge_dir() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let os = create_test_os(&temp_dir).await;
+
+        let agent_dir = agent_knowledge_dir(&os, "test-agent").unwrap();
+        // The path will be transformed by chroot_path, so we need to get the actual home dir first
+        let home = home_dir(&os).unwrap();
+        let expected = home
+            .join(".aws")
+            .join("amazonq")
+            .join("knowledge_bases")
+            .join("test-agent");
+
+        assert_eq!(agent_dir, expected);
+    }
+
+    async fn create_test_os(temp_dir: &tempfile::TempDir) -> crate::os::Os {
+        let os = crate::os::Os::new().await.unwrap();
+        // Override home directory to use temp directory
+        unsafe {
+            os.env.set_var("HOME", temp_dir.path().to_str().unwrap());
+        }
+        os
     }
 }

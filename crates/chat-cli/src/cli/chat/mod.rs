@@ -1907,7 +1907,12 @@ impl ChatSession {
 
             let invoke_result = tool
                 .tool
-                .invoke(os, &mut self.stdout, &mut self.conversation.file_line_tracker)
+                .invoke(
+                    os,
+                    &mut self.stdout,
+                    &mut self.conversation.file_line_tracker,
+                    self.conversation.agents.get_active(),
+                )
                 .await;
 
             if self.spinner.is_some() {
