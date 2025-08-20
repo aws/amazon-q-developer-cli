@@ -1,27 +1,22 @@
 #!/bin/bash
 
 # Simple categorized test runner with real-time output and summary
-# Usage: ./run_simple_categorized.sh [path_to_q_binary] [--quiet]
+# Usage: ./run_mcp_only.sh [path_to_q_binary] [--quiet]
 
 # ============================================================================
 # CATEGORY CONFIGURATION - Set to true/false to enable/disable categories
 # ============================================================================
-RUN_CORE_SESSION=true
-RUN_AGENT=true
-RUN_CONTEXT=true
-RUN_SAVE_LOAD=true
-RUN_MODEL=true
-RUN_SESSION_MGMT=true
-RUN_INTEGRATION=true
+RUN_CORE_SESSION=false
+RUN_AGENT=false
+RUN_CONTEXT=false
+RUN_SAVE_LOAD=false
+RUN_MODEL=false
+RUN_SESSION_MGMT=false
+RUN_INTEGRATION=false
 RUN_MCP=true
-RUN_AI_PROMPTS=true
-RUN_ISSUE_REPORTING=true
-RUN_TOOLS=true
-RUN_COMPACT=true
-RUN_HOOKS=true
-RUN_USAGE=true
-RUN_EDITOR=true
-RUN_SUBSCRIBE=true
+RUN_AI_PROMPTS=false
+RUN_ISSUE_REPORTING=false
+RUN_TOOLS=false
 # ============================================================================
 
 Q_BINARY="q"
@@ -65,17 +60,25 @@ run_category() {
     
     # Show which tests will run in this category
     echo "📋 Tests in this category:"
+    test_count=0
     for file in tests/*.rs; do
         if grep -q "cfg(feature = \"$category\")" "$file" 2>/dev/null; then
-            test_name=$(basename "$file" .rs)
-            echo "   • $test_name"
+            # Extract actual test function names from the file
+            grep -n "fn test_" "$file" | while read -r line; do
+                test_name=$(echo "$line" | sed 's/.*fn \(test_[^(]*\).*/\1/')
+                echo "   • $test_name"
+                ((test_count++))
+            done
         fi
     done
+    if [ $test_count -eq 0 ]; then
+        echo "   • No tests found for this category"
+    fi
     echo ""
     
     echo "🔄 Running tests..."
     
-    if [ "$QUIET_MODE" = false ]; then
+    if [ "$QUIET_MODE" = true ]; then
         # Quiet mode - show individual test results in real-time
         cargo test --tests --features "$category" -- --test-threads=1 2>&1 | while IFS= read -r line; do
             if echo "$line" | grep -q "test .* \.\.\. ok$"; then
@@ -214,46 +217,6 @@ fi
 
 if [ "$RUN_TOOLS" = true ]; then
     if run_category "tools" "TOOLS"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
-
-if [ "$RUN_COMPACT" = true ]; then
-    if run_category "compact" "COMPACT"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
-
-if [ "$RUN_HOOKS" = true ]; then
-    if run_category "hooks" "HOOKS"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
-
-if [ "$RUN_USAGE" = true ]; then
-    if run_category "usage" "USAGE"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
-
-if [ "$RUN_EDITOR" = true ]; then
-    if run_category "editor" "EDITOR"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
-
-if [ "$RUN_SUBSCRIBE" = true ]; then
-    if run_category "subscribe" "SUBSCRIBE"; then
         ((total_passed++))
     else
         ((total_failed++))
