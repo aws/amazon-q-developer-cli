@@ -4,6 +4,7 @@ pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
 pub mod knowledge;
+pub mod shell_wrappers;
 pub mod thinking;
 pub mod use_aws;
 
@@ -34,6 +35,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use shell_wrappers::LsDirectory;
 use thinking::Thinking;
 use tracing::error;
 use use_aws::UseAws;
@@ -79,6 +81,7 @@ pub enum Tool {
     GhIssue(GhIssue),
     Knowledge(Knowledge),
     Thinking(Thinking),
+    LsDirectory(LsDirectory),
 }
 
 impl Tool {
@@ -96,6 +99,7 @@ impl Tool {
             Tool::GhIssue(_) => "gh_issue",
             Tool::Knowledge(_) => "knowledge",
             Tool::Thinking(_) => "thinking (prerelease)",
+            Tool::LsDirectory(_) => "shell_read_only_ls_directory",
         }
         .to_owned()
     }
@@ -111,6 +115,7 @@ impl Tool {
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(agent),
+            Tool::LsDirectory(ls_directory) => ls_directory.eval_perm(agent),
         }
     }
 
@@ -130,6 +135,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
+            Tool::LsDirectory(ls_directory) => ls_directory.invoke(os, stdout).await,
         }
     }
 
@@ -144,6 +150,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
             Tool::Thinking(thinking) => thinking.queue_description(output),
+            Tool::LsDirectory(ls_directory) => ls_directory.queue_description(output),
         }
     }
 
@@ -158,6 +165,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
+            Tool::LsDirectory(ls_directory) => ls_directory.validate(os).await,
         }
     }
 
