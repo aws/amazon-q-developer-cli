@@ -2,7 +2,19 @@ use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
-const TOTAL_TESTS: usize = 9; // Updated for active tests
+
+const TEST_NAMES: &[&str] = &[
+    "agent_without_subcommand",
+    "test_agent_create_command",
+    "test_agent_create_missing_args",
+    "test_agent_help_command",
+    "test_agent_invalid_command",
+    "test_agent_list_command",
+    // "test_agent_schema_command", 
+    "test_agent_set_default_command",
+    "test_agent_set_default_missing_args",
+];
+const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
 #[cfg(feature = "agent")]
