@@ -414,7 +414,6 @@ impl ToolManagerBuilder {
             },
             messenger_builder: Some(messenger_builder),
             is_first_launch: self.is_first_launch,
-            sampling_request_sender: Some(sampling_sender),
             sampling_receiver,
             ..Default::default()
         };
@@ -562,9 +561,6 @@ pub struct ToolManager {
     /// The value is the load message (i.e. load time, warnings, and errors)
     pub mcp_load_record: Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
 
-    /// Channel sender for MCP clients to send sampling requests for approval
-    pub sampling_request_sender: Option<tokio::sync::mpsc::UnboundedSender<PendingSamplingRequest>>,
-
     /// Channel receiver for incoming sampling requests from MCP servers
     pub sampling_receiver: UnboundedReceiver<PendingSamplingRequest>,
 
@@ -601,7 +597,6 @@ impl Default for ToolManager {
             schema: Default::default(),
             is_interactive: Default::default(),
             mcp_load_record: Default::default(),
-            sampling_request_sender: Default::default(),
             sampling_receiver: receiver,
             disabled_servers: Default::default(),
             messenger_builder: Default::default(),
@@ -623,7 +618,6 @@ impl Clone for ToolManager {
             is_interactive: self.is_interactive,
             mcp_load_record: self.mcp_load_record.clone(),
             disabled_servers: self.disabled_servers.clone(),
-            sampling_request_sender: self.sampling_request_sender.clone(),
             ..Default::default()
         }
     }
