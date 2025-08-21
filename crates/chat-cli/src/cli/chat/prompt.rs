@@ -83,6 +83,12 @@ pub const COMMANDS: &[&str] = &[
     "/save",
     "/load",
     "/subscribe",
+    "/capture init",
+    "/capture restore",
+    "/capture list",
+    "/capture clean",
+    "/capture expand",
+    "/capture diff",
 ];
 
 /// Complete commands that start with a slash

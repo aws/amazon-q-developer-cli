@@ -6,6 +6,7 @@ mod error_formatter;
 mod input_source;
 mod message;
 mod parse;
+use std::mem::ManuallyDrop;
 use std::path::{
     MAIN_SEPARATOR,
     PathBuf,
@@ -1607,8 +1608,9 @@ impl ChatSession {
         };
 
         if let Some(mut manager) = self.conversation.capture_manager.take() {
-            if manager.last_user_message.is_none() && !user_input.is_empty() {
+            if !manager.user_message_lock {
                 manager.last_user_message = Some(user_input.clone());
+                manager.user_message_lock = true;
             }
             self.conversation.capture_manager = Some(manager);
         }
@@ -2446,6 +2448,7 @@ impl ChatSession {
             self.tool_turn_start_time = None;
 
             if let Some(mut manager) = self.conversation.capture_manager.take() {
+                manager.user_message_lock = false;
                 let user_message = match manager.last_user_message {
                     Some(message) => {
                         let message = message.clone();

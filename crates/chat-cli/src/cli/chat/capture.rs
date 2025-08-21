@@ -36,7 +36,9 @@ pub struct CaptureManager {
     pub tag_to_index: HashMap<String, usize>,
     pub num_turns: usize,
     pub num_tools_this_turn: usize,
+
     pub last_user_message: Option<String>,
+    pub user_message_lock: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +118,7 @@ impl CaptureManager {
             num_turns: 0,
             num_tools_this_turn: 0,
             last_user_message: None,
+            user_message_lock: false,
         })
     }
 
@@ -153,6 +156,7 @@ impl CaptureManager {
             num_turns: 0,
             num_tools_this_turn: 0,
             last_user_message: None,
+            user_message_lock: false,
         })
     }
 
