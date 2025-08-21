@@ -355,6 +355,11 @@ impl Database {
         self.set_json_entry(Table::Conversations, path, state)
     }
 
+    /// Get all conversations for history browsing
+    pub fn get_all_conversations(&self) -> Result<Map<String, serde_json::Value>, DatabaseError> {
+        self.all_entries(Table::Conversations)
+    }
+
     pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
         trace!(key, "getting secret");
         Ok(self.get_entry::<String>(Table::Auth, key)?.map(Into::into))
