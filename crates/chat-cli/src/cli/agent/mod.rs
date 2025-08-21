@@ -421,29 +421,37 @@ impl Agents {
                 },
             }
 
-            let Ok(path) = directories::chat_local_agent_dir(os) else {
-                break 'local Vec::<Agent>::new();
-            };
-            let Ok(files) = os.fs.read_dir(path).await else {
+            let mut agents = Vec::<Agent>::new();
+
+            let Ok(mut current_dir) = os.env.current_dir() else {
                 break 'local Vec::<Agent>::new();
             };
 
-            let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
-            for result in results {
-                match result {
-                    Ok(agent) => agents.push(agent),
-                    Err(e) => {
-                        load_metadata.load_failed_count += 1;
-                        let _ = queue!(
-                            output,
-                            style::SetForegroundColor(Color::Red),
-                            style::Print("Error: "),
-                            style::ResetColor,
-                            style::Print(e),
-                            style::Print("\n"),
-                        );
-                    },
+            loop {
+                if let Ok(maybe_config_dir) = directories::chat_relative_agent_dir(current_dir.clone()) {
+                    if let Ok(files) = os.fs.read_dir(&maybe_config_dir).await {
+                        let results = load_agents_from_entries(files, os, &mut global_mcp_config).await;
+                        for result in results {
+                            match result {
+                                Ok(agent) => agents.push(agent),
+                                Err(e) => {
+                                    load_metadata.load_failed_count += 1;
+                                    let _ = queue!(
+                                        output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print("Error: "),
+                                        style::ResetColor,
+                                        style::Print(e),
+                                        style::Print("\n"),
+                                    );
+                                },
+                            }
+                        }
+                    }
+                }
+
+                if !current_dir.pop() {
+                    break;
                 }
             }
 
