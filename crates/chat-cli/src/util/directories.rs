@@ -343,7 +343,14 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let os = create_test_os(&temp_dir).await;
 
-        let agent_dir = agent_knowledge_dir(&os, "test-agent").unwrap();
+        // Create a test agent
+        let test_agent = crate::cli::Agent {
+            name: "test-agent".to_string(),
+            path: None,
+            ..Default::default()
+        };
+
+        let agent_dir = agent_knowledge_dir(&os, Some(&test_agent)).unwrap();
         // The path will be transformed by chroot_path, so we need to get the actual home dir first
         let home = home_dir(&os).unwrap();
         let expected = home
