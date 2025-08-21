@@ -101,16 +101,16 @@ impl Tool {
     }
 
     /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.
-    pub fn requires_acceptance(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn requires_acceptance(&self, os: &Os, agent: &Agent) -> PermissionEvalResult {
         match self {
-            Tool::FsRead(fs_read) => fs_read.eval_perm(agent),
-            Tool::FsWrite(fs_write) => fs_write.eval_perm(agent),
-            Tool::ExecuteCommand(execute_command) => execute_command.eval_perm(agent),
-            Tool::UseAws(use_aws) => use_aws.eval_perm(agent),
-            Tool::Custom(custom_tool) => custom_tool.eval_perm(agent),
+            Tool::FsRead(fs_read) => fs_read.eval_perm(os, agent),
+            Tool::FsWrite(fs_write) => fs_write.eval_perm(os, agent),
+            Tool::ExecuteCommand(execute_command) => execute_command.eval_perm(os, agent),
+            Tool::UseAws(use_aws) => use_aws.eval_perm(os, agent),
+            Tool::Custom(custom_tool) => custom_tool.eval_perm(os, agent),
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
-            Tool::Knowledge(knowledge) => knowledge.eval_perm(agent),
+            Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
         }
     }
 

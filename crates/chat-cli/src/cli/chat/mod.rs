@@ -125,7 +125,10 @@ use util::{
 use winnow::Partial;
 use winnow::stream::Offset;
 
-use super::agent::PermissionEvalResult;
+use super::agent::{
+    DEFAULT_AGENT_NAME,
+    PermissionEvalResult,
+};
 use crate::api_client::model::ToolResultStatus;
 use crate::api_client::{
     self,
@@ -620,7 +623,7 @@ impl ChatSession {
                                 ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
                             ))
                         )?;
-                        let _ = agents.switch("default");
+                        let _ = agents.switch(DEFAULT_AGENT_NAME);
                     }
                 }
                 cs.agents = agents;
@@ -1181,6 +1184,11 @@ impl ChatSession {
                 ))
             )?;
         }
+
+        if let Some(agent) = self.conversation.agents.get_active() {
+            agent.print_overridden_permissions(&mut self.stderr)?;
+        }
+
         self.stderr.flush()?;
 
         if let Some(ref model_info) = self.conversation.model_info {
@@ -1749,6 +1757,12 @@ impl ChatSession {
                             .clone()
                             .unwrap_or(tool_use.name.clone());
                         self.conversation.agents.trust_tools(vec![formatted_tool_name]);
+
+                        if let Some(agent) = self.conversation.agents.get_active() {
+                            agent
+                                .print_overridden_permissions(&mut self.stderr)
+                                .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
+                        }
                     }
                     tool_use.accepted = true;
 
@@ -1816,7 +1830,7 @@ impl ChatSession {
                 self.conversation
                     .agents
                     .get_active()
-                    .is_some_and(|a| match tool.tool.requires_acceptance(a) {
+                    .is_some_and(|a| match tool.tool.requires_acceptance(os, a) {
                         PermissionEvalResult::Allow => true,
                         PermissionEvalResult::Ask => false,
                         PermissionEvalResult::Deny(matches) => {
