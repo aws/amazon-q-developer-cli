@@ -26,15 +26,3 @@ hooks=[]
 usage=[]
 editor=[]
 subscribe=[]
-
-[[test]]
-name = "test_help_command"
-path = "tests/test_help_command.rs"
-
-[[test]]
-name = "test_tools_command"
-path = "tests/test_tools_command.rs"
-
-[[test]]
-name = "test_ai_prompt"
-path = "tests/test_ai_prompt.rs"
