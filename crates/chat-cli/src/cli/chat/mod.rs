@@ -1856,7 +1856,7 @@ impl ChatSession {
 
                 // Reset active tool calls on early return
                 self.active_tool_calls.store(false, Ordering::Relaxed);
-                
+
                 return Ok(ChatState::HandleInput {
                     input: format!(
                         "Tool use with {} was rejected because the arguments supplied were forbidden",
@@ -1903,10 +1903,10 @@ impl ChatSession {
 
         // Clone the tools to avoid borrowing self during iteration
         let tools_to_execute = self.tool_uses.clone();
-        
+
         for tool in &tools_to_execute {
             let tool_start = std::time::Instant::now();
-            
+
             // Handle initial telemetry setup and drop the borrow
             {
                 let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
@@ -1943,7 +1943,7 @@ impl ChatSession {
 
             let tool_end_time = Instant::now();
             let tool_time = tool_end_time.duration_since(tool_start);
-            
+
             // Re-create telemetry borrow in function-global scope for post-execution updates
             let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
             tool_telemetry = tool_telemetry.and_modify(|ev| {
@@ -2088,10 +2088,10 @@ impl ChatSession {
         self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
             .await;
         self.send_tool_use_telemetry(os).await;
-        
+
         // Set active tool calls to false when tool execution completes
         self.active_tool_calls.store(false, Ordering::Relaxed);
-        
+
         return Ok(ChatState::HandleResponseStream(
             self.conversation
                 .as_sendable_conversation_state(os, &mut self.stderr, false)
@@ -2497,11 +2497,11 @@ impl ChatSession {
         self.tool_uses = queued_tools;
         self.pending_tool_index = Some(0);
         self.tool_turn_start_time = Some(Instant::now());
-        
+
         // Set active tool calls to true when tools are pending approval
         // This allows sampling requests during the tool approval phase
         self.active_tool_calls.store(true, Ordering::Relaxed);
-        
+
         Ok(ChatState::ExecuteTools)
     }
 
