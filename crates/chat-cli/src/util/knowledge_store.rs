@@ -15,10 +15,9 @@ use semantic_search_client::types::{
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::cli::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 use crate::util::directories;
-
-const DEFAULT_AGENT_NAME: &str = "q_cli_default";
 
 /// Configuration for adding knowledge contexts
 #[derive(Default)]
@@ -111,17 +110,17 @@ pub struct KnowledgeStore {
 }
 
 impl KnowledgeStore {
-    /// Get singleton instance with optional agent name
+    /// Get singleton instance with optional agent
     pub async fn get_async_instance(
         os: &Os,
-        agent_name: Option<&str>,
+        agent: Option<&crate::cli::Agent>,
     ) -> Result<Arc<Mutex<Self>>, directories::DirectoryError> {
         static ASYNC_INSTANCE: Lazy<tokio::sync::OnceCell<Arc<Mutex<KnowledgeStore>>>> =
             Lazy::new(tokio::sync::OnceCell::new);
 
         if cfg!(test) {
             // For tests, create a new instance each time
-            let store = Self::new_with_os_settings(os, agent_name)
+            let store = Self::new_with_os_settings(os, agent)
                 .await
                 .map_err(|_e| directories::DirectoryError::Io(std::io::Error::other("Failed to create store")))?;
             Ok(Arc::new(Mutex::new(store)))
@@ -129,13 +128,12 @@ impl KnowledgeStore {
             Ok(ASYNC_INSTANCE
                 .get_or_init(|| async {
                     // Check for migration before initializing the client
-                    let agent_name = agent_name.unwrap_or(DEFAULT_AGENT_NAME);
-                    let agent_dir = crate::util::directories::agent_knowledge_dir(os, agent_name)
+                    let agent_dir = crate::util::directories::agent_knowledge_dir(os, agent)
                         .expect("Failed to get agent directory");
 
-                    Self::migrate_legacy_knowledge_base(&agent_dir, agent_name).await;
+                    Self::migrate_legacy_knowledge_base(&agent_dir).await;
 
-                    let store = Self::new_with_os_settings(os, Some(agent_name))
+                    let store = Self::new_with_os_settings(os, agent)
                         .await
                         .expect("Failed to create knowledge store");
                     Arc::new(Mutex::new(store))
@@ -146,8 +144,14 @@ impl KnowledgeStore {
     }
 
     /// Migrate legacy knowledge base from old location if needed
-    async fn migrate_legacy_knowledge_base(agent_dir: &PathBuf, current_agent_name: &str) -> bool {
+    async fn migrate_legacy_knowledge_base(agent_dir: &PathBuf) -> bool {
         let mut migrated = false;
+        
+        // Extract agent identifier from the directory path (last component)
+        let current_agent_id = agent_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(DEFAULT_AGENT_NAME);
 
         // Migrate from legacy ~/.semantic_search
         let old_flat_dir = dirs::home_dir()
@@ -177,7 +181,7 @@ impl KnowledgeStore {
                         .filter(|entry| {
                             let name = entry.file_name();
                             let name_str = name.to_string_lossy();
-                            name_str != current_agent_name
+                            name_str != current_agent_id
                                 && name_str != DEFAULT_AGENT_NAME
                                 && !name_str.starts_with('.')
                         })
@@ -245,9 +249,8 @@ impl KnowledgeStore {
     }
 
     /// Create instance with database settings from OS
-    async fn new_with_os_settings(os: &crate::os::Os, agent_name: Option<&str>) -> Result<Self> {
-        let agent_name = agent_name.unwrap_or(DEFAULT_AGENT_NAME);
-        let agent_dir = crate::util::directories::agent_knowledge_dir(os, agent_name)?;
+    async fn new_with_os_settings(os: &crate::os::Os, agent: Option<&crate::cli::Agent>) -> Result<Self> {
+        let agent_dir = crate::util::directories::agent_knowledge_dir(os, agent)?;
         let agent_config = Self::create_config_from_db_settings(os, agent_dir.clone());
         let agent_client = AsyncSemanticSearchClient::with_config(&agent_dir, agent_config)
             .await

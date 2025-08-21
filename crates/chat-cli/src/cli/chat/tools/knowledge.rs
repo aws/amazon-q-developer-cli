@@ -315,10 +315,9 @@ impl Knowledge {
         &self,
         os: &Os,
         _updates: &mut impl Write,
-        agent: Option<&crate::cli::agent::Agent>,
+        agent: Option<&crate::cli::Agent>,
     ) -> Result<InvokeOutput> {
-        let agent_name = agent.map(|a| a.name.as_str());
-        let async_knowledge_store = KnowledgeStore::get_async_instance(os, agent_name)
+        let async_knowledge_store = KnowledgeStore::get_async_instance(os, agent)
             .await
             .map_err(|e| eyre::eyre!("Failed to access knowledge base: {}", e))?;
         let mut store = async_knowledge_store.lock().await;

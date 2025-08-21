@@ -5,6 +5,7 @@ use std::path::{
 
 use thiserror::Error;
 
+use crate::cli::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 
 #[derive(Debug, Error)]
@@ -191,8 +192,33 @@ pub fn knowledge_bases_dir(os: &Os) -> Result<PathBuf> {
 }
 
 /// The directory for agent-specific knowledge base storage
-pub fn agent_knowledge_dir(os: &Os, agent_name: &str) -> Result<PathBuf> {
-    Ok(knowledge_bases_dir(os)?.join(agent_name))
+pub fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result<PathBuf> {
+    let unique_id = if let Some(agent) = agent {
+        generate_agent_unique_id(agent)
+    } else {
+        // Default agent case
+        DEFAULT_AGENT_NAME.to_string()
+    };
+    Ok(knowledge_bases_dir(os)?.join(unique_id))
+}
+
+/// Generate a unique identifier for an agent based on its path and name
+fn generate_agent_unique_id(agent: &crate::cli::Agent) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    
+    if let Some(path) = &agent.path {
+        // Create a hash from the agent's path for uniqueness
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        let path_hash = hasher.finish();
+        
+        // Combine hash with agent name for readability
+        format!("{}_{:x}", agent.name, path_hash)
+    } else {
+        // For agents without a path (like default), use just the name
+        agent.name.clone()
+    }
 }
 
 /// The path to the fig settings file
