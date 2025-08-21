@@ -371,7 +371,7 @@ impl ChatArgs {
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
 
         // Set the ApiClient for MCP clients that have sampling enabled
-        tool_manager.set_streaming_client(std::sync::Arc::new(os.client.clone()));
+        tool_manager.set_streaming_client(os.client.clone());
 
         ChatSession::new(
             os,

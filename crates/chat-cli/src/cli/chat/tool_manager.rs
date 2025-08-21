@@ -664,7 +664,7 @@ impl ToolManager {
     }
 
     /// Set the ApiClient for all MCP clients that have sampling enabled
-    pub fn set_streaming_client(&self, api_client: std::sync::Arc<crate::api_client::ApiClient>) {
+    pub fn set_streaming_client(&self, api_client: crate::api_client::ApiClient) {
         tracing::info!(target: "mcp", "Setting ApiClient for MCP clients with sampling enabled");
 
         for (server_name, client) in &self.clients {

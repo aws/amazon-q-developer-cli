@@ -103,7 +103,7 @@ pub enum CustomToolClient {
 impl CustomToolClient {
     // TODO: add support for http transport
     /// Set the ApiClient for LLM integration in sampling requests
-    pub fn set_streaming_client(&self, api_client: std::sync::Arc<crate::api_client::ApiClient>) {
+    pub fn set_streaming_client(&self, api_client: crate::api_client::ApiClient) {
         match self {
             CustomToolClient::Stdio { client, .. } => {
                 client.set_streaming_client(api_client);
