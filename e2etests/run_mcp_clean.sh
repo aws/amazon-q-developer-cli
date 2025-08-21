@@ -16,7 +16,7 @@ echo ""
 
 # Run only the specific MCP test files
 echo "🔄 Running MCP tests..."
-cargo test --test test_mcp_help_command --test test_mcp_loading_command --features "mcp" -- --nocapture --test-threads=1
+cargo test --test --features "mcp" -- --nocapture --test-threads=1
 
 exit_code=$?
 

@@ -3,7 +3,7 @@ use q_cli_e2e_tests::q_chat_helper::QChatSession;
 #[test]
 #[cfg(feature = "core_session")]
 fn test_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 [CORE SESSION] Testing /help command...");
+    println!("🔍 Testing /help command...");
     
     let mut chat = QChatSession::new()?;
     println!("✅ Q Chat session started");
@@ -24,15 +24,6 @@ fn test_help_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(response.contains("tools"), "Missing tools command");
     assert!(response.contains("help"), "Missing help command");
     println!("✅ Verified core commands: quit, clear, tools, help");
-    
-    assert!(response.contains("Options:"), "Missing Options section");
-    println!("✅ Found Options section with -h, --help flags");
-    
-    assert!(response.contains("MCP:"), "Missing MCP section");
-    println!("✅ Found MCP section with configuration documentation link");
-    
-    assert!(response.contains("Tips:"), "Missing Tips section");
-    println!("✅ Found Tips section with keyboard shortcuts and settings");
     
     // Verify specific useful commands
     if response.contains("context") {

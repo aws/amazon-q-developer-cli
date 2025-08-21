@@ -1,5 +1,5 @@
 use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize};
 
 static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
 
