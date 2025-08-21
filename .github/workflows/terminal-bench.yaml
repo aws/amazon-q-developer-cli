@@ -7,12 +7,11 @@ name: Terminal-Bench
 on:
   workflow_dispatch:
     inputs:
-      name:
-        description: 'Run terminal-bench workflow to test Q CLI in real terminal environments.' 
-        default: 'all'
+      git_commit_hash:
+        description: 'Input git commit hash to run TB on (must exist on S3)'
         required: true
+        default: 'latest'
         type: string
-        
 jobs:
   run-benchmark:
     # avoids disk storage issues
@@ -21,6 +20,7 @@ jobs:
     env:
       CHAT_DOWNLOAD_ROLE_ARN: ${{ secrets.CHAT_DOWNLOAD_ROLE_ARN }}
       CHAT_BUILD_BUCKET_NAME: ${{ secrets.CHAT_BUILD_BUCKET_NAME }}
+      GIT_HASH: ${{ github.event.inputs.git_commit_hash }}
     permissions:
       id-token: write
       contents: read
@@ -40,18 +40,6 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@v4
-
-    # Captures git hash of branch to query specific S3 bucket
-    - name: Set git hash
-      run: |
-        if [ -n "$GITHUB_SHA" ]; then
-          git_hash=$(git rev-parse "$GITHUB_SHA")
-        else
-          git_hash="latest"
-        fi
-        # appends to github_env file
-        echo "GIT_HASH=$git_hash" >> $GITHUB_ENV
-        echo "Git hash set to: $git_hash"
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -73,7 +61,7 @@ jobs:
     - name: Run terminal benchmark
       run: |
         cd terminal-bench-test
-        tb run --agent-import-path main:AmazonQCLIAgent --dataset-name terminal-bench-core --dataset-version head
+        tb run --agent-import-path main:AmazonQCLIAgent --dataset-name terminal-bench-core --dataset-version head --cleanup --n-tasks=5
 
     # uploads results if run fails as well to allow for easy log inspection
     - name: Upload results
