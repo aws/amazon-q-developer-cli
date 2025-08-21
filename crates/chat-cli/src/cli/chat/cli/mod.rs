@@ -32,7 +32,12 @@ use tools::ToolsArgs;
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
 use crate::cli::chat::cli::usage::UsageArgs;
 use crate::cli::chat::consts::AGENT_MIGRATION_DOC_URL;
-use crate::cli::chat::{ChatError, ChatSession, ChatState, EXTRA_HELP};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+    ChatState,
+    EXTRA_HELP,
+};
 use crate::cli::issue;
 use crate::os::Os;
 
@@ -93,7 +98,10 @@ impl SlashCommand {
             Self::Clear(args) => args.execute(session).await,
             Self::Agent(subcommand) => subcommand.execute(os, session).await,
             Self::Profile => {
-                use crossterm::{execute, style};
+                use crossterm::{
+                    execute,
+                    style,
+                };
                 execute!(
                     session.stderr,
                     style::SetForegroundColor(style::Color::Yellow),

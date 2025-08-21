@@ -2,14 +2,36 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 
 use eyre::Result;
-use rustyline::completion::{Completer, FilenameCompleter, extract_word};
+use rustyline::completion::{
+    Completer,
+    FilenameCompleter,
+    extract_word,
+};
 use rustyline::error::ReadlineError;
-use rustyline::highlight::{CmdKind, Highlighter};
+use rustyline::highlight::{
+    CmdKind,
+    Highlighter,
+};
 use rustyline::hint::Hinter as RustylineHinter;
 use rustyline::history::DefaultHistory;
-use rustyline::validate::{ValidationContext, ValidationResult, Validator};
+use rustyline::validate::{
+    ValidationContext,
+    ValidationResult,
+    Validator,
+};
 use rustyline::{
-    Cmd, Completer, CompletionType, Config, Context, EditMode, Editor, EventHandler, Helper, Hinter, KeyCode, KeyEvent,
+    Cmd,
+    Completer,
+    CompletionType,
+    Config,
+    Context,
+    EditMode,
+    Editor,
+    EventHandler,
+    Helper,
+    Hinter,
+    KeyCode,
+    KeyEvent,
     Modifiers,
 };
 use winnow::stream::AsChar;

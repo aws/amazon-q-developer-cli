@@ -10,7 +10,8 @@ pub struct PromptComponents {
 
 /// Parse prompt components from a plain text prompt
 pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
-    // Expected format: "[agent] !> " or "> " or "!> " or "[agent] ↯ > " or "↯ > " or "[agent] ↯ !> " etc.
+    // Expected format: "[agent] !> " or "> " or "!> " or "[agent] ↯ > " or "↯ > " or "[agent] ↯ !> "
+    // etc.
     let mut profile = None;
     let mut warning = false;
     let mut tangent_mode = false;

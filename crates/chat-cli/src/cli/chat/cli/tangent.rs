@@ -1,8 +1,15 @@
 use clap::Args;
 use crossterm::execute;
-use crossterm::style::{self, Color};
+use crossterm::style::{
+    self,
+    Color,
+};
 
-use crate::cli::chat::{ChatError, ChatSession, ChatState};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+    ChatState,
+};
 use crate::os::Os;
 
 #[derive(Debug, PartialEq, Args)]
@@ -52,9 +59,7 @@ impl TangentArgs {
                 style::Print("/tangent"),
                 style::SetForegroundColor(Color::DarkGrey),
                 style::Print(" to restore the conversation later.\n"),
-                style::Print(
-                    "Note: this functionality is experimental and may change or be removed in the future.\n"
-                ),
+                style::Print("Note: this functionality is experimental and may change or be removed in the future.\n"),
                 style::SetForegroundColor(Color::Reset)
             )?;
         }

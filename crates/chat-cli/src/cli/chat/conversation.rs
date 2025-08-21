@@ -1360,8 +1360,14 @@ mod tests {
         assert!(!conversation.is_in_tangent_mode());
 
         // Add some main conversation history
-        conversation.set_next_user_message("main conversation".to_string()).await;
-        conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, "main response".to_string()), None);
+        conversation
+            .set_next_user_message("main conversation".to_string())
+            .await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "main response".to_string()),
+            None,
+        );
         conversation.transcript.push_back("main transcript".to_string());
 
         let main_history_len = conversation.history.len();
@@ -1377,8 +1383,14 @@ mod tests {
         assert!(conversation.next_message.is_none());
 
         // Add tangent conversation
-        conversation.set_next_user_message("tangent conversation".to_string()).await;
-        conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, "tangent response".to_string()), None);
+        conversation
+            .set_next_user_message("tangent conversation".to_string())
+            .await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "tangent response".to_string()),
+            None,
+        );
 
         // During tangent mode, history should have grown
         assert_eq!(conversation.history.len(), main_history_len + 1);
