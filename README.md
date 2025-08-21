@@ -47,7 +47,7 @@ cargo install typos-cli
 
 ## Project Layout
 
-- [`chat_cli`](crates/chat_cli/) - the `q` CLI, allows users to interface with Amazon Q Developer from
+- [`chat_cli`](crates/chat-cli/) - the `q` CLI, allows users to interface with Amazon Q Developer from
   the command line
 - [`scripts/`](scripts/) - Contains ops and build related scripts
 - [`crates/`](crates/) - Contains all rust crates
