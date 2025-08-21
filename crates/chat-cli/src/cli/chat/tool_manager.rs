@@ -374,7 +374,16 @@ impl ToolManagerBuilder {
                 Err(e) => {
                     error!("Error initializing mcp client for server {}: {:?}", name, &e);
                     os.telemetry
-                        .send_mcp_server_init(&os.database, conversation_id.clone(), name, Some(e.to_string()), 0)
+                        .send_mcp_server_init(
+                            &os.database,
+                            conversation_id.clone(),
+                            name,
+                            Some(e.to_string()),
+                            0,
+                            Some("".to_string()),
+                            Some("".to_string()),
+                            0,
+                        )
                         .await
                         .ok();
                     let _ = messenger.send_tools_list_result(Err(e)).await;
@@ -1292,6 +1301,19 @@ fn spawn_orchestrator_task(
                             format!("{:.2}", time_taken)
                         });
                     pending.write().await.remove(&server_name);
+
+                    let result_tools = match &result {
+                        Ok(tools_result) => {
+                            let names: Vec<String> = tools_result
+                                .tools
+                                .iter()
+                                .filter_map(|tool| tool.get("name")?.as_str().map(String::from))
+                                .collect();
+                            names
+                        },
+                        Err(_) => vec![],
+                    };
+
                     let (tool_filter, alias_list) = {
                         let agent_lock = agent.lock().await;
 
@@ -1386,6 +1408,7 @@ fn spawn_orchestrator_task(
                                 &alias_list,
                                 regex,
                                 telemetry_clone,
+                                &result_tools,
                             )
                             .await;
                             if let Some(sender) = &loading_status_sender {
@@ -1620,6 +1643,7 @@ async fn process_tool_specs(
     alias_list: &HashMap<HostToolName, ModelToolName>,
     regex: &Regex,
     telemetry: &TelemetryThread,
+    result_tools: &[String],
 ) -> eyre::Result<()> {
     // Tools are subjected to the following validations:
     // 1. ^[a-zA-Z][a-zA-Z0-9_]*$,
@@ -1631,6 +1655,14 @@ async fn process_tool_specs(
     let mut out_of_spec_tool_names = Vec::<OutOfSpecName>::new();
     let mut hasher = DefaultHasher::new();
     let mut number_of_tools = 0_usize;
+
+    let number_of_tools_in_mcp_server = result_tools.len();
+
+    let all_tool_names = if !result_tools.is_empty() {
+        Some(result_tools.join(","))
+    } else {
+        None
+    };
 
     for spec in specs.iter_mut() {
         let model_tool_name = alias_list.get(&spec.name).cloned().unwrap_or({
@@ -1662,6 +1694,11 @@ async fn process_tool_specs(
     // Native origin is the default, and since this function never reads native tools, if we still
     // have it, that would indicate a tool that should not be included.
     specs.retain(|spec| !matches!(spec.tool_origin, ToolOrigin::Native));
+    let loaded_tool_names = if specs.is_empty() {
+        None
+    } else {
+        Some(specs.iter().map(|spec| spec.name.clone()).collect::<Vec<_>>().join(","))
+    };
     // Send server load success metric datum
     let conversation_id = conversation_id.to_string();
     let _ = telemetry
@@ -1671,6 +1708,9 @@ async fn process_tool_specs(
             server_name.to_string(),
             None,
             number_of_tools,
+            all_tool_names,
+            loaded_tool_names,
+            number_of_tools_in_mcp_server,
         )
         .await;
     // Tool name translation. This is beyond of the scope of what is

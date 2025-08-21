@@ -34,6 +34,7 @@ use crate::telemetry::definitions::types::{
     CodewhispererterminalCustomToolLatency,
     CodewhispererterminalCustomToolOutputTokenSize,
     CodewhispererterminalIsToolValid,
+    CodewhispererterminalMcpServerAllToolsCount,
     CodewhispererterminalMcpServerInitFailureReason,
     CodewhispererterminalToolName,
     CodewhispererterminalToolUseId,
@@ -366,6 +367,9 @@ impl Event {
                 server_name,
                 init_failure_reason,
                 number_of_tools,
+                all_tool_names,
+                loaded_tool_names,
+                all_tools_count,
             } => Some(
                 CodewhispererterminalMcpServerInit {
                     create_time: self.created_time,
@@ -379,6 +383,11 @@ impl Event {
                         number_of_tools as i64,
                     )),
                     codewhispererterminal_client_application: self.client_application.map(Into::into),
+                    codewhispererterminal_mcp_server_all_tool_names: all_tool_names.map(Into::into),
+                    codewhispererterminal_mcp_server_loaded_tool_names: loaded_tool_names.map(Into::into),
+                    codewhispererterminal_mcp_server_all_tools_count: Some(
+                        CodewhispererterminalMcpServerAllToolsCount(all_tools_count as i64),
+                    ),
                 }
                 .into_metric_datum(),
             ),
@@ -615,6 +624,9 @@ pub enum EventType {
         server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
+        all_tool_names: Option<String>,
+        loaded_tool_names: Option<String>,
+        all_tools_count: usize,
     },
     AgentConfigInit {
         conversation_id: String,
