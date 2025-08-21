@@ -888,21 +888,21 @@ where
         };
 
         // Convert SamplingRequest to ConversationState format
-        let user_message = crate::api_client::model::UserInputMessage {
-            content: prompt.to_string(),
-            user_input_message_context: None,
-            user_intent: None,
-            images: None,
-            model_id: request.model_preferences
-                .as_ref()
-                .and_then(|prefs| prefs.hints.as_ref())
-                .and_then(|hints| hints.first())
-                .map(|hint| hint.name.clone()),
-        };
+        let model_name = request.model_preferences
+            .as_ref()
+            .and_then(|prefs| prefs.hints.as_ref())
+            .and_then(|hints| hints.first())
+            .map(|hint| hint.name.clone());
 
         let conversation_state = crate::api_client::model::ConversationState {
             conversation_id: None, // New conversation for sampling
-            user_input_message: user_message,
+            user_input_message: crate::api_client::model::UserInputMessage {
+                content: prompt.to_string(),
+                user_input_message_context: None,
+                user_intent: None,
+                images: None,
+                model_id: model_name.clone(),
+            },
             history: None, // No history for sampling requests
         };
 
@@ -933,12 +933,7 @@ where
                     }
                 }
 
-                let model_name = request.model_preferences
-                    .as_ref()
-                    .and_then(|prefs| prefs.hints.as_ref())
-                    .and_then(|hints| hints.first())
-                    .map(|hint| hint.name.clone())
-                    .unwrap_or_else(|| "default-model".to_string());
+                let model_name = model_name.unwrap_or_else(|| "default-model".to_string());
 
                 if response_content.is_empty() {
                     tracing::warn!(target: "mcp", "No content received from LLM for sampling request");
