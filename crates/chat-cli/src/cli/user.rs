@@ -117,8 +117,14 @@ impl LoginArgs {
                             None => os.database.get_idc_region()?,
                         };
 
-                        let start_url = input("Enter Start URL", default_start_url.as_deref())?;
-                        let region = input("Enter Region", default_region.as_deref())?;
+                        let start_url = match default_start_url {
+                            Some(url) => url,
+                            None => input("Enter Start URL", None)?,
+                        };
+                        let region = match default_region {
+                            Some(r) => r,
+                            None => input("Enter Region", None)?,
+                        };
 
                         let _ = os.database.set_start_url(start_url.clone());
                         let _ = os.database.set_idc_region(region.clone());
