@@ -1608,40 +1608,6 @@ impl ChatSession {
                 .put_skim_command_selector(os, Arc::new(context_manager.clone()), tool_names);
         }
 
-        // Check for incoming sampling requests from MCP servers
-        while let Ok(mut sampling_request) = self.conversation.tool_manager.sampling_receiver.try_recv() {
-            // Check if tool calls are currently active
-            if !self.active_tool_calls.load(Ordering::Relaxed) {
-                tracing::info!(target: "mcp", "Denying sampling request from {}: no active tool calls", sampling_request.server_name);
-                sampling_request.send_approval_result(
-                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::rejected(
-                        "Sampling requests are only allowed during active tool execution".to_string()
-                    )
-                );
-                continue;
-            }
-
-            // Ask user for approval during active tool calls
-            let approval_prompt = format!(
-                "MCP server '{}' is requesting to use AI sampling. Allow this request? [y/n]: ",
-                sampling_request.server_name
-            );
-
-            if self.ask_user_approval(&approval_prompt) {
-                tracing::info!(target: "mcp", "User approved sampling request from server: {}", sampling_request.server_name);
-                sampling_request.send_approval_result(
-                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::approved()
-                );
-            } else {
-                tracing::info!(target: "mcp", "User denied sampling request from server: {}", sampling_request.server_name);
-                sampling_request.send_approval_result(
-                    crate::mcp_client::sampling_ipc::SamplingApprovalResult::rejected(
-                        "User denied the sampling request".to_string()
-                    )
-                );
-            }
-        }
-
         execute!(
             self.stderr,
             style::SetForegroundColor(Color::Reset),
