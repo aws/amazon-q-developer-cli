@@ -48,6 +48,7 @@ use crate::cli::chat::{
     sanitize_unicode_tags,
 };
 use crate::os::Os;
+use crate::util::pattern_matching::matches_any_pattern;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FsRead {
@@ -118,7 +119,7 @@ impl FsRead {
             true
         }
 
-        let is_in_allowlist = agent.allowed_tools.contains("fs_read");
+        let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, "fs_read");
         match agent.tools_settings.get("fs_read") {
             Some(settings) if is_in_allowlist => {
                 let Settings {
