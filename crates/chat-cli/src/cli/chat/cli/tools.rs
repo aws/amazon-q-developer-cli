@@ -170,6 +170,17 @@ impl ToolsArgs {
             )?;
         }
 
+        if !session.conversation.mcp_enabled {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("\n"),
+                style::Print("⚠️  WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
+            )?;
+        }
+
         Ok(ChatState::default())
     }
 

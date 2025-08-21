@@ -124,6 +124,8 @@ pub struct ConversationState {
     /// Maps from a file path to [FileLineTracker]
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
+    #[serde(default = "default_true")]
+    pub mcp_enabled: bool,
 }
 
 impl ConversationState {
@@ -134,6 +136,7 @@ impl ConversationState {
         tool_manager: ToolManager,
         current_model_id: Option<String>,
         os: &Os,
+        mcp_enabled: bool,
     ) -> Self {
         let model = if let Some(model_id) = current_model_id {
             match get_model_info(&model_id, os).await {
@@ -180,6 +183,7 @@ impl ConversationState {
             model: None,
             model_info: model,
             file_line_tracker: HashMap::new(),
+            mcp_enabled,
         }
     }
 
@@ -1006,6 +1010,9 @@ fn enforce_tool_use_history_invariants(history: &mut VecDeque<HistoryEntry>, too
     }
 }
 
+fn default_true() -> bool {
+    true
+}
 #[cfg(test)]
 mod tests {
     use super::super::message::AssistantToolUse;
@@ -1124,6 +1131,7 @@ mod tests {
             tool_manager,
             None,
             &os,
+            false,
         )
         .await;
 
@@ -1156,6 +1164,7 @@ mod tests {
             tool_manager.clone(),
             None,
             &os,
+            false,
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1191,6 +1200,7 @@ mod tests {
             tool_manager.clone(),
             None,
             &os,
+            false,
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1245,6 +1255,7 @@ mod tests {
             tool_manager,
             None,
             &os,
+            false,
         )
         .await;
 

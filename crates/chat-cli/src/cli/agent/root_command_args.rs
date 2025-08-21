@@ -74,9 +74,16 @@ pub struct AgentArgs {
 impl AgentArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         let mut stderr = std::io::stderr();
+        let mcp_enabled = match os.client.is_mcp_enabled().await {
+            Ok(enabled) => enabled,
+            Err(err) => {
+                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+                true
+            },
+        };
         match self.cmd {
             Some(AgentSubcommands::List) | None => {
-                let agents = Agents::load(os, None, true, &mut stderr).await.0;
+                let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
                 let agent_with_path =
                     agents
                         .agents
@@ -101,7 +108,7 @@ impl AgentArgs {
                 writeln!(stderr, "{}", output_str)?;
             },
             Some(AgentSubcommands::Create { name, directory, from }) => {
-                let mut agents = Agents::load(os, None, true, &mut stderr).await.0;
+                let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from).await?;
                 let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
                 let mut cmd = std::process::Command::new(editor_cmd);
@@ -133,7 +140,7 @@ impl AgentArgs {
             },
             Some(AgentSubcommands::Validate { path }) => {
                 let mut global_mcp_config = None::<McpServerConfig>;
-                let agent = Agent::load(os, path.as_str(), &mut global_mcp_config).await;
+                let agent = Agent::load(os, path.as_str(), &mut global_mcp_config, mcp_enabled).await;
 
                 'validate: {
                     match agent {
@@ -251,7 +258,7 @@ impl AgentArgs {
                 }
             },
             Some(AgentSubcommands::SetDefault { name }) => {
-                let mut agents = Agents::load(os, None, true, &mut stderr).await.0;
+                let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
                 match agents.switch(&name) {
                     Ok(agent) => {
                         os.database

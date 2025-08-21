@@ -132,7 +132,9 @@ impl AgentSubcommand {
                     .map_err(|e| ChatError::Custom(format!("Error printing agent schema: {e}").into()))?;
             },
             Self::Create { name, directory, from } => {
-                let mut agents = Agents::load(os, None, true, &mut session.stderr).await.0;
+                let mut agents = Agents::load(os, None, true, &mut session.stderr, session.conversation.mcp_enabled)
+                    .await
+                    .0;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from)
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
@@ -144,7 +146,8 @@ impl AgentSubcommand {
                     return Err(ChatError::Custom("Editor process did not exit with success".into()));
                 }
 
-                let new_agent = Agent::load(os, &path_with_file_name, &mut None).await;
+                let new_agent =
+                    Agent::load(os, &path_with_file_name, &mut None, session.conversation.mcp_enabled).await;
                 match new_agent {
                     Ok(agent) => {
                         session.conversation.agents.agents.insert(agent.name.clone(), agent);
