@@ -297,7 +297,7 @@
             "add", 
             "remove"
           ],
-          "description": "The command to run. Allowed options are `add`, `complete`."
+          "description": "The command to run. Allowed options are `create`, `complete`, `load`, `add`, and `remove`."
         },
         "tasks": {
           "description": "Required parameter of `create` command containing the list of DISTINCT tasks to be added to the TODO list.",
