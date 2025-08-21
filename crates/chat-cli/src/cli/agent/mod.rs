@@ -768,7 +768,16 @@ impl Agents {
         if tool_trusted || self.trust_all_tools {
             format!("* {}", "trusted".dark_green().bold())
         } else {
-            self.default_permission_label(tool_name)
+            // For custom agents, only show defaults if using the built-in default agent
+            let is_default_agent = self
+                .get_active()
+                .is_some_and(|a| a.path.is_none());
+            
+            if is_default_agent {
+                self.default_permission_label(tool_name)
+            } else {
+                format!("* {}", "not trusted".dark_grey())
+            }
         }
     }
 
