@@ -489,8 +489,10 @@ impl Knowledge {
         })
     }
 
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, os: &Os, agent: &Agent) -> PermissionEvalResult {
         _ = self;
+        _ = os;
+
         if matches_any_pattern(&agent.allowed_tools, "knowledge") {
             PermissionEvalResult::Allow
         } else {

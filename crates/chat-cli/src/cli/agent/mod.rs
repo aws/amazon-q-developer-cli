@@ -213,8 +213,8 @@ impl Agent {
 
         self.path = Some(path.to_path_buf());
 
+        let mut stderr = std::io::stderr();
         if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
-            let mut stderr = std::io::stderr();
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
@@ -235,6 +235,31 @@ impl Agent {
                 let mut server_clone = legacy_server.clone();
                 server_clone.is_from_legacy_mcp_json = true;
                 mcp_servers.mcp_servers.insert(name.clone(), server_clone);
+            }
+        }
+
+        stderr.flush()?;
+
+        Ok(())
+    }
+
+    pub fn print_overridden_permissions(&self, output: &mut impl Write) -> Result<(), AgentConfigError> {
+        let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        for allowed_tool in &self.allowed_tools {
+            if let Some(settings) = self.tools_settings.get(allowed_tool.as_str()) {
+                // currently we only have four native tools that offers tool settings
+                let overridden_settings_key = match allowed_tool.as_str() {
+                    "fs_read" | "fs_write" => Some("allowedPaths"),
+                    "use_aws" => Some("allowedServices"),
+                    name if name == execute_name => Some("allowedCommands"),
+                    _ => None,
+                };
+
+                if let Some(key) = overridden_settings_key {
+                    if let Some(ref override_settings) = settings.get(key).map(|value| format!("{key}: {value}")) {
+                        queue_permission_override_warning(allowed_tool.as_str(), override_settings, output)?;
+                    }
+                }
             }
         }
 
@@ -861,6 +886,28 @@ async fn load_legacy_mcp_config(os: &Os) -> eyre::Result<Option<McpServerConfig>
     })
 }
 
+pub fn queue_permission_override_warning(
+    tool_name: &str,
+    overridden_settings: &str,
+    output: &mut impl Write,
+) -> Result<(), std::io::Error> {
+    Ok(queue!(
+        output,
+        style::SetForegroundColor(Color::Yellow),
+        style::Print("WARNING: "),
+        style::ResetColor,
+        style::Print("You have trusted "),
+        style::SetForegroundColor(Color::Green),
+        style::Print(tool_name),
+        style::ResetColor,
+        style::Print(" tool, which overrides the toolsSettings: "),
+        style::SetForegroundColor(Color::Cyan),
+        style::Print(overridden_settings),
+        style::ResetColor,
+        style::Print("\n"),
+    )?)
+}
+
 fn default_schema() -> String {
     "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
 }
@@ -1088,8 +1135,10 @@ mod tests {
 
     #[test]
     fn test_display_label_trust_all_tools() {
-        let mut agents = Agents::default();
-        agents.trust_all_tools = true;
+        let agents = Agents {
+            trust_all_tools: true,
+            ..Default::default()
+        };
 
         // Should be trusted even if not in allowed_tools
         let label = agents.display_label("random_tool", &ToolOrigin::Native);
@@ -1119,7 +1168,8 @@ mod tests {
             fs_write_label
         );
 
-        let execute_bash_label = agents.display_label("execute_bash", &ToolOrigin::Native);
+        let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let execute_bash_label = agents.display_label(execute_name, &ToolOrigin::Native);
         assert!(
             execute_bash_label.contains("read-only"),
             "execute_bash should show read-only by default, instead found: {}",
