@@ -246,3 +246,56 @@ pub struct ServerCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<serde_json::Value>,
 }
+
+// MCP Sampling types
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SamplingMessage {
+    pub role: String,
+    pub content: SamplingContent,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
+pub enum SamplingContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image")]
+    Image { data: String, mime_type: String },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPreferences {
+    pub hints: Option<Vec<ModelHint>>,
+    pub cost_priority: Option<f64>,
+    pub speed_priority: Option<f64>,
+    pub intelligence_priority: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModelHint {
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SamplingRequest {
+    pub messages: Vec<SamplingMessage>,
+    pub model_preferences: Option<ModelPreferences>,
+    pub system_prompt: Option<String>,
+    pub include_context: Option<String>, // "none" | "thisServer" | "allServers"
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+    pub stop_sequences: Option<Vec<String>>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SamplingResponse {
+    pub role: String,
+    pub content: SamplingContent,
+    pub model: String,
+    pub stop_reason: String,
+}
