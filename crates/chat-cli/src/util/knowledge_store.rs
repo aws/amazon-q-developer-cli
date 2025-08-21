@@ -146,7 +146,7 @@ impl KnowledgeStore {
     /// Migrate legacy knowledge base from old location if needed
     async fn migrate_legacy_knowledge_base(agent_dir: &PathBuf) -> bool {
         let mut migrated = false;
-        
+
         // Extract agent identifier from the directory path (last component)
         let current_agent_id = agent_dir
             .file_name()
@@ -181,9 +181,7 @@ impl KnowledgeStore {
                         .filter(|entry| {
                             let name = entry.file_name();
                             let name_str = name.to_string_lossy();
-                            name_str != current_agent_id
-                                && name_str != DEFAULT_AGENT_NAME
-                                && !name_str.starts_with('.')
+                            name_str != current_agent_id && name_str != DEFAULT_AGENT_NAME && !name_str.starts_with('.')
                         })
                         .collect();
 

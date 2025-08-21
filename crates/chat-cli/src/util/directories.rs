@@ -205,14 +205,17 @@ pub fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result
 /// Generate a unique identifier for an agent based on its path and name
 fn generate_agent_unique_id(agent: &crate::cli::Agent) -> String {
     use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    
+    use std::hash::{
+        Hash,
+        Hasher,
+    };
+
     if let Some(path) = &agent.path {
         // Create a hash from the agent's path for uniqueness
         let mut hasher = DefaultHasher::new();
         path.hash(&mut hasher);
         let path_hash = hasher.finish();
-        
+
         // Combine hash with agent name for readability
         format!("{}_{:x}", agent.name, path_hash)
     } else {

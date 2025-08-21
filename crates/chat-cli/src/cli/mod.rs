@@ -16,8 +16,11 @@ use std::io::{
 use std::process::ExitCode;
 
 use agent::AgentArgs;
+pub use agent::{
+    Agent,
+    DEFAULT_AGENT_NAME,
+};
 use anstream::println;
-pub use agent::{Agent, DEFAULT_AGENT_NAME};
 pub use chat::ConversationState;
 use clap::{
     ArgAction,
