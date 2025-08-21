@@ -281,5 +281,38 @@
         "command"
       ]
     }
+  },
+  "shell_read_only_ls_directory": {
+    "name": "shell_read_only_ls_directory",
+    "description": "List directory contents with sanitized parameters",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Directory path to list"
+        },
+        "show_hidden": {
+          "type": "boolean",
+          "description": "Show hidden files (files starting with .)"
+        },
+        "long_format": {
+          "type": "boolean", 
+          "description": "Use long listing format with detailed information"
+        },
+        "recursive": {
+          "type": "boolean",
+          "description": "List subdirectories recursively"
+        },
+        "sort_by": {
+          "type": "string",
+          "enum": ["name", "size", "time"],
+          "description": "Sort files by name, size, or modification time"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
   }
 }
