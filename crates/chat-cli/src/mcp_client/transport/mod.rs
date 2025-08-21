@@ -4,7 +4,6 @@ pub mod stdio;
 use std::fmt::Debug;
 
 pub use base_protocol::*;
-pub use stdio::*;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error)]
