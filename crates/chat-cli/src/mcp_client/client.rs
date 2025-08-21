@@ -20,58 +20,11 @@ use thiserror::Error;
 use tokio::time;
 use tokio::time::error::Elapsed;
 
-// MCP Sampling types
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SamplingMessage {
-    pub role: String,
-    pub content: SamplingContent,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type")]
-pub enum SamplingContent {
-    #[serde(rename = "text")]
-    Text { text: String },
-    #[serde(rename = "image")]
-    Image { data: String, mime_type: String },
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelPreferences {
-    pub hints: Option<Vec<ModelHint>>,
-    pub cost_priority: Option<f64>,
-    pub speed_priority: Option<f64>,
-    pub intelligence_priority: Option<f64>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ModelHint {
-    pub name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SamplingRequest {
-    pub messages: Vec<SamplingMessage>,
-    pub model_preferences: Option<ModelPreferences>,
-    pub system_prompt: Option<String>,
-    pub include_context: Option<String>, // "none" | "thisServer" | "allServers"
-    pub temperature: Option<f64>,
-    pub max_tokens: Option<u32>,
-    pub stop_sequences: Option<Vec<String>>,
-    pub metadata: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SamplingResponse {
-    pub role: String,
-    pub content: SamplingContent,
-    pub model: String,
-    pub stop_reason: String,
-}
+use super::facilitator_types::{
+     SamplingContent,
+     SamplingRequest,
+     SamplingResponse,
+ };
 
 use super::transport::base_protocol::{
     JsonRpcMessage,
@@ -98,7 +51,11 @@ use super::{
     ResourcesListResult,
     ServerCapabilities,
     ToolsListResult,
+    sampling_ipc::PendingSamplingRequest,
 };
+use tokio::sync::mpsc::UnboundedSender;
+use crate::api_client::{ApiClient, ApiClientError};
+use crate::api_client::model::{ConversationState, UserInputMessage, ChatResponseStream};
 use crate::util::process::{
     Pid,
     terminate_process,
@@ -143,7 +100,7 @@ pub struct ClientConfig {
     pub client_info: serde_json::Value,
     pub env: Option<HashMap<String, String>>,
     #[serde(skip)]
-    pub sampling_sender: Option<tokio::sync::mpsc::UnboundedSender<crate::mcp_client::sampling_ipc::PendingSamplingRequest>>,
+    pub sampling_sender: Option<UnboundedSender<PendingSamplingRequest>>,
 }
 
 #[allow(dead_code)]
@@ -193,8 +150,8 @@ pub struct Client<T: Transport> {
     // TODO: move this to tool manager that way all the assets are treated equally
     pub prompt_gets: Arc<SyncRwLock<HashMap<String, PromptGet>>>,
     pub is_prompts_out_of_date: Arc<AtomicBool>,
-    sampling_sender: Option<tokio::sync::mpsc::UnboundedSender<crate::mcp_client::sampling_ipc::PendingSamplingRequest>>,
-    streaming_client: Arc<Mutex<Option<std::sync::Arc<crate::api_client::ApiClient>>>>,
+    sampling_sender: Option<UnboundedSender<PendingSamplingRequest>>,
+    streaming_client: Arc<Mutex<Option<ApiClient>>>,
 }
 
 impl<T: Transport> Clone for Client<T> {
@@ -724,7 +681,7 @@ where
     }
 
     /// Set the StreamingClient for LLM integration in sampling requests
-    pub fn set_streaming_client(&self, api_client: std::sync::Arc<crate::api_client::ApiClient>) {
+    pub fn set_streaming_client(&self, api_client: ApiClient) {
         tracing::info!(target: "mcp", "Setting StreamingClient for server: {}", self.server_name);
         if let Ok(mut client_guard) = self.streaming_client.lock() {
             *client_guard = Some(api_client);
@@ -760,7 +717,7 @@ where
             let (approval_sender, approval_receiver) = tokio::sync::oneshot::channel();
 
             // Create pending sampling request
-            let pending_request = crate::mcp_client::sampling_ipc::PendingSamplingRequest::new(
+            let pending_request = PendingSamplingRequest::new(
                 self.server_name.clone(),
                 prompt_content.clone(),
                 sampling_request.system_prompt.clone(),
@@ -894,9 +851,9 @@ where
             .and_then(|hints| hints.first())
             .map(|hint| hint.name.clone());
 
-        let conversation_state = crate::api_client::model::ConversationState {
+        let conversation_state = ConversationState {
             conversation_id: None, // New conversation for sampling
-            user_input_message: crate::api_client::model::UserInputMessage {
+            user_input_message: UserInputMessage {
                 content: prompt.to_string(),
                 user_input_message_context: None,
                 user_intent: None,
@@ -916,13 +873,13 @@ where
                 let mut response_content = String::new();
                 while let Ok(Some(response_stream)) = send_message_output.recv().await {
                     match response_stream {
-                        crate::api_client::model::ChatResponseStream::AssistantResponseEvent { content } => {
+                        ChatResponseStream::AssistantResponseEvent { content } => {
                             response_content.push_str(&content);
                         }
-                        crate::api_client::model::ChatResponseStream::CodeEvent { content } => {
+                        ChatResponseStream::CodeEvent { content } => {
                             response_content.push_str(&content);
                         }
-                        crate::api_client::model::ChatResponseStream::InvalidStateEvent { reason, message } => {
+                        ChatResponseStream::InvalidStateEvent { reason, message } => {
                             tracing::error!(target: "mcp", "Invalid state during sampling: {} - {}", reason, message);
                             break;
                         }
@@ -956,19 +913,19 @@ where
 
                 // Map API client errors to appropriate client errors with detailed logging
                 match e {
-                    crate::api_client::ApiClientError::QuotaBreach { message, status_code } => {
+                    ApiClientError::QuotaBreach { message, status_code } => {
                         tracing::warn!(target: "mcp", "Quota breach during sampling request: {} (status: {:?})", message, status_code);
                         Err(ClientError::NegotiationError(format!("Quota exceeded: {}", message)))
                     }
-                    crate::api_client::ApiClientError::ContextWindowOverflow { status_code } => {
+                    ApiClientError::ContextWindowOverflow { status_code } => {
                         tracing::warn!(target: "mcp", "Context window overflow during sampling request (status: {:?})", status_code);
                         Err(ClientError::NegotiationError("Input too long for model context window".to_string()))
                     }
-                    crate::api_client::ApiClientError::ModelOverloadedError { request_id, status_code } => {
+                    ApiClientError::ModelOverloadedError { request_id, status_code } => {
                         tracing::warn!(target: "mcp", "Model overloaded during sampling request (request_id: {:?}, status: {:?})", request_id, status_code);
                         Err(ClientError::NegotiationError("Model temporarily unavailable due to high load".to_string()))
                     }
-                    crate::api_client::ApiClientError::MonthlyLimitReached { status_code } => {
+                    ApiClientError::MonthlyLimitReached { status_code } => {
                         tracing::warn!(target: "mcp", "Monthly limit reached during sampling request (status: {:?})", status_code);
                         Err(ClientError::NegotiationError("Monthly usage limit reached".to_string()))
                     }
