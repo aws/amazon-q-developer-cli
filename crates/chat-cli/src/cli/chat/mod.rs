@@ -19,109 +19,40 @@ pub mod tool_manager;
 pub mod tools;
 pub mod util;
 use std::borrow::Cow;
-use std::collections::{
-    HashMap,
-    VecDeque,
-};
-use std::io::{
-    IsTerminal,
-    Read,
-    Write,
-};
+use std::collections::{HashMap, VecDeque};
+use std::io::{IsTerminal, Read, Write};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{
-    Duration,
-    Instant,
-};
+use std::time::{Duration, Instant};
 
 use amzn_codewhisperer_client::types::SubscriptionStatus;
-use clap::{
-    Args,
-    CommandFactory,
-    Parser,
-};
+use clap::{Args, CommandFactory, Parser};
 use cli::compact::CompactStrategy;
-use cli::model::{
-    get_available_models,
-    select_model,
-};
+use cli::model::{get_available_models, select_model};
 pub use conversation::ConversationState;
 use conversation::TokenWarningLevel;
-use crossterm::style::{
-    Attribute,
-    Color,
-    Stylize,
-};
-use crossterm::{
-    cursor,
-    execute,
-    queue,
-    style,
-    terminal,
-};
-use eyre::{
-    Report,
-    Result,
-    bail,
-    eyre,
-};
+use crossterm::style::{Attribute, Color, Stylize};
+use crossterm::{cursor, execute, queue, style, terminal};
+use tool_manager::{PromptQuery, PromptQueryResult};
+use eyre::{Report, Result, bail, eyre};
 use input_source::InputSource;
-use message::{
-    AssistantMessage,
-    AssistantToolUse,
-    ToolUseResult,
-    ToolUseResultBlock,
-};
-use parse::{
-    ParseState,
-    interpret_markdown,
-};
-use parser::{
-    RecvErrorKind,
-    RequestMetadata,
-    SendMessageStream,
-};
+use message::{AssistantMessage, AssistantToolUse, ToolUseResult, ToolUseResultBlock};
+use parse::{ParseState, interpret_markdown};
+use parser::{RecvErrorKind, RequestMetadata, SendMessageStream};
 use regex::Regex;
-use spinners::{
-    Spinner,
-    Spinners,
-};
+use spinners::{Spinner, Spinners};
 use thiserror::Error;
 use time::OffsetDateTime;
 use token_counter::TokenCounter;
 use tokio::signal::ctrl_c;
-use tokio::sync::{
-    Mutex,
-    broadcast,
-};
-use tool_manager::{
-    PromptQuery,
-    PromptQueryResult,
-    ToolManager,
-    ToolManagerBuilder,
-};
+use tokio::sync::{Mutex, broadcast};
+use tool_manager::{ToolManager, ToolManagerBuilder};
 use tools::gh_issue::GhIssueContext;
-use tools::{
-    NATIVE_TOOLS,
-    OutputKind,
-    QueuedTool,
-    Tool,
-    ToolSpec,
-};
-use tracing::{
-    debug,
-    error,
-    info,
-    trace,
-    warn,
-};
+use tools::{NATIVE_TOOLS, OutputKind, QueuedTool, Tool, ToolSpec};
+use tracing::{debug, error, info, trace, warn};
 use util::images::RichImageBlock;
 use util::ui::draw_box;
-use util::{
-    animate_output,
-    play_notification_bell,
-};
+use util::{animate_output, play_notification_bell};
 use winnow::Partial;
 use winnow::stream::Offset;
 
@@ -130,36 +61,22 @@ use super::agent::{
     PermissionEvalResult,
 };
 use crate::api_client::model::ToolResultStatus;
-use crate::api_client::{
-    self,
-    ApiClientError,
-};
+use crate::api_client::{self, ApiClientError};
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::model::find_model;
-use crate::cli::chat::cli::prompts::{
-    GetPromptError,
-    PromptsSubcommand,
-};
+use crate::cli::chat::cli::prompts::{GetPromptError, PromptsSubcommand};
 use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 use crate::telemetry::core::{
-    AgentConfigInitArgs,
-    ChatAddedMessageParams,
-    ChatConversationType,
-    MessageMetaTag,
-    RecordUserTurnCompletionArgs,
+    AgentConfigInitArgs, ChatAddedMessageParams, ChatConversationType, MessageMetaTag, RecordUserTurnCompletionArgs,
     ToolUseEventBuilder,
 };
-use crate::telemetry::{
-    ReasonCode,
-    TelemetryResult,
-    get_error_reason,
-};
+use crate::telemetry::{ReasonCode, TelemetryResult, get_error_reason};
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 
 const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
@@ -177,6 +94,8 @@ pub const EXTRA_HELP: &str = color_print::cstr! {"
 <em>Ctrl(^) + s</em>         <black!>Fuzzy search commands and context files</black!>
                     <black!>Use Tab to select multiple items</black!>
                     <black!>Change the keybind using: q settings chat.skimCommandKey x</black!>
+<em>Ctrl(^) + t</em>         <black!>Toggle tangent mode for isolated conversations</black!>
+                    <black!>Change the keybind using: q settings chat.tangentModeKey x</black!>
 <em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
                     <black!>Change using: q settings chat.skimCommandKey x</black!>
 "};
@@ -270,13 +189,17 @@ impl ChatArgs {
             agents.trust_all_tools = self.trust_all_tools;
 
             os.telemetry
-                .send_agent_config_init(&os.database, conversation_id.clone(), AgentConfigInitArgs {
-                    agents_loaded_count: md.load_count as i64,
-                    agents_loaded_failed_count: md.load_failed_count as i64,
-                    legacy_profile_migration_executed: md.migration_performed,
-                    legacy_profile_migrated_count: md.migrated_count as i64,
-                    launched_agent: md.launched_agent,
-                })
+                .send_agent_config_init(
+                    &os.database,
+                    conversation_id.clone(),
+                    AgentConfigInitArgs {
+                        agents_loaded_count: md.load_count as i64,
+                        agents_loaded_failed_count: md.load_failed_count as i64,
+                        legacy_profile_migration_executed: md.migration_performed,
+                        legacy_profile_migrated_count: md.migrated_count as i64,
+                        launched_agent: md.launched_agent,
+                    },
+                )
                 .await
                 .map_err(|err| error!(?err, "failed to send agent config init telemetry"))
                 .ok();
@@ -401,7 +324,7 @@ const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cya
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
 // Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 16] = [
+const ROTATING_TIPS: [&str; 17] = [
     color_print::cstr! {"You can resume the last conversation from your current directory by launching with
     <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding.
@@ -433,6 +356,7 @@ const ROTATING_TIPS: [&str; 16] = [
     color_print::cstr! {"Use <green!>/model</green!> to select the model to use for this conversation"},
     color_print::cstr! {"Set a default model by running <green!>q settings chat.defaultModel MODEL</green!>. Run <green!>/model</green!> to learn more."},
     color_print::cstr! {"Run <green!>/prompts</green!> to learn how to build & run repeatable workflows"},
+    color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
 ];
 
 const GREETING_BREAK_POINT: usize = 80;
@@ -2640,7 +2564,8 @@ impl ChatSession {
     fn generate_tool_trust_prompt(&mut self) -> String {
         let profile = self.conversation.current_profile().map(|s| s.to_string());
         let all_trusted = self.all_tools_trusted();
-        prompt::generate_prompt(profile.as_deref(), all_trusted)
+        let tangent_mode = self.conversation.is_in_tangent_mode();
+        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode)
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
@@ -2742,7 +2667,13 @@ impl ChatSession {
             tool_use_id: self.conversation.latest_tool_use_ids(),
             tool_name: self.conversation.latest_tool_use_names(),
             assistant_response_length: md.map(|md| md.response_size as i32),
-            message_meta_tags: md.map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
+            message_meta_tags: {
+                let mut tags = md.map(|md| md.message_meta_tags.clone()).unwrap_or_default();
+                if self.conversation.is_in_tangent_mode() {
+                    tags.push(crate::telemetry::core::MessageMetaTag::TangentMode);
+                }
+                tags
+            },
         };
         os.telemetry
             .send_chat_added_message(&os.database, conversation_id.clone(), result, data)
@@ -2762,26 +2693,31 @@ impl ChatSession {
             };
 
             os.telemetry
-                .send_record_user_turn_completion(&os.database, conversation_id, result, RecordUserTurnCompletionArgs {
-                    message_ids: mds.iter().map(|md| md.message_id.clone()).collect::<_>(),
-                    request_ids: mds.iter().map(|md| md.request_id.clone()).collect::<_>(),
-                    reason,
-                    reason_desc,
-                    status_code,
-                    time_to_first_chunks_ms: mds
-                        .iter()
-                        .map(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0))
-                        .collect::<_>(),
-                    chat_conversation_type: md.and_then(|md| md.chat_conversation_type),
-                    assistant_response_length: mds.iter().map(|md| md.response_size as i64).sum(),
-                    message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
-                    user_prompt_length: mds.first().map(|md| md.user_prompt_length).unwrap_or_default() as i64,
-                    user_turn_duration_seconds,
-                    follow_up_count: mds
-                        .iter()
-                        .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
-                        .count() as i64,
-                })
+                .send_record_user_turn_completion(
+                    &os.database,
+                    conversation_id,
+                    result,
+                    RecordUserTurnCompletionArgs {
+                        message_ids: mds.iter().map(|md| md.message_id.clone()).collect::<_>(),
+                        request_ids: mds.iter().map(|md| md.request_id.clone()).collect::<_>(),
+                        reason,
+                        reason_desc,
+                        status_code,
+                        time_to_first_chunks_ms: mds
+                            .iter()
+                            .map(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0))
+                            .collect::<_>(),
+                        chat_conversation_type: md.and_then(|md| md.chat_conversation_type),
+                        assistant_response_length: mds.iter().map(|md| md.response_size as i64).sum(),
+                        message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
+                        user_prompt_length: mds.first().map(|md| md.user_prompt_length).unwrap_or_default() as i64,
+                        user_turn_duration_seconds,
+                        follow_up_count: mds
+                            .iter()
+                            .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
+                            .count() as i64,
+                    },
+                )
                 .await
                 .ok();
         }

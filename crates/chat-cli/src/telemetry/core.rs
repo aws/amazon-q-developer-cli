@@ -505,6 +505,8 @@ impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
 pub enum MessageMetaTag {
     /// A /compact request
     Compact,
+    /// A /tangent request
+    TangentMode,
 }
 
 /// Optional fields to add for a chatAddedMessage telemetry event.

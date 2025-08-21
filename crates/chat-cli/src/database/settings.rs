@@ -2,16 +2,9 @@ use std::fmt::Display;
 use std::io::SeekFrom;
 
 use fd_lock::RwLock;
-use serde_json::{
-    Map,
-    Value,
-};
+use serde_json::{Map, Value};
 use tokio::fs::File;
-use tokio::io::{
-    AsyncReadExt,
-    AsyncSeekExt,
-    AsyncWriteExt,
-};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use super::DatabaseError;
 
@@ -29,6 +22,7 @@ pub enum Setting {
     KnowledgeChunkOverlap,
     KnowledgeIndexType,
     SkimCommandKey,
+    TangentModeKey,
     ChatGreetingEnabled,
     ApiTimeout,
     ChatEditMode,
@@ -60,6 +54,7 @@ impl AsRef<str> for Setting {
             Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap",
             Self::KnowledgeIndexType => "knowledge.indexType",
             Self::SkimCommandKey => "chat.skimCommandKey",
+            Self::TangentModeKey => "chat.tangentModeKey",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
             Self::ChatEditMode => "chat.editMode",
@@ -101,6 +96,7 @@ impl TryFrom<&str> for Setting {
             "knowledge.chunkOverlap" => Ok(Self::KnowledgeChunkOverlap),
             "knowledge.indexType" => Ok(Self::KnowledgeIndexType),
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
+            "chat.tangentModeKey" => Ok(Self::TangentModeKey),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),
             "chat.editMode" => Ok(Self::ChatEditMode),
