@@ -417,6 +417,5 @@ mod tests {
         assert_eq!(result, "**/path");
         let result = canonicalizes_path(&test_os, "**/middle/**/path").unwrap();
         assert_eq!(result, "**/middle/**/path");
-
     }
 }
