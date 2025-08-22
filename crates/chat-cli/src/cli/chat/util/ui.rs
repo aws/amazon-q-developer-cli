@@ -117,9 +117,9 @@ pub fn draw_box(
 #[cfg(test)]
 mod tests {
     use bstr::ByteSlice;
-    use crossterm::style::Color;
 
     use super::*;
+    use crate::cli::chat::colors::ColorManager;
     use crate::cli::chat::GREETING_BREAK_POINT;
 
     #[tokio::test]

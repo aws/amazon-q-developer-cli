@@ -230,16 +230,32 @@ impl ColorTheme {
                     ThemeName::Nord => Self::nord_theme(),
                 };
                 
-                // Apply any theme-specific color overrides
+                // Apply any theme-specific color overrides, with individual color settings as fallback
                 return Self {
-                    success: settings.get_color(Setting::Color { theme, category: ColorCategory::Success }).unwrap_or(base_theme.success),
-                    error: settings.get_color(Setting::Color { theme, category: ColorCategory::Error }).unwrap_or(base_theme.error),
-                    warning: settings.get_color(Setting::Color { theme, category: ColorCategory::Warning }).unwrap_or(base_theme.warning),
-                    info: settings.get_color(Setting::Color { theme, category: ColorCategory::Info }).unwrap_or(base_theme.info),
-                    secondary: settings.get_color(Setting::Color { theme, category: ColorCategory::Secondary }).unwrap_or(base_theme.secondary),
-                    primary: settings.get_color(Setting::Color { theme, category: ColorCategory::Primary }).unwrap_or(base_theme.primary),
-                    action: settings.get_color(Setting::Color { theme, category: ColorCategory::Action }).unwrap_or(base_theme.action),
-                    data: settings.get_color(Setting::Color { theme, category: ColorCategory::Data }).unwrap_or(base_theme.data),
+                    success: settings.get_color(Setting::Color { theme, category: ColorCategory::Success })
+                        .or_else(|| settings.get_color(Setting::ChatThemeSuccess))
+                        .unwrap_or(base_theme.success),
+                    error: settings.get_color(Setting::Color { theme, category: ColorCategory::Error })
+                        .or_else(|| settings.get_color(Setting::ChatThemeError))
+                        .unwrap_or(base_theme.error),
+                    warning: settings.get_color(Setting::Color { theme, category: ColorCategory::Warning })
+                        .or_else(|| settings.get_color(Setting::ChatThemeWarning))
+                        .unwrap_or(base_theme.warning),
+                    info: settings.get_color(Setting::Color { theme, category: ColorCategory::Info })
+                        .or_else(|| settings.get_color(Setting::ChatThemeInfo))
+                        .unwrap_or(base_theme.info),
+                    secondary: settings.get_color(Setting::Color { theme, category: ColorCategory::Secondary })
+                        .or_else(|| settings.get_color(Setting::ChatThemeSecondary))
+                        .unwrap_or(base_theme.secondary),
+                    primary: settings.get_color(Setting::Color { theme, category: ColorCategory::Primary })
+                        .or_else(|| settings.get_color(Setting::ChatThemePrimary))
+                        .unwrap_or(base_theme.primary),
+                    action: settings.get_color(Setting::Color { theme, category: ColorCategory::Action })
+                        .or_else(|| settings.get_color(Setting::ChatThemeAction))
+                        .unwrap_or(base_theme.action),
+                    data: settings.get_color(Setting::Color { theme, category: ColorCategory::Data })
+                        .or_else(|| settings.get_color(Setting::ChatThemeData))
+                        .unwrap_or(base_theme.data),
                 };
             }
         }
@@ -576,6 +592,35 @@ impl Settings {
         lock.flush().await?;
 
         Ok(())
+    }
+
+    pub async fn set_color(&mut self, key: Setting, color: Color) -> eyre::Result<()> {
+        let color_str = match color {
+            Color::Black => "black",
+            Color::DarkGrey => "dark_grey", 
+            Color::Red => "red",
+            Color::DarkRed => "dark_red",
+            Color::Green => "green",
+            Color::DarkGreen => "dark_green",
+            Color::Yellow => "yellow",
+            Color::DarkYellow => "dark_yellow",
+            Color::Blue => "blue",
+            Color::DarkBlue => "dark_blue",
+            Color::Magenta => "magenta",
+            Color::DarkMagenta => "dark_magenta",
+            Color::Cyan => "cyan",
+            Color::DarkCyan => "dark_cyan",
+            Color::White => "white",
+            Color::Grey => "grey",
+            Color::Reset => "reset",
+            Color::Rgb { r, g, b } => return Ok(self.set(key, format!("rgb({},{},{})", r, g, b)).await?),
+            Color::AnsiValue(v) => return Ok(self.set(key, format!("ansi({})", v)).await?),
+        };
+        Ok(self.set(key, color_str.to_string()).await?)
+    }
+
+    pub async fn clear_theme(&mut self) -> eyre::Result<()> {
+        Ok(self.remove(Setting::ChatTheme).await.map(|_| ())?)
     }
 }
 

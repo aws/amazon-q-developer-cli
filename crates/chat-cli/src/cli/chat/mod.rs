@@ -2976,8 +2976,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use super::super::colors::ColorManager;
-use crate::cli::agent::Agent;
+    use crate::cli::agent::Agent;
 
     async fn get_test_agents(os: &Os) -> Agents {
         const AGENT_PATH: &str = "/persona/TestAgent.json";
