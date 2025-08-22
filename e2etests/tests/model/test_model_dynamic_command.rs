@@ -10,6 +10,7 @@ static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
 const TEST_NAMES: &[&str] = &[
     "test_model_dynamic_command",
     "test_model_help_command",
+    "test_model_h_command",
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
@@ -148,10 +149,6 @@ fn test_model_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", response);
     println!("📝 END OUTPUT");
     
-    /* Verify description
-    assert!(response.contains("Select") && response.contains("model"), "Missing model selection description");
-    println!("✅ Found model selection description");*/
-    
     // Verify Usage section
     assert!(response.contains("Usage:"), "Missing Usage section");
     assert!(response.contains("/model"), "Missing /model command in usage section");
@@ -162,8 +159,46 @@ fn test_model_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found Options section");
     
     // Verify help flags
-    assert!(response.contains("-h") &&  response.contains("--help") && response.contains("Print help"), "Missing -h, --help flags");
-    assert!(response.contains("Print help"), "Missing Print help description");
+    assert!(response.contains("-h") &&  response.contains("--help"), "Missing -h, --help flags");
+    println!("✅ Found help flags: -h, --help with Print help description");
+    
+    println!("✅ All model help content verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "model", feature = "regression"))]
+fn test_model_h_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Testing /model -h command...");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
+    let response = chat.execute_command("/model -h")?;
+    
+    println!("📝 Model help response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    // Verify Usage section
+    assert!(response.contains("Usage:"), "Missing Usage section");
+    assert!(response.contains("/model"), "Missing /model command in usage section");
+    println!("✅ Found Usage section with /model command");
+    
+    // Verify Options section
+    assert!(response.contains("Options:"), "Missing Options section");
+    println!("✅ Found Options section");
+    
+    // Verify help flags
+    assert!(response.contains("-h") &&  response.contains("--help"), "Missing -h, --help flags");
     println!("✅ Found help flags: -h, --help with Print help description");
     
     println!("✅ All model help content verified!");

@@ -10,6 +10,7 @@ static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
 const TEST_NAMES: &[&str] = &[
     "test_usage_command",
     "test_usage_help_command",
+    "test_usage_h_command",
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
@@ -88,9 +89,47 @@ fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", response);
     println!("📝 END OUTPUT");
     
-    /* Verify description
-    assert!(response.contains("context window ") && response.contains("usage"), "Missing usage command description");
-    println!("✅ Found usage command description");*/
+    // Verify Usage section
+    assert!(response.contains("Usage:"), "Missing Usage section");
+    assert!(response.contains("/usage"), "Missing /usage command in usage section");
+    println!("✅ Found Usage section with /usage command");
+    
+    // Verify Options section
+    assert!(response.contains("Options:"), "Missing Options section");
+    println!("✅ Found Options section");
+    
+    // Verify help flags
+    assert!(response.contains("-h") &&  response.contains("--help") && response.contains("Print help"), "Missing -h, --help flags");
+    println!("✅ Found help flags: -h, --help with description");
+    
+    println!("✅ All usage help content verified!");
+    
+    println!("✅ Test completed successfully");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(any(feature = "usage", feature = "session_mgmt"), feature = "regression"))]
+fn test_usage_h_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Testing /usage -h command...");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
+    let response = chat.execute_command("/usage -h")?;
+    
+    println!("📝 Usage help response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
     
     // Verify Usage section
     assert!(response.contains("Usage:"), "Missing Usage section");
