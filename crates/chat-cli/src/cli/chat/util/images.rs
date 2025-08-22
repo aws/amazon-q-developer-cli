@@ -13,6 +13,8 @@ use serde::{
     Serialize,
 };
 
+use super::super::colors::ColorManager;
+
 use crate::api_client::model::{
     ImageBlock,
     ImageFormat,
@@ -56,7 +58,7 @@ pub fn pre_process(path: &str) -> String {
     path.to_string()
 }
 
-pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> RichImageBlocks {
+pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String], colors: &ColorManager) -> RichImageBlocks {
     let mut extracted_images = Vec::new();
     let mut seen_args = std::collections::HashSet::new();
 
@@ -91,7 +93,7 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
     if valid_images.len() > MAX_NUMBER_OF_IMAGES_PER_REQUEST {
         execute!(
             &mut *output,
-            style::SetForegroundColor(Color::DarkYellow),
+            style::SetForegroundColor(colors.warning()),
             style::Print(format!(
                 "\nMore than {} images detected. Extra ones will be dropped.\n",
                 MAX_NUMBER_OF_IMAGES_PER_REQUEST
@@ -105,7 +107,7 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
     if !images_exceeding_size_limit.is_empty() {
         execute!(
             &mut *output,
-            style::SetForegroundColor(Color::DarkYellow),
+            style::SetForegroundColor(colors.warning()),
             style::Print(format!(
                 "\nThe following images are dropped due to exceeding size limit ({}MB):\n",
                 MAX_IMAGE_SIZE / (1024 * 1024)
@@ -123,7 +125,7 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
             };
             execute!(
                 &mut *output,
-                style::SetForegroundColor(Color::DarkYellow),
+                style::SetForegroundColor(colors.warning()),
                 style::Print(format!("  - {} ({})\n", metadata.filename, image_size_str)),
                 style::SetForegroundColor(Color::Reset)
             )
@@ -226,7 +228,7 @@ mod tests {
         let image_path = temp_dir.path().join("test_image.jpg");
         std::fs::write(&image_path, b"fake_image_data").unwrap();
 
-        let images = handle_images_from_paths(&mut vec![], &[image_path.to_string_lossy().to_string()]);
+        let images = handle_images_from_paths(&mut vec![], &[image_path.to_string_lossy().to_string()], &ColorManager::default());
 
         assert_eq!(images.len(), 1);
         assert_eq!(images[0].1.filename, "test_image.jpg");
@@ -257,7 +259,7 @@ mod tests {
         let large_image_size = MAX_IMAGE_SIZE + 1;
         std::fs::write(&large_image_path, vec![0; large_image_size]).unwrap();
         let mut output = vec![];
-        let images = handle_images_from_paths(&mut output, &[large_image_path.to_string_lossy().to_string()]);
+        let images = handle_images_from_paths(&mut output, &[large_image_path.to_string_lossy().to_string()], &ColorManager::default());
         let output_str = output.to_str_lossy();
         print!("{}", output_str);
         assert!(output_str.contains("The following images are dropped due to exceeding size limit (10MB):"));
@@ -276,7 +278,7 @@ mod tests {
             std::fs::write(&image_path, b"fake_image_data").unwrap();
         }
 
-        let images = handle_images_from_paths(&mut vec![], &paths);
+        let images = handle_images_from_paths(&mut vec![], &paths, &ColorManager::default());
 
         assert_eq!(images.len(), MAX_NUMBER_OF_IMAGES_PER_REQUEST);
     }

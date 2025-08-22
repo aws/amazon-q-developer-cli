@@ -45,6 +45,15 @@ use tokio::sync::{
     RwLock,
 };
 use tokio::task::JoinHandle;
+
+use super::colors::ColorManager;
+use crate::database::settings::Settings;
+
+// Helper function to get colors with fallbacks
+fn get_colors() -> ColorManager {
+    let settings = Settings::default();
+    ColorManager::from_settings(&settings)
+}
 use tracing::{
     error,
     info,
@@ -249,6 +258,7 @@ impl ToolManagerBuilder {
         os: &mut Os,
         mut output: Box<dyn Write + Send + Sync + 'static>,
         interactive: bool,
+        colors: &ColorManager,
     ) -> eyre::Result<ToolManager> {
         let McpServerConfig { mcp_servers } = match &self.agent {
             Some(agent) => agent.lock().await.mcp_servers.clone(),
@@ -272,15 +282,16 @@ impl ToolManagerBuilder {
             .into_iter()
             .filter_map(|(server_name, server_config)| {
                 if server_name == "builtin" {
+                    let colors = get_colors();
                     let _ = queue!(
                         output,
-                        style::SetForegroundColor(style::Color::Red),
+                        style::SetForegroundColor(colors.error()),
                         style::Print("✗ Invalid server name "),
-                        style::SetForegroundColor(style::Color::Blue),
+                        style::SetForegroundColor(colors.info()),
                         style::Print(&server_name),
                         style::ResetColor,
                         style::Print(". Server name cannot contain reserved word "),
-                        style::SetForegroundColor(style::Color::Yellow),
+                        style::SetForegroundColor(colors.warning()),
                         style::Print("builtin"),
                         style::ResetColor,
                         style::Print(" (it is used to denote native tools)\n")
@@ -304,7 +315,7 @@ impl ToolManagerBuilder {
         // This is only necessary when we are in interactive mode AND there are servers to load.
         // Otherwise we do not need to be spawning this.
         let (loading_display_task, loading_status_sender) =
-            spawn_display_task(interactive, total, disabled_servers, output);
+            spawn_display_task(interactive, total, disabled_servers, output, colors.clone());
 
         let mut clients = HashMap::<String, Arc<CustomToolClient>>::new();
         let new_tool_specs = self.new_tool_specs;
@@ -600,7 +611,7 @@ impl ToolManager {
     /// - Swapping the old with the new (the old would be dropped after we exit the scope of this
     ///   function)
     /// - Calling load tools
-    pub async fn swap_agent(&mut self, os: &mut Os, output: &mut impl Write, agent: &Agent) -> eyre::Result<()> {
+    pub async fn swap_agent(&mut self, os: &mut Os, output: &mut impl Write, agent: &Agent, colors: &ColorManager) -> eyre::Result<()> {
         self.clients.clear();
 
         let mut agent_lock = self.agent.lock().await;
@@ -610,7 +621,7 @@ impl ToolManager {
         self.mcp_load_record.lock().await.clear();
 
         let builder = ToolManagerBuilder::from(&mut *self);
-        let mut new_tool_manager = builder.build(os, Box::new(std::io::sink()), true).await?;
+        let mut new_tool_manager = builder.build(os, Box::new(std::io::sink()), true, colors).await?;
         std::mem::swap(self, &mut new_tool_manager);
 
         // we can discard the output here and let background server load take care of getting the
@@ -1055,6 +1066,7 @@ fn spawn_display_task(
     total: usize,
     disabled_servers: Vec<(String, CustomToolConfig)>,
     mut output: Box<dyn Write + Send + Sync + 'static>,
+    colors: ColorManager,
 ) -> (Option<DisplayTaskJoinHandle>, Option<LoadingStatusSender>) {
     if interactive && (total > 0 || !disabled_servers.is_empty()) {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<LoadingMsg>(50);
@@ -1066,11 +1078,11 @@ fn spawn_display_task(
 
                 // Show disabled servers immediately
                 for (server_name, _) in &disabled_servers {
-                    queue_disabled_message(server_name, &mut output)?;
+                    queue_disabled_message(server_name, &mut output, &colors)?;
                 }
 
                 if total > 0 {
-                    queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
+                    queue_init_message(spinner_logo_idx, complete, failed, total, &mut output, &colors)?;
                 }
 
                 loop {
@@ -1084,8 +1096,8 @@ fn spawn_display_task(
                                     cursor::MoveUp(1),
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
-                                queue_success_message(&name, &time, &mut output)?;
-                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
+                                queue_success_message(&name, &time, &mut output, &colors)?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output, &colors)?;
                             },
                             LoadingMsg::Error { name, msg, time } => {
                                 failed += 1;
@@ -1095,8 +1107,8 @@ fn spawn_display_task(
                                     cursor::MoveUp(1),
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
-                                queue_failure_message(&name, &msg, time.as_str(), &mut output)?;
-                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
+                                queue_failure_message(&name, &msg, time.as_str(), &mut output, &colors)?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output, &colors)?;
                             },
                             LoadingMsg::Warn { name, msg, time } => {
                                 complete += 1;
@@ -1107,8 +1119,8 @@ fn spawn_display_task(
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
                                 let msg = eyre::eyre!(msg.to_string());
-                                queue_warn_message(&name, &msg, time.as_str(), &mut output)?;
-                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
+                                queue_warn_message(&name, &msg, time.as_str(), &mut output, &colors)?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output, &colors)?;
                             },
                             LoadingMsg::Terminate { still_loading } => {
                                 if !still_loading.is_empty() && total > 0 {
@@ -1123,7 +1135,7 @@ fn spawn_display_task(
                                         acc
                                     });
                                     let msg = eyre::eyre!(msg);
-                                    queue_incomplete_load_message(complete, total, &msg, &mut output)?;
+                                    queue_incomplete_load_message(complete, total, &msg, &mut output, &colors)?;
                                 } else if total > 0 {
                                     // Clear the loading line if we have enabled servers
                                     execute!(
@@ -1368,12 +1380,14 @@ fn spawn_orchestrator_task(
                                     "Received tool list result from {server_name} but its associated process {pid} is no longer running. Ignoring."
                                 );
 
+                                let colors = ColorManager::default();
                                 let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
                                 let _ = queue_failure_message(
                                     &server_name,
                                     &eyre::eyre!("Process associated is no longer running"),
                                     &time_taken,
                                     &mut buf_writer,
+                                    &colors,
                                 );
                                 let _ = buf_writer.flush();
                                 drop(buf_writer);
@@ -1439,13 +1453,14 @@ fn spawn_orchestrator_task(
                                 .insert(server_name.clone(), (sanitized_mapping, specs));
                             has_new_stuff.store(true, Ordering::Release);
                             // Maintain a record of the server load:
+                            let colors = ColorManager::default();
                             let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
                             if let Err(e) = &process_result {
                                 let _ =
-                                    queue_warn_message(server_name.as_str(), e, time_taken.as_str(), &mut buf_writer);
+                                    queue_warn_message(server_name.as_str(), e, time_taken.as_str(), &mut buf_writer, &colors);
                             } else {
                                 let _ =
-                                    queue_success_message(server_name.as_str(), time_taken.as_str(), &mut buf_writer);
+                                    queue_success_message(server_name.as_str(), time_taken.as_str(), &mut buf_writer, &colors);
                             }
                             let _ = buf_writer.flush();
                             drop(buf_writer);
@@ -1468,8 +1483,9 @@ fn spawn_orchestrator_task(
                             // Log error to chat Log
                             error!("Error loading server {server_name}: {:?}", e);
                             // Maintain a record of the server load:
+                            let colors = ColorManager::default();
                             let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                            let _ = queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer);
+                            let _ = queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer, &colors);
                             let _ = buf_writer.flush();
                             drop(buf_writer);
                             let record = String::from_utf8_lossy(record_temp_buf).to_string();
@@ -1787,16 +1803,16 @@ fn is_process_running(pid: u32) -> bool {
     }
 }
 
-fn queue_success_message(name: &str, time_taken: &str, output: &mut impl Write) -> eyre::Result<()> {
+fn queue_success_message(name: &str, time_taken: &str, output: &mut impl Write, colors: &ColorManager) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Green),
+        style::SetForegroundColor(colors.success()),
         style::Print("✓ "),
-        style::SetForegroundColor(style::Color::Blue),
+        style::SetForegroundColor(colors.info()),
         style::Print(name),
         style::ResetColor,
         style::Print(" loaded in "),
-        style::SetForegroundColor(style::Color::Yellow),
+        style::SetForegroundColor(colors.warning()),
         style::Print(format!("{time_taken} s\n")),
         style::ResetColor,
     )?)
@@ -1808,18 +1824,19 @@ fn queue_init_message(
     failed: usize,
     total: usize,
     output: &mut impl Write,
+    colors: &ColorManager,
 ) -> eyre::Result<()> {
     if total == complete {
         queue!(
             output,
-            style::SetForegroundColor(style::Color::Green),
+            style::SetForegroundColor(colors.success()),
             style::Print("✓"),
             style::ResetColor,
         )?;
     } else if total == complete + failed {
         queue!(
             output,
-            style::SetForegroundColor(style::Color::Red),
+            style::SetForegroundColor(colors.error()),
             style::Print("✗"),
             style::ResetColor,
         )?;
@@ -1828,11 +1845,11 @@ fn queue_init_message(
     }
     queue!(
         output,
-        style::SetForegroundColor(style::Color::Blue),
+        style::SetForegroundColor(colors.info()),
         style::Print(format!(" {}", complete)),
         style::ResetColor,
         style::Print(" of "),
-        style::SetForegroundColor(style::Color::Blue),
+        style::SetForegroundColor(colors.info()),
         style::Print(format!("{} ", total)),
         style::ResetColor,
         style::Print("mcp servers initialized."),
@@ -1840,7 +1857,7 @@ fn queue_init_message(
     if total > complete + failed {
         queue!(
             output,
-            style::SetForegroundColor(style::Color::Blue),
+            style::SetForegroundColor(colors.info()),
             style::Print(" ctrl-c "),
             style::ResetColor,
             style::Print("to start chatting now")
@@ -1854,17 +1871,18 @@ fn queue_failure_message(
     fail_load_msg: &eyre::Report,
     time: &str,
     output: &mut impl Write,
+    colors: &ColorManager,
 ) -> eyre::Result<()> {
     use crate::util::CHAT_BINARY_NAME;
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Red),
+        style::SetForegroundColor(colors.error()),
         style::Print("✗ "),
-        style::SetForegroundColor(style::Color::Blue),
+        style::SetForegroundColor(colors.info()),
         style::Print(name),
         style::ResetColor,
         style::Print(" has failed to load after"),
-        style::SetForegroundColor(style::Color::Yellow),
+        style::SetForegroundColor(colors.warning()),
         style::Print(format!(" {time} s")),
         style::ResetColor,
         style::Print("\n - "),
@@ -1877,16 +1895,16 @@ fn queue_failure_message(
     )?)
 }
 
-fn queue_warn_message(name: &str, msg: &eyre::Report, time: &str, output: &mut impl Write) -> eyre::Result<()> {
+fn queue_warn_message(name: &str, msg: &eyre::Report, time: &str, output: &mut impl Write, colors: &ColorManager) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        style::SetForegroundColor(colors.warning()),
         style::Print("⚠ "),
-        style::SetForegroundColor(style::Color::Blue),
+        style::SetForegroundColor(colors.info()),
         style::Print(name),
         style::ResetColor,
         style::Print(" has loaded in"),
-        style::SetForegroundColor(style::Color::Yellow),
+        style::SetForegroundColor(colors.warning()),
         style::Print(format!(" {time} s")),
         style::ResetColor,
         style::Print(" with the following warning:\n"),
@@ -1895,12 +1913,12 @@ fn queue_warn_message(name: &str, msg: &eyre::Report, time: &str, output: &mut i
     )?)
 }
 
-fn queue_disabled_message(name: &str, output: &mut impl Write) -> eyre::Result<()> {
+fn queue_disabled_message(name: &str, output: &mut impl Write, colors: &ColorManager) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::DarkGrey),
+        style::SetForegroundColor(colors.secondary()),
         style::Print("○ "),
-        style::SetForegroundColor(style::Color::Blue),
+        style::SetForegroundColor(colors.info()),
         style::Print(name),
         style::ResetColor,
         style::Print(" is disabled\n"),
@@ -1913,16 +1931,17 @@ fn queue_incomplete_load_message(
     total: usize,
     msg: &eyre::Report,
     output: &mut impl Write,
+    colors: &ColorManager,
 ) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        style::SetForegroundColor(colors.warning()),
         style::Print("⚠"),
-        style::SetForegroundColor(style::Color::Blue),
+        style::SetForegroundColor(colors.info()),
         style::Print(format!(" {}", complete)),
         style::ResetColor,
         style::Print(" of "),
-        style::SetForegroundColor(style::Color::Blue),
+        style::SetForegroundColor(colors.info()),
         style::Print(format!("{} ", total)),
         style::ResetColor,
         style::Print("mcp servers initialized."),

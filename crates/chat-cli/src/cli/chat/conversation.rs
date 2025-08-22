@@ -7,7 +7,6 @@ use std::io::Write;
 use std::sync::atomic::Ordering;
 
 use chrono::Utc;
-use crossterm::style::Color;
 use crossterm::{
     execute,
     style,
@@ -20,6 +19,8 @@ use tracing::{
     debug,
     warn,
 };
+
+use super::colors::ColorManager;
 
 use super::cli::compact::CompactStrategy;
 use super::cli::model::context_window_tokens;
@@ -430,13 +431,14 @@ impl ConversationState {
 
         let context = self.backend_conversation_state(os, run_perprompt_hooks, stderr).await?;
         if !context.dropped_context_files.is_empty() {
+            let colors = ColorManager::from_settings(&os.database.settings);
             execute!(
                 stderr,
-                style::SetForegroundColor(Color::DarkYellow),
+                style::SetForegroundColor(colors.warning()),
                 style::Print("\nSome context files are dropped due to size limit, please run "),
-                style::SetForegroundColor(Color::DarkGreen),
+                style::SetForegroundColor(colors.success()),
                 style::Print("/context show "),
-                style::SetForegroundColor(Color::DarkYellow),
+                style::SetForegroundColor(colors.warning()),
                 style::Print("to learn more.\n"),
                 style::SetForegroundColor(style::Color::Reset)
             )
@@ -762,6 +764,7 @@ impl ConversationState {
         os: &mut Os,
         output: &mut impl Write,
         agent_name: &str,
+        colors: &ColorManager,
     ) -> Result<(), ChatError> {
         let agent = self.agents.switch(agent_name).map_err(ChatError::AgentSwapError)?;
         self.context_manager.replace({
@@ -770,7 +773,7 @@ impl ConversationState {
         });
 
         self.tool_manager
-            .swap_agent(os, output, agent)
+            .swap_agent(os, output, agent, colors)
             .await
             .map_err(ChatError::AgentSwapError)?;
 

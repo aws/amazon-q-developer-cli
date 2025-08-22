@@ -11,6 +11,7 @@ pub mod profile;
 pub mod prompts;
 pub mod subscribe;
 pub mod tangent;
+pub mod theme;
 pub mod tools;
 pub mod usage;
 
@@ -27,6 +28,7 @@ use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
 use tangent::TangentArgs;
+use theme::ThemeArgs;
 use tools::ToolsArgs;
 
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
@@ -81,6 +83,8 @@ pub enum SlashCommand {
     Mcp(McpArgs),
     /// Select a model for the current conversation session
     Model(ModelArgs),
+    /// View and change color theme
+    Theme(ThemeArgs),
     /// Upgrade to a Q Developer Pro subscription for increased query limits
     Subscribe(SubscribeArgs),
     /// Toggle tangent mode for isolated conversations
@@ -104,11 +108,11 @@ impl SlashCommand {
                 };
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print("This command has been deprecated. Use"),
-                    style::SetForegroundColor(style::Color::Cyan),
+                    style::SetForegroundColor(session.colors.primary()),
                     style::Print(" /agent "),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print("instead.\nSee "),
                     style::Print(AGENT_MIGRATION_DOC_URL),
                     style::Print(" for more detail"),
@@ -139,6 +143,7 @@ impl SlashCommand {
             Self::Usage(args) => args.execute(os, session).await,
             Self::Mcp(args) => args.execute(session).await,
             Self::Model(args) => args.execute(os, session).await,
+            Self::Theme(args) => args.execute(os, session).await,
             Self::Subscribe(args) => args.execute(os, session).await,
             Self::Tangent(args) => args.execute(os, session).await,
             Self::Persist(subcommand) => subcommand.execute(os, session).await,
@@ -171,6 +176,7 @@ impl SlashCommand {
             Self::Usage(_) => "usage",
             Self::Mcp(_) => "mcp",
             Self::Model(_) => "model",
+            Self::Theme(_) => "theme",
             Self::Subscribe(_) => "subscribe",
             Self::Tangent(_) => "tangent",
             Self::Persist(sub) => match sub {

@@ -27,6 +27,7 @@ use super::agent::{
     DEFAULT_AGENT_NAME,
     McpServerConfig,
 };
+use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::tool_manager::{
     global_mcp_config_path,
     workspace_mcp_config_path,
@@ -119,9 +120,10 @@ pub struct AddArgs {
 
 impl AddArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
+        let colors = ColorManager::from_settings(&os.database.settings);
         match self.agent.as_deref() {
             Some(agent_name) => {
-                let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
+                let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name, &colors).await?;
                 let mcp_servers = &mut agent.mcp_servers.mcp_servers;
 
                 if mcp_servers.contains_key(&self.name) && !self.force {
@@ -203,9 +205,10 @@ pub struct RemoveArgs {
 
 impl RemoveArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
+        let colors = ColorManager::from_settings(&os.database.settings);
         match self.agent.as_deref() {
             Some(agent_name) => {
-                let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
+                let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name, &colors).await?;
 
                 if !os.fs.exists(&config_path) {
                     writeln!(output, "\nNo MCP server configurations found.\n")?;

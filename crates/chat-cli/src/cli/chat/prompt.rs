@@ -58,6 +58,7 @@ pub const COMMANDS: &[&str] = &[
     "/tools reset",
     "/mcp",
     "/model",
+    "/theme",
     "/agent",
     "/agent help",
     "/agent list",

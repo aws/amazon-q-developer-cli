@@ -19,10 +19,9 @@ use std::path::{
     PathBuf,
 };
 
-use crossterm::style::{
-    Color,
-    Stylize as _,
-};
+use crate::cli::chat::colors::ColorManager;
+use crossterm::style::{Color, Stylize};
+
 use crossterm::{
     execute,
     queue,
@@ -208,7 +207,7 @@ impl Agent {
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
     /// For example, converting the mcp array to actual mcp config and populate the agent file path.
-    fn thaw(&mut self, path: &Path, legacy_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
+    fn thaw(&mut self, path: &Path, legacy_mcp_config: Option<&McpServerConfig>, colors: &ColorManager) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         self.path = Some(path.to_path_buf());
@@ -219,11 +218,11 @@ impl Agent {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
                         stderr,
-                        style::SetForegroundColor(Color::Yellow),
+                        style::SetForegroundColor(colors.warning()),
                         style::Print("WARNING: "),
                         style::ResetColor,
                         style::Print("MCP server '"),
-                        style::SetForegroundColor(Color::Green),
+                        style::SetForegroundColor(colors.success()),
                         style::Print(name),
                         style::ResetColor,
                         style::Print(
@@ -274,7 +273,7 @@ impl Agent {
 
     /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
     /// and falling back to global dir if it does not exist in local.
-    pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
+    pub async fn get_agent_by_name(os: &Os, agent_name: &str, colors: &ColorManager) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
             let local_config_dir = directories::chat_local_agent_dir(os)?.join(format!("{agent_name}.json"));
@@ -300,7 +299,7 @@ impl Agent {
                     None
                 };
 
-                agent.thaw(&config_path, legacy_mcp_config.as_ref())?;
+                agent.thaw(&config_path, legacy_mcp_config.as_ref(), colors)?;
                 Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
@@ -312,6 +311,7 @@ impl Agent {
         agent_path: impl AsRef<Path>,
         legacy_mcp_config: &mut Option<McpServerConfig>,
         mcp_enabled: bool,
+        colors: &ColorManager,
     ) -> Result<Agent, AgentConfigError> {
         let content = os.fs.read(&agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
@@ -326,11 +326,11 @@ impl Agent {
                     legacy_mcp_config.replace(config);
                 }
             }
-            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref())?;
+            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), &colors)?;
         } else {
             agent.clear_mcp_configs();
             // Thaw the agent with empty MCP config to finalize normalization.
-            agent.thaw(agent_path.as_ref(), None)?;
+            agent.thaw(agent_path.as_ref(), None, &colors)?;
         }
         Ok(agent)
     }
@@ -438,10 +438,12 @@ impl Agents {
         output: &mut impl Write,
         mcp_enabled: bool,
     ) -> (Self, AgentsLoadMetadata) {
+        let colors = ColorManager::from_settings(&os.database.settings);
+        
         if !mcp_enabled {
             let _ = execute!(
                 output,
-                style::SetForegroundColor(Color::Yellow),
+                style::SetForegroundColor(colors.warning()),
                 style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
                 style::SetForegroundColor(Color::Reset),
@@ -495,7 +497,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, &colors).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -503,7 +505,7 @@ impl Agents {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
-                            style::SetForegroundColor(Color::Red),
+                            style::SetForegroundColor(colors.error()),
                             style::Print("Error: "),
                             style::ResetColor,
                             style::Print(e),
@@ -533,7 +535,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, &colors).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -541,7 +543,7 @@ impl Agents {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
-                            style::SetForegroundColor(Color::Red),
+                            style::SetForegroundColor(colors.error()),
                             style::Print("Error: "),
                             style::ResetColor,
                             style::Print(e),
@@ -611,11 +613,11 @@ impl Agents {
             if local_names.contains(name) {
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    style::SetForegroundColor(colors.warning()),
                     style::Print("WARNING: "),
                     style::ResetColor,
                     style::Print("Agent conflict for "),
-                    style::SetForegroundColor(style::Color::Green),
+                    style::SetForegroundColor(colors.success()),
                     style::Print(name),
                     style::ResetColor,
                     style::Print(". Using workspace version.\n")
@@ -641,15 +643,15 @@ impl Agents {
                 }
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(Color::Red),
+                    style::SetForegroundColor(colors.error()),
                     style::Print("Error"),
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(colors.warning()),
                     style::Print(format!(
                         ": no agent with name {} found. Falling back to user specified default",
                         name
                     )),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    style::ResetColor
                 );
             }
 
@@ -659,15 +661,15 @@ impl Agents {
                 }
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(Color::Red),
+                    style::SetForegroundColor(colors.error()),
                     style::Print("Error"),
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(colors.warning()),
                     style::Print(format!(
                         ": user defined default {} not found. Falling back to in-memory default",
                         user_set_default
                     )),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    style::ResetColor
                 );
             }
 
@@ -725,15 +727,15 @@ impl Agents {
                         let name = &agent.name;
                         let _ = execute!(
                             output,
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(colors.warning()),
                             style::Print("WARNING "),
                             style::ResetColor,
                             style::Print("Agent config "),
-                            style::SetForegroundColor(Color::Green),
+                            style::SetForegroundColor(colors.success()),
                             style::Print(name),
                             style::ResetColor,
                             style::Print(" is malformed at "),
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(colors.warning()),
                             style::Print(&e.instance_path),
                             style::ResetColor,
                             style::Print(format!(": {e}\n")),
@@ -791,7 +793,7 @@ impl Agents {
         });
 
         if tool_trusted || self.trust_all_tools {
-            format!("* {}", "trusted".dark_green().bold())
+            format!("* {}", "trusted".green().bold())
         } else {
             self.default_permission_label(tool_name)
         }
@@ -801,17 +803,17 @@ impl Agents {
     // This "static" way avoids needing to construct a tool instance.
     fn default_permission_label(&self, tool_name: &str) -> String {
         let label = match tool_name {
-            "fs_read" => "trusted".dark_green().bold(),
-            "fs_write" => "not trusted".dark_grey(),
+            "fs_read" => "trusted".green().bold(),
+            "fs_write" => "not trusted".white(),
             #[cfg(not(windows))]
-            "execute_bash" => "trust read-only commands".dark_grey(),
+            "execute_bash" => "trust read-only commands".white(),
             #[cfg(windows)]
-            "execute_cmd" => "trust read-only commands".dark_grey(),
-            "use_aws" => "trust read-only commands".dark_grey(),
-            "report_issue" => "trusted".dark_green().bold(),
-            "thinking" => "trusted (prerelease)".dark_green().bold(),
-            _ if self.trust_all_tools => "trusted".dark_grey().bold(),
-            _ => "not trusted".dark_grey(),
+            "execute_cmd" => "trust read-only commands".white(),
+            "use_aws" => "trust read-only commands".white(),
+            "report_issue" => "trusted".green().bold(),
+            "thinking" => "trusted (prerelease)".green().bold(),
+            _ if self.trust_all_tools => "trusted".white().bold(),
+            _ => "not trusted".white(),
         };
 
         format!("{} {label}", "*".reset())
@@ -833,6 +835,7 @@ async fn load_agents_from_entries(
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
     mcp_enabled: bool,
+    colors: &ColorManager,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
 
@@ -843,7 +846,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled).await);
+            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled, colors).await);
         }
     }
 
