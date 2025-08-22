@@ -48,14 +48,6 @@ pub enum Setting {
     ChatDisableAutoCompaction,
     ChatEnableHistoryHints,
     ChatTheme,
-    ChatThemeSuccess,
-    ChatThemeError,
-    ChatThemeWarning,
-    ChatThemeInfo,
-    ChatThemeSecondary,
-    ChatThemePrimary,
-    ChatThemeAction,
-    ChatThemeData,
     Color {
         theme: ThemeName,
         category: ColorCategory,
@@ -230,47 +222,22 @@ impl ColorTheme {
                     ThemeName::Nord => Self::nord_theme(),
                 };
                 
-                // Apply any theme-specific color overrides, with individual color settings as fallback
+                // Apply any theme-specific color overrides
                 return Self {
-                    success: settings.get_color(Setting::Color { theme, category: ColorCategory::Success })
-                        .or_else(|| settings.get_color(Setting::ChatThemeSuccess))
-                        .unwrap_or(base_theme.success),
-                    error: settings.get_color(Setting::Color { theme, category: ColorCategory::Error })
-                        .or_else(|| settings.get_color(Setting::ChatThemeError))
-                        .unwrap_or(base_theme.error),
-                    warning: settings.get_color(Setting::Color { theme, category: ColorCategory::Warning })
-                        .or_else(|| settings.get_color(Setting::ChatThemeWarning))
-                        .unwrap_or(base_theme.warning),
-                    info: settings.get_color(Setting::Color { theme, category: ColorCategory::Info })
-                        .or_else(|| settings.get_color(Setting::ChatThemeInfo))
-                        .unwrap_or(base_theme.info),
-                    secondary: settings.get_color(Setting::Color { theme, category: ColorCategory::Secondary })
-                        .or_else(|| settings.get_color(Setting::ChatThemeSecondary))
-                        .unwrap_or(base_theme.secondary),
-                    primary: settings.get_color(Setting::Color { theme, category: ColorCategory::Primary })
-                        .or_else(|| settings.get_color(Setting::ChatThemePrimary))
-                        .unwrap_or(base_theme.primary),
-                    action: settings.get_color(Setting::Color { theme, category: ColorCategory::Action })
-                        .or_else(|| settings.get_color(Setting::ChatThemeAction))
-                        .unwrap_or(base_theme.action),
-                    data: settings.get_color(Setting::Color { theme, category: ColorCategory::Data })
-                        .or_else(|| settings.get_color(Setting::ChatThemeData))
-                        .unwrap_or(base_theme.data),
+                    success: settings.get_color(Setting::Color { theme, category: ColorCategory::Success }).unwrap_or(base_theme.success),
+                    error: settings.get_color(Setting::Color { theme, category: ColorCategory::Error }).unwrap_or(base_theme.error),
+                    warning: settings.get_color(Setting::Color { theme, category: ColorCategory::Warning }).unwrap_or(base_theme.warning),
+                    info: settings.get_color(Setting::Color { theme, category: ColorCategory::Info }).unwrap_or(base_theme.info),
+                    secondary: settings.get_color(Setting::Color { theme, category: ColorCategory::Secondary }).unwrap_or(base_theme.secondary),
+                    primary: settings.get_color(Setting::Color { theme, category: ColorCategory::Primary }).unwrap_or(base_theme.primary),
+                    action: settings.get_color(Setting::Color { theme, category: ColorCategory::Action }).unwrap_or(base_theme.action),
+                    data: settings.get_color(Setting::Color { theme, category: ColorCategory::Data }).unwrap_or(base_theme.data),
                 };
             }
         }
         
-        // Fallback to individual color settings (current behavior)
-        Self {
-            success: settings.get_color(Setting::ChatThemeSuccess).unwrap_or(Color::Green),
-            error: settings.get_color(Setting::ChatThemeError).unwrap_or(Color::Red),
-            warning: settings.get_color(Setting::ChatThemeWarning).unwrap_or(Color::Yellow),
-            info: settings.get_color(Setting::ChatThemeInfo).unwrap_or(Color::Blue),
-            secondary: settings.get_color(Setting::ChatThemeSecondary).unwrap_or(Color::DarkGrey),
-            primary: settings.get_color(Setting::ChatThemePrimary).unwrap_or(Color::Cyan),
-            action: settings.get_color(Setting::ChatThemeAction).unwrap_or(Color::Magenta),
-            data: settings.get_color(Setting::ChatThemeData).unwrap_or(Color::DarkCyan),
-        }
+        // No theme set, use default theme
+        Self::default_theme()
     }
 }
 
@@ -305,14 +272,6 @@ impl Setting {
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction".into(),
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints".into(),
             Self::ChatTheme => "chat.theme".into(),
-            Self::ChatThemeSuccess => "chat.theme.success".into(),
-            Self::ChatThemeError => "chat.theme.error".into(),
-            Self::ChatThemeWarning => "chat.theme.warning".into(),
-            Self::ChatThemeInfo => "chat.theme.info".into(),
-            Self::ChatThemeSecondary => "chat.theme.secondary".into(),
-            Self::ChatThemePrimary => "chat.theme.primary".into(),
-            Self::ChatThemeAction => "chat.theme.action".into(),
-            Self::ChatThemeData => "chat.theme.data".into(),
             Self::Color { theme, category } => {
                 format!("chat.theme.{}.{}", theme.as_str(), category.as_str()).into()
             }
@@ -351,14 +310,6 @@ impl AsRef<str> for Setting {
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::ChatTheme => "chat.theme",
-            Self::ChatThemeSuccess => "chat.theme.success",
-            Self::ChatThemeError => "chat.theme.error",
-            Self::ChatThemeWarning => "chat.theme.warning",
-            Self::ChatThemeInfo => "chat.theme.info",
-            Self::ChatThemeSecondary => "chat.theme.secondary",
-            Self::ChatThemePrimary => "chat.theme.primary",
-            Self::ChatThemeAction => "chat.theme.action",
-            Self::ChatThemeData => "chat.theme.data",
             Self::Color { .. } => {
                 // For dynamic strings, we can't return &str
                 // This is a limitation - callers should use as_string() instead
@@ -407,14 +358,6 @@ impl TryFrom<&str> for Setting {
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
             "chat.theme" => Ok(Self::ChatTheme),
-            "chat.theme.success" => Ok(Self::ChatThemeSuccess),
-            "chat.theme.error" => Ok(Self::ChatThemeError),
-            "chat.theme.warning" => Ok(Self::ChatThemeWarning),
-            "chat.theme.info" => Ok(Self::ChatThemeInfo),
-            "chat.theme.secondary" => Ok(Self::ChatThemeSecondary),
-            "chat.theme.primary" => Ok(Self::ChatThemePrimary),
-            "chat.theme.action" => Ok(Self::ChatThemeAction),
-            "chat.theme.data" => Ok(Self::ChatThemeData),
             _ => {
                 // Check for theme color pattern: chat.theme.{theme}.{color}
                 static THEME_COLOR_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
@@ -593,35 +536,6 @@ impl Settings {
 
         Ok(())
     }
-
-    pub async fn set_color(&mut self, key: Setting, color: Color) -> eyre::Result<()> {
-        let color_str = match color {
-            Color::Black => "black",
-            Color::DarkGrey => "dark_grey", 
-            Color::Red => "red",
-            Color::DarkRed => "dark_red",
-            Color::Green => "green",
-            Color::DarkGreen => "dark_green",
-            Color::Yellow => "yellow",
-            Color::DarkYellow => "dark_yellow",
-            Color::Blue => "blue",
-            Color::DarkBlue => "dark_blue",
-            Color::Magenta => "magenta",
-            Color::DarkMagenta => "dark_magenta",
-            Color::Cyan => "cyan",
-            Color::DarkCyan => "dark_cyan",
-            Color::White => "white",
-            Color::Grey => "grey",
-            Color::Reset => "reset",
-            Color::Rgb { r, g, b } => return Ok(self.set(key, format!("rgb({},{},{})", r, g, b)).await?),
-            Color::AnsiValue(v) => return Ok(self.set(key, format!("ansi({})", v)).await?),
-        };
-        Ok(self.set(key, color_str.to_string()).await?)
-    }
-
-    pub async fn clear_theme(&mut self) -> eyre::Result<()> {
-        Ok(self.remove(Setting::ChatTheme).await.map(|_| ())?)
-    }
 }
 
 #[cfg(test)]
@@ -741,8 +655,8 @@ mod test {
         // Set a base theme
         settings.set(Setting::ChatTheme, "default").await.unwrap();
         
-        // Override the primary color
-        settings.set_color(Setting::ChatThemePrimary, Color::Blue).await.unwrap();
+        // Override the primary color using theme-specific setting
+        settings.set(Setting::Color { theme: ThemeName::Default, category: ColorCategory::Primary }, "blue").await.unwrap();
         
         let theme = settings.get_color_theme();
         let default_theme = ColorTheme::default_theme();
@@ -757,19 +671,14 @@ mod test {
 
     #[tokio::test]
     async fn test_color_theme_from_settings_fallback() {
-        let mut settings = Settings::new().await.unwrap();
+        let settings = Settings::new().await.unwrap();
         
-        // No theme set, should use individual colors or defaults
-        settings.set_color(Setting::ChatThemePrimary, Color::Blue).await.unwrap();
-        
+        // No theme set, should use default theme
         let theme = settings.get_color_theme();
+        let default_theme = ColorTheme::default_theme();
         
-        // Should use default colors for unset values
-        assert_eq!(theme.success, Color::Green);
-        assert_eq!(theme.error, Color::Red);
-        
-        // Should use the individual setting
-        assert_eq!(theme.primary, Color::Blue);
+        // Should match default theme exactly
+        assert_eq!(theme, default_theme);
     }
 
     #[tokio::test]
@@ -786,7 +695,7 @@ mod test {
         assert_eq!(settings.get_theme(), Some(ThemeName::Light));
         
         // Test clearing theme
-        settings.clear_theme().await.unwrap();
+        settings.remove(Setting::ChatTheme).await.unwrap();
         assert_eq!(settings.get_theme(), None);
         assert_eq!(settings.get(Setting::ChatTheme), None);
     }
