@@ -13,7 +13,7 @@ pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
             println!("✅ Q Chat session started");
             CHAT_SESSION = Some(Mutex::new(chat));
         });
-        CHAT_SESSION.as_ref().unwrap()
+        (&raw const CHAT_SESSION).as_ref().unwrap().as_ref().unwrap()
     }
 }
 
@@ -21,7 +21,7 @@ pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Res
     let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
     if count == total_tests {
         unsafe {
-            if let Some(session) = &CHAT_SESSION {
+            if let Some(session) = (&raw const CHAT_SESSION).as_ref().unwrap() {
                 if let Ok(mut chat) = session.lock() {
                     chat.quit()?;
                     println!("✅ Test completed successfully");

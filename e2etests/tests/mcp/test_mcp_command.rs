@@ -1,9 +1,12 @@
+#[allow(unused_imports)]
 use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
 use std::sync::atomic::{AtomicUsize};
 
+#[allow(dead_code)]
 static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 // List of covered tests
+#[allow(dead_code)]
 const TEST_NAMES: &[&str] = &[
     "test_mcp_help_command",
     "test_mcp_loading_command",
@@ -15,6 +18,7 @@ const TEST_NAMES: &[&str] = &[
     "test_q_mcp_list_help_command",
     "test_q_mcp_status_help_command"
 ];
+#[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]

@@ -1,13 +1,17 @@
+#[allow(unused_imports)]
 use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 
+#[allow(dead_code)]
 static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 // List of covered tests
+#[allow(dead_code)]
 const TEST_NAMES: &[&str] = &[
     "test_subscribe_command",
     "test_subscribe_help_command",
 ];
+#[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 
