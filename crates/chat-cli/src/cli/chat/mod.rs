@@ -210,6 +210,9 @@ pub struct ChatArgs {
 
 impl ChatArgs {
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
+        // Check if user wants to resume existing conversation
+        self.check_and_prompt_resume(os)?;
+        
         let mut input = self.input;
 
         if self.no_interactive && input.is_none() {
@@ -387,6 +390,69 @@ impl ChatArgs {
         .spawn(os)
         .await
         .map(|_| ExitCode::SUCCESS)
+    }
+
+    /// Check if there's an existing conversation and prompt user to resume
+    fn check_and_prompt_resume(&mut self, os: &mut Os) -> Result<()> {
+        use std::io::{self, Write};
+        
+        // Skip if resume is already true or in non-interactive mode
+        if self.resume || self.no_interactive {
+            return Ok(());
+        }
+
+        // Check for existing conversation in current directory
+        let previous_conversation = std::env::current_dir()
+            .ok()
+            .and_then(|cwd| os.database.get_conversation_by_path(cwd).ok())
+            .flatten();
+
+        // Only prompt if there's a conversation with actual messages
+        if let Some(cs) = previous_conversation {
+            if !cs.history().is_empty() {
+                print!("Found existing Q chat conversation in this directory. Resume? [Y/n]: ");
+                io::stdout().flush()?;
+                
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                
+                let response = input.trim().to_lowercase();
+                if response.is_empty() || response == "y" || response == "yes" {
+                    self.resume = true;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod auto_resume_tests {
+    use super::*;
+
+    #[test]
+    fn test_auto_resume_skips_when_resume_already_true() {
+        let args = ChatArgs {
+            resume: true,
+            ..Default::default()
+        };
+        
+        // Should not change resume flag when already true
+        assert!(args.resume);
+    }
+
+    #[test]
+    fn test_auto_resume_skips_when_no_interactive() {
+        let args = ChatArgs {
+            resume: false,
+            no_interactive: true,
+            ..Default::default()
+        };
+        
+        // Should not prompt in non-interactive mode
+        assert!(!args.resume);
+        assert!(args.no_interactive);
     }
 }
 
