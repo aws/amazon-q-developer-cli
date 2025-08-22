@@ -154,6 +154,10 @@ impl AddArgs {
                     Some(Scope::Workspace) => directories::chat_legacy_workspace_mcp_config(os)?,
                     _ => directories::chat_legacy_global_mcp_config(os)?,
                 };
+                if !legacy_mcp_config_path.exists() {
+                    // Create an empty config file that won't fail to deserialize.
+                    os.fs.write(&legacy_mcp_config_path, "{ \"mcpServers\": {} }").await?;
+                }
                 let mut mcp_servers = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
 
                 if mcp_servers.mcp_servers.contains_key(&self.name) && !self.force {
@@ -415,7 +419,14 @@ impl StatusArgs {
 async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(String, Option<McpServerConfig>, bool)>>> {
     let mut results = BTreeMap::new();
     let mut stderr = std::io::stderr();
-    let agents = Agents::load(os, None, true, &mut stderr).await.0;
+    let mcp_enabled = match os.client.is_mcp_enabled().await {
+        Ok(enabled) => enabled,
+        Err(err) => {
+            tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+            true
+        },
+    };
+    let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
     let global_path = directories::chat_global_agent_path(os)?;
     for (_, agent) in agents.agents {
         let scope = if agent

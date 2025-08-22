@@ -11,7 +11,10 @@ use crossterm::{
     execute,
     queue,
 };
+use dialoguer::Select;
 use syntect::easy::HighlightLines;
+
+use crate::cli::chat::colors::ColorManager;
 use syntect::highlighting::{
     Style,
     ThemeSet,
@@ -77,6 +80,9 @@ pub enum AgentSubcommand {
         #[arg(long, short)]
         name: String,
     },
+    /// Swap to a new agent at runtime
+    #[command(alias = "switch")]
+    Swap { name: Option<String> },
 }
 
 impl AgentSubcommand {
@@ -128,7 +134,9 @@ impl AgentSubcommand {
                     .map_err(|e| ChatError::Custom(format!("Error printing agent schema: {e}").into()))?;
             },
             Self::Create { name, directory, from } => {
-                let mut agents = Agents::load(os, None, true, &mut session.stderr).await.0;
+                let mut agents = Agents::load(os, None, true, &mut session.stderr, session.conversation.mcp_enabled)
+                    .await
+                    .0;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from)
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
@@ -140,7 +148,8 @@ impl AgentSubcommand {
                     return Err(ChatError::Custom("Editor process did not exit with success".into()));
                 }
 
-                let new_agent = Agent::load(os, &path_with_file_name, &mut None, &session.colors).await;
+                let new_agent =
+                    Agent::load(os, &path_with_file_name, &mut None, session.conversation.mcp_enabled, &session.colors).await;
                 match new_agent {
                     Ok(agent) => {
                         session.conversation.agents.agents.insert(agent.name.clone(), agent);
@@ -224,6 +233,51 @@ impl AgentSubcommand {
                     )?;
                 },
             },
+            Self::Swap { name } => {
+                if let Some(name) = name {
+                    let colors = ColorManager::from_settings(&os.database.settings);
+                    session.conversation.swap_agent(os, &mut session.stderr, &name, &colors).await?;
+                } else {
+                    let labels = session
+                        .conversation
+                        .agents
+                        .agents
+                        .keys()
+                        .map(|name| name.as_str())
+                        .collect::<Vec<_>>();
+
+                    let name = {
+                        let idx = match Select::with_theme(&crate::util::dialoguer_theme())
+                            .with_prompt("Choose one of the following agents")
+                            .items(&labels)
+                            .default(1)
+                            .interact_on_opt(&dialoguer::console::Term::stdout())
+                        {
+                            Ok(sel) => {
+                                let _ = crossterm::execute!(
+                                    std::io::stdout(),
+                                    crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
+                                );
+                                sel
+                            },
+                            // Ctrl‑C -> Err(Interrupted)
+                            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
+                            Err(e) => {
+                                return Err(ChatError::Custom(
+                                    format!("Dialog has failed to make a selection {e}").into(),
+                                ));
+                            },
+                        };
+
+                        idx.and_then(|idx| labels.get(idx).cloned().map(str::to_string))
+                    };
+
+                    if let Some(name) = name {
+                        let colors = ColorManager::from_settings(&os.database.settings);
+                        session.conversation.swap_agent(os, &mut session.stderr, &name, &colors).await?;
+                    }
+                }
+            },
         }
 
         Ok(ChatState::PromptUser {
@@ -239,6 +293,7 @@ impl AgentSubcommand {
             Self::Set { .. } => "set",
             Self::Schema => "schema",
             Self::SetDefault { .. } => "set_default",
+            Self::Swap { .. } => "swap",
         }
     }
 }

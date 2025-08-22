@@ -20,7 +20,7 @@ use std::path::{
 };
 
 use crate::cli::chat::colors::ColorManager;
-use crossterm::style::Stylize;
+use crossterm::style::{Color, Stylize};
 
 use crossterm::{
     execute,
@@ -212,8 +212,8 @@ impl Agent {
 
         self.path = Some(path.to_path_buf());
 
+        let mut stderr = std::io::stderr();
         if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
-            let mut stderr = std::io::stderr();
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
@@ -234,6 +234,31 @@ impl Agent {
                 let mut server_clone = legacy_server.clone();
                 server_clone.is_from_legacy_mcp_json = true;
                 mcp_servers.mcp_servers.insert(name.clone(), server_clone);
+            }
+        }
+
+        stderr.flush()?;
+
+        Ok(())
+    }
+
+    pub fn print_overridden_permissions(&self, output: &mut impl Write) -> Result<(), AgentConfigError> {
+        let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        for allowed_tool in &self.allowed_tools {
+            if let Some(settings) = self.tools_settings.get(allowed_tool.as_str()) {
+                // currently we only have four native tools that offers tool settings
+                let overridden_settings_key = match allowed_tool.as_str() {
+                    "fs_read" | "fs_write" => Some("allowedPaths"),
+                    "use_aws" => Some("allowedServices"),
+                    name if name == execute_name => Some("allowedCommands"),
+                    _ => None,
+                };
+
+                if let Some(key) = overridden_settings_key {
+                    if let Some(ref override_settings) = settings.get(key).map(|value| format!("{key}: {value}")) {
+                        queue_permission_override_warning(allowed_tool.as_str(), override_settings, output)?;
+                    }
+                }
             }
         }
 
@@ -285,6 +310,7 @@ impl Agent {
         os: &Os,
         agent_path: impl AsRef<Path>,
         legacy_mcp_config: &mut Option<McpServerConfig>,
+        mcp_enabled: bool,
         colors: &ColorManager,
     ) -> Result<Agent, AgentConfigError> {
         let content = os.fs.read(&agent_path).await?;
@@ -293,23 +319,57 @@ impl Agent {
             path: agent_path.as_ref().to_path_buf(),
         })?;
 
-        if agent.use_legacy_mcp_json && legacy_mcp_config.is_none() {
-            let config = load_legacy_mcp_config(os).await.unwrap_or_default();
-            if let Some(config) = config {
-                legacy_mcp_config.replace(config);
+        if mcp_enabled {
+            if agent.use_legacy_mcp_json && legacy_mcp_config.is_none() {
+                let config = load_legacy_mcp_config(os).await.unwrap_or_default();
+                if let Some(config) = config {
+                    legacy_mcp_config.replace(config);
+                }
             }
+            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), &colors)?;
+        } else {
+            agent.clear_mcp_configs();
+            // Thaw the agent with empty MCP config to finalize normalization.
+            agent.thaw(agent_path.as_ref(), None, &colors)?;
         }
-
-        agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), &colors)?;
         Ok(agent)
+    }
+
+    /// Clear all MCP configurations while preserving built-in tools
+    pub fn clear_mcp_configs(&mut self) {
+        self.mcp_servers = McpServerConfig::default();
+        self.use_legacy_mcp_json = false;
+
+        // Transform tools: "*" → "@builtin", remove MCP refs
+        self.tools = self
+            .tools
+            .iter()
+            .filter_map(|tool| match tool.as_str() {
+                "*" => Some("@builtin".to_string()),
+                t if !is_mcp_tool_ref(t) => Some(t.to_string()),
+                _ => None,
+            })
+            .collect();
+
+        // Remove MCP references from other fields
+        self.allowed_tools.retain(|tool| !is_mcp_tool_ref(tool));
+        self.tool_aliases.retain(|orig, _| !is_mcp_tool_ref(&orig.to_string()));
+        self.tools_settings
+            .retain(|target, _| !is_mcp_tool_ref(&target.to_string()));
     }
 }
 
+/// Result of evaluating tool permissions, indicating whether a tool should be allowed,
+/// require user confirmation, or be denied with specific reasons.
 #[derive(Debug, PartialEq)]
 pub enum PermissionEvalResult {
+    /// Tool is allowed to execute without user confirmation
     Allow,
+    /// Tool requires user confirmation before execution
     Ask,
-    Deny,
+    /// Denial with specific reasons explaining why the tool was denied
+    /// Tools are free to overload what these reasons are
+    Deny(Vec<String>),
 }
 
 #[derive(Clone, Default, Debug)]
@@ -376,9 +436,21 @@ impl Agents {
         agent_name: Option<&str>,
         skip_migration: bool,
         output: &mut impl Write,
+        mcp_enabled: bool,
     ) -> (Self, AgentsLoadMetadata) {
         let colors = ColorManager::from_settings(&os.database.settings);
         
+        if !mcp_enabled {
+            let _ = execute!(
+                output,
+                style::SetForegroundColor(colors.warning()),
+                style::Print("\n"),
+                style::Print("⚠️  WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
+            );
+        }
+
         // Tracking metadata about the performed load operation.
         let mut load_metadata = AgentsLoadMetadata::default();
 
@@ -425,7 +497,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, &colors).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, &colors).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -463,7 +535,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, &colors).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, &colors).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -603,27 +675,30 @@ impl Agents {
 
             all_agents.push({
                 let mut agent = Agent::default();
-                'load_legacy_mcp_json: {
-                    if global_mcp_config.is_none() {
-                        let Ok(global_mcp_path) = directories::chat_legacy_global_mcp_config(os) else {
-                            tracing::error!("Error obtaining legacy mcp json path. Skipping");
-                            break 'load_legacy_mcp_json;
-                        };
-                        let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
-                            Ok(config) => config,
-                            Err(e) => {
-                                tracing::error!("Error loading global mcp json path: {e}. Skipping");
+                if mcp_enabled {
+                    'load_legacy_mcp_json: {
+                        if global_mcp_config.is_none() {
+                            let Ok(global_mcp_path) = directories::chat_legacy_global_mcp_config(os) else {
+                                tracing::error!("Error obtaining legacy mcp json path. Skipping");
                                 break 'load_legacy_mcp_json;
-                            },
-                        };
-                        global_mcp_config.replace(legacy_mcp_config);
+                            };
+                            let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+                                Ok(config) => config,
+                                Err(e) => {
+                                    tracing::error!("Error loading global mcp json path: {e}. Skipping");
+                                    break 'load_legacy_mcp_json;
+                                },
+                            };
+                            global_mcp_config.replace(legacy_mcp_config);
+                        }
                     }
-                }
 
-                if let Some(config) = &global_mcp_config {
-                    agent.mcp_servers = config.clone();
+                    if let Some(config) = &global_mcp_config {
+                        agent.mcp_servers = config.clone();
+                    }
+                } else {
+                    agent.mcp_servers = McpServerConfig::default();
                 }
-
                 agent
             });
 
@@ -689,18 +764,31 @@ impl Agents {
 
     /// Returns a label to describe the permission status for a given tool.
     pub fn display_label(&self, tool_name: &str, origin: &ToolOrigin) -> String {
+        use crate::util::pattern_matching::matches_any_pattern;
+
         let tool_trusted = self.get_active().is_some_and(|a| {
+            if matches!(origin, &ToolOrigin::Native) {
+                return matches_any_pattern(&a.allowed_tools, tool_name);
+            }
+
             a.allowed_tools.iter().any(|name| {
-                // Here the tool names can take the following forms:
-                // - @{server_name}{delimiter}{tool_name}
-                // - native_tool_name
-                name == tool_name && matches!(origin, &ToolOrigin::Native)
-                    || name.strip_prefix("@").is_some_and(|remainder| {
-                        remainder
-                            .split_once(MCP_SERVER_TOOL_DELIMITER)
-                            .is_some_and(|(_left, right)| right == tool_name)
-                            || remainder == <ToolOrigin as Borrow<str>>::borrow(origin)
-                    })
+                name.strip_prefix("@").is_some_and(|remainder| {
+                    remainder
+                        .split_once(MCP_SERVER_TOOL_DELIMITER)
+                        .is_some_and(|(_left, right)| right == tool_name)
+                        || remainder == <ToolOrigin as Borrow<str>>::borrow(origin)
+                }) || {
+                    if let Some(server_name) = name.strip_prefix("@").and_then(|s| s.split('/').next()) {
+                        if server_name == <ToolOrigin as Borrow<str>>::borrow(origin) {
+                            let tool_pattern = format!("@{}/{}", server_name, tool_name);
+                            matches_any_pattern(&a.allowed_tools, &tool_pattern)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
             })
         });
 
@@ -746,6 +834,7 @@ async fn load_agents_from_entries(
     mut files: ReadDir,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
+    mcp_enabled: bool,
     colors: &ColorManager,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
@@ -757,7 +846,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, file_path, global_mcp_config, colors).await);
+            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled, colors).await);
         }
     }
 
@@ -800,8 +889,37 @@ async fn load_legacy_mcp_config(os: &Os) -> eyre::Result<Option<McpServerConfig>
     })
 }
 
+pub fn queue_permission_override_warning(
+    tool_name: &str,
+    overridden_settings: &str,
+    output: &mut impl Write,
+) -> Result<(), std::io::Error> {
+    Ok(queue!(
+        output,
+        style::SetForegroundColor(Color::Yellow),
+        style::Print("WARNING: "),
+        style::ResetColor,
+        style::Print("You have trusted "),
+        style::SetForegroundColor(Color::Green),
+        style::Print(tool_name),
+        style::ResetColor,
+        style::Print(" tool, which overrides the toolsSettings: "),
+        style::SetForegroundColor(Color::Cyan),
+        style::Print(overridden_settings),
+        style::ResetColor,
+        style::Print("\n"),
+    )?)
+}
+
 fn default_schema() -> String {
     "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
+}
+
+// Check if a tool reference is MCP-specific (not @builtin and starts with @)
+pub fn is_mcp_tool_ref(s: &str) -> bool {
+    // @builtin is not MCP, it's a reference to all built-in tools
+    // Any other @ prefix is MCP (e.g., "@git", "@git/git_status")
+    !s.starts_with("@builtin") && s.starts_with('@')
 }
 
 #[cfg(test)]
@@ -824,8 +942,9 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use serde_json::json;
 
+    use super::*;
     const INPUT: &str = r#"
             {
               "name": "some_agent",
@@ -938,5 +1057,227 @@ mod tests {
         assert!(validate_agent_name("_invalid").is_err());
         assert!(validate_agent_name("invalid!").is_err());
         assert!(validate_agent_name("invalid space").is_err());
+    }
+
+    #[test]
+    fn test_clear_mcp_configs_with_builtin_variants() {
+        let mut agent: Agent = serde_json::from_value(json!({
+            "name": "test",
+            "tools": [
+                "@builtin",
+                "@builtin/fs_read",
+                "@builtin/execute_bash",
+                "@git",
+                "@git/status",
+                "fs_write"
+            ],
+            "allowedTools": [
+                "@builtin/fs_read",
+                "@git/status",
+                "fs_write"
+            ],
+            "toolAliases": {
+                "@builtin/fs_read": "read",
+                "@git/status": "git_st"
+            },
+            "toolsSettings": {
+                "@builtin/fs_write": { "allowedPaths": ["~/**"] },
+                "@git/commit": { "sign": true }
+            }
+        }))
+        .unwrap();
+
+        agent.clear_mcp_configs();
+
+        // All @builtin variants should be preserved while MCP tools should be removed
+        assert!(agent.tools.contains(&"@builtin".to_string()));
+        assert!(agent.tools.contains(&"@builtin/fs_read".to_string()));
+        assert!(agent.tools.contains(&"@builtin/execute_bash".to_string()));
+        assert!(agent.tools.contains(&"fs_write".to_string()));
+        assert!(!agent.tools.contains(&"@git".to_string()));
+        assert!(!agent.tools.contains(&"@git/status".to_string()));
+
+        assert!(agent.allowed_tools.contains("@builtin/fs_read"));
+        assert!(agent.allowed_tools.contains("fs_write"));
+        assert!(!agent.allowed_tools.contains("@git/status"));
+
+        // Check tool aliases - need to iterate since we can't construct OriginalToolName directly
+        let has_builtin_alias = agent
+            .tool_aliases
+            .iter()
+            .any(|(k, v)| k.to_string() == "@builtin/fs_read" && v == "read");
+        assert!(has_builtin_alias, "@builtin/fs_read alias should be preserved");
+
+        let has_git_alias = agent.tool_aliases.iter().any(|(k, _)| k.to_string() == "@git/status");
+        assert!(!has_git_alias, "@git/status alias should be removed");
+
+        // Check tool settings - need to iterate since we can't construct ToolSettingTarget directly
+        let has_builtin_setting = agent
+            .tools_settings
+            .iter()
+            .any(|(k, _)| k.to_string() == "@builtin/fs_write");
+        assert!(has_builtin_setting, "@builtin/fs_write settings should be preserved");
+
+        let has_git_setting = agent.tools_settings.iter().any(|(k, _)| k.to_string() == "@git/commit");
+        assert!(!has_git_setting, "@git/commit settings should be removed");
+    }
+
+    #[test]
+    fn test_display_label_no_active_agent() {
+        let agents = Agents::default();
+
+        let label = agents.display_label("fs_read", &ToolOrigin::Native);
+        // With no active agent, it should fall back to default permissions
+        // fs_read has a default of "trusted"
+        assert!(
+            label.contains("trusted"),
+            "fs_read should show default trusted permission, instead found: {}",
+            label
+        );
+    }
+
+    #[test]
+    fn test_display_label_trust_all_tools() {
+        let agents = Agents {
+            trust_all_tools: true,
+            ..Default::default()
+        };
+
+        // Should be trusted even if not in allowed_tools
+        let label = agents.display_label("random_tool", &ToolOrigin::Native);
+        assert!(
+            label.contains("trusted"),
+            "trust_all_tools should make everything trusted, instead found: {}",
+            label
+        );
+    }
+
+    #[test]
+    fn test_display_label_default_permissions() {
+        let agents = Agents::default();
+
+        // Test default permissions for known tools
+        let fs_read_label = agents.display_label("fs_read", &ToolOrigin::Native);
+        assert!(
+            fs_read_label.contains("trusted"),
+            "fs_read should be trusted by default, instead found: {}",
+            fs_read_label
+        );
+
+        let fs_write_label = agents.display_label("fs_write", &ToolOrigin::Native);
+        assert!(
+            fs_write_label.contains("not trusted"),
+            "fs_write should not be trusted by default, instead found: {}",
+            fs_write_label
+        );
+
+        let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let execute_bash_label = agents.display_label(execute_name, &ToolOrigin::Native);
+        assert!(
+            execute_bash_label.contains("read-only"),
+            "execute_bash should show read-only by default, instead found: {}",
+            execute_bash_label
+        );
+    }
+
+    #[test]
+    fn test_display_label_comprehensive_patterns() {
+        let mut agents = Agents::default();
+
+        // Create agent with all types of patterns
+        let mut allowed_tools = HashSet::new();
+        // Native exact match
+        allowed_tools.insert("fs_read".to_string());
+        // Native wildcard
+        allowed_tools.insert("execute_*".to_string());
+        // MCP server exact (allows all tools from that server)
+        allowed_tools.insert("@server1".to_string());
+        // MCP tool exact
+        allowed_tools.insert("@server2/specific_tool".to_string());
+        // MCP tool wildcard
+        allowed_tools.insert("@server3/tool_*".to_string());
+
+        let agent = Agent {
+            schema: "test".to_string(),
+            name: "test-agent".to_string(),
+            description: None,
+            prompt: None,
+            mcp_servers: Default::default(),
+            tools: Vec::new(),
+            tool_aliases: Default::default(),
+            allowed_tools,
+            tools_settings: Default::default(),
+            resources: Vec::new(),
+            hooks: Default::default(),
+            use_legacy_mcp_json: false,
+            path: None,
+        };
+
+        agents.agents.insert("test-agent".to_string(), agent);
+        agents.active_idx = "test-agent".to_string();
+
+        // Test 1: Native exact match
+        let label = agents.display_label("fs_read", &ToolOrigin::Native);
+        assert!(
+            label.contains("trusted"),
+            "fs_read should be trusted (exact match), instead found: {}",
+            label
+        );
+
+        // Test 2: Native wildcard match
+        let label = agents.display_label("execute_bash", &ToolOrigin::Native);
+        assert!(
+            label.contains("trusted"),
+            "execute_bash should match execute_* pattern, instead found: {}",
+            label
+        );
+
+        // Test 3: Native no match
+        let label = agents.display_label("fs_write", &ToolOrigin::Native);
+        assert!(
+            !label.contains("trusted") || label.contains("not trusted"),
+            "fs_write should not be trusted, instead found: {}",
+            label
+        );
+
+        // Test 4: MCP server exact match (allows any tool from server1)
+        let label = agents.display_label("any_tool", &ToolOrigin::McpServer("server1".to_string()));
+        assert!(
+            label.contains("trusted"),
+            "Server-level permission should allow any tool, instead found: {}",
+            label
+        );
+
+        // Test 5: MCP tool exact match
+        let label = agents.display_label("specific_tool", &ToolOrigin::McpServer("server2".to_string()));
+        assert!(
+            label.contains("trusted"),
+            "Exact MCP tool should be trusted, instead found: {}",
+            label
+        );
+
+        // Test 6: MCP tool wildcard match
+        let label = agents.display_label("tool_read", &ToolOrigin::McpServer("server3".to_string()));
+        assert!(
+            label.contains("trusted"),
+            "tool_read should match @server3/tool_* pattern, instead found: {}",
+            label
+        );
+
+        // Test 7: MCP tool no match
+        let label = agents.display_label("other_tool", &ToolOrigin::McpServer("server2".to_string()));
+        assert!(
+            !label.contains("trusted") || label.contains("not trusted"),
+            "Non-matching MCP tool should not be trusted, instead found: {}",
+            label
+        );
+
+        // Test 8: MCP server no match
+        let label = agents.display_label("some_tool", &ToolOrigin::McpServer("unknown_server".to_string()));
+        assert!(
+            !label.contains("trusted") || label.contains("not trusted"),
+            "Unknown server should not be trusted, instead found: {}",
+            label
+        );
     }
 }

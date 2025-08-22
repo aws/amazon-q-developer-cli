@@ -19,6 +19,7 @@ use crate::database::settings::{Setting, Settings};
 use crate::os::Os;
 use crate::util::knowledge_store::KnowledgeStore;
 use crate::{with_success, with_info, with_warning, with_color};
+use crate::util::pattern_matching::matches_any_pattern;
 
 /// The Knowledge tool allows storing and retrieving information across chat sessions.
 /// It provides semantic search capabilities for files, directories, and text content.
@@ -123,7 +124,9 @@ impl Knowledge {
             Knowledge::Update(update) => {
                 // Require at least one identifier (context_id or name)
                 if update.context_id.is_empty() && update.name.is_empty() && update.path.is_empty() {
-                    eyre::bail!("Please provide either context_id or name or path to identify the context to update");
+                    eyre::bail!(
+                        "Please provide either context_id, name, or path to identify the knowledge base entry to update"
+                    );
                 }
 
                 // Validate the path exists
@@ -246,8 +249,10 @@ impl Knowledge {
     }
 
     pub async fn invoke(&self, os: &Os, _updates: &mut impl Write) -> Result<InvokeOutput> {
-        // Get the async knowledge store singleton
-        let async_knowledge_store = KnowledgeStore::get_async_instance().await;
+        // Get the async knowledge store singleton with OS-aware directory
+        let async_knowledge_store = KnowledgeStore::get_async_instance_with_os(os)
+            .await
+            .map_err(|e| eyre::eyre!("Failed to access knowledge base: {}", e))?;
         let mut store = async_knowledge_store.lock().await;
 
         let result = match self {
@@ -261,7 +266,14 @@ impl Knowledge {
                     add.value.clone()
                 };
 
-                match store.add(&add.name, &value_to_use).await {
+                match store
+                    .add(
+                        &add.name,
+                        &value_to_use,
+                        crate::util::knowledge_store::AddOptions::with_db_defaults(os),
+                    )
+                    .await
+                {
                     Ok(context_id) => format!(
                         "Added '{}' to knowledge base with ID: {}. Track active jobs in '/knowledge status' with provided id.",
                         add.name, context_id
@@ -348,23 +360,24 @@ impl Knowledge {
                 .await
                 .unwrap_or_else(|e| format!("Failed to clear knowledge base: {}", e)),
             Knowledge::Search(search) => {
-                // Only use a spinner for search, not a full progress bar
                 let results = store.search(&search.query, search.context_id.as_deref()).await;
                 match results {
                     Ok(results) => {
                         if results.is_empty() {
-                            "No matching entries found in knowledge base".to_string()
+                            format!("No matching entries found for query: \"{}\"", search.query)
                         } else {
-                            let mut output = String::from("Search results:\n");
+                            let mut output = format!("Search results for \"{}\":\n\n", search.query);
                             for result in results {
                                 if let Some(text) = result.text() {
-                                    output.push_str(&format!("- {}\n", text));
+                                    output.push_str(&format!("{}\n\n", text));
                                 }
                             }
                             output
                         }
                     },
-                    Err(e) => format!("Search failed: {}", e),
+                    Err(e) => {
+                        format!("Search failed: {}", e)
+                    },
                 }
             },
             Knowledge::Show => {
@@ -412,9 +425,11 @@ impl Knowledge {
         })
     }
 
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, os: &Os, agent: &Agent) -> PermissionEvalResult {
         _ = self;
-        if agent.allowed_tools.contains("knowledge") {
+        _ = os;
+
+        if matches_any_pattern(&agent.allowed_tools, "knowledge") {
             PermissionEvalResult::Allow
         } else {
             PermissionEvalResult::Ask

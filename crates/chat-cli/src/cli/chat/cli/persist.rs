@@ -94,6 +94,8 @@ impl PersistSubcommand {
 
                 let mut new_state: ConversationState = tri!(serde_json::from_str(&contents), "import from", &path);
                 std::mem::swap(&mut new_state.tool_manager, &mut session.conversation.tool_manager);
+                std::mem::swap(&mut new_state.mcp_enabled, &mut session.conversation.mcp_enabled);
+                std::mem::swap(&mut new_state.model_info, &mut session.conversation.model_info);
                 std::mem::swap(
                     &mut new_state.context_manager,
                     &mut session.conversation.context_manager,

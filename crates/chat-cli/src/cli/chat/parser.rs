@@ -681,8 +681,10 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_parse() {
+    async fn test_response_parser_ignores_licensed_code() {
         // let _ = tracing_subscriber::fmt::try_init();
+
+        let content_to_ignore = "IGNORE ME PLEASE";
         let tool_use_id = "TEST_ID".to_string();
         let tool_name = "execute_bash".to_string();
         let tool_args = serde_json::json!({
@@ -698,7 +700,7 @@ mod tests {
                 content: " there".to_string(),
             },
             ChatResponseStream::AssistantResponseEvent {
-                content: "IGNORE ME PLEASE".to_string(),
+                content: content_to_ignore.to_string(),
             },
             ChatResponseStream::CodeReferenceEvent(()),
             ChatResponseStream::ToolUseEvent {
@@ -741,8 +743,14 @@ mod tests {
             Arc::new(Mutex::new(None)),
         );
 
+        let mut output = String::new();
         for _ in 0..5 {
-            println!("{:?}", parser.recv().await.unwrap());
+            output.push_str(&format!("{:?}", parser.recv().await.unwrap()));
         }
+
+        assert!(
+            !output.contains(content_to_ignore),
+            "assistant text preceding a code reference should be ignored as this indicates licensed code is being returned"
+        );
     }
 }

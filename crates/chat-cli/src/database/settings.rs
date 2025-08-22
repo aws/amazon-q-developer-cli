@@ -25,7 +25,14 @@ pub enum Setting {
     ShareCodeWhispererContent,
     EnabledThinking,
     EnabledKnowledge,
+    KnowledgeDefaultIncludePatterns,
+    KnowledgeDefaultExcludePatterns,
+    KnowledgeMaxFiles,
+    KnowledgeChunkSize,
+    KnowledgeChunkOverlap,
+    KnowledgeIndexType,
     SkimCommandKey,
+    TangentModeKey,
     ChatGreetingEnabled,
     ApiTimeout,
     ChatEditMode,
@@ -259,7 +266,14 @@ impl Setting {
             Self::ShareCodeWhispererContent => "codeWhisperer.shareCodeWhispererContentWithAWS".into(),
             Self::EnabledThinking => "chat.enableThinking".into(),
             Self::EnabledKnowledge => "chat.enableKnowledge".into(),
+            Self::KnowledgeDefaultIncludePatterns => "knowledge.defaultIncludePatterns".into(),
+            Self::KnowledgeDefaultExcludePatterns => "knowledge.defaultExcludePatterns".into(),
+            Self::KnowledgeMaxFiles => "knowledge.maxFiles".into(),
+            Self::KnowledgeChunkSize => "knowledge.chunkSize".into(),
+            Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap".into(),
+            Self::KnowledgeIndexType => "knowledge.indexType".into(),
             Self::SkimCommandKey => "chat.skimCommandKey".into(),
+            Self::TangentModeKey => "chat.tangentModeKey".into(),
             Self::ChatGreetingEnabled => "chat.greeting.enabled".into(),
             Self::ApiTimeout => "api.timeout".into(),
             Self::ChatEditMode => "chat.editMode".into(),
@@ -298,7 +312,14 @@ impl AsRef<str> for Setting {
             Self::ShareCodeWhispererContent => "codeWhisperer.shareCodeWhispererContentWithAWS",
             Self::EnabledThinking => "chat.enableThinking",
             Self::EnabledKnowledge => "chat.enableKnowledge",
+            Self::KnowledgeDefaultIncludePatterns => "knowledge.defaultIncludePatterns",
+            Self::KnowledgeDefaultExcludePatterns => "knowledge.defaultExcludePatterns",
+            Self::KnowledgeMaxFiles => "knowledge.maxFiles",
+            Self::KnowledgeChunkSize => "knowledge.chunkSize",
+            Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap",
+            Self::KnowledgeIndexType => "knowledge.indexType",
             Self::SkimCommandKey => "chat.skimCommandKey",
+            Self::TangentModeKey => "chat.tangentModeKey",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
             Self::ChatEditMode => "chat.editMode",
@@ -347,7 +368,14 @@ impl TryFrom<&str> for Setting {
             "codeWhisperer.shareCodeWhispererContentWithAWS" => Ok(Self::ShareCodeWhispererContent),
             "chat.enableThinking" => Ok(Self::EnabledThinking),
             "chat.enableKnowledge" => Ok(Self::EnabledKnowledge),
+            "knowledge.defaultIncludePatterns" => Ok(Self::KnowledgeDefaultIncludePatterns),
+            "knowledge.defaultExcludePatterns" => Ok(Self::KnowledgeDefaultExcludePatterns),
+            "knowledge.maxFiles" => Ok(Self::KnowledgeMaxFiles),
+            "knowledge.chunkSize" => Ok(Self::KnowledgeChunkSize),
+            "knowledge.chunkOverlap" => Ok(Self::KnowledgeChunkOverlap),
+            "knowledge.indexType" => Ok(Self::KnowledgeIndexType),
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
+            "chat.tangentModeKey" => Ok(Self::TangentModeKey),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),
             "chat.editMode" => Ok(Self::ChatEditMode),
@@ -479,6 +507,10 @@ impl Settings {
         self.get(key).and_then(|value| value.as_i64())
     }
 
+    pub fn get_int_or(&self, key: Setting, default: usize) -> usize {
+        self.get_int(key).map_or(default, |v| v as usize)
+    }
+
     /// Get a color setting, parsing from string representation
     pub fn get_color(&self, key: Setting) -> Option<Color> {
         match key {
@@ -509,7 +541,6 @@ impl Settings {
         self.get_string(Setting::ChatTheme)
             .and_then(|s| ThemeName::from_str(&s))
     }
-
 
 
     pub async fn save_to_file(&self) -> Result<(), DatabaseError> {
@@ -560,6 +591,7 @@ mod test {
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
+        assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
         assert_eq!(settings.get(Setting::ChatDefaultModel), None);
         assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
@@ -567,6 +599,7 @@ mod test {
         settings.set(Setting::TelemetryEnabled, true).await.unwrap();
         settings.set(Setting::OldClientId, "test").await.unwrap();
         settings.set(Setting::ShareCodeWhispererContent, false).await.unwrap();
+        settings.set(Setting::KnowledgeIndexType, "fast").await.unwrap();
         settings.set(Setting::McpLoadedBefore, true).await.unwrap();
         settings.set(Setting::ChatDefaultModel, "model 1").await.unwrap();
         settings
@@ -583,6 +616,10 @@ mod test {
             settings.get(Setting::ShareCodeWhispererContent),
             Some(&Value::Bool(false))
         );
+        assert_eq!(
+            settings.get(Setting::KnowledgeIndexType),
+            Some(&Value::String("fast".to_string()))
+        );
         assert_eq!(settings.get(Setting::McpLoadedBefore), Some(&Value::Bool(true)));
         assert_eq!(
             settings.get(Setting::ChatDefaultModel),
@@ -596,12 +633,14 @@ mod test {
         settings.remove(Setting::TelemetryEnabled).await.unwrap();
         settings.remove(Setting::OldClientId).await.unwrap();
         settings.remove(Setting::ShareCodeWhispererContent).await.unwrap();
+        settings.remove(Setting::KnowledgeIndexType).await.unwrap();
         settings.remove(Setting::McpLoadedBefore).await.unwrap();
         settings.remove(Setting::ChatDisableMarkdownRendering).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
         assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
+        assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
         assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
     }

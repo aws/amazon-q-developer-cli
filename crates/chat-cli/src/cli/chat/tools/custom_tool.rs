@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use crossterm::{
     queue,
@@ -34,12 +33,13 @@ use crate::mcp_client::{
     JsonRpcStdioTransport,
     MessageContent,
     Messenger,
-    PromptGet,
     ServerCapabilities,
     StdioTransport,
     ToolCallResult,
 };
 use crate::os::Os;
+use crate::util::MCP_SERVER_TOOL_DELIMITER;
+use crate::util::pattern_matching::matches_any_pattern;
 
 // TODO: support http transport type
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
@@ -175,9 +175,9 @@ impl CustomToolClient {
         }
     }
 
-    pub fn list_prompt_gets(&self) -> Arc<std::sync::RwLock<HashMap<String, PromptGet>>> {
+    pub fn get_pid(&self) -> Option<u32> {
         match self {
-            CustomToolClient::Stdio { client, .. } => client.prompt_gets.clone(),
+            CustomToolClient::Stdio { client, .. } => client.server_process_id.as_ref().map(|pid| pid.as_u32()),
         }
     }
 
@@ -185,18 +185,6 @@ impl CustomToolClient {
     pub async fn notify(&self, method: &str, params: Option<serde_json::Value>) -> Result<()> {
         match self {
             CustomToolClient::Stdio { client, .. } => Ok(client.notify(method, params).await?),
-        }
-    }
-
-    pub fn is_prompts_out_of_date(&self) -> bool {
-        match self {
-            CustomToolClient::Stdio { client, .. } => client.is_prompts_out_of_date.load(Ordering::Relaxed),
-        }
-    }
-
-    pub fn prompts_updated(&self) {
-        match self {
-            CustomToolClient::Stdio { client, .. } => client.is_prompts_out_of_date.store(false, Ordering::Relaxed),
         }
     }
 }
@@ -288,8 +276,7 @@ impl CustomTool {
             + TokenCounter::count_tokens(self.params.as_ref().map_or("", |p| p.as_str().unwrap_or_default()))
     }
 
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
-        use crate::util::MCP_SERVER_TOOL_DELIMITER;
+    pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
         let Self {
             name: tool_name,
             client,
@@ -297,15 +284,17 @@ impl CustomTool {
         } = self;
         let server_name = client.get_server_name();
 
-        if agent.allowed_tools.contains(&format!("@{server_name}"))
-            || agent
-                .allowed_tools
-                .contains(&format!("@{server_name}{MCP_SERVER_TOOL_DELIMITER}{tool_name}"))
-        {
-            PermissionEvalResult::Allow
-        } else {
-            PermissionEvalResult::Ask
+        let server_pattern = format!("@{server_name}");
+        if agent.allowed_tools.contains(&server_pattern) {
+            return PermissionEvalResult::Allow;
         }
+
+        let tool_pattern = format!("@{server_name}{MCP_SERVER_TOOL_DELIMITER}{tool_name}");
+        if matches_any_pattern(&agent.allowed_tools, &tool_pattern) {
+            return PermissionEvalResult::Allow;
+        }
+
+        PermissionEvalResult::Ask
     }
 }
 

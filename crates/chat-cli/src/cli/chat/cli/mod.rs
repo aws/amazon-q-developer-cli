@@ -10,6 +10,7 @@ pub mod persist;
 pub mod profile;
 pub mod prompts;
 pub mod subscribe;
+pub mod tangent;
 pub mod theme;
 pub mod tools;
 pub mod usage;
@@ -26,6 +27,7 @@ use model::ModelArgs;
 use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
+use tangent::TangentArgs;
 use theme::ThemeArgs;
 use tools::ToolsArgs;
 
@@ -85,6 +87,8 @@ pub enum SlashCommand {
     Theme(ThemeArgs),
     /// Upgrade to a Q Developer Pro subscription for increased query limits
     Subscribe(SubscribeArgs),
+    /// Toggle tangent mode for isolated conversations
+    Tangent(TangentArgs),
     #[command(flatten)]
     Persist(PersistSubcommand),
     // #[command(flatten)]
@@ -141,6 +145,7 @@ impl SlashCommand {
             Self::Model(args) => args.execute(os, session).await,
             Self::Theme(args) => args.execute(os, session).await,
             Self::Subscribe(args) => args.execute(os, session).await,
+            Self::Tangent(args) => args.execute(os, session).await,
             Self::Persist(subcommand) => subcommand.execute(os, session).await,
             // Self::Root(subcommand) => {
             //     if let Err(err) = subcommand.execute(os, database, telemetry).await {
@@ -173,6 +178,7 @@ impl SlashCommand {
             Self::Model(_) => "model",
             Self::Theme(_) => "theme",
             Self::Subscribe(_) => "subscribe",
+            Self::Tangent(_) => "tangent",
             Self::Persist(sub) => match sub {
                 PersistSubcommand::Save { .. } => "save",
                 PersistSubcommand::Load { .. } => "load",
