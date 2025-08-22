@@ -125,7 +125,10 @@ use util::{
 use winnow::Partial;
 use winnow::stream::Offset;
 
-use super::agent::PermissionEvalResult;
+use super::agent::{
+    DEFAULT_AGENT_NAME,
+    PermissionEvalResult,
+};
 use crate::api_client::model::ToolResultStatus;
 use crate::api_client::{
     self,
@@ -174,6 +177,8 @@ pub const EXTRA_HELP: &str = color_print::cstr! {"
 <em>Ctrl(^) + s</em>         <black!>Fuzzy search commands and context files</black!>
                     <black!>Use Tab to select multiple items</black!>
                     <black!>Change the keybind using: q settings chat.skimCommandKey x</black!>
+<em>Ctrl(^) + t</em>         <black!>Toggle tangent mode for isolated conversations</black!>
+                    <black!>Change the keybind using: q settings chat.tangentModeKey x</black!>
 <em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
                     <black!>Change using: q settings chat.skimCommandKey x</black!>
 "};
@@ -251,9 +256,19 @@ impl ChatArgs {
         let conversation_id = uuid::Uuid::new_v4().to_string();
         info!(?conversation_id, "Generated new conversation id");
 
+        // Check MCP status once at the beginning of the session
+        let mcp_enabled = match os.client.is_mcp_enabled().await {
+            Ok(enabled) => enabled,
+            Err(err) => {
+                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+                true
+            },
+        };
+
         let agents = {
             let skip_migration = self.no_interactive;
-            let (mut agents, md) = Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr).await;
+            let (mut agents, md) =
+                Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr, mcp_enabled).await;
             agents.trust_all_tools = self.trust_all_tools;
 
             os.telemetry
@@ -268,9 +283,11 @@ impl ChatArgs {
                 .map_err(|err| error!(?err, "failed to send agent config init telemetry"))
                 .ok();
 
-            if agents
-                .get_active()
-                .is_some_and(|a| !a.mcp_servers.mcp_servers.is_empty())
+            // Only show MCP safety message if MCP is enabled and has servers
+            if mcp_enabled
+                && agents
+                    .get_active()
+                    .is_some_and(|a| !a.mcp_servers.mcp_servers.is_empty())
             {
                 if !self.no_interactive && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
                     execute!(
@@ -364,6 +381,7 @@ impl ChatArgs {
             model_id,
             tool_config,
             !self.no_interactive,
+            mcp_enabled,
         )
         .await?
         .spawn(os)
@@ -385,7 +403,7 @@ const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cya
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
 // Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 16] = [
+const ROTATING_TIPS: [&str; 17] = [
     color_print::cstr! {"You can resume the last conversation from your current directory by launching with
     <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding.
@@ -417,6 +435,7 @@ const ROTATING_TIPS: [&str; 16] = [
     color_print::cstr! {"Use <green!>/model</green!> to select the model to use for this conversation"},
     color_print::cstr! {"Set a default model by running <green!>q settings chat.defaultModel MODEL</green!>. Run <green!>/model</green!> to learn more."},
     color_print::cstr! {"Run <green!>/prompts</green!> to learn how to build & run repeatable workflows"},
+    color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
 ];
 
 const GREETING_BREAK_POINT: usize = 80;
@@ -589,6 +608,7 @@ impl ChatSession {
         model_id: Option<String>,
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
+        mcp_enabled: bool,
     ) -> Result<Self> {
         // Reload prior conversation
         let mut existing_conversation = false;
@@ -620,15 +640,27 @@ impl ChatSession {
                                 ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
                             ))
                         )?;
-                        let _ = agents.switch("default");
+                        let _ = agents.switch(DEFAULT_AGENT_NAME);
                     }
                 }
                 cs.agents = agents;
+                cs.mcp_enabled = mcp_enabled;
                 cs.update_state(true).await;
                 cs.enforce_tool_use_history_invariants();
                 cs
             },
-            false => ConversationState::new(conversation_id, agents, tool_config, tool_manager, model_id, os).await,
+            false => {
+                ConversationState::new(
+                    conversation_id,
+                    agents,
+                    tool_config,
+                    tool_manager,
+                    model_id,
+                    os,
+                    mcp_enabled,
+                )
+                .await
+            },
         };
 
         // Spawn a task for listening and broadcasting sigints.
@@ -1181,6 +1213,11 @@ impl ChatSession {
                 ))
             )?;
         }
+
+        if let Some(agent) = self.conversation.agents.get_active() {
+            agent.print_overridden_permissions(&mut self.stderr)?;
+        }
+
         self.stderr.flush()?;
 
         if let Some(ref model_info) = self.conversation.model_info {
@@ -1749,6 +1786,12 @@ impl ChatSession {
                             .clone()
                             .unwrap_or(tool_use.name.clone());
                         self.conversation.agents.trust_tools(vec![formatted_tool_name]);
+
+                        if let Some(agent) = self.conversation.agents.get_active() {
+                            agent
+                                .print_overridden_permissions(&mut self.stderr)
+                                .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
+                        }
                     }
                     tool_use.accepted = true;
 
@@ -1816,7 +1859,7 @@ impl ChatSession {
                 self.conversation
                     .agents
                     .get_active()
-                    .is_some_and(|a| match tool.tool.requires_acceptance(a) {
+                    .is_some_and(|a| match tool.tool.requires_acceptance(os, a) {
                         PermissionEvalResult::Allow => true,
                         PermissionEvalResult::Ask => false,
                         PermissionEvalResult::Deny(matches) => {
@@ -2605,7 +2648,8 @@ impl ChatSession {
     fn generate_tool_trust_prompt(&mut self) -> String {
         let profile = self.conversation.current_profile().map(|s| s.to_string());
         let all_trusted = self.all_tools_trusted();
-        prompt::generate_prompt(profile.as_deref(), all_trusted)
+        let tangent_mode = self.conversation.is_in_tangent_mode();
+        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode)
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
@@ -2707,7 +2751,13 @@ impl ChatSession {
             tool_use_id: self.conversation.latest_tool_use_ids(),
             tool_name: self.conversation.latest_tool_use_names(),
             assistant_response_length: md.map(|md| md.response_size as i32),
-            message_meta_tags: md.map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
+            message_meta_tags: {
+                let mut tags = md.map(|md| md.message_meta_tags.clone()).unwrap_or_default();
+                if self.conversation.is_in_tangent_mode() {
+                    tags.push(crate::telemetry::core::MessageMetaTag::TangentMode);
+                }
+                tags
+            },
         };
         os.telemetry
             .send_chat_added_message(&os.database, conversation_id.clone(), result, data)
@@ -2972,6 +3022,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()
@@ -3113,6 +3164,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()
@@ -3209,6 +3261,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()
@@ -3283,6 +3336,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()
@@ -3333,6 +3387,7 @@ mod tests {
             None,
             tool_config,
             true,
+            false,
         )
         .await
         .unwrap()

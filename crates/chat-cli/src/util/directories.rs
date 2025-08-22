@@ -1,8 +1,13 @@
+use std::env::VarError;
 use std::path::{
     PathBuf,
     StripPrefixError,
 };
 
+use globset::{
+    Glob,
+    GlobSetBuilder,
+};
 use thiserror::Error;
 
 use crate::cli::DEFAULT_AGENT_NAME;
@@ -29,6 +34,10 @@ pub enum DirectoryError {
     IntoString(#[from] std::ffi::IntoStringError),
     #[error(transparent)]
     StripPrefix(#[from] StripPrefixError),
+    #[error(transparent)]
+    PathExpand(#[from] shellexpand::LookupError<VarError>),
+    #[error(transparent)]
+    GlobCreation(#[from] globset::Error),
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
@@ -164,6 +173,27 @@ pub fn chat_global_agent_path(os: &Os) -> Result<PathBuf> {
 pub fn chat_local_agent_dir(os: &Os) -> Result<PathBuf> {
     let cwd = os.env.current_dir()?;
     Ok(cwd.join(WORKSPACE_AGENT_DIR_RELATIVE))
+}
+
+/// Canonicalizes path given by expanding the path given
+pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
+    let context = |input: &str| Ok(os.env.get(input).ok());
+    let home_dir = || os.env.home().map(|p| p.to_string_lossy().to_string());
+
+    Ok(shellexpand::full_with_context(path_as_str, home_dir, context)?.to_string())
+}
+
+/// Given a globset builder and a path, build globs for both the file and directory patterns
+/// This is needed because by default glob does not match children of a dir so we need both
+/// patterns to exist in a globset.
+pub fn add_gitignore_globs(builder: &mut GlobSetBuilder, path: &str) -> Result<()> {
+    let glob_for_file = Glob::new(path)?;
+    let glob_for_dir = Glob::new(&format!("{path}/**"))?;
+
+    builder.add(glob_for_file);
+    builder.add(glob_for_dir);
+
+    Ok(())
 }
 
 /// Derives the absolute path to an agent config directory given a "workspace directory".
@@ -342,35 +372,51 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_agent_knowledge_dir() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+    async fn test_canonicalizes_path() {
+        use std::fs;
 
-        // Create a test agent
-        let test_agent = crate::cli::Agent {
-            name: "test-agent".to_string(),
-            path: None,
-            ..Default::default()
-        };
+        use tempfile::TempDir;
 
-        let agent_dir = agent_knowledge_dir(&os, Some(&test_agent)).unwrap();
-        // The path will be transformed by chroot_path, so we need to get the actual home dir first
-        let home = home_dir(&os).unwrap();
-        let expected = home
-            .join(".aws")
-            .join("amazonq")
-            .join("knowledge_bases")
-            .join("test-agent");
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
 
-        assert_eq!(agent_dir, expected);
-    }
+        // Create a test file and directory
+        let test_file = temp_path.join("test_file.txt");
+        let test_dir = temp_path.join("test_dir");
+        fs::write(&test_file, "test content").unwrap();
+        fs::create_dir(&test_dir).unwrap();
 
-    async fn create_test_os(temp_dir: &tempfile::TempDir) -> crate::os::Os {
-        let os = crate::os::Os::new().await.unwrap();
-        // Override home directory to use temp directory
+        let test_os = Os::new().await.unwrap();
         unsafe {
-            os.env.set_var("HOME", temp_dir.path().to_str().unwrap());
+            test_os.env.set_var("HOME", "/home/testuser");
+            test_os.env.set_var("TEST_VAR", "test_value");
         }
-        os
+
+        // Test home directory expansion
+        let result = canonicalizes_path(&test_os, "~/test").unwrap();
+        assert_eq!(result, "/home/testuser/test");
+
+        // Test environment variable expansion
+        let result = canonicalizes_path(&test_os, "$TEST_VAR/path").unwrap();
+        assert_eq!(result, "test_value/path");
+
+        // Test combined expansion
+        let result = canonicalizes_path(&test_os, "~/$TEST_VAR").unwrap();
+        assert_eq!(result, "/home/testuser/test_value");
+
+        // Test absolute path (no expansion needed)
+        let result = canonicalizes_path(&test_os, "/absolute/path").unwrap();
+        assert_eq!(result, "/absolute/path");
+
+        // Test relative path (no expansion needed)
+        let result = canonicalizes_path(&test_os, "relative/path").unwrap();
+        assert_eq!(result, "relative/path");
+
+        // Test glob prefixed paths
+        let result = canonicalizes_path(&test_os, "**/path").unwrap();
+        assert_eq!(result, "**/path");
+        let result = canonicalizes_path(&test_os, "**/middle/**/path").unwrap();
+        assert_eq!(result, "**/middle/**/path");
+
     }
 }
