@@ -67,21 +67,21 @@ version = "1.5.5"
 version = "1.2.4"
 
 [dependencies.aws-smithy-eventstream]
-version = "0.60.6"
+version = "0.60.11"
 
 [dependencies.aws-smithy-http]
-version = "0.60.12"
+version = "0.62.3"
 features = ["event-stream"]
 
 [dependencies.aws-smithy-json]
 version = "0.61.2"
 
 [dependencies.aws-smithy-runtime]
-version = "1.7.8"
+version = "1.9.0"
 features = ["client"]
 
 [dependencies.aws-smithy-runtime-api]
-version = "1.7.3"
+version = "1.9.0"
 features = [
     "client",
     "http-02x",
