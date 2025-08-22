@@ -6,7 +6,6 @@ mod error_formatter;
 mod input_source;
 mod message;
 mod parse;
-use std::mem::ManuallyDrop;
 use std::path::{
     MAIN_SEPARATOR,
     PathBuf,
@@ -1607,14 +1606,6 @@ impl ChatSession {
             None => return Ok(ChatState::Exit),
         };
 
-        if let Some(mut manager) = self.conversation.capture_manager.take() {
-            if !manager.user_message_lock {
-                manager.last_user_message = Some(user_input.clone());
-                manager.user_message_lock = true;
-            }
-            self.conversation.capture_manager = Some(manager);
-        }
-
         self.conversation.append_user_transcript(&user_input);
         Ok(ChatState::HandleInput { input: user_input })
     }
@@ -1771,6 +1762,14 @@ impl ChatSession {
                 skip_printing_tools: false,
             })
         } else {
+            // Track this as the last user message for checkpointing
+            if let Some(mut manager) = self.conversation.capture_manager.take() {
+                if !manager.user_message_lock {
+                    manager.last_user_message = Some(user_input.clone());
+                    manager.user_message_lock = true;
+                }
+                self.conversation.capture_manager = Some(manager);
+            }
             // Check for a pending tool approval
             if let Some(index) = self.pending_tool_index {
                 let is_trust = ["t", "T"].contains(&input);

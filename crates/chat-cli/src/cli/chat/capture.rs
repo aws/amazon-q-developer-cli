@@ -68,12 +68,7 @@ impl CaptureManager {
 
         let repo_root = get_git_repo_root()?;
         let output = Command::new("git")
-            .args([
-                "clone",
-                "--depth=1",
-                &repo_root.to_string_lossy(),
-                &path.to_string_lossy(),
-            ])
+            .args(["clone", &repo_root.to_string_lossy(), &path.to_string_lossy()])
             .output()?;
 
         if !output.status.success() {
@@ -81,20 +76,6 @@ impl CaptureManager {
         }
 
         let cloned_git_dir = path.join(".git");
-
-        // Remove remote origin to sever connection
-        let output = Command::new("git")
-            .args([
-                &format!("--git-dir={}", cloned_git_dir.display()),
-                "remote",
-                "remove",
-                "origin",
-            ])
-            .output()?;
-
-        if !output.status.success() {
-            bail!("git remote remove failed: {}", String::from_utf8_lossy(&output.stdout));
-        }
 
         config(&cloned_git_dir.to_string_lossy())?;
         stage_commit_tag(&cloned_git_dir.to_string_lossy(), "Initial capture", "0")?;
