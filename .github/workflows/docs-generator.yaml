@@ -1,0 +1,25 @@
+name: docs-generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      qcli_version:
+        description: 'PR number to document'
+        required: true
+        type: string
+
+jobs:
+  generate_docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source ~/.cargo/env
+    - name: Build and run from source (for testing purposes only)
+      run: cargo run --bin chat_cli
+    
+
+
+      
